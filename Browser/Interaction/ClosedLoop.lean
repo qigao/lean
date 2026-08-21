@@ -175,7 +175,7 @@ theorem closed_loop_is_resolved
   dsimp
   cases hselected : aggregateRecovery (effectiveFaults generation trace) with
   | retry =>
-      simp [hselected, resolveSelection, supervisorResolved, healthySupervisor]
+      simp [resolveSelection, supervisorResolved, healthySupervisor]
   | reResolve =>
       simpa [hselected, resolveSelection] using
         resolve_supervisor_fuel_is_resolved fuel
@@ -201,7 +201,7 @@ theorem closed_loop_is_resolved
         resolve_supervisor_fuel_is_resolved fuel
           (recoveringSupervisor generation budget .restartBrowser) available
   | fail =>
-      simp [hselected, resolveSelection, supervisorResolved, failedSupervisor]
+      simp [resolveSelection, supervisorResolved, failedSupervisor]
 
 /-- If the trace contains at least one effective fault and bounded recovery
     succeeds rather than failing, the result is the fresh next generation. -/
