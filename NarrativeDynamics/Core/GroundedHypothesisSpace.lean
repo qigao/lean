@@ -88,7 +88,7 @@ theorem grounded_candidate_requires_info_path
     {Agent : Type uA} {Event : Type uE} {Object : Type uO}
     {Location : Type uL} {Institution : Type uI} {Concept : Type uC}
     {Node : Type uN}
-    (w : WorldGraph Agent Event Node) (event : Event)
+    {w : WorldGraph Agent Event Node} {event : Event}
     (g : GroundedHypothesisSpace ι ProofId Agent Event Object Location Institution Concept Node w event)
     (hw : WorldInvariant w) (i : ι) :
     infoReachable w.info (w.eventNode event) (w.agentNode g.kb.owner) := by
