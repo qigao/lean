@@ -12,7 +12,7 @@ inductive LocalEventKind where
   | humanInput
   | humanIdle
   | automationStarted
-  | automationFinished
+  | automationFinished (action : ActionId)
   | navigationStarted
   | pageReady
   | executionContextDestroyed
