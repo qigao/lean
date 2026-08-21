@@ -34,12 +34,25 @@ structure Model where
   browserAlive : Bool := true
   graph : RuntimeGraph
   knownPages : List PageId := []
+  contextAvailable : ContextId → Bool := fun _ => true
   page : PageId → PageState := fun _ => {}
 
-/-- A primitive action may execute only when all browser/page/runtime/input
+/-- Functional page update. This is the formal boundary that prevents a
+    page-targeted transition from mutating sibling pages implicitly. -/
+def updatePage (m : Model) (p : PageId) (f : PageState → PageState) : Model :=
+  { m with
+    page := fun q => if q = p then f (m.page q) else m.page q }
+
+/-- Functional parent-context availability update. -/
+def updateContextAvailability (m : Model) (c : ContextId) (available : Bool) : Model :=
+  { m with
+    contextAvailable := fun q => if q = c then available else m.contextAvailable q }
+
+/-- A primitive action may execute only when all browser/context/page/runtime/input
     preconditions hold simultaneously. -/
 def canExecute (m : Model) (p : PageId) : Prop :=
   m.browserAlive = true ∧
+  m.contextAvailable (m.graph.contextOf p) = true ∧
   (m.page p).lifecycle = .ready ∧
   (m.page p).runtime = .ready ∧
   (m.page p).input = .automation ∧

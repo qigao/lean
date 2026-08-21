@@ -30,11 +30,24 @@ theorem closed_page_blocks_execution
     ¬ canExecute (step m (.local { page := p, kind := .pageClosed })) p := by
   simp [canExecute, step, updatePage, applyLocal]
 
-/-- Parent browser availability constrains all descendant pages without
-    directly rewriting every page state. -/
+/-- Parent browser availability constrains all descendant pages. -/
 theorem browser_disconnect_blocks_all_pages
     (m : Model) (p : PageId) :
     ¬ canExecute (step m .browserDisconnected) p := by
   simp [canExecute, step]
+
+/-- An explicit page command cannot mutate any sibling page. -/
+theorem page_command_isolated
+    (m : Model) (cmd : PageCommand) (q : PageId) (h : q ≠ cmd.page) :
+    (applyCommand m cmd).page q = m.page q := by
+  simp [applyCommand, updatePage, h]
+
+/-- Parent-context unavailability blocks primitive execution for every page in
+    that context before any recovery policy is considered. -/
+theorem context_unavailable_blocks_descendants
+    (m : Model) (c : ContextId) (p : PageId)
+    (hctx : m.graph.contextOf p = c) :
+    ¬ canExecute (step m (.contextUnavailable c)) p := by
+  simp [canExecute, step, updateContextAvailability, hctx]
 
 end Browser

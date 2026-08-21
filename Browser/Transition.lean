@@ -1,12 +1,6 @@
-import Browser.Event
+import Browser.Policy
 
 namespace Browser
-
-/-- Functional page update. This is the formal boundary that prevents a
-    page-local event from mutating sibling pages implicitly. -/
-def updatePage (m : Model) (p : PageId) (f : PageState → PageState) : Model :=
-  { m with
-    page := fun q => if q = p then f (m.page q) else m.page q }
 
 /-- Pure transition for a single page-local event. -/
 def applyLocal (kind : LocalEventKind) (s : PageState) : PageState :=
@@ -56,11 +50,18 @@ def applyLocal (kind : LocalEventKind) (s : PageState) : PageState :=
         input := .idle
         action := .suspended }
 
-/-- The sole state transition entry point for the executable specification. -/
+/-- Raw normalized state transition. Cross-page effects are intentionally absent. -/
 def step (m : Model) (event : RuntimeEvent) : Model :=
   match event with
   | .local e => updatePage m e.page (applyLocal e.kind)
+  | .contextUnavailable context => updateContextAvailability m context false
+  | .contextAvailable context => updateContextAvailability m context true
   | .browserDisconnected => { m with browserAlive := false }
   | .browserConnected => { m with browserAlive := true }
+
+/-- Full reactive transition: first observe the world event, then execute only
+    the explicit commands produced by policy. -/
+def react (m : Model) (event : RuntimeEvent) : Model :=
+  applyCommands (step m event) (commandsFor m event)
 
 end Browser
