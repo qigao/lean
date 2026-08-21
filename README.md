@@ -62,17 +62,22 @@ The reference C++17 API lives under `driver/`:
 
 ```text
 driver/include/browser/interaction_journal.hpp
+driver/include/browser/interaction_boundary.hpp
 driver/include/browser/jsonl_interaction_sink.hpp
 driver/src/interaction_journal.cpp
 driver/src/jsonl_interaction_sink.cpp
 ```
 
-Driver components call typed methods such as `action_started`, `cdp_request`, `timer_expired`, `input_dispatch`, and `human_input`. They do not serialize JSON or allocate sequence numbers. `InteractionJournal` serializes sequence assignment and sink delivery under one mutex, so concurrent emitters observe one deterministic journal order. `JsonlInteractionSink` owns the Lean-compatible wire format.
+Driver components never construct JSON or allocate sequence numbers. `InteractionJournal` serializes sequence assignment and sink delivery under one mutex, so concurrent emitters observe one deterministic journal order. `JsonlInteractionSink` alone owns the Lean-compatible wire format.
 
-CI compiles a concurrent C++ smoke test and also performs a real round trip:
+`InteractionBoundary` is the integration point for real Driver code. Every method records the typed interaction immediately before invoking the supplied real Driver callable. The reference emitter already uses this path, so the CI round-trip is:
 
 ```text
-C++ InteractionJournal
+Driver-like callable
+        ↓
+InteractionBoundary
+        ↓ journal first
+InteractionJournal
         ↓
 JsonlInteractionSink
         ↓
@@ -80,6 +85,42 @@ JsonlInteractionSink
         ↓
 Lean verifyInteractionJournalJsonl
 ```
+
+### Placement rules
+
+The boundary must sit at the actual ownership or side-effect edge, not at a higher-level observer that later guesses what happened:
+
+```text
+ActionEngine
+  before publishing start transition     → actionStarted
+  before publishing terminal transition  → actionFinished
+
+CdpSession / protocol routing
+  immediately before transport send      → cdpRequest
+  immediately before response delivery   → cdpResponse
+
+Deadline / Timer
+  immediately before arming scheduler    → deadlineArmed
+  inside timer callback, before Action    → timerExpired
+
+InputRouter / InputObserver
+  immediately before Input.dispatch*     → inputDispatch
+  before delivering observed human input → humanInput
+
+PolicyEngine
+  immediately before command enqueue     → policyIssued
+  immediately before child delivery      → policyDelivered
+
+RuntimeGraph / node lifecycle
+  immediately before incarnation mutation → epochRecreated
+  immediately before destruction mutation → actorDestroyed
+```
+
+A journal entry means **the Driver attempted or delivered that interaction at the boundary**. If the delegated transport/send/callback/mutation throws, the journal entry is intentionally not rolled back; the exception propagates unchanged. Success/failure diagnostics belong to the normal telemetry/flight-recorder channel unless success/failure itself later becomes part of a formal interaction contract.
+
+The real Driver owns `lane` assignment. The intended default is one stable lane per Page interaction domain, so Action/Input/Deadline interactions for one Page share a lane while independent Pages may interleave globally through `seq`.
+
+CI compiles both the concurrent journal smoke and the boundary-ordering smoke. The boundary smoke asserts from inside delegated callables that the expected record already exists, including the exception path.
 
 ## Integration/reference model
 
@@ -97,11 +138,13 @@ The existing Browser/Async model remains for composed regression testing:
 Lean is pinned to 4.33.0. CI runs:
 
 ```text
-C++17 InteractionJournal smoke test
-C++17 JSONL emitter
+C++17 InteractionJournal concurrent smoke test
+C++17 InteractionBoundary ordering smoke test
+C++17 JSONL emitter through InteractionBoundary
 lake build --wfail
 lake exe browser-interaction-check
 lake exe browser-driver-interaction-journal-check /tmp/driver-interaction-journal.jsonl
+lake exe browser-driver-interaction-journal-check traces/driver-interaction-journal.jsonl
 lake exe browser-interaction-trace-check traces/interaction-contracts.jsonl
 lake exe browser-runtime-check
 lake exe browser-driver-trace-check traces/generation-race.jsonl
@@ -115,3 +158,4 @@ Design documents:
 - `docs/superpowers/specs/2026-08-21-interaction-contracts-design.md`
 - `docs/superpowers/plans/2026-08-21-interaction-contracts.md`
 - `docs/superpowers/plans/2026-08-21-driver-interaction-journal.md`
+- `docs/superpowers/plans/2026-08-21-driver-boundary-instrumentation.md`
