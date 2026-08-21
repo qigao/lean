@@ -27,4 +27,5 @@ import Browser.ConformanceSpec
 import Browser.AsyncConformance
 import Browser.AsyncConformanceSpec
 import Browser.Interaction.CoreSpec
+import Browser.Interaction.SafetySpec
 import Browser.Trace
