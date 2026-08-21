@@ -86,6 +86,26 @@ def observeAdversarial
           | some active =>
               { supervisor with active := some (mergeActiveRecovery active fault) }
 
+/-- Feed one recovery result back into the single active recovery. `stepRecovery`
+    remains the authority for budget/escalation. The supervisor only projects a
+    terminal result back into fresh-generation or explicit-failure state. -/
+def applyRecoveryFeedback
+    (supervisor : FaultSupervisor) (feedback : RecoveryFeedback) : FaultSupervisor :=
+  if supervisor.failed then
+    supervisor
+  else
+    match supervisor.active with
+    | none => supervisor
+    | some active =>
+        let next := stepRecovery active feedback
+        match next.status with
+        | .healthy =>
+            { supervisor with generation := next.generation, active := none }
+        | .recovering =>
+            { supervisor with active := some next }
+        | .failed =>
+            { supervisor with active := none, failed := true }
+
 theorem stale_observation_noop
     (supervisor : FaultSupervisor) (observation : TaggedObservation)
     (h : observation.generation < supervisor.generation) :
@@ -102,5 +122,11 @@ theorem future_observation_noop
     exact Ne.symm (Nat.ne_of_lt h)
   cases hfailed : supervisor.failed <;>
     simp [observeAdversarial, hfailed, hne]
+
+theorem failed_supervisor_absorbs_feedback
+    (supervisor : FaultSupervisor) (h : supervisor.failed = true)
+    (feedback : RecoveryFeedback) :
+    applyRecoveryFeedback supervisor feedback = supervisor := by
+  simp [applyRecoveryFeedback, h]
 
 end Browser.Interaction
