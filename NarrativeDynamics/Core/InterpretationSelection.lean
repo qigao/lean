@@ -45,8 +45,9 @@ theorem pair_grounded_posteriors_le_one
   classical
   have hnonneg : ∀ k, 0 ≤ posterior g.competition k :=
     fun k => grounded_posterior_nonneg g hprior hlikelihood hmass k
+  let pair : Finset ι := {i, j}
   have hpair :
-      (∑ k in ({i, j} : Finset ι), posterior g.competition k) ≤
+      (∑ k ∈ pair, posterior g.competition k) ≤
         ∑ k, posterior g.competition k := by
     apply Finset.sum_le_sum_of_subset_of_nonneg
     · intro k hk
@@ -56,7 +57,7 @@ theorem pair_grounded_posteriors_le_one
   have htotal : (∑ k, posterior g.competition k) = 1 :=
     grounded_posterior_sum_one g hmass
   rw [htotal] at hpair
-  simpa [hneq] using hpair
+  simpa [pair, hneq] using hpair
 
 /-- At a majority threshold, two distinct grounded interpretations cannot both
 be committed. Normalization and nonnegativity make commitment unique whenever
