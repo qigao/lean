@@ -23,6 +23,63 @@ The compact single-lane contract can be checked with:
 lake exe browser-interaction-trace-check traces/interaction-contracts.jsonl
 ```
 
+## Feedback and recovery contracts
+
+The Driver is also modeled as an asynchronous feedback-control system rather than a monolithic state machine:
+
+```text
+Operation
+  -> Feedback
+  -> Decision
+  -> minimal sufficient recovery when needed
+  -> Healthy(new generation) | ExplicitFailure
+```
+
+`FeedbackClass` is intentionally small: `success`, `transient`, `stale`, `conflict`, `unavailable`, `timeout`, `terminal`, and `unknown`. `decideFeedback` is total; unknown and timed-out work fail safe instead of silently retrying an old attempt.
+
+Recovery actions have an explicit least-to-most disruptive rank:
+
+```text
+retry
+reResolve
+rebindRuntime
+reattachSession
+recreatePage
+recreateContext
+restartBrowser
+fail
+```
+
+`minimumRecovery` selects the least sufficient repair for each fault, and `minimum_recovery_is_minimal` proves that no lower-ranked sufficient action exists under this recovery relation.
+
+Recovery state contains only status, generation, fault, current recovery action, and finite budget. Successful recovery always produces `generation + 1`; it never revives the failed incarnation. Timeout and unknown faults start directly in `failed` and cannot later be revived by a spurious success signal.
+
+`runRecoveryFuel` abstracts environmental recovery with `available : RecoveryAction -> Bool`. It escalates while repair is unavailable and forces any still-recovering computation to explicit failure when fuel is exhausted. The theorem `run_recovery_fuel_is_terminal` proves for arbitrary finite fuel and arbitrary availability behavior that the internal recovery computation ends in `healthy` or `failed`, excluding internal recovery livelock.
+
+The executable recovery scenario checks both directions:
+
+```text
+pageLost
+  -> recreatePage unavailable
+  -> recreateContext available
+  -> Healthy(generation + 1)
+
+sessionLost
+  -> all repair levels unavailable
+  -> bounded escalation
+  -> Failed
+```
+
+Run it with:
+
+```text
+lake exe browser-recovery-check
+```
+
+This does not assume Chromium, the network, or the OS eventually recovers. The formal guarantee is conditional: when a repair level succeeds before the finite budget/fuel is exhausted, the recovered actor is a fresh generation; otherwise the Driver terminates recovery explicitly rather than hanging indefinitely.
+
+## Driver-facing interaction journal
+
 The Driver-facing journal is multiplexed. It starts with a version header, then every event carries a globally increasing `seq` and an opaque `lane`:
 
 ```json
@@ -143,6 +200,7 @@ C++17 InteractionBoundary ordering smoke test
 C++17 JSONL emitter through InteractionBoundary
 lake build --wfail
 lake exe browser-interaction-check
+lake exe browser-recovery-check
 lake exe browser-driver-interaction-journal-check /tmp/driver-interaction-journal.jsonl
 lake exe browser-driver-interaction-journal-check traces/driver-interaction-journal.jsonl
 lake exe browser-interaction-trace-check traces/interaction-contracts.jsonl
@@ -159,3 +217,5 @@ Design documents:
 - `docs/superpowers/plans/2026-08-21-interaction-contracts.md`
 - `docs/superpowers/plans/2026-08-21-driver-interaction-journal.md`
 - `docs/superpowers/plans/2026-08-21-driver-boundary-instrumentation.md`
+- `docs/superpowers/specs/2026-08-21-feedback-recovery-contracts-design.md`
+- `docs/superpowers/plans/2026-08-21-feedback-recovery-contracts.md`
