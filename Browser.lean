@@ -11,6 +11,7 @@ import Browser.Generation
 import Browser.Transition
 import Browser.Proofs
 import Browser.TimeoutProofs
+import Browser.GenerationProofs
 import Browser.PolicySpec
 import Browser.CausalitySpec
 import Browser.ActionSpec
