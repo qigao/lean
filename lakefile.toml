@@ -1,0 +1,10 @@
+name = "browser_runtime"
+version = "0.1.0"
+defaultTargets = ["Browser", "browser-runtime-check"]
+
+[[lean_lib]]
+name = "Browser"
+
+[[lean_exe]]
+name = "browser-runtime-check"
+root = "Main"

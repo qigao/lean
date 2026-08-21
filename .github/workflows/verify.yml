@@ -1,0 +1,28 @@
+name: Verify Lean model
+
+on:
+  push:
+    branches:
+      - master
+      - "formal/**"
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  proof-and-model:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and check proofs
+        uses: leanprover/lean-action@v1
+        with:
+          build: true
+          build-args: "--wfail"
+          test: false
+          lint: false
+          nanoda: true
+          nanoda-allow-sorry: false
+      - name: Replay executable runtime scenario
+        run: lake exe browser-runtime-check
