@@ -33,4 +33,41 @@ theorem structuralConflict_has_tradeoff_direction {g₁ g₂ : ℝ}
   · unfold potentialChange
     nlinarith
 
+/-- First-order motivational-potential change in a real inner-product state
+space. This is the directional derivative represented by the gradient inner
+product with a candidate world-state direction. -/
+def vectorPotentialChange {E : Type*}
+    [NormedAddCommGroup E] [InnerProductSpace ℝ E]
+    (gradient direction : E) : ℝ :=
+  ⟪gradient, direction⟫_ℝ
+
+/-- Vector structural conflict: two agents' local motivational gradients
+have a negative inner product. -/
+def vectorStructuralConflict {E : Type*}
+    [NormedAddCommGroup E] [InnerProductSpace ℝ E]
+    (g₁ g₂ : E) : Prop :=
+  ⟪g₁, g₂⟫_ℝ < 0
+
+/-- In any real inner-product state space, a negative gradient inner product
+implies a local tradeoff direction. Choosing `-g₁` strictly improves agent 1
+while strictly worsening agent 2. -/
+theorem vectorStructuralConflict_has_tradeoff_direction {E : Type*}
+    [NormedAddCommGroup E] [InnerProductSpace ℝ E]
+    {g₁ g₂ : E} (hconflict : vectorStructuralConflict g₁ g₂) :
+    ∃ δ : E,
+      vectorPotentialChange g₁ δ < 0 ∧
+      0 < vectorPotentialChange g₂ δ := by
+  unfold vectorStructuralConflict at hconflict
+  refine ⟨-g₁, ?_, ?_⟩
+  · have hg₁ : g₁ ≠ 0 := by
+      intro hz
+      subst g₁
+      simp at hconflict
+    have hself : 0 < ⟪g₁, g₁⟫_ℝ := real_inner_self_pos.mpr hg₁
+    have hneg : -⟪g₁, g₁⟫_ℝ < 0 := neg_lt_zero.mpr hself
+    simpa [vectorPotentialChange] using hneg
+  · have hneg : 0 < -⟪g₁, g₂⟫_ℝ := neg_pos.mpr hconflict
+    have hcomm : ⟪g₂, g₁⟫_ℝ = ⟪g₁, g₂⟫_ℝ := real_inner_comm g₂ g₁
+    simpa [vectorPotentialChange, hcomm] using hneg
+
 end NarrativeDynamics
