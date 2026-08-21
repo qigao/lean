@@ -21,7 +21,9 @@ private def faultsPermuted : FaultPermutation faultsA faultsB := by
   · exact FaultPermutation.swap .elementStale .sessionLost [.pageLost]
   · apply FaultPermutation.trans
     · exact FaultPermutation.cons .sessionLost (FaultPermutation.swap .elementStale .pageLost [])
-    · exact FaultPermutation.swap .sessionLost .pageLost [.elementStale]
+    · apply FaultPermutation.trans
+      · exact FaultPermutation.swap .sessionLost .pageLost [.elementStale]
+      · exact FaultPermutation.cons .pageLost (FaultPermutation.swap .sessionLost .elementStale [])
 
 example : aggregateRecovery faultsA = aggregateRecovery faultsB := by
   exact aggregate_permutation_invariant faultsPermuted
