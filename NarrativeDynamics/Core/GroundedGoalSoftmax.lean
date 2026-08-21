@@ -20,11 +20,10 @@ theorem finiteSoftmax_denominator_pos
     (β : ℝ) (score : Goal → ℝ) (witness : Goal) :
     0 < ∑ goal, Real.exp (β * score goal) := by
   classical
-  change 0 < ∑ goal in (Finset.univ : Finset Goal),
-    Real.exp (β * score goal)
-  exact Finset.sum_pos
-    (fun goal _ => Real.exp_pos (β * score goal))
-    ⟨witness, Finset.mem_univ witness⟩
+  apply Finset.sum_pos
+  · intro goal _
+    exact Real.exp_pos (β * score goal)
+  · exact ⟨witness, Finset.mem_univ witness⟩
 
 /-- A finite nonempty softmax distribution is normalized. -/
 theorem finiteSoftmax_sum_one
