@@ -67,7 +67,7 @@ theorem vectorStructuralConflict_has_tradeoff_direction {E : Type*}
     have hneg : -(inner ℝ g₁ g₁) < 0 := neg_lt_zero.mpr hself
     simpa [vectorPotentialChange] using hneg
   · have hneg : 0 < -(inner ℝ g₁ g₂) := neg_pos.mpr hconflict
-    have hcomm : inner ℝ g₂ g₁ = inner ℝ g₁ g₂ := real_inner_comm g₂ g₁
+    have hcomm : inner ℝ g₂ g₁ = inner ℝ g₁ g₂ := real_inner_comm g₁ g₂
     simpa [vectorPotentialChange, hcomm] using hneg
 
 end NarrativeDynamics
