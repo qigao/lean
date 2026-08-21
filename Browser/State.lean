@@ -14,7 +14,7 @@ structure PageState where
   waitingOn : Option WaitReason := none
   timeout : Option WaitReason := none
   pendingProtocol : Option ProtocolWait := none
-  deriving Repr
+  deriving Repr, DecidableEq, BEq
 
 namespace PageState
 
