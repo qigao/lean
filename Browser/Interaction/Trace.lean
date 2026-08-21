@@ -15,6 +15,7 @@ inductive InteractionTraceEvent where
   | cdpResponse (action : ActionId) (call : CdpCallId)
   | deadlineArmed (action : ActionId) (expiresAt : Time)
   | timerExpired (action : ActionId) (now : Time)
+  | inputDispatch (action : ActionId)
   | humanInput
   | policyIssued (trigger : InteractionCause) (page : PageId)
   | policyDelivered
@@ -64,6 +65,19 @@ private def armTraceDeadline
   else
     state
 
+/-- Side effects are checked before replay. Stale responses/timers are allowed to
+    arrive because their protocol transition is a no-op; new side effects require
+    a live actor and current ownership. -/
+def interactionEventAllowed (state : InteractionTraceState) : InteractionTraceEvent → Bool
+  | .cdpRequest action _ =>
+      mayEmitExternalEffect state.liveness .cdpRequest &&
+      decide (state.cdp.currentAction = some action)
+  | .inputDispatch action =>
+      mayEmitExternalEffect state.liveness .inputDispatch &&
+      canAutomationDispatch state.input action
+  | .policyDelivered => state.pendingPolicy.isSome
+  | _ => true
+
 def applyInteractionTraceEvent
     (state : InteractionTraceState) : InteractionTraceEvent → InteractionTraceState
   | .actionStarted action => startAction state action
@@ -74,6 +88,7 @@ def applyInteractionTraceEvent
   | .deadlineArmed action expiresAt => armTraceDeadline state action expiresAt
   | .timerExpired action now =>
       { state with deadline := expireDeadline state.deadline action now }
+  | .inputDispatch _ => state
   | .humanInput => { state with input := onHumanInput state.input }
   | .policyIssued trigger page =>
       let (policy, emission) := emitPolicyCommand state.policy trigger page
