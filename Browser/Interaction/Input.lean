@@ -18,7 +18,7 @@ def onHumanInput : InputOwner → InputOwner
 
 /-- Automation may dispatch only when the exact ActionId owns the input. -/
 def canAutomationDispatch (owner : InputOwner) (action : ActionId) : Bool :=
-  owner == .automation action
+  decide (owner = .automation action)
 
 theorem human_input_conflicts_with_automation (action : ActionId) :
     onHumanInput (.automation action) = .conflict action := by
