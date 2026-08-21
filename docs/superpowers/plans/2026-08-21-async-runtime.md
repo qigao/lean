@@ -1,3 +1,5 @@
+> **Status: historical/reference plan.** This plan records implementation of the earlier whole-`AsyncRuntime` model. That model remains integration/regression evidence under `Browser.Integration`; it is not the supported public proof architecture. See `docs/README.md`.
+
 # Unified Async Runtime Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

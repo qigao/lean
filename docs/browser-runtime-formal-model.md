@@ -1,3 +1,5 @@
+> **Status: historical/reference.** This document describes the earlier normalized whole-runtime model. It is retained for design history and regression context, not as the supported proof architecture. Start with `Browser.ProofAPI` and `docs/README.md` for current work.
+
 # Browser Runtime Formal Model
 
 ## Scope

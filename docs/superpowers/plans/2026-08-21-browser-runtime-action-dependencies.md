@@ -1,3 +1,5 @@
+> **Status: historical/reference plan.** This plan belongs to the earlier whole-runtime architecture and is retained for implementation history. New public proof work should start from `Browser.ProofAPI`; see `docs/README.md`.
+
 # Browser Runtime Action Dependency Invalidation Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

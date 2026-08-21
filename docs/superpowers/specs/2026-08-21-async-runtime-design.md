@@ -1,3 +1,5 @@
+> **Status: historical/reference.** This design records the earlier whole-`AsyncRuntime` direction. The model remains useful for integration/regression evidence, but new public proofs should target `Browser.ProofAPI`. See `docs/README.md` for the current architecture index.
+
 # Unified Async Browser Runtime Design
 
 ## Goal
