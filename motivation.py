@@ -42,3 +42,8 @@ def effective_pressure(boundary: Sequence[float], pressures: Sequence[float]) ->
 def softmax_probability(beta: float, own_score: float, rival_score: float) -> float:
     """Binary softmax probability written in numerically stable logistic form."""
     return 1.0 / (1.0 + math.exp(beta * (rival_score - own_score)))
+
+
+def learn_instrumentality(old: float, observed: float, rate: float) -> float:
+    """Prediction-error learning update for goal instrumentality."""
+    return old + rate * (observed - old)
