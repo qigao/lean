@@ -7,7 +7,14 @@ namespace Browser
 example (s : PageState) :
     (startActionState s).actionGeneration = s.actionGeneration + 1 ∧
     (startActionState s).currentAction = some (s.actionGeneration + 1) := by
-  simp [startActionState]
+  simp [startActionState, nextActionId, clearDeadlineState]
+
+/-- A completion callback from an older action generation cannot finish the
+    current action. -/
+example (s : PageState) (action : ActionId)
+    (hstale : s.currentAction ≠ some action) :
+    finishActionState s action = s := by
+  simp [finishActionState, hstale]
 
 /-- A timer created by an older action generation cannot arm a deadline on the
     current action. -/
