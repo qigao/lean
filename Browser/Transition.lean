@@ -64,4 +64,12 @@ def step (m : Model) (event : RuntimeEvent) : Model :=
 def react (m : Model) (event : RuntimeEvent) : Model :=
   applyCommands (step m event) (commandsFor m event)
 
+/-- Bounded causal entry point. Over-budget events are rejected before they can
+    mutate semantic runtime state or trigger another policy reaction. -/
+def reactEnvelope (budget : ReactionBudget) (m : Model) (envelope : EventEnvelope) : Option Model :=
+  if WithinBudget budget envelope then
+    some (react m envelope.event)
+  else
+    none
+
 end Browser

@@ -1,4 +1,4 @@
-import Browser.State
+import Browser.Causality
 
 namespace Browser
 
@@ -10,6 +10,13 @@ inductive PageCommandKind where
 structure PageCommand where
   page : PageId
   kind : PageCommandKind
+  deriving Repr
+
+/-- A policy-issued command carries the causal identity of the reaction that
+    created it without changing the command's semantic payload. -/
+structure IssuedCommand where
+  command : PageCommand
+  cause : Cause
   deriving Repr
 
 def pauseCommand (page : PageId) : PageCommand :=

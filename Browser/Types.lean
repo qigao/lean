@@ -5,6 +5,8 @@ abbrev ContextId := Nat
 abbrev PageId := Nat
 abbrev FrameId := Nat
 abbrev CdpSessionId := Nat
+abbrev EventId := Nat
+abbrev CorrelationId := Nat
 
 inductive Lifecycle where
   | attaching

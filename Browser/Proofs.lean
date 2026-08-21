@@ -111,4 +111,45 @@ theorem context_reaction_isolated
     _ = m.page q := by
             simp [step, updateContextAvailability]
 
+/-- Every policy-issued command stays in the triggering correlation. -/
+theorem issued_command_preserves_correlation
+    (m : Model) (envelope : EventEnvelope) (issued : IssuedCommand)
+    (h : issued ∈ issueCommandsFor m envelope) :
+    issued.cause.correlation = envelope.cause.correlation := by
+  have hm : issued ∈ (commandsFor m envelope.event).map (fun command =>
+      ({ command := command, cause := childCause envelope } : IssuedCommand)) := by
+    simpa [issueCommandsFor] using h
+  rcases List.mem_map.mp hm with ⟨command, _, rfl⟩
+  rfl
+
+/-- Every policy-issued command links directly to the triggering event id. -/
+theorem issued_command_parent_is_trigger
+    (m : Model) (envelope : EventEnvelope) (issued : IssuedCommand)
+    (h : issued ∈ issueCommandsFor m envelope) :
+    issued.cause.parent = some envelope.id := by
+  have hm : issued ∈ (commandsFor m envelope.event).map (fun command =>
+      ({ command := command, cause := childCause envelope } : IssuedCommand)) := by
+    simpa [issueCommandsFor] using h
+  rcases List.mem_map.mp hm with ⟨command, _, rfl⟩
+  rfl
+
+/-- Every policy reaction advances causal depth by exactly one. -/
+theorem issued_command_depth_succ
+    (m : Model) (envelope : EventEnvelope) (issued : IssuedCommand)
+    (h : issued ∈ issueCommandsFor m envelope) :
+    issued.cause.depth = envelope.cause.depth + 1 := by
+  have hm : issued ∈ (commandsFor m envelope.event).map (fun command =>
+      ({ command := command, cause := childCause envelope } : IssuedCommand)) := by
+    simpa [issueCommandsFor] using h
+  rcases List.mem_map.mp hm with ⟨command, _, rfl⟩
+  rfl
+
+/-- An event deeper than the finite reaction budget is rejected before state
+    mutation, preventing unbounded policy self-reaction. -/
+theorem over_budget_rejected
+    (budget : ReactionBudget) (m : Model) (envelope : EventEnvelope)
+    (h : budget.maxDepth < envelope.cause.depth) :
+    reactEnvelope budget m envelope = none := by
+  simp [reactEnvelope, WithinBudget, Nat.not_le.mpr h]
+
 end Browser

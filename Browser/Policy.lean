@@ -1,4 +1,3 @@
-import Browser.Event
 import Browser.Command
 
 namespace Browser
@@ -14,5 +13,13 @@ def commandsFor (m : Model) : RuntimeEvent → List PageCommand
   | .browserDisconnected => m.knownPages.map pauseCommand
   | .browserConnected => m.knownPages.map resumeCommand
   | .local _ => []
+
+/-- Attach causal metadata to policy output. The semantic command list is still
+    produced by `commandsFor`, so existing state proofs remain unchanged. -/
+def issueCommandsFor (m : Model) (envelope : EventEnvelope) : List IssuedCommand :=
+  (commandsFor m envelope.event).map fun command => {
+    command := command
+    cause := childCause envelope
+  }
 
 end Browser
