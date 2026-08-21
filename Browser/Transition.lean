@@ -1,6 +1,7 @@
 import Browser.Policy
 import Browser.Action
 import Browser.Timeout
+import Browser.Generation
 
 namespace Browser
 
@@ -37,14 +38,13 @@ def applyLocal (kind : LocalEventKind) (s : PageState) : PageState :=
       | .human | .conflict => { s with input := .idle }
       | _ => s
   | .automationStarted =>
-      let fresh := clearDeadlineState s
-      if s.lifecycle = .ready ∧ s.runtime = .ready ∧ s.input = .idle then
+      let fresh := startActionState s
+      if fresh.lifecycle = .ready ∧ fresh.runtime = .ready ∧ fresh.input = .idle then
         { fresh with input := .automation, action := .executing }
       else
         { fresh with action := .waiting }
   | .automationFinished =>
-      let fresh := clearDeadlineState s
-      { fresh with input := .idle, action := .idle }
+      finishActionState s
   | .navigationStarted =>
       { s with
         lifecycle := .loading
@@ -63,10 +63,14 @@ def applyLocal (kind : LocalEventKind) (s : PageState) : PageState :=
         runtime := .ready
         contextGeneration := s.contextGeneration + 1
         action := if s.action = .recovering then .waiting else s.action }
-  | .deadlineArmed expiresAt reason =>
-      armDeadlineState s expiresAt reason
-  | .deadlineReached now =>
-      expirePageState s now
+  | .deadlineArmed action expiresAt reason =>
+      armActionDeadlineState s action expiresAt reason
+  | .deadlineReached action now =>
+      expireActionDeadlineState s action now
+  | .protocolWaitStarted action call =>
+      startProtocolWaitState s action call
+  | .protocolResponse action call =>
+      receiveProtocolResponseState s action call
   | .pageCrashed =>
       { s with
         lifecycle := .crashed
