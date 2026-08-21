@@ -28,7 +28,7 @@ inductive LocalEventKind where
 structure LocalEvent where
   page : PageId
   kind : LocalEventKind
-  deriving Repr
+  deriving Repr, DecidableEq, BEq
 
 inductive RuntimeEvent where
   | local (event : LocalEvent)
@@ -36,7 +36,7 @@ inductive RuntimeEvent where
   | contextAvailable (context : ContextId)
   | browserDisconnected
   | browserConnected
-  deriving Repr
+  deriving Repr, DecidableEq, BEq
 
 def scopeOf : RuntimeEvent → EventScope
   | .local event => .page event.page
