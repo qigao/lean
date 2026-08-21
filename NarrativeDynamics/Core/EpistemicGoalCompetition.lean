@@ -57,10 +57,10 @@ theorem softmax2_strict_of_own_increases_rival_decreases
         Real.exp (β * own₁) * Real.exp (β * rival₂) := by ring
     _ < Real.exp (β * own₁) * Real.exp (β * own₂) +
         Real.exp (β * own₂) * Real.exp (β * rival₂) := by
-      exact add_lt_add_left hleft _
+      exact add_lt_add_right hleft _
     _ < Real.exp (β * own₁) * Real.exp (β * own₂) +
         Real.exp (β * own₂) * Real.exp (β * rival₁) := by
-      exact add_lt_add_left hright _
+      exact add_lt_add_right hright _
     _ = Real.exp (β * own₂) *
         (Real.exp (β * own₁) + Real.exp (β * rival₁)) := by ring
 
