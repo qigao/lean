@@ -69,6 +69,8 @@ jobs:
 
       # Integration/reference regression. These preserve executable/runtime evidence
       # without enlarging Browser.ProofAPI.
+      - name: "Integration: verify umbrella import"
+        run: lake build Browser.Integration --wfail
       - name: "Integration: compile C++ InteractionJournal smoke test"
         run: |
           c++ -std=c++17 -Wall -Wextra -Werror -pthread \
