@@ -35,4 +35,5 @@ import Browser.Interaction.ConformanceSpec
 import Browser.Interaction.JournalConformanceSpec
 import Browser.Interaction.FeedbackSpec
 import Browser.Interaction.RecoverySpec
+import Browser.Interaction.RecoveryTraceSpec
 import Browser.Trace
