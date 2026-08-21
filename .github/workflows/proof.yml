@@ -33,5 +33,6 @@ jobs:
           lake env lean NarrativeDynamics/Tests/VectorStrategy.lean
           lake env lean NarrativeDynamics/Tests/WorldGraph.lean
           lake env lean NarrativeDynamics/Tests/TemporalGraph.lean
+          lake env lean NarrativeDynamics/Tests/TypedGraph.lean
       - name: Python numerical tests
         run: python3 -m unittest discover -s tests -v
