@@ -1,6 +1,6 @@
 name = "browser_runtime"
 version = "0.1.0"
-defaultTargets = ["Browser", "browser-runtime-check", "browser-driver-trace-check", "browser-async-trace-check", "browser-interaction-check"]
+defaultTargets = ["Browser", "browser-runtime-check", "browser-driver-trace-check", "browser-async-trace-check", "browser-interaction-check", "browser-interaction-trace-check"]
 
 [[lean_lib]]
 name = "Browser"
@@ -20,3 +20,7 @@ root = "AsyncTraceMain"
 [[lean_exe]]
 name = "browser-interaction-check"
 root = "InteractionTraceMain"
+
+[[lean_exe]]
+name = "browser-interaction-trace-check"
+root = "InteractionJournalMain"
