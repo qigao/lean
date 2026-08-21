@@ -26,12 +26,12 @@ theorem timed_out_terminal_under_close
     (applyLocal .pageClosed s).action = .timedOut := by
   simp [applyLocal, suspendedOrTimedOut, h]
 
-/-- A deadline notification before the absolute expiry instant is a no-op. -/
+/-- A matching deadline notification before the absolute expiry instant is a no-op. -/
 theorem before_deadline_does_not_timeout
-    (s : PageState) (deadline now : Time) (reason : WaitReason)
+    (s : PageState) (action : ActionId) (deadline now : Time) (reason : WaitReason)
     (hbefore : now < deadline) :
-    expirePageState (armDeadlineState s deadline reason) now =
-      armDeadlineState s deadline reason := by
+    expirePageState (armDeadlineState s action deadline reason) action now =
+      armDeadlineState s action deadline reason := by
   simp [expirePageState, armDeadlineState, Nat.not_le.mpr hbefore]
 
 /-- Explicitly starting a new action clears the previous action's deadline and
@@ -45,6 +45,6 @@ theorem new_action_clears_timeout
     (applyLocal .automationStarted s).deadline = none ∧
     (applyLocal .automationStarted s).waitingOn = none ∧
     (applyLocal .automationStarted s).timeout = none := by
-  simp [applyLocal, clearDeadlineState, hlife, hruntime, hinput]
+  simp [applyLocal, startActionState, clearDeadlineState, hlife, hruntime, hinput]
 
 end Browser
