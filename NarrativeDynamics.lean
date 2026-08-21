@@ -16,3 +16,4 @@ import NarrativeDynamics.Core.Interpretation
 import NarrativeDynamics.Core.ObservationAdmission
 import NarrativeDynamics.Core.CognitivePipeline
 import NarrativeDynamics.Core.HypothesisCompetition
+import NarrativeDynamics.Core.GroundedHypothesisSpace
