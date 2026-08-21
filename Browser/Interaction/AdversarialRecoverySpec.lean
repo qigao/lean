@@ -120,4 +120,31 @@ private def oneBudgetExhausted : FaultSupervisor :=
 example : (oneBudgetSpent.active.map (fun r => r.budget)) = some 0 := by rfl
 example : oneBudgetExhausted.failed = true := by rfl
 
+private def contextAvailable : RecoveryAction → Bool
+  | .recreateContext => true
+  | _ => false
+
+private def nothingAvailable : RecoveryAction → Bool := fun _ => false
+
+private def resolvedMerged : FaultSupervisor :=
+  resolveSupervisorFuel 4 pageThenContext contextAvailable
+
+example : resolvedMerged.generation = 11 := by rfl
+example : resolvedMerged.active = none := by rfl
+example : resolvedMerged.failed = false := by rfl
+example : supervisorResolved resolvedMerged = true := by rfl
+
+private def resolvedFailure : FaultSupervisor :=
+  resolveSupervisorFuel 8 oneBudget nothingAvailable
+
+example : resolvedFailure.failed = true := by rfl
+example : resolvedFailure.active = none := by rfl
+example : supervisorResolved resolvedFailure = true := by rfl
+
+example
+    (fuel : Nat) (supervisor : FaultSupervisor)
+    (available : RecoveryAction → Bool) :
+    supervisorResolved (resolveSupervisorFuel fuel supervisor available) = true := by
+  exact resolve_supervisor_fuel_is_resolved fuel supervisor available
+
 end Browser.Interaction
