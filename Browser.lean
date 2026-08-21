@@ -2,9 +2,11 @@ import Browser.Types
 import Browser.Graph
 import Browser.State
 import Browser.Event
+import Browser.Causality
 import Browser.Command
 import Browser.Policy
 import Browser.Transition
 import Browser.Proofs
 import Browser.PolicySpec
+import Browser.CausalitySpec
 import Browser.Trace
