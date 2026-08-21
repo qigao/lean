@@ -29,5 +29,7 @@ jobs:
           lake env lean NarrativeDynamics/Tests/Learning.lean
           lake env lean NarrativeDynamics/Tests/Belief.lean
           lake env lean NarrativeDynamics/Tests/Strategy.lean
+          lake env lean NarrativeDynamics/Tests/Epistemic.lean
+          lake env lean NarrativeDynamics/Tests/VectorStrategy.lean
       - name: Python numerical tests
         run: python3 -m unittest discover -s tests -v
