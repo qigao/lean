@@ -64,6 +64,8 @@ jobs:
         run: lake exe browser-adversarial-recovery-check
       - name: Verify finite fault aggregation
         run: lake exe browser-fault-aggregation-check
+      - name: Verify runtime trace aggregation equivalence
+        run: lake exe browser-trace-aggregation-check
       - name: Verify C++ generated multi-lane interaction journal
         run: lake exe browser-driver-interaction-journal-check /tmp/driver-interaction-journal.jsonl
       - name: Replay canonical multi-lane interaction journal
