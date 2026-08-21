@@ -62,6 +62,8 @@ jobs:
         run: lake exe browser-decoder-recovery-check
       - name: Verify adversarial recovery convergence
         run: lake exe browser-adversarial-recovery-check
+      - name: Verify finite fault aggregation
+        run: lake exe browser-fault-aggregation-check
       - name: Verify C++ generated multi-lane interaction journal
         run: lake exe browser-driver-interaction-journal-check /tmp/driver-interaction-journal.jsonl
       - name: Replay canonical multi-lane interaction journal
