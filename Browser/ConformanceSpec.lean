@@ -10,16 +10,18 @@ private def bootstrap : TraceBootstrap := {
   ]
 }
 
+private def initial : Model := modelFromBootstrap bootstrap
+
 /-- A bootstrap line constructs the same page/context ownership model used by
     the runtime proofs. -/
 example :
-    (modelFromBootstrap bootstrap).graph.contextOf 1 = 10 ∧
-    (modelFromBootstrap bootstrap).graph.contextOf 2 = 20 := by
+    initial.graph.contextOf 1 = 10 ∧
+    initial.graph.contextOf 2 = 20 := by
   decide
 
 /-- Driver JSON uses a declared ActionId for `actionStarted`; conformance must
     reject a trace when that id does not equal the model's next generation. -/
-example (m : Model) :
+example :
     let record : DriverTraceRecord := {
       envelope := {
         id := 1
@@ -28,7 +30,7 @@ example (m : Model) :
       }
       declaredAction := some 99
     }
-    verifyRecord { maxDepth := 4 } m [] record = .error "action generation mismatch" := by
+    verifyRecord { maxDepth := 4 } initial [] record = .error "action generation mismatch" := by
   rfl
 
 /-- The JSONL decoder accepts a normalized action-start record carrying stable
