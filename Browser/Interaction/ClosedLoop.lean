@@ -196,11 +196,6 @@ theorem closed_loop_success_is_fresh
       cases hselected : aggregateRecovery (fault :: rest) with
       | retry =>
           exact False.elim (hnotRetry hselected)
-      | fail =>
-          simp [runClosedLoop, heffective, hselected, resolveSelection,
-            failedSupervisor] at hsuccess
-      | retry =>
-          exact False.elim (hnotRetry hselected)
       | reResolve =>
           simpa [runClosedLoop, heffective, hselected, resolveSelection] using
             resolve_recovering_success_is_fresh generation budget fuel .reResolve available
@@ -225,6 +220,9 @@ theorem closed_loop_success_is_fresh
           simpa [runClosedLoop, heffective, hselected, resolveSelection] using
             resolve_recovering_success_is_fresh generation budget fuel .restartBrowser available
               (by simpa [runClosedLoop, heffective, hselected, resolveSelection] using hsuccess)
+      | fail =>
+          simp [runClosedLoop, heffective, hselected, resolveSelection,
+            failedSupervisor] at hsuccess
 
 /-- Compact top-level closed-loop guarantee: selection is mathematically minimal
     and finite recovery is resolved. -/
