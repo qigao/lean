@@ -2,6 +2,10 @@ import Browser.Interaction.Conformance
 
 namespace Browser.Interaction
 
+private def failed {α : Type} : Except String α → Bool
+  | .error _ => true
+  | .ok _ => false
+
 private def validTrace : String :=
   "{\"kind\":\"interaction\",\"event\":\"actionStarted\",\"action\":2}\n" ++
   "{\"kind\":\"interaction\",\"event\":\"cdpRequest\",\"action\":2,\"call\":17}\n" ++
@@ -33,13 +37,13 @@ example :
 example : (verifyInteractionJsonl validTrace).isOk = true := by
   native_decide
 
-example : (verifyInteractionJsonl terminalViolation).isError = true := by
+example : failed (verifyInteractionJsonl terminalViolation) = true := by
   native_decide
 
-example : (verifyInteractionJsonl timeoutViolation).isError = true := by
+example : failed (verifyInteractionJsonl timeoutViolation) = true := by
   native_decide
 
-example : (verifyInteractionJsonl forgedPolicyDelivery).isError = true := by
+example : failed (verifyInteractionJsonl forgedPolicyDelivery) = true := by
   native_decide
 
 end Browser.Interaction
