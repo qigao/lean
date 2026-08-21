@@ -5,3 +5,4 @@ import NarrativeDynamics.Core.Strategy
 import NarrativeDynamics.Core.Epistemic
 import NarrativeDynamics.Core.WorldGraph
 import NarrativeDynamics.Core.TypedGraph
+import NarrativeDynamics.Core.TypedHypergraph
