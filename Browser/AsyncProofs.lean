@@ -1,8 +1,18 @@
 import Browser.Async
 
+/-!
+# AsyncRuntime integration/reference proofs
+
+These theorems are retained as regression evidence for the original whole
+`AsyncRuntime` model. They are not part of the supported public proof API.
+New proof obligations should target `Browser.ProofAPI`, whose formal control
+chain is `Interaction -> Feedback -> Recovery -> Aggregation -> ClosedLoop`.
+-/
+
 namespace Browser
 
-/-- Re-delivering the exact same envelope is an exact runtime no-op. -/
+/-- Integration/reference: re-delivering the exact same envelope is an exact
+    runtime no-op. -/
 theorem duplicate_delivery_noop
     (rt : AsyncRuntime) (envelope : AsyncEnvelope)
     (hdup : exactDuplicate rt envelope = true) :
@@ -11,8 +21,8 @@ theorem duplicate_delivery_noop
     (deliver rt envelope).disposition = .duplicate := by
   simp [deliver, hdup]
 
-/-- Reusing an observed MessageId for different content is rejected without
-    mutating runtime state. -/
+/-- Integration/reference: reusing an observed MessageId for different content
+    is rejected without mutating runtime state. -/
 theorem message_id_collision_rejected
     (rt : AsyncRuntime) (envelope : AsyncEnvelope)
     (hdup : exactDuplicate rt envelope = false)
@@ -22,7 +32,8 @@ theorem message_id_collision_rejected
     (deliver rt envelope).disposition = .rejected := by
   simp [deliver, hdup, hcollision]
 
-/-- An unknown/dead current-epoch target cannot mutate the runtime. -/
+/-- Integration/reference: an unknown/dead current-epoch target cannot mutate
+    the runtime. -/
 theorem orphan_delivery_noop
     (rt : AsyncRuntime) (envelope : AsyncEnvelope)
     (hdup : exactDuplicate rt envelope = false)
@@ -34,8 +45,9 @@ theorem orphan_delivery_noop
     (deliver rt envelope).disposition = .orphan := by
   simp [deliver, hdup, hcollision, hcause, htarget]
 
-/-- A message for an old node epoch may be observed for causal diagnostics, but
-    browser/graph/Page business state is unchanged and no child work is emitted. -/
+/-- Integration/reference: a message for an old node epoch may be observed for
+    causal diagnostics, but browser/graph/Page business state is unchanged and
+    no child work is emitted. -/
 theorem stale_delivery_preserves_model
     (rt : AsyncRuntime) (envelope : AsyncEnvelope)
     (hdup : exactDuplicate rt envelope = false)
