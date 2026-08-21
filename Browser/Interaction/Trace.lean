@@ -87,7 +87,10 @@ def applyInteractionTraceEvent
       { state with cdp := receiveCdpResponse state.cdp action call }
   | .deadlineArmed action expiresAt => armTraceDeadline state action expiresAt
   | .timerExpired action now =>
-      { state with deadline := expireDeadline state.deadline action now }
+      let deadline := expireDeadline state.deadline action now
+      { state with
+        deadline := deadline
+        liveness := if deadline.timedOut then .timedOut else state.liveness }
   | .inputDispatch _ => state
   | .humanInput => { state with input := onHumanInput state.input }
   | .policyIssued trigger page =>
