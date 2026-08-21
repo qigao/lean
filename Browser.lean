@@ -37,4 +37,5 @@ import Browser.Interaction.FeedbackSpec
 import Browser.Interaction.RecoverySpec
 import Browser.Interaction.RecoveryTraceSpec
 import Browser.Interaction.NormalizerSpec
+import Browser.Interaction.FeedbackRecoverySpec
 import Browser.Trace
