@@ -51,7 +51,7 @@ class InteractionSink {
   virtual void write(const InteractionRecord& record) = 0;
 };
 
-/--
+/**
  * Thread-safe typed interaction journal.
  *
  * The journal owns total observation order: sequence assignment and sink
