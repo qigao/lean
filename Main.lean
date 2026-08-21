@@ -52,12 +52,12 @@ private def scenario : List RuntimeEvent := [
   .contextUnavailable 10,
   .contextAvailable 10,
   .local { page := 1, kind := .automationStarted },
-  .local { page := 1, kind := .automationFinished },
+  .local { page := 1, kind := .automationFinished 2 },
   .local { page := 2, kind := .automationStarted },
   .browserDisconnected,
   .browserConnected,
   .local { page := 2, kind := .automationStarted },
-  .local { page := 2, kind := .automationFinished }
+  .local { page := 2, kind := .automationFinished 2 }
 ]
 
 private def humanTimeoutState : Model :=
@@ -101,18 +101,19 @@ private def timeoutScenarioOk : Bool :=
   ((restartAfterTimeoutState.page 1).timeout == none) &&
   ((restartAfterTimeoutState.page 1).deadline == none)
 
-/-- Action 1 leaves timer and CDP work behind; Action 2 starts and waits on its
-    own call. Late Action-1 callbacks must not mutate Action 2. -/
+/-- Action 1 leaves callbacks behind; Action 2 starts and waits on its own call.
+    Late Action-1 timer, CDP response and duplicate finish must not mutate Action 2. -/
 private def generationRaceState : Model :=
   let action1 := reactSafe initial (.local { page := 1, kind := .automationStarted })
   let wait1 := reactSafe action1 (.local { page := 1, kind := .protocolWaitStarted 1 100 })
   let armed1 := reactSafe wait1 (.local { page := 1, kind := .deadlineArmed 1 10 .protocol })
-  let finished1 := reactSafe armed1 (.local { page := 1, kind := .automationFinished })
+  let finished1 := reactSafe armed1 (.local { page := 1, kind := .automationFinished 1 })
   let action2 := reactSafe finished1 (.local { page := 1, kind := .automationStarted })
   let wait2 := reactSafe action2 (.local { page := 1, kind := .protocolWaitStarted 2 200 })
   let armed2 := reactSafe wait2 (.local { page := 1, kind := .deadlineArmed 2 100 .protocol })
   let staleTimer := reactSafe armed2 (.local { page := 1, kind := .deadlineReached 1 999 })
-  reactSafe staleTimer (.local { page := 1, kind := .protocolResponse 1 100 })
+  let staleResponse := reactSafe staleTimer (.local { page := 1, kind := .protocolResponse 1 100 })
+  reactSafe staleResponse (.local { page := 1, kind := .automationFinished 1 })
 
 private def generationRaceAfterMatchingResponse : Model :=
   reactSafe generationRaceState (.local { page := 1, kind := .protocolResponse 2 200 })
