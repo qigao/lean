@@ -71,24 +71,25 @@ private theorem join_fail_right (action : RecoveryAction) :
 theorem observe_adversarial_preserves_generation
     (supervisor : FaultSupervisor) (observation : TaggedObservation) :
     (observeAdversarial supervisor observation).generation = supervisor.generation := by
-  by_cases hfailed : supervisor.failed = true
-  · simp [observeAdversarial, hfailed]
-  · have hfailedFalse : supervisor.failed = false := Bool.eq_false_of_not_eq_true hfailed
-    by_cases hgeneration : observation.generation = supervisor.generation
-    · cases hfault : (normalizeObservation (decodeEvent observation.event)).fault with
-      | none =>
-          simp [observeAdversarial, hfailedFalse, hgeneration, hfault]
-      | some fault =>
-          by_cases hrequired : minimumRecovery fault = .fail
-          · simp [observeAdversarial, hfailedFalse, hgeneration, hfault, hrequired]
-          · cases hactive : supervisor.active with
-            | none =>
-                simp [observeAdversarial, hfailedFalse, hgeneration, hfault,
-                  hrequired, hactive, beginRecovery]
-            | some active =>
-                simp [observeAdversarial, hfailedFalse, hgeneration, hfault,
-                  hrequired, hactive]
-    · simp [observeAdversarial, hfailedFalse, hgeneration]
+  cases hfailed : supervisor.failed with
+  | true =>
+      simp [observeAdversarial, hfailed]
+  | false =>
+      by_cases hgeneration : observation.generation = supervisor.generation
+      · cases hfault : (normalizeObservation (decodeEvent observation.event)).fault with
+        | none =>
+            simp [observeAdversarial, hfailed, hgeneration, hfault]
+        | some fault =>
+            by_cases hrequired : minimumRecovery fault = .fail
+            · simp [observeAdversarial, hfailed, hgeneration, hfault, hrequired]
+            · cases hactive : supervisor.active with
+              | none =>
+                  simp [observeAdversarial, hfailed, hgeneration, hfault,
+                    hrequired, hactive, beginRecovery]
+              | some active =>
+                  simp [observeAdversarial, hfailed, hgeneration, hfault,
+                    hrequired, hactive]
+      · simp [observeAdversarial, hfailed, hgeneration]
 
 /-- One delivered observation changes the represented recovery requirement by
     exactly joining in that observation's current-generation requirement. -/
@@ -98,30 +99,31 @@ theorem observe_requirement_step
       joinRecovery
         (supervisorRequirement supervisor)
         (observationRequirement supervisor.generation observation) := by
-  by_cases hfailed : supervisor.failed = true
-  · simp [observeAdversarial, supervisorRequirement, observationRequirement,
-      hfailed, join_fail_left]
-  · have hfailedFalse : supervisor.failed = false := Bool.eq_false_of_not_eq_true hfailed
-    by_cases hgeneration : observation.generation = supervisor.generation
-    · cases hfault : (normalizeObservation (decodeEvent observation.event)).fault with
-      | none =>
-          simp [observeAdversarial, supervisorRequirement, observationRequirement,
-            hfailedFalse, hgeneration, hfault, join_retry_right]
-      | some fault =>
-          by_cases hrequired : minimumRecovery fault = .fail
-          · simp [observeAdversarial, supervisorRequirement, observationRequirement,
-              hfailedFalse, hgeneration, hfault, hrequired, join_fail_right]
-          · cases hactive : supervisor.active with
-            | none =>
-                simp [observeAdversarial, supervisorRequirement, observationRequirement,
-                  hfailedFalse, hgeneration, hfault, hrequired, hactive,
-                  beginRecovery, join_retry_left, join_retry_right]
-            | some active =>
-                simp [observeAdversarial, supervisorRequirement, observationRequirement,
-                  hfailedFalse, hgeneration, hfault, hrequired, hactive,
-                  join_retry_right, joinRecovery]
-    · simp [observeAdversarial, supervisorRequirement, observationRequirement,
-        hfailedFalse, hgeneration, join_retry_right]
+  cases hfailed : supervisor.failed with
+  | true =>
+      simp [observeAdversarial, supervisorRequirement, observationRequirement,
+        hfailed, join_fail_left]
+  | false =>
+      by_cases hgeneration : observation.generation = supervisor.generation
+      · cases hfault : (normalizeObservation (decodeEvent observation.event)).fault with
+        | none =>
+            simp [observeAdversarial, supervisorRequirement, observationRequirement,
+              hfailed, hgeneration, hfault, join_retry_right]
+        | some fault =>
+            by_cases hrequired : minimumRecovery fault = .fail
+            · simp [observeAdversarial, supervisorRequirement, observationRequirement,
+                hfailed, hgeneration, hfault, hrequired, join_fail_right]
+            · cases hactive : supervisor.active with
+              | none =>
+                  simp [observeAdversarial, supervisorRequirement, observationRequirement,
+                    hfailed, hgeneration, hfault, hrequired, hactive,
+                    beginRecovery, join_retry_left]
+              | some active =>
+                  simp [observeAdversarial, supervisorRequirement, observationRequirement,
+                    hfailed, hgeneration, hfault, hrequired, hactive,
+                    joinRecovery] <;> rfl
+      · simp [observeAdversarial, supervisorRequirement, observationRequirement,
+          hfailed, hgeneration, join_retry_right]
 
 /-- The pure trace requirement is exactly the finite-fault aggregate after
     filtering stale/future/no-fault observations. -/
