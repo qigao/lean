@@ -107,8 +107,7 @@ theorem run_recovery_fuel_success_is_fresh
               exact False.elim (hnotHealthy hstatus)
           | recovering =>
               have hfresh := ih next hstatus hhealthyNext
-              rw [hgeneration] at hfresh
-              exact hfresh
+              simpa [runRecoveryFuel, hrecovering, havailable, next, hgeneration] using hfresh
           | failed =>
               have hstaysFailed :=
                 run_recovery_fuel_failed_stays_failed fuel next available hstatus
@@ -174,9 +173,35 @@ theorem closed_loop_is_resolved
       (runClosedLoop generation budget fuel trace available).final = true := by
   unfold runClosedLoop
   dsimp
-  cases hselected : aggregateRecovery (effectiveFaults generation trace) <;>
-    simp [resolveSelection, supervisorResolved, failedSupervisor,
-      hselected, resolve_supervisor_fuel_is_resolved]
+  cases hselected : aggregateRecovery (effectiveFaults generation trace) with
+  | retry =>
+      simp [hselected, resolveSelection, supervisorResolved, healthySupervisor]
+  | reResolve =>
+      simpa [hselected, resolveSelection] using
+        resolve_supervisor_fuel_is_resolved fuel
+          (recoveringSupervisor generation budget .reResolve) available
+  | rebindRuntime =>
+      simpa [hselected, resolveSelection] using
+        resolve_supervisor_fuel_is_resolved fuel
+          (recoveringSupervisor generation budget .rebindRuntime) available
+  | reattachSession =>
+      simpa [hselected, resolveSelection] using
+        resolve_supervisor_fuel_is_resolved fuel
+          (recoveringSupervisor generation budget .reattachSession) available
+  | recreatePage =>
+      simpa [hselected, resolveSelection] using
+        resolve_supervisor_fuel_is_resolved fuel
+          (recoveringSupervisor generation budget .recreatePage) available
+  | recreateContext =>
+      simpa [hselected, resolveSelection] using
+        resolve_supervisor_fuel_is_resolved fuel
+          (recoveringSupervisor generation budget .recreateContext) available
+  | restartBrowser =>
+      simpa [hselected, resolveSelection] using
+        resolve_supervisor_fuel_is_resolved fuel
+          (recoveringSupervisor generation budget .restartBrowser) available
+  | fail =>
+      simp [hselected, resolveSelection, supervisorResolved, failedSupervisor]
 
 /-- If the trace contains at least one effective fault and bounded recovery
     succeeds rather than failing, the result is the fresh next generation. -/
