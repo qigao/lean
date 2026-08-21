@@ -11,3 +11,4 @@ import NarrativeDynamics.Core.Closure
 import NarrativeDynamics.Core.Provenance
 import NarrativeDynamics.Core.TruthMaintenance
 import NarrativeDynamics.Core.BeliefSupport
+import NarrativeDynamics.Core.EpistemicBelief
