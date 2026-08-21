@@ -61,13 +61,18 @@ private def decodeInteraction (raw : RawInteractionRecord) : Except String Inter
   | "actorDestroyed" => pure .actorDestroyed
   | other => throw s!"unknown interaction event: {other}"
 
-/-- Stable line-oriented wire contract for the C/C++ Driver EventJournal. -/
-def parseInteractionLine (line : String) : Except String InteractionTraceEvent := do
-  let json ← Json.parse line
+/-- Decode one already-parsed compact interaction JSON value. This is public so
+    the multi-lane journal verifier can reuse the exact event vocabulary without
+    duplicating protocol decoding. -/
+def decodeInteractionJson (json : Json) : Except String InteractionTraceEvent := do
   let raw : RawInteractionRecord ← fromJson? json
   if raw.kind != "interaction" then
     throw s!"unknown interaction record kind: {raw.kind}"
   decodeInteraction raw
+
+/-- Stable line-oriented wire contract for a single interaction lane. -/
+def parseInteractionLine (line : String) : Except String InteractionTraceEvent := do
+  decodeInteractionJson (← Json.parse line)
 
 private def verifyInteractionEvents :
     InteractionTraceState → List InteractionTraceEvent → Except String InteractionTraceState
