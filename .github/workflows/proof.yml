@@ -54,5 +54,6 @@ jobs:
           lake env lean NarrativeDynamics/Tests/GroundedEpistemicGoal.lean
           lake env lean NarrativeDynamics/Tests/GroundedGoalCovariance.lean
           lake env lean NarrativeDynamics/Tests/GroundedGoalScoreCovariance.lean
+          lake env lean NarrativeDynamics/Tests/GroundedGoalRankingReversal.lean
       - name: Python numerical tests
         run: python3 -m unittest discover -s tests -v
