@@ -1,6 +1,6 @@
 name = "browser_runtime"
 version = "0.1.0"
-defaultTargets = ["Browser", "browser-runtime-check", "browser-driver-trace-check", "browser-async-trace-check", "browser-interaction-check", "browser-interaction-trace-check", "browser-driver-interaction-journal-check", "browser-recovery-check", "browser-feedback-recovery-check", "browser-decoder-recovery-check", "browser-adversarial-recovery-check", "browser-fault-aggregation-check", "browser-trace-aggregation-check"]
+defaultTargets = ["Browser", "browser-runtime-check", "browser-driver-trace-check", "browser-async-trace-check", "browser-interaction-check", "browser-interaction-trace-check", "browser-driver-interaction-journal-check", "browser-recovery-check", "browser-feedback-recovery-check", "browser-decoder-recovery-check", "browser-adversarial-recovery-check", "browser-fault-aggregation-check", "browser-trace-aggregation-check", "browser-closed-loop-check"]
 
 [[lean_lib]]
 name = "Browser"
@@ -52,3 +52,7 @@ root = "FaultAggregationMain"
 [[lean_exe]]
 name = "browser-trace-aggregation-check"
 root = "TraceAggregationMain"
+
+[[lean_exe]]
+name = "browser-closed-loop-check"
+root = "ClosedLoopMain"
