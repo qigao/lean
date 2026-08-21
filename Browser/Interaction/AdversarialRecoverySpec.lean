@@ -76,7 +76,7 @@ example : (pageThenSession.active.map (fun r => r.action)) = some .recreatePage 
 example : (pageThenSession.active.map (fun r => r.budget)) = some 5 := by rfl
 
 example :
-    observeAdversarial initialSupervisor { generation := 10, event := .malformed } |>.failed = true := by
+    (observeAdversarial initialSupervisor { generation := 10, event := .malformed }).failed = true := by
   rfl
 
 end Browser.Interaction
