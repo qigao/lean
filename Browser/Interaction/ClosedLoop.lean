@@ -249,17 +249,21 @@ theorem closed_loop_success_is_fresh
           simp [runClosedLoop, heffective, hselected, resolveSelection,
             failedSupervisor] at hsuccess
 
-/-- Compact top-level closed-loop guarantee: selection is mathematically minimal
-    and finite recovery is resolved. -/
+/-- Compact top-level closed-loop guarantee: the selected recovery is the least
+    sufficient action for all effective faults, and finite recovery is resolved. -/
 theorem closed_loop_converges
     (generation budget fuel : Nat) (trace : List TaggedObservation)
     (available : RecoveryAction → Bool) :
-    (runClosedLoop generation budget fuel trace available).selected =
-        aggregateRecovery (effectiveFaults generation trace) ∧
+    MinimalCombined
+        (effectiveFaults generation trace)
+        (runClosedLoop generation budget fuel trace available).selected ∧
       supervisorResolved
         (runClosedLoop generation budget fuel trace available).final = true := by
   constructor
-  · exact closed_loop_selects_aggregate generation budget fuel trace available
+  · have hselected :=
+      closed_loop_selects_aggregate generation budget fuel trace available
+    rw [hselected]
+    exact aggregate_is_minimal_combined (effectiveFaults generation trace)
   · exact closed_loop_is_resolved generation budget fuel trace available
 
 end Browser.Interaction
