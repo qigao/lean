@@ -15,3 +15,4 @@ import NarrativeDynamics.Core.EpistemicBelief
 import NarrativeDynamics.Core.Interpretation
 import NarrativeDynamics.Core.ObservationAdmission
 import NarrativeDynamics.Core.CognitivePipeline
+import NarrativeDynamics.Core.HypothesisCompetition
