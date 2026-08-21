@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping
+import math
+from typing import Mapping, Sequence
 
 
 @dataclass(frozen=True)
@@ -31,3 +32,13 @@ class AgentMotivation:
             for drive, pressure in self.pressures.items()
         )
         return instrumental_value - goal.cost - goal.risk
+
+
+def effective_pressure(boundary: Sequence[float], pressures: Sequence[float]) -> float:
+    """Weighted perceived pressure inside an agent's motivational boundary."""
+    return sum(weight * pressure for weight, pressure in zip(boundary, pressures))
+
+
+def softmax_probability(beta: float, own_score: float, rival_score: float) -> float:
+    """Binary softmax probability written in numerically stable logistic form."""
+    return 1.0 / (1.0 + math.exp(beta * (rival_score - own_score)))
