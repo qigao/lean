@@ -2,8 +2,6 @@ import Browser.Transition
 
 namespace Browser
 
-/-- Dynamic topology changes are messages too; they are not out-of-band graph
-    mutations. Creation carries the epoch of the new child incarnation. -/
 inductive GraphPayload where
   | contextCreated (context : ContextId) (epoch : NodeEpoch)
   | contextDestroyed (context : ContextId)
@@ -19,8 +17,6 @@ inductive AsyncPayload where
   | graph (event : GraphPayload)
   deriving Repr
 
-/-- One asynchronously delivered message. `source` and `target` are logical
-    actor incarnations, not physical threads. -/
 structure AsyncEnvelope where
   id : MessageId
   cause : Cause
@@ -35,8 +31,6 @@ structure SeenMessage where
   depth : Nat
   deriving Repr, DecidableEq, BEq
 
-/-- Runtime registry around the already-proven browser state model. `slot`
-    retains the last epoch even after a node dies. -/
 structure AsyncRuntime where
   model : Model
   slot : ActorRef → NodeSlot
@@ -72,15 +66,11 @@ private def initialSlot (m : Model) : ActorRef → NodeSlot
       else
         {}
 
-/-- Lift an existing synchronous model into the async runtime without changing
-    its browser semantics. Existing known Pages/Contexts start at epoch 1. -/
 def asyncFromModel (m : Model) : AsyncRuntime := {
   model := m
   slot := initialSlot m
 }
 
-/-- Action actors borrow their Page epoch while additionally requiring the
-    ActionId to be current. Other actors use the registry directly. -/
 def nodeSlot (rt : AsyncRuntime) : ActorRef → NodeSlot
   | .action page action =>
       let pageSlot := rt.slot (.page page)
@@ -100,9 +90,6 @@ private def findSeen (id : MessageId) : List SeenMessage → Option SeenMessage
 def hasSeen (rt : AsyncRuntime) (id : MessageId) : Bool :=
   (findSeen id rt.seen).isSome
 
-/-- Causal children may arrive long after their parent, but an accepted child
-    must reference an already observed parent with the same correlation and
-    exactly one greater depth. -/
 def causalValid (rt : AsyncRuntime) (envelope : AsyncEnvelope) : Bool :=
   match envelope.cause.parent with
   | none => envelope.cause.depth == 0
@@ -130,20 +117,50 @@ inductive TargetClass where
   | orphan
   deriving Repr, DecidableEq, BEq
 
-/-- Unknown/dead target is orphan. A known actor with a different epoch is
-    stale, even if a newer incarnation is currently alive. -/
-def classifyTarget (rt : AsyncRuntime) (address : ActorAddress) : TargetClass :=
-  let slot := nodeSlot rt address.actor
-  if slot.epoch = 0 then
+private def classifyActionTarget
+    (rt : AsyncRuntime) (page : PageId) (action : ActionId) (epoch : NodeEpoch) : TargetClass :=
+  let pageSlot := rt.slot (.page page)
+  if pageSlot.epoch = 0 then
     .orphan
-  else if slot.epoch ≠ address.epoch then
+  else if pageSlot.epoch ≠ epoch then
     .stale
-  else if slot.alive = true then
+  else if pageSlot.alive ≠ true then
+    .orphan
+  else if (rt.model.page page).currentAction = some action then
     .current
+  else if action ≤ (rt.model.page page).actionGeneration then
+    .stale
   else
     .orphan
 
+/-- NodeEpoch and ActionId are both asynchronous-incarnation checks. Old Page/
+    Frame epochs and old Action generations are classified before actor-local
+    state logic runs. -/
+def classifyTarget (rt : AsyncRuntime) (address : ActorAddress) : TargetClass :=
+  match address.actor with
+  | .action page action => classifyActionTarget rt page action address.epoch
+  | actor =>
+      let slot := nodeSlot rt actor
+      if slot.epoch = 0 then
+        .orphan
+      else if slot.epoch ≠ address.epoch then
+        .stale
+      else if slot.alive = true then
+        .current
+      else
+        .orphan
+
 private def targetMatches (target : ActorAddress) : AsyncPayload → Bool
+  | .runtime (.local { page := page, kind := .automationFinished action }) =>
+      target.actor == .action page action
+  | .runtime (.local { page := page, kind := .deadlineArmed action _ _ }) =>
+      target.actor == .action page action
+  | .runtime (.local { page := page, kind := .deadlineReached action _ }) =>
+      target.actor == .action page action
+  | .runtime (.local { page := page, kind := .protocolWaitStarted action _ }) =>
+      target.actor == .action page action
+  | .runtime (.local { page := page, kind := .protocolResponse action _ }) =>
+      target.actor == .action page action
   | .runtime (.local event) => target.actor == .page event.page
   | .runtime (.contextUnavailable context) => target.actor == .context context
   | .runtime (.contextAvailable context) => target.actor == .context context
@@ -205,9 +222,6 @@ private def applyGraph (rt : AsyncRuntime) : GraphPayload → Except String Asyn
   | .frameDestroyed frame =>
       pure (destroySlot rt (.frame frame))
 
-/-- Local Page messages may reconcile that Page against parent availability,
-    but Browser/Context messages do not synchronously rewrite descendant Page
-    state. Cross-actor effects are emitted as command messages below. -/
 private def applyRuntimeEventAsync (m : Model) (event : RuntimeEvent) : Model :=
   let stepped := step m event
   match event with
@@ -260,9 +274,6 @@ private def acceptedGraph
   | .error _ => { runtime := rt, disposition := .rejected }
   | .ok changed => { runtime := markObserved changed envelope, disposition := .accepted }
 
-/-- The sole cross-actor delivery boundary. Validation happens before actor-local
-    transition logic. Only `accepted` may mutate browser/graph/Page state or emit
-    child messages. -/
 def deliver (rt : AsyncRuntime) (envelope : AsyncEnvelope) : DeliveryResult :=
   if hasSeen rt envelope.id then
     { runtime := rt, disposition := .duplicate }

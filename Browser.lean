@@ -21,6 +21,7 @@ import Browser.Async
 import Browser.AsyncProofs
 import Browser.AsyncSpec
 import Browser.AsyncScenario
+import Browser.AsyncActionScenario
 import Browser.Conformance
 import Browser.ConformanceSpec
 import Browser.Trace
