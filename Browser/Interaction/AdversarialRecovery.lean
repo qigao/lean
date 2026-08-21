@@ -106,6 +106,38 @@ def applyRecoveryFeedback
         | .failed =>
             { supervisor with active := none, failed := true }
 
+/-- A resolved supervisor has no live recovery left. `failed = true` is already
+    terminal; otherwise `active = none` means the lane is healthy/idle again. -/
+def supervisorResolved (supervisor : FaultSupervisor) : Bool :=
+  if supervisor.failed then
+    true
+  else
+    match supervisor.active with
+    | none => true
+    | some _ => false
+
+/-- Resolve the currently active recovery with finite fuel. The existing
+    `runRecoveryFuel` remains the recovery algorithm. This projection never
+    exposes a still-recovering result: an impossible/nonterminal result is
+    treated fail-safe as explicit supervisor failure. -/
+def resolveSupervisorFuel
+    (fuel : Nat) (supervisor : FaultSupervisor)
+    (available : RecoveryAction → Bool) : FaultSupervisor :=
+  if supervisor.failed then
+    supervisor
+  else
+    match supervisor.active with
+    | none => supervisor
+    | some active =>
+        let result := runRecoveryFuel fuel active available
+        match result.status with
+        | .healthy =>
+            { supervisor with generation := result.generation, active := none }
+        | .failed =>
+            { supervisor with active := none, failed := true }
+        | .recovering =>
+            { supervisor with active := none, failed := true }
+
 theorem stale_observation_noop
     (supervisor : FaultSupervisor) (observation : TaggedObservation)
     (h : observation.generation < supervisor.generation) :
@@ -128,5 +160,20 @@ theorem failed_supervisor_absorbs_feedback
     (feedback : RecoveryFeedback) :
     applyRecoveryFeedback supervisor feedback = supervisor := by
   simp [applyRecoveryFeedback, h]
+
+theorem resolve_supervisor_fuel_is_resolved
+    (fuel : Nat) (supervisor : FaultSupervisor)
+    (available : RecoveryAction → Bool) :
+    supervisorResolved (resolveSupervisorFuel fuel supervisor available) = true := by
+  cases hfailed : supervisor.failed with
+  | true =>
+      simp [resolveSupervisorFuel, supervisorResolved, hfailed]
+  | false =>
+      cases hactive : supervisor.active with
+      | none =>
+          simp [resolveSupervisorFuel, supervisorResolved, hfailed, hactive]
+      | some active =>
+          cases hstatus : (runRecoveryFuel fuel active available).status <;>
+            simp [resolveSupervisorFuel, supervisorResolved, hfailed, hactive, hstatus]
 
 end Browser.Interaction
