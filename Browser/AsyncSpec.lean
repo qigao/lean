@@ -1,5 +1,13 @@
 import Browser.AsyncProofs
 
+/-!
+# AsyncRuntime integration/reference spec
+
+Executable examples for the historical whole-`AsyncRuntime` model. They are
+retained for regression and replay evidence and are intentionally outside the
+supported `Browser.ProofAPI` theorem surface.
+-/
+
 namespace Browser
 
 private def graph : RuntimeGraph := {

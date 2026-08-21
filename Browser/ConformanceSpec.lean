@@ -1,5 +1,13 @@
 import Browser.Conformance
 
+/-!
+# Driver conformance integration/reference spec
+
+Executable JSONL/conformance examples for the earlier whole-runtime model.
+Retained for integration and regression evidence; they do not enlarge the
+supported `Browser.ProofAPI` theorem surface.
+-/
+
 namespace Browser
 
 private def bootstrap : TraceBootstrap := {

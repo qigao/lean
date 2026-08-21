@@ -1,6 +1,14 @@
 import Browser.Timeout
 import Browser.Proofs
 
+/-!
+# Timeout integration/reference spec
+
+Executable examples for the earlier whole-runtime deadline/timeout model.
+Retained as regression evidence through `Browser.Integration`; the supported
+public recovery surface is `Browser.ProofAPI`.
+-/
+
 namespace Browser
 
 /-- Human suspension must not extend an already armed absolute deadline. -/

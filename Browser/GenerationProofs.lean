@@ -1,5 +1,14 @@
 import Browser.Proofs
 
+/-!
+# Action-generation integration/reference proofs
+
+These theorems preserve the earlier whole-runtime ActionId/generation model for
+regression and compatibility. They are not part of `Browser.ProofAPI`; new
+public ownership and freshness contracts should be expressed through the
+current Interaction/Recovery chain.
+-/
+
 namespace Browser
 
 /-- Action generations are monotonic and the newly started action is bound to

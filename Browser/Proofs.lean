@@ -1,5 +1,16 @@
 import Browser.Transition
 
+/-!
+# Whole-runtime integration/reference proofs
+
+These theorems are preserved for the earlier normalized whole-runtime model.
+They are regression/reference evidence, not part of the supported public proof
+API. New public correctness arguments should extend `Browser.ProofAPI` and the
+`Interaction -> Feedback -> Recovery -> Aggregation -> ClosedLoop` chain.
+
+Import `Browser.Integration` when these historical theorems are needed.
+-/
+
 namespace Browser
 
 /-- A page-local event cannot mutate an unrelated sibling page. -/

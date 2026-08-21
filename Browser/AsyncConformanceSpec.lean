@@ -1,5 +1,13 @@
 import Browser.AsyncConformance
 
+/-!
+# Async JSONL conformance integration/reference spec
+
+Executable wire-format/replay examples for the historical whole-`AsyncRuntime`
+model. Retained for integration and regression evidence and intentionally kept
+outside `Browser.ProofAPI`.
+-/
+
 namespace Browser
 
 private def tinyAsyncTrace : String :=

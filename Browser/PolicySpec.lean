@@ -1,6 +1,14 @@
 import Browser.Policy
 import Browser.Transition
 
+/-!
+# Policy integration/reference spec
+
+Executable examples for the earlier whole-runtime policy/command layer. They are
+kept as regression evidence and are available through `Browser.Integration`;
+they do not define the supported public theorem surface.
+-/
+
 namespace Browser
 
 /-- A page command is a strictly page-local mutation. -/

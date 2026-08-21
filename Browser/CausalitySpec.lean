@@ -2,6 +2,14 @@ import Browser.Causality
 import Browser.Policy
 import Browser.Transition
 
+/-!
+# Causality integration/reference spec
+
+Executable examples for the earlier whole-runtime envelope/reaction-budget
+model. They remain regression evidence, not a second public proof API. Current
+public causality contracts live under `Browser.ProofAPI`.
+-/
+
 namespace Browser
 
 private def envelope : EventEnvelope := {

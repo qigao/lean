@@ -1,5 +1,13 @@
 import Browser.AsyncProofs
 
+/-!
+# Async action integration/reference scenario
+
+Executable ActionId freshness scenarios for the historical whole-`AsyncRuntime`
+model. They are retained for regression evidence and remain outside the
+supported `Browser.ProofAPI` theorem surface.
+-/
+
 namespace Browser
 
 private def actionGraph : RuntimeGraph := {

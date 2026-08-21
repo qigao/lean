@@ -1,5 +1,13 @@
 import Browser.AsyncProofs
 
+/-!
+# AsyncRuntime integration/reference scenario
+
+Executable lifecycle/policy scenarios for the historical whole-`AsyncRuntime`
+model. Retained for regression evidence; they are not a public proof API and
+should not be extended into a parallel theorem family.
+-/
+
 namespace Browser
 
 private def asyncGraph : RuntimeGraph := {

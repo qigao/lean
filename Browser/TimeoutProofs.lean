@@ -1,5 +1,14 @@
 import Browser.Proofs
 
+/-!
+# Timeout integration/reference proofs
+
+These theorems belong to the earlier whole-runtime timeout model. They are
+retained as regression/reference evidence and compatibility surface, not as the
+supported public proof API. New timeout/recovery contracts should flow through
+`Browser.ProofAPI`.
+-/
+
 namespace Browser
 
 /-- Navigation cannot resurrect a terminal timed-out action. -/

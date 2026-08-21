@@ -1,5 +1,13 @@
 import Browser.Proofs
 
+/-!
+# Action-contract integration/reference spec
+
+Executable examples for the earlier whole-runtime action-dependency
+reconciliation model. Retained for regression/reference use through
+`Browser.Integration`; new public contracts should extend `Browser.ProofAPI`.
+-/
+
 namespace Browser
 
 /-- Browser availability is a declared primitive-action dependency. -/

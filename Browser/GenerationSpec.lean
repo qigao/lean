@@ -1,5 +1,13 @@
 import Browser.Generation
 
+/-!
+# Action-generation integration/reference spec
+
+Executable examples for the earlier whole-runtime ActionId generation model.
+They remain regression evidence through `Browser.Integration`; current public
+freshness/ownership contracts belong to `Browser.ProofAPI`.
+-/
+
 namespace Browser
 
 /-- Starting a new action advances the page-local action generation and binds
