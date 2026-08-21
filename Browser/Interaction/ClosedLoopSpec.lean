@@ -26,6 +26,10 @@ example :
     recoveredLoop.selected = aggregateRecovery (effectiveFaults 10 mixedTrace) := by
   exact closed_loop_selects_aggregate 10 5 8 mixedTrace pageAvailable
 
+example :
+    MinimalCombined (effectiveFaults 10 mixedTrace) recoveredLoop.selected := by
+  exact (closed_loop_converges 10 5 8 mixedTrace pageAvailable).1
+
 example : supervisorResolved recoveredLoop.final = true := by
   exact closed_loop_is_resolved 10 5 8 mixedTrace pageAvailable
 
