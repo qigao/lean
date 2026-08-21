@@ -2,9 +2,14 @@ import NarrativeDynamics.Core.TypedGraph
 
 namespace NarrativeDynamics
 
+universe uA uE uO uL uI uC
+
 /-- A heterogeneous node indexed by its `NodeKind`. The index carries the
 endpoint type at compile time. -/
-inductive KindNode (Agent Event Object Location Institution Concept : Type*) : NodeKind → Type where
+inductive KindNode
+    (Agent : Type uA) (Event : Type uE) (Object : Type uO)
+    (Location : Type uL) (Institution : Type uI) (Concept : Type uC) :
+    NodeKind → Type (max uA (max uE (max uO (max uL (max uI uC))))) where
   | agent : Agent → KindNode Agent Event Object Location Institution Concept .agent
   | event : Event → KindNode Agent Event Object Location Institution Concept .event
   | object : Object → KindNode Agent Event Object Location Institution Concept .object
@@ -13,7 +18,9 @@ inductive KindNode (Agent Event Object Location Institution Concept : Type*) : N
   | concept : Concept → KindNode Agent Event Object Location Institution Concept .concept
 
 /-- Erase the dependent index while preserving the ordinary heterogeneous node. -/
-def eraseKindNode {Agent Event Object Location Institution Concept : Type*}
+def eraseKindNode
+    {Agent : Type uA} {Event : Type uE} {Object : Type uO}
+    {Location : Type uL} {Institution : Type uI} {Concept : Type uC}
     {k : NodeKind} :
     KindNode Agent Event Object Location Institution Concept k →
       HNode Agent Event Object Location Institution Concept
@@ -25,7 +32,9 @@ def eraseKindNode {Agent Event Object Location Institution Concept : Type*}
   | .concept c => .concept c
 
 /-- Erasing an indexed node recovers exactly the kind encoded in its type. -/
-theorem eraseKindNode_kind {Agent Event Object Location Institution Concept : Type*}
+theorem eraseKindNode_kind
+    {Agent : Type uA} {Event : Type uE} {Object : Type uO}
+    {Location : Type uL} {Institution : Type uI} {Concept : Type uC}
     {k : NodeKind}
     (n : KindNode Agent Event Object Location Institution Concept k) :
     nodeKind (eraseKindNode n) = k := by
@@ -33,8 +42,10 @@ theorem eraseKindNode_kind {Agent Event Object Location Institution Concept : Ty
 
 /-- A dependent list of premises whose type index is the exact sequence of
 node kinds required by a hyperedge signature. -/
-inductive TypedPremises (Agent Event Object Location Institution Concept : Type*) :
-    List NodeKind → Type where
+inductive TypedPremises
+    (Agent : Type uA) (Event : Type uE) (Object : Type uO)
+    (Location : Type uL) (Institution : Type uI) (Concept : Type uC) :
+    List NodeKind → Type (max uA (max uE (max uO (max uL (max uI uC))))) where
   | nil : TypedPremises Agent Event Object Location Institution Concept []
   | cons {k : NodeKind} {ks : List NodeKind} :
       KindNode Agent Event Object Location Institution Concept k →
@@ -42,7 +53,9 @@ inductive TypedPremises (Agent Event Object Location Institution Concept : Type*
       TypedPremises Agent Event Object Location Institution Concept (k :: ks)
 
 /-- Erase dependent premises into ordinary heterogeneous nodes. -/
-def erasePremises {Agent Event Object Location Institution Concept : Type*}
+def erasePremises
+    {Agent : Type uA} {Event : Type uE} {Object : Type uO}
+    {Location : Type uL} {Institution : Type uI} {Concept : Type uC}
     {ks : List NodeKind} :
     TypedPremises Agent Event Object Location Institution Concept ks →
       List (HNode Agent Event Object Location Institution Concept)
@@ -50,7 +63,9 @@ def erasePremises {Agent Event Object Location Institution Concept : Type*}
   | .cons head tail => eraseKindNode head :: erasePremises tail
 
 /-- Erasing a typed premise list preserves its complete kind sequence. -/
-theorem erasePremises_kinds {Agent Event Object Location Institution Concept : Type*}
+theorem erasePremises_kinds
+    {Agent : Type uA} {Event : Type uE} {Object : Type uO}
+    {Location : Type uL} {Institution : Type uI} {Concept : Type uC}
     {ks : List NodeKind}
     (ps : TypedPremises Agent Event Object Location Institution Concept ks) :
     (erasePremises ps).map nodeKind = ks := by
@@ -69,7 +84,8 @@ structure HyperedgeSignature where
 /-- A hyperedge whose premise arity/kinds and conclusion kind are enforced by
 the dependent types in its signature. -/
 structure TypedHyperedge
-    (Agent Event Object Location Institution Concept : Type*)
+    (Agent : Type uA) (Event : Type uE) (Object : Type uO)
+    (Location : Type uL) (Institution : Type uI) (Concept : Type uC)
     (sig : HyperedgeSignature) where
   inputs : TypedPremises Agent Event Object Location Institution Concept sig.premiseKinds
   output : KindNode Agent Event Object Location Institution Concept sig.conclusionKind
@@ -77,7 +93,8 @@ structure TypedHyperedge
 /-- Every representable hyperedge has exactly the premise-kind sequence stated
 by its signature. -/
 theorem hyperedge_premises_match_signature
-    {Agent Event Object Location Institution Concept : Type*}
+    {Agent : Type uA} {Event : Type uE} {Object : Type uO}
+    {Location : Type uL} {Institution : Type uI} {Concept : Type uC}
     {sig : HyperedgeSignature}
     (h : TypedHyperedge Agent Event Object Location Institution Concept sig) :
     (erasePremises h.inputs).map nodeKind = sig.premiseKinds := by
@@ -86,7 +103,8 @@ theorem hyperedge_premises_match_signature
 /-- Every representable hyperedge has exactly the conclusion kind stated by
 its signature. -/
 theorem hyperedge_conclusion_matches_signature
-    {Agent Event Object Location Institution Concept : Type*}
+    {Agent : Type uA} {Event : Type uE} {Object : Type uO}
+    {Location : Type uL} {Institution : Type uI} {Concept : Type uC}
     {sig : HyperedgeSignature}
     (h : TypedHyperedge Agent Event Object Location Institution Concept sig) :
     nodeKind (eraseKindNode h.output) = sig.conclusionKind := by
@@ -94,11 +112,12 @@ theorem hyperedge_conclusion_matches_signature
 
 /-- The number of represented premises is exactly the signature arity. -/
 theorem hyperedge_arity_matches_signature
-    {Agent Event Object Location Institution Concept : Type*}
+    {Agent : Type uA} {Event : Type uE} {Object : Type uO}
+    {Location : Type uL} {Institution : Type uI} {Concept : Type uC}
     {sig : HyperedgeSignature}
     (h : TypedHyperedge Agent Event Object Location Institution Concept sig) :
     (erasePremises h.inputs).length = sig.premiseKinds.length := by
-  have hk := hyperedge_premises_match_signature h
-  exact List.length_map (f := nodeKind) (erasePremises h.inputs) ▸ congrArg List.length hk
+  have hk := congrArg List.length (hyperedge_premises_match_signature h)
+  simpa using hk
 
 end NarrativeDynamics
