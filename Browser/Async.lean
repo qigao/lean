@@ -9,13 +9,13 @@ inductive GraphPayload where
   | pageDestroyed (page : PageId)
   | frameCreated (frame : FrameId) (page : PageId) (parent : Option FrameId) (epoch : NodeEpoch)
   | frameDestroyed (frame : FrameId)
-  deriving Repr
+  deriving Repr, DecidableEq, BEq
 
 inductive AsyncPayload where
   | runtime (event : RuntimeEvent)
   | command (command : PageCommand)
   | graph (event : GraphPayload)
-  deriving Repr
+  deriving Repr, DecidableEq, BEq
 
 structure AsyncEnvelope where
   id : MessageId
@@ -23,12 +23,10 @@ structure AsyncEnvelope where
   source : ActorAddress
   target : ActorAddress
   payload : AsyncPayload
-  deriving Repr
+  deriving Repr, DecidableEq, BEq
 
 structure SeenMessage where
-  id : MessageId
-  correlation : CorrelationId
-  depth : Nat
+  envelope : AsyncEnvelope
   deriving Repr, DecidableEq, BEq
 
 structure AsyncRuntime where
@@ -85,10 +83,21 @@ def updateSlot (rt : AsyncRuntime) (actor : ActorRef) (slot : NodeSlot) : AsyncR
 
 private def findSeen (id : MessageId) : List SeenMessage → Option SeenMessage
   | [] => none
-  | event :: rest => if event.id = id then some event else findSeen id rest
+  | event :: rest => if event.envelope.id = id then some event else findSeen id rest
 
 def hasSeen (rt : AsyncRuntime) (id : MessageId) : Bool :=
   (findSeen id rt.seen).isSome
+
+/-- Exact idempotent redelivery means both MessageId and full envelope match. -/
+def exactDuplicate (rt : AsyncRuntime) (envelope : AsyncEnvelope) : Bool :=
+  match findSeen envelope.id rt.seen with
+  | none => false
+  | some seen => seen.envelope == envelope
+
+/-- Reusing an existing MessageId for different content is trace corruption, not
+    an idempotent duplicate. -/
+def messageIdCollision (rt : AsyncRuntime) (envelope : AsyncEnvelope) : Bool :=
+  hasSeen rt envelope.id && !exactDuplicate rt envelope
 
 def causalValid (rt : AsyncRuntime) (envelope : AsyncEnvelope) : Bool :=
   match envelope.cause.parent with
@@ -97,13 +106,11 @@ def causalValid (rt : AsyncRuntime) (envelope : AsyncEnvelope) : Bool :=
       match findSeen parentId rt.seen with
       | none => false
       | some parent =>
-          (parent.correlation == envelope.cause.correlation) &&
-          (envelope.cause.depth == parent.depth + 1)
+          (parent.envelope.cause.correlation == envelope.cause.correlation) &&
+          (envelope.cause.depth == parent.envelope.cause.depth + 1)
 
 private def seenOf (envelope : AsyncEnvelope) : SeenMessage := {
-  id := envelope.id
-  correlation := envelope.cause.correlation
-  depth := envelope.cause.depth
+  envelope := envelope
 }
 
 private def markObserved (rt : AsyncRuntime) (envelope : AsyncEnvelope) : AsyncRuntime :=
@@ -275,8 +282,10 @@ private def acceptedGraph
   | .ok changed => { runtime := markObserved changed envelope, disposition := .accepted }
 
 def deliver (rt : AsyncRuntime) (envelope : AsyncEnvelope) : DeliveryResult :=
-  if hasSeen rt envelope.id then
+  if exactDuplicate rt envelope then
     { runtime := rt, disposition := .duplicate }
+  else if messageIdCollision rt envelope then
+    { runtime := rt, disposition := .rejected }
   else if !causalValid rt envelope then
     { runtime := rt, disposition := .rejected }
   else
