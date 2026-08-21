@@ -17,8 +17,10 @@ inductive LocalEventKind where
   | pageReady
   | executionContextDestroyed
   | executionContextReady
-  | deadlineArmed (expiresAt : Time) (reason : WaitReason)
-  | deadlineReached (now : Time)
+  | deadlineArmed (action : ActionId) (expiresAt : Time) (reason : WaitReason)
+  | deadlineReached (action : ActionId) (now : Time)
+  | protocolWaitStarted (action : ActionId) (call : CdpCallId)
+  | protocolResponse (action : ActionId) (call : CdpCallId)
   | pageCrashed
   | pageClosed
   deriving Repr, DecidableEq, BEq
