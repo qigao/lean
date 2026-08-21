@@ -67,7 +67,7 @@ jobs:
             echo "::error::Browser.ProofAPI leaks Browser.AsyncRuntime; async runtime belongs to Browser.Integration"
             exit 1
           fi
-          if ! grep -Eq "unknown (identifier|constant).*Browser.AsyncRuntime" /tmp/public-proof-api-boundary.log; then
+          if ! grep -Eqi "unknown (identifier|constant).*Browser.AsyncRuntime" /tmp/public-proof-api-boundary.log; then
             cat /tmp/public-proof-api-boundary.log
             echo "::error::public proof boundary probe failed for an unexpected reason"
             exit 1
