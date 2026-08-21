@@ -45,6 +45,6 @@ theorem successful_recovery_is_fresh
     (s : RecoveryState) (h : s.status = .recovering) :
     (stepRecovery s .recovered).generation = s.generation + 1 ∧
     (stepRecovery s .recovered).status = .healthy := by
-  simpa [stepRecovery, h]
+  simp [stepRecovery, h]
 
 end Browser.Interaction
