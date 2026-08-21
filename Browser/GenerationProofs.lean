@@ -9,6 +9,13 @@ theorem new_action_advances_generation (s : PageState) :
     (startActionState s).currentAction = some (s.actionGeneration + 1) := by
   simp [startActionState, nextActionId, clearDeadlineState]
 
+/-- A stale completion callback from an old ActionId cannot finish newer work. -/
+theorem stale_action_finish_ignored
+    (s : PageState) (action : ActionId)
+    (hstale : s.currentAction ≠ some action) :
+    finishActionState s action = s := by
+  simp [finishActionState, hstale]
+
 /-- A stale timer registration from an old ActionId is a state no-op. -/
 theorem stale_deadline_arm_ignored
     (s : PageState) (action : ActionId) (expiresAt : Time) (reason : WaitReason)
