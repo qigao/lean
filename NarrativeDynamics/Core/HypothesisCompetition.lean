@@ -37,7 +37,7 @@ theorem posterior_sum_one {ι : Type u} [Fintype ι]
     (∑ i, posterior c i) = 1 := by
   classical
   unfold posterior
-  rw [Finset.sum_div]
+  rw [← Finset.sum_div]
   change evidenceMass c / evidenceMass c = 1
   exact div_self (ne_of_gt hmass)
 
