@@ -79,4 +79,45 @@ example :
     (observeAdversarial initialSupervisor { generation := 10, event := .malformed }).failed = true := by
   rfl
 
+private def retrying : FaultSupervisor :=
+  applyRecoveryFeedback pageRecovering .retryableFailure
+
+example : (retrying.active.map (fun r => r.budget)) = some 4 := by rfl
+example : (retrying.active.map (fun r => r.action)) = some .recreatePage := by rfl
+
+private def insufficient : FaultSupervisor :=
+  applyRecoveryFeedback pageRecovering .insufficientRepair
+
+example : (insufficient.active.map (fun r => r.budget)) = some 4 := by rfl
+example : (insufficient.active.map (fun r => r.action)) = some .recreateContext := by rfl
+
+private def recovered : FaultSupervisor :=
+  applyRecoveryFeedback pageRecovering .recovered
+
+example : recovered.generation = 11 := by rfl
+example : recovered.active = none := by rfl
+example : recovered.failed = false := by rfl
+
+example :
+    observeAdversarial recovered { generation := 10, event := .browserProcessExited } = recovered := by
+  exact stale_observation_noop recovered _ (by decide)
+
+private def poisonedRecovery : FaultSupervisor :=
+  observeAdversarial pageRecovering { generation := 10, event := .malformed }
+
+example : poisonedRecovery.failed = true := by rfl
+example : applyRecoveryFeedback poisonedRecovery .recovered = poisonedRecovery := by rfl
+
+private def oneBudget : FaultSupervisor :=
+  observeAdversarial (healthySupervisor 30 1) { generation := 30, event := .targetSessionDetached }
+
+private def oneBudgetSpent : FaultSupervisor :=
+  applyRecoveryFeedback oneBudget .retryableFailure
+
+private def oneBudgetExhausted : FaultSupervisor :=
+  applyRecoveryFeedback oneBudgetSpent .retryableFailure
+
+example : (oneBudgetSpent.active.map (fun r => r.budget)) = some 0 := by rfl
+example : oneBudgetExhausted.failed = true := by rfl
+
 end Browser.Interaction
