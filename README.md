@@ -25,13 +25,13 @@ lake exe browser-interaction-trace-check traces/interaction-contracts.jsonl
 
 ## Feedback and recovery contracts
 
-The Driver is also modeled as an asynchronous feedback-control system rather than a monolithic state machine:
+The Driver is modeled as an asynchronous feedback-control system:
 
 ```text
-Operation
-  -> Feedback
+Observation
+  -> Classification
   -> Decision
-  -> minimal sufficient recovery when needed
+  -> minimal sufficient recovery when required
   -> Healthy(new generation) | ExplicitFailure
 ```
 
@@ -56,27 +56,13 @@ Recovery state contains only status, generation, fault, current recovery action,
 
 `runRecoveryFuel` abstracts environmental recovery with `available : RecoveryAction -> Bool`. It escalates while repair is unavailable and forces any still-recovering computation to explicit failure when fuel is exhausted. The theorem `run_recovery_fuel_is_terminal` proves for arbitrary finite fuel and arbitrary availability behavior that the internal recovery computation ends in `healthy` or `failed`, excluding internal recovery livelock.
 
-The executable recovery scenario checks both directions:
-
-```text
-pageLost
-  -> recreatePage unavailable
-  -> recreateContext available
-  -> Healthy(generation + 1)
-
-sessionLost
-  -> all repair levels unavailable
-  -> bounded escalation
-  -> Failed
-```
-
-Run it with:
+Run the bounded recovery scenario with:
 
 ```text
 lake exe browser-recovery-check
 ```
 
-This does not assume Chromium, the network, or the OS eventually recovers. The formal guarantee is conditional: when a repair level succeeds before the finite budget/fuel is exhausted, the recovered actor is a fresh generation; otherwise the Driver terminates recovery explicitly rather than hanging indefinitely.
+This does not assume Chromium, the network, or the OS eventually recovers. The formal guarantee is conditional: when a repair level succeeds before finite budget/fuel is exhausted, the recovered actor is a fresh generation; otherwise the Driver terminates recovery explicitly rather than hanging indefinitely.
 
 ## Feedback normalization
 
@@ -117,20 +103,10 @@ unrecognized                -> unknown / unknownFault
 
 `normalization_is_coherent` proves every raw observation produces an allowed feedback/fault pair. `recover_observation_fuel_is_resolved` composes normalization with the existing bounded recovery theorem and proves that recovery is either not required or returns a terminal `healthy`/`failed` state; it never leaves an internally stuck `recovering` result.
 
-The end-to-end executable checks recoverable, unavailable, timeout, unknown, human-conflict, transient, and success observations:
+Run the full observation-to-recovery scenario with:
 
 ```text
 lake exe browser-feedback-recovery-check
-```
-
-The compact formal chain is therefore:
-
-```text
-Observation
-  -> Classification
-  -> Decision
-  -> Minimal sufficient recovery when required
-  -> Convergence to Healthy(new generation) or ExplicitFailure
 ```
 
 Identity, generation ownership, causal delivery, and side-effect authorization remain separate interaction contracts; the normalizer does not reconstruct Browser/Page/Action state.
