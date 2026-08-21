@@ -79,6 +79,33 @@ def add_causal_edge(world: WorldState, source: str, target: str) -> WorldState:
     return replace(world, causal_edges=causal_edges)
 
 
+def causal_reachable(world: WorldState, source: str, target: str) -> bool:
+    """Reachability through one or more causal edges (non-reflexive closure)."""
+    adjacency: dict[str, set[str]] = {}
+    for u, v in world.causal_edges:
+        adjacency.setdefault(u, set()).add(v)
+
+    seen = {source}
+    frontier = [source]
+    while frontier:
+        node = frontier.pop()
+        for nxt in adjacency.get(node, ()):
+            if nxt == target:
+                return True
+            if nxt not in seen:
+                seen.add(nxt)
+                frontier.append(nxt)
+    return False
+
+
+def causal_graph_acyclic(world: WorldState) -> bool:
+    """A graph is acyclic when no event reaches itself by a nonempty path."""
+    events = set(world.event_time)
+    events.update(u for u, _ in world.causal_edges)
+    events.update(v for _, v in world.causal_edges)
+    return all(not causal_reachable(world, event, event) for event in events)
+
+
 def apply_rewrites(
     world: WorldState,
     rewrites: list[Callable[[WorldState], WorldState]],
