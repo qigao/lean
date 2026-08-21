@@ -18,6 +18,7 @@ jobs:
       - name: Build and check proofs
         uses: leanprover/lean-action@v1
         with:
+          auto-config: false
           build: true
           build-args: "--wfail"
           test: false
