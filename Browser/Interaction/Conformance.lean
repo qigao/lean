@@ -14,7 +14,7 @@ private structure RawInteractionRecord where
   now? : Option Time := none
   eventId? : Option EventId := none
   correlationId? : Option CorrelationId := none
-  depth : Nat := 0
+  depth? : Option Nat := none
   page? : Option PageId := none
   deriving FromJson
 
@@ -51,7 +51,11 @@ private def decodeInteraction (raw : RawInteractionRecord) : Except String Inter
       let id ← requiredField "eventId" raw.eventId?
       let correlation ← requiredField "correlationId" raw.correlationId?
       let page ← requiredField "page" raw.page?
-      pure (.policyIssued { id := id, correlation := correlation, depth := raw.depth } page)
+      pure (.policyIssued {
+        id := id
+        correlation := correlation
+        depth := raw.depth?.getD 0
+      } page)
   | "policyDelivered" => pure .policyDelivered
   | "epochRecreated" => pure .epochRecreated
   | "actorDestroyed" => pure .actorDestroyed
