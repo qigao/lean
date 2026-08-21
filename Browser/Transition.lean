@@ -43,8 +43,8 @@ def applyLocal (kind : LocalEventKind) (s : PageState) : PageState :=
         { fresh with input := .automation, action := .executing }
       else
         { fresh with action := .waiting }
-  | .automationFinished =>
-      finishActionState s
+  | .automationFinished action =>
+      finishActionState s action
   | .navigationStarted =>
       { s with
         lifecycle := .loading
