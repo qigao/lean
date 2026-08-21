@@ -88,8 +88,7 @@ theorem apply_commands_isolated
         _ = m.page q := page_command_isolated m cmd q (h cmd (by simp))
 
 /-- A context-scoped reaction cannot mutate the page state of a page belonging
-    to a different context. Cross-page effects are therefore explicit and
-    context-bounded. -/
+    to a different context. -/
 theorem context_reaction_isolated
     (m : Model) (c : ContextId) (q : PageId)
     (hctx : m.graph.contextOf q ≠ c) :
@@ -144,12 +143,38 @@ theorem issued_command_depth_succ
   rcases List.mem_map.mp hm with ⟨command, _, rfl⟩
   rfl
 
-/-- An event deeper than the finite reaction budget is rejected before state
-    mutation, preventing unbounded policy self-reaction. -/
+/-- An event deeper than the finite reaction budget is rejected before state mutation. -/
 theorem over_budget_rejected
     (budget : ReactionBudget) (m : Model) (envelope : EventEnvelope)
     (h : budget.maxDepth < envelope.cause.depth) :
     reactEnvelope budget m envelope = none := by
   simp [reactEnvelope, Nat.not_le.mpr h]
+
+/-- Browser availability is a declared dependency of every primitive action. -/
+theorem browser_unavailable_invalidates_primitive
+    (m : Model) (p : PageId) (h : m.browserAlive = false) :
+    requirementsHold m (primitiveContract p) = false := by
+  simp [requirementsHold, primitiveContract, requirementHolds, h]
+
+/-- Context availability is a declared dependency of every primitive action. -/
+theorem context_unavailable_invalidates_primitive
+    (m : Model) (p : PageId)
+    (h : m.contextAvailable (m.graph.contextOf p) = false) :
+    requirementsHold m (primitiveContract p) = false := by
+  simp [requirementsHold, primitiveContract, requirementHolds, h]
+
+/-- Runtime readiness is a declared dependency of every primitive action. -/
+theorem runtime_unavailable_invalidates_primitive
+    (m : Model) (p : PageId) (h : (m.page p).runtime = .unavailable) :
+    requirementsHold m (primitiveContract p) = false := by
+  simp [requirementsHold, primitiveContract, requirementHolds, h]
+
+/-- An executing action whose declared contract is false is explicitly suspended. -/
+theorem reconcile_invalid_action_suspends
+    (m : Model) (contract : ActionContract)
+    (hexec : (m.page contract.page).action = .executing)
+    (hreq : requirementsHold m contract = false) :
+    ((reconcileAction m contract).page contract.page).action = .suspended := by
+  simp [reconcileAction, hexec, hreq, updatePage]
 
 end Browser

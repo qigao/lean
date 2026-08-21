@@ -1,4 +1,5 @@
 import Browser.Policy
+import Browser.Action
 
 namespace Browser
 
@@ -59,16 +60,25 @@ def step (m : Model) (event : RuntimeEvent) : Model :=
   | .browserDisconnected => { m with browserAlive := false }
   | .browserConnected => { m with browserAlive := true }
 
-/-- Full reactive transition: first observe the world event, then execute only
-    the explicit commands produced by policy. -/
+/-- Full reactive transition: observe the event, then execute explicit policy commands. -/
 def react (m : Model) (event : RuntimeEvent) : Model :=
   applyCommands (step m event) (commandsFor m event)
 
-/-- Bounded causal entry point. Over-budget events are rejected before they can
-    mutate semantic runtime state or trigger another policy reaction. -/
+/-- Runtime-safe reaction additionally reconciles every running action contract. -/
+def reactSafe (m : Model) (event : RuntimeEvent) : Model :=
+  reconcileKnownActions (react m event)
+
+/-- Bounded causal entry point for the semantic `react` path. -/
 def reactEnvelope (budget : ReactionBudget) (m : Model) (envelope : EventEnvelope) : Option Model :=
   if envelope.cause.depth ≤ budget.maxDepth then
     some (react m envelope.event)
+  else
+    none
+
+/-- Bounded causal entry point used by the action-safe runtime. -/
+def reactEnvelopeSafe (budget : ReactionBudget) (m : Model) (envelope : EventEnvelope) : Option Model :=
+  if envelope.cause.depth ≤ budget.maxDepth then
+    some (reactSafe m envelope.event)
   else
     none
 
