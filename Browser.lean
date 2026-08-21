@@ -32,4 +32,5 @@ import Browser.Interaction.OwnershipSpec
 import Browser.Interaction.CompositionSpec
 import Browser.Interaction.TraceSpec
 import Browser.Interaction.ConformanceSpec
+import Browser.Interaction.JournalConformanceSpec
 import Browser.Trace
