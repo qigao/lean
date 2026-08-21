@@ -206,7 +206,9 @@ theorem human_input_preserves_deadline
     (m : Model) (p : PageId) :
     ((step m (.local { page := p, kind := .humanInput })).page p).deadline =
       (m.page p).deadline := by
-  simp [step, updatePage, applyLocal]
+  by_cases h : (m.page p).input = .automation
+  · simp [step, updatePage, applyLocal, h]
+  · simp [step, updatePage, applyLocal, h]
 
 /-- Once timed out, a generic pause command cannot turn the action back into a
     resumable suspended state. -/
