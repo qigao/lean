@@ -39,14 +39,14 @@ product with a candidate world-state direction. -/
 def vectorPotentialChange {E : Type*}
     [NormedAddCommGroup E] [InnerProductSpace ℝ E]
     (gradient direction : E) : ℝ :=
-  ⟪gradient, direction⟫_ℝ
+  inner ℝ gradient direction
 
 /-- Vector structural conflict: two agents' local motivational gradients
 have a negative inner product. -/
 def vectorStructuralConflict {E : Type*}
     [NormedAddCommGroup E] [InnerProductSpace ℝ E]
     (g₁ g₂ : E) : Prop :=
-  ⟪g₁, g₂⟫_ℝ < 0
+  inner ℝ g₁ g₂ < 0
 
 /-- In any real inner-product state space, a negative gradient inner product
 implies a local tradeoff direction. Choosing `-g₁` strictly improves agent 1
@@ -63,11 +63,11 @@ theorem vectorStructuralConflict_has_tradeoff_direction {E : Type*}
       intro hz
       subst g₁
       simp at hconflict
-    have hself : 0 < ⟪g₁, g₁⟫_ℝ := real_inner_self_pos.mpr hg₁
-    have hneg : -⟪g₁, g₁⟫_ℝ < 0 := neg_lt_zero.mpr hself
+    have hself : 0 < inner ℝ g₁ g₁ := real_inner_self_pos.mpr hg₁
+    have hneg : -(inner ℝ g₁ g₁) < 0 := neg_lt_zero.mpr hself
     simpa [vectorPotentialChange] using hneg
-  · have hneg : 0 < -⟪g₁, g₂⟫_ℝ := neg_pos.mpr hconflict
-    have hcomm : ⟪g₂, g₁⟫_ℝ = ⟪g₁, g₂⟫_ℝ := real_inner_comm g₂ g₁
+  · have hneg : 0 < -(inner ℝ g₁ g₂) := neg_pos.mpr hconflict
+    have hcomm : inner ℝ g₂ g₁ = inner ℝ g₁ g₂ := real_inner_comm g₂ g₁
     simpa [vectorPotentialChange, hcomm] using hneg
 
 end NarrativeDynamics
