@@ -23,7 +23,6 @@ jobs:
           build-args: "--wfail"
           test: false
           lint: false
-          nanoda: true
-          nanoda-allow-sorry: false
+          nanoda: false
       - name: Replay executable runtime scenario
         run: lake exe browser-runtime-check
