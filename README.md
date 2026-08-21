@@ -1,73 +1,74 @@
-# Browser Runtime Formal Model
+# Lean Browser Runtime Safety Model
 
-Lean 4 executable specification for a stateful CDP browser driver/runtime.
+This repository formalizes safety properties for a stateful asynchronous CDP browser Driver in Lean 4.
 
-The model separates these concerns:
+The primary proof surface is now **interaction contracts**, not a second full implementation of the Browser Driver. The larger runtime model remains as an integration/reference model.
 
-- **Runtime graph**: ownership/topology (`Browser -> Context -> Page -> Frame`).
-- **State machines**: mutable page/runtime/input/action state.
-- **Event scope**: page, browser-context, or browser.
-- **Policy + commands**: the only legal route for cross-page reactions.
-- **Causality + reaction budget**: stable correlation/parent/depth metadata and bounded response chains.
-- **Action contracts**: explicit runtime dependencies plus post-event reconciliation.
-- **Timeouts**: monotonic absolute deadlines with human/page/network/protocol causes.
-- **Action generations**: stale timer, CDP response, and completion callbacks are rejected by `ActionId`.
-- **Proofs + executable replay**: static safety theorems and concrete trace checking.
+## Interaction contracts
 
-## Proven properties
+`Browser/Interaction/` models the dangerous boundaries between components:
 
-The model covers page/context isolation, human/automation conflict handling,
-parent/runtime invalidation, explicit policy routing, causal invariants and finite
-reaction depth. Timeout and async-race properties additionally require:
+- CDP request/response ownership by `(ActionId, CdpCallId)`
+- Deadline/timer ownership and stale timer rejection
+- Human vs automation input ownership
+- Terminal side-effect blocking after cancel/timeout/destroy
+- Node epoch/incarnation isolation
+- Context→Page and Page→Frame ownership
+- Policy issue→deliver causality
+- Typed authorized-effect composition
 
-1. Human/page/network/protocol waiting never extends an armed absolute deadline.
-2. Timeout is terminal under generic pause/resume and page lifecycle changes.
-3. Starting fresh work increments a page-local `ActionId` generation.
-4. Deadlines and protocol waits are bound to the `ActionId` that created them.
-5. A deadline callback carrying a stale ActionId is a no-op.
-6. A CDP/protocol response carrying a stale ActionId is a no-op.
-7. A completion callback carrying a stale ActionId cannot finish a newer action.
-8. Sibling Page generations and async state remain isolated.
-
-These are properties of the abstract driver model. They do **not** by themselves
-prove a future C/C++ CDP driver implementation correct. The conformance layer is
-trace based: the driver emits normalized events/actions and CI replays them
-through this executable model.
-
-## Async generation model
+A compact Driver EventJournal can be checked without reconstructing the full runtime:
 
 ```text
-Action A / id=1
-  |-- timer(action=1)
-  |-- CDP call(action=1, call=100)
-  `-- finish(action=1)
-
-Action B / id=2 starts
-
-late timer(action=1)       -> ignored
-late response(action=1)    -> ignored
-late finish(action=1)      -> ignored
-response(action=2)         -> may affect Action B
+lake exe browser-interaction-trace-check traces/interaction-contracts.jsonl
 ```
 
-This prevents a timed-out or completed operation from later mutating a newer
-browser operation when an OS timer, network response, renderer event, or CDP
-response arrives late.
+The journal vocabulary currently includes:
 
-## Build
+```text
+actionStarted(action)
+actionFinished(action)
+cdpRequest(action, call)
+cdpResponse(action, call)
+deadlineArmed(action, expiresAt)
+timerExpired(action, now)
+inputDispatch(action)
+humanInput
+policyIssued(eventId, correlationId, depth, page)
+policyDelivered
+epochRecreated
+actorDestroyed
+```
 
-```bash
+`inputDispatch` and `cdpRequest` are treated as real external side effects. They are rejected when ownership/liveness contracts do not authorize them. A matching expired deadline propagates into terminal liveness, so later input/CDP side effects are rejected.
+
+## Integration/reference model
+
+The existing Browser/Async model remains for composed regression testing:
+
+- Browser / Context / Page / Frame / Action logical actors
+- NodeEpoch and ActionId generations
+- async Policy command emission and later delivery
+- dynamic graph lifecycle
+- duplicate/collision handling
+- Driver JSONL replay
+
+## Verification
+
+Lean is pinned to 4.33.0. CI runs:
+
+```text
 lake build --wfail
+lake exe browser-interaction-check
+lake exe browser-interaction-trace-check traces/interaction-contracts.jsonl
 lake exe browser-runtime-check
+lake exe browser-driver-trace-check traces/generation-race.jsonl
+lake exe browser-async-trace-check traces/async-runtime-race.jsonl
 ```
 
-The project is pinned to Lean 4.33.0. GitHub Actions builds the complete model
-with `--wfail` and runs the executable verifier.
+Design documents:
 
-## Driver integration target
-
-The C/C++ driver should normalize raw CDP/injected/timer events into the formal
-vocabulary before runtime state mutation. Action-owned asynchronous work must
-carry `PageId + ActionId`; protocol work additionally carries `CdpCallId`.
-Cross-page effects remain explicit policy commands. Implementation traces will
-be replayed through the same Lean transition functions for conformance checking.
+- `docs/superpowers/specs/2026-08-21-async-runtime-design.md`
+- `docs/superpowers/plans/2026-08-21-async-runtime.md`
+- `docs/superpowers/specs/2026-08-21-interaction-contracts-design.md`
+- `docs/superpowers/plans/2026-08-21-interaction-contracts.md`
