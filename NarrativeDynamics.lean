@@ -21,3 +21,4 @@ import NarrativeDynamics.Core.GroundedBeliefUpdate
 import NarrativeDynamics.Core.InterpretationCommitment
 import NarrativeDynamics.Core.InterpretationSelection
 import NarrativeDynamics.Core.EpistemicGoal
+import NarrativeDynamics.Core.EpistemicGoalCompetition
