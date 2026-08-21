@@ -42,4 +42,5 @@ import Browser.Interaction.DecoderSpec
 import Browser.Interaction.DecoderRecoverySpec
 import Browser.Interaction.AdversarialRecoverySpec
 import Browser.Interaction.FaultAggregationSpec
+import Browser.Interaction.TraceAggregationSpec
 import Browser.Trace
