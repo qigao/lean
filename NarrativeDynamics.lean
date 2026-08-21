@@ -19,3 +19,4 @@ import NarrativeDynamics.Core.HypothesisCompetition
 import NarrativeDynamics.Core.GroundedHypothesisSpace
 import NarrativeDynamics.Core.GroundedBeliefUpdate
 import NarrativeDynamics.Core.InterpretationCommitment
+import NarrativeDynamics.Core.InterpretationSelection
