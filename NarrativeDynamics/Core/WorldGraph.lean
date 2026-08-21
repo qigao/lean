@@ -122,4 +122,32 @@ theorem rewriteSequence_preserves_invariant {Agent Event Node : Type*}
         exact hpres r' (List.mem_cons_of_mem r hr')
       · exact hpres r (by simp) w hw
 
+/-- A causal path contains at least one causal edge. -/
+def causalPath {Agent Event Node : Type*}
+    (w : WorldGraph Agent Event Node) (source target : Event) : Prop :=
+  Relation.TransGen w.causal source target
+
+/-- Every nonempty causal path in a well-formed world strictly increases event
+time from its first event to its last event. -/
+theorem causalPath_time_increasing {Agent Event Node : Type*}
+    (w : WorldGraph Agent Event Node) (h : WorldInvariant w)
+    {source target : Event} (path : causalPath w source target) :
+    w.eventTime source < w.eventTime target := by
+  have hedge : ∀ u v, w.causal u v → w.eventTime u < w.eventTime v := h.2.2
+  induction path with
+  | single hab =>
+      exact hedge _ _ hab
+  | tail hab hbc ih =>
+      exact Nat.lt_trans ih (hedge _ _ hbc)
+
+/-- Strict temporal increase along every causal path rules out directed causal
+cycles in the time-unrolled graph. -/
+theorem causalGraph_acyclic {Agent Event Node : Type*}
+    (w : WorldGraph Agent Event Node) (h : WorldInvariant w) (event : Event) :
+    ¬ causalPath w event event := by
+  intro cycle
+  have ht : w.eventTime event < w.eventTime event :=
+    causalPath_time_increasing w h cycle
+  exact (Nat.lt_irrefl _ ht)
+
 end NarrativeDynamics
