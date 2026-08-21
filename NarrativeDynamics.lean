@@ -9,3 +9,4 @@ import NarrativeDynamics.Core.TypedHypergraph
 import NarrativeDynamics.Core.TypedInference
 import NarrativeDynamics.Core.Closure
 import NarrativeDynamics.Core.Provenance
+import NarrativeDynamics.Core.TruthMaintenance
