@@ -40,4 +40,5 @@ import Browser.Interaction.NormalizerSpec
 import Browser.Interaction.FeedbackRecoverySpec
 import Browser.Interaction.DecoderSpec
 import Browser.Interaction.DecoderRecoverySpec
+import Browser.Interaction.AdversarialRecoverySpec
 import Browser.Trace
