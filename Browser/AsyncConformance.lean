@@ -36,7 +36,7 @@ private structure RawAsyncMessage where
   now? : Option Time := none
   reason? : Option String := none
   nodeEpoch? : Option NodeEpoch := none
-  expected : String := "accepted"
+  expected? : Option String := none
   deriving FromJson
 
 structure AsyncDriverRecord where
@@ -89,7 +89,7 @@ private def decodeAsyncReason : String → Except String WaitReason
   | other => throw s!"unknown wait reason: {other}"
 
 private def localPayload
-    (raw : RawAsyncMessage) (page : PageId) (kind : LocalEventKind) : AsyncPayload :=
+    (_raw : RawAsyncMessage) (page : PageId) (kind : LocalEventKind) : AsyncPayload :=
   .runtime (.local { page := page, kind := kind })
 
 private def decodeAsyncPayload (raw : RawAsyncMessage) : Except String (AsyncPayload × Option ActionId) := do
@@ -183,7 +183,7 @@ private def decodeAsyncMessage (raw : RawAsyncMessage) : Except String AsyncDriv
   let source ← decodeActor raw.source
   let target ← decodeActor raw.target
   let (payload, declaredAction) ← decodeAsyncPayload raw
-  let expected ← decodeDisposition raw.expected
+  let expected ← decodeDisposition (raw.expected?.getD "accepted")
   pure {
     envelope := {
       id := raw.messageId
