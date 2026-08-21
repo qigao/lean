@@ -52,6 +52,26 @@ jobs:
           test: false
           lint: false
           nanoda: false
+      - name: Enforce public proof API boundary
+        run: |
+          cat > /tmp/public-proof-api-boundary.lean <<'EOF'
+          import Browser.ProofAPI
+          #check Browser.AsyncRuntime
+          EOF
+          set +e
+          lake env lean /tmp/public-proof-api-boundary.lean > /tmp/public-proof-api-boundary.log 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            cat /tmp/public-proof-api-boundary.log
+            echo "::error::Browser.ProofAPI leaks Browser.AsyncRuntime; async runtime belongs to Browser.Integration"
+            exit 1
+          fi
+          if ! grep -Eq "unknown (identifier|constant).*Browser.AsyncRuntime" /tmp/public-proof-api-boundary.log; then
+            cat /tmp/public-proof-api-boundary.log
+            echo "::error::public proof boundary probe failed for an unexpected reason"
+            exit 1
+          fi
       - name: Verify interaction contracts
         run: lake exe browser-interaction-check
       - name: Verify bounded recovery contracts
