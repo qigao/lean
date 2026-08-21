@@ -26,6 +26,14 @@ jobs:
             driver/src/interaction_journal.cpp \
             -o /tmp/interaction-journal-smoke
           /tmp/interaction-journal-smoke
+      - name: Compile C++ InteractionBoundary smoke test
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -pthread \
+            -Idriver/include \
+            driver/examples/interaction_boundary_smoke.cpp \
+            driver/src/interaction_journal.cpp \
+            -o /tmp/interaction-boundary-smoke
+          /tmp/interaction-boundary-smoke
       - name: Compile C++ JSONL journal emitter
         run: |
           c++ -std=c++17 -Wall -Wextra -Werror -pthread \
