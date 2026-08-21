@@ -26,6 +26,15 @@ jobs:
             driver/src/interaction_journal.cpp \
             -o /tmp/interaction-journal-smoke
           /tmp/interaction-journal-smoke
+      - name: Compile C++ JSONL journal emitter
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -pthread \
+            -Idriver/include \
+            driver/examples/emit_interaction_trace.cpp \
+            driver/src/interaction_journal.cpp \
+            driver/src/jsonl_interaction_sink.cpp \
+            -o /tmp/emit-interaction-trace
+          /tmp/emit-interaction-trace /tmp/driver-interaction-journal.jsonl
       - name: Build and check proofs
         uses: leanprover/lean-action@v1
         with:
