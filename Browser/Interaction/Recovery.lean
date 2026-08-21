@@ -45,10 +45,18 @@ def MinimalSufficient (fault : FaultClass) (action : RecoveryAction) : Prop :=
     recoverySufficient fault candidate = true →
       recoveryRank action ≤ recoveryRank candidate
 
+theorem sufficient_recovery_has_required_rank
+    (fault : FaultClass) (action : RecoveryAction)
+    (h : recoverySufficient fault action = true) :
+    recoveryRank (minimumRecovery fault) ≤ recoveryRank action := by
+  simpa [recoverySufficient] using h
+
 theorem minimum_recovery_is_minimal (fault : FaultClass) :
     MinimalSufficient fault (minimumRecovery fault) := by
-  cases fault <;>
-    simp [MinimalSufficient, recoverySufficient, minimumRecovery, recoveryRank]
+  constructor
+  · simp [recoverySufficient]
+  · intro candidate h
+    exact sufficient_recovery_has_required_rank fault candidate h
 
 inductive RecoveryStatus where
   | healthy
