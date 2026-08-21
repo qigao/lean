@@ -20,7 +20,7 @@ import Browser             -- executable/runtime model
 import Browser.Integration -- historical proofs, projection, specs, replay/conformance
 ```
 
-`Browser.ProofAPI` intentionally does not expose `Browser.AsyncRuntime`; CI enforces this with a negative compile guard.
+`Browser.ProofAPI` intentionally does not expose `Browser.AsyncRuntime`; CI enforces this with a negative compile guard. `Browser.Integration` is also compiled directly under `--wfail`, so the advertised integration umbrella cannot silently rot outside the default build closure.
 
 ## Public proof architecture
 
@@ -57,6 +57,8 @@ closed_loop_is_resolved
 closed_loop_success_is_fresh
 closed_loop_converges
 ```
+
+`closed_loop_converges` directly states the final public guarantee: the selected action is `MinimalCombined` for all effective faults in the finite trace, and the bounded closed loop is resolved. `closed_loop_selects_aggregate` remains available when an exact equality with `aggregateRecovery` is needed.
 
 Recovery actions are ordered from least to most disruptive:
 
@@ -102,7 +104,7 @@ Historical whole-runtime proofs are intentionally kept out of `Browser.ProofAPI`
 
 ## Verification surfaces
 
-Lean is pinned to 4.33.0. `lake build --wfail` builds the complete target set. After that, verification is intentionally split into two surfaces.
+Lean is pinned to 4.33.0. `lake build --wfail` builds the default target set. After that, verification is intentionally split into two surfaces.
 
 **Public proof verification** defines the supported theorem/API contract:
 
@@ -118,9 +120,10 @@ lake exe browser-trace-aggregation-check
 lake exe browser-closed-loop-check
 ```
 
-**Integration/reference regression** preserves executable Driver/runtime evidence without enlarging the public theorem API:
+**Integration/reference regression** first compiles the complete integration umbrella, then preserves executable Driver/runtime evidence:
 
 ```text
+lake build Browser.Integration --wfail
 C++17 InteractionJournal smoke test
 C++17 InteractionBoundary smoke test
 C++17 JSONL journal emitter
