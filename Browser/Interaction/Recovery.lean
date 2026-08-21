@@ -80,13 +80,21 @@ inductive RecoveryFeedback where
   deriving Repr, DecidableEq, BEq
 
 def beginRecovery
-    (generation : Nat) (fault : FaultClass) (budget : Nat) : RecoveryState := {
-  status := .recovering
-  generation := generation
-  fault := some fault
-  action := minimumRecovery fault
-  budget := budget
-}
+    (generation : Nat) (fault : FaultClass) (budget : Nat) : RecoveryState :=
+  let action := minimumRecovery fault
+  if action = .fail then {
+    status := .failed
+    generation := generation
+    fault := some fault
+    action := .fail
+    budget := budget
+  } else {
+    status := .recovering
+    generation := generation
+    fault := some fault
+    action := action
+    budget := budget
+  }
 
 def nextRecovery : RecoveryAction → RecoveryAction
   | .retry => .reResolve
