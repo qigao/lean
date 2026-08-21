@@ -100,12 +100,13 @@ The larger `Browser/Async` model remains useful for regression evidence around:
 
 Historical whole-runtime proofs are intentionally kept out of `Browser.ProofAPI` and remain available through `Browser.Integration`.
 
-## Verification
+## Verification surfaces
 
-Lean is pinned to 4.33.0. CI runs the full proof and integration suite, including:
+Lean is pinned to 4.33.0. `lake build --wfail` builds the complete target set. After that, verification is intentionally split into two surfaces.
+
+**Public proof verification** defines the supported theorem/API contract:
 
 ```text
-lake build --wfail
 public proof API boundary guard
 lake exe browser-interaction-check
 lake exe browser-recovery-check
@@ -115,6 +116,14 @@ lake exe browser-adversarial-recovery-check
 lake exe browser-fault-aggregation-check
 lake exe browser-trace-aggregation-check
 lake exe browser-closed-loop-check
+```
+
+**Integration/reference regression** preserves executable Driver/runtime evidence without enlarging the public theorem API:
+
+```text
+C++17 InteractionJournal smoke test
+C++17 InteractionBoundary smoke test
+C++17 JSONL journal emitter
 lake exe browser-driver-interaction-journal-check /tmp/driver-interaction-journal.jsonl
 lake exe browser-driver-interaction-journal-check traces/driver-interaction-journal.jsonl
 lake exe browser-interaction-trace-check traces/interaction-contracts.jsonl
@@ -123,7 +132,7 @@ lake exe browser-driver-trace-check traces/generation-race.jsonl
 lake exe browser-async-trace-check traces/async-runtime-race.jsonl
 ```
 
-The workflow also compiles the C++ InteractionJournal, InteractionBoundary, and JSONL emitter smoke paths.
+The executable names are intentionally preserved for compatibility. New verification targets should be placed in the public group only when they establish a supported semantic contract; replay, conformance, scenario, projection, and whole-runtime checks belong to integration/reference by default.
 
 ## Documentation
 

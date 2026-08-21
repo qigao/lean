@@ -18,32 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Compile C++ InteractionJournal smoke test
-        run: |
-          c++ -std=c++17 -Wall -Wextra -Werror -pthread \
-            -Idriver/include \
-            driver/examples/interaction_journal_smoke.cpp \
-            driver/src/interaction_journal.cpp \
-            -o /tmp/interaction-journal-smoke
-          /tmp/interaction-journal-smoke
-      - name: Compile C++ InteractionBoundary smoke test
-        run: |
-          c++ -std=c++17 -Wall -Wextra -Werror -pthread \
-            -Idriver/include \
-            driver/examples/interaction_boundary_smoke.cpp \
-            driver/src/interaction_journal.cpp \
-            -o /tmp/interaction-boundary-smoke
-          /tmp/interaction-boundary-smoke
-      - name: Compile C++ JSONL journal emitter
-        run: |
-          c++ -std=c++17 -Wall -Wextra -Werror -pthread \
-            -Idriver/include \
-            driver/examples/emit_interaction_trace.cpp \
-            driver/src/interaction_journal.cpp \
-            driver/src/jsonl_interaction_sink.cpp \
-            -o /tmp/emit-interaction-trace
-          /tmp/emit-interaction-trace /tmp/driver-interaction-journal.jsonl
-      - name: Build and check proofs
+
+      - name: Build all Lean targets
         uses: leanprover/lean-action@v1
         with:
           auto-config: false
@@ -52,7 +28,9 @@ jobs:
           test: false
           lint: false
           nanoda: false
-      - name: Enforce public proof API boundary
+
+      # Public proof verification. These checks define the supported theorem surface.
+      - name: "Public: enforce proof API boundary"
         run: |
           cat > /tmp/public-proof-api-boundary.lean <<'EOF'
           import Browser.ProofAPI
@@ -72,31 +50,59 @@ jobs:
             echo "::error::public proof boundary probe failed for an unexpected reason"
             exit 1
           fi
-      - name: Verify interaction contracts
+      - name: "Public: verify interaction contracts"
         run: lake exe browser-interaction-check
-      - name: Verify bounded recovery contracts
+      - name: "Public: verify bounded recovery contracts"
         run: lake exe browser-recovery-check
-      - name: Verify feedback normalization and recovery
+      - name: "Public: verify feedback normalization and recovery"
         run: lake exe browser-feedback-recovery-check
-      - name: Verify decoder to recovery convergence
+      - name: "Public: verify decoder to recovery convergence"
         run: lake exe browser-decoder-recovery-check
-      - name: Verify adversarial recovery convergence
+      - name: "Public: verify adversarial recovery convergence"
         run: lake exe browser-adversarial-recovery-check
-      - name: Verify finite fault aggregation
+      - name: "Public: verify finite fault aggregation"
         run: lake exe browser-fault-aggregation-check
-      - name: Verify runtime trace aggregation equivalence
+      - name: "Public: verify runtime trace aggregation equivalence"
         run: lake exe browser-trace-aggregation-check
-      - name: Verify closed-loop recovery convergence
+      - name: "Public: verify closed-loop recovery convergence"
         run: lake exe browser-closed-loop-check
-      - name: Verify C++ generated multi-lane interaction journal
+
+      # Integration/reference regression. These preserve executable/runtime evidence
+      # without enlarging Browser.ProofAPI.
+      - name: "Integration: compile C++ InteractionJournal smoke test"
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -pthread \
+            -Idriver/include \
+            driver/examples/interaction_journal_smoke.cpp \
+            driver/src/interaction_journal.cpp \
+            -o /tmp/interaction-journal-smoke
+          /tmp/interaction-journal-smoke
+      - name: "Integration: compile C++ InteractionBoundary smoke test"
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -pthread \
+            -Idriver/include \
+            driver/examples/interaction_boundary_smoke.cpp \
+            driver/src/interaction_journal.cpp \
+            -o /tmp/interaction-boundary-smoke
+          /tmp/interaction-boundary-smoke
+      - name: "Integration: compile C++ JSONL journal emitter"
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -pthread \
+            -Idriver/include \
+            driver/examples/emit_interaction_trace.cpp \
+            driver/src/interaction_journal.cpp \
+            driver/src/jsonl_interaction_sink.cpp \
+            -o /tmp/emit-interaction-trace
+          /tmp/emit-interaction-trace /tmp/driver-interaction-journal.jsonl
+      - name: "Integration: verify C++ generated multi-lane interaction journal"
         run: lake exe browser-driver-interaction-journal-check /tmp/driver-interaction-journal.jsonl
-      - name: Replay canonical multi-lane interaction journal
+      - name: "Integration: replay canonical multi-lane interaction journal"
         run: lake exe browser-driver-interaction-journal-check traces/driver-interaction-journal.jsonl
-      - name: Replay compact interaction journal
+      - name: "Integration: replay compact interaction journal"
         run: lake exe browser-interaction-trace-check traces/interaction-contracts.jsonl
-      - name: Replay executable runtime scenario
+      - name: "Integration: replay executable runtime scenario"
         run: lake exe browser-runtime-check
-      - name: Replay driver JSONL conformance trace
+      - name: "Integration: replay driver JSONL conformance trace"
         run: lake exe browser-driver-trace-check traces/generation-race.jsonl
-      - name: Replay unified async driver trace
+      - name: "Integration: replay unified async driver trace"
         run: lake exe browser-async-trace-check traces/async-runtime-race.jsonl

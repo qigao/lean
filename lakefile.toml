@@ -1,33 +1,34 @@
 name = "browser_runtime"
 version = "0.1.0"
-defaultTargets = ["Browser", "browser-runtime-check", "browser-driver-trace-check", "browser-async-trace-check", "browser-interaction-check", "browser-interaction-trace-check", "browser-driver-interaction-journal-check", "browser-recovery-check", "browser-feedback-recovery-check", "browser-decoder-recovery-check", "browser-adversarial-recovery-check", "browser-fault-aggregation-check", "browser-trace-aggregation-check", "browser-closed-loop-check"]
+defaultTargets = [
+  "Browser",
+
+  # Public proof verification executables.
+  "browser-interaction-check",
+  "browser-recovery-check",
+  "browser-feedback-recovery-check",
+  "browser-decoder-recovery-check",
+  "browser-adversarial-recovery-check",
+  "browser-fault-aggregation-check",
+  "browser-trace-aggregation-check",
+  "browser-closed-loop-check",
+
+  # Integration/reference regression executables.
+  "browser-driver-interaction-journal-check",
+  "browser-interaction-trace-check",
+  "browser-runtime-check",
+  "browser-driver-trace-check",
+  "browser-async-trace-check",
+]
 
 [[lean_lib]]
 name = "Browser"
 
-[[lean_exe]]
-name = "browser-runtime-check"
-root = "Main"
-
-[[lean_exe]]
-name = "browser-driver-trace-check"
-root = "DriverTraceMain"
-
-[[lean_exe]]
-name = "browser-async-trace-check"
-root = "AsyncTraceMain"
+# Public proof verification executables.
 
 [[lean_exe]]
 name = "browser-interaction-check"
 root = "InteractionTraceMain"
-
-[[lean_exe]]
-name = "browser-interaction-trace-check"
-root = "InteractionJournalMain"
-
-[[lean_exe]]
-name = "browser-driver-interaction-journal-check"
-root = "DriverInteractionJournalMain"
 
 [[lean_exe]]
 name = "browser-recovery-check"
@@ -56,3 +57,25 @@ root = "TraceAggregationMain"
 [[lean_exe]]
 name = "browser-closed-loop-check"
 root = "ClosedLoopMain"
+
+# Integration/reference regression executables.
+
+[[lean_exe]]
+name = "browser-driver-interaction-journal-check"
+root = "DriverInteractionJournalMain"
+
+[[lean_exe]]
+name = "browser-interaction-trace-check"
+root = "InteractionJournalMain"
+
+[[lean_exe]]
+name = "browser-runtime-check"
+root = "Main"
+
+[[lean_exe]]
+name = "browser-driver-trace-check"
+root = "DriverTraceMain"
+
+[[lean_exe]]
+name = "browser-async-trace-check"
+root = "AsyncTraceMain"
