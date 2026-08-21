@@ -1,6 +1,6 @@
 name = "browser_runtime"
 version = "0.1.0"
-defaultTargets = ["Browser", "browser-runtime-check"]
+defaultTargets = ["Browser", "browser-runtime-check", "browser-driver-trace-check"]
 
 [[lean_lib]]
 name = "Browser"
@@ -8,3 +8,7 @@ name = "Browser"
 [[lean_exe]]
 name = "browser-runtime-check"
 root = "Main"
+
+[[lean_exe]]
+name = "browser-driver-trace-check"
+root = "DriverTraceMain"
