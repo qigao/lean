@@ -177,26 +177,28 @@ theorem reconcile_invalid_action_suspends
     ((reconcileAction m contract).page contract.page).action = .suspended := by
   simp [reconcileAction, hexec, hreq, updatePage]
 
-/-- Expiring an armed absolute deadline makes primitive execution impossible. -/
+/-- Expiring a matching absolute deadline makes primitive execution impossible. -/
 theorem expired_page_blocks_execution
-    (m : Model) (p : PageId) (deadline now : Time) (reason : WaitReason)
+    (m : Model) (p : PageId) (action : ActionId)
+    (deadline now : Time) (reason : WaitReason)
     (hexpired : deadline ≤ now) :
-    ¬ canExecute (expirePage (armDeadline m p deadline reason) p now) p := by
+    ¬ canExecute (expirePage (armDeadline m p action deadline reason) p action now) p := by
   simp [canExecute, expirePage, armDeadline, armDeadlineState, expirePageState,
     timeoutReason, updatePage, hexpired]
 
 /-- The timeout record preserves the current wait reason for diagnostics and policy. -/
 theorem expired_page_records_reason
-    (m : Model) (p : PageId) (deadline now : Time) (reason : WaitReason)
+    (m : Model) (p : PageId) (action : ActionId)
+    (deadline now : Time) (reason : WaitReason)
     (hexpired : deadline ≤ now) :
-    ((expirePage (armDeadline m p deadline reason) p now).page p).timeout = some reason := by
+    ((expirePage (armDeadline m p action deadline reason) p action now).page p).timeout = some reason := by
   simp [expirePage, armDeadline, armDeadlineState, expirePageState,
     timeoutReason, updatePage, hexpired]
 
 /-- A targeted deadline expiry cannot mutate any sibling Page. -/
 theorem expire_page_isolated
-    (m : Model) (p q : PageId) (now : Time) (hne : q ≠ p) :
-    (expirePage m p now).page q = m.page q := by
+    (m : Model) (p q : PageId) (action : ActionId) (now : Time) (hne : q ≠ p) :
+    (expirePage m p action now).page q = m.page q := by
   simp [expirePage, updatePage, hne]
 
 /-- Human takeover may suspend an action but it never moves its absolute deadline. -/
