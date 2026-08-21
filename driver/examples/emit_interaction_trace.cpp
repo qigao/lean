@@ -1,4 +1,4 @@
-#include "browser/interaction_journal.hpp"
+#include "browser/interaction_boundary.hpp"
 #include "browser/jsonl_interaction_sink.hpp"
 
 #include <fstream>
@@ -20,14 +20,17 @@ int main(int argc, char** argv) {
 
   bi::JsonlInteractionSink sink(output);
   bi::InteractionJournal journal(sink);
+  bi::InteractionBoundary boundary(journal);
 
-  journal.action_started(1, 2);
-  journal.action_started(2, 7);
-  journal.deadline_armed(1, 2, 10);
-  journal.timer_expired(1, 2, 10);
-  journal.input_dispatch(2, 7);
-  journal.cdp_request(2, 7, 31);
-  journal.cdp_response(2, 7, 31);
+  const auto effect = [] {};
+
+  boundary.action_started(1, 2, effect);
+  boundary.action_started(2, 7, effect);
+  boundary.deadline_armed(1, 2, 10, effect);
+  boundary.timer_expired(1, 2, 10, effect);
+  boundary.input_dispatch(2, 7, effect);
+  boundary.cdp_request(2, 7, 31, effect);
+  boundary.cdp_response(2, 7, 31, effect);
 
   return 0;
 }
