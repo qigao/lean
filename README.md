@@ -2,9 +2,29 @@
 
 This repository formalizes safety properties for a stateful asynchronous CDP browser Driver in Lean 4.
 
-The primary proof surface is **interaction + decoder/feedback/recovery contracts**, not a second full implementation of the Browser Driver. The larger runtime model remains as integration/reference evidence.
+The supported proof entry point is `Browser.ProofAPI`. The formal proof story is deliberately constrained to one chain:
+
+```text
+Interaction -> Feedback -> Recovery -> Aggregation -> ClosedLoop
+```
+
+The larger whole-`AsyncRuntime` model, projection adapters, JSONL replay, executable scenarios, and historical whole-runtime theorems remain available as integration/reference evidence rather than a second public proof API.
+
+## Import surfaces
+
+Use the smallest entry point that matches the task:
+
+```lean
+import Browser.ProofAPI    -- supported formal proof surface
+import Browser             -- executable/runtime model
+import Browser.Integration -- legacy proofs, projection, specs, replay/conformance
+```
+
+`Browser.ProofAPI` intentionally does not expose `Browser.AsyncRuntime`; CI enforces that boundary. New public correctness arguments should extend the `Interaction -> Feedback -> Recovery -> Aggregation -> ClosedLoop` chain instead of adding another whole-runtime theorem family.
 
 ## Primary proof chain
+
+At the feedback/recovery level, the control path is:
 
 ```text
 AdapterEvent
@@ -14,6 +34,8 @@ AdapterEvent
   -> NormalizedFeedback { FeedbackClass, FaultClass? }
   -> decideNormalized
   -> minimal sufficient recovery when required
+  -> finite aggregation for concurrent faults
+  -> bounded closed-loop recovery
   -> Healthy(new generation) | ExplicitFailure
 ```
 
@@ -214,7 +236,7 @@ The larger `Browser/Async` model remains regression evidence for:
 - duplicate/collision handling
 - Driver JSONL replay
 
-It is not the primary theorem surface.
+`Browser/AsyncProofs.lean` is likewise integration/reference: its theorem names remain available for compatibility, but they are deliberately absent from `Browser.ProofAPI`.
 
 ## Verification
 
@@ -225,11 +247,15 @@ C++17 InteractionJournal concurrent smoke test
 C++17 InteractionBoundary ordering smoke test
 C++17 JSONL emitter through InteractionBoundary
 lake build --wfail
+public proof API boundary guard (Browser.ProofAPI must not expose Browser.AsyncRuntime)
 lake exe browser-interaction-check
 lake exe browser-recovery-check
 lake exe browser-feedback-recovery-check
 lake exe browser-decoder-recovery-check
 lake exe browser-adversarial-recovery-check
+lake exe browser-fault-aggregation-check
+lake exe browser-trace-aggregation-check
+lake exe browser-closed-loop-check
 lake exe browser-driver-interaction-journal-check /tmp/driver-interaction-journal.jsonl
 lake exe browser-driver-interaction-journal-check traces/driver-interaction-journal.jsonl
 lake exe browser-interaction-trace-check traces/interaction-contracts.jsonl

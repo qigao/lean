@@ -1,21 +1,5 @@
-import Browser.Interaction.Cdp
-import Browser.Interaction.Deadline
-import Browser.Interaction.Input
-import Browser.Interaction.Terminal
-import Browser.Interaction.Epoch
-import Browser.Interaction.Ownership
-import Browser.Interaction.Policy
-import Browser.Interaction.Composition
 import Browser.Interaction.Trace
-import Browser.Interaction.Feedback
-import Browser.Interaction.Normalizer
-import Browser.Interaction.Decoder
-import Browser.Interaction.Recovery
-import Browser.Interaction.FeedbackRecovery
-import Browser.Interaction.DecoderRecovery
-import Browser.Interaction.AdversarialRecovery
-import Browser.Interaction.FaultAggregation
-import Browser.Interaction.TraceAggregation
+import Browser.Interaction.Ownership
 import Browser.Interaction.ClosedLoop
 
 /-!
@@ -27,9 +11,12 @@ The public proof story is intentionally one directional chain:
 
 `Interaction -> Feedback -> Recovery -> Aggregation -> ClosedLoop`.
 
-The small modules imported above remain useful implementation units, but new
-public proof obligations should extend this chain instead of creating a second
-end-to-end theorem family.
+`Trace` plus `Ownership` provide the compact interaction contracts. `ClosedLoop`
+transitively provides the feedback, recovery, finite aggregation, runtime/algebra
+bridge, and terminal closed-loop guarantees.
+
+New public proof obligations should extend this chain instead of creating a
+second end-to-end theorem family.
 
 Legacy whole-`AsyncRuntime` proofs, executable specs, scenarios, JSONL
 conformance/replay checks, and `AsyncRuntime` projection adapters are regression

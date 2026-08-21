@@ -18,6 +18,7 @@ import Browser.ConformanceSpec
 import Browser.AsyncConformance
 import Browser.AsyncConformanceSpec
 
+import Browser.Interaction.Projection
 import Browser.Interaction.CoreSpec
 import Browser.Interaction.SafetySpec
 import Browser.Interaction.OwnershipSpec
@@ -40,8 +41,9 @@ import Browser.Interaction.ClosedLoopSpec
 /-!
 # Browser integration/reference surface
 
-This module keeps the historical whole-runtime proofs and executable regression
-specifications available without making them part of the supported proof API.
+This module keeps the historical whole-runtime proofs, AsyncRuntime projection,
+and executable regression specifications available without making them part of
+the supported proof API.
 
 Use it for integration, replay, conformance, and regression work. New formal
 contracts should normally be added through `Browser.ProofAPI` and the
