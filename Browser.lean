@@ -30,4 +30,5 @@ import Browser.Interaction.CoreSpec
 import Browser.Interaction.SafetySpec
 import Browser.Interaction.OwnershipSpec
 import Browser.Interaction.CompositionSpec
+import Browser.Interaction.TraceSpec
 import Browser.Trace
