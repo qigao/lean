@@ -54,6 +54,8 @@ jobs:
           nanoda: false
       - name: Verify interaction contracts
         run: lake exe browser-interaction-check
+      - name: Verify bounded recovery contracts
+        run: lake exe browser-recovery-check
       - name: Verify C++ generated multi-lane interaction journal
         run: lake exe browser-driver-interaction-journal-check /tmp/driver-interaction-journal.jsonl
       - name: Replay canonical multi-lane interaction journal
