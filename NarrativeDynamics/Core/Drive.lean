@@ -37,11 +37,11 @@ instrumentality of the goal, minus cost and risk. -/
 def goalScore (p instrumentality cost risk : ℝ) : ℝ :=
   p * instrumentality - cost - risk
 
-/-- For nonnegative pressure, increasing positive instrumentality cannot
-lower the goal score when cost and risk are held fixed. -/
-theorem goalScore_monotone_instrumentality {p λ₁ λ₂ cost risk : ℝ}
-    (hp : 0 ≤ p) (hλ : λ₁ ≤ λ₂) :
-    goalScore p λ₁ cost risk ≤ goalScore p λ₂ cost risk := by
+/-- For nonnegative pressure, increasing instrumentality cannot lower the
+goal score when cost and risk are held fixed. -/
+theorem goalScore_monotone_instrumentality {p inst₁ inst₂ cost risk : ℝ}
+    (hp : 0 ≤ p) (hinst : inst₁ ≤ inst₂) :
+    goalScore p inst₁ cost risk ≤ goalScore p inst₂ cost risk := by
   unfold goalScore
   nlinarith
 
