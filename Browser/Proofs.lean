@@ -50,4 +50,65 @@ theorem context_unavailable_blocks_descendants
     ¬ canExecute (step m (.contextUnavailable c)) p := by
   simp [canExecute, step, updateContextAvailability, hctx]
 
+/-- Membership in the policy's context page set carries the context relation. -/
+theorem pages_in_context_correct
+    (m : Model) (c : ContextId) (p : PageId)
+    (h : p ∈ pagesInContext m c) :
+    m.graph.contextOf p = c := by
+  simp [pagesInContext] at h
+  exact h.2
+
+/-- Every pause command generated for a context-unavailable event targets only
+    a page in that exact context. -/
+theorem context_policy_targets_only_context
+    (m : Model) (c : ContextId) (cmd : PageCommand)
+    (hcmd : cmd ∈ commandsFor m (.contextUnavailable c)) :
+    m.graph.contextOf cmd.page = c := by
+  have hm : cmd ∈ (pagesInContext m c).map pauseCommand := by
+    simpa [commandsFor] using hcmd
+  rcases List.mem_map.mp hm with ⟨p, hp, rfl⟩
+  simpa [pauseCommand] using pages_in_context_correct m c p hp
+
+/-- Applying any list of page commands leaves a page unchanged when no command
+    in the list targets that page. -/
+theorem apply_commands_isolated
+    (m : Model) (cmds : List PageCommand) (q : PageId)
+    (h : ∀ cmd ∈ cmds, q ≠ cmd.page) :
+    (applyCommands m cmds).page q = m.page q := by
+  induction cmds generalizing m with
+  | nil => rfl
+  | cons cmd rest ih =>
+      calc
+        (applyCommands m (cmd :: rest)).page q
+            = (applyCommands (applyCommand m cmd) rest).page q := rfl
+        _ = (applyCommand m cmd).page q := by
+              apply ih
+              intro cmd' hmem
+              exact h cmd' (by simp [hmem])
+        _ = m.page q := page_command_isolated m cmd q (h cmd (by simp))
+
+/-- A context-scoped reaction cannot mutate the page state of a page belonging
+    to a different context. Cross-page effects are therefore explicit and
+    context-bounded. -/
+theorem context_reaction_isolated
+    (m : Model) (c : ContextId) (q : PageId)
+    (hctx : m.graph.contextOf q ≠ c) :
+    (react m (.contextUnavailable c)).page q = m.page q := by
+  have htargets : ∀ cmd ∈ commandsFor m (.contextUnavailable c), q ≠ cmd.page := by
+    intro cmd hcmd hEq
+    apply hctx
+    rw [hEq]
+    exact context_policy_targets_only_context m c cmd hcmd
+  have hiso := apply_commands_isolated
+    (m := step m (.contextUnavailable c))
+    (cmds := commandsFor m (.contextUnavailable c))
+    (q := q)
+    htargets
+  calc
+    (react m (.contextUnavailable c)).page q
+        = (step m (.contextUnavailable c)).page q := by
+            simpa [react] using hiso
+    _ = m.page q := by
+            simp [step, updateContextAvailability]
+
 end Browser
