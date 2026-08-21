@@ -29,6 +29,8 @@ jobs:
           nanoda: false
       - name: Verify interaction contracts
         run: lake exe browser-interaction-check
+      - name: Replay compact interaction journal
+        run: lake exe browser-interaction-trace-check traces/interaction-contracts.jsonl
       - name: Replay executable runtime scenario
         run: lake exe browser-runtime-check
       - name: Replay driver JSONL conformance trace
