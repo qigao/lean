@@ -33,4 +33,5 @@ import Browser.Interaction.CompositionSpec
 import Browser.Interaction.TraceSpec
 import Browser.Interaction.ConformanceSpec
 import Browser.Interaction.JournalConformanceSpec
+import Browser.Interaction.FeedbackSpec
 import Browser.Trace
