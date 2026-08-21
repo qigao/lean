@@ -18,6 +18,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Compile C++ InteractionJournal smoke test
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -pthread \
+            -Idriver/include \
+            driver/examples/interaction_journal_smoke.cpp \
+            driver/src/interaction_journal.cpp \
+            -o /tmp/interaction-journal-smoke
+          /tmp/interaction-journal-smoke
       - name: Build and check proofs
         uses: leanprover/lean-action@v1
         with:
