@@ -47,3 +47,10 @@ def softmax_probability(beta: float, own_score: float, rival_score: float) -> fl
 def learn_instrumentality(old: float, observed: float, rate: float) -> float:
     """Prediction-error learning update for goal instrumentality."""
     return old + rate * (observed - old)
+
+
+def bayes_posterior(prior: float, likelihood_h: float, likelihood_not_h: float) -> float:
+    """Posterior probability for a binary hypothesis after one observation."""
+    numerator = prior * likelihood_h
+    denominator = numerator + (1.0 - prior) * likelihood_not_h
+    return numerator / denominator
