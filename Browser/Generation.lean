@@ -18,15 +18,18 @@ def startActionState (s : PageState) : PageState :=
     currentAction := some action
     pendingProtocol := none }
 
-/-- Finishing an action releases its identity. The generation counter remains
-    monotonic and is never reused. -/
-def finishActionState (s : PageState) : PageState :=
-  let fresh := clearDeadlineState s
-  { fresh with
-    input := .idle
-    action := .idle
-    currentAction := none
-    pendingProtocol := none }
+/-- Finish only the action generation named by the completion callback. A late
+    completion from an older action is ignored instead of clearing newer work. -/
+def finishActionState (s : PageState) (action : ActionId) : PageState :=
+  if s.currentAction = some action then
+    let fresh := clearDeadlineState s
+    { fresh with
+      input := .idle
+      action := .idle
+      currentAction := none
+      pendingProtocol := none }
+  else
+    s
 
 /-- Action-aware deadline arming. A delayed timer-registration callback from an
     older action generation is ignored. -/
