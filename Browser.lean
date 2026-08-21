@@ -7,6 +7,7 @@ import Browser.Command
 import Browser.Policy
 import Browser.Action
 import Browser.Timeout
+import Browser.Generation
 import Browser.Transition
 import Browser.Proofs
 import Browser.TimeoutProofs
@@ -14,4 +15,5 @@ import Browser.PolicySpec
 import Browser.CausalitySpec
 import Browser.ActionSpec
 import Browser.TimeoutSpec
+import Browser.GenerationSpec
 import Browser.Trace
