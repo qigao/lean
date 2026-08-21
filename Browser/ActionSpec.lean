@@ -13,6 +13,6 @@ example (m : Model) (p : PageId)
     (hexec : (m.page p).action = .executing)
     (hreq : requirementsHold m (primitiveContract p) = false) :
     ((reconcileAction m (primitiveContract p)).page p).action = .suspended := by
-  simp [reconcileAction, primitiveContract, hexec, hreq, updatePage]
+  simp [reconcileAction, hexec, hreq, updatePage]
 
 end Browser

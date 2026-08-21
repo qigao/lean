@@ -17,13 +17,23 @@ structure ActionContract where
   requires : List ActionRequirement
   deriving Repr
 
-/-- Evaluate one declared dependency against the current runtime model. -/
+/-- Evaluate one declared dependency against the current runtime model. Explicit
+    matches keep the executable predicate transparent to theorem simplification. -/
 def requirementHolds (m : Model) (p : PageId) : ActionRequirement → Bool
   | .browserAvailable => m.browserAlive
   | .contextAvailable => m.contextAvailable (m.graph.contextOf p)
-  | .pageReady => (m.page p).lifecycle == .ready
-  | .runtimeReady => (m.page p).runtime == .ready
-  | .automationOwned => (m.page p).input == .automation
+  | .pageReady =>
+      match (m.page p).lifecycle with
+      | .ready => true
+      | _ => false
+  | .runtimeReady =>
+      match (m.page p).runtime with
+      | .ready => true
+      | _ => false
+  | .automationOwned =>
+      match (m.page p).input with
+      | .automation => true
+      | _ => false
 
 /-- Executable conjunction of every dependency declared by an action. -/
 def requirementsHold (m : Model) (contract : ActionContract) : Bool :=
@@ -42,15 +52,17 @@ def primitiveContract (p : PageId) : ActionContract := {
   ]
 }
 
-/-- If a running action loses any declared dependency, make the invalidation
+/-- If a running action loses any declared dependency, make invalidation
     explicit in state instead of leaving `action = executing` while blocked. -/
 def reconcileAction (m : Model) (contract : ActionContract) : Model :=
-  let s := m.page contract.page
-  if (s.action == .executing) && !(requirementsHold m contract) then
-    updatePage m contract.page fun current =>
-      { current with input := .idle, action := .suspended }
-  else
-    m
+  match (m.page contract.page).action with
+  | .executing =>
+      if requirementsHold m contract then
+        m
+      else
+        updatePage m contract.page fun current =>
+          { current with input := .idle, action := .suspended }
+  | _ => m
 
 /-- Reconcile all Page actions known to the Browser supervisor. -/
 def reconcileKnownActions (m : Model) : Model :=
