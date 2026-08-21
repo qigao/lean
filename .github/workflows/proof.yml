@@ -48,5 +48,6 @@ jobs:
           lake env lean NarrativeDynamics/Tests/GroundedHypothesisSpace.lean
           lake env lean NarrativeDynamics/Tests/GroundedBeliefUpdate.lean
           lake env lean NarrativeDynamics/Tests/InterpretationCommitment.lean
+          lake env lean NarrativeDynamics/Tests/InterpretationSelection.lean
       - name: Python numerical tests
         run: python3 -m unittest discover -s tests -v
