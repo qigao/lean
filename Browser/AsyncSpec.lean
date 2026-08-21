@@ -32,6 +32,14 @@ private def humanOnPage1 : AsyncEnvelope := {
   payload := .runtime (.local { page := 1, kind := .humanInput })
 }
 
+private def conflictingMessageId1 : AsyncEnvelope := {
+  id := 1
+  cause := rootCause
+  source := { actor := .browser, epoch := 1 }
+  target := { actor := .page 2, epoch := 1 }
+  payload := .runtime (.local { page := 2, kind := .humanInput })
+}
+
 private def staleHumanOnPage1 : AsyncEnvelope := {
   id := 2
   cause := { correlation := 200, parent := none, depth := 0 }
@@ -60,10 +68,17 @@ example :
     ((deliver runtime humanOnPage1).runtime.model.page 2) = model.page 2 := by
   native_decide
 
-/-- Delivering the same MessageId twice is classified as duplicate. -/
+/-- Re-delivering the exact same message is classified as duplicate. -/
 example :
     let first := deliver runtime humanOnPage1
     (deliver first.runtime humanOnPage1).disposition = .duplicate := by
+  native_decide
+
+/-- Reusing a MessageId for different content is corruption, not idempotent
+    redelivery, and must be rejected. -/
+example :
+    let first := deliver runtime humanOnPage1
+    (deliver first.runtime conflictingMessageId1).disposition = .rejected := by
   native_decide
 
 /-- Old Page epoch is stale and cannot mutate the current Page state. -/
