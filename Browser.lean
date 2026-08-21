@@ -17,4 +17,6 @@ import Browser.CausalitySpec
 import Browser.ActionSpec
 import Browser.TimeoutSpec
 import Browser.GenerationSpec
+import Browser.Conformance
+import Browser.ConformanceSpec
 import Browser.Trace
