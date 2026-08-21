@@ -150,6 +150,6 @@ theorem over_budget_rejected
     (budget : ReactionBudget) (m : Model) (envelope : EventEnvelope)
     (h : budget.maxDepth < envelope.cause.depth) :
     reactEnvelope budget m envelope = none := by
-  simp [reactEnvelope, WithinBudget, Nat.not_le.mpr h]
+  simp [reactEnvelope, Nat.not_le.mpr h]
 
 end Browser

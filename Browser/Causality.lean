@@ -21,11 +21,13 @@ structure ReactionBudget where
   maxDepth : Nat
   deriving Repr, DecidableEq, BEq
 
+/-- Logical form used in theorems. -/
 def WithinBudget (budget : ReactionBudget) (envelope : EventEnvelope) : Prop :=
   envelope.cause.depth ≤ budget.maxDepth
 
+/-- Executable form intentionally decides the reducible Nat relation directly. -/
 def withinBudget (budget : ReactionBudget) (envelope : EventEnvelope) : Bool :=
-  decide (WithinBudget budget envelope)
+  decide (envelope.cause.depth ≤ budget.maxDepth)
 
 /-- Causal metadata inherited by policy output from a triggering event. -/
 def childCause (envelope : EventEnvelope) : Cause := {

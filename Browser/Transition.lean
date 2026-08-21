@@ -67,7 +67,7 @@ def react (m : Model) (event : RuntimeEvent) : Model :=
 /-- Bounded causal entry point. Over-budget events are rejected before they can
     mutate semantic runtime state or trigger another policy reaction. -/
 def reactEnvelope (budget : ReactionBudget) (m : Model) (envelope : EventEnvelope) : Option Model :=
-  if WithinBudget budget envelope then
+  if envelope.cause.depth ≤ budget.maxDepth then
     some (react m envelope.event)
   else
     none
