@@ -17,3 +17,4 @@ import NarrativeDynamics.Core.ObservationAdmission
 import NarrativeDynamics.Core.CognitivePipeline
 import NarrativeDynamics.Core.HypothesisCompetition
 import NarrativeDynamics.Core.GroundedHypothesisSpace
+import NarrativeDynamics.Core.GroundedBeliefUpdate
