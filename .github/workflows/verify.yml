@@ -58,6 +58,8 @@ jobs:
         run: lake exe browser-recovery-check
       - name: Verify feedback normalization and recovery
         run: lake exe browser-feedback-recovery-check
+      - name: Verify decoder to recovery convergence
+        run: lake exe browser-decoder-recovery-check
       - name: Verify C++ generated multi-lane interaction journal
         run: lake exe browser-driver-interaction-journal-check /tmp/driver-interaction-journal.jsonl
       - name: Replay canonical multi-lane interaction journal
