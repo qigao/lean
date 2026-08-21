@@ -54,3 +54,20 @@ def bayes_posterior(prior: float, likelihood_h: float, likelihood_not_h: float) 
     numerator = prior * likelihood_h
     denominator = numerator + (1.0 - prior) * likelihood_not_h
     return numerator / denominator
+
+
+def potential_change(gradient: float, direction: float) -> float:
+    """First-order change in motivational potential along a scalar direction."""
+    return gradient * direction
+
+
+def structural_conflict(g1: float, g2: float) -> bool:
+    """Whether two scalar motivational gradients point in opposite directions."""
+    return g1 * g2 < 0.0
+
+
+def conflict_direction(g1: float, g2: float) -> float:
+    """Witness direction that helps agent 1 and harms agent 2 under conflict."""
+    if not structural_conflict(g1, g2):
+        raise ValueError("gradients are not structurally conflicted")
+    return -g1
