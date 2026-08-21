@@ -26,7 +26,7 @@ def classifyEpoch (slot : EpochProtocol) (incoming : NodeEpoch) : EpochClass :=
     .dead
 
 def epochAccepts (slot : EpochProtocol) (incoming : NodeEpoch) : Bool :=
-  classifyEpoch slot incoming == .current
+  decide (classifyEpoch slot incoming = .current)
 
 /-- Recreation creates the next incarnation; epochs are never reused. -/
 def recreateEpoch (slot : EpochProtocol) : EpochProtocol :=
@@ -48,6 +48,6 @@ theorem future_epoch_not_accepted
 theorem recreate_epoch_advances (slot : EpochProtocol) :
     (recreateEpoch slot).epoch = slot.epoch + 1 ∧
     (recreateEpoch slot).alive = true := by
-  rfl
+  constructor <;> rfl
 
 end Browser.Interaction
