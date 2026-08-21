@@ -33,5 +33,6 @@ theorem stale_delivery_preserves_model
     (deliver rt envelope).emitted = [] ∧
     (deliver rt envelope).disposition = .stale := by
   simp [deliver, hseen, hcause, htarget]
+  rfl
 
 end Browser
