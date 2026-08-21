@@ -7,6 +7,8 @@ abbrev FrameId := Nat
 abbrev CdpSessionId := Nat
 abbrev EventId := Nat
 abbrev CorrelationId := Nat
+abbrev ActionId := Nat
+abbrev CdpCallId := Nat
 abbrev Time := Nat
 
 /-- Why a running browser action is currently waiting. The same value is
@@ -19,10 +21,18 @@ inductive WaitReason where
   | protocol
   deriving Repr, DecidableEq, BEq
 
-/-- Absolute monotonic deadline. Driver implementations should map `Time` to a
-    monotonic clock rather than wall-clock time. -/
+/-- Absolute monotonic deadline bound to the ActionId that created it. Driver
+    implementations should map `Time` to a monotonic clock rather than wall-clock time. -/
 structure Deadline where
+  action : ActionId
   expiresAt : Time
+  deriving Repr, DecidableEq, BEq
+
+/-- One outstanding protocol/CDP wait is bound to both its action generation
+    and command id so late responses can be rejected deterministically. -/
+structure ProtocolWait where
+  action : ActionId
+  call : CdpCallId
   deriving Repr, DecidableEq, BEq
 
 inductive Lifecycle where
