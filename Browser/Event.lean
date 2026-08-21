@@ -17,6 +17,8 @@ inductive LocalEventKind where
   | pageReady
   | executionContextDestroyed
   | executionContextReady
+  | deadlineArmed (expiresAt : Time) (reason : WaitReason)
+  | deadlineReached (now : Time)
   | pageCrashed
   | pageClosed
   deriving Repr, DecidableEq, BEq

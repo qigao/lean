@@ -8,7 +8,7 @@ example (m : Model) (p : PageId) (deadline : Time)
     (hinput : (m.page p).input = .automation) :
     ((step (armDeadline m p deadline .human) (.local { page := p, kind := .humanInput })).page p).deadline =
       some { expiresAt := deadline } := by
-  simp [armDeadline, step, updatePage, applyLocal, hinput]
+  simp [armDeadline, armDeadlineState, step, updatePage, applyLocal, hinput]
 
 /-- An expired action cannot remain executable. -/
 example (m : Model) (p : PageId) (deadline now : Time)
@@ -26,5 +26,23 @@ example (m : Model) (p : PageId) (deadline now : Time)
 example (m : Model) (p q : PageId) (now : Time) (hne : q ≠ p) :
     (expirePage m p now).page q = m.page q := by
   exact expire_page_isolated m p q now hne
+
+/-- Timeout is terminal under ordinary pause/resume policy commands. -/
+example (s : PageState) (h : s.action = .timedOut) :
+    (applyPageCommand .pauseAutomation s).action = .timedOut ∧
+    (applyPageCommand .resumeAutomation s).action = .timedOut := by
+  constructor
+  · exact timed_out_terminal_under_pause s h
+  · exact timed_out_terminal_under_resume s h
+
+/-- Deadline events use the same page-local event path as browser/CDP events. -/
+example (m : Model) (p : PageId) (deadline now : Time)
+    (hexpired : deadline ≤ now) :
+    ¬ canExecute
+      (step
+        (step m (.local { page := p, kind := .deadlineArmed deadline .protocol }))
+        (.local { page := p, kind := .deadlineReached now })) p := by
+  simp [canExecute, step, updatePage, applyLocal, armDeadlineState,
+    expirePageState, timeoutReason, hexpired]
 
 end Browser

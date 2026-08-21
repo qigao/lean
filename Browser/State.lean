@@ -8,6 +8,9 @@ structure PageState where
   input : InputState := .idle
   action : ActionState := .idle
   contextGeneration : Nat := 0
+  deadline : Option Deadline := none
+  waitingOn : Option WaitReason := none
+  timeout : Option WaitReason := none
   deriving Repr
 
 namespace PageState
@@ -49,7 +52,8 @@ def updateContextAvailability (m : Model) (c : ContextId) (available : Bool) : M
     contextAvailable := fun q => if q = c then available else m.contextAvailable q }
 
 /-- A primitive action may execute only when all browser/context/page/runtime/input
-    preconditions hold simultaneously. -/
+    preconditions hold simultaneously. A timed-out action is therefore terminal
+    until a new action is explicitly started. -/
 def canExecute (m : Model) (p : PageId) : Prop :=
   m.browserAlive = true ∧
   m.contextAvailable (m.graph.contextOf p) = true ∧

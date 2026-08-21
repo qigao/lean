@@ -28,8 +28,10 @@ def resumeCommand (page : PageId) : PageCommand :=
 def applyPageCommand (kind : PageCommandKind) (s : PageState) : PageState :=
   match kind with
   | .pauseAutomation =>
-      if s.action = .idle then s
-      else { s with input := .idle, action := .suspended }
+      match s.action with
+      | .idle => s
+      | .timedOut => s
+      | _ => { s with input := .idle, action := .suspended }
   | .resumeAutomation =>
       if s.action = .suspended ∧ s.lifecycle = .ready ∧ s.runtime = .ready ∧ s.input = .idle then
         { s with action := .waiting }

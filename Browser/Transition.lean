@@ -1,5 +1,6 @@
 import Browser.Policy
 import Browser.Action
+import Browser.Timeout
 
 namespace Browser
 
@@ -8,7 +9,7 @@ def applyLocal (kind : LocalEventKind) (s : PageState) : PageState :=
   match kind with
   | .humanInput =>
       if s.input = .automation then
-        { s with input := .conflict, action := .suspended }
+        { s with input := .conflict, action := .suspended, waitingOn := some .human }
       else
         { s with input := .human }
   | .humanIdle =>
@@ -16,28 +17,35 @@ def applyLocal (kind : LocalEventKind) (s : PageState) : PageState :=
       | .human | .conflict => { s with input := .idle }
       | _ => s
   | .automationStarted =>
+      let fresh := clearDeadlineState s
       if s.lifecycle = .ready ∧ s.runtime = .ready ∧ s.input = .idle then
-        { s with input := .automation, action := .executing }
+        { fresh with input := .automation, action := .executing }
       else
-        { s with action := .waiting }
+        { fresh with action := .waiting }
   | .automationFinished =>
-      { s with input := .idle, action := .idle }
+      { clearDeadlineState s with input := .idle, action := .idle }
   | .navigationStarted =>
       { s with
         lifecycle := .loading
         runtime := .unavailable
+        waitingOn := if s.action = .idle then s.waitingOn else some .page
         action := if s.action = .idle then .idle else .recovering }
   | .pageReady =>
       { s with lifecycle := .ready }
   | .executionContextDestroyed =>
       { s with
         runtime := .unavailable
+        waitingOn := if s.action = .idle then s.waitingOn else some .page
         action := if s.action = .idle then .idle else .recovering }
   | .executionContextReady =>
       { s with
         runtime := .ready
         contextGeneration := s.contextGeneration + 1
         action := if s.action = .recovering then .waiting else s.action }
+  | .deadlineArmed expiresAt reason =>
+      armDeadlineState s expiresAt reason
+  | .deadlineReached now =>
+      expirePageState s now
   | .pageCrashed =>
       { s with
         lifecycle := .crashed

@@ -177,4 +177,46 @@ theorem reconcile_invalid_action_suspends
     ((reconcileAction m contract).page contract.page).action = .suspended := by
   simp [reconcileAction, hexec, hreq, updatePage]
 
+/-- Expiring an armed absolute deadline makes primitive execution impossible. -/
+theorem expired_page_blocks_execution
+    (m : Model) (p : PageId) (deadline now : Time) (reason : WaitReason)
+    (hexpired : deadline ≤ now) :
+    ¬ canExecute (expirePage (armDeadline m p deadline reason) p now) p := by
+  simp [canExecute, expirePage, armDeadline, armDeadlineState, expirePageState,
+    timeoutReason, updatePage, hexpired]
+
+/-- The timeout record preserves the current wait reason for diagnostics and policy. -/
+theorem expired_page_records_reason
+    (m : Model) (p : PageId) (deadline now : Time) (reason : WaitReason)
+    (hexpired : deadline ≤ now) :
+    ((expirePage (armDeadline m p deadline reason) p now).page p).timeout = some reason := by
+  simp [expirePage, armDeadline, armDeadlineState, expirePageState,
+    timeoutReason, updatePage, hexpired]
+
+/-- A targeted deadline expiry cannot mutate any sibling Page. -/
+theorem expire_page_isolated
+    (m : Model) (p q : PageId) (now : Time) (hne : q ≠ p) :
+    (expirePage m p now).page q = m.page q := by
+  simp [expirePage, updatePage, hne]
+
+/-- Human takeover may suspend an action but it never moves its absolute deadline. -/
+theorem human_input_preserves_deadline
+    (m : Model) (p : PageId) :
+    ((step m (.local { page := p, kind := .humanInput })).page p).deadline =
+      (m.page p).deadline := by
+  simp [step, updatePage, applyLocal]
+
+/-- Once timed out, a generic pause command cannot turn the action back into a
+    resumable suspended state. -/
+theorem timed_out_terminal_under_pause
+    (s : PageState) (h : s.action = .timedOut) :
+    (applyPageCommand .pauseAutomation s).action = .timedOut := by
+  simp [applyPageCommand, h]
+
+/-- Once timed out, a generic resume command cannot resurrect the action. -/
+theorem timed_out_terminal_under_resume
+    (s : PageState) (h : s.action = .timedOut) :
+    (applyPageCommand .resumeAutomation s).action = .timedOut := by
+  simp [applyPageCommand, h]
+
 end Browser
