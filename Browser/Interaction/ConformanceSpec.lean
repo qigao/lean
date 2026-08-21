@@ -16,6 +16,12 @@ private def terminalViolation : String :=
   "{\"kind\":\"interaction\",\"event\":\"actorDestroyed\"}\n" ++
   "{\"kind\":\"interaction\",\"event\":\"inputDispatch\",\"action\":2}\n"
 
+private def timeoutViolation : String :=
+  "{\"kind\":\"interaction\",\"event\":\"actionStarted\",\"action\":2}\n" ++
+  "{\"kind\":\"interaction\",\"event\":\"deadlineArmed\",\"action\":2,\"expiresAt\":10}\n" ++
+  "{\"kind\":\"interaction\",\"event\":\"timerExpired\",\"action\":2,\"now\":10}\n" ++
+  "{\"kind\":\"interaction\",\"event\":\"inputDispatch\",\"action\":2}\n"
+
 private def forgedPolicyDelivery : String :=
   "{\"kind\":\"interaction\",\"event\":\"policyDelivered\"}\n"
 
@@ -28,6 +34,9 @@ example : (verifyInteractionJsonl validTrace).isOk = true := by
   native_decide
 
 example : (verifyInteractionJsonl terminalViolation).isError = true := by
+  native_decide
+
+example : (verifyInteractionJsonl timeoutViolation).isError = true := by
   native_decide
 
 example : (verifyInteractionJsonl forgedPolicyDelivery).isError = true := by
