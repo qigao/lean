@@ -6,7 +6,6 @@ import Browser.Interaction.Epoch
 import Browser.Interaction.Ownership
 import Browser.Interaction.Policy
 import Browser.Interaction.Composition
-import Browser.Interaction.Projection
 import Browser.Interaction.Trace
 import Browser.Interaction.Feedback
 import Browser.Interaction.Normalizer
@@ -32,8 +31,8 @@ The small modules imported above remain useful implementation units, but new
 public proof obligations should extend this chain instead of creating a second
 end-to-end theorem family.
 
-Legacy whole-`AsyncRuntime` proofs, executable specs, scenarios, and JSONL
-conformance/replay checks are regression evidence. They are intentionally not
-re-exported here; import `Browser.Integration` when those reference artifacts
-are needed.
+Legacy whole-`AsyncRuntime` proofs, executable specs, scenarios, JSONL
+conformance/replay checks, and `AsyncRuntime` projection adapters are regression
+evidence. They are intentionally not re-exported here; import
+`Browser.Integration` when those reference artifacts are needed.
 -/
