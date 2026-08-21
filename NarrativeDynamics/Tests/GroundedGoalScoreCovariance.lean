@@ -61,6 +61,23 @@ example
     {Node : Type uN}
     {w : WorldGraph Agent Event Node} {event : Event}
     (g : GroundedHypothesisSpace ι ProofId Agent Event Object Location Institution Concept Node w event)
+    (instrumentality : ι → ℝ)
+    (pressure cost risk : ℝ)
+    (hpressure : 0 < pressure)
+    (hmass : 0 < evidenceMass g.competition)
+    (hcov : groundedLikelihoodInstrumentalityCovariance g instrumentality < 0) :
+    groundedEpistemicGoalScore pressure cost risk g instrumentality <
+      groundedPriorEpistemicGoalScore pressure cost risk g instrumentality := by
+  exact negative_grounded_covariance_lowers_goal_score
+    g instrumentality pressure cost risk hpressure hmass hcov
+
+example
+    {ι : Type uH} [Fintype ι] {ProofId : Type uP}
+    {Agent : Type uA} {Event : Type uE} {Object : Type uO}
+    {Location : Type uL} {Institution : Type uI} {Concept : Type uC}
+    {Node : Type uN}
+    {w : WorldGraph Agent Event Node} {event : Event}
+    (g : GroundedHypothesisSpace ι ProofId Agent Event Object Location Institution Concept Node w event)
     (instrumentalityA instrumentalityB : ι → ℝ)
     (pressure costA riskA costB riskB : ℝ)
     (hpressure : 0 < pressure)
