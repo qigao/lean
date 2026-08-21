@@ -1,5 +1,4 @@
-import Browser.Action
-import Browser.Transition
+import Browser.Proofs
 
 namespace Browser
 
@@ -13,6 +12,11 @@ example (m : Model) (p : PageId)
     (hexec : (m.page p).action = .executing)
     (hreq : requirementsHold m (primitiveContract p) = false) :
     ((reconcileAction m (primitiveContract p)).page p).action = .suspended := by
-  simp [reconcileAction, hexec, hreq, updatePage]
+  have hs := reconcile_invalid_action_suspends
+    (m := m)
+    (contract := primitiveContract p)
+    (hexec := by simpa [primitiveContract] using hexec)
+    (hreq := hreq)
+  simpa [primitiveContract] using hs
 
 end Browser
