@@ -9,6 +9,7 @@ import Browser.Action
 import Browser.Timeout
 import Browser.Transition
 import Browser.Proofs
+import Browser.TimeoutProofs
 import Browser.PolicySpec
 import Browser.CausalitySpec
 import Browser.ActionSpec

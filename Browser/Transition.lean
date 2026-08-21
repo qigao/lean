@@ -4,6 +4,26 @@ import Browser.Timeout
 
 namespace Browser
 
+/-- Preserve terminal timeout while putting all other active actions into recovery. -/
+def recoveryAction (s : PageState) : ActionState :=
+  match s.action with
+  | .idle => .idle
+  | .timedOut => .timedOut
+  | _ => .recovering
+
+/-- Page/runtime loss becomes the current wait cause only for a live action. -/
+def pageWaitReason (s : PageState) : Option WaitReason :=
+  match s.action with
+  | .idle => s.waitingOn
+  | .timedOut => s.waitingOn
+  | _ => some .page
+
+/-- Crash/close suspend a live action but cannot resurrect a timed-out one. -/
+def suspendedOrTimedOut (s : PageState) : ActionState :=
+  match s.action with
+  | .timedOut => .timedOut
+  | _ => .suspended
+
 /-- Pure transition for a single page-local event. -/
 def applyLocal (kind : LocalEventKind) (s : PageState) : PageState :=
   match kind with
@@ -23,20 +43,21 @@ def applyLocal (kind : LocalEventKind) (s : PageState) : PageState :=
       else
         { fresh with action := .waiting }
   | .automationFinished =>
-      { clearDeadlineState s with input := .idle, action := .idle }
+      let fresh := clearDeadlineState s
+      { fresh with input := .idle, action := .idle }
   | .navigationStarted =>
       { s with
         lifecycle := .loading
         runtime := .unavailable
-        waitingOn := if s.action = .idle then s.waitingOn else some .page
-        action := if s.action = .idle then .idle else .recovering }
+        waitingOn := pageWaitReason s
+        action := recoveryAction s }
   | .pageReady =>
       { s with lifecycle := .ready }
   | .executionContextDestroyed =>
       { s with
         runtime := .unavailable
-        waitingOn := if s.action = .idle then s.waitingOn else some .page
-        action := if s.action = .idle then .idle else .recovering }
+        waitingOn := pageWaitReason s
+        action := recoveryAction s }
   | .executionContextReady =>
       { s with
         runtime := .ready
@@ -51,13 +72,13 @@ def applyLocal (kind : LocalEventKind) (s : PageState) : PageState :=
         lifecycle := .crashed
         runtime := .unavailable
         input := .idle
-        action := .suspended }
+        action := suspendedOrTimedOut s }
   | .pageClosed =>
       { s with
         lifecycle := .closed
         runtime := .unavailable
         input := .idle
-        action := .suspended }
+        action := suspendedOrTimedOut s }
 
 /-- Raw normalized state transition. Cross-page effects are intentionally absent. -/
 def step (m : Model) (event : RuntimeEvent) : Model :=

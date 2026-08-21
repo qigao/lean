@@ -60,6 +60,45 @@ private def scenario : List RuntimeEvent := [
   .local { page := 2, kind := .automationFinished }
 ]
 
+private def humanTimeoutState : Model :=
+  let running := reactSafe initial (.local { page := 1, kind := .automationStarted })
+  let armed := reactSafe running (.local { page := 1, kind := .deadlineArmed 10 .action })
+  let human := reactSafe armed (.local { page := 1, kind := .humanInput })
+  reactSafe human (.local { page := 1, kind := .deadlineReached 10 })
+
+private def pageTimeoutState : Model :=
+  let running := reactSafe initial (.local { page := 1, kind := .automationStarted })
+  let armed := reactSafe running (.local { page := 1, kind := .deadlineArmed 20 .action })
+  let navigating := reactSafe armed (.local { page := 1, kind := .navigationStarted })
+  reactSafe navigating (.local { page := 1, kind := .deadlineReached 20 })
+
+private def networkTimeoutState : Model :=
+  let running := reactSafe initial (.local { page := 1, kind := .automationStarted })
+  let armed := reactSafe running (.local { page := 1, kind := .deadlineArmed 30 .network })
+  reactSafe armed (.local { page := 1, kind := .deadlineReached 30 })
+
+private def protocolTimeoutState : Model :=
+  let running := reactSafe initial (.local { page := 1, kind := .automationStarted })
+  let armed := reactSafe running (.local { page := 1, kind := .deadlineArmed 40 .protocol })
+  reactSafe armed (.local { page := 1, kind := .deadlineReached 40 })
+
+private def restartAfterTimeoutState : Model :=
+  reactSafe networkTimeoutState (.local { page := 1, kind := .automationStarted })
+
+private def timeoutScenarioOk : Bool :=
+  ((humanTimeoutState.page 1).action == .timedOut) &&
+  ((humanTimeoutState.page 1).timeout == some .human) &&
+  ((pageTimeoutState.page 1).action == .timedOut) &&
+  ((pageTimeoutState.page 1).timeout == some .page) &&
+  ((networkTimeoutState.page 1).action == .timedOut) &&
+  ((networkTimeoutState.page 1).timeout == some .network) &&
+  ((protocolTimeoutState.page 1).action == .timedOut) &&
+  ((protocolTimeoutState.page 1).timeout == some .protocol) &&
+  ((networkTimeoutState.page 2).action == .idle) &&
+  ((restartAfterTimeoutState.page 1).action == .executing) &&
+  ((restartAfterTimeoutState.page 1).timeout == none) &&
+  ((restartAfterTimeoutState.page 1).deadline == none)
+
 private def budget : ReactionBudget := { maxDepth := 3 }
 
 private def causalEnvelope : EventEnvelope := {
@@ -96,9 +135,10 @@ def main : IO Unit := do
   let final := replay initial scenario
   if contextIsolationOk &&
       actionDependencyScenarioOk &&
+      timeoutScenarioOk &&
       traceSafe initial scenario &&
       wellFormed? final &&
       causalScenarioOk then
-    IO.println "browser-runtime formal model: scoped policy + causality + action dependencies verified"
+    IO.println "browser-runtime formal model: policy + causality + dependencies + timeout semantics verified"
   else
     throw <| IO.userError "browser-runtime formal model: runtime invariant violated"
