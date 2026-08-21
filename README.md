@@ -2,87 +2,22 @@
 
 This repository formalizes safety properties for a stateful asynchronous CDP browser Driver in Lean 4.
 
-The primary proof surface is now **interaction contracts**, not a second full implementation of the Browser Driver. The larger runtime model remains as an integration/reference model.
+The primary proof surface is **interaction + feedback/recovery contracts**, not a second full implementation of the Browser Driver. The larger runtime model remains as integration/reference evidence.
 
-## Interaction contracts
-
-`Browser/Interaction/` models the dangerous boundaries between components:
-
-- CDP request/response ownership by `(ActionId, CdpCallId)`
-- Deadline/timer ownership and stale timer rejection
-- Human vs automation input ownership
-- Terminal side-effect blocking after cancel/timeout/destroy
-- Node epoch/incarnation isolation
-- Context→Page and Page→Frame ownership
-- Policy issue→deliver causality
-- Typed authorized-effect composition
-
-The compact single-lane contract can be checked with:
+## Primary proof chain
 
 ```text
-lake exe browser-interaction-trace-check traces/interaction-contracts.jsonl
-```
-
-## Feedback and recovery contracts
-
-The Driver is modeled as an asynchronous feedback-control system:
-
-```text
-Observation
-  -> Classification
-  -> Decision
+RawObservation
+  -> normalizeObservation
+  -> NormalizedFeedback { FeedbackClass, FaultClass? }
+  -> decideNormalized
   -> minimal sufficient recovery when required
   -> Healthy(new generation) | ExplicitFailure
 ```
 
-`FeedbackClass` is intentionally small: `success`, `transient`, `stale`, `conflict`, `unavailable`, `timeout`, `terminal`, and `unknown`. `decideFeedback` is total; unknown and timed-out work fail safe instead of silently retrying an old attempt.
+`RawObservation` is a finite adapter-facing vocabulary. Chromium/CDP version-specific strings and error codes are decoded outside the proof core; anything not recognized must become `unrecognized` rather than being silently dropped.
 
-Recovery actions have an explicit least-to-most disruptive rank:
-
-```text
-retry
-reResolve
-rebindRuntime
-reattachSession
-recreatePage
-recreateContext
-restartBrowser
-fail
-```
-
-`minimumRecovery` selects the least sufficient repair for each fault, and `minimum_recovery_is_minimal` proves that no lower-ranked sufficient action exists under this recovery relation.
-
-Recovery state contains only status, generation, fault, current recovery action, and finite budget. Successful recovery always produces `generation + 1`; it never revives the failed incarnation. Timeout and unknown faults start directly in `failed` and cannot later be revived by a spurious success signal.
-
-`runRecoveryFuel` abstracts environmental recovery with `available : RecoveryAction -> Bool`. It escalates while repair is unavailable and forces any still-recovering computation to explicit failure when fuel is exhausted. The theorem `run_recovery_fuel_is_terminal` proves for arbitrary finite fuel and arbitrary availability behavior that the internal recovery computation ends in `healthy` or `failed`, excluding internal recovery livelock.
-
-Run the bounded recovery scenario with:
-
-```text
-lake exe browser-recovery-check
-```
-
-This does not assume Chromium, the network, or the OS eventually recovers. The formal guarantee is conditional: when a repair level succeeds before finite budget/fuel is exhausted, the recovered actor is a fresh generation; otherwise the Driver terminates recovery explicitly rather than hanging indefinitely.
-
-## Feedback normalization
-
-The final proof entry point is a finite adapter-facing `RawObservation` vocabulary. Chromium/CDP version-specific strings and error codes are decoded outside the proof core; anything not recognized must become `unrecognized` rather than being silently dropped.
-
-```text
-RawObservation
-      ↓ normalizeObservation
-NormalizedFeedback
-├── feedback : FeedbackClass
-└── fault    : Option FaultClass
-      ↓ decideNormalized
-Decision
-      ↓ fault-bearing observations only
-recoverObservationFuel
-      ↓
-Healthy(new generation) | Failed
-```
-
-Representative normalization rules are:
+Representative mappings:
 
 ```text
 operationSucceeded          -> success / none
@@ -99,21 +34,63 @@ deadlineReached             -> timeout / timeoutFault
 unrecognized                -> unknown / unknownFault
 ```
 
-`FeedbackClass` alone does not choose recovery scope. If normalization identifies a `FaultClass`, `decideNormalized` uses that fault's `minimumRecovery`; only no-fault observations fall back to `decideFeedback`. This is why `elementDetached` selects `reResolve`, while `executionContextDestroyed` selects `rebindRuntime`, even though both are stale-style feedback.
+`FeedbackClass` alone does not choose recovery scope. If normalization identifies a `FaultClass`, `decideNormalized` uses that fault's `minimumRecovery`; only no-fault observations fall back to `decideFeedback`. Thus `elementDetached` selects `reResolve`, while `executionContextDestroyed` selects `rebindRuntime`, even though both are stale-style feedback.
 
-`normalization_is_coherent` proves every raw observation produces an allowed feedback/fault pair. `recover_observation_fuel_is_resolved` composes normalization with the existing bounded recovery theorem and proves that recovery is either not required or returns a terminal `healthy`/`failed` state; it never leaves an internally stuck `recovering` result.
+`normalization_is_coherent` proves every raw observation produces an allowed feedback/fault pair. `recover_observation_fuel_is_resolved` composes normalization with bounded recovery and proves recovery is either not required or returns terminal `healthy`/`failed`, never an internally stuck `recovering` result.
 
-Run the full observation-to-recovery scenario with:
+Run the end-to-end check with:
 
 ```text
 lake exe browser-feedback-recovery-check
 ```
 
-Identity, generation ownership, causal delivery, and side-effect authorization remain separate interaction contracts; the normalizer does not reconstruct Browser/Page/Action state.
+## Recovery contracts
+
+Recovery actions are ranked from least to most disruptive:
+
+```text
+retry
+reResolve
+rebindRuntime
+reattachSession
+recreatePage
+recreateContext
+restartBrowser
+fail
+```
+
+`minimumRecovery` chooses the least sufficient repair for each fault, and `minimum_recovery_is_minimal` proves no lower-ranked sufficient action exists under that relation.
+
+Successful recovery always produces `generation + 1`; it never revives the failed incarnation. Timeout and unknown faults begin directly in `failed` and cannot later be revived by a spurious success signal.
+
+`runRecoveryFuel` abstracts environment availability with `RecoveryAction -> Bool`. The theorem `run_recovery_fuel_is_terminal` proves that for arbitrary finite fuel and arbitrary availability behavior, the internal recovery computation ends in `healthy` or `failed`, excluding recovery livelock.
+
+This does not assert Chromium/network/OS eventually recover. The formal claim is conditional: if a repair succeeds before budget/fuel exhaustion, the Driver returns as a fresh generation; otherwise it fails explicitly in finite internal steps.
+
+Run the lower-level recovery scenario with:
+
+```text
+lake exe browser-recovery-check
+```
+
+## Interaction contracts
+
+`Browser/Interaction/` separately proves the dangerous cross-component boundaries:
+
+- exact CDP `(ActionId, CdpCallId)` ownership
+- deadline/timer ownership and stale timer rejection
+- Human vs Automation input exclusivity
+- terminal side-effect blocking after cancel/timeout/destroy
+- node epoch/incarnation isolation
+- Context→Page and Page→Frame ownership
+- Policy issue→deliver causality
+- typed authorized-effect composition
+
+These contracts remain separate from normalization: identity, generation ownership, causal delivery, and side-effect authorization are not reconstructed in the feedback model.
 
 ## Driver-facing interaction journal
 
-The Driver-facing journal is multiplexed. It starts with a version header, then every event carries a globally increasing `seq` and an opaque `lane`:
+The multiplexed journal starts with a version header, then every event carries a globally increasing `seq` and opaque `lane`:
 
 ```json
 {"kind":"interaction-journal","version":1}
@@ -121,34 +98,15 @@ The Driver-facing journal is multiplexed. It starts with a version header, then 
 {"kind":"interaction","seq":2,"lane":2,"event":"actionStarted","action":7}
 ```
 
-`seq` is the total order in which the journal observed records. Each `lane` owns an independent compact `InteractionTraceState`, so events from different Pages/Actions may interleave without mutating each other's protocol state. The canonical fixture is `traces/driver-interaction-journal.jsonl` and can be checked with:
+Each lane owns an independent compact interaction state, while `seq` records total journal observation order.
 
 ```text
 lake exe browser-driver-interaction-journal-check traces/driver-interaction-journal.jsonl
 ```
 
-The journal vocabulary currently includes:
+## C++ reference integration
 
-```text
-actionStarted(action)
-actionFinished(action)
-cdpRequest(action, call)
-cdpResponse(action, call)
-deadlineArmed(action, expiresAt)
-timerExpired(action, now)
-inputDispatch(action)
-humanInput
-policyIssued(eventId, correlationId, depth, page)
-policyDelivered
-epochRecreated
-actorDestroyed
-```
-
-`inputDispatch` and `cdpRequest` are real external side effects. They are rejected when ownership/liveness contracts do not authorize them. A matching expired deadline propagates into terminal liveness, so later input/CDP side effects are rejected.
-
-## C++ Driver journal API
-
-The reference C++17 API lives under `driver/`:
+The C++17 reference API lives under `driver/`:
 
 ```text
 driver/include/browser/interaction_journal.hpp
@@ -158,70 +116,32 @@ driver/src/interaction_journal.cpp
 driver/src/jsonl_interaction_sink.cpp
 ```
 
-Driver components never construct JSON or allocate sequence numbers. `InteractionJournal` serializes sequence assignment and sink delivery under one mutex, so concurrent emitters observe one deterministic journal order. `JsonlInteractionSink` alone owns the Lean-compatible wire format.
+`InteractionBoundary` journals immediately before invoking the real Driver callable. This keeps formal evidence attached to the actual ownership/side-effect edge rather than reconstructing events afterward.
 
-`InteractionBoundary` is the integration point for real Driver code. Every method records the typed interaction immediately before invoking the supplied real Driver callable. The reference emitter already uses this path, so the CI round-trip is:
-
-```text
-Driver-like callable
-        ↓
-InteractionBoundary
-        ↓ journal first
-InteractionJournal
-        ↓
-JsonlInteractionSink
-        ↓
-/tmp/driver-interaction-journal.jsonl
-        ↓
-Lean verifyInteractionJournalJsonl
-```
-
-### Placement rules
-
-The boundary must sit at the actual ownership or side-effect edge, not at a higher-level observer that later guesses what happened:
+Intended placement:
 
 ```text
-ActionEngine
-  before publishing start transition     → actionStarted
-  before publishing terminal transition  → actionFinished
-
-CdpSession / protocol routing
-  immediately before transport send      → cdpRequest
-  immediately before response delivery   → cdpResponse
-
-Deadline / Timer
-  immediately before arming scheduler    → deadlineArmed
-  inside timer callback, before Action    → timerExpired
-
-InputRouter / InputObserver
-  immediately before Input.dispatch*     → inputDispatch
-  before delivering observed human input → humanInput
-
-PolicyEngine
-  immediately before command enqueue     → policyIssued
-  immediately before child delivery      → policyDelivered
-
-RuntimeGraph / node lifecycle
-  immediately before incarnation mutation → epochRecreated
-  immediately before destruction mutation → actorDestroyed
+ActionEngine      -> before start/terminal transition publication
+CdpSession        -> before transport send / response delivery
+Deadline/Timer    -> before scheduler arm / Action timeout notification
+InputRouter       -> before Input.dispatch*
+InputObserver     -> before human-input delivery
+PolicyEngine      -> before command enqueue / child delivery
+RuntimeGraph      -> before incarnation/destruction mutation
 ```
-
-A journal entry means **the Driver attempted or delivered that interaction at the boundary**. If the delegated transport/send/callback/mutation throws, the journal entry is intentionally not rolled back; the exception propagates unchanged. Success/failure diagnostics belong to the normal telemetry/flight-recorder channel unless success/failure itself later becomes part of a formal interaction contract.
-
-The real Driver owns `lane` assignment. The intended default is one stable lane per Page interaction domain, so Action/Input/Deadline interactions for one Page share a lane while independent Pages may interleave globally through `seq`.
-
-CI compiles both the concurrent journal smoke and the boundary-ordering smoke. The boundary smoke asserts from inside delegated callables that the expected record already exists, including the exception path.
 
 ## Integration/reference model
 
-The existing Browser/Async model remains for composed regression testing:
+The larger `Browser/Async` model remains regression evidence for:
 
 - Browser / Context / Page / Frame / Action logical actors
-- NodeEpoch and ActionId generations
+- NodeEpoch and ActionId generation isolation
 - async Policy command emission and later delivery
 - dynamic graph lifecycle
 - duplicate/collision handling
 - Driver JSONL replay
+
+It is not the primary theorem surface.
 
 ## Verification
 
@@ -243,7 +163,7 @@ lake exe browser-driver-trace-check traces/generation-race.jsonl
 lake exe browser-async-trace-check traces/async-runtime-race.jsonl
 ```
 
-Design documents:
+## Design documents
 
 - `docs/superpowers/specs/2026-08-21-async-runtime-design.md`
 - `docs/superpowers/plans/2026-08-21-async-runtime.md`
