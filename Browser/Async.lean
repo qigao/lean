@@ -225,7 +225,7 @@ private def applyGraph (rt : AsyncRuntime) : GraphPayload → Except String Asyn
 private def applyRuntimeEventAsync (m : Model) (event : RuntimeEvent) : Model :=
   let stepped := step m event
   match event with
-  | .local local => reconcileAction stepped (primitiveContract local.page)
+  | .local e => reconcileAction stepped (primitiveContract e.page)
   | _ => stepped
 
 private def pageAddress (rt : AsyncRuntime) (page : PageId) : ActorAddress := {
