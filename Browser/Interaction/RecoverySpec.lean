@@ -23,6 +23,17 @@ example : sessionRecovery.generation = 7 := by rfl
 example : sessionRecovery.action = .reattachSession := by rfl
 example : sessionRecovery.budget = 3 := by rfl
 
+private def timeoutRecovery : RecoveryState :=
+  beginRecovery 9 .timeoutFault 3
+
+private def unknownRecovery : RecoveryState :=
+  beginRecovery 9 .unknownFault 3
+
+example : timeoutRecovery.status = .failed := by rfl
+example : unknownRecovery.status = .failed := by rfl
+example : (stepRecovery timeoutRecovery .recovered).status = .failed := by rfl
+example : (stepRecovery unknownRecovery .recovered).status = .failed := by rfl
+
 example : (stepRecovery sessionRecovery .recovered).status = .healthy := by rfl
 example : (stepRecovery sessionRecovery .recovered).generation = 8 := by rfl
 example : (stepRecovery sessionRecovery .recovered).fault = none := by rfl
