@@ -40,5 +40,6 @@ jobs:
           lake env lean NarrativeDynamics/Tests/Provenance.lean
           lake env lean NarrativeDynamics/Tests/TruthMaintenance.lean
           lake env lean NarrativeDynamics/Tests/BeliefSupport.lean
+          lake env lean NarrativeDynamics/Tests/EpistemicBelief.lean
       - name: Python numerical tests
         run: python3 -m unittest discover -s tests -v
