@@ -25,5 +25,6 @@ jobs:
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
           lake env lean NarrativeDynamics/Tests/Drive.lean
+          lake env lean NarrativeDynamics/Tests/Collective.lean
       - name: Python numerical tests
         run: python3 -m unittest discover -s tests -v
