@@ -2,14 +2,17 @@ import Browser.State
 
 namespace Browser
 
-/-- Arm or replace the absolute deadline for the current action phase. -/
-def armDeadlineState (s : PageState) (expiresAt : Time) (reason : WaitReason) : PageState :=
+/-- Arm or replace the absolute deadline for one action generation. Callers must
+    still validate that `action` is the current ActionId before invoking this
+    primitive; `Browser.Generation` provides the guarded API used by events. -/
+def armDeadlineState
+    (s : PageState) (action : ActionId) (expiresAt : Time) (reason : WaitReason) : PageState :=
   { s with
-    deadline := some { expiresAt := expiresAt }
+    deadline := some { action := action, expiresAt := expiresAt }
     waitingOn := some reason
     timeout := none }
 
-/-- Starting a new action must discard timeout state from any previous action. -/
+/-- Clear deadline/timeout phase state without changing the page's ActionId. -/
 def clearDeadlineState (s : PageState) : PageState :=
   { s with deadline := none, waitingOn := none, timeout := none }
 
@@ -20,14 +23,12 @@ def timeoutReason (s : PageState) : WaitReason :=
   | some reason => reason
   | none => .action
 
-/-- Expire an armed absolute deadline. Waiting, recovery, suspension and human
-    takeover do not move the deadline; they merely change why the action is
-    waiting. -/
-def expirePageState (s : PageState) (now : Time) : PageState :=
+/-- Expire only the deadline bound to the supplied ActionId. -/
+def expirePageState (s : PageState) (action : ActionId) (now : Time) : PageState :=
   match s.deadline with
   | none => s
   | some deadline =>
-      if deadline.expiresAt ≤ now then
+      if deadline.action = action ∧ deadline.expiresAt ≤ now then
         { s with
           input := .idle
           action := .timedOut
@@ -35,10 +36,11 @@ def expirePageState (s : PageState) (now : Time) : PageState :=
       else
         s
 
-def armDeadline (m : Model) (p : PageId) (expiresAt : Time) (reason : WaitReason) : Model :=
-  updatePage m p fun state => armDeadlineState state expiresAt reason
+def armDeadline
+    (m : Model) (p : PageId) (action : ActionId) (expiresAt : Time) (reason : WaitReason) : Model :=
+  updatePage m p fun state => armDeadlineState state action expiresAt reason
 
-def expirePage (m : Model) (p : PageId) (now : Time) : Model :=
-  updatePage m p fun state => expirePageState state now
+def expirePage (m : Model) (p : PageId) (action : ActionId) (now : Time) : Model :=
+  updatePage m p fun state => expirePageState state action now
 
 end Browser
