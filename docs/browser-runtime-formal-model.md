@@ -2,18 +2,21 @@
 
 ## Scope
 
-This repository proves properties of the **normalized browser-driver runtime model**, not Chromium/CDP itself. Raw CDP and injected-page events are translated into `RuntimeEvent` before they can affect formal runtime state.
+This repository proves properties of the **normalized browser-driver runtime model**, not Chromium/CDP itself. Raw CDP and injected-page events are translated into semantic `RuntimeEvent` values and wrapped in causal `EventEnvelope` metadata before entering the bounded reactive runtime.
 
 ## Layers
 
 1. `RuntimeGraph` models stable ownership/topology such as Page -> BrowserContext and Frame -> Page.
 2. `PageState` models orthogonal lifecycle/runtime/input/action regions.
 3. `EventScope` classifies events as Page, Context, or Browser scoped.
-4. `step` records the normalized event without implicit sibling-page mutation.
-5. `Policy.commandsFor` turns parent-scope events into explicit `PageCommand` values.
-6. `react` composes `step` with `applyCommands` and is the executable runtime transition used by trace replay.
-7. `Browser.Proofs` proves safety and propagation boundaries over the same functions.
-8. `Browser.Trace` checks every state in concrete event streams with `traceSafe`.
+4. `EventEnvelope` adds `EventId`, `CorrelationId`, parent event, and causal depth without changing event semantics.
+5. `step` records the normalized event without implicit sibling-page mutation.
+6. `Policy.commandsFor` turns parent-scope events into explicit `PageCommand` values.
+7. `issueCommandsFor` gives policy output a derived child `Cause`.
+8. `react` composes semantic state transition with policy commands.
+9. `reactEnvelope` adds the finite `ReactionBudget` gate before `react`.
+10. `Browser.Proofs` proves safety, propagation, and causality boundaries over these same functions.
+11. `Browser.Trace` checks semantic and causal invariants on executable traces.
 
 ## Safety properties
 
@@ -24,61 +27,66 @@ This repository proves properties of the **normalized browser-driver runtime mod
 - Destroyed execution contexts cannot continue primitive execution.
 - Closed pages cannot continue primitive execution.
 
-### Parent-state safety
+### Parent-state and propagation safety
 
 - Browser disconnect blocks execution for all descendant pages.
 - Context unavailability blocks execution for every page belonging to that context.
-
-### Explicit propagation safety
-
 - A `PageCommand` mutates only its target page.
 - Commands emitted for `contextUnavailable C` target only pages whose `RuntimeGraph.contextOf` is `C`.
 - A list of commands cannot mutate page Q if no command targets Q.
 - Therefore `react` for Context A cannot mutate page state in unrelated Context B.
 
-This establishes the intended rule:
+### Causal safety
+
+For an event envelope `E`, every command produced by policy is wrapped as an `IssuedCommand` with `childCause E`. Lean proves:
+
+```text
+issued.correlation = E.correlation
+issued.parent      = some E.id
+issued.depth       = E.depth + 1
+```
+
+`ReactionBudget.maxDepth` is checked before semantic state mutation. Lean proves that if `budget.maxDepth < envelope.depth`, `reactEnvelope` returns `none`. This provides a formal barrier against unbounded policy self-reaction.
+
+## Explicit response model
 
 ```text
 Page A event ----X----> Page B direct mutation
 
-Page/Context event
-       |
-       v
-      step
-       |
-       v
-     Policy
-       |
-       v
+EventEnvelope
+      |
+      v
+ budget gate
+      |
+      v
+     step
+      |
+      v
+    Policy
+      |
+      +----> IssuedCommand(correlation, parent, depth+1)
+      |
+      v
  explicit PageCommand(target = Page B)
-       |
-       v
+      |
+      v
  Page B state transition
 ```
 
-Sibling effects are not implicit state propagation. They are explicit policy decisions represented as data and therefore observable in traces.
+Sibling effects are not implicit state propagation. They are explicit policy decisions represented as data, causally linked to the source event, bounded in depth, and observable in traces.
 
 ## Executable conformance contract
 
-The future C/C++ driver should emit normalized events with stable IDs and causal metadata:
+The future C/C++ driver should emit normalized records with stable IDs and causal metadata. `replay` validates semantic events through `react`; `replayEnvelopes` validates causal events through `reactEnvelope`; `traceSafe` checks every intermediate semantic state; `causalPolicySafe` checks every issued command's correlation, parent, and depth.
 
-```text
-CDP event / injected event
-          |
-          v
-    RuntimeEvent
-          |
-          v
-        react
-          |
-          +----> runtime state
-          +----> telemetry/event journal
-```
+The executable scenario currently validates:
 
-`replay` processes the same event stream through `react`. `traceSafe` checks the invariant after every event, so a transient illegal state is rejected even if a later event would recover it.
-
-The current executable scenario contains two pages in different contexts. Page 1 starts automation in Context 10; `contextUnavailable 10` suspends Page 1 through policy while Page 2 in Context 20 remains unchanged. The scenario also exercises Browser disconnect/reconnect and policy pause/resume.
+- Context 10 can pause Page 1 while Page 2 in Context 20 remains unchanged.
+- Browser disconnect/reconnect passes through the explicit policy path.
+- A Context event at depth 0 is accepted by a depth-3 reaction budget.
+- Its policy-issued commands preserve correlation, parent linkage, and depth+1.
+- A Context event at depth 4 is rejected by that same budget before state mutation.
 
 ## Next proof layer
 
-The next increment should formalize causal metadata (`EventId`, `CorrelationId`, parent cause), policy-loop prevention, and action precondition invalidation. Behavior-tree semantics should remain above primitive `ActionState` and consume proven-safe actions rather than bypassing them.
+The next increment should formalize action dependency invalidation: a running primitive action declares required Page/Runtime/Input predicates, and state transitions invalidate/suspend the action when a dependency stops holding. Behavior-tree semantics should remain above primitive actions and consume those proven-safe action results rather than bypassing them.

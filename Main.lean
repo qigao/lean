@@ -39,9 +39,38 @@ private def scenario : List RuntimeEvent := [
   .local { page := 2, kind := .automationFinished }
 ]
 
+private def budget : ReactionBudget := { maxDepth := 3 }
+
+private def causalEnvelope : EventEnvelope := {
+  id := 100
+  event := .contextUnavailable 10
+  cause := { correlation := 9001, parent := none, depth := 0 }
+}
+
+private def overBudgetEnvelope : EventEnvelope := {
+  id := 101
+  event := .contextUnavailable 10
+  cause := { correlation := 9001, parent := some 100, depth := 4 }
+}
+
+private def causalReplayAccepted : Bool :=
+  match replayEnvelopes budget initial [causalEnvelope] with
+  | some _ => true
+  | none => false
+
+private def overBudgetReplayRejected : Bool :=
+  match replayEnvelopes budget initial [overBudgetEnvelope] with
+  | none => true
+  | some _ => false
+
+private def causalScenarioOk : Bool :=
+  causalPolicySafe initial causalEnvelope &&
+  causalReplayAccepted &&
+  overBudgetReplayRejected
+
 def main : IO Unit := do
   let final := replay initial scenario
-  if contextIsolationOk && traceSafe initial scenario && wellFormed? final then
-    IO.println "browser-runtime formal model: scoped policy scenario verification passed"
+  if contextIsolationOk && traceSafe initial scenario && wellFormed? final && causalScenarioOk then
+    IO.println "browser-runtime formal model: scoped policy + causal budget verification passed"
   else
-    throw <| IO.userError "browser-runtime formal model: scoped policy safety invariant violated"
+    throw <| IO.userError "browser-runtime formal model: runtime invariant violated"
