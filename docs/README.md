@@ -18,6 +18,8 @@ Interaction -> Feedback -> Recovery -> Aggregation -> ClosedLoop
 
 `Browser/ProofAPI.lean` is the public proof surface. `Browser.lean` exposes the executable/runtime model. `Browser/Integration.lean` exposes historical whole-runtime proofs, projection adapters, specs, scenarios, replay, and conformance artifacts.
 
+`Browser.ProofAPI` is guarded negatively in CI so it cannot expose `Browser.AsyncRuntime`. `Browser.Integration` is compiled directly with `lake build Browser.Integration --wfail`, so the integration/reference umbrella and every spec/scenario it re-exports are checked as one surface.
+
 ### Current design specs
 
 These documents describe the current proof architecture:
@@ -30,6 +32,8 @@ These documents describe the current proof architecture:
 - `superpowers/specs/2026-08-21-finite-fault-aggregation-design.md`
 
 The terminal composition is defined directly by `Browser/Interaction/ClosedLoop.lean`. A second prose design for ClosedLoop is intentionally not maintained; the theorem module is the canonical source for the final composition and prevents another duplicated architecture narrative.
+
+The top-level theorem `closed_loop_converges` directly states the compact final contract: the selected action is `MinimalCombined` for the effective finite fault set, and the bounded closed loop is resolved. Exact equality with `aggregateRecovery` remains available separately through `closed_loop_selects_aggregate`.
 
 ### Current implementation plans
 
