@@ -17,14 +17,35 @@ private def initial : Model := {
 }
 
 private def afterContextPause : Model :=
-  let running := react initial (.local { page := 1, kind := .automationStarted })
-  react running (.contextUnavailable 10)
+  let running := reactSafe initial (.local { page := 1, kind := .automationStarted })
+  reactSafe running (.contextUnavailable 10)
 
 private def contextIsolationOk : Bool :=
   ((afterContextPause.page 1).action == .suspended) &&
   ((afterContextPause.page 2).action == .idle) &&
   (!(afterContextPause.contextAvailable 10)) &&
   afterContextPause.contextAvailable 20
+
+/-- Regression: a local automation start cannot resurrect execution while the
+    Browser parent is disconnected. -/
+private def disconnectedStartState : Model :=
+  let disconnected := reactSafe initial .browserDisconnected
+  reactSafe disconnected (.local { page := 1, kind := .automationStarted })
+
+private def disconnectedStartBlocked : Bool :=
+  ((disconnectedStartState.page 1).action == .suspended) &&
+  ((disconnectedStartState.page 1).input == .idle)
+
+/-- Regression: a local automation start cannot resurrect execution while its
+    BrowserContext parent is unavailable. -/
+private def contextUnavailableStartState : Model :=
+  let unavailable := reactSafe initial (.contextUnavailable 10)
+  reactSafe unavailable (.local { page := 1, kind := .automationStarted })
+
+private def contextUnavailableStartBlocked : Bool :=
+  ((contextUnavailableStartState.page 1).action == .suspended) &&
+  ((contextUnavailableStartState.page 1).input == .idle) &&
+  ((contextUnavailableStartState.page 2).action == .idle)
 
 private def scenario : List RuntimeEvent := [
   .local { page := 1, kind := .automationStarted },
@@ -68,9 +89,16 @@ private def causalScenarioOk : Bool :=
   causalReplayAccepted &&
   overBudgetReplayRejected
 
+private def actionDependencyScenarioOk : Bool :=
+  disconnectedStartBlocked && contextUnavailableStartBlocked
+
 def main : IO Unit := do
   let final := replay initial scenario
-  if contextIsolationOk && traceSafe initial scenario && wellFormed? final && causalScenarioOk then
-    IO.println "browser-runtime formal model: scoped policy + causal budget verification passed"
+  if contextIsolationOk &&
+      actionDependencyScenarioOk &&
+      traceSafe initial scenario &&
+      wellFormed? final &&
+      causalScenarioOk then
+    IO.println "browser-runtime formal model: scoped policy + causality + action dependencies verified"
   else
     throw <| IO.userError "browser-runtime formal model: runtime invariant violated"

@@ -2,17 +2,19 @@ import Browser.Proofs
 
 namespace Browser
 
-/-- Replay a concrete runtime event stream through the full reactive pipeline:
-    normalized state transition followed by explicit policy commands. -/
+/-- Replay a concrete runtime event stream through the fully reconciled runtime:
+    normalized state transition, explicit policy commands, then action dependency
+    reconciliation. -/
 def replay : Model → List RuntimeEvent → Model
   | m, [] => m
-  | m, event :: rest => replay (react m event) rest
+  | m, event :: rest => replay (reactSafe m event) rest
 
-/-- Replay causally wrapped events through the finite reaction-budget gate. -/
+/-- Replay causally wrapped events through both the finite reaction-budget gate
+    and action dependency reconciliation. -/
 def replayEnvelopes (budget : ReactionBudget) : Model → List EventEnvelope → Option Model
   | m, [] => some m
   | m, envelope :: rest =>
-      match reactEnvelope budget m envelope with
+      match reactEnvelopeSafe budget m envelope with
       | none => none
       | some next => replayEnvelopes budget next rest
 
@@ -21,21 +23,17 @@ def pageSafe (m : Model) (p : PageId) : Bool :=
   let s := m.page p
   match s.action with
   | .executing =>
-      m.browserAlive &&
-      m.contextAvailable (m.graph.contextOf p) &&
-      (s.lifecycle == .ready) &&
-      (s.runtime == .ready) &&
-      (s.input == .automation)
+      requirementsHold m (primitiveContract p)
   | _ => true
 
 def wellFormed? (m : Model) : Bool :=
   m.knownPages.all (pageSafe m)
 
-/-- Check every semantic state reached by a concrete event trace. -/
+/-- Check every reconciled semantic state reached by a concrete event trace. -/
 def traceSafe : Model → List RuntimeEvent → Bool
   | m, [] => wellFormed? m
   | m, event :: rest =>
-      let next := react m event
+      let next := reactSafe m event
       wellFormed? next && traceSafe next rest
 
 /-- Executable check corresponding to the causal theorems for one issued command. -/

@@ -9,6 +9,7 @@ The model separates these concerns:
 - **Event scope**: page, browser-context, or browser.
 - **Policy + commands**: the only legal route for cross-page reactions.
 - **Causality + reaction budget**: stable correlation/parent/depth metadata and bounded response chains.
+- **Action contracts**: explicit runtime dependencies plus post-event reconciliation.
 - **Proofs + executable replay**: static safety theorems and concrete trace checking.
 
 ## Proven properties
@@ -29,6 +30,9 @@ The current model proves that:
 12. Every policy-issued command records the triggering `EventId` as parent.
 13. Every policy reaction increments causal depth exactly once.
 14. Events deeper than a finite `ReactionBudget` are rejected before state mutation.
+15. Primitive actions explicitly depend on Browser availability, Context availability, Page readiness, Runtime readiness, and automation input ownership.
+16. Browser, Context, or Runtime unavailability makes the primitive contract false.
+17. An executing action whose declared contract becomes false is explicitly reconciled to `suspended` rather than remaining nominally `executing`.
 
 These are properties of the abstract driver model. They do **not** by themselves prove a future C/C++ CDP driver implementation correct. The conformance layer is trace based: the driver emits normalized events/actions, and CI replays them through this executable model.
 
@@ -38,12 +42,7 @@ These are properties of the abstract driver model. They do **not** by themselves
 CDP / injected observer
         |
         v
- EventEnvelope
-  + RuntimeEvent
-  + EventId
-  + CorrelationId
-  + parent
-  + depth
+ EventEnvelope + RuntimeEvent
         |
         v
  reaction-budget gate
@@ -64,9 +63,15 @@ CDP / injected observer
         |
         v
       react
+        |
+        v
+ reconcileKnownActions
+        |
+        v
+     reactSafe
 ```
 
-A page-local event has no policy commands by default. Context events may generate commands only for pages in that context. Browser events may generate commands for all known descendant pages. Causal metadata does not alter semantic state transitions; it makes reaction provenance explicit and bounds recursive response chains.
+A page-local event has no policy commands by default. Context events may generate commands only for pages in that context. Browser events may generate commands for all known descendant pages. Causal metadata does not alter semantic state transitions. Action reconciliation is separate from event semantics: after state/policy changes, executing actions are revalidated against their declared contracts.
 
 ## Build
 
@@ -75,8 +80,8 @@ lake build --wfail
 lake exe browser-runtime-check
 ```
 
-The project is pinned to Lean 4.33.0. GitHub Actions builds the complete model with `--wfail` and runs the executable verifier. The executable validates page/context isolation, every intermediate runtime state, policy-issued causal metadata, acceptance of an in-budget envelope, and rejection of an over-budget envelope.
+The project is pinned to Lean 4.33.0. GitHub Actions builds the complete model with `--wfail` and runs the executable verifier. The executable validates page/context isolation, every intermediate reconciled runtime state, policy-issued causal metadata, reaction-budget acceptance/rejection, and attempts to start automation while Browser or Context parents are unavailable.
 
 ## Driver integration target
 
-The C/C++ driver should normalize raw CDP/injected events into `EventEnvelope` + `RuntimeEvent` before runtime state mutation. Cross-page effects must be materialized as explicit policy commands. Every emitted reaction should preserve correlation, link to its triggering event, and advance depth exactly once. Any trace that violates these rules should fail conformance replay.
+The C/C++ driver should normalize raw CDP/injected events into `EventEnvelope` + `RuntimeEvent` before runtime state mutation. Cross-page effects must be explicit policy commands. Every emitted reaction should preserve correlation, link to its triggering event, and advance depth exactly once. Primitive actions should declare dependencies and run through the same reconciliation boundary. Any implementation trace that violates these rules should fail conformance replay.

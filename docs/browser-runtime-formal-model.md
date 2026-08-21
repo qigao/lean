@@ -14,9 +14,12 @@ This repository proves properties of the **normalized browser-driver runtime mod
 6. `Policy.commandsFor` turns parent-scope events into explicit `PageCommand` values.
 7. `issueCommandsFor` gives policy output a derived child `Cause`.
 8. `react` composes semantic state transition with policy commands.
-9. `reactEnvelope` adds the finite `ReactionBudget` gate before `react`.
-10. `Browser.Proofs` proves safety, propagation, and causality boundaries over these same functions.
-11. `Browser.Trace` checks semantic and causal invariants on executable traces.
+9. `ActionContract` declares the dependencies a running action requires.
+10. `reconcileKnownActions` revalidates running primitive actions after a reaction.
+11. `reactSafe` composes `react` with dependency reconciliation.
+12. `reactEnvelopeSafe` adds the finite `ReactionBudget` gate before `reactSafe`.
+13. `Browser.Proofs` proves safety, propagation, causality, and action-invalidation properties over these functions.
+14. `Browser.Trace` checks semantic, causal, and action-contract invariants on executable traces.
 
 ## Safety properties
 
@@ -46,7 +49,35 @@ issued.parent      = some E.id
 issued.depth       = E.depth + 1
 ```
 
-`ReactionBudget.maxDepth` is checked before semantic state mutation. Lean proves that if `budget.maxDepth < envelope.depth`, `reactEnvelope` returns `none`. This provides a formal barrier against unbounded policy self-reaction.
+`ReactionBudget.maxDepth` is checked before state mutation. An over-budget envelope returns `none`.
+
+### Action dependency safety
+
+Primitive input actions currently declare five dependencies:
+
+```text
+BrowserAvailable
+ContextAvailable
+PageReady
+RuntimeReady
+AutomationOwned
+```
+
+`requirementsHold` evaluates the contract. `reconcileAction` proves the local safety rule:
+
+```text
+action = Executing
+AND contract = false
+        |
+        v
+reconcileAction
+        |
+        v
+action = Suspended
+input  = Idle
+```
+
+The contract is intentionally a list of reusable `ActionRequirement` values so future actions can declare different dependency sets rather than hard-coding one global actionability rule.
 
 ## Explicit response model
 
@@ -70,23 +101,31 @@ EventEnvelope
  explicit PageCommand(target = Page B)
       |
       v
- Page B state transition
+    react
+      |
+      v
+ Action dependency reconciliation
+      |
+      v
+  reconciled runtime state
 ```
 
-Sibling effects are not implicit state propagation. They are explicit policy decisions represented as data, causally linked to the source event, bounded in depth, and observable in traces.
+Sibling effects are explicit policy decisions represented as data, causally linked to the source event, bounded in depth, and observable in traces. Action invalidation is likewise explicit state, not merely a failed guard hidden behind `canExecute`.
 
 ## Executable conformance contract
 
-The future C/C++ driver should emit normalized records with stable IDs and causal metadata. `replay` validates semantic events through `react`; `replayEnvelopes` validates causal events through `reactEnvelope`; `traceSafe` checks every intermediate semantic state; `causalPolicySafe` checks every issued command's correlation, parent, and depth.
+The future C/C++ driver should emit normalized records with stable IDs and causal metadata. `replay` now executes `reactSafe`; `replayEnvelopes` executes `reactEnvelopeSafe`; `traceSafe` checks every intermediate reconciled state; `causalPolicySafe` checks every issued command's correlation, parent, and depth.
 
-The executable scenario currently validates:
+The executable scenario validates:
 
 - Context 10 can pause Page 1 while Page 2 in Context 20 remains unchanged.
 - Browser disconnect/reconnect passes through the explicit policy path.
 - A Context event at depth 0 is accepted by a depth-3 reaction budget.
 - Its policy-issued commands preserve correlation, parent linkage, and depth+1.
-- A Context event at depth 4 is rejected by that same budget before state mutation.
+- A Context event at depth 4 is rejected before state mutation.
+- If automation is requested after Browser disconnect, reconciliation forces Page 1 to `suspended`/`idle`.
+- If automation is requested while Context 10 is unavailable, reconciliation forces Page 1 to `suspended` without changing Page 2 in Context 20.
 
 ## Next proof layer
 
-The next increment should formalize action dependency invalidation: a running primitive action declares required Page/Runtime/Input predicates, and state transitions invalidate/suspend the action when a dependency stops holding. Behavior-tree semantics should remain above primitive actions and consume those proven-safe action results rather than bypassing them.
+The next increment should formalize higher-level action lifecycle/resume semantics and Behavior Tree consumption of action results. BT nodes should observe `running/suspended/success/failure` and action dependencies rather than bypassing the proven `reactSafe` boundary.
