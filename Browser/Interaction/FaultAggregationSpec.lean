@@ -16,7 +16,7 @@ example :
       aggregateRecovery [.pageLost, .sessionLost] := by
   exact aggregate_duplicate_invariant .pageLost [.sessionLost]
 
-private def faultsPermuted : FaultPermutation faultsA faultsB := by
+private theorem faultsPermuted : FaultPermutation faultsA faultsB := by
   apply FaultPermutation.trans
   · exact FaultPermutation.swap .elementStale .sessionLost [.pageLost]
   · apply FaultPermutation.trans
