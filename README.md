@@ -24,11 +24,11 @@ These are properties of the abstract driver model. They do **not** by themselves
 ## Build
 
 ```bash
-lake build
+lake build --wfail
 lake exe browser-runtime-check
 ```
 
-The project is pinned to Lean 4.33.0. GitHub Actions also runs `nanoda` with `sorry` disallowed.
+The project is pinned to Lean 4.33.0. GitHub Actions builds the complete model with `--wfail` and then runs the executable trace-replay scenario. The warning-as-error build also rejects warning-producing proof gaps such as `sorry`.
 
 ## Driver integration target
 
