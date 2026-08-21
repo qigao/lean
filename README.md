@@ -121,6 +121,31 @@ Run the lower-level recovery scenario with:
 lake exe browser-recovery-check
 ```
 
+## Adversarial recovery
+
+`Browser/Interaction/AdversarialRecovery.lean` models hostile asynchronous arrival without reconstructing Browser/Page state. Every observation is tagged with the runtime generation it belongs to. Old and future generations cannot mutate the current recovery supervisor; only the current generation is decoded and considered.
+
+Concurrent recovery requirements are merged with `joinRecovery`. Because recovery actions are totally ranked, the join is the least action strong enough to cover both faults. The module proves idempotence, commutativity, associativity, both upper-bound laws, and the least-upper-bound property. This gives the recovery policy a join-semilattice semantics:
+
+```text
+duplicate fault           -> same recovery
+fault A then fault B      -> same result as B then A
+weaker later fault        -> no downgrade
+stronger later fault      -> minimum necessary escalation
+concurrent fault          -> one active recovery, no parallel recovery
+fault merge               -> recovery budget is not reset
+```
+
+`FaultSupervisor` stores only the current generation, finite recovery budget, one optional active `RecoveryState`, and terminal failure. A current-generation fatal/unknown fault fails safe immediately. Recovery feedback is delegated to the existing `stepRecovery`; successful repair clears the active recovery and advances to a fresh generation, making callbacks from the failed generation stale immediately.
+
+`resolveSupervisorFuel` projects the existing bounded recovery algorithm back into the supervisor. `resolve_supervisor_fuel_is_resolved` proves that for arbitrary finite fuel and arbitrary environment availability, the resolved supervisor has no live recovery left: it is either healthy/idle or explicitly failed. Even an unexpected nonterminal lower-level result is projected to fail-safe rather than left hanging.
+
+The executable adversarial scenario covers duplicate and reordered faults, stronger/weaker recovery requirements, stale and future observations, unknown/malformed faults during recovery, fresh-generation isolation after success, and retry-budget exhaustion:
+
+```text
+lake exe browser-adversarial-recovery-check
+```
+
 ## Interaction contracts
 
 `Browser/Interaction/` separately proves the dangerous cross-component boundaries:
@@ -204,6 +229,7 @@ lake exe browser-interaction-check
 lake exe browser-recovery-check
 lake exe browser-feedback-recovery-check
 lake exe browser-decoder-recovery-check
+lake exe browser-adversarial-recovery-check
 lake exe browser-driver-interaction-journal-check /tmp/driver-interaction-journal.jsonl
 lake exe browser-driver-interaction-journal-check traces/driver-interaction-journal.jsonl
 lake exe browser-interaction-trace-check traces/interaction-contracts.jsonl
@@ -226,3 +252,5 @@ lake exe browser-async-trace-check traces/async-runtime-race.jsonl
 - `docs/superpowers/plans/2026-08-21-feedback-normalizer.md`
 - `docs/superpowers/specs/2026-08-21-decoder-contract-design.md`
 - `docs/superpowers/plans/2026-08-21-decoder-contract.md`
+- `docs/superpowers/specs/2026-08-21-adversarial-recovery-design.md`
+- `docs/superpowers/plans/2026-08-21-adversarial-recovery.md`
