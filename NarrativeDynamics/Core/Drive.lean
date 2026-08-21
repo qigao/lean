@@ -64,7 +64,7 @@ theorem goalScore_monotone_instrumentality {p inst₁ inst₂ cost risk : ℝ}
   nlinarith
 
 /-- Binary softmax probability for choosing `own` against one rival. -/
-def softmax2 (β own rival : ℝ) : ℝ :=
+noncomputable def softmax2 (β own rival : ℝ) : ℝ :=
   Real.exp (β * own) /
     (Real.exp (β * own) + Real.exp (β * rival))
 
@@ -97,7 +97,7 @@ theorem softmax2_monotone_own_score {β score₁ score₂ rival : ℝ}
         Real.exp (β * score₁) * Real.exp (β * rival) := by ring
     _ ≤ Real.exp (β * score₁) * Real.exp (β * score₂) +
         Real.exp (β * score₂) * Real.exp (β * rival) := by
-      exact add_le_add_left hmul _
+      exact add_le_add_right hmul _
     _ = Real.exp (β * score₂) *
         (Real.exp (β * score₁) + Real.exp (β * rival)) := by ring
 
