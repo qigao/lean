@@ -31,3 +31,5 @@ jobs:
         run: lake exe browser-runtime-check
       - name: Replay driver JSONL conformance trace
         run: lake exe browser-driver-trace-check traces/generation-race.jsonl
+      - name: Replay unified async driver trace
+        run: lake exe browser-async-trace-check traces/async-runtime-race.jsonl

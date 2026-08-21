@@ -24,4 +24,6 @@ import Browser.AsyncScenario
 import Browser.AsyncActionScenario
 import Browser.Conformance
 import Browser.ConformanceSpec
+import Browser.AsyncConformance
+import Browser.AsyncConformanceSpec
 import Browser.Trace

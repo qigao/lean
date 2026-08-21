@@ -10,7 +10,7 @@ inductive PageCommandKind where
 structure PageCommand where
   page : PageId
   kind : PageCommandKind
-  deriving Repr
+  deriving Repr, DecidableEq, BEq
 
 /-- A policy-issued command carries the causal identity of the reaction that
     created it without changing the command's semantic payload. -/
