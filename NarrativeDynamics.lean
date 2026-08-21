@@ -7,3 +7,4 @@ import NarrativeDynamics.Core.WorldGraph
 import NarrativeDynamics.Core.TypedGraph
 import NarrativeDynamics.Core.TypedHypergraph
 import NarrativeDynamics.Core.TypedInference
+import NarrativeDynamics.Core.Closure
