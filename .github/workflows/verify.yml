@@ -29,3 +29,5 @@ jobs:
           nanoda: false
       - name: Replay executable runtime scenario
         run: lake exe browser-runtime-check
+      - name: Replay driver JSONL conformance trace
+        run: lake exe browser-driver-trace-check traces/generation-race.jsonl
