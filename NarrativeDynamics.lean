@@ -23,3 +23,4 @@ import NarrativeDynamics.Core.InterpretationSelection
 import NarrativeDynamics.Core.EpistemicGoal
 import NarrativeDynamics.Core.EpistemicGoalCompetition
 import NarrativeDynamics.Core.GroundedEpistemicGoal
+import NarrativeDynamics.Core.GroundedGoalCovariance
