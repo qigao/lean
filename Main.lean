@@ -62,25 +62,26 @@ private def scenario : List RuntimeEvent := [
 
 private def humanTimeoutState : Model :=
   let running := reactSafe initial (.local { page := 1, kind := .automationStarted })
-  let armed := reactSafe running (.local { page := 1, kind := .deadlineArmed 10 .action })
+  let armed := reactSafe running (.local { page := 1, kind := .deadlineArmed 1 10 .action })
   let human := reactSafe armed (.local { page := 1, kind := .humanInput })
-  reactSafe human (.local { page := 1, kind := .deadlineReached 10 })
+  reactSafe human (.local { page := 1, kind := .deadlineReached 1 10 })
 
 private def pageTimeoutState : Model :=
   let running := reactSafe initial (.local { page := 1, kind := .automationStarted })
-  let armed := reactSafe running (.local { page := 1, kind := .deadlineArmed 20 .action })
+  let armed := reactSafe running (.local { page := 1, kind := .deadlineArmed 1 20 .action })
   let navigating := reactSafe armed (.local { page := 1, kind := .navigationStarted })
-  reactSafe navigating (.local { page := 1, kind := .deadlineReached 20 })
+  reactSafe navigating (.local { page := 1, kind := .deadlineReached 1 20 })
 
 private def networkTimeoutState : Model :=
   let running := reactSafe initial (.local { page := 1, kind := .automationStarted })
-  let armed := reactSafe running (.local { page := 1, kind := .deadlineArmed 30 .network })
-  reactSafe armed (.local { page := 1, kind := .deadlineReached 30 })
+  let armed := reactSafe running (.local { page := 1, kind := .deadlineArmed 1 30 .network })
+  reactSafe armed (.local { page := 1, kind := .deadlineReached 1 30 })
 
 private def protocolTimeoutState : Model :=
   let running := reactSafe initial (.local { page := 1, kind := .automationStarted })
-  let armed := reactSafe running (.local { page := 1, kind := .deadlineArmed 40 .protocol })
-  reactSafe armed (.local { page := 1, kind := .deadlineReached 40 })
+  let waiting := reactSafe running (.local { page := 1, kind := .protocolWaitStarted 1 400 })
+  let armed := reactSafe waiting (.local { page := 1, kind := .deadlineArmed 1 40 .protocol })
+  reactSafe armed (.local { page := 1, kind := .deadlineReached 1 40 })
 
 private def restartAfterTimeoutState : Model :=
   reactSafe networkTimeoutState (.local { page := 1, kind := .automationStarted })
@@ -96,8 +97,36 @@ private def timeoutScenarioOk : Bool :=
   ((protocolTimeoutState.page 1).timeout == some .protocol) &&
   ((networkTimeoutState.page 2).action == .idle) &&
   ((restartAfterTimeoutState.page 1).action == .executing) &&
+  ((restartAfterTimeoutState.page 1).currentAction == some 2) &&
   ((restartAfterTimeoutState.page 1).timeout == none) &&
   ((restartAfterTimeoutState.page 1).deadline == none)
+
+/-- Action 1 leaves timer and CDP work behind; Action 2 starts and waits on its
+    own call. Late Action-1 callbacks must not mutate Action 2. -/
+private def generationRaceState : Model :=
+  let action1 := reactSafe initial (.local { page := 1, kind := .automationStarted })
+  let wait1 := reactSafe action1 (.local { page := 1, kind := .protocolWaitStarted 1 100 })
+  let armed1 := reactSafe wait1 (.local { page := 1, kind := .deadlineArmed 1 10 .protocol })
+  let finished1 := reactSafe armed1 (.local { page := 1, kind := .automationFinished })
+  let action2 := reactSafe finished1 (.local { page := 1, kind := .automationStarted })
+  let wait2 := reactSafe action2 (.local { page := 1, kind := .protocolWaitStarted 2 200 })
+  let armed2 := reactSafe wait2 (.local { page := 1, kind := .deadlineArmed 2 100 .protocol })
+  let staleTimer := reactSafe armed2 (.local { page := 1, kind := .deadlineReached 1 999 })
+  reactSafe staleTimer (.local { page := 1, kind := .protocolResponse 1 100 })
+
+private def generationRaceAfterMatchingResponse : Model :=
+  reactSafe generationRaceState (.local { page := 1, kind := .protocolResponse 2 200 })
+
+private def generationRaceOk : Bool :=
+  ((generationRaceState.page 1).currentAction == some 2) &&
+  ((generationRaceState.page 1).actionGeneration == 2) &&
+  ((generationRaceState.page 1).action == .waiting) &&
+  ((generationRaceState.page 1).timeout == none) &&
+  ((generationRaceState.page 1).deadline == some { action := 2, expiresAt := 100 }) &&
+  ((generationRaceState.page 1).pendingProtocol == some { action := 2, call := 200 }) &&
+  ((generationRaceAfterMatchingResponse.page 1).pendingProtocol == none) &&
+  ((generationRaceAfterMatchingResponse.page 1).currentAction == some 2) &&
+  ((generationRaceState.page 2).actionGeneration == 0)
 
 private def budget : ReactionBudget := { maxDepth := 3 }
 
@@ -136,9 +165,10 @@ def main : IO Unit := do
   if contextIsolationOk &&
       actionDependencyScenarioOk &&
       timeoutScenarioOk &&
+      generationRaceOk &&
       traceSafe initial scenario &&
       wellFormed? final &&
       causalScenarioOk then
-    IO.println "browser-runtime formal model: policy + causality + dependencies + timeout semantics verified"
+    IO.println "browser-runtime formal model: policy + causality + dependencies + timeout + generation isolation verified"
   else
     throw <| IO.userError "browser-runtime formal model: runtime invariant violated"
