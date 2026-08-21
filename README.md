@@ -2,12 +2,14 @@
 
 This repository formalizes safety properties for a stateful asynchronous CDP browser Driver in Lean 4.
 
-The primary proof surface is **interaction + feedback/recovery contracts**, not a second full implementation of the Browser Driver. The larger runtime model remains as integration/reference evidence.
+The primary proof surface is **interaction + decoder/feedback/recovery contracts**, not a second full implementation of the Browser Driver. The larger runtime model remains as integration/reference evidence.
 
 ## Primary proof chain
 
 ```text
-RawObservation
+AdapterEvent
+  -> decodeEvent
+  -> RawObservation
   -> normalizeObservation
   -> NormalizedFeedback { FeedbackClass, FaultClass? }
   -> decideNormalized
@@ -15,9 +17,9 @@ RawObservation
   -> Healthy(new generation) | ExplicitFailure
 ```
 
-`RawObservation` is a finite adapter-facing vocabulary. Chromium/CDP version-specific strings and error codes are decoded outside the proof core; anything not recognized must become `unrecognized` rather than being silently dropped.
+`RawObservation` is a finite semantic vocabulary. Chromium/CDP version-specific JSON and error strings are parsed by a thin adapter before entering the proof core. Anything unknown, malformed, under-scoped, or ambiguous must become `unrecognized` rather than being silently dropped or optimistically guessed.
 
-Representative mappings:
+Representative normalized mappings:
 
 ```text
 operationSucceeded          -> success / none
@@ -38,11 +40,57 @@ unrecognized                -> unknown / unknownFault
 
 `normalization_is_coherent` proves every raw observation produces an allowed feedback/fault pair. `recover_observation_fuel_is_resolved` composes normalization with bounded recovery and proves recovery is either not required or returns terminal `healthy`/`failed`, never an internally stuck `recovering` result.
 
-Run the end-to-end check with:
+Run the feedback/recovery check with:
 
 ```text
 lake exe browser-feedback-recovery-check
 ```
+
+## Decoder contract
+
+`Browser/Interaction/Decoder.lean` formalizes the stable adapter boundary. It intentionally does not parse arbitrary Chromium JSON and does not choose recovery. It only converts structured adapter events into `RawObservation`.
+
+Current critical CDP-style mappings include:
+
+```text
+Runtime.executionContextDestroyed -> executionContextDestroyed
+Runtime.executionContextsCleared   -> executionContextDestroyed
+Page.frameDetached                 -> frameDetached
+Target.detachedFromTarget          -> sessionDetached
+Inspector.detached                 -> sessionDetached
+Target.targetCrashed(page)         -> pageCrashed
+Target.targetDestroyed(page)       -> pageClosed
+```
+
+Target lifecycle events require an adapter-resolved scope. A worker/service-worker/unknown target crash or destroy is **not** promoted into a page fault; it decodes to `unrecognized` unless a higher layer has enough ownership information to classify it safely.
+
+`Network.loadingFailed` and protocol command errors also require an adapter-resolved failure disposition:
+
+```text
+network transient       -> networkTransient
+network cancelled       -> conditionPending
+network blocked/CORS/?  -> unrecognized
+protocol transient      -> protocolTransient
+protocol sessionGone    -> sessionDetached
+protocol unknown        -> unrecognized
+```
+
+This reflects a core rule: **method name alone is not always enough to select recovery scope**. Insufficient information must fail safe.
+
+Decoder properties include:
+
+- `decoder_output_safe`: scope/disposition ambiguity follows the fail-safe decoder rules.
+- `decoded_normalization_is_coherent`: every decoded observation remains valid under the existing normalizer contract.
+- malformed and unknown adapter events become `unrecognized -> unknownFault -> failSafe`.
+- `recover_adapter_event_fuel_is_resolved`: the full decoder-to-recovery path is either unnecessary or terminal; it cannot internally livelock.
+
+Run the end-to-end decoder check with:
+
+```text
+lake exe browser-decoder-recovery-check
+```
+
+The executable covers page/session recovery into a fresh generation, transient network waiting, and under-scoped/blocked/malformed inputs failing safe.
 
 ## Recovery contracts
 
@@ -86,7 +134,7 @@ lake exe browser-recovery-check
 - Policy issue→deliver causality
 - typed authorized-effect composition
 
-These contracts remain separate from normalization: identity, generation ownership, causal delivery, and side-effect authorization are not reconstructed in the feedback model.
+These contracts remain separate from decoding/normalization: identity, generation ownership, causal delivery, and side-effect authorization are not reconstructed in the feedback model.
 
 ## Driver-facing interaction journal
 
@@ -155,6 +203,7 @@ lake build --wfail
 lake exe browser-interaction-check
 lake exe browser-recovery-check
 lake exe browser-feedback-recovery-check
+lake exe browser-decoder-recovery-check
 lake exe browser-driver-interaction-journal-check /tmp/driver-interaction-journal.jsonl
 lake exe browser-driver-interaction-journal-check traces/driver-interaction-journal.jsonl
 lake exe browser-interaction-trace-check traces/interaction-contracts.jsonl
@@ -175,3 +224,5 @@ lake exe browser-async-trace-check traces/async-runtime-race.jsonl
 - `docs/superpowers/plans/2026-08-21-feedback-recovery-contracts.md`
 - `docs/superpowers/specs/2026-08-21-feedback-normalizer-design.md`
 - `docs/superpowers/plans/2026-08-21-feedback-normalizer.md`
+- `docs/superpowers/specs/2026-08-21-decoder-contract-design.md`
+- `docs/superpowers/plans/2026-08-21-decoder-contract.md`
