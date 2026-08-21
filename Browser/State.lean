@@ -8,9 +8,12 @@ structure PageState where
   input : InputState := .idle
   action : ActionState := .idle
   contextGeneration : Nat := 0
+  actionGeneration : Nat := 0
+  currentAction : Option ActionId := none
   deadline : Option Deadline := none
   waitingOn : Option WaitReason := none
   timeout : Option WaitReason := none
+  pendingProtocol : Option ProtocolWait := none
   deriving Repr
 
 namespace PageState
@@ -29,7 +32,8 @@ def WellFormed (s : PageState) : Prop :=
   s.action = .executing →
     s.lifecycle = .ready ∧
     s.runtime = .ready ∧
-    s.input = .automation
+    s.input = .automation ∧
+    s.currentAction ≠ none
 
 end PageState
 
@@ -52,14 +56,14 @@ def updateContextAvailability (m : Model) (c : ContextId) (available : Bool) : M
     contextAvailable := fun q => if q = c then available else m.contextAvailable q }
 
 /-- A primitive action may execute only when all browser/context/page/runtime/input
-    preconditions hold simultaneously. A timed-out action is therefore terminal
-    until a new action is explicitly started. -/
+    preconditions hold simultaneously and the action has a current generation. -/
 def canExecute (m : Model) (p : PageId) : Prop :=
   m.browserAlive = true ∧
   m.contextAvailable (m.graph.contextOf p) = true ∧
   (m.page p).lifecycle = .ready ∧
   (m.page p).runtime = .ready ∧
   (m.page p).input = .automation ∧
-  (m.page p).action = .executing
+  (m.page p).action = .executing ∧
+  (m.page p).currentAction ≠ none
 
 end Browser
