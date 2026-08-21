@@ -46,6 +46,8 @@ jobs:
           nanoda: false
       - name: Verify interaction contracts
         run: lake exe browser-interaction-check
+      - name: Verify C++ generated multi-lane interaction journal
+        run: lake exe browser-driver-interaction-journal-check /tmp/driver-interaction-journal.jsonl
       - name: Replay compact interaction journal
         run: lake exe browser-interaction-trace-check traces/interaction-contracts.jsonl
       - name: Replay executable runtime scenario
