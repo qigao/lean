@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 from statistics import fmean, pstdev
 
@@ -10,8 +10,9 @@ from narrative_dynamics.contracts import (
     ExperimentManifest,
     ExperimentStage,
     Scenario,
+    _validated_content_hash,
 )
-from narrative_dynamics.manifest import required_manifest_hash
+from narrative_dynamics.manifest import required_manifest_hash, stable_content_hash
 from narrative_dynamics.metrics import MetricExtractor
 from narrative_dynamics.simulation import ModelSource, SimulationRunner
 
@@ -21,9 +22,13 @@ ParameterTuple = tuple[tuple[str, float], ...]
 
 @dataclass(frozen=True)
 class ParameterAcceptanceSet:
-    """Canonical finite set of parameter candidates retained by uncertainty checks."""
+    """Canonical finite candidates plus the manifests that produced them."""
 
     parameters: tuple[ParameterTuple, ...]
+    source_manifest_hashes: tuple[str, ...] = field(
+        default=(),
+        compare=False,
+    )
 
     def __post_init__(self) -> None:
         canonical = tuple(
@@ -34,14 +39,31 @@ class ParameterAcceptanceSet:
             for candidate in canonical[1:]:
                 if tuple(name for name, _ in candidate) != schema:
                     raise ValueError("accepted parameter tuples must share one schema")
+        sources = tuple(
+            sorted(
+                {
+                    _validated_content_hash(
+                        source_hash,
+                        label="accepted-parameter source manifest hash",
+                    )
+                    for source_hash in self.source_manifest_hashes
+                }
+            )
+        )
         object.__setattr__(self, "parameters", canonical)
+        object.__setattr__(self, "source_manifest_hashes", sources)
 
     @classmethod
     def from_parameters(
         cls,
         parameters: Iterable[Iterable[tuple[str, float]]],
+        *,
+        source_manifest_hashes: Iterable[str] = (),
     ) -> "ParameterAcceptanceSet":
-        return cls(parameters=tuple(tuple(candidate) for candidate in parameters))
+        return cls(
+            parameters=tuple(tuple(candidate) for candidate in parameters),
+            source_manifest_hashes=tuple(source_manifest_hashes),
+        )
 
     @property
     def count(self) -> int:
@@ -50,6 +72,15 @@ class ParameterAcceptanceSet:
     @property
     def parameter_maps(self) -> tuple[dict[str, float], ...]:
         return tuple(dict(parameters) for parameters in self.parameters)
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(
+            {
+                "parameters": self.parameters,
+                "source_manifest_hashes": self.source_manifest_hashes,
+            }
+        )
 
     def __iter__(self):
         return iter(self.parameters)
@@ -89,7 +120,15 @@ class RepeatedCalibrationReport:
 
     @property
     def acceptance_set(self) -> ParameterAcceptanceSet:
-        return ParameterAcceptanceSet.from_parameters(self.accepted_parameters)
+        source_hashes = (
+            ()
+            if self.manifest is None
+            else (self.manifest.content_hash,)
+        )
+        return ParameterAcceptanceSet.from_parameters(
+            self.accepted_parameters,
+            source_manifest_hashes=source_hashes,
+        )
 
 
 @dataclass(frozen=True)
@@ -358,11 +397,16 @@ def calibrate_seed_block_variants(
         },
         parent_hashes=variant_hashes,
     )
+    source_hashes = (manifest.content_hash,)
     return SeedBlockVariationReport(
         variants=tuple(variants),
-        accepted_union=ParameterAcceptanceSet.from_parameters(accepted_union),
+        accepted_union=ParameterAcceptanceSet.from_parameters(
+            accepted_union,
+            source_manifest_hashes=source_hashes,
+        ),
         accepted_intersection=ParameterAcceptanceSet.from_parameters(
-            accepted_intersection
+            accepted_intersection,
+            source_manifest_hashes=source_hashes,
         ),
         manifest=manifest,
     )

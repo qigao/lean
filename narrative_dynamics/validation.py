@@ -137,7 +137,9 @@ class HeldOutSuite:
                 else EvaluationRole(self.role)
             )
         except (TypeError, ValueError) as error:
-            raise ValueError("held-out suite role must be a supported evaluation role") from error
+            raise ValueError(
+                "held-out suite role must be a supported evaluation role"
+            ) from error
         cases = tuple(self.cases)
         if not cases:
             raise ValueError("held-out suite must contain at least one case")
@@ -480,14 +482,20 @@ def validate_acceptance_set_held_out(
         stage=ExperimentStage.ACCEPTANCE_VALIDATION,
         inputs={
             "accepted_parameters": acceptance_set.parameters,
+            "accepted_parameter_set_hash": acceptance_set.content_hash,
             "max_mean_loss": mean_limit,
             "max_worst_loss": worst_limit,
         },
-        parent_hashes=validation_hashes,
+        parent_hashes=(
+            acceptance_set.source_manifest_hashes + validation_hashes
+        ),
     )
     return HeldOutAcceptanceReport(
         evaluations=evaluations,
-        retained_parameters=ParameterAcceptanceSet.from_parameters(retained),
+        retained_parameters=ParameterAcceptanceSet.from_parameters(
+            retained,
+            source_manifest_hashes=(manifest.content_hash,),
+        ),
         best=evaluations[0],
         manifest=manifest,
     )

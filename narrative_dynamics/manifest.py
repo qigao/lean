@@ -24,12 +24,27 @@ def _type_name(value: object) -> str:
     return f"{value.__class__.__module__}.{value.__class__.__qualname__}"
 
 
+def _normalized_enum_or_text(value: object, *, label: str) -> str:
+    raw = getattr(value, "value", value)
+    if not isinstance(raw, str) or not raw:
+        raise ValueError(f"{label} must be a non-empty string")
+    return raw
+
+
 def component_identity(
     component: object,
     *,
     fallback_name: str | None = None,
 ) -> dict[str, object]:
     """Describe one model or runtime component without executing it."""
+
+    custom_identity = getattr(component, "manifest_identity", None)
+    if callable(custom_identity):
+        identity = custom_identity()
+        if not isinstance(identity, Mapping):
+            raise TypeError("custom component identity must be a mapping")
+        stable_content_hash(identity)
+        return dict(identity)
 
     raw_name = getattr(component, "name", None)
     if isinstance(raw_name, str) and raw_name:
@@ -50,11 +65,35 @@ def component_identity(
         "version": raw_version,
         "type": _type_name(component),
     }
+
+    implementation_revision = getattr(
+        component,
+        "implementation_revision",
+        None,
+    )
+    if implementation_revision is not None:
+        if (
+            not isinstance(implementation_revision, str)
+            or not implementation_revision
+        ):
+            raise ValueError(
+                "component implementation revision must be a non-empty string"
+            )
+        identity["implementation_revision"] = implementation_revision
+
     implementation_hash = getattr(component, "implementation_hash", None)
     if implementation_hash is not None:
         if not isinstance(implementation_hash, str) or not implementation_hash:
             raise ValueError("component implementation hash must be a non-empty string")
         identity["implementation_hash"] = implementation_hash
+
+    lifecycle = getattr(component, "lifecycle", None)
+    if lifecycle is not None:
+        identity["lifecycle"] = _normalized_enum_or_text(
+            lifecycle,
+            label="component lifecycle",
+        )
+
     return identity
 
 

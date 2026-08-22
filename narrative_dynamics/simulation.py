@@ -4,6 +4,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 import math
 import random
+from typing import Protocol, cast
 
 from narrative_dynamics.contracts import (
     ExperimentManifest,
@@ -53,30 +54,79 @@ def _validated_model(
     return model
 
 
+def _validated_identity_text(value: object, *, label: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{label} must be a non-empty string")
+    if value != value.strip():
+        raise ValueError(f"{label} cannot have surrounding whitespace")
+    return value
+
+
 @dataclass(frozen=True)
 class ModelFactory:
     """Create one fresh simulator instance for each runner batch."""
 
     name: str
     create: Callable[[], SimulatorModel]
+    version: str = "unversioned"
+    implementation_revision: str = "unversioned"
 
     def __post_init__(self) -> None:
-        if not isinstance(self.name, str) or not self.name:
-            raise ValueError("model factory name must be a non-empty string")
+        object.__setattr__(
+            self,
+            "name",
+            _validated_identity_text(self.name, label="model factory name"),
+        )
         if not callable(self.create):
             raise TypeError("model factory create must be callable")
+        object.__setattr__(
+            self,
+            "version",
+            _validated_identity_text(
+                self.version,
+                label="model factory version",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "implementation_revision",
+            _validated_identity_text(
+                self.implementation_revision,
+                label="model factory implementation revision",
+            ),
+        )
+
+    @property
+    def lifecycle(self) -> str:
+        return "fresh_per_batch"
 
     def instantiate(self) -> SimulatorModel:
         return _validated_model(self.create(), expected_name=self.name)
 
 
-ModelSource = SimulatorModel | ModelFactory
+class InstantiableModelSource(Protocol):
+    """Structural source that can supply one model for a runner batch."""
+
+    name: str
+
+    def instantiate(self) -> SimulatorModel:
+        ...
+
+
+ModelSource = SimulatorModel | InstantiableModelSource
 
 
 def _materialize_model(model: ModelSource) -> SimulatorModel:
-    if isinstance(model, ModelFactory):
-        return model.instantiate()
-    return _validated_model(model)
+    instantiate = getattr(model, "instantiate", None)
+    if callable(instantiate):
+        expected_name = getattr(model, "name", None)
+        if not isinstance(expected_name, str) or not expected_name:
+            raise ValueError("instantiable model source must have a name")
+        return _validated_model(
+            instantiate(),
+            expected_name=expected_name,
+        )
+    return _validated_model(cast(SimulatorModel, model))
 
 
 class SimulationRunner:
@@ -85,6 +135,7 @@ class SimulationRunner:
     def _run_once_with_model(
         self,
         model: SimulatorModel,
+        identity_source: ModelSource,
         scenario: Scenario,
         parameters: Mapping[str, float],
         *,
@@ -102,7 +153,7 @@ class SimulationRunner:
         manifest = ExperimentManifest(
             stage=ExperimentStage.SIMULATION_RUN,
             inputs={
-                "model": component_identity(model),
+                "model": component_identity(identity_source),
                 "scenario": scenario_identity(scenario),
                 "parameters": canonical,
                 "seed": seed,
@@ -127,8 +178,10 @@ class SimulationRunner:
         *,
         seed: int,
     ) -> SimulationTrace:
+        materialized = _materialize_model(model)
         return self._run_once_with_model(
-            _materialize_model(model),
+            materialized,
+            model,
             scenario,
             parameters,
             seed=seed,
@@ -150,6 +203,7 @@ class SimulationRunner:
         return tuple(
             self._run_once_with_model(
                 batch_model,
+                model,
                 scenario,
                 parameters,
                 seed=seed,
