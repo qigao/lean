@@ -5,13 +5,24 @@ from dataclasses import dataclass
 from itertools import product
 import math
 
-from narrative_dynamics.contracts import Scenario, SimulatorModel
+from narrative_dynamics.contracts import (
+    ExperimentManifest,
+    ExperimentStage,
+    Scenario,
+)
+from narrative_dynamics.manifest import (
+    callable_identity,
+    component_identity,
+    required_manifest_hash,
+    scenario_identity,
+    stable_content_hash,
+)
 from narrative_dynamics.metrics import (
     MetricExtractor,
     aggregate_metrics,
     weighted_squared_error,
 )
-from narrative_dynamics.simulation import SimulationRunner
+from narrative_dynamics.simulation import ModelSource, SimulationRunner
 
 
 @dataclass(frozen=True)
@@ -19,6 +30,7 @@ class CandidateEvaluation:
     parameters: tuple[tuple[str, float], ...]
     metrics: tuple[tuple[str, float], ...]
     loss: float
+    run_manifest_hashes: tuple[str, ...] = ()
 
     @property
     def parameter_map(self) -> dict[str, float]:
@@ -33,6 +45,7 @@ class CandidateEvaluation:
 class CalibrationResult:
     best: CandidateEvaluation
     ranking: tuple[CandidateEvaluation, ...]
+    manifest: ExperimentManifest | None = None
 
 
 def _grid_candidates(
@@ -68,7 +81,7 @@ def _grid_candidates(
 def calibrate_grid(
     *,
     runner: SimulationRunner,
-    model: SimulatorModel,
+    model: ModelSource,
     scenario: Scenario,
     parameter_grid: Mapping[str, Iterable[float]],
     seeds: Iterable[int],
@@ -82,14 +95,21 @@ def calibrate_grid(
     if not ordered_seeds:
         raise ValueError("calibration requires at least one simulation seed")
 
+    candidates = _grid_candidates(parameter_grid)
     evaluations: list[CandidateEvaluation] = []
-    for parameters in _grid_candidates(parameter_grid):
+    run_parent_hashes: list[str] = []
+    for parameters in candidates:
         traces = runner.run_batch(
             model,
             scenario,
             dict(parameters),
             seeds=ordered_seeds,
         )
+        run_hashes = tuple(
+            required_manifest_hash(trace, label="calibration trace")
+            for trace in traces
+        )
+        run_parent_hashes.extend(run_hashes)
         metrics = aggregate_metrics(traces, extractor)
         loss = weighted_squared_error(metrics, target, weights=weights)
         evaluations.append(
@@ -97,6 +117,7 @@ def calibrate_grid(
                 parameters=parameters,
                 metrics=tuple(sorted(metrics.items())),
                 loss=loss,
+                run_manifest_hashes=run_hashes,
             )
         )
 
@@ -106,4 +127,27 @@ def calibrate_grid(
             key=lambda candidate: (candidate.loss, candidate.parameters),
         )
     )
-    return CalibrationResult(best=ranking[0], ranking=ranking)
+    manifest = ExperimentManifest(
+        stage=ExperimentStage.GRID_CALIBRATION,
+        inputs={
+            "model": component_identity(model),
+            "scenario": scenario_identity(scenario),
+            "parameter_grid": candidates,
+            "seeds": ordered_seeds,
+            "metric": callable_identity(extractor),
+            "target_hash": stable_content_hash(target),
+            "weights_hash": (
+                None if weights is None else stable_content_hash(weights)
+            ),
+            "loss": {
+                "name": "weighted_squared_error",
+                "version": "1",
+            },
+        },
+        parent_hashes=tuple(run_parent_hashes),
+    )
+    return CalibrationResult(
+        best=ranking[0],
+        ranking=ranking,
+        manifest=manifest,
+    )

@@ -6,7 +6,12 @@ import math
 from statistics import fmean, pstdev
 
 from narrative_dynamics.calibration import CalibrationResult, calibrate_grid
-from narrative_dynamics.contracts import Scenario
+from narrative_dynamics.contracts import (
+    ExperimentManifest,
+    ExperimentStage,
+    Scenario,
+)
+from narrative_dynamics.manifest import required_manifest_hash
 from narrative_dynamics.metrics import MetricExtractor
 from narrative_dynamics.simulation import ModelSource, SimulationRunner
 
@@ -80,6 +85,7 @@ class RepeatedCalibrationReport:
     blocks: tuple[CalibrationResult, ...]
     stability: tuple[CandidateStability, ...]
     accepted_parameters: tuple[ParameterTuple, ...]
+    manifest: ExperimentManifest | None = None
 
     @property
     def acceptance_set(self) -> ParameterAcceptanceSet:
@@ -102,6 +108,7 @@ class SeedBlockVariationReport:
     variants: tuple[SeedBlockVariant, ...]
     accepted_union: ParameterAcceptanceSet
     accepted_intersection: ParameterAcceptanceSet
+    manifest: ExperimentManifest | None = None
 
 
 @dataclass(frozen=True)
@@ -248,10 +255,24 @@ def repeated_grid_calibration(
         if accepted_blocks / block_count >= minimum_fraction:
             accepted_parameters.append(parameters)
 
+    block_hashes = tuple(
+        required_manifest_hash(block, label="repeated-calibration block")
+        for block in calibrations
+    )
+    manifest = ExperimentManifest(
+        stage=ExperimentStage.REPEATED_CALIBRATION,
+        inputs={
+            "seed_blocks": blocks,
+            "acceptance_loss_delta": loss_delta,
+            "min_acceptance_fraction": minimum_fraction,
+        },
+        parent_hashes=block_hashes,
+    )
     return RepeatedCalibrationReport(
         blocks=calibrations,
         stability=tuple(stability_entries),
         accepted_parameters=tuple(accepted_parameters),
+        manifest=manifest,
     )
 
 
@@ -322,12 +343,28 @@ def calibrate_seed_block_variants(
 
     accepted_union = set().union(*accepted_sets)
     accepted_intersection = set.intersection(*accepted_sets)
+    variant_hashes = tuple(
+        required_manifest_hash(
+            variant.calibration,
+            label="seed-block calibration variant",
+        )
+        for variant in variants
+    )
+    manifest = ExperimentManifest(
+        stage=ExperimentStage.SEED_BLOCK_VARIATION,
+        inputs={
+            "base_seed_blocks": base_blocks,
+            "seed_offsets": offsets,
+        },
+        parent_hashes=variant_hashes,
+    )
     return SeedBlockVariationReport(
         variants=tuple(variants),
         accepted_union=ParameterAcceptanceSet.from_parameters(accepted_union),
         accepted_intersection=ParameterAcceptanceSet.from_parameters(
             accepted_intersection
         ),
+        manifest=manifest,
     )
 
 

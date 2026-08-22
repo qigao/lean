@@ -6,10 +6,17 @@ import math
 import random
 
 from narrative_dynamics.contracts import (
+    ExperimentManifest,
+    ExperimentStage,
     ModelRun,
     Scenario,
     SimulationTrace,
     SimulatorModel,
+)
+from narrative_dynamics.manifest import (
+    RUNTIME_IDENTITY,
+    component_identity,
+    scenario_identity,
 )
 
 
@@ -31,7 +38,11 @@ def _canonical_parameters(
     return tuple(canonical)
 
 
-def _validated_model(model: SimulatorModel, *, expected_name: str | None = None) -> SimulatorModel:
+def _validated_model(
+    model: SimulatorModel,
+    *,
+    expected_name: str | None = None,
+) -> SimulatorModel:
     model_name = getattr(model, "name", None)
     if not isinstance(model_name, str) or not model_name:
         raise ValueError("model name must be a non-empty string")
@@ -69,7 +80,7 @@ def _materialize_model(model: ModelSource) -> SimulatorModel:
 
 
 class SimulationRunner:
-    """Owns seeds and canonical metadata around an untrusted model call."""
+    """Owns seeds, canonical metadata, and run manifests around a model call."""
 
     def _run_once_with_model(
         self,
@@ -88,6 +99,16 @@ class SimulationRunner:
         if not isinstance(result, ModelRun):
             raise TypeError("model simulate() must return ModelRun")
 
+        manifest = ExperimentManifest(
+            stage=ExperimentStage.SIMULATION_RUN,
+            inputs={
+                "model": component_identity(model),
+                "scenario": scenario_identity(scenario),
+                "parameters": canonical,
+                "seed": seed,
+                "runtime": RUNTIME_IDENTITY,
+            },
+        )
         return SimulationTrace(
             model_name=model.name,
             scenario_id=scenario.id,
@@ -95,6 +116,7 @@ class SimulationRunner:
             seed=seed,
             events=result.events,
             outcome=result.outcome,
+            manifest=manifest,
         )
 
     def run_once(

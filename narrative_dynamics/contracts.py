@@ -2,10 +2,18 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import Enum
+import hashlib
+import json
 import math
 import random
+import re
 from types import MappingProxyType
 from typing import Protocol
+
+
+MANIFEST_SCHEMA_VERSION = 1
+_CONTENT_HASH_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 def _freeze_canonical_value(value: object, *, label: str) -> object:
@@ -45,6 +53,140 @@ def _freeze_mapping(value: Mapping[str, object], *, label: str) -> Mapping[str, 
     return frozen
 
 
+def _canonical_hash_value(value: object, *, label: str) -> object:
+    """Encode canonical values with explicit type tags for stable hashing."""
+
+    if value is None:
+        return ("null",)
+    if isinstance(value, bool):
+        return ("bool", value)
+    if isinstance(value, int):
+        return ("int", str(value))
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError(f"{label} numbers must be finite")
+        return ("float", value.hex())
+    if isinstance(value, str):
+        return ("str", value)
+    if isinstance(value, Mapping):
+        keys = tuple(value)
+        if any(not isinstance(key, str) or not key for key in keys):
+            raise ValueError(f"{label} keys must be non-empty strings")
+        items: list[tuple[str, object]] = []
+        for key in sorted(keys):
+            items.append(
+                (
+                    key,
+                    _canonical_hash_value(
+                        value[key],
+                        label=f"{label}.{key}",
+                    ),
+                )
+            )
+        return ("mapping", tuple(items))
+    if isinstance(value, (list, tuple)):
+        return (
+            "sequence",
+            tuple(
+                _canonical_hash_value(item, label=f"{label}[{index}]")
+                for index, item in enumerate(value)
+            ),
+        )
+    raise TypeError(
+        f"{label} values must be canonical scalars, mappings, lists, or tuples"
+    )
+
+
+def stable_content_hash(value: object) -> str:
+    """Return a deterministic typed SHA-256 digest for canonical runtime data."""
+
+    canonical = _canonical_hash_value(value, label="content")
+    encoded = json.dumps(
+        canonical,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+
+
+def _validated_content_hash(value: object, *, label: str) -> str:
+    if not isinstance(value, str) or _CONTENT_HASH_PATTERN.fullmatch(value) is None:
+        raise ValueError(f"{label} must be a sha256 content hash")
+    return value
+
+
+class ExperimentStage(str, Enum):
+    """Stable manifest stages for the Python research runtime."""
+
+    SIMULATION_RUN = "simulation_run"
+    GRID_CALIBRATION = "grid_calibration"
+    REPEATED_CALIBRATION = "repeated_calibration"
+    SEED_BLOCK_VARIATION = "seed_block_variation"
+    SYNTHETIC_RECOVERY = "synthetic_recovery"
+    HELD_OUT_VALIDATION = "held_out_validation"
+    ACCEPTANCE_VALIDATION = "acceptance_validation"
+    SELECTION_VALIDATION = "selection_validation"
+    FINAL_TEST = "final_test"
+    LOCAL_SENSITIVITY = "local_sensitivity"
+
+
+@dataclass(frozen=True)
+class ExperimentManifest:
+    """Versioned immutable identity and parent chain for one experiment stage."""
+
+    stage: ExperimentStage | str
+    inputs: Mapping[str, object]
+    parent_hashes: tuple[str, ...] = ()
+    schema_version: int = MANIFEST_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.schema_version, int)
+            or isinstance(self.schema_version, bool)
+            or self.schema_version <= 0
+        ):
+            raise ValueError("manifest schema version must be a positive integer")
+        try:
+            stage = (
+                self.stage
+                if isinstance(self.stage, ExperimentStage)
+                else ExperimentStage(self.stage)
+            )
+        except (TypeError, ValueError) as error:
+            raise ValueError("manifest stage must be supported") from error
+
+        parent_hashes = tuple(
+            sorted(
+                {
+                    _validated_content_hash(
+                        parent_hash,
+                        label="manifest parent hash",
+                    )
+                    for parent_hash in self.parent_hashes
+                }
+            )
+        )
+        object.__setattr__(self, "stage", stage)
+        object.__setattr__(
+            self,
+            "inputs",
+            _freeze_mapping(self.inputs, label="manifest inputs"),
+        )
+        object.__setattr__(self, "parent_hashes", parent_hashes)
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(
+            {
+                "schema_version": self.schema_version,
+                "stage": self.stage.value,
+                "inputs": self.inputs,
+                "parent_hashes": self.parent_hashes,
+            }
+        )
+
+
 @dataclass(frozen=True)
 class Scenario:
     """Opaque model input identified by a stable experiment id."""
@@ -60,6 +202,10 @@ class Scenario:
             "payload",
             _freeze_mapping(self.payload, label="scenario payload"),
         )
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash({"id": self.id, "payload": self.payload})
 
 
 @dataclass(frozen=True)
@@ -111,11 +257,17 @@ class SimulationTrace:
     seed: int
     events: tuple[TraceEvent, ...]
     outcome: Mapping[str, object]
+    manifest: ExperimentManifest | None = None
 
     def __post_init__(self) -> None:
         events = tuple(self.events)
         if any(not isinstance(event, TraceEvent) for event in events):
             raise TypeError("simulation trace events must contain TraceEvent values")
+        if self.manifest is not None and not isinstance(
+            self.manifest,
+            ExperimentManifest,
+        ):
+            raise TypeError("simulation trace manifest must be an ExperimentManifest")
         object.__setattr__(self, "events", events)
         object.__setattr__(
             self,
@@ -126,6 +278,10 @@ class SimulationTrace:
     @property
     def parameter_map(self) -> dict[str, float]:
         return dict(self.parameters)
+
+    @property
+    def manifest_hash(self) -> str | None:
+        return None if self.manifest is None else self.manifest.content_hash
 
 
 class SimulatorModel(Protocol):

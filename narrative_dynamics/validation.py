@@ -7,7 +7,18 @@ import math
 from statistics import fmean
 
 from narrative_dynamics.calibration import CalibrationResult, calibrate_grid
-from narrative_dynamics.contracts import Scenario
+from narrative_dynamics.contracts import (
+    ExperimentManifest,
+    ExperimentStage,
+    Scenario,
+)
+from narrative_dynamics.manifest import (
+    callable_identity,
+    component_identity,
+    required_manifest_hash,
+    scenario_identity,
+    stable_content_hash,
+)
 from narrative_dynamics.metrics import (
     MetricExtractor,
     aggregate_metrics,
@@ -23,6 +34,7 @@ class SyntheticRecoveryReport:
     target_metrics: tuple[tuple[str, float], ...]
     calibration: CalibrationResult
     recovered: bool
+    manifest: ExperimentManifest | None = None
 
 
 @dataclass(frozen=True)
@@ -52,6 +64,7 @@ class HeldOutCaseEvaluation:
     metrics: tuple[tuple[str, float], ...]
     target: tuple[tuple[str, float], ...]
     loss: float
+    run_manifest_hashes: tuple[str, ...] = ()
 
     @property
     def metric_map(self) -> dict[str, float]:
@@ -68,6 +81,7 @@ class HeldOutValidationReport:
     cases: tuple[HeldOutCaseEvaluation, ...]
     mean_loss: float
     worst_loss: float
+    manifest: ExperimentManifest | None = None
 
     @property
     def max_loss(self) -> float:
@@ -95,6 +109,7 @@ class HeldOutAcceptanceReport:
     evaluations: tuple[AcceptedParameterHeldOutEvaluation, ...]
     retained_parameters: ParameterAcceptanceSet
     best: AcceptedParameterHeldOutEvaluation
+    manifest: ExperimentManifest | None = None
 
 
 class EvaluationRole(str, Enum):
@@ -138,6 +153,7 @@ class SelectionValidationReport:
     role: EvaluationRole
     candidate_report: HeldOutAcceptanceReport
     selected_parameters: tuple[tuple[str, float], ...]
+    manifest: ExperimentManifest | None = None
 
 
 @dataclass(frozen=True)
@@ -147,6 +163,7 @@ class FinalTestReport:
     suite_name: str
     role: EvaluationRole
     validation: HeldOutValidationReport
+    manifest: ExperimentManifest | None = None
 
 
 @dataclass(frozen=True)
@@ -198,6 +215,7 @@ class LocalSensitivityReport:
 
     baseline: HeldOutValidationReport
     parameters: tuple[LocalParameterSensitivity, ...]
+    manifest: ExperimentManifest | None = None
 
 
 def synthetic_recovery(
@@ -239,11 +257,34 @@ def synthetic_recovery(
         weights=weights,
     )
     canonical_true = observed_traces[0].parameters
+    recovered = calibration.best.parameters == canonical_true
+    observation_hashes = tuple(
+        required_manifest_hash(trace, label="synthetic observation trace")
+        for trace in observed_traces
+    )
+    calibration_hash = required_manifest_hash(
+        calibration,
+        label="synthetic recovery calibration",
+    )
+    manifest = ExperimentManifest(
+        stage=ExperimentStage.SYNTHETIC_RECOVERY,
+        inputs={
+            "model": component_identity(model),
+            "scenario": scenario_identity(scenario),
+            "true_parameters": canonical_true,
+            "observation_seeds": observed_seed_tuple,
+            "calibration_seeds": calibrated_seed_tuple,
+            "metric": callable_identity(extractor),
+            "target_hash": stable_content_hash(target),
+        },
+        parent_hashes=observation_hashes + (calibration_hash,),
+    )
     return SyntheticRecoveryReport(
         true_parameters=canonical_true,
         target_metrics=tuple(sorted(target.items())),
         calibration=calibration,
-        recovered=calibration.best.parameters == canonical_true,
+        recovered=recovered,
+        manifest=manifest,
     )
 
 
@@ -277,6 +318,8 @@ def validate_held_out(
         raise ValueError("held-out case names must be unique")
 
     evaluations: list[HeldOutCaseEvaluation] = []
+    case_inputs: list[dict[str, object]] = []
+    run_parent_hashes: list[str] = []
     canonical_parameters: tuple[tuple[str, float], ...] | None = None
     for case in held_out_cases:
         seeds = tuple(case.seeds)
@@ -294,6 +337,11 @@ def validate_held_out(
         elif traces[0].parameters != canonical_parameters:
             raise RuntimeError("held-out validation changed its parameter metadata")
 
+        run_hashes = tuple(
+            required_manifest_hash(trace, label="held-out trace")
+            for trace in traces
+        )
+        run_parent_hashes.extend(run_hashes)
         metrics = aggregate_metrics(traces, extractor)
         loss = weighted_squared_error(
             metrics,
@@ -309,16 +357,45 @@ def validate_held_out(
                     sorted((name, float(value)) for name, value in case.target.items())
                 ),
                 loss=loss,
+                run_manifest_hashes=run_hashes,
             )
+        )
+        case_inputs.append(
+            {
+                "name": case.effective_name,
+                "scenario": scenario_identity(case.scenario),
+                "seeds": seeds,
+                "target_hash": stable_content_hash(case.target),
+                "weights_hash": (
+                    None
+                    if case.weights is None
+                    else stable_content_hash(case.weights)
+                ),
+            }
         )
 
     assert canonical_parameters is not None
     losses = tuple(evaluation.loss for evaluation in evaluations)
+    manifest = ExperimentManifest(
+        stage=ExperimentStage.HELD_OUT_VALIDATION,
+        inputs={
+            "model": component_identity(model),
+            "parameters": canonical_parameters,
+            "cases": tuple(case_inputs),
+            "metric": callable_identity(extractor),
+            "loss": {
+                "name": "weighted_squared_error",
+                "version": "1",
+            },
+        },
+        parent_hashes=tuple(run_parent_hashes),
+    )
     return HeldOutValidationReport(
         parameters=canonical_parameters,
         cases=tuple(evaluations),
         mean_loss=fmean(losses),
         worst_loss=max(losses),
+        manifest=manifest,
     )
 
 
@@ -392,10 +469,27 @@ def validate_acceptance_set_held_out(
         if (mean_limit is None or evaluation.validation.mean_loss <= mean_limit)
         and (worst_limit is None or evaluation.validation.worst_loss <= worst_limit)
     )
+    validation_hashes = tuple(
+        required_manifest_hash(
+            evaluation.validation,
+            label="accepted-parameter held-out validation",
+        )
+        for evaluation in evaluations
+    )
+    manifest = ExperimentManifest(
+        stage=ExperimentStage.ACCEPTANCE_VALIDATION,
+        inputs={
+            "accepted_parameters": acceptance_set.parameters,
+            "max_mean_loss": mean_limit,
+            "max_worst_loss": worst_limit,
+        },
+        parent_hashes=validation_hashes,
+    )
     return HeldOutAcceptanceReport(
         evaluations=evaluations,
         retained_parameters=ParameterAcceptanceSet.from_parameters(retained),
         best=evaluations[0],
+        manifest=manifest,
     )
 
 
@@ -431,11 +525,26 @@ def select_on_validation_suite(
         for evaluation in candidate_report.evaluations
         if evaluation.parameters in retained
     )
+    candidate_hash = required_manifest_hash(
+        candidate_report,
+        label="selection candidate report",
+    )
+    manifest = ExperimentManifest(
+        stage=ExperimentStage.SELECTION_VALIDATION,
+        inputs={
+            "suite_name": suite.name,
+            "role": suite.role.value,
+            "max_mean_loss": max_mean_loss,
+            "max_worst_loss": max_worst_loss,
+        },
+        parent_hashes=(candidate_hash,),
+    )
     return SelectionValidationReport(
         suite_name=suite.name,
         role=suite.role,
         candidate_report=candidate_report,
         selected_parameters=selected_parameters,
+        manifest=manifest,
     )
 
 
@@ -451,16 +560,31 @@ def evaluate_on_final_test_suite(
 
     if suite.role is not EvaluationRole.FINAL_TEST:
         raise ValueError("final-test evaluation requires a final-test suite")
+    validation = validate_held_out(
+        runner=runner,
+        model=model,
+        parameters=parameters,
+        cases=suite.cases,
+        extractor=extractor,
+    )
+    validation_hash = required_manifest_hash(
+        validation,
+        label="final-test validation",
+    )
+    manifest = ExperimentManifest(
+        stage=ExperimentStage.FINAL_TEST,
+        inputs={
+            "suite_name": suite.name,
+            "role": suite.role.value,
+            "parameters": validation.parameters,
+        },
+        parent_hashes=(validation_hash,),
+    )
     return FinalTestReport(
         suite_name=suite.name,
         role=suite.role,
-        validation=validate_held_out(
-            runner=runner,
-            model=model,
-            parameters=parameters,
-            cases=suite.cases,
-            extractor=extractor,
-        ),
+        validation=validation,
+        manifest=manifest,
     )
 
 
@@ -491,6 +615,10 @@ def local_sensitivity_report(
         raise ValueError("local sensitivity contains an unknown parameter")
 
     sensitivities: list[LocalParameterSensitivity] = []
+    parent_hashes: list[str] = [
+        required_manifest_hash(baseline, label="sensitivity baseline")
+    ]
+    canonical_steps: list[tuple[str, float]] = []
     for name in sorted(step_sizes):
         try:
             step = float(step_sizes[name])
@@ -523,6 +651,13 @@ def local_sensitivity_report(
             cases=held_out_cases,
             extractor=extractor,
         )
+        parent_hashes.extend(
+            (
+                required_manifest_hash(lower, label="sensitivity lower report"),
+                required_manifest_hash(upper, label="sensitivity upper report"),
+            )
+        )
+        canonical_steps.append((name, step))
         sensitivities.append(
             LocalParameterSensitivity(
                 name=name,
@@ -534,7 +669,16 @@ def local_sensitivity_report(
             )
         )
 
+    manifest = ExperimentManifest(
+        stage=ExperimentStage.LOCAL_SENSITIVITY,
+        inputs={
+            "baseline_parameters": baseline.parameters,
+            "step_sizes": tuple(canonical_steps),
+        },
+        parent_hashes=tuple(parent_hashes),
+    )
     return LocalSensitivityReport(
         baseline=baseline,
         parameters=tuple(sensitivities),
+        manifest=manifest,
     )
