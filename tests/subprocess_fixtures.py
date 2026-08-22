@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import time
 
@@ -73,6 +74,21 @@ class HugeTraceProcessModel:
         return ModelRun(events=(), outcome={"blob": "x" * size})
 
 
+class DescendantProcessModel:
+    name = "process-descendant"
+
+    def simulate(self, scenario, parameters, rng):
+        child = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                "import time; time.sleep(30)",
+            ]
+        )
+        print(f"descendant started {child.pid}", flush=True)
+        return ModelRun(events=(), outcome={"child_pid": child.pid})
+
+
 class BusyProcessModel:
     name = "process-busy"
 
@@ -101,6 +117,10 @@ def create_noisy_model():
 
 def create_huge_trace_model():
     return HugeTraceProcessModel()
+
+
+def create_descendant_model():
+    return DescendantProcessModel()
 
 
 def create_busy_model():

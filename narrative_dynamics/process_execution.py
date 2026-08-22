@@ -436,6 +436,17 @@ def _terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
         pass
 
 
+def _kill_remaining_process_group(process: subprocess.Popen[bytes]) -> None:
+    """Kill descendants left in the worker's dedicated POSIX process group."""
+
+    if os.name != "posix":
+        return
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+
+
 def _resource_for_return_code(
     return_code: int,
     limits: ProcessLimits,
@@ -882,6 +893,7 @@ class SubprocessModel:
                 finally:
                     if process.poll() is None:
                         _terminate_process_tree(process)
+                    _kill_remaining_process_group(process)
 
 
 __all__ = [

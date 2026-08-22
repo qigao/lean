@@ -143,6 +143,36 @@ class SubprocessExecutionTests(unittest.TestCase):
             "tests.subprocess_fixtures:create_echo_model",
         )
 
+    @unittest.skipUnless(os.name == "posix", "POSIX process groups are required")
+    def test_success_cleans_up_descendant_process_group(self):
+        source = self.source(
+            "process-descendant",
+            "tests.subprocess_fixtures:create_descendant_model",
+        )
+        trace = self.runner.run_once(
+            source,
+            self.scenario,
+            {},
+            seed=10,
+        )
+        child_pid = int(trace.outcome["child_pid"])
+
+        def exists():
+            try:
+                os.kill(child_pid, 0)
+            except ProcessLookupError:
+                return False
+            return True
+
+        try:
+            deadline = time.monotonic() + 2.0
+            while exists() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertFalse(exists(), "worker descendant survived successful return")
+        finally:
+            if exists():
+                os.kill(child_pid, signal.SIGKILL)
+
     def test_timeout_terminates_worker_and_preserves_partial_output(self):
         api = execution_api(self)
         source = self.source(
@@ -336,7 +366,6 @@ class SubprocessRegistryTests(unittest.TestCase):
             identity["factory"],
             "tests.subprocess_fixtures:create_echo_model",
         )
-
 
     def test_unrelated_execute_method_does_not_opt_into_process_execution(self):
         model = IncidentalExecuteModel()
