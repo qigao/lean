@@ -24,6 +24,7 @@ from narrative_dynamics.process_execution import (
     CancellationToken,
     ModelCancelled,
     ProcessExecutionResult,
+    SubprocessModel,
 )
 
 
@@ -158,13 +159,11 @@ def _materialize_model(model: ModelSource) -> SimulatorModel:
 
 
 def _execution_callable(model: ModelSource):
-    direct = getattr(model, "execute", None)
-    if callable(direct):
-        return direct
+    if isinstance(model, SubprocessModel):
+        return model.execute
     nested_source = getattr(model, "source", None)
-    nested = getattr(nested_source, "execute", None)
-    if callable(nested):
-        return nested
+    if isinstance(nested_source, SubprocessModel):
+        return nested_source.execute
     return None
 
 

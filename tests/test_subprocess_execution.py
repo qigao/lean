@@ -9,7 +9,7 @@ import threading
 import time
 import unittest
 
-from narrative_dynamics.contracts import Scenario
+from narrative_dynamics.contracts import ModelRun, Scenario
 from narrative_dynamics.model_contract import ModelContract, ModelLifecycle, ModelSchema
 from narrative_dynamics.registry import ModelRegistry
 from narrative_dynamics.simulation import SimulationRunner
@@ -36,6 +36,19 @@ def execution_api(test_case):
     missing = tuple(name for name in names if getattr(module, name, None) is None)
     test_case.assertEqual(missing, (), f"subprocess execution API is missing: {missing}")
     return module
+
+
+class IncidentalExecuteModel:
+    name = "incidental-execute"
+
+    def execute(self):
+        raise AssertionError("unrelated execute() must not be used by the runner")
+
+    def simulate(self, scenario, parameters, rng):
+        return ModelRun(
+            events=(),
+            outcome={"value": float(parameters["value"])},
+        )
 
 
 def full_contract():
@@ -323,6 +336,22 @@ class SubprocessRegistryTests(unittest.TestCase):
             identity["factory"],
             "tests.subprocess_fixtures:create_echo_model",
         )
+
+
+    def test_unrelated_execute_method_does_not_opt_into_process_execution(self):
+        model = IncidentalExecuteModel()
+        registry = ModelRegistry()
+        descriptor = registry.register(model)
+
+        self.assertEqual(descriptor.lifecycle, ModelLifecycle.SHARED_INSTANCE)
+        trace = SimulationRunner().run_once(
+            descriptor,
+            Scenario(id="incidental", payload={}),
+            {"value": 9.0},
+            seed=9,
+        )
+        self.assertEqual(trace.outcome["value"], 9.0)
+        self.assertIsNone(trace.execution)
 
 
 if __name__ == "__main__":

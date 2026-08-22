@@ -12,6 +12,7 @@ from narrative_dynamics.model_contract import (
     ModelSchema,
     validate_contract_matches_source,
 )
+from narrative_dynamics.process_execution import SubprocessModel
 from narrative_dynamics.simulation import ModelSource
 
 
@@ -76,7 +77,7 @@ class ModelDescriptor:
         return self.contract.complete
 
     def instantiate(self) -> SimulatorModel:
-        if callable(getattr(self.model, "execute", None)):
+        if isinstance(self.model, SubprocessModel):
             raise TypeError(
                 "fresh-process model sources execute directly and cannot be instantiated"
             )
@@ -164,9 +165,8 @@ class ModelRegistry:
         if name != name.strip():
             raise ValueError("registered model name cannot have surrounding whitespace")
 
-        execute = getattr(model, "execute", None)
         instantiate = getattr(model, "instantiate", None)
-        if callable(execute):
+        if isinstance(model, SubprocessModel):
             lifecycle = ModelLifecycle.FRESH_PROCESS_PER_RUN
         elif callable(instantiate):
             lifecycle = ModelLifecycle.FRESH_PER_BATCH
