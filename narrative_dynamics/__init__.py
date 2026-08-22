@@ -1,5 +1,15 @@
 """Research simulation, calibration, validation, and model-adapter runtime."""
 
+from narrative_dynamics.conformance import (
+    ConformanceDefinitionError,
+    ConformanceMismatch,
+    ExactRational,
+    ReferenceSuite,
+    ReferenceVector,
+    assert_reference_conformance,
+    default_operation_evaluators,
+    load_reference_suite,
+)
 from narrative_dynamics.contracts import (
     ExecutionCapture,
     ExperimentManifest,
@@ -42,6 +52,9 @@ from narrative_dynamics.simulation import ModelFactory, SimulationRunner
 
 __all__ = [
     "CancellationToken",
+    "ConformanceDefinitionError",
+    "ConformanceMismatch",
+    "ExactRational",
     "ExecutionCapture",
     "ExperimentManifest",
     "ExperimentStage",
@@ -64,13 +77,19 @@ __all__ = [
     "ModelTraceLimitExceeded",
     "ProcessExecutionResult",
     "ProcessLimits",
+    "REFERENCE_SCHEMA_DIALECT",
     "RUNTIME_SCHEMA_DIALECT",
+    "ReferenceSuite",
+    "ReferenceVector",
     "Scenario",
     "SimulationRunner",
     "SimulationTrace",
     "SimulatorModel",
     "SubprocessModel",
     "TraceEvent",
+    "assert_reference_conformance",
+    "default_operation_evaluators",
+    "load_reference_suite",
     "stable_content_hash",
     "validate_schema_value",
 ]
