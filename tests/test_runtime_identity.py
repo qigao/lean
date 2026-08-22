@@ -5,9 +5,11 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+import types
 import unittest
 
 from narrative_dynamics.attestation import (
+    ImplementationAttestationUnavailable,
     RepositoryIdentity,
     ResultArtifact,
     detect_repository_identity,
@@ -79,6 +81,26 @@ class ImplementationMeasurementTests(unittest.TestCase):
                 "python-module:tests.subprocess_fixtures",
             ),
         )
+
+    def test_loaded_dynamic_module_cannot_use_a_shadow_file_for_attestation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            shadow_path = Path(directory) / "shadowed_fixture.py"
+            shadow_path.write_text("class Model: pass\n", encoding="utf-8")
+            dynamic_module = types.ModuleType("shadowed_fixture")
+            dynamic_model = type(
+                "Model",
+                (),
+                {"__module__": "shadowed_fixture"},
+            )
+            dynamic_module.Model = dynamic_model
+            sys.modules["shadowed_fixture"] = dynamic_module
+            sys.path.insert(0, directory)
+            try:
+                with self.assertRaises(ImplementationAttestationUnavailable):
+                    measure_implementation(dynamic_model())
+            finally:
+                sys.path.remove(directory)
+                sys.modules.pop("shadowed_fixture", None)
 
     def test_runner_snapshots_implementation_before_model_execution(self):
         with tempfile.TemporaryDirectory() as directory:
