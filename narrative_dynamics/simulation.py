@@ -26,6 +26,10 @@ from narrative_dynamics.process_execution import (
     ProcessExecutionResult,
     SubprocessModel,
 )
+from narrative_dynamics.schema_validation import (
+    validate_contract_events,
+    validate_contract_inputs,
+)
 
 
 def _canonical_parameters(
@@ -180,7 +184,7 @@ def _raise_if_cancelled(
 
 
 class SimulationRunner:
-    """Owns seeds, canonical metadata, and run manifests around a model call."""
+    """Owns seeds, schema checks, canonical metadata, and run manifests."""
 
     @staticmethod
     def _trace(
@@ -191,6 +195,7 @@ class SimulationRunner:
         seed: int,
         result: ModelRun,
         execution: ExecutionCapture | None,
+        input_schema_validation: Mapping[str, object] | None,
     ) -> SimulationTrace:
         if not isinstance(result, ModelRun):
             raise TypeError("model execution must return ModelRun")
@@ -198,15 +203,25 @@ class SimulationRunner:
         if not isinstance(model_name, str) or not model_name:
             raise ValueError("model source name must be a non-empty string")
 
+        schema_validation = validate_contract_events(
+            identity_source,
+            result.events,
+            input_schema_validation,
+            execution=execution,
+        )
+        manifest_inputs: dict[str, object] = {
+            "model": component_identity(identity_source),
+            "scenario": scenario_identity(scenario),
+            "parameters": canonical_parameters,
+            "seed": seed,
+            "runtime": RUNTIME_IDENTITY,
+        }
+        if schema_validation is not None:
+            manifest_inputs["schema_validation"] = schema_validation
+
         manifest = ExperimentManifest(
             stage=ExperimentStage.SIMULATION_RUN,
-            inputs={
-                "model": component_identity(identity_source),
-                "scenario": scenario_identity(scenario),
-                "parameters": canonical_parameters,
-                "seed": seed,
-                "runtime": RUNTIME_IDENTITY,
-            },
+            inputs=manifest_inputs,
         )
         return SimulationTrace(
             model_name=model_name,
@@ -228,6 +243,7 @@ class SimulationRunner:
         *,
         seed: int,
         cancellation: CancellationToken | None,
+        input_schema_validation: Mapping[str, object] | None,
     ) -> SimulationTrace:
         _raise_if_cancelled(cancellation)
         result = model.simulate(
@@ -242,6 +258,7 @@ class SimulationRunner:
             seed=seed,
             result=result,
             execution=None,
+            input_schema_validation=input_schema_validation,
         )
 
     def _run_once_with_executor(
@@ -253,6 +270,7 @@ class SimulationRunner:
         *,
         seed: int,
         cancellation: CancellationToken | None,
+        input_schema_validation: Mapping[str, object] | None,
     ) -> SimulationTrace:
         _raise_if_cancelled(cancellation)
         executed = executor(
@@ -272,6 +290,7 @@ class SimulationRunner:
             seed=seed,
             result=executed.run,
             execution=executed.capture,
+            input_schema_validation=input_schema_validation,
         )
 
     def run_once(
@@ -285,6 +304,11 @@ class SimulationRunner:
     ) -> SimulationTrace:
         validated_seed = _validated_seed(seed)
         canonical = _canonical_parameters(parameters)
+        schema_validation = validate_contract_inputs(
+            model,
+            scenario,
+            dict(canonical),
+        )
         executor = _execution_callable(model)
         if executor is not None:
             return self._run_once_with_executor(
@@ -294,6 +318,7 @@ class SimulationRunner:
                 canonical,
                 seed=validated_seed,
                 cancellation=cancellation,
+                input_schema_validation=schema_validation,
             )
 
         materialized = _materialize_model(model)
@@ -304,6 +329,7 @@ class SimulationRunner:
             canonical,
             seed=validated_seed,
             cancellation=cancellation,
+            input_schema_validation=schema_validation,
         )
 
     def run_batch(
@@ -319,6 +345,11 @@ class SimulationRunner:
         if not ordered_seeds:
             raise ValueError("simulation batch must contain at least one seed")
         canonical = _canonical_parameters(parameters)
+        schema_validation = validate_contract_inputs(
+            model,
+            scenario,
+            dict(canonical),
+        )
 
         executor = _execution_callable(model)
         if executor is not None:
@@ -330,6 +361,7 @@ class SimulationRunner:
                     canonical,
                     seed=seed,
                     cancellation=cancellation,
+                    input_schema_validation=schema_validation,
                 )
                 for seed in ordered_seeds
             )
@@ -343,6 +375,7 @@ class SimulationRunner:
                 canonical,
                 seed=seed,
                 cancellation=cancellation,
+                input_schema_validation=schema_validation,
             )
             for seed in ordered_seeds
         )
