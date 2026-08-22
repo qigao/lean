@@ -15,6 +15,45 @@ ParameterTuple = tuple[tuple[str, float], ...]
 
 
 @dataclass(frozen=True)
+class ParameterAcceptanceSet:
+    """Canonical finite set of parameter candidates retained by uncertainty checks."""
+
+    parameters: tuple[ParameterTuple, ...]
+
+    def __post_init__(self) -> None:
+        canonical = tuple(
+            sorted({_canonical_parameter_tuple(candidate) for candidate in self.parameters})
+        )
+        if canonical:
+            schema = tuple(name for name, _ in canonical[0])
+            for candidate in canonical[1:]:
+                if tuple(name for name, _ in candidate) != schema:
+                    raise ValueError("accepted parameter tuples must share one schema")
+        object.__setattr__(self, "parameters", canonical)
+
+    @classmethod
+    def from_parameters(
+        cls,
+        parameters: Iterable[Iterable[tuple[str, float]]],
+    ) -> "ParameterAcceptanceSet":
+        return cls(parameters=tuple(tuple(candidate) for candidate in parameters))
+
+    @property
+    def count(self) -> int:
+        return len(self.parameters)
+
+    @property
+    def parameter_maps(self) -> tuple[dict[str, float], ...]:
+        return tuple(dict(parameters) for parameters in self.parameters)
+
+    def __iter__(self):
+        return iter(self.parameters)
+
+    def __len__(self) -> int:
+        return len(self.parameters)
+
+
+@dataclass(frozen=True)
 class CandidateStability:
     """How one finite-grid candidate behaves across independent seed blocks."""
 
@@ -41,6 +80,28 @@ class RepeatedCalibrationReport:
     blocks: tuple[CalibrationResult, ...]
     stability: tuple[CandidateStability, ...]
     accepted_parameters: tuple[ParameterTuple, ...]
+
+    @property
+    def acceptance_set(self) -> ParameterAcceptanceSet:
+        return ParameterAcceptanceSet.from_parameters(self.accepted_parameters)
+
+
+@dataclass(frozen=True)
+class SeedBlockVariant:
+    """One deterministic translation of every seed in every calibration block."""
+
+    offset: int
+    seed_blocks: tuple[tuple[int, ...], ...]
+    calibration: RepeatedCalibrationReport
+
+
+@dataclass(frozen=True)
+class SeedBlockVariationReport:
+    """Calibration robustness under deterministic whole-block seed translations."""
+
+    variants: tuple[SeedBlockVariant, ...]
+    accepted_union: ParameterAcceptanceSet
+    accepted_intersection: ParameterAcceptanceSet
 
 
 @dataclass(frozen=True)
@@ -182,6 +243,81 @@ def repeated_grid_calibration(
         blocks=calibrations,
         stability=tuple(stability_entries),
         accepted_parameters=tuple(accepted_parameters),
+    )
+
+
+def calibrate_seed_block_variants(
+    *,
+    runner: SimulationRunner,
+    model: SimulatorModel,
+    scenario: Scenario,
+    parameter_grid: Mapping[str, Iterable[float]],
+    seed_blocks: Iterable[Iterable[int]],
+    seed_offsets: Iterable[int],
+    extractor: MetricExtractor,
+    target: Mapping[str, float],
+    weights: Mapping[str, float] | None = None,
+    acceptance_loss_delta: float = 0.0,
+    min_acceptance_fraction: float = 1.0,
+) -> SeedBlockVariationReport:
+    """Re-run repeated calibration after translating complete seed blocks.
+
+    Each offset is added to every seed while preserving block membership and
+    block size. The report exposes both the union and intersection of parameter
+    candidates accepted across the resulting calibrations.
+    """
+
+    base_blocks = tuple(tuple(block) for block in seed_blocks)
+    if not base_blocks:
+        raise ValueError("seed-block variation requires at least one seed block")
+    if any(not block for block in base_blocks):
+        raise ValueError("every seed-block variation block must be non-empty")
+    if any(not isinstance(seed, int) for block in base_blocks for seed in block):
+        raise TypeError("seed-block variation seeds must be integers")
+
+    offsets = tuple(seed_offsets)
+    if not offsets:
+        raise ValueError("seed-block variation requires at least one offset")
+    if any(not isinstance(offset, int) for offset in offsets):
+        raise TypeError("seed-block variation offsets must be integers")
+    if len(set(offsets)) != len(offsets):
+        raise ValueError("seed-block variation offsets must be unique")
+
+    variants: list[SeedBlockVariant] = []
+    accepted_sets: list[set[ParameterTuple]] = []
+    for offset in offsets:
+        mutated_blocks = tuple(
+            tuple(seed + offset for seed in block) for block in base_blocks
+        )
+        calibration = repeated_grid_calibration(
+            runner=runner,
+            model=model,
+            scenario=scenario,
+            parameter_grid=parameter_grid,
+            seed_blocks=mutated_blocks,
+            extractor=extractor,
+            target=target,
+            weights=weights,
+            acceptance_loss_delta=acceptance_loss_delta,
+            min_acceptance_fraction=min_acceptance_fraction,
+        )
+        variants.append(
+            SeedBlockVariant(
+                offset=offset,
+                seed_blocks=mutated_blocks,
+                calibration=calibration,
+            )
+        )
+        accepted_sets.append(set(calibration.accepted_parameters))
+
+    accepted_union = set().union(*accepted_sets)
+    accepted_intersection = set.intersection(*accepted_sets)
+    return SeedBlockVariationReport(
+        variants=tuple(variants),
+        accepted_union=ParameterAcceptanceSet.from_parameters(accepted_union),
+        accepted_intersection=ParameterAcceptanceSet.from_parameters(
+            accepted_intersection
+        ),
     )
 
 

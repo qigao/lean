@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+import math
 from statistics import fmean
 
 from narrative_dynamics.calibration import CalibrationResult, calibrate_grid
@@ -12,6 +13,7 @@ from narrative_dynamics.metrics import (
     weighted_squared_error,
 )
 from narrative_dynamics.simulation import SimulationRunner
+from narrative_dynamics.uncertainty import ParameterAcceptanceSet
 
 
 @dataclass(frozen=True)
@@ -71,6 +73,78 @@ class HeldOutValidationReport:
         """Alias emphasizing that the report retains the worst held-out case."""
 
         return self.worst_loss
+
+
+@dataclass(frozen=True)
+class AcceptedParameterHeldOutEvaluation:
+    """External-validation result for one uncertainty-retained parameter tuple."""
+
+    parameters: tuple[tuple[str, float], ...]
+    validation: HeldOutValidationReport
+
+    @property
+    def parameter_map(self) -> dict[str, float]:
+        return dict(self.parameters)
+
+
+@dataclass(frozen=True)
+class HeldOutAcceptanceReport:
+    """Rank and optionally filter an accepted parameter set on held-out cases."""
+
+    evaluations: tuple[AcceptedParameterHeldOutEvaluation, ...]
+    retained_parameters: ParameterAcceptanceSet
+    best: AcceptedParameterHeldOutEvaluation
+
+
+@dataclass(frozen=True)
+class LocalParameterSensitivity:
+    """Central finite-difference sensitivity for one parameter coordinate."""
+
+    name: str
+    baseline_value: float
+    step: float
+    baseline: HeldOutValidationReport
+    lower: HeldOutValidationReport
+    upper: HeldOutValidationReport
+
+    @property
+    def mean_loss_slope(self) -> float:
+        return (self.upper.mean_loss - self.lower.mean_loss) / (2.0 * self.step)
+
+    @property
+    def mean_loss_curvature(self) -> float:
+        return (
+            self.upper.mean_loss
+            - 2.0 * self.baseline.mean_loss
+            + self.lower.mean_loss
+        ) / (self.step * self.step)
+
+    @property
+    def worst_loss_slope(self) -> float:
+        return (self.upper.worst_loss - self.lower.worst_loss) / (2.0 * self.step)
+
+    @property
+    def worst_loss_curvature(self) -> float:
+        return (
+            self.upper.worst_loss
+            - 2.0 * self.baseline.worst_loss
+            + self.lower.worst_loss
+        ) / (self.step * self.step)
+
+    @property
+    def max_absolute_mean_loss_change(self) -> float:
+        return max(
+            abs(self.lower.mean_loss - self.baseline.mean_loss),
+            abs(self.upper.mean_loss - self.baseline.mean_loss),
+        )
+
+
+@dataclass(frozen=True)
+class LocalSensitivityReport:
+    """One-at-a-time held-out loss sensitivity around fixed parameters."""
+
+    baseline: HeldOutValidationReport
+    parameters: tuple[LocalParameterSensitivity, ...]
 
 
 def synthetic_recovery(
@@ -192,4 +266,157 @@ def validate_held_out(
         cases=tuple(evaluations),
         mean_loss=fmean(losses),
         worst_loss=max(losses),
+    )
+
+
+def _optional_loss_limit(value: float | None, *, label: str) -> float | None:
+    if value is None:
+        return None
+    try:
+        validated = float(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{label} must be numeric") from error
+    if not math.isfinite(validated) or validated < 0.0:
+        raise ValueError(f"{label} must be finite and non-negative")
+    return validated
+
+
+def validate_acceptance_set_held_out(
+    *,
+    runner: SimulationRunner,
+    model: SimulatorModel,
+    accepted_parameters: ParameterAcceptanceSet
+    | Iterable[Iterable[tuple[str, float]]],
+    cases: Iterable[HeldOutCase],
+    extractor: MetricExtractor,
+    max_mean_loss: float | None = None,
+    max_worst_loss: float | None = None,
+) -> HeldOutAcceptanceReport:
+    """Externally validate every candidate in a finite parameter acceptance set.
+
+    Candidates are ranked by mean held-out loss and then worst-case loss.
+    Optional non-negative limits turn the external suite into a second-stage
+    filter without re-calibrating any candidate.
+    """
+
+    acceptance_set = (
+        accepted_parameters
+        if isinstance(accepted_parameters, ParameterAcceptanceSet)
+        else ParameterAcceptanceSet.from_parameters(accepted_parameters)
+    )
+    if not acceptance_set.parameters:
+        raise ValueError("held-out acceptance validation requires candidates")
+
+    held_out_cases = tuple(cases)
+    mean_limit = _optional_loss_limit(max_mean_loss, label="maximum mean loss")
+    worst_limit = _optional_loss_limit(max_worst_loss, label="maximum worst loss")
+
+    evaluations = tuple(
+        sorted(
+            (
+                AcceptedParameterHeldOutEvaluation(
+                    parameters=parameters,
+                    validation=validate_held_out(
+                        runner=runner,
+                        model=model,
+                        parameters=dict(parameters),
+                        cases=held_out_cases,
+                        extractor=extractor,
+                    ),
+                )
+                for parameters in acceptance_set.parameters
+            ),
+            key=lambda evaluation: (
+                evaluation.validation.mean_loss,
+                evaluation.validation.worst_loss,
+                evaluation.parameters,
+            ),
+        )
+    )
+    retained = tuple(
+        evaluation.parameters
+        for evaluation in evaluations
+        if (mean_limit is None or evaluation.validation.mean_loss <= mean_limit)
+        and (worst_limit is None or evaluation.validation.worst_loss <= worst_limit)
+    )
+    return HeldOutAcceptanceReport(
+        evaluations=evaluations,
+        retained_parameters=ParameterAcceptanceSet.from_parameters(retained),
+        best=evaluations[0],
+    )
+
+
+def local_sensitivity_report(
+    *,
+    runner: SimulationRunner,
+    model: SimulatorModel,
+    parameters: Mapping[str, float],
+    cases: Iterable[HeldOutCase],
+    extractor: MetricExtractor,
+    step_sizes: Mapping[str, float],
+) -> LocalSensitivityReport:
+    """Compute one-at-a-time central finite differences on held-out losses."""
+
+    held_out_cases = tuple(cases)
+    baseline = validate_held_out(
+        runner=runner,
+        model=model,
+        parameters=parameters,
+        cases=held_out_cases,
+        extractor=extractor,
+    )
+    baseline_parameters = dict(baseline.parameters)
+    if not step_sizes:
+        raise ValueError("local sensitivity requires at least one step size")
+    unknown = set(step_sizes) - set(baseline_parameters)
+    if unknown:
+        raise ValueError("local sensitivity contains an unknown parameter")
+
+    sensitivities: list[LocalParameterSensitivity] = []
+    for name in sorted(step_sizes):
+        try:
+            step = float(step_sizes[name])
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"sensitivity step for {name!r} must be numeric") from error
+        if not math.isfinite(step) or step <= 0.0:
+            raise ValueError("local sensitivity steps must be finite and positive")
+
+        baseline_value = baseline_parameters[name]
+        lower_value = baseline_value - step
+        upper_value = baseline_value + step
+        if not math.isfinite(lower_value) or not math.isfinite(upper_value):
+            raise ValueError("local sensitivity perturbations must remain finite")
+
+        lower_parameters = dict(baseline_parameters)
+        upper_parameters = dict(baseline_parameters)
+        lower_parameters[name] = lower_value
+        upper_parameters[name] = upper_value
+        lower = validate_held_out(
+            runner=runner,
+            model=model,
+            parameters=lower_parameters,
+            cases=held_out_cases,
+            extractor=extractor,
+        )
+        upper = validate_held_out(
+            runner=runner,
+            model=model,
+            parameters=upper_parameters,
+            cases=held_out_cases,
+            extractor=extractor,
+        )
+        sensitivities.append(
+            LocalParameterSensitivity(
+                name=name,
+                baseline_value=baseline_value,
+                step=step,
+                baseline=baseline,
+                lower=lower,
+                upper=upper,
+            )
+        )
+
+    return LocalSensitivityReport(
+        baseline=baseline,
+        parameters=tuple(sensitivities),
     )
