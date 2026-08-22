@@ -12,7 +12,7 @@ structure ExactRat where
 
 /-- Interpret one exact reference value in the same real-number domain used by
 the formal core definitions. -/
-def ExactRat.toReal (value : ExactRat) : ℝ :=
+noncomputable def ExactRat.toReal (value : ExactRat) : ℝ :=
   (value.numerator : ℝ) / (value.denominator : ℝ)
 
 private def exactRat (numerator : Int) (denominator : Nat) : ExactRat :=
