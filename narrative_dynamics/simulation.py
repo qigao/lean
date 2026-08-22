@@ -20,6 +20,7 @@ from narrative_dynamics.manifest import (
     RUNTIME_IDENTITY,
     component_identity,
     scenario_identity,
+    scenario_identity_from_payload,
 )
 from narrative_dynamics.process_execution import (
     CancellationToken,
@@ -173,18 +174,19 @@ def _execution_callable(model: ModelSource):
     return None
 
 
-def _scenario_validation_view(
+def _scenario_boundary_snapshot(
     model: ModelSource,
     scenario: object,
-) -> object:
-    """Use the same custom payload for schema validation and manifest identity."""
+) -> tuple[object, Mapping[str, object]]:
+    """Snapshot once for schema validation and the recorded scenario identity."""
 
     contract = getattr(model, "contract", None)
     scenario_schema = getattr(contract, "scenario_schema", None)
-    if not bool(getattr(scenario_schema, "specified", False)):
-        return scenario
-    if isinstance(scenario, Scenario):
-        return scenario
+    if (
+        not bool(getattr(scenario_schema, "specified", False))
+        or isinstance(scenario, Scenario)
+    ):
+        return scenario, scenario_identity(scenario)
 
     manifest_payload = getattr(scenario, "manifest_payload", None)
     if not callable(manifest_payload):
@@ -205,7 +207,10 @@ def _scenario_validation_view(
             schema_name=schema_name,
         )
 
-    return SimpleNamespace(payload=payload)
+    return (
+        SimpleNamespace(payload=payload),
+        scenario_identity_from_payload(scenario, payload),
+    )
 
 
 def _raise_if_cancelled(
@@ -228,6 +233,7 @@ class SimulationRunner:
         *,
         identity_source: ModelSource,
         scenario: Scenario,
+        scenario_manifest_identity: Mapping[str, object],
         canonical_parameters: tuple[tuple[str, float], ...],
         seed: int,
         result: ModelRun,
@@ -248,7 +254,7 @@ class SimulationRunner:
         )
         manifest_inputs: dict[str, object] = {
             "model": component_identity(identity_source),
-            "scenario": scenario_identity(scenario),
+            "scenario": scenario_manifest_identity,
             "parameters": canonical_parameters,
             "seed": seed,
             "runtime": RUNTIME_IDENTITY,
@@ -276,6 +282,7 @@ class SimulationRunner:
         model: SimulatorModel,
         identity_source: ModelSource,
         scenario: Scenario,
+        scenario_manifest_identity: Mapping[str, object],
         canonical_parameters: tuple[tuple[str, float], ...],
         *,
         seed: int,
@@ -291,6 +298,7 @@ class SimulationRunner:
         return self._trace(
             identity_source=identity_source,
             scenario=scenario,
+            scenario_manifest_identity=scenario_manifest_identity,
             canonical_parameters=canonical_parameters,
             seed=seed,
             result=result,
@@ -303,6 +311,7 @@ class SimulationRunner:
         executor,
         identity_source: ModelSource,
         scenario: Scenario,
+        scenario_manifest_identity: Mapping[str, object],
         canonical_parameters: tuple[tuple[str, float], ...],
         *,
         seed: int,
@@ -323,6 +332,7 @@ class SimulationRunner:
         return self._trace(
             identity_source=identity_source,
             scenario=scenario,
+            scenario_manifest_identity=scenario_manifest_identity,
             canonical_parameters=canonical_parameters,
             seed=seed,
             result=executed.run,
@@ -341,9 +351,12 @@ class SimulationRunner:
     ) -> SimulationTrace:
         validated_seed = _validated_seed(seed)
         canonical = _canonical_parameters(parameters)
+        scenario_validation_view, scenario_manifest_identity = (
+            _scenario_boundary_snapshot(model, scenario)
+        )
         schema_validation = validate_contract_inputs(
             model,
-            _scenario_validation_view(model, scenario),
+            scenario_validation_view,
             dict(canonical),
         )
         executor = _execution_callable(model)
@@ -352,6 +365,7 @@ class SimulationRunner:
                 executor,
                 model,
                 scenario,
+                scenario_manifest_identity,
                 canonical,
                 seed=validated_seed,
                 cancellation=cancellation,
@@ -363,6 +377,7 @@ class SimulationRunner:
             materialized,
             model,
             scenario,
+            scenario_manifest_identity,
             canonical,
             seed=validated_seed,
             cancellation=cancellation,
@@ -382,9 +397,12 @@ class SimulationRunner:
         if not ordered_seeds:
             raise ValueError("simulation batch must contain at least one seed")
         canonical = _canonical_parameters(parameters)
+        scenario_validation_view, scenario_manifest_identity = (
+            _scenario_boundary_snapshot(model, scenario)
+        )
         schema_validation = validate_contract_inputs(
             model,
-            _scenario_validation_view(model, scenario),
+            scenario_validation_view,
             dict(canonical),
         )
 
@@ -395,6 +413,7 @@ class SimulationRunner:
                     executor,
                     model,
                     scenario,
+                    scenario_manifest_identity,
                     canonical,
                     seed=seed,
                     cancellation=cancellation,
@@ -409,6 +428,7 @@ class SimulationRunner:
                 batch_model,
                 model,
                 scenario,
+                scenario_manifest_identity,
                 canonical,
                 seed=seed,
                 cancellation=cancellation,
