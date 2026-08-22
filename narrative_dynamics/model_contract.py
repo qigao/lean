@@ -6,6 +6,10 @@ from enum import Enum
 
 from narrative_dynamics.contracts import _freeze_mapping
 from narrative_dynamics.manifest import stable_content_hash
+from narrative_dynamics.schema_validation import (
+    RUNTIME_SCHEMA_DIALECT,
+    validate_schema_definition,
+)
 
 
 class ModelLifecycle(str, Enum):
@@ -26,16 +30,13 @@ def _validated_metadata_text(value: object, *, label: str) -> str:
 
 @dataclass(frozen=True)
 class ModelSchema:
-    """Immutable identity for one opaque adapter schema definition.
-
-    The runtime hashes and versions the supplied definition but does not claim
-    to interpret or enforce a particular schema language.
-    """
+    """Immutable executable boundary schema in the runtime-v1 dialect."""
 
     name: str
     version: str
     definition: Mapping[str, object]
     specified: bool = True
+    dialect: str = RUNTIME_SCHEMA_DIALECT
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -48,13 +49,24 @@ class ModelSchema:
             "version",
             _validated_metadata_text(self.version, label="model schema version"),
         )
-        if not isinstance(self.specified, bool):
-            raise TypeError("model schema specified flag must be boolean")
         object.__setattr__(
             self,
-            "definition",
-            _freeze_mapping(self.definition, label="model schema definition"),
+            "dialect",
+            _validated_metadata_text(self.dialect, label="model schema dialect"),
         )
+        if not isinstance(self.specified, bool):
+            raise TypeError("model schema specified flag must be boolean")
+        frozen_definition = _freeze_mapping(
+            self.definition,
+            label="model schema definition",
+        )
+        object.__setattr__(self, "definition", frozen_definition)
+        if self.specified:
+            validate_schema_definition(
+                frozen_definition,
+                schema_name=self.name,
+                dialect=self.dialect,
+            )
 
     @classmethod
     def unspecified(cls, role: str) -> "ModelSchema":
@@ -70,11 +82,16 @@ class ModelSchema:
         )
 
     @property
+    def enforceable(self) -> bool:
+        return self.specified and self.dialect == RUNTIME_SCHEMA_DIALECT
+
+    @property
     def content_hash(self) -> str:
         return stable_content_hash(
             {
                 "name": self.name,
                 "version": self.version,
+                "dialect": self.dialect,
                 "definition": self.definition,
                 "specified": self.specified,
             }
@@ -84,14 +101,16 @@ class ModelSchema:
         return {
             "name": self.name,
             "version": self.version,
+            "dialect": self.dialect,
             "specified": self.specified,
+            "enforceable": self.enforceable,
             "content_hash": self.content_hash,
         }
 
 
 @dataclass(frozen=True)
 class ModelContract:
-    """Version, implementation revision, and boundary schemas for one adapter."""
+    """Version, implementation revision, and executable boundary schemas."""
 
     version: str = "unversioned"
     implementation_revision: str = "unversioned"
@@ -171,9 +190,9 @@ class ModelContract:
         return (
             self.version != "unversioned"
             and self.implementation_revision != "unversioned"
-            and self.parameter_schema.specified
-            and self.scenario_schema.specified
-            and self.event_schema.specified
+            and self.parameter_schema.enforceable
+            and self.scenario_schema.enforceable
+            and self.event_schema.enforceable
         )
 
     @property
@@ -239,5 +258,6 @@ __all__ = [
     "ModelContract",
     "ModelLifecycle",
     "ModelSchema",
+    "RUNTIME_SCHEMA_DIALECT",
     "validate_contract_matches_source",
 ]
