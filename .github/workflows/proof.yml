@@ -60,10 +60,15 @@ jobs:
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
           mkdir -p .generated-conformance
-          lake env lean --run NarrativeDynamics/Conformance/ReferenceVectors.lean \
-            > .generated-conformance/lean_reference_vectors.json
-          cmp \
-            conformance/lean_reference_vectors.json \
-            .generated-conformance/lean_reference_vectors.json
+          generated=.generated-conformance/lean_reference_vectors.json
+          if ! lake env lean --run NarrativeDynamics/Conformance/ReferenceVectors.lean \
+              > "$generated"; then
+            cat "$generated"
+            exit 1
+          fi
+          if ! cmp conformance/lean_reference_vectors.json "$generated"; then
+            diff -u conformance/lean_reference_vectors.json "$generated" || true
+            exit 1
+          fi
       - name: Python numerical tests
         run: python3 -m unittest discover -s tests -v
