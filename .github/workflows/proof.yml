@@ -17,6 +17,20 @@ jobs:
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
           lake update
+      - name: Lean Python conformance vectors
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          mkdir -p .generated-conformance
+          generated=.generated-conformance/lean_reference_vectors.json
+          if ! lake env lean --run NarrativeDynamics/Conformance/ReferenceVectors.lean \
+              > "$generated"; then
+            cat "$generated"
+            exit 1
+          fi
+          if ! cmp conformance/lean_reference_vectors.json "$generated"; then
+            diff -u conformance/lean_reference_vectors.json "$generated" || true
+            exit 1
+          fi
       - name: Build Lean library
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
@@ -56,19 +70,5 @@ jobs:
           lake env lean NarrativeDynamics/Tests/GroundedGoalScoreCovariance.lean
           lake env lean NarrativeDynamics/Tests/GroundedGoalRankingReversal.lean
           lake env lean NarrativeDynamics/Tests/GroundedGoalSoftmax.lean
-      - name: Lean Python conformance vectors
-        run: |
-          export PATH="$HOME/.elan/bin:$PATH"
-          mkdir -p .generated-conformance
-          generated=.generated-conformance/lean_reference_vectors.json
-          if ! lake env lean --run NarrativeDynamics/Conformance/ReferenceVectors.lean \
-              > "$generated"; then
-            cat "$generated"
-            exit 1
-          fi
-          if ! cmp conformance/lean_reference_vectors.json "$generated"; then
-            diff -u conformance/lean_reference_vectors.json "$generated" || true
-            exit 1
-          fi
       - name: Python numerical tests
         run: python3 -m unittest discover -s tests -v
