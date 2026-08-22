@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
 from pathlib import Path
@@ -111,6 +112,48 @@ class ImplementationMeasurementTests(unittest.TestCase):
                 sys.modules.pop("shadowpkg.target", None)
                 sys.modules.pop("shadowpkg", None)
 
+    def test_unloaded_child_uses_the_loaded_parent_package_path(self):
+        with tempfile.TemporaryDirectory() as shadow, tempfile.TemporaryDirectory() as actual:
+            shadow_package = Path(shadow) / "loadedpkg"
+            actual_package = Path(actual) / "loadedpkg"
+            shadow_package.mkdir()
+            actual_package.mkdir()
+            (shadow_package / "__init__.py").write_text("origin = 'shadow'\n", encoding="utf-8")
+            shadow_target = shadow_package / "target.py"
+            actual_target = actual_package / "target.py"
+            shadow_target.write_text("origin = 'shadow'\n", encoding="utf-8")
+            actual_target.write_text("origin = 'actual'\n", encoding="utf-8")
+
+            loaded_parent = types.ModuleType("loadedpkg")
+            loaded_parent.__file__ = str(actual_package / "__init__.py")
+            loaded_parent.__path__ = [str(actual_package)]
+            sys.modules["loadedpkg"] = loaded_parent
+            sys.modules.pop("loadedpkg.target", None)
+            sys.path[0:0] = [shadow, actual]
+            try:
+                source = SubprocessModel(
+                    name="loaded-parent-process",
+                    factory="loadedpkg.target:create_model",
+                    version="1.0.0",
+                    implementation_revision="test",
+                    limits=ProcessLimits(timeout_seconds=2.0),
+                )
+                measured = measure_implementation(source)
+            finally:
+                del sys.path[:2]
+                sys.modules.pop("loadedpkg.target", None)
+                sys.modules.pop("loadedpkg", None)
+
+        artifacts = {item.locator: item for item in measured.artifacts}
+        self.assertEqual(
+            artifacts["python-module:loadedpkg.target"].sha256,
+            f"sha256:{hashlib.sha256(actual_target.read_bytes()).hexdigest()}",
+        )
+        self.assertNotEqual(
+            artifacts["python-module:loadedpkg.target"].sha256,
+            f"sha256:{hashlib.sha256(shadow_target.read_bytes()).hexdigest()}",
+        )
+
     def test_loaded_dynamic_module_cannot_use_a_shadow_file_for_attestation(self):
         with tempfile.TemporaryDirectory() as directory:
             shadow_path = Path(directory) / "shadowed_fixture.py"
@@ -148,6 +191,30 @@ class ImplementationMeasurementTests(unittest.TestCase):
             finally:
                 sys.path.remove(directory)
                 sys.modules.pop("blocked_fixture", None)
+
+    def test_blocked_parent_entry_cannot_supply_a_shadow_child(self):
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory) / "blockedpkg"
+            package.mkdir()
+            (package / "__init__.py").write_text("origin = 'shadow'\n", encoding="utf-8")
+            (package / "target.py").write_text("origin = 'shadow'\n", encoding="utf-8")
+            sys.modules["blockedpkg"] = None
+            sys.modules.pop("blockedpkg.target", None)
+            sys.path.insert(0, directory)
+            try:
+                source = SubprocessModel(
+                    name="blocked-parent-process",
+                    factory="blockedpkg.target:create_model",
+                    version="1.0.0",
+                    implementation_revision="test",
+                    limits=ProcessLimits(timeout_seconds=2.0),
+                )
+                with self.assertRaises(ImplementationAttestationUnavailable):
+                    measure_implementation(source)
+            finally:
+                sys.path.remove(directory)
+                sys.modules.pop("blockedpkg.target", None)
+                sys.modules.pop("blockedpkg", None)
 
     def test_runner_snapshots_implementation_before_model_execution(self):
         with tempfile.TemporaryDirectory() as directory:
