@@ -423,13 +423,19 @@ def select_on_validation_suite(
         max_mean_loss=max_mean_loss,
         max_worst_loss=max_worst_loss,
     )
-    if not candidate_report.retained_parameters.parameters:
+    retained = set(candidate_report.retained_parameters.parameters)
+    if not retained:
         raise ValueError("selection-validation thresholds retained no candidates")
+    selected_parameters = next(
+        evaluation.parameters
+        for evaluation in candidate_report.evaluations
+        if evaluation.parameters in retained
+    )
     return SelectionValidationReport(
         suite_name=suite.name,
         role=suite.role,
         candidate_report=candidate_report,
-        selected_parameters=candidate_report.best.parameters,
+        selected_parameters=selected_parameters,
     )
 
 
