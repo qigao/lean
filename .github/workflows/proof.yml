@@ -20,6 +20,10 @@ jobs:
       - name: Lean Python conformance vectors
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
+          lake build \
+            NarrativeDynamics.Core.Belief \
+            NarrativeDynamics.Core.Drive \
+            NarrativeDynamics.Core.Learning
           mkdir -p .generated-conformance
           generated=.generated-conformance/lean_reference_vectors.json
           if ! lake env lean --run NarrativeDynamics/Conformance/ReferenceVectors.lean \
