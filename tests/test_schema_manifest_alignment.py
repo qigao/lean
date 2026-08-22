@@ -1,6 +1,6 @@
 import unittest
 
-from narrative_dynamics.manifest import scenario_identity
+from narrative_dynamics.manifest import scenario_identity, stable_content_hash
 from narrative_dynamics.registry import ModelRegistry
 from narrative_dynamics.schema_validation import ModelSchemaViolation
 from narrative_dynamics.simulation import SimulationRunner
@@ -20,6 +20,19 @@ class ManifestOnlyScenario:
 class PayloadOnlyScenario:
     id = "payload-only"
     payload = {"scale": 1.0}
+
+
+class OneShotManifestScenario:
+    id = "one-shot-manifest"
+
+    def __init__(self):
+        self.calls = 0
+
+    def manifest_payload(self):
+        self.calls += 1
+        if self.calls > 1:
+            raise AssertionError("manifest_payload() must be snapshotted exactly once")
+        return {"scale": 1.0}
 
 
 class SchemaManifestAlignmentTests(unittest.TestCase):
@@ -67,6 +80,36 @@ class SchemaManifestAlignmentTests(unittest.TestCase):
         self.assertEqual(raised.exception.boundary, "scenario")
         self.assertEqual(raised.exception.path, "$")
         self.assertEqual(model.calls, 0)
+
+    def test_custom_manifest_payload_is_snapshotted_once_for_validation_and_identity(self):
+        scenario = OneShotManifestScenario()
+        descriptor = ModelRegistry().register(
+            CountingContractModel(),
+            contract=in_process_contract(),
+        )
+
+        trace = SimulationRunner().run_once(
+            descriptor,
+            scenario,
+            {"level": 5.0},
+            seed=9,
+        )
+
+        scenario_type = (
+            f"{scenario.__class__.__module__}.{scenario.__class__.__qualname__}"
+        )
+        expected_hash = stable_content_hash(
+            {
+                "id": scenario.id,
+                "type": scenario_type,
+                "payload": {"scale": 1.0},
+            }
+        )
+        self.assertEqual(scenario.calls, 1)
+        self.assertEqual(
+            trace.manifest.inputs["scenario"]["content_hash"],
+            expected_hash,
+        )
 
 
 if __name__ == "__main__":
