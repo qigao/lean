@@ -108,6 +108,30 @@ def callable_identity(value: Callable[..., object]) -> dict[str, object]:
     )
 
 
+def scenario_identity_from_payload(
+    scenario: object,
+    payload: object,
+) -> dict[str, object]:
+    """Build a full custom-scenario identity from one already captured payload."""
+
+    scenario_id = getattr(scenario, "id", None)
+    if not isinstance(scenario_id, str) or not scenario_id:
+        raise ValueError("manifest scenario id must be a non-empty string")
+    scenario_type = _type_name(scenario)
+    return {
+        "id": scenario_id,
+        "type": scenario_type,
+        "content_scope": "full",
+        "content_hash": stable_content_hash(
+            {
+                "id": scenario_id,
+                "type": scenario_type,
+                "payload": payload,
+            }
+        ),
+    }
+
+
 def scenario_identity(scenario: object) -> dict[str, object]:
     """Hash a canonical scenario fully or mark a custom scenario identity fallback."""
 
@@ -126,19 +150,7 @@ def scenario_identity(scenario: object) -> dict[str, object]:
 
     manifest_payload = getattr(scenario, "manifest_payload", None)
     if callable(manifest_payload):
-        payload = manifest_payload()
-        return {
-            "id": scenario_id,
-            "type": scenario_type,
-            "content_scope": "full",
-            "content_hash": stable_content_hash(
-                {
-                    "id": scenario_id,
-                    "type": scenario_type,
-                    "payload": payload,
-                }
-            ),
-        }
+        return scenario_identity_from_payload(scenario, manifest_payload())
 
     version = getattr(scenario, "version", "unversioned")
     if not isinstance(version, str) or not version:
@@ -171,5 +183,6 @@ __all__ = [
     "component_identity",
     "required_manifest_hash",
     "scenario_identity",
+    "scenario_identity_from_payload",
     "stable_content_hash",
 ]
