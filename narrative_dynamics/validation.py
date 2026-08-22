@@ -2,17 +2,18 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from enum import Enum
 import math
 from statistics import fmean
 
 from narrative_dynamics.calibration import CalibrationResult, calibrate_grid
-from narrative_dynamics.contracts import Scenario, SimulatorModel
+from narrative_dynamics.contracts import Scenario
 from narrative_dynamics.metrics import (
     MetricExtractor,
     aggregate_metrics,
     weighted_squared_error,
 )
-from narrative_dynamics.simulation import SimulationRunner
+from narrative_dynamics.simulation import ModelSource, SimulationRunner
 from narrative_dynamics.uncertainty import ParameterAcceptanceSet
 
 
@@ -96,6 +97,58 @@ class HeldOutAcceptanceReport:
     best: AcceptedParameterHeldOutEvaluation
 
 
+class EvaluationRole(str, Enum):
+    """Declare whether an external suite may select candidates or only test one."""
+
+    SELECTION_VALIDATION = "selection_validation"
+    FINAL_TEST = "final_test"
+
+
+@dataclass(frozen=True)
+class HeldOutSuite:
+    """Named external scenario suite with an explicit statistical role."""
+
+    name: str
+    role: EvaluationRole
+    cases: tuple[HeldOutCase, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.name, str) or not self.name:
+            raise ValueError("held-out suite name must be a non-empty string")
+        try:
+            role = (
+                self.role
+                if isinstance(self.role, EvaluationRole)
+                else EvaluationRole(self.role)
+            )
+        except (TypeError, ValueError) as error:
+            raise ValueError("held-out suite role must be a supported evaluation role") from error
+        cases = tuple(self.cases)
+        if not cases:
+            raise ValueError("held-out suite must contain at least one case")
+        object.__setattr__(self, "role", role)
+        object.__setattr__(self, "cases", cases)
+
+
+@dataclass(frozen=True)
+class SelectionValidationReport:
+    """Candidate selection performed only on a selection-validation suite."""
+
+    suite_name: str
+    role: EvaluationRole
+    candidate_report: HeldOutAcceptanceReport
+    selected_parameters: tuple[tuple[str, float], ...]
+
+
+@dataclass(frozen=True)
+class FinalTestReport:
+    """One fixed parameter mapping evaluated without candidate ranking."""
+
+    suite_name: str
+    role: EvaluationRole
+    validation: HeldOutValidationReport
+
+
 @dataclass(frozen=True)
 class LocalParameterSensitivity:
     """Central finite-difference sensitivity for one parameter coordinate."""
@@ -150,7 +203,7 @@ class LocalSensitivityReport:
 def synthetic_recovery(
     *,
     runner: SimulationRunner,
-    model: SimulatorModel,
+    model: ModelSource,
     scenario: Scenario,
     true_parameters: Mapping[str, float],
     parameter_grid: Mapping[str, Iterable[float]],
@@ -197,7 +250,7 @@ def synthetic_recovery(
 def validate_held_out(
     *,
     runner: SimulationRunner,
-    model: SimulatorModel,
+    model: ModelSource,
     parameters: Mapping[str, float],
     cases: Iterable[HeldOutCase],
     extractor: MetricExtractor,
@@ -284,7 +337,7 @@ def _optional_loss_limit(value: float | None, *, label: str) -> float | None:
 def validate_acceptance_set_held_out(
     *,
     runner: SimulationRunner,
-    model: SimulatorModel,
+    model: ModelSource,
     accepted_parameters: ParameterAcceptanceSet
     | Iterable[Iterable[tuple[str, float]]],
     cases: Iterable[HeldOutCase],
@@ -346,10 +399,69 @@ def validate_acceptance_set_held_out(
     )
 
 
+def select_on_validation_suite(
+    *,
+    runner: SimulationRunner,
+    model: ModelSource,
+    accepted_parameters: ParameterAcceptanceSet
+    | Iterable[Iterable[tuple[str, float]]],
+    suite: HeldOutSuite,
+    extractor: MetricExtractor,
+    max_mean_loss: float | None = None,
+    max_worst_loss: float | None = None,
+) -> SelectionValidationReport:
+    """Select among candidates only on a suite explicitly marked for selection."""
+
+    if suite.role is not EvaluationRole.SELECTION_VALIDATION:
+        raise ValueError("candidate selection requires a selection-validation suite")
+    candidate_report = validate_acceptance_set_held_out(
+        runner=runner,
+        model=model,
+        accepted_parameters=accepted_parameters,
+        cases=suite.cases,
+        extractor=extractor,
+        max_mean_loss=max_mean_loss,
+        max_worst_loss=max_worst_loss,
+    )
+    if not candidate_report.retained_parameters.parameters:
+        raise ValueError("selection-validation thresholds retained no candidates")
+    return SelectionValidationReport(
+        suite_name=suite.name,
+        role=suite.role,
+        candidate_report=candidate_report,
+        selected_parameters=candidate_report.best.parameters,
+    )
+
+
+def evaluate_on_final_test_suite(
+    *,
+    runner: SimulationRunner,
+    model: ModelSource,
+    parameters: Mapping[str, float],
+    suite: HeldOutSuite,
+    extractor: MetricExtractor,
+) -> FinalTestReport:
+    """Evaluate one fixed parameter mapping on an explicitly final test suite."""
+
+    if suite.role is not EvaluationRole.FINAL_TEST:
+        raise ValueError("final-test evaluation requires a final-test suite")
+    return FinalTestReport(
+        suite_name=suite.name,
+        role=suite.role,
+        validation=validate_held_out(
+            runner=runner,
+            model=model,
+            parameters=parameters,
+            cases=suite.cases,
+            extractor=extractor,
+        ),
+    )
+
+
 def local_sensitivity_report(
     *,
     runner: SimulationRunner,
-    model: SimulatorModel,
+    model: ModelSource,
     parameters: Mapping[str, float],
     cases: Iterable[HeldOutCase],
     extractor: MetricExtractor,
