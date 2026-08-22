@@ -6,9 +6,9 @@ import math
 from statistics import fmean, pstdev
 
 from narrative_dynamics.calibration import CalibrationResult, calibrate_grid
-from narrative_dynamics.contracts import Scenario, SimulatorModel
+from narrative_dynamics.contracts import Scenario
 from narrative_dynamics.metrics import MetricExtractor
-from narrative_dynamics.simulation import SimulationRunner
+from narrative_dynamics.simulation import ModelSource, SimulationRunner
 
 
 ParameterTuple = tuple[tuple[str, float], ...]
@@ -149,10 +149,18 @@ def _validated_fraction(value: float, *, label: str) -> float:
     return validated
 
 
+def _materialized_parameter_grid(
+    parameter_grid: Mapping[str, Iterable[float]],
+) -> dict[str, tuple[float, ...]]:
+    """Consume each grid dimension once so every later calibration can replay it."""
+
+    return {name: tuple(values) for name, values in parameter_grid.items()}
+
+
 def repeated_grid_calibration(
     *,
     runner: SimulationRunner,
-    model: SimulatorModel,
+    model: ModelSource,
     scenario: Scenario,
     parameter_grid: Mapping[str, Iterable[float]],
     seed_blocks: Iterable[Iterable[int]],
@@ -185,13 +193,14 @@ def repeated_grid_calibration(
         min_acceptance_fraction,
         label="minimum acceptance fraction",
     )
+    replayable_grid = _materialized_parameter_grid(parameter_grid)
 
     calibrations = tuple(
         calibrate_grid(
             runner=runner,
             model=model,
             scenario=scenario,
-            parameter_grid=parameter_grid,
+            parameter_grid=replayable_grid,
             seeds=block,
             extractor=extractor,
             target=target,
@@ -249,7 +258,7 @@ def repeated_grid_calibration(
 def calibrate_seed_block_variants(
     *,
     runner: SimulationRunner,
-    model: SimulatorModel,
+    model: ModelSource,
     scenario: Scenario,
     parameter_grid: Mapping[str, Iterable[float]],
     seed_blocks: Iterable[Iterable[int]],
@@ -283,6 +292,7 @@ def calibrate_seed_block_variants(
     if len(set(offsets)) != len(offsets):
         raise ValueError("seed-block variation offsets must be unique")
 
+    replayable_grid = _materialized_parameter_grid(parameter_grid)
     variants: list[SeedBlockVariant] = []
     accepted_sets: list[set[ParameterTuple]] = []
     for offset in offsets:
@@ -293,7 +303,7 @@ def calibrate_seed_block_variants(
             runner=runner,
             model=model,
             scenario=scenario,
-            parameter_grid=parameter_grid,
+            parameter_grid=replayable_grid,
             seed_blocks=mutated_blocks,
             extractor=extractor,
             target=target,
