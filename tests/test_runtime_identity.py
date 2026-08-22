@@ -82,6 +82,35 @@ class ImplementationMeasurementTests(unittest.TestCase):
             ),
         )
 
+    def test_unloaded_dotted_module_respects_the_first_regular_package(self):
+        with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
+            first_package = Path(first) / "shadowpkg"
+            second_package = Path(second) / "shadowpkg"
+            first_package.mkdir()
+            second_package.mkdir()
+            (first_package / "__init__.py").write_text("origin = 'first'\n", encoding="utf-8")
+            (second_package / "target.py").write_text(
+                "def create_model():\n    raise AssertionError('must not import')\n",
+                encoding="utf-8",
+            )
+            sys.path[0:0] = [first, second]
+            try:
+                source = SubprocessModel(
+                    name="shadowed-process",
+                    factory="shadowpkg.target:create_model",
+                    version="1.0.0",
+                    implementation_revision="test",
+                    limits=ProcessLimits(timeout_seconds=2.0),
+                )
+                with self.assertRaises(ImplementationAttestationUnavailable):
+                    measure_implementation(source)
+                self.assertNotIn("shadowpkg", sys.modules)
+                self.assertNotIn("shadowpkg.target", sys.modules)
+            finally:
+                del sys.path[:2]
+                sys.modules.pop("shadowpkg.target", None)
+                sys.modules.pop("shadowpkg", None)
+
     def test_loaded_dynamic_module_cannot_use_a_shadow_file_for_attestation(self):
         with tempfile.TemporaryDirectory() as directory:
             shadow_path = Path(directory) / "shadowed_fixture.py"
@@ -101,6 +130,24 @@ class ImplementationMeasurementTests(unittest.TestCase):
             finally:
                 sys.path.remove(directory)
                 sys.modules.pop("shadowed_fixture", None)
+
+    def test_blocked_module_entry_cannot_fall_back_to_a_shadow_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            shadow_path = Path(directory) / "blocked_fixture.py"
+            shadow_path.write_text("class Model: pass\n", encoding="utf-8")
+            dynamic_model = type(
+                "Model",
+                (),
+                {"__module__": "blocked_fixture"},
+            )
+            sys.modules["blocked_fixture"] = None
+            sys.path.insert(0, directory)
+            try:
+                with self.assertRaises(ImplementationAttestationUnavailable):
+                    measure_implementation(dynamic_model())
+            finally:
+                sys.path.remove(directory)
+                sys.modules.pop("blocked_fixture", None)
 
     def test_runner_snapshots_implementation_before_model_execution(self):
         with tempfile.TemporaryDirectory() as directory:
