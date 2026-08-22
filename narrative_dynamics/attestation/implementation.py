@@ -155,30 +155,134 @@ def _loaded_module_path(module_name: str, module: object) -> Path:
     return _source_candidate(Path(loaded_path))
 
 
+def _loaded_package_locations(module_name: str, module: object) -> tuple[Path, ...]:
+    """Resolve one loaded package's authoritative child-search locations."""
+
+    raw_locations = getattr(module, "__path__", None)
+    if raw_locations is None or isinstance(
+        raw_locations,
+        (str, bytes, bytearray),
+    ):
+        raise ImplementationAttestationUnavailable(
+            f"loaded implementation module prefix {module_name!r} is not a package"
+        )
+    try:
+        entries = tuple(raw_locations)
+    except TypeError as error:
+        raise ImplementationAttestationUnavailable(
+            f"loaded implementation package {module_name!r} has no iterable path"
+        ) from error
+    if not entries:
+        raise ImplementationAttestationUnavailable(
+            f"loaded implementation package {module_name!r} has an empty path"
+        )
+
+    locations: list[Path] = []
+    seen: set[str] = set()
+    for entry in entries:
+        try:
+            candidate = Path(os.fspath(entry)).resolve(strict=True)
+        except (TypeError, ValueError, OSError) as error:
+            raise ImplementationAttestationUnavailable(
+                f"loaded implementation package {module_name!r} has an unreadable path"
+            ) from error
+        if not candidate.is_dir():
+            raise ImplementationAttestationUnavailable(
+                f"loaded implementation package {module_name!r} path is not a directory"
+            )
+        marker = str(candidate)
+        if marker not in seen:
+            seen.add(marker)
+            locations.append(candidate)
+    return tuple(locations)
+
+
+def _existing_source(path: Path) -> Path | None:
+    """Return one readable source candidate without raising for a search miss."""
+
+    try:
+        resolved = path.resolve(strict=True)
+    except OSError:
+        return None
+    return resolved if resolved.is_file() else None
+
+
 def _unloaded_module_path(module_name: str) -> Path:
+    """Resolve an unloaded module using regular/namespace package precedence.
+
+    The resolver intentionally avoids importing external code. It mirrors the
+    parts of Python import selection that matter for ordinary filesystem source:
+    an earlier module or regular package blocks later same-name entries, while
+    namespace-package portions are combined only until a regular package wins.
+    Already loaded package prefixes remain authoritative through their __path__.
+    """
+
     parts = module_name.split(".")
     if any(not part.isidentifier() for part in parts):
         raise ImplementationAttestationUnavailable(
             f"implementation module {module_name!r} is not a valid module name"
         )
 
-    seen: set[str] = set()
-    for entry in sys.path:
-        base = Path(entry or os.curdir)
-        for candidate in (
-            base.joinpath(*parts[:-1], f"{parts[-1]}.py"),
-            base.joinpath(*parts, "__init__.py"),
-        ):
-            marker = str(candidate)
-            if marker in seen:
-                continue
-            seen.add(marker)
+    search_locations = tuple(Path(entry or os.curdir) for entry in sys.path)
+    for index, part in enumerate(parts):
+        is_final = index == len(parts) - 1
+        prefix = ".".join(parts[: index + 1])
+
+        if prefix in sys.modules:
+            loaded = sys.modules[prefix]
+            if loaded is None:
+                raise ImplementationAttestationUnavailable(
+                    f"implementation module prefix {prefix!r} is blocked in sys.modules"
+                )
+            if is_final:
+                return _loaded_module_path(prefix, loaded)
+            search_locations = _loaded_package_locations(prefix, loaded)
+            continue
+
+        namespace_locations: list[Path] = []
+        resolved_regular_package: Path | None = None
+
+        for location in search_locations:
+            package_directory = location / part
+            package_init = _existing_source(package_directory / "__init__.py")
+            module_file = _existing_source(location / f"{part}.py")
+
+            # FileFinder gives a regular package in this path entry precedence
+            # over the same-name module file and over all later sys.path entries.
+            if package_init is not None:
+                if is_final:
+                    return package_init
+                resolved_regular_package = package_directory.resolve()
+                break
+
+            # A module in an earlier path entry blocks later packages. It cannot
+            # supply a child module when this is an intermediate dotted segment.
+            if module_file is not None:
+                if is_final:
+                    return module_file
+                raise ImplementationAttestationUnavailable(
+                    f"implementation module prefix {prefix!r} is not a package"
+                )
+
             try:
-                resolved = candidate.resolve(strict=True)
+                namespace_directory = package_directory.resolve(strict=True)
             except OSError:
                 continue
-            if resolved.is_file():
-                return resolved
+            if namespace_directory.is_dir():
+                namespace_locations.append(namespace_directory)
+
+        if is_final:
+            raise ImplementationAttestationUnavailable(
+                f"implementation module {module_name!r} has no readable source file"
+            )
+        if resolved_regular_package is not None:
+            search_locations = (resolved_regular_package,)
+        elif namespace_locations:
+            search_locations = tuple(namespace_locations)
+        else:
+            raise ImplementationAttestationUnavailable(
+                f"implementation module {module_name!r} has no importable package prefix"
+            )
 
     raise ImplementationAttestationUnavailable(
         f"implementation module {module_name!r} has no readable source file"
@@ -186,14 +290,18 @@ def _unloaded_module_path(module_name: str) -> Path:
 
 
 def _module_file(module_name: str) -> Path:
-    """Resolve the actual loaded module, or import-order path for an unloaded module.
+    """Resolve the loaded module or import-faithful path for an unloaded module.
 
-    A loaded module never falls back to sys.path. Doing so could attest a same-name
-    shadow file that was not the module used by the running model.
+    A loaded or explicitly blocked module never falls back to sys.path. Doing so
+    could attest a same-name shadow file that was not selected by Python.
     """
 
-    loaded = sys.modules.get(module_name)
-    if loaded is not None:
+    if module_name in sys.modules:
+        loaded = sys.modules[module_name]
+        if loaded is None:
+            raise ImplementationAttestationUnavailable(
+                f"implementation module {module_name!r} is blocked in sys.modules"
+            )
         return _loaded_module_path(module_name, loaded)
     return _unloaded_module_path(module_name)
 

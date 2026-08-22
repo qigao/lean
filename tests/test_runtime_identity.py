@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
 from pathlib import Path
@@ -82,6 +83,83 @@ class ImplementationMeasurementTests(unittest.TestCase):
             ),
         )
 
+    def test_unloaded_dotted_module_respects_the_first_regular_package(self):
+        with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
+            first_package = Path(first) / "shadowpkg"
+            second_package = Path(second) / "shadowpkg"
+            first_package.mkdir()
+            second_package.mkdir()
+            (first_package / "__init__.py").write_text("origin = 'first'\n", encoding="utf-8")
+            (second_package / "target.py").write_text(
+                "def create_model():\n    raise AssertionError('must not import')\n",
+                encoding="utf-8",
+            )
+            sys.path[0:0] = [first, second]
+            try:
+                source = SubprocessModel(
+                    name="shadowed-process",
+                    factory="shadowpkg.target:create_model",
+                    version="1.0.0",
+                    implementation_revision="test",
+                    limits=ProcessLimits(timeout_seconds=2.0),
+                )
+                with self.assertRaises(ImplementationAttestationUnavailable):
+                    measure_implementation(source)
+                self.assertNotIn("shadowpkg", sys.modules)
+                self.assertNotIn("shadowpkg.target", sys.modules)
+            finally:
+                del sys.path[:2]
+                sys.modules.pop("shadowpkg.target", None)
+                sys.modules.pop("shadowpkg", None)
+
+    def test_unloaded_child_uses_the_loaded_parent_package_path(self):
+        with tempfile.TemporaryDirectory() as shadow, tempfile.TemporaryDirectory() as actual:
+            shadow_package = Path(shadow) / "loadedpkg"
+            actual_package = Path(actual) / "loadedpkg"
+            shadow_package.mkdir()
+            actual_package.mkdir()
+            (shadow_package / "__init__.py").write_text("origin = 'shadow'\n", encoding="utf-8")
+            shadow_target = shadow_package / "target.py"
+            actual_target = actual_package / "target.py"
+            shadow_target.write_text("origin = 'shadow'\n", encoding="utf-8")
+            actual_target.write_text("origin = 'actual'\n", encoding="utf-8")
+            expected_actual_hash = (
+                f"sha256:{hashlib.sha256(actual_target.read_bytes()).hexdigest()}"
+            )
+            expected_shadow_hash = (
+                f"sha256:{hashlib.sha256(shadow_target.read_bytes()).hexdigest()}"
+            )
+
+            loaded_parent = types.ModuleType("loadedpkg")
+            loaded_parent.__file__ = str(actual_package / "__init__.py")
+            loaded_parent.__path__ = [str(actual_package)]
+            sys.modules["loadedpkg"] = loaded_parent
+            sys.modules.pop("loadedpkg.target", None)
+            sys.path[0:0] = [shadow, actual]
+            try:
+                source = SubprocessModel(
+                    name="loaded-parent-process",
+                    factory="loadedpkg.target:create_model",
+                    version="1.0.0",
+                    implementation_revision="test",
+                    limits=ProcessLimits(timeout_seconds=2.0),
+                )
+                measured = measure_implementation(source)
+            finally:
+                del sys.path[:2]
+                sys.modules.pop("loadedpkg.target", None)
+                sys.modules.pop("loadedpkg", None)
+
+        artifacts = {item.locator: item for item in measured.artifacts}
+        self.assertEqual(
+            artifacts["python-module:loadedpkg.target"].sha256,
+            expected_actual_hash,
+        )
+        self.assertNotEqual(
+            artifacts["python-module:loadedpkg.target"].sha256,
+            expected_shadow_hash,
+        )
+
     def test_loaded_dynamic_module_cannot_use_a_shadow_file_for_attestation(self):
         with tempfile.TemporaryDirectory() as directory:
             shadow_path = Path(directory) / "shadowed_fixture.py"
@@ -101,6 +179,48 @@ class ImplementationMeasurementTests(unittest.TestCase):
             finally:
                 sys.path.remove(directory)
                 sys.modules.pop("shadowed_fixture", None)
+
+    def test_blocked_module_entry_cannot_fall_back_to_a_shadow_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            shadow_path = Path(directory) / "blocked_fixture.py"
+            shadow_path.write_text("class Model: pass\n", encoding="utf-8")
+            dynamic_model = type(
+                "Model",
+                (),
+                {"__module__": "blocked_fixture"},
+            )
+            sys.modules["blocked_fixture"] = None
+            sys.path.insert(0, directory)
+            try:
+                with self.assertRaises(ImplementationAttestationUnavailable):
+                    measure_implementation(dynamic_model())
+            finally:
+                sys.path.remove(directory)
+                sys.modules.pop("blocked_fixture", None)
+
+    def test_blocked_parent_entry_cannot_supply_a_shadow_child(self):
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory) / "blockedpkg"
+            package.mkdir()
+            (package / "__init__.py").write_text("origin = 'shadow'\n", encoding="utf-8")
+            (package / "target.py").write_text("origin = 'shadow'\n", encoding="utf-8")
+            sys.modules["blockedpkg"] = None
+            sys.modules.pop("blockedpkg.target", None)
+            sys.path.insert(0, directory)
+            try:
+                source = SubprocessModel(
+                    name="blocked-parent-process",
+                    factory="blockedpkg.target:create_model",
+                    version="1.0.0",
+                    implementation_revision="test",
+                    limits=ProcessLimits(timeout_seconds=2.0),
+                )
+                with self.assertRaises(ImplementationAttestationUnavailable):
+                    measure_implementation(source)
+            finally:
+                sys.path.remove(directory)
+                sys.modules.pop("blockedpkg.target", None)
+                sys.modules.pop("blockedpkg", None)
 
     def test_runner_snapshots_implementation_before_model_execution(self):
         with tempfile.TemporaryDirectory() as directory:
