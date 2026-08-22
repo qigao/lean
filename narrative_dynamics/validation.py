@@ -24,16 +24,27 @@ class SyntheticRecoveryReport:
 
 @dataclass(frozen=True)
 class HeldOutCase:
-    """One scenario, seed set, and external target excluded from calibration."""
+    """One external scenario and target excluded from parameter calibration.
+
+    ``name`` is an experiment label. When omitted, the stable scenario id is
+    used. Keeping both fields lets multiple validation suites describe cases
+    without weakening the requirement that scenario ids remain unique.
+    """
 
     scenario: Scenario
     seeds: tuple[int, ...]
     target: Mapping[str, float]
     weights: Mapping[str, float] | None = None
+    name: str | None = None
+
+    @property
+    def effective_name(self) -> str:
+        return self.scenario.id if self.name is None else self.name
 
 
 @dataclass(frozen=True)
 class HeldOutCaseEvaluation:
+    name: str
     scenario_id: str
     metrics: tuple[tuple[str, float], ...]
     target: tuple[tuple[str, float], ...]
@@ -54,6 +65,12 @@ class HeldOutValidationReport:
     cases: tuple[HeldOutCaseEvaluation, ...]
     mean_loss: float
     worst_loss: float
+
+    @property
+    def max_loss(self) -> float:
+        """Alias emphasizing that the report retains the worst held-out case."""
+
+        return self.worst_loss
 
 
 def synthetic_recovery(
@@ -114,8 +131,8 @@ def validate_held_out(
     """Evaluate fixed parameters on scenarios excluded from calibration.
 
     The function never modifies or re-calibrates ``parameters``. It reports
-    per-scenario, mean, and worst-case error so poor generalization cannot be
-    hidden by averaging alone.
+    each case, the mean loss, and the worst loss so a single failing world
+    cannot be hidden by an aggregate score.
     """
 
     held_out_cases = tuple(cases)
@@ -125,6 +142,12 @@ def validate_held_out(
     scenario_ids = tuple(case.scenario.id for case in held_out_cases)
     if len(set(scenario_ids)) != len(scenario_ids):
         raise ValueError("held-out scenario ids must be unique")
+
+    names = tuple(case.effective_name for case in held_out_cases)
+    if any(not isinstance(name, str) or not name for name in names):
+        raise ValueError("held-out case names must be non-empty strings")
+    if len(set(names)) != len(names):
+        raise ValueError("held-out case names must be unique")
 
     evaluations: list[HeldOutCaseEvaluation] = []
     canonical_parameters: tuple[tuple[str, float], ...] | None = None
@@ -152,6 +175,7 @@ def validate_held_out(
         )
         evaluations.append(
             HeldOutCaseEvaluation(
+                name=case.effective_name,
                 scenario_id=case.scenario.id,
                 metrics=tuple(sorted(metrics.items())),
                 target=tuple(
