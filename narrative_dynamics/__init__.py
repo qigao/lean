@@ -77,7 +77,6 @@ __all__ = [
     "ModelTraceLimitExceeded",
     "ProcessExecutionResult",
     "ProcessLimits",
-    "REFERENCE_SCHEMA_DIALECT",
     "RUNTIME_SCHEMA_DIALECT",
     "ReferenceSuite",
     "ReferenceVector",
