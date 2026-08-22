@@ -207,6 +207,59 @@ class EvaluationDataRoleTests(unittest.TestCase):
                 extractor=value_metrics,
             )
 
+    def test_selection_returns_best_candidate_that_survives_thresholds(self):
+        validation = importlib.import_module("narrative_dynamics.validation")
+
+        class ScaledLevelModel:
+            name = "threshold-scaled-level"
+
+            def simulate(self, scenario, parameters, rng):
+                return ModelRun(
+                    events=(),
+                    outcome={
+                        "value": float(parameters["level"])
+                        * float(scenario.payload["scale"])
+                    },
+                )
+
+        suite = validation.HeldOutSuite(
+            name="threshold-selection",
+            role=validation.EvaluationRole.SELECTION_VALIDATION,
+            cases=(
+                HeldOutCase(
+                    scenario=Scenario(id="high-scale", payload={"scale": 3.0}),
+                    seeds=(1,),
+                    target={"value": 0.0},
+                ),
+                HeldOutCase(
+                    scenario=Scenario(id="low-scale", payload={"scale": 1.0}),
+                    seeds=(2,),
+                    target={"value": 4.0},
+                ),
+            ),
+        )
+        selection = validation.select_on_validation_suite(
+            runner=SimulationRunner(),
+            model=ScaledLevelModel(),
+            accepted_parameters=(
+                (("level", 0.0),),
+                (("level", 1.0),),
+            ),
+            suite=suite,
+            extractor=value_metrics,
+            max_worst_loss=10.0,
+        )
+
+        self.assertEqual(
+            selection.candidate_report.best.parameters,
+            (("level", 0.0),),
+        )
+        self.assertEqual(
+            selection.candidate_report.retained_parameters.parameters,
+            ((("level", 1.0),),),
+        )
+        self.assertEqual(selection.selected_parameters, (("level", 1.0),))
+
 
 if __name__ == "__main__":
     unittest.main()
