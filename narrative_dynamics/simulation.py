@@ -7,6 +7,12 @@ import random
 from types import SimpleNamespace
 from typing import Protocol, cast
 
+from narrative_dynamics.attestation import (
+    RepositoryIdentity,
+    ResultArtifact,
+    detect_repository_identity,
+    implementation_attestation_identity,
+)
 from narrative_dynamics.contracts import (
     ExecutionCapture,
     ExperimentManifest,
@@ -33,6 +39,9 @@ from narrative_dynamics.schema_validation import (
     validate_contract_events,
     validate_contract_inputs,
 )
+
+
+_DEFAULT_REPOSITORY_IDENTITY = detect_repository_identity()
 
 
 def _canonical_parameters(
@@ -228,8 +237,25 @@ def _raise_if_cancelled(
 class SimulationRunner:
     """Owns seeds, schema checks, canonical metadata, and run manifests."""
 
-    @staticmethod
+    def __init__(
+        self,
+        *,
+        repository_identity: RepositoryIdentity | None = None,
+    ) -> None:
+        if repository_identity is None:
+            repository_identity = _DEFAULT_REPOSITORY_IDENTITY
+        if not isinstance(repository_identity, RepositoryIdentity):
+            raise TypeError(
+                "repository_identity must be a RepositoryIdentity or None"
+            )
+        self._repository_identity = repository_identity
+
+    @property
+    def repository_identity(self) -> RepositoryIdentity:
+        return self._repository_identity
+
     def _trace(
+        self,
         *,
         identity_source: ModelSource,
         scenario: Scenario,
@@ -239,6 +265,7 @@ class SimulationRunner:
         result: ModelRun,
         execution: ExecutionCapture | None,
         input_schema_validation: Mapping[str, object] | None,
+        implementation_attestation: Mapping[str, object],
     ) -> SimulationTrace:
         if not isinstance(result, ModelRun):
             raise TypeError("model execution must return ModelRun")
@@ -252,12 +279,22 @@ class SimulationRunner:
             input_schema_validation,
             execution=execution,
         )
+        model_identity = component_identity(identity_source)
+        model_identity["implementation_attestation"] = dict(
+            implementation_attestation
+        )
+        result_artifact = ResultArtifact.from_result(
+            result.events,
+            result.outcome,
+        )
         manifest_inputs: dict[str, object] = {
-            "model": component_identity(identity_source),
+            "model": model_identity,
             "scenario": scenario_manifest_identity,
             "parameters": canonical_parameters,
             "seed": seed,
             "runtime": RUNTIME_IDENTITY,
+            "repository": self._repository_identity.manifest_identity(),
+            "result_artifact": result_artifact.manifest_identity(),
         }
         if schema_validation is not None:
             manifest_inputs["schema_validation"] = schema_validation
@@ -288,6 +325,7 @@ class SimulationRunner:
         seed: int,
         cancellation: CancellationToken | None,
         input_schema_validation: Mapping[str, object] | None,
+        implementation_attestation: Mapping[str, object],
     ) -> SimulationTrace:
         _raise_if_cancelled(cancellation)
         result = model.simulate(
@@ -304,6 +342,7 @@ class SimulationRunner:
             result=result,
             execution=None,
             input_schema_validation=input_schema_validation,
+            implementation_attestation=implementation_attestation,
         )
 
     def _run_once_with_executor(
@@ -317,6 +356,7 @@ class SimulationRunner:
         seed: int,
         cancellation: CancellationToken | None,
         input_schema_validation: Mapping[str, object] | None,
+        implementation_attestation: Mapping[str, object],
     ) -> SimulationTrace:
         _raise_if_cancelled(cancellation)
         executed = executor(
@@ -338,6 +378,7 @@ class SimulationRunner:
             result=executed.run,
             execution=executed.capture,
             input_schema_validation=input_schema_validation,
+            implementation_attestation=implementation_attestation,
         )
 
     def run_once(
@@ -359,6 +400,7 @@ class SimulationRunner:
             scenario_validation_view,
             dict(canonical),
         )
+        implementation_attestation = implementation_attestation_identity(model)
         executor = _execution_callable(model)
         if executor is not None:
             return self._run_once_with_executor(
@@ -370,6 +412,7 @@ class SimulationRunner:
                 seed=validated_seed,
                 cancellation=cancellation,
                 input_schema_validation=schema_validation,
+                implementation_attestation=implementation_attestation,
             )
 
         materialized = _materialize_model(model)
@@ -382,6 +425,7 @@ class SimulationRunner:
             seed=validated_seed,
             cancellation=cancellation,
             input_schema_validation=schema_validation,
+            implementation_attestation=implementation_attestation,
         )
 
     def run_batch(
@@ -405,6 +449,7 @@ class SimulationRunner:
             scenario_validation_view,
             dict(canonical),
         )
+        implementation_attestation = implementation_attestation_identity(model)
 
         executor = _execution_callable(model)
         if executor is not None:
@@ -418,6 +463,7 @@ class SimulationRunner:
                     seed=seed,
                     cancellation=cancellation,
                     input_schema_validation=schema_validation,
+                    implementation_attestation=implementation_attestation,
                 )
                 for seed in ordered_seeds
             )
@@ -433,6 +479,7 @@ class SimulationRunner:
                 seed=seed,
                 cancellation=cancellation,
                 input_schema_validation=schema_validation,
+                implementation_attestation=implementation_attestation,
             )
             for seed in ordered_seeds
         )
