@@ -32,6 +32,12 @@ from narrative_dynamics.registry import (
     ModelRegistry,
     ModelSchema,
 )
+from narrative_dynamics.schema_validation import (
+    ModelSchemaDefinitionError,
+    ModelSchemaViolation,
+    RUNTIME_SCHEMA_DIALECT,
+    validate_schema_value,
+)
 from narrative_dynamics.simulation import ModelFactory, SimulationRunner
 
 __all__ = [
@@ -52,10 +58,13 @@ __all__ = [
     "ModelResourceLimitExceeded",
     "ModelRun",
     "ModelSchema",
+    "ModelSchemaDefinitionError",
+    "ModelSchemaViolation",
     "ModelTimeout",
     "ModelTraceLimitExceeded",
     "ProcessExecutionResult",
     "ProcessLimits",
+    "RUNTIME_SCHEMA_DIALECT",
     "Scenario",
     "SimulationRunner",
     "SimulationTrace",
@@ -63,4 +72,5 @@ __all__ = [
     "SubprocessModel",
     "TraceEvent",
     "stable_content_hash",
+    "validate_schema_value",
 ]
