@@ -7,6 +7,7 @@ import random
 from typing import Protocol, cast
 
 from narrative_dynamics.contracts import (
+    ExecutionCapture,
     ExperimentManifest,
     ExperimentStage,
     ModelRun,
@@ -18,6 +19,11 @@ from narrative_dynamics.manifest import (
     RUNTIME_IDENTITY,
     component_identity,
     scenario_identity,
+)
+from narrative_dynamics.process_execution import (
+    CancellationToken,
+    ModelCancelled,
+    ProcessExecutionResult,
 )
 
 
@@ -37,6 +43,12 @@ def _canonical_parameters(
         canonical.append((name, value))
     canonical.sort(key=lambda item: item[0])
     return tuple(canonical)
+
+
+def _validated_seed(seed: object) -> int:
+    if not isinstance(seed, int) or isinstance(seed, bool):
+        raise TypeError("simulation seed must be an integer")
+    return seed
 
 
 def _validated_model(
@@ -113,7 +125,23 @@ class InstantiableModelSource(Protocol):
         ...
 
 
-ModelSource = SimulatorModel | InstantiableModelSource
+class ExecutableModelSource(Protocol):
+    """Structural source that owns execution outside the in-process model call."""
+
+    name: str
+
+    def execute(
+        self,
+        scenario: Scenario,
+        parameters: Mapping[str, float],
+        *,
+        seed: int,
+        cancellation: CancellationToken | None = None,
+    ) -> ProcessExecutionResult:
+        ...
+
+
+ModelSource = SimulatorModel | InstantiableModelSource | ExecutableModelSource
 
 
 def _materialize_model(model: ModelSource) -> SimulatorModel:
@@ -129,45 +157,122 @@ def _materialize_model(model: ModelSource) -> SimulatorModel:
     return _validated_model(cast(SimulatorModel, model))
 
 
+def _execution_callable(model: ModelSource):
+    direct = getattr(model, "execute", None)
+    if callable(direct):
+        return direct
+    nested_source = getattr(model, "source", None)
+    nested = getattr(nested_source, "execute", None)
+    if callable(nested):
+        return nested
+    return None
+
+
+def _raise_if_cancelled(
+    cancellation: CancellationToken | None,
+) -> None:
+    if cancellation is not None:
+        if not isinstance(cancellation, CancellationToken):
+            raise TypeError("cancellation must be a CancellationToken or None")
+        if cancellation.cancelled:
+            raise ModelCancelled(
+                "model execution was cancelled before start"
+            )
+
+
 class SimulationRunner:
     """Owns seeds, canonical metadata, and run manifests around a model call."""
 
-    def _run_once_with_model(
-        self,
-        model: SimulatorModel,
+    @staticmethod
+    def _trace(
+        *,
         identity_source: ModelSource,
         scenario: Scenario,
-        parameters: Mapping[str, float],
-        *,
+        canonical_parameters: tuple[tuple[str, float], ...],
         seed: int,
+        result: ModelRun,
+        execution: ExecutionCapture | None,
     ) -> SimulationTrace:
-        if not isinstance(seed, int):
-            raise TypeError("simulation seed must be an integer")
-
-        canonical = _canonical_parameters(parameters)
-        rng = random.Random(seed)
-        result = model.simulate(scenario, dict(canonical), rng)
         if not isinstance(result, ModelRun):
-            raise TypeError("model simulate() must return ModelRun")
+            raise TypeError("model execution must return ModelRun")
+        model_name = getattr(identity_source, "name", None)
+        if not isinstance(model_name, str) or not model_name:
+            raise ValueError("model source name must be a non-empty string")
 
         manifest = ExperimentManifest(
             stage=ExperimentStage.SIMULATION_RUN,
             inputs={
                 "model": component_identity(identity_source),
                 "scenario": scenario_identity(scenario),
-                "parameters": canonical,
+                "parameters": canonical_parameters,
                 "seed": seed,
                 "runtime": RUNTIME_IDENTITY,
             },
         )
         return SimulationTrace(
-            model_name=model.name,
+            model_name=model_name,
             scenario_id=scenario.id,
-            parameters=canonical,
+            parameters=canonical_parameters,
             seed=seed,
             events=result.events,
             outcome=result.outcome,
             manifest=manifest,
+            execution=execution,
+        )
+
+    def _run_once_with_model(
+        self,
+        model: SimulatorModel,
+        identity_source: ModelSource,
+        scenario: Scenario,
+        canonical_parameters: tuple[tuple[str, float], ...],
+        *,
+        seed: int,
+        cancellation: CancellationToken | None,
+    ) -> SimulationTrace:
+        _raise_if_cancelled(cancellation)
+        result = model.simulate(
+            scenario,
+            dict(canonical_parameters),
+            random.Random(seed),
+        )
+        return self._trace(
+            identity_source=identity_source,
+            scenario=scenario,
+            canonical_parameters=canonical_parameters,
+            seed=seed,
+            result=result,
+            execution=None,
+        )
+
+    def _run_once_with_executor(
+        self,
+        executor,
+        identity_source: ModelSource,
+        scenario: Scenario,
+        canonical_parameters: tuple[tuple[str, float], ...],
+        *,
+        seed: int,
+        cancellation: CancellationToken | None,
+    ) -> SimulationTrace:
+        _raise_if_cancelled(cancellation)
+        executed = executor(
+            scenario,
+            dict(canonical_parameters),
+            seed=seed,
+            cancellation=cancellation,
+        )
+        if not isinstance(executed, ProcessExecutionResult):
+            raise TypeError(
+                "external model execute() must return ProcessExecutionResult"
+            )
+        return self._trace(
+            identity_source=identity_source,
+            scenario=scenario,
+            canonical_parameters=canonical_parameters,
+            seed=seed,
+            result=executed.run,
+            execution=executed.capture,
         )
 
     def run_once(
@@ -177,14 +282,29 @@ class SimulationRunner:
         parameters: Mapping[str, float],
         *,
         seed: int,
+        cancellation: CancellationToken | None = None,
     ) -> SimulationTrace:
+        validated_seed = _validated_seed(seed)
+        canonical = _canonical_parameters(parameters)
+        executor = _execution_callable(model)
+        if executor is not None:
+            return self._run_once_with_executor(
+                executor,
+                model,
+                scenario,
+                canonical,
+                seed=validated_seed,
+                cancellation=cancellation,
+            )
+
         materialized = _materialize_model(model)
         return self._run_once_with_model(
             materialized,
             model,
             scenario,
-            parameters,
-            seed=seed,
+            canonical,
+            seed=validated_seed,
+            cancellation=cancellation,
         )
 
     def run_batch(
@@ -194,10 +314,26 @@ class SimulationRunner:
         parameters: Mapping[str, float],
         *,
         seeds: Iterable[int],
+        cancellation: CancellationToken | None = None,
     ) -> tuple[SimulationTrace, ...]:
-        ordered_seeds = tuple(seeds)
+        ordered_seeds = tuple(_validated_seed(seed) for seed in seeds)
         if not ordered_seeds:
             raise ValueError("simulation batch must contain at least one seed")
+        canonical = _canonical_parameters(parameters)
+
+        executor = _execution_callable(model)
+        if executor is not None:
+            return tuple(
+                self._run_once_with_executor(
+                    executor,
+                    model,
+                    scenario,
+                    canonical,
+                    seed=seed,
+                    cancellation=cancellation,
+                )
+                for seed in ordered_seeds
+            )
 
         batch_model = _materialize_model(model)
         return tuple(
@@ -205,8 +341,9 @@ class SimulationRunner:
                 batch_model,
                 model,
                 scenario,
-                parameters,
+                canonical,
                 seed=seed,
+                cancellation=cancellation,
             )
             for seed in ordered_seeds
         )

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 import hashlib
 import json
@@ -248,6 +248,33 @@ class ModelRun:
 
 
 @dataclass(frozen=True)
+class ExecutionCapture:
+    """Trusted execution metadata captured outside the model result."""
+
+    isolated: bool
+    stdout: str
+    stderr: str
+    return_code: int
+    duration_seconds: float
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.isolated, bool):
+            raise TypeError("execution isolated flag must be boolean")
+        if not isinstance(self.stdout, str) or not isinstance(self.stderr, str):
+            raise TypeError("execution stdout and stderr must be strings")
+        if not isinstance(self.return_code, int) or isinstance(self.return_code, bool):
+            raise TypeError("execution return code must be an integer")
+        if (
+            not isinstance(self.duration_seconds, (int, float))
+            or isinstance(self.duration_seconds, bool)
+            or not math.isfinite(float(self.duration_seconds))
+            or float(self.duration_seconds) < 0.0
+        ):
+            raise ValueError("execution duration must be finite and non-negative")
+        object.__setattr__(self, "duration_seconds", float(self.duration_seconds))
+
+
+@dataclass(frozen=True)
 class SimulationTrace:
     """Canonical result used by metrics, calibration, and replay."""
 
@@ -258,6 +285,7 @@ class SimulationTrace:
     events: tuple[TraceEvent, ...]
     outcome: Mapping[str, object]
     manifest: ExperimentManifest | None = None
+    execution: ExecutionCapture | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         events = tuple(self.events)
@@ -268,6 +296,11 @@ class SimulationTrace:
             ExperimentManifest,
         ):
             raise TypeError("simulation trace manifest must be an ExperimentManifest")
+        if self.execution is not None and not isinstance(
+            self.execution,
+            ExecutionCapture,
+        ):
+            raise TypeError("simulation trace execution must be an ExecutionCapture")
         object.__setattr__(self, "events", events)
         object.__setattr__(
             self,

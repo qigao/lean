@@ -13,6 +13,7 @@ class ModelLifecycle(str, Enum):
 
     SHARED_INSTANCE = "shared_instance"
     FRESH_PER_BATCH = "fresh_per_batch"
+    FRESH_PROCESS_PER_RUN = "fresh_process_per_run"
 
 
 def _validated_metadata_text(value: object, *, label: str) -> str:

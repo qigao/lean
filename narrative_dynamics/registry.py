@@ -5,6 +5,7 @@ from enum import Enum
 from typing import cast
 
 from narrative_dynamics.contracts import SimulatorModel
+from narrative_dynamics.manifest import component_identity
 from narrative_dynamics.model_contract import (
     ModelContract,
     ModelLifecycle,
@@ -75,6 +76,10 @@ class ModelDescriptor:
         return self.contract.complete
 
     def instantiate(self) -> SimulatorModel:
+        if callable(getattr(self.model, "execute", None)):
+            raise TypeError(
+                "fresh-process model sources execute directly and cannot be instantiated"
+            )
         instantiate = getattr(self.model, "instantiate", None)
         if callable(instantiate):
             return _validated_registered_model(
@@ -87,21 +92,20 @@ class ModelDescriptor:
         )
 
     def manifest_identity(self) -> dict[str, object]:
-        source_type = (
-            f"{self.model.__class__.__module__}."
-            f"{self.model.__class__.__qualname__}"
+        identity = component_identity(self.model)
+        identity.update(
+            {
+                "name": self.name,
+                "version": self.contract.version,
+                "kind": self.kind.value,
+                "implementation_revision": self.contract.implementation_revision,
+                "lifecycle": self.lifecycle.value,
+                "contract_hash": self.contract.content_hash,
+                "schemas": self.contract.schema_identities,
+                "metadata_complete": self.contract.complete,
+            }
         )
-        return {
-            "name": self.name,
-            "version": self.contract.version,
-            "type": source_type,
-            "kind": self.kind.value,
-            "implementation_revision": self.contract.implementation_revision,
-            "lifecycle": self.lifecycle.value,
-            "contract_hash": self.contract.content_hash,
-            "schemas": self.contract.schema_identities,
-            "metadata_complete": self.contract.complete,
-        }
+        return identity
 
 
 class ModelRegistry:
@@ -160,13 +164,16 @@ class ModelRegistry:
         if name != name.strip():
             raise ValueError("registered model name cannot have surrounding whitespace")
 
+        execute = getattr(model, "execute", None)
         instantiate = getattr(model, "instantiate", None)
-        if callable(instantiate):
+        if callable(execute):
+            lifecycle = ModelLifecycle.FRESH_PROCESS_PER_RUN
+        elif callable(instantiate):
             lifecycle = ModelLifecycle.FRESH_PER_BATCH
         else:
             if not callable(getattr(model, "simulate", None)):
                 raise TypeError(
-                    "registered model must provide simulate() or instantiate()"
+                    "registered model must provide simulate(), instantiate(), or execute()"
                 )
             lifecycle = ModelLifecycle.SHARED_INSTANCE
 

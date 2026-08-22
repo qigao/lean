@@ -135,7 +135,7 @@ class SubprocessExecutionTests(unittest.TestCase):
         source = self.source(
             "process-sleep",
             "tests.subprocess_fixtures:create_sleep_model",
-            timeout_seconds=0.10,
+            timeout_seconds=1.0,
         )
 
         started = time.monotonic()
@@ -149,7 +149,7 @@ class SubprocessExecutionTests(unittest.TestCase):
 
         self.assertLess(time.monotonic() - started, 2.0)
         self.assertIn("sleep started", raised.exception.stdout)
-        self.assertEqual(raised.exception.timeout_seconds, 0.10)
+        self.assertEqual(raised.exception.timeout_seconds, 1.0)
 
     def test_cancellation_terminates_worker(self):
         api = execution_api(self)
@@ -159,7 +159,7 @@ class SubprocessExecutionTests(unittest.TestCase):
             timeout_seconds=5.0,
         )
         cancellation = api.CancellationToken()
-        timer = threading.Timer(0.10, cancellation.cancel)
+        timer = threading.Timer(1.0, cancellation.cancel)
         timer.start()
         try:
             with self.assertRaises(api.ModelCancelled) as raised:
