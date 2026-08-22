@@ -155,6 +155,48 @@ def _loaded_module_path(module_name: str, module: object) -> Path:
     return _source_candidate(Path(loaded_path))
 
 
+def _loaded_package_locations(module_name: str, module: object) -> tuple[Path, ...]:
+    """Resolve one loaded package's authoritative child-search locations."""
+
+    raw_locations = getattr(module, "__path__", None)
+    if raw_locations is None or isinstance(
+        raw_locations,
+        (str, bytes, bytearray),
+    ):
+        raise ImplementationAttestationUnavailable(
+            f"loaded implementation module prefix {module_name!r} is not a package"
+        )
+    try:
+        entries = tuple(raw_locations)
+    except TypeError as error:
+        raise ImplementationAttestationUnavailable(
+            f"loaded implementation package {module_name!r} has no iterable path"
+        ) from error
+    if not entries:
+        raise ImplementationAttestationUnavailable(
+            f"loaded implementation package {module_name!r} has an empty path"
+        )
+
+    locations: list[Path] = []
+    seen: set[str] = set()
+    for entry in entries:
+        try:
+            candidate = Path(os.fspath(entry)).resolve(strict=True)
+        except (TypeError, ValueError, OSError) as error:
+            raise ImplementationAttestationUnavailable(
+                f"loaded implementation package {module_name!r} has an unreadable path"
+            ) from error
+        if not candidate.is_dir():
+            raise ImplementationAttestationUnavailable(
+                f"loaded implementation package {module_name!r} path is not a directory"
+            )
+        marker = str(candidate)
+        if marker not in seen:
+            seen.add(marker)
+            locations.append(candidate)
+    return tuple(locations)
+
+
 def _existing_source(path: Path) -> Path | None:
     """Return one readable source candidate without raising for a search miss."""
 
@@ -172,6 +214,7 @@ def _unloaded_module_path(module_name: str) -> Path:
     parts of Python import selection that matter for ordinary filesystem source:
     an earlier module or regular package blocks later same-name entries, while
     namespace-package portions are combined only until a regular package wins.
+    Already loaded package prefixes remain authoritative through their __path__.
     """
 
     parts = module_name.split(".")
@@ -183,6 +226,19 @@ def _unloaded_module_path(module_name: str) -> Path:
     search_locations = tuple(Path(entry or os.curdir) for entry in sys.path)
     for index, part in enumerate(parts):
         is_final = index == len(parts) - 1
+        prefix = ".".join(parts[: index + 1])
+
+        if prefix in sys.modules:
+            loaded = sys.modules[prefix]
+            if loaded is None:
+                raise ImplementationAttestationUnavailable(
+                    f"implementation module prefix {prefix!r} is blocked in sys.modules"
+                )
+            if is_final:
+                return _loaded_module_path(prefix, loaded)
+            search_locations = _loaded_package_locations(prefix, loaded)
+            continue
+
         namespace_locations: list[Path] = []
         resolved_regular_package: Path | None = None
 
@@ -205,7 +261,7 @@ def _unloaded_module_path(module_name: str) -> Path:
                 if is_final:
                     return module_file
                 raise ImplementationAttestationUnavailable(
-                    f"implementation module prefix {part!r} is not a package"
+                    f"implementation module prefix {prefix!r} is not a package"
                 )
 
             try:
