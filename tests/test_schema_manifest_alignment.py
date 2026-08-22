@@ -2,6 +2,7 @@ import unittest
 
 from narrative_dynamics.manifest import scenario_identity
 from narrative_dynamics.registry import ModelRegistry
+from narrative_dynamics.schema_validation import ModelSchemaViolation
 from narrative_dynamics.simulation import SimulationRunner
 from tests.test_runtime_schema_enforcement import (
     CountingContractModel,
@@ -14,6 +15,11 @@ class ManifestOnlyScenario:
 
     def manifest_payload(self):
         return {"scale": 1.0}
+
+
+class PayloadOnlyScenario:
+    id = "payload-only"
+    payload = {"scale": 1.0}
 
 
 class SchemaManifestAlignmentTests(unittest.TestCase):
@@ -42,6 +48,25 @@ class SchemaManifestAlignmentTests(unittest.TestCase):
             trace.manifest.inputs["schema_validation"]["scenario"]["status"],
             "validated",
         )
+
+    def test_contracted_custom_scenario_cannot_validate_unrecorded_payload(self):
+        model = CountingContractModel()
+        descriptor = ModelRegistry().register(
+            model,
+            contract=in_process_contract(),
+        )
+
+        with self.assertRaises(ModelSchemaViolation) as raised:
+            SimulationRunner().run_once(
+                descriptor,
+                PayloadOnlyScenario(),
+                {"level": 5.0},
+                seed=8,
+            )
+
+        self.assertEqual(raised.exception.boundary, "scenario")
+        self.assertEqual(raised.exception.path, "$")
+        self.assertEqual(model.calls, 0)
 
 
 if __name__ == "__main__":
