@@ -123,6 +123,12 @@ class ImplementationMeasurementTests(unittest.TestCase):
             actual_target = actual_package / "target.py"
             shadow_target.write_text("origin = 'shadow'\n", encoding="utf-8")
             actual_target.write_text("origin = 'actual'\n", encoding="utf-8")
+            expected_actual_hash = (
+                f"sha256:{hashlib.sha256(actual_target.read_bytes()).hexdigest()}"
+            )
+            expected_shadow_hash = (
+                f"sha256:{hashlib.sha256(shadow_target.read_bytes()).hexdigest()}"
+            )
 
             loaded_parent = types.ModuleType("loadedpkg")
             loaded_parent.__file__ = str(actual_package / "__init__.py")
@@ -147,11 +153,11 @@ class ImplementationMeasurementTests(unittest.TestCase):
         artifacts = {item.locator: item for item in measured.artifacts}
         self.assertEqual(
             artifacts["python-module:loadedpkg.target"].sha256,
-            f"sha256:{hashlib.sha256(actual_target.read_bytes()).hexdigest()}",
+            expected_actual_hash,
         )
         self.assertNotEqual(
             artifacts["python-module:loadedpkg.target"].sha256,
-            f"sha256:{hashlib.sha256(shadow_target.read_bytes()).hexdigest()}",
+            expected_shadow_hash,
         )
 
     def test_loaded_dynamic_module_cannot_use_a_shadow_file_for_attestation(self):
