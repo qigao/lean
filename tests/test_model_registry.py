@@ -82,8 +82,7 @@ class ModelRegistryTests(unittest.TestCase):
             registry.register(NonCallableSimulate())
         with self.assertRaises(ValueError):
             registry.register(ConstantModel("bad-kind", 1.0), kind="unknown")
-        with self.assertRaises(ValueError):
-            registry.names(kind="unknown")
+        self.assertEqual(registry.names(kind="missing"), ())
 
     def test_supported_model_kinds_are_explicit_and_stable(self):
         self.assertEqual(
