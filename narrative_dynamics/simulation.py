@@ -4,6 +4,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 import math
 import random
+from types import SimpleNamespace
 from typing import Protocol, cast
 
 from narrative_dynamics.contracts import (
@@ -27,6 +28,7 @@ from narrative_dynamics.process_execution import (
     SubprocessModel,
 )
 from narrative_dynamics.schema_validation import (
+    ModelSchemaViolation,
     validate_contract_events,
     validate_contract_inputs,
 )
@@ -171,6 +173,41 @@ def _execution_callable(model: ModelSource):
     return None
 
 
+def _scenario_validation_view(
+    model: ModelSource,
+    scenario: object,
+) -> object:
+    """Use the same custom payload for schema validation and manifest identity."""
+
+    contract = getattr(model, "contract", None)
+    scenario_schema = getattr(contract, "scenario_schema", None)
+    if not bool(getattr(scenario_schema, "specified", False)):
+        return scenario
+    if isinstance(scenario, Scenario):
+        return scenario
+
+    manifest_payload = getattr(scenario, "manifest_payload", None)
+    if not callable(manifest_payload):
+        schema_name = getattr(scenario_schema, "name", "scenario")
+        raise ModelSchemaViolation(
+            "contracted custom scenarios must expose manifest_payload()",
+            boundary="scenario",
+            path="$",
+            schema_name=schema_name,
+        )
+    payload = manifest_payload()
+    if not isinstance(payload, Mapping):
+        schema_name = getattr(scenario_schema, "name", "scenario")
+        raise ModelSchemaViolation(
+            "manifest_payload() must return a mapping",
+            boundary="scenario",
+            path="$",
+            schema_name=schema_name,
+        )
+
+    return SimpleNamespace(payload=payload)
+
+
 def _raise_if_cancelled(
     cancellation: CancellationToken | None,
 ) -> None:
@@ -306,7 +343,7 @@ class SimulationRunner:
         canonical = _canonical_parameters(parameters)
         schema_validation = validate_contract_inputs(
             model,
-            scenario,
+            _scenario_validation_view(model, scenario),
             dict(canonical),
         )
         executor = _execution_callable(model)
@@ -347,7 +384,7 @@ class SimulationRunner:
         canonical = _canonical_parameters(parameters)
         schema_validation = validate_contract_inputs(
             model,
-            scenario,
+            _scenario_validation_view(model, scenario),
             dict(canonical),
         )
 
