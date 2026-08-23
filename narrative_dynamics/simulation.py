@@ -450,7 +450,6 @@ class SimulationRunner:
             scenario_validation_view,
             dict(canonical),
         )
-        implementation_attestation = implementation_attestation_identity(model)
 
         executor = _execution_callable(model)
         if executor is not None:
@@ -464,11 +463,14 @@ class SimulationRunner:
                     seed=seed,
                     cancellation=cancellation,
                     input_schema_validation=schema_validation,
-                    implementation_attestation=implementation_attestation,
+                    implementation_attestation=(
+                        implementation_attestation_identity(model)
+                    ),
                 )
                 for seed in ordered_seeds
             )
 
+        implementation_attestation = implementation_attestation_identity(model)
         batch_model = _materialize_model(model)
         return tuple(
             self._run_once_with_model(
