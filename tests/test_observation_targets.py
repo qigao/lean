@@ -60,7 +60,7 @@ class ObservationTargetTests(unittest.TestCase):
                 seeds_by_case=seeds,
             )
 
-        with self.assertRaises(ValueEror):
+        with self.assertRaises(ValueError):
             construct_categorical_targets(
                 dataset,
                 plan(
@@ -68,7 +68,7 @@ class ObservationTargetTests(unittest.TestCase):
                     {"selection-case": (1,)},
                 ),
             )
-        with self.assertRaises(ValueEror):
+        with self.assertRaises(ValueError):
             construct_categorical_targets(
                 dataset,
                 plan(
@@ -98,7 +98,7 @@ class ObservationTargetTests(unittest.TestCase):
                 role=ObservationPartitionRole.TRAIN,
             ),
         )
-        with self.assertRaises(ValueEror):
+        with self.assertRaises(ValueError):
             train_report.as_held_out_suite()
 
 
