@@ -1,0 +1,11 @@
+{"kind":"interaction","event":"actionStarted","action":2}
+{"kind":"interaction","event":"cdpRequest","action":2,"call":17}
+{"kind":"interaction","event":"cdpResponse","action":1,"call":17}
+{"kind":"interaction","event":"deadlineArmed","action":2,"expiresAt":100}
+{"kind":"interaction","event":"timerExpired","action":1,"now":999}
+{"kind":"interaction","event":"inputDispatch","action":2}
+{"kind":"interaction","event":"humanInput"}
+{"kind":"interaction","event":"policyIssued","eventId":50,"correlationId":900,"depth":0,"page":1}
+{"kind":"interaction","event":"policyDelivered"}
+{"kind":"interaction","event":"epochRecreated"}
+{"kind":"interaction","event":"actorDestroyed"}

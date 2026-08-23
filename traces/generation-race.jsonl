@@ -1,0 +1,12 @@
+{"kind":"bootstrap","pages":[{"page":1,"context":10},{"page":2,"context":20}]}
+{"kind":"event","eventId":1,"correlationId":100,"depth":0,"event":"actionStarted","page":1,"action":1}
+{"kind":"event","eventId":2,"correlationId":100,"parentId":1,"depth":1,"event":"protocolWaitStarted","page":1,"action":1,"call":100}
+{"kind":"event","eventId":3,"correlationId":100,"parentId":2,"depth":2,"event":"deadlineArmed","page":1,"action":1,"deadline":10,"reason":"protocol"}
+{"kind":"event","eventId":4,"correlationId":100,"parentId":1,"depth":1,"event":"actionFinished","page":1,"action":1}
+{"kind":"event","eventId":10,"correlationId":200,"depth":0,"event":"actionStarted","page":1,"action":2}
+{"kind":"event","eventId":11,"correlationId":200,"parentId":10,"depth":1,"event":"protocolWaitStarted","page":1,"action":2,"call":200}
+{"kind":"event","eventId":12,"correlationId":200,"parentId":11,"depth":2,"event":"deadlineArmed","page":1,"action":2,"deadline":100,"reason":"protocol"}
+{"kind":"event","eventId":5,"correlationId":100,"parentId":3,"depth":3,"event":"deadlineReached","page":1,"action":1,"now":999}
+{"kind":"event","eventId":6,"correlationId":100,"parentId":2,"depth":2,"event":"protocolResponse","page":1,"action":1,"call":100}
+{"kind":"event","eventId":7,"correlationId":100,"parentId":4,"depth":2,"event":"actionFinished","page":1,"action":1}
+{"kind":"event","eventId":13,"correlationId":200,"parentId":11,"depth":2,"event":"protocolResponse","page":1,"action":2,"call":200}

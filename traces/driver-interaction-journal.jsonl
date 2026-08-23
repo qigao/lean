@@ -1,0 +1,8 @@
+{"kind":"interaction-journal","version":1}
+{"kind":"interaction","seq":1,"lane":1,"event":"actionStarted","action":2}
+{"kind":"interaction","seq":2,"lane":2,"event":"actionStarted","action":7}
+{"kind":"interaction","seq":3,"lane":1,"event":"deadlineArmed","action":2,"expiresAt":10}
+{"kind":"interaction","seq":4,"lane":1,"event":"timerExpired","action":2,"now":10}
+{"kind":"interaction","seq":5,"lane":2,"event":"inputDispatch","action":7}
+{"kind":"interaction","seq":6,"lane":2,"event":"cdpRequest","action":7,"call":31}
+{"kind":"interaction","seq":7,"lane":2,"event":"cdpResponse","action":7,"call":31}
