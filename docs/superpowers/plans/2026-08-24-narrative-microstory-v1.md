@@ -4,9 +4,9 @@
 
 **Goal:** Add the first non-prison canonical story domain, prove objective-versus-subjective relocation semantics in Lean, and run two parameter-free competing search models through the existing trusted Python runtime on a matched false-belief/informed microstory pair.
 
-**Architecture:** Add one generic Lean `StoryState` layer on top of the existing `WorldGraph` observation boundary, then add a Python `narrative_dynamics.story` package for authored schema, pure replay, anti-leakage runtime projection, and common metrics. Keep `agent-belief-search` and `omniscient-search` as separate adapters that consume only projected canonical scenarios; fixtures may contain source text and oracle data, but models may never receive either.
+**Architecture:** Add one generic Lean `StoryState` layer on top of the existing `WorldGraph` observation boundary. Add a Python `narrative_dynamics.story` package for authored schema, pure replay, anti-leakage runtime projection, and common metrics; keep `agent-belief-search` and `omniscient-search` as separate adapters that consume only projected canonical scenarios.
 
-**Tech Stack:** Lean 4.32 + Mathlib; Python 3 standard library only; `unittest`; existing `narrative_dynamics` contracts, `stable_content_hash`, `SimulationRunner`, manifests, and metric/loss infrastructure; GitHub Actions `proof` workflow.
+**Tech Stack:** Lean 4.32 + Mathlib; Python 3 standard library only; `unittest`; existing `narrative_dynamics` contracts, `stable_content_hash`, `SimulationRunner`, manifests, and metric infrastructure; GitHub Actions `proof` workflow.
 
 **Spec:** `docs/superpowers/specs/2026-08-24-narrative-microstory-v1-design.md`
 
@@ -15,17 +15,19 @@
 - Implementation base is `proof/narrative-dynamics-v0`; implementation work uses isolated branch `work/narrative-microstory-v1`.
 - Do not merge or move `master` in this plan. Final integration, if green, is only a non-forced fast-forward of `proof/narrative-dynamics-v0`.
 - Follow strict RED → verify RED → minimal GREEN → verify GREEN → commit for every production increment.
-- Preserve remote RED evidence in the draft feature PR before each corresponding GREEN fix when practical; unrelated Lean/Python tests must remain green.
+- Preserve observable RED evidence in the draft feature PR before the matching GREEN fix; unrelated existing behavior must stay green.
 - V1 supports only authored canonical stories with `Agent`, `Object`, `Location`, `relocate_object`, `direct_perception`, and `search_object`.
 - V1 is parameter-free. Both story models accept exactly an empty parameter mapping; do not add `beta`, calibration, training, selection, or final-test stages.
 - Do not add NLP parsing, coreference, dialogue, testimony, deception, trust, noisy perception, Bayesian story confidence, memory, nested belief, emotion, personality, social norms, arbitrary planning, or a generic fluent language.
 - Do not modify prison model semantics or import prison adapters from story code.
 - Do not add dependencies or dependency/lock files.
-- Do not add a new `NodeKind` and do not change existing `TypedEdge.locatedAt` semantics.
-- Reuse `WorldGraph.observed`, `WorldInvariant`, and `ObservationEvidenceAdmissible`; do not define a second independent observation semantics in Lean.
+- Do not add a new `NodeKind`; do not change existing `TypedEdge.locatedAt` semantics.
+- Reuse `WorldGraph.observed`, `WorldInvariant`, and `ObservationEvidenceAdmissible`; do not define a second observation semantics in Lean.
+- Python canonical `logical_time` maps to `WorldGraph.eventTime(event)` in the Lean instantiation. Lean does not introduce a second duplicate time field.
 - Runtime `Scenario.payload` visible to models contains exactly `entities`, `events`, `observations`, and `decision`.
 - Runtime `Scenario.id` is neutral and derived only from the model-visible payload digest. It must not contain fixture name/version, `false-belief`, `informed`, oracle, source text, provenance, or gold labels.
 - `source_text`, fixture `name/version`, `source/provenance`, oracle, gold ranking/choice, and any post-decision continuation never enter model-visible input.
+- Cross-field canonical validation is shared between authored fixtures and decoded runtime scenarios; a manually constructed `Scenario` may not bypass entity/reference/time/relocation/observation/decision invariants.
 - `narrative_dynamics.story` is the public story surface. Do not add story APIs to package root `narrative_dynamics.__init__` in V1.
 - Model-specific APIs remain module-scoped under `narrative_dynamics.adapters`.
 - Both models must run through the existing `SimulationRunner`; no bespoke runner or trust boundary is added.
@@ -41,14 +43,14 @@
 - Create `NarrativeDynamics/Core/StoryState.lean` — generic temporal object-location fluent replay over existing `WorldGraph.observed`.
 - Create `NarrativeDynamics/Tests/StoryState.lean` — generic and concrete false-belief/informed theorem obligations.
 - Modify `NarrativeDynamics.lean` — import `NarrativeDynamics.Core.StoryState` after the new module exists.
-- Modify `.github/workflows/proof.yml` — add `lake env lean NarrativeDynamics/Tests/StoryState.lean` to the theorem-test gate.
+- Modify `.github/workflows/proof.yml` — add a dedicated StoryState theorem step after the existing Python step so deliberate Lean RED still proves every pre-existing Lean/Python gate green.
 
 ### Python story domain
 
 - Create `narrative_dynamics/story/__init__.py` — public V1 schema/projection/replay/metric exports only.
-- Create `narrative_dynamics/story/schema.py` — immutable authored story schema, validation, JSON round-trip, declared content-hash verification.
+- Create `narrative_dynamics/story/schema.py` — immutable authored story schema, shared cross-field semantic validator, JSON round-trip, declared content-hash verification.
 - Create `narrative_dynamics/story/replay.py` — pure objective/subjective relocation projection and support-event identity.
-- Create `narrative_dynamics/story/scenario.py` — fixture-to-runtime anti-leakage projection and runtime scenario validation/decoding.
+- Create `narrative_dynamics/story/scenario.py` — fixture-to-runtime anti-leakage projection plus strict model-facing scenario decoding using the same semantic validator as fixtures.
 - Create `narrative_dynamics/story/metrics.py` — common two-action policy metric extractor.
 
 ### Python model adapters
@@ -69,7 +71,7 @@
 - Create `tests/test_story_models.py`.
 - Create `tests/test_story_runtime.py`.
 
-Do not modify `narrative_dynamics/contracts.py`, `narrative_dynamics/simulation.py`, observation protocol modules, prison adapters, loss implementations, or model-comparison code unless a failing pre-existing contract proves a genuine incompatibility. If such an incompatibility appears, stop the current task, use systematic debugging, and add a focused RED test before changing shared runtime code.
+Do not modify `narrative_dynamics/contracts.py`, `narrative_dynamics/simulation.py`, observation protocol modules, prison adapters, loss implementations, or model-comparison code unless a failing pre-existing contract proves a genuine incompatibility. If that happens, stop the current task, invoke `superpowers:systematic-debugging`, and add a focused RED test before touching shared runtime code.
 
 ---
 
@@ -82,22 +84,32 @@ Do not modify `narrative_dynamics/contracts.py`, `narrative_dynamics/simulation.
 - Modify: `NarrativeDynamics.lean`
 
 **Interfaces:**
-- Consumes: existing `WorldGraph Agent Event Node`, `WorldInvariant`, `w.observed`, `w.eventTime`, `infoReachable`, and `ObservationEvidenceAdmissible`.
+- Consumes: existing `WorldGraph Agent Event Node`, `WorldInvariant`, `w.observed`, `w.eventTime`, `infoReachable`, and existing observation-admission theorems.
 - Produces:
   - `StoryRelocation Event Object Location`
   - `applyStoryRelocation`
   - `objectiveLocation`
   - `subjectiveLocation`
   - `StoryHistoryCompatible`
-  - theorem that appending a relocation sets the objective location of its object to its destination
-  - theorem that appending an unobserved relocation does not change an agent's subjective location
-  - theorem that appending an observed relocation sets that agent's subjective location for the relocated object to the destination
-  - theorem that, under `WorldInvariant`, every event admitted by the subjective `w.observed` filter has an information path
-  - theorem that no information path implies the event is not recorded as observed in a well-formed world
+  - `objectiveLocation_append_relocation`
+  - `subjectiveLocation_append_unobserved`
+  - `subjectiveLocation_append_observed_relocation`
+  - `observed_story_event_has_info_path`
+  - `no_info_path_story_event_unobserved`
 
-- [ ] **Step 1: Create the deliberate Lean RED theorem test**
+- [ ] **Step 1: Start implementation in an isolated workspace**
 
-Create `NarrativeDynamics/Tests/StoryState.lean` first, importing the not-yet-existing module:
+At execution time use `superpowers:using-git-worktrees` before editing, based on the current `proof/narrative-dynamics-v0` head, and create branch:
+
+```text
+work/narrative-microstory-v1
+```
+
+Do not base it on `master`.
+
+- [ ] **Step 2: Create the deliberate Lean RED theorem test**
+
+Create `NarrativeDynamics/Tests/StoryState.lean` before the production module:
 
 ```lean
 import NarrativeDynamics.Core.StoryState
@@ -162,6 +174,9 @@ private def history : List (StoryRelocation Event Object Location) := [
   { event := .e2, object := .key, fromLocation := some .drawer, toLocation := .box }
 ]
 
+example : StoryHistoryCompatible falseBeliefWorld history := by
+  decide
+
 example : objectiveLocation history .key = some .box := by
   rfl
 
@@ -181,36 +196,43 @@ example :
     score .box .drawer < score .box .box := by
   decide
 
+#check NarrativeDynamics.no_info_path_no_admissible_observation
+
 end NarrativeDynamics.Tests.StoryState
 ```
 
-The exact local proof simplification may be adjusted only to match the final fixed production signatures; do not weaken the three semantic equalities or the strict ranking claim.
+The concrete worlds deliberately make information reachability trivial because this test's purpose is fluent projection and ranking. Information-path denial itself remains covered by the generic theorem below and the pre-existing observation-admission theorem referenced by `#check`.
 
-- [ ] **Step 2: Add the new theorem test to CI before implementation exists**
+- [ ] **Step 3: Add a dedicated final StoryState CI step before implementation exists**
 
-Append this command to the `Lean theorem tests` block in `.github/workflows/proof.yml`:
+Do **not** put the deliberate RED command inside the existing `Lean theorem tests` block because that would skip the later Python step on failure. Append a new step after `Python numerical tests`:
 
-```bash
-lake env lean NarrativeDynamics/Tests/StoryState.lean
+```yaml
+      - name: Narrative story theorem tests
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          lake env lean NarrativeDynamics/Tests/StoryState.lean
 ```
 
-Do not yet add `StoryState` to `NarrativeDynamics.lean`; this preserves the desired RED shape: the full existing library build remains green, and the new theorem-test command fails because the new module is missing.
+This ordering makes the intended remote RED precise: conformance, full build, all existing Lean theorem tests, and all existing Python tests run first; only the new StoryState step fails.
 
-- [ ] **Step 3: Run the Lean RED locally**
+- [ ] **Step 4: Verify Lean RED locally**
 
 Run:
 
 ```bash
 lake build
+python3 -m unittest discover -s tests -v
 lake env lean NarrativeDynamics/Tests/StoryState.lean
 ```
 
 Expected:
 
-- `lake build` succeeds on the pre-existing library;
-- the StoryState theorem command fails because `NarrativeDynamics.Core.StoryState` does not exist.
+- existing Lean build succeeds;
+- all pre-existing Python tests succeed;
+- StoryState command fails because `NarrativeDynamics.Core.StoryState` does not exist.
 
-- [ ] **Step 4: Commit and publish the precise RED**
+- [ ] **Step 5: Commit and publish the precise RED**
 
 ```bash
 git add .github/workflows/proof.yml NarrativeDynamics/Tests/StoryState.lean
@@ -218,18 +240,17 @@ git commit -m "test: add narrative story state RED"
 git push -u origin work/narrative-microstory-v1
 ```
 
-Open a draft PR from `work/narrative-microstory-v1` to `proof/narrative-dynamics-v0`. Record the exact `proof` run. Require:
+Open a draft PR to `proof/narrative-dynamics-v0`. Record the exact `proof` run and require:
 
-- Lean/Python conformance gate success;
-- full pre-existing `lake build` success;
-- theorem step failure specifically at the new `StoryState.lean` import;
-- Python suite still green.
+- conformance success;
+- full `lake build` success;
+- all pre-existing Lean theorem tests success;
+- Python suite success at the then-current count;
+- failure only in `Narrative story theorem tests` because the new module is missing.
 
-If any unrelated failure appears, invoke `superpowers:systematic-debugging` before proceeding.
+- [ ] **Step 6: Implement the minimal generic StoryState layer**
 
-- [ ] **Step 5: Implement the minimal generic StoryState layer**
-
-Create `NarrativeDynamics/Core/StoryState.lean` with this production surface:
+Create `NarrativeDynamics/Core/StoryState.lean`:
 
 ```lean
 import NarrativeDynamics.Core.WorldGraph
@@ -251,10 +272,7 @@ def applyStoryRelocation
     (relocation : StoryRelocation Event Object Location) :
     Object → Option Location :=
   fun object =>
-    if object = relocation.object then
-      some relocation.toLocation
-    else
-      state object
+    if object = relocation.object then some relocation.toLocation else state object
 
 
 def objectiveLocation
@@ -373,9 +391,11 @@ theorem no_info_path_story_event_unobserved
 end NarrativeDynamics
 ```
 
-If a small Lean syntax adjustment is required, preserve these exact semantics and theorem signatures as closely as Lean permits. Do not move mutable object location into `TypedEdge`.
+`StoryRelocation` deliberately does not duplicate canonical `logical_time`: the concrete story-to-Lean instantiation maps each Python event's `logical_time` to `world.eventTime relocation.event`. `StoryHistoryCompatible` validates strict event-time order plus objective `fromLocation` continuity.
 
-- [ ] **Step 6: Add the module to the library root**
+If Lean requires a small syntax/proof adjustment, preserve these semantics and public theorem meanings; do not move object fluent state into `TypedEdge`.
+
+- [ ] **Step 7: Add StoryState to the library root and verify GREEN**
 
 Append to `NarrativeDynamics.lean`:
 
@@ -383,18 +403,15 @@ Append to `NarrativeDynamics.lean`:
 import NarrativeDynamics.Core.StoryState
 ```
 
-- [ ] **Step 7: Verify Lean GREEN**
-
 Run:
 
 ```bash
 lake env lean NarrativeDynamics/Tests/StoryState.lean
 lake build
+python3 -m unittest discover -s tests -v
 ```
 
-Then run the complete theorem list from `.github/workflows/proof.yml`, including the new StoryState test.
-
-Expected: all commands succeed.
+Then execute every existing Lean theorem command from `.github/workflows/proof.yml`.
 
 - [ ] **Step 8: Commit Lean GREEN**
 
@@ -404,7 +421,7 @@ git commit -m "feat: add narrative story state semantics"
 git push
 ```
 
-Require the draft PR `proof` run to return fully green before Task 2.
+Require the draft PR `proof` run fully green before Task 2.
 
 ---
 
@@ -427,29 +444,15 @@ Require the draft PR `proof` run to return fully green before Task 2.
   - `NarrativeOracleV1`
   - `NarrativeCaseV1`
   - `load_narrative_case(path: str | Path) -> NarrativeCaseV1`
+  - private shared `_validate_story_semantics(entities, events, observations, decision) -> None`
   - `NarrativeCaseV1.identity_payload() -> dict[str, object]`
   - `NarrativeCaseV1.to_dict(include_content_hash: bool = True) -> dict[str, object]`
   - `NarrativeCaseV1.to_json() -> str`
-  - `NarrativeCaseV1.from_dict(data: Mapping[str, object], *, verify_declared_hash: bool = True) -> NarrativeCaseV1`
+  - `NarrativeCaseV1.from_dict(data, *, verify_declared_hash: bool = True) -> NarrativeCaseV1`
 
-- [ ] **Step 1: Write schema RED tests before the package exists**
+- [ ] **Step 1: Write schema RED tests**
 
-Create `tests/test_story_schema.py` with `unittest` tests covering the exact fixed cases and validation failures. Start with imports that intentionally fail:
-
-```python
-from narrative_dynamics.story.schema import (
-    DirectObservationV1,
-    NarrativeCaseV1,
-    NarrativeOracleV1,
-    RelocationEventV1,
-    SearchActionV1,
-    SearchDecisionV1,
-    StoryEntitiesV1,
-    load_narrative_case,
-)
-```
-
-Add a helper that constructs the false-belief case entirely in memory:
+Create `tests/test_story_schema.py` and import the not-yet-existing schema module. Define the canonical false-belief in-memory case exactly:
 
 ```python
 def make_false_belief_case() -> NarrativeCaseV1:
@@ -483,9 +486,7 @@ def make_false_belief_case() -> NarrativeCaseV1:
                 from_location="drawer", to_location="box",
             ),
         ),
-        observations=(
-            DirectObservationV1(event="e1", agent="bob"),
-        ),
+        observations=(DirectObservationV1(event="e1", agent="bob"),),
         decision=SearchDecisionV1(
             id="d1", time=3, actor="bob", object="key",
             actions=(
@@ -502,37 +503,34 @@ def make_false_belief_case() -> NarrativeCaseV1:
     )
 ```
 
-Required tests include:
+Required tests:
 
 ```python
 class NarrativeStorySchemaTests(unittest.TestCase):
     def test_case_is_immutable_roundtrippable_and_hash_stable(self):
         case = make_false_belief_case()
-        encoded = case.to_json()
-        loaded = NarrativeCaseV1.from_dict(json.loads(encoded))
+        loaded = NarrativeCaseV1.from_dict(json.loads(case.to_json()))
         self.assertEqual(loaded, case)
         self.assertEqual(loaded.content_hash, case.content_hash)
         with self.assertRaises((FrozenInstanceError, TypeError)):
             case.name = "changed"
 
     def test_declared_hash_is_verified(self):
-        case = make_false_belief_case()
-        payload = case.to_dict()
+        payload = make_false_belief_case().to_dict()
         payload["content_hash"] = "sha256:" + "0" * 64
         with self.assertRaisesRegex(ValueError, "content hash"):
             NarrativeCaseV1.from_dict(payload)
 
     def test_objective_history_continuity_is_enforced(self):
-        case = make_false_belief_case()
-        bad = case.to_dict(include_content_hash=False)
+        bad = make_false_belief_case().to_dict(include_content_hash=False)
         bad["events"][1]["from_location"] = "box"
         with self.assertRaisesRegex(ValueError, "from_location"):
             NarrativeCaseV1.from_dict(bad, verify_declared_hash=False)
 ```
 
-Also add focused cases for duplicate entity/event/action IDs, undeclared actor/object/location, non-increasing event time, invalid first `from_location`, invalid observation event/agent, duplicate observation pair, unsupported observation channel, decision time not after every event, duplicate action location, and decision actor lacking any observed relocation of the target object.
+Add explicit tests for duplicate entity/event/action IDs, undeclared actor/object/location, non-increasing event time, invalid first `from_location`, invalid observation event/agent, duplicate observation pair, unsupported observation channel, decision time not after events, duplicate action location, and decision actor lacking any observed relocation of the target object.
 
-- [ ] **Step 2: Verify Python schema RED**
+- [ ] **Step 2: Verify, commit, and publish schema RED**
 
 Run:
 
@@ -542,7 +540,7 @@ python3 -m unittest tests.test_story_schema -v
 
 Expected: import failure because `narrative_dynamics.story.schema` does not exist.
 
-- [ ] **Step 3: Commit and publish schema RED**
+Then:
 
 ```bash
 git add tests/test_story_schema.py
@@ -550,13 +548,11 @@ git commit -m "test: add canonical microstory schema RED"
 git push
 ```
 
-Require remote `proof` to fail only on the new story-schema Python obligation; all Lean gates and prior Python tests must remain green.
+Remote `proof` must fail only on the new Python story-schema obligation; all Lean gates and prior Python tests must remain green up to that failure.
 
-- [ ] **Step 4: Implement minimal immutable schema**
+- [ ] **Step 3: Implement frozen schema values and one shared semantic validator**
 
-Create `narrative_dynamics/story/schema.py` using frozen dataclasses, recursive freezing patterns consistent with the existing observation dataset code, exact-key JSON validation, and `stable_content_hash`.
-
-Use these fixed class signatures:
+Create `narrative_dynamics/story/schema.py` with these class signatures:
 
 ```python
 @dataclass(frozen=True)
@@ -617,9 +613,24 @@ class NarrativeCaseV1:
     schema_version: int = 1
 ```
 
-Validation must be performed in constructors rather than deferred to models. `NarrativeCaseV1.__post_init__` must replay objective location continuity using a local dictionary and reject inconsistent `from_location` before any runtime projection exists.
+Implement a single private cross-field validator and call it from `NarrativeCaseV1.__post_init__`:
 
-Hashing is exactly:
+```python
+def _validate_story_semantics(
+    entities: StoryEntitiesV1,
+    events: tuple[RelocationEventV1, ...],
+    observations: tuple[DirectObservationV1, ...],
+    decision: SearchDecisionV1,
+) -> None:
+    # Validate all cross references, strict event order, objective from_location
+    # continuity, observation references/uniqueness, decision references/time,
+    # unique actions/locations, known objective target, and at least one observed
+    # relocation of the target for the decision actor.
+```
+
+The code body must implement each enumerated validation directly; do not duplicate this logic later in `scenario.py`.
+
+Use recursive freezing patterns consistent with `narrative_dynamics/observations/dataset.py`, reject unknown/missing JSON keys, and use `stable_content_hash` for fixture identity:
 
 ```python
 @property
@@ -627,11 +638,11 @@ def content_hash(self) -> str:
     return stable_content_hash(self.identity_payload())
 ```
 
-`to_dict()` includes `content_hash` only when requested. `from_dict()` requires exact top-level/nested keys and, when `verify_declared_hash=True`, requires a declared hash and compares it to the reconstructed object's computed hash.
+`from_dict(..., verify_declared_hash=True)` requires a declared hash and verifies it. With `False`, the same structural/semantic validation still runs; only declared-hash checking is skipped.
 
-- [ ] **Step 5: Generate the two committed fixtures from the production schema**
+- [ ] **Step 4: Generate exactly two committed fixtures from production constructors**
 
-After schema tests are green in memory, use a one-shot Python command that imports the production dataclasses, constructs both cases, and writes `case.to_json() + "\n"`. Do not hand-author the declared hashes.
+Use a one-shot Python command importing the production dataclasses and writing `case.to_json() + "\n"`; do not hand-author declared hashes.
 
 The informed case is identical in entities/events/decision and adds:
 
@@ -639,7 +650,7 @@ The informed case is identical in entities/events/decision and adds:
 DirectObservationV1(event="e2", agent="bob")
 ```
 
-with oracle:
+with:
 
 ```python
 NarrativeOracleV1(
@@ -650,10 +661,10 @@ NarrativeOracleV1(
 )
 ```
 
-Then extend `test_story_schema.py`:
+Extend the schema test:
 
 ```python
-def test_committed_pair_loads_and_has_identical_objective_events(self):
+def test_committed_pair_has_identical_objective_events(self):
     false_case = load_narrative_case(
         "fixtures/stories/key_location_false_belief_v1.json"
     )
@@ -666,7 +677,7 @@ def test_committed_pair_loads_and_has_identical_objective_events(self):
     self.assertFalse(false_case.provenance["population_representative"])
 ```
 
-- [ ] **Step 6: Verify schema GREEN**
+- [ ] **Step 5: Verify and commit schema GREEN**
 
 Run:
 
@@ -676,9 +687,7 @@ python3 -m unittest discover -s tests -v
 python3 -m compileall -q narrative_dynamics
 ```
 
-Expected: all Python tests pass.
-
-- [ ] **Step 7: Commit schema GREEN**
+Then:
 
 ```bash
 git add narrative_dynamics/story/schema.py tests/test_story_schema.py fixtures/stories
@@ -704,8 +713,6 @@ Require remote `proof` green before Task 3.
   - `subjective_state(events, observations, agent, *, at_time: int | None = None) -> Mapping[str, ObjectLocationState]`
   - `latest_object_location(state, object_id) -> ObjectLocationState`
 
-`ObjectLocationState` is fixed as:
-
 ```python
 @dataclass(frozen=True)
 class ObjectLocationState:
@@ -730,15 +737,9 @@ class StoryReplayTests(unittest.TestCase):
         )
 
     def test_false_belief_has_objective_box_and_subjective_drawer(self):
-        objective = latest_object_location(
-            objective_state(self.false_case.events), "key"
-        )
+        objective = latest_object_location(objective_state(self.false_case.events), "key")
         subjective = latest_object_location(
-            subjective_state(
-                self.false_case.events,
-                self.false_case.observations,
-                "bob",
-            ),
+            subjective_state(self.false_case.events, self.false_case.observations, "bob"),
             "key",
         )
         self.assertEqual((objective.location, objective.supporting_event_id), ("box", "e2"))
@@ -746,39 +747,33 @@ class StoryReplayTests(unittest.TestCase):
 
     def test_informed_observation_updates_subjective_state(self):
         subjective = latest_object_location(
-            subjective_state(
-                self.informed_case.events,
-                self.informed_case.observations,
-                "bob",
-            ),
+            subjective_state(self.informed_case.events, self.informed_case.observations, "bob"),
             "key",
         )
         self.assertEqual((subjective.location, subjective.supporting_event_id), ("box", "e2"))
 ```
 
-Add a focused test that an extra unobserved relocation changes objective state but not Bob's subjective state, plus an `at_time=1` test proving historical state remains queryable.
+Also test:
 
-- [ ] **Step 2: Verify replay RED**
+- adding an unobserved later relocation changes objective state but not Bob's subjective state;
+- adding Bob's observation of that event changes subjective state;
+- `at_time=1` returns the historical drawer state;
+- missing object support raises `ValueError` rather than falling back.
+
+- [ ] **Step 2: Verify, commit, and publish replay RED**
 
 ```bash
 python3 -m unittest tests.test_story_replay -v
-```
-
-Expected: import failure because `narrative_dynamics.story.replay` does not exist.
-
-- [ ] **Step 3: Commit and publish replay RED**
-
-```bash
 git add tests/test_story_replay.py
 git commit -m "test: add narrative replay RED"
 git push
 ```
 
-Require remote failure only in the new replay tests.
+Expected local/remote failure is the missing replay module only.
 
-- [ ] **Step 4: Implement pure replay**
+- [ ] **Step 3: Implement replay with no runtime dependency**
 
-Create `narrative_dynamics/story/replay.py` with no simulation/runtime imports:
+Create `narrative_dynamics/story/replay.py`:
 
 ```python
 @dataclass(frozen=True)
@@ -837,16 +832,11 @@ def latest_object_location(
 
 No fallback from subjective to objective state is permitted.
 
-- [ ] **Step 5: Verify replay GREEN**
+- [ ] **Step 4: Verify and commit replay GREEN**
 
 ```bash
 python3 -m unittest tests.test_story_replay -v
 python3 -m unittest discover -s tests -v
-```
-
-- [ ] **Step 6: Commit replay GREEN**
-
-```bash
 git add narrative_dynamics/story/replay.py tests/test_story_replay.py
 git commit -m "feat: add objective and subjective story replay"
 git push
@@ -861,20 +851,21 @@ Require remote `proof` green before Task 4.
 **Files:**
 - Create: `narrative_dynamics/story/scenario.py`
 - Create: `tests/test_story_scenario.py`
+- Modify: `narrative_dynamics/story/schema.py` only if an import-safe private shared validator export is required; do not duplicate validation.
 
 **Interfaces:**
-- Consumes: `NarrativeCaseV1`, all model-visible schema dataclasses, `contracts.Scenario`, `stable_content_hash`.
+- Consumes: `NarrativeCaseV1`, model-visible schema dataclasses, private `_validate_story_semantics`, `contracts.Scenario`, `stable_content_hash`.
 - Produces:
   - `NarrativeScenarioV1`
-  - `NarrativeScenarioV1.from_case(case: NarrativeCaseV1) -> NarrativeScenarioV1`
+  - `NarrativeScenarioV1.from_case(case) -> NarrativeScenarioV1`
   - `NarrativeScenarioV1.to_payload() -> dict[str, object]`
-  - `NarrativeScenarioV1.from_payload(payload: Mapping[str, object]) -> NarrativeScenarioV1`
-  - `project_narrative_scenario(case: NarrativeCaseV1) -> Scenario`
-  - `decode_narrative_scenario(scenario: Scenario) -> NarrativeScenarioV1`
+  - `NarrativeScenarioV1.from_payload(payload) -> NarrativeScenarioV1`
+  - `project_narrative_scenario(case) -> Scenario`
+  - `decode_narrative_scenario(scenario) -> NarrativeScenarioV1`
 
-- [ ] **Step 1: Write anti-leakage RED tests**
+- [ ] **Step 1: Write anti-leakage and bypass-resistance RED tests**
 
-Create `tests/test_story_scenario.py` with explicit model-visible key assertions:
+Create `tests/test_story_scenario.py`:
 
 ```python
 class NarrativeScenarioProjectionTests(unittest.TestCase):
@@ -904,31 +895,32 @@ class NarrativeScenarioProjectionTests(unittest.TestCase):
         self.assertEqual(scenario.id, f"story-v1-{digest}")
 ```
 
-Add a test that clones the case with changed `name`, `version`, `source`, `provenance`, `source_text`, and oracle but identical entities/events/observations/decision; both projections must have identical `Scenario.id` and payload.
+Add tests that:
 
-Add a decoder test that rejects a manually constructed `Scenario` with the right payload but a non-neutral ID, extra payload key, missing key, unsupported event kind, or unsupported observation channel.
+- changing only fixture `name`, `version`, `source`, `provenance`, `source_text`, and oracle leaves projected payload and runtime ID unchanged;
+- non-neutral scenario ID is rejected;
+- extra/missing model-visible payload key is rejected;
+- unsupported event kind/observation channel is rejected;
+- **a manually constructed runtime payload with invalid `from_location` continuity is rejected**;
+- **a manually constructed runtime payload with an undeclared entity reference is rejected**;
+- **a manually constructed runtime payload where the decision actor has no observed target relocation is rejected**.
 
-- [ ] **Step 2: Verify scenario RED**
+Those last three tests prove runtime decoding cannot bypass fixture-only cross-field validation.
+
+- [ ] **Step 2: Verify, commit, and publish scenario RED**
 
 ```bash
 python3 -m unittest tests.test_story_scenario -v
-```
-
-Expected: import failure because `narrative_dynamics.story.scenario` does not exist.
-
-- [ ] **Step 3: Commit and publish scenario RED**
-
-```bash
 git add tests/test_story_scenario.py
 git commit -m "test: add narrative scenario leakage RED"
 git push
 ```
 
-Require remote failure only in the new scenario tests.
+Expected failure is the missing scenario module only.
 
-- [ ] **Step 4: Implement the projection and strict decoder**
+- [ ] **Step 3: Implement one validated model-facing scenario type**
 
-Create `NarrativeScenarioV1` as a frozen dataclass with only:
+Create:
 
 ```python
 @dataclass(frozen=True)
@@ -937,13 +929,19 @@ class NarrativeScenarioV1:
     events: tuple[RelocationEventV1, ...]
     observations: tuple[DirectObservationV1, ...]
     decision: SearchDecisionV1
+
+    def __post_init__(self) -> None:
+        _validate_story_semantics(
+            self.entities,
+            self.events,
+            self.observations,
+            self.decision,
+        )
 ```
 
-`from_case()` copies only those four fields.
+`from_case()` copies only those four fields. `from_payload()` reconstructs those exact typed values and therefore calls the same semantic validator through `__post_init__`.
 
-`to_payload()` serializes only those four fields using canonical JSON-compatible structures.
-
-The only ID algorithm is:
+The neutral ID algorithm is the only accepted one:
 
 ```python
 def _runtime_id(payload: Mapping[str, object]) -> str:
@@ -951,7 +949,7 @@ def _runtime_id(payload: Mapping[str, object]) -> str:
     return f"story-v1-{digest}"
 ```
 
-`project_narrative_scenario()` is:
+Projection:
 
 ```python
 def project_narrative_scenario(case: NarrativeCaseV1) -> Scenario:
@@ -960,21 +958,25 @@ def project_narrative_scenario(case: NarrativeCaseV1) -> Scenario:
     return Scenario(id=_runtime_id(payload), payload=payload)
 ```
 
-`decode_narrative_scenario()` must parse via `NarrativeScenarioV1.from_payload()` and then recompute the expected neutral ID from the canonical reconstructed payload; reject if `scenario.id` differs.
+Decoder:
 
-Do not accept fixture `name` as an alternate ID and do not expose a switch that disables the neutral-ID check.
+```python
+def decode_narrative_scenario(scenario: Scenario) -> NarrativeScenarioV1:
+    story = NarrativeScenarioV1.from_payload(scenario.payload)
+    canonical_payload = story.to_payload()
+    if scenario.id != _runtime_id(canonical_payload):
+        raise ValueError("narrative scenario id does not match canonical payload")
+    return story
+```
 
-- [ ] **Step 5: Verify anti-leakage GREEN**
+Do not expose a flag that disables the neutral-ID or semantic-validation checks.
+
+- [ ] **Step 4: Verify and commit scenario GREEN**
 
 ```bash
 python3 -m unittest tests.test_story_scenario -v
 python3 -m unittest discover -s tests -v
-```
-
-- [ ] **Step 6: Commit scenario GREEN**
-
-```bash
-git add narrative_dynamics/story/scenario.py tests/test_story_scenario.py
+git add narrative_dynamics/story/schema.py narrative_dynamics/story/scenario.py tests/test_story_scenario.py
 git commit -m "feat: add leak-safe narrative runtime projection"
 git push
 ```
@@ -991,9 +993,9 @@ Require remote `proof` green before Task 5.
 
 **Interfaces:**
 - Consumes: `Scenario`, `ModelRun`, `TraceEvent`, `decode_narrative_scenario`, `subjective_state`, `latest_object_location`.
-- Produces: `AgentBeliefSearchModel` with `name = "agent-belief-search"` and `simulate(scenario, parameters, rng) -> ModelRun`.
+- Produces: `AgentBeliefSearchModel`, name exactly `agent-belief-search`.
 
-Common model outcome contract introduced here and reused unchanged by Task 6:
+Common outcome contract introduced here and reused unchanged by Task 6:
 
 ```text
 epistemic_basis = {
@@ -1008,8 +1010,6 @@ selected_action = action_id
 ```
 
 - [ ] **Step 1: Write belief-model RED tests**
-
-Create `tests/test_story_models.py` with the belief model tests first:
 
 ```python
 class StoryModelTests(unittest.TestCase):
@@ -1047,29 +1047,18 @@ class StoryModelTests(unittest.TestCase):
             )
 ```
 
-Also assert exact action score/policy keys, one-hot normalization, and fail-closed behavior when the actor's subjective location is not represented by any decision action.
+Also assert exact action-score/policy keys, one-hot normalization, and fail-closed behavior when the known subjective location has no matching decision action. Do not allow an objective fallback.
 
-- [ ] **Step 2: Verify belief-model RED**
+- [ ] **Step 2: Verify, commit, and publish belief-model RED**
 
 ```bash
 python3 -m unittest tests.test_story_models.StoryModelTests.test_belief_model_follows_actor_subjective_state -v
-```
-
-Expected: import failure because the belief adapter does not exist.
-
-- [ ] **Step 3: Commit and publish belief-model RED**
-
-```bash
 git add tests/test_story_models.py
 git commit -m "test: add belief-sensitive story model RED"
 git push
 ```
 
-Require remote failure only in the new model obligations.
-
-- [ ] **Step 4: Implement parameter-free belief search**
-
-Create `narrative_dynamics/adapters/story_belief_search.py`:
+- [ ] **Step 3: Implement parameter-free belief search**
 
 ```python
 class AgentBeliefSearchModel:
@@ -1127,16 +1116,11 @@ class AgentBeliefSearchModel:
 
 The RNG argument is intentionally unused. Do not add stochastic behavior or a hidden tie-breaker.
 
-- [ ] **Step 5: Verify belief model GREEN**
+- [ ] **Step 4: Verify and commit belief-model GREEN**
 
 ```bash
 python3 -m unittest tests.test_story_models -v
 python3 -m unittest discover -s tests -v
-```
-
-- [ ] **Step 6: Commit belief model GREEN**
-
-```bash
 git add narrative_dynamics/adapters/story_belief_search.py tests/test_story_models.py
 git commit -m "feat: add belief-sensitive story search model"
 git push
@@ -1154,12 +1138,12 @@ Require remote `proof` green before Task 6.
 - Modify: `tests/test_story_models.py`
 
 **Interfaces:**
-- Consumes: the common model outcome contract from Task 5, `objective_state`, and `SimulationTrace`.
+- Consumes: common outcome contract from Task 5, `objective_state`, `SimulationTrace`.
 - Produces:
-  - `OmniscientSearchModel` with `name = "omniscient-search"`
-  - `story_choice_metrics(trace: SimulationTrace) -> dict[str, float]`
+  - `OmniscientSearchModel`, name exactly `omniscient-search`
+  - `story_choice_metrics(trace) -> dict[str, float]`
 
-The V1 metric keys are fixed to:
+V1 metric keys are exactly:
 
 ```text
 choice.search_box
@@ -1167,8 +1151,6 @@ choice.search_drawer
 ```
 
 - [ ] **Step 1: Add omniscient/metrics RED tests**
-
-Extend `tests/test_story_models.py`:
 
 ```python
 def test_omniscient_model_follows_objective_state_in_both_cases(self):
@@ -1199,47 +1181,29 @@ def test_false_belief_separates_models_and_informed_case_reunites_them(self):
     )
 ```
 
-Add a metric test using a real `SimulationTrace` or a minimal trace fixture and require:
+Add metric validation tests for exact two-action coverage, numeric finite non-negative probabilities, and normalized mass.
 
-```python
-{
-    "choice.search_box": 0.0,
-    "choice.search_drawer": 1.0,
-}
-```
-
-for the false-belief belief model. The extractor must reject missing/extra action keys, non-numeric/non-finite/negative probabilities, and non-normalized probability mass.
-
-- [ ] **Step 2: Verify omniscient/metrics RED**
+- [ ] **Step 2: Verify, commit, and publish omniscient/metrics RED**
 
 ```bash
 python3 -m unittest tests.test_story_models -v
-```
-
-Expected: failures because the omniscient adapter and story metric extractor do not exist.
-
-- [ ] **Step 3: Commit and publish omniscient/metrics RED**
-
-```bash
 git add tests/test_story_models.py
 git commit -m "test: add omniscient story baseline RED"
 git push
 ```
 
-- [ ] **Step 4: Implement omniscient baseline**
+- [ ] **Step 3: Implement omniscient baseline**
 
-Create `story_omniscient_search.py` with the same validation/output contract as the belief model, replacing only the epistemic projection:
+Use the same result contract as Task 5, changing only projection:
 
 ```python
 state = objective_state(story.events, at_time=story.decision.time)
 location = latest_object_location(state, story.decision.object)
 ```
 
-Basis kind is exactly `"objective"`. Parameters must be exactly empty. Unknown objective target action fails closed.
+Basis kind is exactly `objective`; parameters must be empty; missing matching action fails closed.
 
-- [ ] **Step 5: Implement common metric extractor**
-
-Create `narrative_dynamics/story/metrics.py`:
+- [ ] **Step 4: Implement common metric extractor**
 
 ```python
 _EXPECTED_ACTIONS = ("search_box", "search_drawer")
@@ -1265,22 +1229,14 @@ def story_choice_metrics(trace: SimulationTrace) -> dict[str, float]:
         values[action] = probability
     if not math.isclose(sum(values.values()), 1.0, rel_tol=1e-12, abs_tol=1e-12):
         raise ValueError("story policy must be normalized")
-    return {
-        f"choice.{action}": values[action]
-        for action in _EXPECTED_ACTIONS
-    }
+    return {f"choice.{action}": values[action] for action in _EXPECTED_ACTIONS}
 ```
 
-- [ ] **Step 6: Verify competing-model GREEN**
+- [ ] **Step 5: Verify and commit competing-model GREEN**
 
 ```bash
 python3 -m unittest tests.test_story_models -v
 python3 -m unittest discover -s tests -v
-```
-
-- [ ] **Step 7: Commit GREEN**
-
-```bash
 git add narrative_dynamics/adapters/story_omniscient_search.py narrative_dynamics/story/metrics.py tests/test_story_models.py
 git commit -m "feat: add omniscient story baseline and metrics"
 git push
@@ -1297,8 +1253,8 @@ Require remote `proof` green before Task 7.
 - Create: `tests/test_story_runtime.py`
 
 **Interfaces:**
-- Consumes: all Task 2–6 story components and existing `SimulationRunner`.
-- Produces public exports from `narrative_dynamics.story`:
+- Consumes: Task 2–6 story components and existing `SimulationRunner`.
+- Produces public `narrative_dynamics.story` exports:
   - `StoryEntitiesV1`
   - `RelocationEventV1`
   - `DirectObservationV1`
@@ -1330,24 +1286,26 @@ class StoryRuntimeTests(unittest.TestCase):
         )
         scenario = project_narrative_scenario(case)
         runner = SimulationRunner()
-
         belief = runner.run_batch(
             AgentBeliefSearchModel(), scenario, {}, seeds=(101, 102)
         )
         omniscient = runner.run_batch(
             OmniscientSearchModel(), scenario, {}, seeds=(101, 102)
         )
-
-        self.assertEqual([t.outcome["selected_action"] for t in belief],
-                         ["search_drawer", "search_drawer"])
-        self.assertEqual([t.outcome["selected_action"] for t in omniscient],
-                         ["search_box", "search_box"])
+        self.assertEqual(
+            [trace.outcome["selected_action"] for trace in belief],
+            ["search_drawer", "search_drawer"],
+        )
+        self.assertEqual(
+            [trace.outcome["selected_action"] for trace in omniscient],
+            ["search_box", "search_box"],
+        )
         for trace in belief + omniscient:
             self.assertEqual(trace.parameters, ())
             self.assertIsNotNone(trace.manifest)
             self.assertEqual(trace.scenario_id, scenario.id)
 
-    def test_deterministic_models_are_seed_replay_compatible(self):
+    def test_deterministic_model_is_seed_replay_compatible(self):
         case = load_narrative_case(
             "fixtures/stories/key_location_informed_v1.json"
         )
@@ -1376,7 +1334,7 @@ class StoryRuntimeTests(unittest.TestCase):
         })
 ```
 
-Add API tests:
+Add API isolation:
 
 ```python
 def test_story_api_is_exported_only_from_story_package(self):
@@ -1384,38 +1342,36 @@ def test_story_api_is_exported_only_from_story_package(self):
     import narrative_dynamics.story as story
 
     for name in (
-        "NarrativeCaseV1", "project_narrative_scenario",
-        "objective_state", "subjective_state", "story_choice_metrics",
+        "NarrativeCaseV1",
+        "project_narrative_scenario",
+        "objective_state",
+        "subjective_state",
+        "story_choice_metrics",
     ):
         self.assertTrue(hasattr(story, name), name)
         self.assertFalse(hasattr(narrative_dynamics, name), name)
 ```
 
-Also assert the model modules contain no import of `prison_pomdp` or `prison_reactive` using `inspect.getsource()` or `ast`.
+Also inspect both adapter module sources and assert they contain no `prison_pomdp` or `prison_reactive` import/reference.
 
-- [ ] **Step 2: Verify runtime/API RED**
+- [ ] **Step 2: Verify, commit, and publish runtime/API RED**
 
 ```bash
 python3 -m unittest tests.test_story_runtime -v
-```
-
-Expected: failures because `narrative_dynamics.story.__init__` does not yet export the required surface.
-
-- [ ] **Step 3: Commit and publish runtime/API RED**
-
-```bash
 git add tests/test_story_runtime.py
 git commit -m "test: add trusted microstory runtime RED"
 git push
 ```
 
-- [ ] **Step 4: Add the story package public API**
+Expected failure is missing `narrative_dynamics.story` exports only.
 
-Create `narrative_dynamics/story/__init__.py` importing and listing exactly the V1 story types/functions above in `__all__`.
+- [ ] **Step 3: Add exact story package public exports**
+
+Create `narrative_dynamics/story/__init__.py` importing and listing exactly the interface names above in `__all__`.
 
 Do not modify `narrative_dynamics/__init__.py`.
 
-- [ ] **Step 5: Verify full Python GREEN**
+- [ ] **Step 4: Verify and commit runtime/API GREEN**
 
 ```bash
 python3 -m unittest tests.test_story_schema -v
@@ -1425,35 +1381,28 @@ python3 -m unittest tests.test_story_models -v
 python3 -m unittest tests.test_story_runtime -v
 python3 -m unittest discover -s tests -v
 python3 -m compileall -q narrative_dynamics
-```
-
-Expected: all pass; total Python test count is greater than 269.
-
-- [ ] **Step 6: Commit runtime/API GREEN**
-
-```bash
 git add narrative_dynamics/story/__init__.py tests/test_story_runtime.py
 git commit -m "feat: exercise narrative microstories through trusted runtime"
 git push
 ```
 
-Require remote `proof` green before Task 8.
+Expected: all Python tests pass; total test count is greater than 269. Require remote `proof` green before Task 8.
 
 ---
 
-### Task 8: Final Evidence, Review, and Integration into the Research Branch
+### Task 8: Final Evidence, Review, and Research-Branch Integration
 
 **Files:**
-- Review all files changed from the implementation branch against `proof/narrative-dynamics-v0`.
+- Review the complete feature diff against the pre-feature `proof/narrative-dynamics-v0` SHA.
 - No production modification is expected unless review finds a defect; every defect requires a failing test before a fix.
 
 **Interfaces:**
-- Consumes: final feature head and draft PR CI evidence.
-- Produces: reviewed green feature head; optionally a non-forced fast-forward of `proof/narrative-dynamics-v0` only.
+- Consumes: final feature head and draft PR evidence.
+- Produces: reviewed green feature head and, after verification, a non-forced fast-forward of `proof/narrative-dynamics-v0` only.
 
-- [ ] **Step 1: Run fresh complete local verification on the exact feature head**
+- [ ] **Step 1: Run fresh complete verification on the exact final feature head**
 
-Run:
+Run the same gates as CI:
 
 ```bash
 lake build \
@@ -1466,52 +1415,53 @@ lake env lean --run NarrativeDynamics/Conformance/ReferenceVectors.lean \
 cmp conformance/lean_reference_vectors.json \
   .generated-conformance/lean_reference_vectors.json
 lake build
-lake env lean NarrativeDynamics/Tests/StoryState.lean
 python3 -m unittest discover -s tests -v
 python3 -m compileall -q narrative_dynamics
+lake env lean NarrativeDynamics/Tests/StoryState.lean
 ```
 
-Also run every existing Lean theorem command listed in `.github/workflows/proof.yml`, not only StoryState.
+Also run every pre-existing Lean theorem command from `.github/workflows/proof.yml`; do not substitute `lake build` for theorem tests.
 
 - [ ] **Step 2: Require a fresh final feature `proof` run**
 
-The final GitHub Actions run for the feature head must have:
+The final remote run must show:
 
-- Lean/Python conformance success;
+- conformance success;
 - full Lean library build success;
-- all existing theorem tests plus `StoryState.lean` success;
-- complete Python suite success with test count greater than 269.
+- all pre-existing theorem tests success;
+- complete Python suite success with count greater than 269;
+- dedicated `Narrative story theorem tests` success.
 
-Record workflow/run ID and exact feature SHA.
+Record exact feature SHA and workflow/run ID.
 
-- [ ] **Step 3: Review the exact diff against the research base**
+- [ ] **Step 3: Review the exact diff**
 
-Confirm all of the following:
+Confirm:
 
-- only one new Lean semantic module plus its import/test/workflow hook were added;
-- no existing prison adapter changed;
-- no observation-protocol semantics changed;
-- no new dependency or lockfile exists;
-- no new `NodeKind` exists;
-- `TypedEdge.locatedAt` is unchanged;
+- one new Lean semantic module plus root import/test/workflow hook only;
+- no prison adapter changes;
+- no observation-protocol semantic changes;
+- no dependency/lockfile changes;
+- no new `NodeKind`;
+- unchanged `TypedEdge.locatedAt`;
+- Python `logical_time` maps to Lean `WorldGraph.eventTime` rather than a second Lean clock;
 - story code never imports prison adapters;
 - replay code has no simulation/model-comparison dependency;
+- authored fixture and runtime decoder call the same cross-field semantic validator;
+- manually constructed malformed `Scenario` values cannot bypass continuity/reference/decision validation;
 - belief model never falls back to objective state;
-- models accept no parameters;
-- fixture source text and oracle never enter `Scenario.payload`;
-- fixture name/version/source/provenance never enter `Scenario.payload`;
-- neutral `Scenario.id` is derived only from the visible payload digest;
-- models cannot infer `false-belief`/`informed` from scenario ID;
-- no post-decision or gold-choice field is model-visible;
+- both models reject any parameter;
+- source text/oracle/name/version/source/provenance/gold outputs never enter `Scenario.payload`;
+- runtime ID is only a digest of model-visible payload;
+- scenario ID cannot reveal `false-belief` or `informed`;
 - both fixture objective event histories are identical;
-- only Bob's observation of `e2` distinguishes the informed semantic case;
-- `narrative_dynamics.story` exports the canonical story surface;
-- package root remains unchanged for story APIs;
-- no empirical-validity, theory-of-mind-generalization, or NLP-understanding claim was added.
+- informed case differs semantically only by Bob observing `e2`;
+- `narrative_dynamics.story` exports the canonical story API and package root remains unchanged;
+- no empirical validity, NLP-understanding, or general theory-of-mind claim was added.
 
-If review finds a defect, write a focused failing test, verify RED, implement the smallest fix, and rerun all verification before continuing.
+If review finds a defect: add focused RED test → verify RED → smallest fix → rerun all gates.
 
-- [ ] **Step 4: Verify feature/base ancestry before integration**
+- [ ] **Step 4: Verify ancestry before integration**
 
 Compare:
 
@@ -1520,57 +1470,56 @@ base = proof/narrative-dynamics-v0
 head = work/narrative-microstory-v1
 ```
 
-Require `behind_by == 0` and feature status `ahead`. If the base moved, re-evaluate and rerun the merged-context proof instead of force-updating anything.
+Require feature `ahead` and `behind_by == 0`. If base moved, re-evaluate the exact merge context and rerun proof; never force-update.
 
 - [ ] **Step 5: Fast-forward only the research branch**
 
-After final review and green CI, move `proof/narrative-dynamics-v0` to the exact feature SHA with `force=false`.
+Move `proof/narrative-dynamics-v0` to the exact reviewed feature SHA with `force=false`.
 
-Do not move `master`. The previous main PR history/revert is outside this feature's integration path.
+Do not move `master`; any future main-branch PR is a separate user-authorized action.
 
-- [ ] **Step 6: Verify the research branch is identical to the feature head**
+- [ ] **Step 6: Verify identical refs and close feature metadata**
 
-Compare the final SHA to `proof/narrative-dynamics-v0` and require `status == identical`, `ahead_by == 0`, `behind_by == 0`.
+Require comparison of final feature SHA and `proof/narrative-dynamics-v0` to report `identical`, `ahead_by == 0`, `behind_by == 0`.
 
-- [ ] **Step 7: Close out the feature PR metadata**
-
-Update the feature PR title/body to summarize:
+Update feature PR title/body with:
 
 - first non-prison canonical story domain;
 - false-belief/informed matched pair;
 - objective versus agent-specific replay;
-- new Lean `StoryState` theorems;
-- `agent-belief-search` versus `omniscient-search`;
+- Lean `StoryState` semantics;
+- belief versus omniscient models;
 - anti-leakage fixture→runtime projection;
-- neutral payload-derived runtime scenario ID;
+- shared runtime semantic validation;
+- neutral payload-derived scenario ID;
 - parameter-free V1;
-- final feature SHA and workflow run;
-- final Python test count;
-- explicit limits: authored canonical input only, no NLP, no empirical human data, no general theory-of-mind claim.
-
-Leave any future `master` PR as a separate user-authorized action.
+- final SHA/run/test count;
+- explicit limits: authored canonical input, no NLP, no empirical human data, no general theory-of-mind claim.
 
 ---
 
 ## Final Acceptance Checklist
 
-- [ ] Two committed authored story fixtures validate and verify declared content hashes.
+- [ ] Two authored fixtures validate, round-trip, and verify declared hashes.
 - [ ] Both fixtures have identical objective relocation history.
 - [ ] False-belief Bob observes only `e1`; informed Bob observes `e1` and `e2`.
 - [ ] Objective replay is `key@box` in both cases.
 - [ ] Bob subjective replay is `key@drawer` in false belief and `key@box` when informed.
-- [ ] Lean proves unobserved relocation cannot update subjective projection and observed relocation can.
-- [ ] Lean keeps the existing information-path/observation-admission boundary authoritative.
-- [ ] Belief model selects drawer only in the false-belief case.
+- [ ] Lean proves an unobserved relocation leaves subjective projection unchanged and an observed later relocation updates it.
+- [ ] Lean keeps information-path and observation-admission boundaries authoritative.
+- [ ] `StoryHistoryCompatible` binds objective continuity and strict `WorldGraph.eventTime` order.
+- [ ] Belief model selects drawer only in false belief.
 - [ ] Omniscient model selects box in both cases.
-- [ ] Both models accept exactly zero fitted parameters.
-- [ ] Both models use the same result and metric contract.
+- [ ] Both models accept exactly zero parameters.
+- [ ] Both models use one shared result/metric contract.
 - [ ] Both models run through `SimulationRunner` with manifests and canonical empty-parameter identity.
 - [ ] Runtime scenario payload contains only `entities/events/observations/decision`.
-- [ ] Runtime scenario ID contains no fixture label and is derived only from visible payload content.
+- [ ] Runtime scenario ID is derived only from visible payload content.
+- [ ] Fixture metadata changes cannot alter model-visible input unless canonical story semantics changed.
+- [ ] Runtime decoding reuses fixture cross-field validation and rejects malformed hand-built scenarios.
 - [ ] Source text/oracle/provenance/gold outputs are not model-visible.
 - [ ] Story public API lives under `narrative_dynamics.story`, not package root.
-- [ ] No prison semantics, dependency files, or generic observation semantics were modified.
+- [ ] No prison semantics, dependency files, or generic observation semantics changed.
 - [ ] All Lean conformance/build/theorem gates are green.
 - [ ] Full Python suite is green with more than 269 tests.
 - [ ] Integration, if performed, is a non-forced fast-forward of `proof/narrative-dynamics-v0` only.
