@@ -61,7 +61,8 @@ private def history : List (StoryRelocation Event Object Location) := [
 ]
 
 example : StoryHistoryCompatible falseBeliefWorld history := by
-  decide
+  simp [StoryHistoryCompatible, storyHistoryCompatibleFrom, falseBeliefWorld,
+    history, eventTime, applyStoryRelocation]
 
 example : objectiveLocation history .key = some .box := by
   rfl
