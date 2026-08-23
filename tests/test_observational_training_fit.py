@@ -116,16 +116,18 @@ class TrainingTargetFitTests(unittest.TestCase):
             loss=brier_loss(),
         )
 
+        expected_candidates = (
+            (("p", 0.2),),
+            (("p", 0.5),),
+            (("p", 0.8),),
+        )
         self.assertIs(report.manifest.stage, ExperimentStage.TRAINING_TARGET_FIT)
         self.assertEqual(len(report.ranking), 3)
         self.assertEqual(report.best.parameters, (("p", 0.8),))
+        self.assertEqual(set(report.candidate_parameters), set(expected_candidates))
         self.assertEqual(
-            set(report.candidate_parameters),
-            {
-                (("p", 0.2),),
-                (("p", 0.5),),
-                (("p", 0.8),),
-            },
+            report.manifest.inputs.get("parameter_candidates"),
+            expected_candidates,
         )
         self.assertTrue(all(len(candidate.cases) == 2 for candidate in report.ranking))
         self.assertEqual(len(report.manifest.parent_hashes), 3)
