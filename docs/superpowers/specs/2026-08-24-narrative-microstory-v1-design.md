@@ -20,9 +20,9 @@ story
   → competing action predictions
 ```
 
-The V1 domain is deliberately tiny: two agents, one object, two locations, relocation events, direct perception, and one search decision. The primary test is false belief. The objective world may contain a later relocation that the decision actor did not observe; a belief-sensitive model must continue to predict from the actor's last admissible information rather than from narrator-level truth.
+V1 is deliberately tiny: two agents, one object, two locations, relocation events, direct perception, and one search decision. The primary test is false belief. Objective reality may contain a later relocation that the decision actor did not observe; a belief-sensitive model must continue to predict from the actor's last admissible information rather than from narrator-level truth.
 
-This increment is not a general natural-language story parser. The source story and the canonical annotation coexist in the fixture, but models consume only the canonical runtime projection.
+This increment is not a general natural-language story parser. The authored story and the canonical annotation coexist in a fixture, but models consume only a canonical runtime projection.
 
 ## Existing boundaries that remain authoritative
 
@@ -33,11 +33,11 @@ The current repository already provides:
 - private per-agent belief/provenance graphs;
 - symbolic belief support separated from Bayesian confidence;
 - finite softmax order-preservation results;
-- immutable Python scenarios, traces, manifests, and content hashes;
+- immutable Python scenarios, traces, manifests, and stable content hashes;
 - `SimulatorModel`, `ModelRun`, `SimulationRunner`, model factories, subprocess execution, schema enforcement, and attestation;
 - metric/loss/model-comparison infrastructure.
 
-This work extends those boundaries rather than replacing them. In particular, V1 does not invent a second observation semantics or a second execution runtime.
+V1 extends these boundaries rather than replacing them. It does not invent a second observation semantics or a second execution runtime.
 
 ## Scientific question
 
@@ -45,12 +45,12 @@ V1 asks one narrow question:
 
 > When objective reality changes without entering an agent's information boundary, should the predicted action follow objective reality or the agent's last supported subjective state?
 
-The two competing models answer differently:
+The competing models answer differently:
 
 - `agent-belief-search` predicts from the decision actor's latest admissible subjective object location;
 - `omniscient-search` predicts from the objective latest object location.
 
-A false-belief story separates them. A matched informed counterfactual makes them converge again.
+A false-belief story separates them. A matched informed counterfactual makes them converge.
 
 This is the first repository-level contrast where:
 
@@ -58,7 +58,7 @@ This is the first repository-level contrast where:
 narrator knows P ≠ character knows P ≠ character acts on P
 ```
 
-can be represented and tested end to end.
+is represented and tested end to end.
 
 ## V1 authored microstories
 
@@ -84,7 +84,7 @@ objective(key)      = box
 subjective(Bob,key) = drawer
 ```
 
-Required model ranking:
+Required ranking:
 
 ```text
 agent-belief-search: search_drawer > search_box
@@ -97,7 +97,7 @@ Canonical source text:
 
 > Alice and Bob are in a room. While Bob is watching, Alice puts a key in the drawer. Alice later moves the key from the drawer to the box, and Bob sees the move. Bob wants to find the key. Where will Bob search first: the drawer or the box?
 
-The objective events are intentionally identical to Case A. The only discriminating semantic change is that Bob also directly observes `e2`.
+The objective event history is exactly the same as Case A. The only discriminating canonical semantic change is that Bob also directly observes `e2`.
 
 At the decision:
 
@@ -106,7 +106,7 @@ objective(key)      = box
 subjective(Bob,key) = box
 ```
 
-Required model ranking:
+Required ranking:
 
 ```text
 agent-belief-search: search_box > search_drawer
@@ -137,38 +137,33 @@ objects   = key
 locations = drawer, box
 ```
 
-Identifiers are non-empty canonical strings, unique inside their entity family. V1 does not infer entity aliases or coreference.
+Identifiers are non-empty canonical strings and unique inside their entity family. V1 does not infer aliases or coreference.
 
 ### Relocation event
 
-The only state-changing event kind in V1 is:
+The only state-changing event kind in V1 is `relocate_object`.
 
-```text
-relocate_object
-```
-
-Each event contains:
+Each relocation contains:
 
 ```text
 id
-logical time
+logical_time
 actor
 object
 from_location : optional Location
- to_location   : Location
+to_location   : Location
 ```
 
 Requirements:
 
 - event IDs are unique;
 - logical times are strictly increasing in fixture order;
-- actor/object/location references must resolve to declared entities;
-- `to_location` must be declared;
-- `from_location`, when present, must equal the object's current objective location immediately before the event;
+- actor, object, and location references resolve to declared entities;
+- `from_location`, when present, equals the object's current objective location immediately before the event;
 - `from_location = null` is allowed only when the object has no prior objective location in the history;
-- one event always establishes the object's new objective location at `to_location`.
+- the event establishes the object's new objective location at `to_location`.
 
-These validation rules make the authored event history itself internally checkable instead of trusting a later oracle field.
+These rules make the authored event history internally checkable rather than trusting an oracle field.
 
 ### Observation
 
@@ -182,21 +177,17 @@ channel = direct_perception
 
 Requirements:
 
-- referenced event and agent must exist;
+- referenced event and agent exist;
 - duplicate `(event, agent)` observations are rejected;
-- V1 supports no other channel.
+- V1 supports no other observation channel.
 
-`direct_perception` is semantic, not decorative metadata: when projected to the Lean world graph it supplies the direct event→agent information connection required for observation admissibility.
+`direct_perception` is semantic, not decorative metadata. In the Lean instantiation it supplies the direct event→agent information connection required for observation admissibility.
 
 No implicit rule says an actor automatically observes their own action. Every model-relevant observation is explicit in canonical data.
 
 ### Decision
 
-V1 admits one decision kind:
-
-```text
-search_object
-```
+V1 admits one decision kind: `search_object`.
 
 A decision contains:
 
@@ -218,19 +209,19 @@ location
 Requirements:
 
 - decision ID is non-empty;
-- decision time is strictly later than every preceding story event;
-- decision actor/object/action locations resolve to declared entities;
+- decision time is strictly later than every story event;
+- decision actor, target object, and action locations resolve to declared entities;
 - action IDs are unique;
 - action locations are unique;
-- the decision contains at least two actions;
-- the target object has a known objective latest location;
-- the decision actor has at least one directly observed relocation of the target object before the decision, so the deterministic V1 belief model has a known subjective location.
+- at least two actions are present;
+- the target object has a known latest objective location;
+- the decision actor has directly observed at least one relocation of the target object before the decision, so the deterministic V1 belief model has a known subjective location.
 
 The committed pair uses exactly `search_drawer` and `search_box`.
 
-## Fixture identity and oracle separation
+## Committed fixture shape
 
-The committed fixture stores both authored material and expected semantic results. A representative top-level shape is:
+The false-belief fixture is structurally equivalent to this complete example:
 
 ```json
 {
@@ -246,28 +237,65 @@ The committed fixture stores both authored material and expected semantic result
     "empirical_human_data": false,
     "population_representative": false
   },
-  "source_text": "...",
+  "source_text": "Alice and Bob are in a room. While Bob is watching, Alice puts a key in the drawer. Bob leaves the room. While Bob is away, Alice moves the key from the drawer to the box. Bob returns and wants to find the key. Where will Bob search first: the drawer or the box?",
   "entities": {
     "agents": ["alice", "bob"],
     "objects": ["key"],
     "locations": ["drawer", "box"]
   },
-  "events": ["...canonical relocation objects..."],
-  "observations": ["...canonical observation objects..."],
-  "decision": {"...": "..."},
+  "events": [
+    {
+      "id": "e1",
+      "logical_time": 1,
+      "kind": "relocate_object",
+      "actor": "alice",
+      "object": "key",
+      "from_location": null,
+      "to_location": "drawer"
+    },
+    {
+      "id": "e2",
+      "logical_time": 2,
+      "kind": "relocate_object",
+      "actor": "alice",
+      "object": "key",
+      "from_location": "drawer",
+      "to_location": "box"
+    }
+  ],
+  "observations": [
+    {
+      "event": "e1",
+      "agent": "bob",
+      "channel": "direct_perception"
+    }
+  ],
+  "decision": {
+    "id": "d1",
+    "time": 3,
+    "kind": "search_object",
+    "actor": "bob",
+    "object": "key",
+    "actions": [
+      {"id": "search_drawer", "location": "drawer"},
+      {"id": "search_box", "location": "box"}
+    ]
+  },
   "oracle": {
     "objective_location": "box",
     "actor_subjective_location": "drawer",
     "agent_belief_ranking": ["search_drawer", "search_box"],
     "omniscient_ranking": ["search_box", "search_drawer"]
   },
-  "content_hash": "sha256:..."
+  "content_hash": "sha256:<64 lowercase hex digits>"
 }
 ```
 
-The declared fixture `content_hash` is recomputed from all canonical fixture content except the declared hash itself. The fixture is immutable after construction, round-trips through strict JSON, and rejects a mismatched declared hash.
+The informed fixture uses the same entities, objective events, and decision, and adds Bob's direct observation of `e2`; its subjective oracle and belief-model ranking change to `box` / `search_box`.
 
-The fixture oracle is test metadata. It must never be exposed to a model.
+The declared fixture `content_hash` is recomputed from all fixture content except the declared hash field itself. The fixture is immutable after construction, round-trips through strict JSON, and rejects a mismatched declared hash.
+
+The oracle is test metadata and must never be exposed to a model.
 
 ## Runtime projection and anti-leakage boundary
 
@@ -276,12 +304,12 @@ Fixture and runtime scenario are distinct values.
 A pure projection:
 
 ```text
-NarrativeCaseV1 → NarrativeScenarioV1 → Scenario
+NarrativeCaseV1 → NarrativeScenarioV1 → contracts.Scenario
 ```
 
-constructs the only payload visible to a simulator.
+constructs the only input visible to a simulator.
 
-The runtime payload contains exactly:
+The model-visible payload contains exactly:
 
 ```text
 entities
@@ -294,33 +322,42 @@ It excludes:
 
 - `oracle`;
 - `source_text`;
+- fixture `name` and `version`;
+- fixture `source` and `provenance`;
 - any observed continuation after the decision;
-- any gold selected action;
-- fixture provenance fields that could encode the answer.
+- any gold selected action or ranking.
 
-The projection is deterministic and itself covered by tests. The resulting ordinary runtime `Scenario` therefore receives the repository's existing recursive immutability and stable identity behavior.
+`Scenario.id` is also part of the model-visible input and therefore must not encode fixture labels such as `false-belief` or `informed`. V1 derives a neutral runtime ID solely from the model-visible payload, using the payload's stable content digest, for example:
 
-V1 intentionally withholds the raw source text from the models. Natural-language parsing becomes a later upstream stage whose output can be checked against this manually authored canonical oracle.
+```text
+story-v1-<payload sha256 hex>
+```
+
+The payload digest is computed before constructing `Scenario`; the final ordinary `Scenario.content_hash` may then include both that neutral ID and the payload without circularity.
+
+Tests must prove that changing only fixture oracle/source metadata cannot alter or reveal the model-facing semantic payload except where model-visible story semantics themselves changed.
+
+V1 intentionally withholds raw source text from models. Natural-language parsing is a later upstream stage whose output can be checked against these manual canonical annotations.
 
 ## Story-state replay semantics
 
-V1 introduces temporal object-location fluents rather than extending structural graph edges with mutable location state.
+V1 introduces temporal object-location fluents rather than extending structural graph edges with mutable object state.
 
 ### Objective projection
 
 `objective_state(events)` replays every valid relocation in time order.
 
-For one object, each relocation replaces the current location with `to_location`. Historical facts remain historical; later movement does not make the earlier event false.
+Each relocation replaces the current location of its object with `to_location`. Historical relocations remain historical facts; later movement does not make an earlier event false.
 
-The latest objective location is the `to_location` of the most recent relocation for the object.
+The latest objective location is the destination of the most recent relocation for the object at or before the decision time.
 
 ### Subjective projection
 
-`subjective_state(events, observations, agent)` replays only relocations that the agent directly observed.
+`subjective_state(events, observations, agent)` replays only relocations directly observed by the agent.
 
-The latest subjective location is the `to_location` of the most recent observed relocation for that object.
+The latest subjective location is the destination of the most recent observed relocation for the object at or before the decision time.
 
-The subjective replay does not require its prior subjective location to equal an observed relocation's `from_location`. Directly seeing a relocation is sufficient to learn its destination even if the observer lacked the earlier state. Objective `from_location` consistency is checked against objective history, not against an agent's private history.
+Subjective replay does not require the agent's prior subjective location to equal an observed relocation's objective `from_location`. Directly seeing a relocation is sufficient to learn its destination even if the observer lacked the earlier state. Objective `from_location` continuity is validated against objective history, not private history.
 
 This keeps observation semantics distinct from world-history consistency.
 
@@ -333,9 +370,9 @@ objectAt(key, drawer, t1)
 objectAt(key, box, t2)
 ```
 
-A later fact does not erase the existence of the earlier historical fact. Decision models query the latest supported state at or before the decision time.
+A later fact does not erase the earlier historical fact. Decision models query the latest supported state at or before decision time.
 
-This distinction is required for future narrative reasoning about what happened previously versus what an agent currently believes.
+This distinction is required for future reasoning about what happened previously versus what an agent currently believes.
 
 ## Lean semantic extension
 
@@ -347,56 +384,60 @@ Add:
 NarrativeDynamics/Core/StoryState.lean
 ```
 
-The module is generic over object and location types. It must not mention Alice, Bob, key, drawer, or box.
-
-Its responsibility is only temporal fluent projection over relocation events and the connection from admissible observation to subjective projection.
+The module is generic over event, object, and location types. It must not mention Alice, Bob, key, drawer, or box.
 
 A representative semantic surface is:
 
 ```text
-StoryRelocation Object Location
+StoryRelocation Event Object Location
 objectiveLocation
 subjectiveLocation
+StoryHistoryCompatible
 ```
 
-Exact implementation types may be refined in the implementation plan, but the semantics above are fixed.
+`StoryRelocation` associates each relocation with the corresponding world event and its temporal/object-location payload. `StoryHistoryCompatible` binds relocation logical time to `WorldGraph.eventTime` and captures valid objective `from_location` continuity.
+
+`subjectiveLocation` filters relocation events through the existing world observation relation for the queried agent; it does not define a second independent notion of observation.
+
+Exact implementation types may change during planning if Lean ergonomics require it, but these semantics and boundaries are fixed.
 
 ### Reuse of existing epistemic kernel
 
-The new module must use the existing `WorldGraph` observation boundary.
+The new module uses the existing `WorldGraph` observation boundary.
 
-For a canonical direct observation, the story-to-Lean instantiation provides an event→agent information path. Existing `WorldInvariant` therefore continues to require that every recorded observation has information reachability.
+For a canonical direct observation, the story-to-Lean instantiation provides an event→agent information path. Existing `WorldInvariant` therefore continues to require information reachability for every recorded observation.
 
-The existing `ObservationEvidenceAdmissible` boundary remains authoritative: an event that has no information path to the agent cannot be admitted into the agent's private evidence state.
+The existing `ObservationEvidenceAdmissible` boundary remains authoritative for proof-carrying private evidence: an event with no information path to an agent cannot be admitted as that agent's raw observation evidence.
 
-StoryState adds the missing fluent theorem layer; it does not redefine observation admission.
+StoryState adds fluent projection on top of these constraints; it does not redefine observation admission, provenance validity, or Bayesian belief confidence.
 
-### Provenance interpretation
+### Typed/provenance interpretation
 
-Relocation events may be represented as event proofs whose derived typed concept fact is the time-indexed `objectAt` proposition. The existing provenance invariant remains authoritative: derived facts must match the rule output and exact ordered parent facts.
+A relocation event can support a time-indexed story proposition such as `objectAt(key, box, t2)` using the existing typed concept/provenance machinery when a private belief representation is needed. Existing provenance rules continue to require that a derived fact match the exact rule output and ordered parent facts.
 
-The V1 design does not require adding a new `NodeKind` or mutating the meaning of existing structural `TypedEdge.locatedAt`, which currently describes an agent-location structural edge rather than an object fluent.
+V1 does not require a new `NodeKind`, and it does not mutate the meaning of existing structural `TypedEdge.locatedAt`, which currently represents an agent-location structural edge rather than a temporal object fluent.
 
 ### Required Lean properties
 
-The implementation must establish at least these semantic properties with executable theorem tests:
+The implementation must establish at least these properties with executable theorem tests:
 
 1. replaying a valid relocation history returns the latest objective destination;
 2. an unobserved relocation can change objective location without changing an agent's subjective location;
 3. an observed later relocation updates the agent's latest subjective location;
 4. objective and subjective locations can differ in the false-belief case;
 5. adding the missing admissible observation makes the informed actor's subjective location agree with objective location;
-6. an event unavailable through the information graph cannot be used as the observation premise that updates the agent projection;
-7. the concrete false-belief instantiation yields opposite strict action rankings for belief-sensitive versus omniscient decision semantics;
-8. the informed counterfactual yields the same `search_box` ranking for both semantics.
+6. under `WorldInvariant`, any event counted as observed by the subjective projection has an information path to the agent;
+7. an event with no information path cannot be admitted as proof-carrying raw observation evidence and therefore cannot provide the admissible-observation bridge for a subjective update;
+8. the concrete false-belief instantiation yields opposite strict action rankings for belief-sensitive versus omniscient decision semantics;
+9. the informed counterfactual yields the same `search_box` ranking for both semantics.
 
-The implementation plan may split these between generic core theorems and concrete theorem tests, but the behavioral claims may not be weakened.
+The implementation plan may split these between generic theorems and concrete theorem tests, but the behavioral claims may not be weakened.
 
 ## Python module architecture
 
 ### `narrative_dynamics/story/schema.py`
 
-Owns canonical story values and fixture validation:
+Owns canonical authored values and fixture validation:
 
 - `NarrativeCaseV1`;
 - entity declarations;
@@ -405,9 +446,9 @@ Owns canonical story values and fixture validation:
 - search decision/actions;
 - oracle value;
 - strict JSON load/dump;
-- fixture content hash verification.
+- fixture content-hash verification.
 
-This module performs structural and objective-history validation only. It does not run a behavioral model.
+It performs structural and objective-history validation only. It does not run a behavioral model.
 
 ### `narrative_dynamics/story/replay.py`
 
@@ -419,7 +460,7 @@ subjective_state(..., agent)
 latest_object_location(...)
 ```
 
-It has no dependency on the simulation runner, metric/loss code, or model comparison.
+It has no dependency on simulation, metrics, losses, or model comparison.
 
 ### `narrative_dynamics/story/scenario.py`
 
@@ -429,18 +470,18 @@ Owns the anti-leakage projection:
 NarrativeCaseV1 → NarrativeScenarioV1 → contracts.Scenario
 ```
 
-It is the only supported path from a V1 fixture into a story model.
+It is the only supported path from a V1 fixture into a story model and is responsible for deriving the neutral payload-based runtime scenario ID.
 
 ### `narrative_dynamics/story/metrics.py`
 
-Owns a common extractor for both story models. It returns the same categorical coordinates for both adapters:
+Owns a common extractor for both story models. It returns exactly:
 
 ```text
 choice.search_box
 choice.search_drawer
 ```
 
-The extractor validates that the emitted policy is complete, finite, non-negative, and normalized.
+using model-emitted policy probabilities. The extractor validates complete action coverage, finite non-negative probabilities, and normalization.
 
 ### `narrative_dynamics/adapters/story_belief_search.py`
 
@@ -450,30 +491,30 @@ The model accepts exactly an empty parameter mapping in V1. It ignores RNG for i
 
 Algorithm:
 
-1. derive the decision actor's subjective state from admissible canonical observations;
+1. derive the decision actor's subjective state from canonical direct observations;
 2. find the latest subjective location of the target object;
-3. assign score `1` to the action targeting that location and `0` to every other action;
+3. assign score `1` to the action targeting that location and `0` to every rival;
 4. emit a deterministic normalized one-hot policy;
-5. select the maximum-score action;
-6. emit an epistemic-basis record identifying the subjective location and supporting observed event ID.
+5. select the unique maximum-score action;
+6. emit an epistemic-basis record naming the subjective location and supporting observed relocation event ID.
 
-Unknown subjective target location is rejected; the V1 scenario contract is designed to prevent it.
+Unknown subjective target location is rejected. V1 scenario validation is designed to prevent it.
 
 ### `narrative_dynamics/adapters/story_omniscient_search.py`
 
 Owns `omniscient-search`.
 
-It also accepts exactly an empty parameter mapping and uses no fitted free parameter.
+It accepts exactly an empty parameter mapping and uses no fitted free parameter.
 
 Algorithm:
 
 1. replay all objective events;
 2. find the target object's latest objective location;
-3. assign score `1` to the action targeting that location and `0` to every other action;
+3. assign score `1` to the action targeting that location and `0` to every rival;
 4. emit the same policy/output contract as the belief model;
-5. identify the basis explicitly as objective-world state.
+5. identify the basis explicitly as objective-world state and its latest supporting relocation event.
 
-The baseline is intentionally epistemically unrealistic. Its purpose is to test whether agent-specific information adds explanatory content beyond narrator-level state.
+This baseline is intentionally epistemically unrealistic. Its purpose is to test whether agent-specific information adds explanatory content beyond narrator-level state.
 
 ## Prediction output contract
 
@@ -486,34 +527,34 @@ policy
 selected_action
 ```
 
-`epistemic_basis` must identify:
+`epistemic_basis` identifies:
 
 - basis kind: `subjective` or `objective`;
 - target object;
 - resolved location;
-- supporting latest relocation event ID.
+- latest supporting relocation event ID.
 
-`action_scores` and `policy` must contain exactly the declared decision action IDs.
+`action_scores` and `policy` contain exactly the declared decision action IDs.
 
 The deterministic V1 policy contains one action with probability `1.0` and every rival with probability `0.0`.
 
-No model may read or emit the fixture oracle as its prediction basis.
+No model may read or emit the fixture oracle, fixture name, or source-text labels as prediction evidence.
 
 ## Why V1 is parameter-free
 
 V1 tests semantic correctness, not behavioral noise.
 
-Adding a free inverse-temperature parameter before the objective/subjective distinction is proven would make semantic bugs harder to diagnose and introduce calibration machinery that is unnecessary for the first story-domain milestone.
+Adding a free inverse-temperature parameter before the objective/subjective distinction is proven would make semantic bugs harder to diagnose and add calibration machinery that is unnecessary for the first story-domain milestone.
 
-The current runtime accepts an empty parameter mapping, and the repository already has finite-softmax semantics that can be applied later without changing score ordering. A later V2 can add `beta > 0` when the research question becomes population choice frequency rather than deterministic false-belief competence.
+The current runtime accepts an empty parameter mapping. The repository already has finite-softmax semantics that can be applied later without changing score order. A later version may add `beta > 0` when the question becomes population choice frequency rather than deterministic false-belief competence.
 
 ## Tests and RED obligations
 
-Implementation follows strict RED → GREEN. Each production increment must begin with a failing obligation and keep unrelated existing tests green.
+Implementation follows strict RED → GREEN. Each production increment begins with a failing obligation and keeps unrelated existing tests green.
 
 ### Python schema RED
 
-Tests must initially fail because the story schema does not exist, then cover:
+Tests initially fail because the story schema does not exist, then cover:
 
 - immutable canonical values;
 - strict JSON round-trip;
@@ -523,7 +564,7 @@ Tests must initially fail because the story schema does not exist, then cover:
 - non-increasing event time;
 - invalid objective `from_location` continuity;
 - invalid observation references or duplicate observations;
-- invalid decision action identities/locations;
+- invalid decision action identities or locations;
 - decision time not after events;
 - decision actor with no observed location for the target object.
 
@@ -545,17 +586,19 @@ Adding an unobserved relocation must not change Bob's subjective state. Adding B
 
 ### Python anti-leakage RED
 
-Require that runtime scenario payload contains no:
+Require that model-visible input contains no:
 
 ```text
 oracle
 source_text
+fixture name/version
+source/provenance labels
 observed_choice
-gold action
+gold action/ranking
 post-decision continuation
 ```
 
-The model-facing scenario hash must therefore be independent of test oracle fields.
+Require a neutral runtime `Scenario.id` derived only from model-visible payload content. Changing only oracle/source metadata must not leak through the payload or runtime ID.
 
 ### Python model RED
 
@@ -571,19 +614,19 @@ informed:
   omniscient model → search_box
 ```
 
-Both models must reject non-empty parameters and malformed story scenarios.
+Both models reject non-empty parameters and malformed story scenarios.
 
 ### Trusted-runtime RED
 
-Both story models must run through the canonical `SimulationRunner` rather than being called directly as the production acceptance path.
+Both story models run through the canonical `SimulationRunner` in production acceptance tests rather than being accepted solely through direct calls.
 
-The tests must verify stable traces, manifest attachment, canonical empty parameter identity, common metric extraction, and seeded replay compatibility even though the deterministic model ignores RNG.
+Tests verify stable traces, manifest attachment, canonical empty parameter identity, common metric extraction, and seeded replay compatibility even though the deterministic models ignore RNG.
 
-If production source factories/contracts are added in V1, they must use the repository's existing schema/pinning/isolation machinery instead of bespoke trust checks.
+If production source factories/contracts are added in V1, they must use the existing schema/pinning/isolation machinery instead of bespoke trust checks.
 
 ### Lean RED
 
-Add concrete theorem obligations before `StoryState.lean` is implemented. The deliberate RED should arise from missing story-state definitions/theorems while the existing Lean library and unrelated theorem tests stay green.
+Add concrete theorem obligations before `StoryState.lean` is implemented. The deliberate RED arises from missing story-state definitions/theorems while the existing Lean library and unrelated theorem tests remain green.
 
 ## Committed fixtures
 
@@ -600,13 +643,35 @@ Their objective event histories are identical. They differ in Bob's observation 
 
 No train/selection/final partitioning is introduced in this increment.
 
+## Expected test/module additions
+
+The implementation plan should prefer focused files such as:
+
+```text
+NarrativeDynamics/Core/StoryState.lean
+NarrativeDynamics/Tests/StoryState.lean
+narrative_dynamics/story/__init__.py
+narrative_dynamics/story/schema.py
+narrative_dynamics/story/replay.py
+narrative_dynamics/story/scenario.py
+narrative_dynamics/story/metrics.py
+narrative_dynamics/adapters/story_belief_search.py
+narrative_dynamics/adapters/story_omniscient_search.py
+tests/test_story_schema.py
+tests/test_story_replay.py
+tests/test_story_models.py
+tests/test_story_runtime.py
+```
+
+This list is an architectural boundary, not a requirement to create empty files. The implementation plan may combine a small test file where doing so improves clarity, but production responsibilities remain separated as described above.
+
 ## Public API
 
-The canonical story schema/projection surface should be available from `narrative_dynamics.story`.
+The canonical story schema/projection surface is available from `narrative_dynamics.story`.
 
 Model-specific adapters remain module-scoped under `narrative_dynamics.adapters` unless a later integration need justifies root-level exports.
 
-The package root should not be expanded merely for convenience in V1.
+The package root is not expanded merely for convenience in V1.
 
 ## Error handling
 
@@ -614,7 +679,7 @@ Canonical authored-data errors fail during fixture/schema construction before mo
 
 Examples include invalid references, impossible relocation continuity, invalid time order, duplicate observations, and malformed decisions.
 
-Semantic model applicability errors such as an unresolved target location also fail closed rather than silently choosing an arbitrary action.
+Semantic model-applicability errors such as an unresolved target location also fail closed rather than silently choosing an arbitrary action.
 
 No fallback may substitute objective state when the belief-sensitive model lacks subjective information; that would erase the scientific distinction under test.
 
@@ -636,7 +701,7 @@ V1 does not implement:
 - social norms or institutions as behavioral mechanisms;
 - arbitrary planning;
 - arbitrary action vocabularies;
-- a generic fluent logic language;
+- a generic fluent-logic language;
 - parameter fitting;
 - train/selection/final observational evaluation;
 - empirical human-behavior claims;
@@ -649,18 +714,18 @@ These are later extensions only after the canonical information-state boundary i
 Narrative Microstory V1 is complete only when all of the following hold:
 
 1. the two authored fixtures load, validate, round-trip, and verify their content hashes;
-2. the model-facing scenario projection excludes all oracle/source-answer material;
+2. model-facing projection excludes oracle/source-answer metadata and uses a neutral payload-derived scenario ID;
 3. objective replay returns `key@box` for both fixtures;
 4. Bob's subjective replay returns `key@drawer` in false belief and `key@box` in informed belief;
-5. the Lean semantic layer proves that unobserved relocation cannot update the agent projection while admissible observation can;
+5. the Lean semantic layer proves that unobserved relocation cannot update agent projection while an admissible observed relocation can;
 6. `agent-belief-search` and `omniscient-search` disagree only where the information contrast predicts they should;
 7. both models expose one common categorical prediction contract and run through the existing trusted simulation runtime;
-8. the complete pre-existing Lean and Python test suites remain green;
+8. the complete pre-existing Lean and Python suites remain green;
 9. no prison model semantics are modified;
 10. no claim is made that success on the authored pair establishes general theory-of-mind competence, natural-language understanding, or empirical validity.
 
 ## Expected next increment
 
-After V1, the preferred next step is not broader story complexity immediately. It is an upstream parser experiment that attempts to recover the same canonical `NarrativeCaseV1` structure from the committed source texts and is scored against the manual annotations.
+After V1, the preferred next step is an upstream parser experiment that attempts to recover the same canonical `NarrativeCaseV1` structure from the committed source texts and is scored against the manual annotations.
 
-Only after the canonical parser boundary is measurable should the story domain expand to testimony, deception, uncertain perception, memory, or nested beliefs.
+Only after that parser boundary is measurable should the story domain expand to testimony, deception, uncertain perception, memory, or nested beliefs.
