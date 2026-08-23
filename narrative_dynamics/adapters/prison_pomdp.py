@@ -35,19 +35,25 @@ def _finite_number(value: object, *, label: str) -> float:
     if isinstance(value, bool):
         raise TypeError(f"{label} must be numeric")
     try:
-        result = float(value)
+        number = float(value)
     except (TypeError, ValueError) as error:
         raise TypeError(f"{label} must be numeric") from error
-    if not math.isfinite(result):
+    if not math.isfinite(number):
         raise ValueError(f"{label} must be finite")
-    return result
+    return number
+
+
+def _finite_result(value: float, *, label: str) -> float:
+    if not math.isfinite(value):
+        raise ValueError(f"{label} is not finite")
+    return value
 
 
 def _probability(value: object, *, label: str) -> float:
-    result = _finite_number(value, label=label)
-    if not 0.0 <= result <= 1.0:
+    number = _finite_number(value, label=label)
+    if not 0.0 <= number <= 1.0:
         raise ValueError(f"{label} must be in [0, 1]")
-    return result
+    return number
 
 
 def _scenario_values(scenario: object) -> _ScenarioValues:
@@ -69,28 +75,15 @@ def _scenario_values(scenario: object) -> _ScenarioValues:
         raise ValueError("prison POMDP scenario must contain exactly its declared fields")
 
     prior = _probability(payload["prior_weak"], label="prior weak probability")
-    accuracy = _probability(
-        payload["signal_accuracy"],
-        label="signal accuracy",
-    )
+    accuracy = _probability(payload["signal_accuracy"], label="signal accuracy")
     if accuracy < 0.5:
         raise ValueError("signal accuracy must be at least 0.5")
     persistence = _probability(
-        payload["guard_persistence"],
-        label="guard persistence",
+        payload["guard_persistence"], label="guard persistence"
     )
-    escape_reward = _finite_number(
-        payload["escape_reward"],
-        label="escape reward",
-    )
-    capture_cost = _finite_number(
-        payload["capture_cost"],
-        label="capture cost",
-    )
-    submit_reward = _finite_number(
-        payload["submit_reward"],
-        label="submit reward",
-    )
+    escape_reward = _finite_number(payload["escape_reward"], label="escape reward")
+    capture_cost = _finite_number(payload["capture_cost"], label="capture cost")
+    submit_reward = _finite_number(payload["submit_reward"], label="submit reward")
     scout_cost = _finite_number(payload["scout_cost"], label="scout cost")
     if escape_reward < 0.0 or capture_cost < 0.0 or scout_cost < 0.0:
         raise ValueError("escape reward and prison costs must be non-negative")
@@ -130,16 +123,30 @@ def _softmax(
 ) -> dict[str, float]:
     if set(values) != set(order):
         raise ValueError("softmax values must match their declared action order")
-    maximum = max(float(values[action]) for action in order)
-    masses = {
-        action: math.exp(beta * (float(values[action]) - maximum))
+    numeric = {
+        action: _finite_number(values[action], label=f"{action} action value")
         for action in order
+    }
+    maximum = max(numeric.values())
+    masses = {
+        action: math.exp(beta * (numeric[action] - maximum)) for action in order
     }
     total = sum(masses.values())
     if not math.isfinite(total) or total <= 0.0:
         raise ValueError("prison POMDP policy mass must be positive and finite")
     policy = {action: masses[action] / total for action in order}
-    policy[order[-1]] += 1.0 - sum(policy.values())
+
+    # Put the rounding residual on the largest coordinate. Rewriting that
+    # coordinate from the sum of all others avoids making an underflowed tail
+    # slightly negative when normalized values add to just over one.
+    pivot = max(order, key=masses.__getitem__)
+    other_mass = sum(policy[action] for action in order if action != pivot)
+    policy[pivot] = 1.0 - other_mass
+    if any(
+        not math.isfinite(probability) or probability < 0.0
+        for probability in policy.values()
+    ):
+        raise ValueError("prison POMDP policy must contain non-negative finite mass")
     return policy
 
 
@@ -160,20 +167,12 @@ def _sample(
     return selected, draw
 
 
-def _signal_probability(
-    prior_weak: float,
-    accuracy: float,
-    signal: str,
-) -> float:
+def _signal_probability(prior_weak: float, accuracy: float, signal: str) -> float:
     clear = prior_weak * accuracy + (1.0 - prior_weak) * (1.0 - accuracy)
     return clear if signal == "clear" else 1.0 - clear
 
 
-def _posterior_weak(
-    prior_weak: float,
-    accuracy: float,
-    signal: str,
-) -> float:
+def _posterior_weak(prior_weak: float, accuracy: float, signal: str) -> float:
     evidence = _signal_probability(prior_weak, accuracy, signal)
     if evidence <= 0.0:
         raise ValueError("prison POMDP observation has zero evidence mass")
@@ -182,25 +181,19 @@ def _posterior_weak(
     return min(1.0, max(0.0, posterior))
 
 
-def _future_weak_probability(
-    current_weak_probability: float,
-    persistence: float,
-) -> float:
-    return (
-        current_weak_probability * persistence
-        + (1.0 - current_weak_probability) * (1.0 - persistence)
-    )
+def _future_weak_probability(current: float, persistence: float) -> float:
+    return current * persistence + (1.0 - current) * (1.0 - persistence)
 
 
 def _route_values(
-    weak_probability: float,
-    scenario: _ScenarioValues,
+    weak_probability: float, scenario: _ScenarioValues
 ) -> dict[str, float]:
+    escape = (
+        weak_probability * scenario.escape_reward
+        - (1.0 - weak_probability) * scenario.capture_cost
+    )
     return {
-        "escape": (
-            weak_probability * scenario.escape_reward
-            - (1.0 - weak_probability) * scenario.capture_cost
-        ),
+        "escape": _finite_result(escape, label="escape action value"),
         "submit": scenario.submit_reward,
     }
 
@@ -218,32 +211,27 @@ def _scout_value(scenario: _ScenarioValues, beta: float) -> float:
     terminal_value = 0.0
     for signal in _SIGNALS:
         mass = _signal_probability(
-            scenario.prior_weak,
-            scenario.signal_accuracy,
-            signal,
+            scenario.prior_weak, scenario.signal_accuracy, signal
         )
         if mass <= 0.0:
             continue
         posterior = _posterior_weak(
-            scenario.prior_weak,
-            scenario.signal_accuracy,
-            signal,
+            scenario.prior_weak, scenario.signal_accuracy, signal
         )
-        future_weak = _future_weak_probability(
-            posterior,
-            scenario.guard_persistence,
+        predicted = _future_weak_probability(
+            posterior, scenario.guard_persistence
         )
-        values, policy = _route_policy(future_weak, scenario, beta)
+        values, policy = _route_policy(predicted, scenario, beta)
         terminal_value += mass * sum(
             policy[action] * values[action] for action in _TERMINAL_ACTIONS
         )
-    return -scenario.scout_cost + scenario.discount * terminal_value
+    return _finite_result(
+        -scenario.scout_cost + scenario.discount * terminal_value,
+        label="scout action value",
+    )
 
 
-def _initial_values(
-    scenario: _ScenarioValues,
-    beta: float,
-) -> dict[str, float]:
+def _initial_values(scenario: _ScenarioValues, beta: float) -> dict[str, float]:
     direct = _route_values(scenario.prior_weak, scenario)
     return {
         "scout": _scout_value(scenario, beta),
@@ -253,9 +241,7 @@ def _initial_values(
 
 
 def _initial_policy(
-    values: Mapping[str, float],
-    scenario: _ScenarioValues,
-    beta: float,
+    values: Mapping[str, float], scenario: _ScenarioValues, beta: float
 ) -> dict[str, float]:
     if scenario.horizon == 1:
         terminal = _softmax(
@@ -276,13 +262,13 @@ def _expected_coordinates(
     beta: float,
     initial_policy: Mapping[str, float],
 ) -> dict[str, float]:
-    escape_probability = float(initial_policy["escape"])
-    submit_probability = float(initial_policy["submit"])
-    success_probability = escape_probability * scenario.prior_weak
+    terminal_escape = float(initial_policy["escape"])
+    terminal_submit = float(initial_policy["submit"])
+    escape_success = terminal_escape * scenario.prior_weak
     direct_values = _route_values(scenario.prior_weak, scenario)
     expected_utility = (
-        escape_probability * direct_values["escape"]
-        + submit_probability * scenario.submit_reward
+        terminal_escape * direct_values["escape"]
+        + terminal_submit * scenario.submit_reward
     )
 
     scout_probability = float(initial_policy["scout"])
@@ -299,41 +285,38 @@ def _expected_coordinates(
                 if state_weak
                 else 1.0 - scenario.signal_accuracy
             )
-            future_weak_probability = (
+            actual_future_weak = (
                 scenario.guard_persistence
                 if state_weak
                 else 1.0 - scenario.guard_persistence
             )
-            for signal, conditional_signal_mass in (
+            for signal, conditional_mass in (
                 ("clear", clear_probability),
                 ("alarm", 1.0 - clear_probability),
             ):
-                joint = state_mass * conditional_signal_mass
+                joint = state_mass * conditional_mass
                 if joint <= 0.0:
                     continue
                 posterior = _posterior_weak(
-                    scenario.prior_weak,
-                    scenario.signal_accuracy,
-                    signal,
+                    scenario.prior_weak, scenario.signal_accuracy, signal
                 )
-                predicted_weak = _future_weak_probability(
-                    posterior,
-                    scenario.guard_persistence,
+                predicted = _future_weak_probability(
+                    posterior, scenario.guard_persistence
                 )
-                _, route_policy = _route_policy(predicted_weak, scenario, beta)
+                _, route_policy = _route_policy(predicted, scenario, beta)
                 route_escape = route_policy["escape"]
                 route_submit = route_policy["submit"]
-                escape_probability += scout_probability * joint * route_escape
-                submit_probability += scout_probability * joint * route_submit
-                success_probability += (
+                terminal_escape += scout_probability * joint * route_escape
+                terminal_submit += scout_probability * joint * route_submit
+                escape_success += (
                     scout_probability
                     * joint
                     * route_escape
-                    * future_weak_probability
+                    * actual_future_weak
                 )
                 actual_escape_value = (
-                    future_weak_probability * scenario.escape_reward
-                    - (1.0 - future_weak_probability) * scenario.capture_cost
+                    actual_future_weak * scenario.escape_reward
+                    - (1.0 - actual_future_weak) * scenario.capture_cost
                 )
                 scout_terminal_utility += joint * (
                     route_escape * actual_escape_value
@@ -344,16 +327,21 @@ def _expected_coordinates(
             + scenario.discount * scout_terminal_utility
         )
 
+    terminal_escape = min(1.0, max(0.0, terminal_escape))
+    terminal_submit = 1.0 - terminal_escape
+    escape_success = min(1.0, max(0.0, escape_success))
     return {
-        "expected_terminal_escape": escape_probability,
-        "expected_terminal_submit": submit_probability,
-        "expected_escape_success": success_probability,
-        "expected_utility": expected_utility,
+        "expected_terminal_escape": terminal_escape,
+        "expected_terminal_submit": terminal_submit,
+        "expected_escape_success": escape_success,
+        "expected_utility": _finite_result(
+            expected_utility, label="expected episode utility"
+        ),
     }
 
 
 class FinitePrisonPOMDPModel:
-    """Exact two-state, one-information-step prison decision model."""
+    """Exact two-state prison decision model with one optional observation."""
 
     name = _MODEL_NAME
     version = _MODEL_VERSION
@@ -382,9 +370,7 @@ class FinitePrisonPOMDPModel:
             )
         ]
         initial_action, initial_draw = _sample(
-            initial_policy,
-            order=_INITIAL_ACTIONS,
-            rng=rng,
+            initial_policy, order=_INITIAL_ACTIONS, rng=rng
         )
         events.append(
             TraceEvent(
@@ -404,8 +390,8 @@ class FinitePrisonPOMDPModel:
         signal = "none"
         posterior_weak = values.prior_weak
         terminal_action = initial_action
-        steps = 1
         scout_selected = initial_action == "scout"
+        steps = 1
 
         if scout_selected:
             signal_draw = rng.random()
@@ -416,9 +402,7 @@ class FinitePrisonPOMDPModel:
             )
             signal = "clear" if signal_draw < clear_probability else "alarm"
             posterior_weak = _posterior_weak(
-                values.prior_weak,
-                values.signal_accuracy,
-                signal,
+                values.prior_weak, values.signal_accuracy, signal
             )
             events.append(
                 TraceEvent(
@@ -431,19 +415,14 @@ class FinitePrisonPOMDPModel:
                     },
                 )
             )
-            predicted_weak = _future_weak_probability(
-                posterior_weak,
-                values.guard_persistence,
+            predicted = _future_weak_probability(
+                posterior_weak, values.guard_persistence
             )
             terminal_values, terminal_policy = _route_policy(
-                predicted_weak,
-                values,
-                beta,
+                predicted, values, beta
             )
             terminal_action, terminal_draw = _sample(
-                terminal_policy,
-                order=_TERMINAL_ACTIONS,
-                rng=rng,
+                terminal_policy, order=_TERMINAL_ACTIONS, rng=rng
             )
             events.append(
                 TraceEvent(
@@ -461,13 +440,12 @@ class FinitePrisonPOMDPModel:
 
         if terminal_action == "escape":
             if scout_selected:
-                transition_draw = rng.random()
-                future_weak_probability = (
+                future_weak = (
                     values.guard_persistence
                     if state_weak
                     else 1.0 - values.guard_persistence
                 )
-                escaped = transition_draw < future_weak_probability
+                escaped = rng.random() < future_weak
             else:
                 escaped = state_weak
             terminal_utility = (
@@ -517,9 +495,7 @@ def create_prison_pomdp_model() -> FinitePrisonPOMDPModel:
 
 
 def _object_schema(
-    *,
-    required: tuple[str, ...],
-    properties: Mapping[str, object],
+    required: tuple[str, ...], properties: Mapping[str, object]
 ) -> dict[str, object]:
     return {
         "type": "object",
@@ -531,8 +507,8 @@ def _object_schema(
 
 def _policy_schema(actions: tuple[str, ...]) -> dict[str, object]:
     return _object_schema(
-        required=actions,
-        properties={
+        actions,
+        {
             action: {"type": "number", "minimum": 0.0, "maximum": 1.0}
             for action in actions
         },
@@ -541,8 +517,19 @@ def _policy_schema(actions: tuple[str, ...]) -> dict[str, object]:
 
 def _values_schema(actions: tuple[str, ...]) -> dict[str, object]:
     return _object_schema(
-        required=actions,
-        properties={action: {"type": "number"} for action in actions},
+        actions, {action: {"type": "number"} for action in actions}
+    )
+
+
+def _decision_event_schema(actions: tuple[str, ...]) -> dict[str, object]:
+    return _object_schema(
+        ("action", "policy", "values", "draw"),
+        {
+            "action": {"type": "string", "enum": actions},
+            "policy": _policy_schema(actions),
+            "values": _values_schema(actions),
+            "draw": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+        },
     )
 
 
@@ -562,21 +549,16 @@ def prison_pomdp_contract() -> ModelContract:
         name="finite-prison-pomdp-parameters",
         version=_MODEL_VERSION,
         definition=_object_schema(
-            required=("beta",),
-            properties={"beta": {"type": "number", "minimum": 1e-12}},
+            ("beta",), {"beta": {"type": "number", "minimum": 1e-12}}
         ),
     )
     scenario_schema = ModelSchema(
         name="finite-prison-pomdp-scenario",
         version=_MODEL_VERSION,
         definition=_object_schema(
-            required=scenario_fields,
-            properties={
-                "prior_weak": {
-                    "type": "number",
-                    "minimum": 0.0,
-                    "maximum": 1.0,
-                },
+            scenario_fields,
+            {
+                "prior_weak": {"type": "number", "minimum": 0.0, "maximum": 1.0},
                 "signal_accuracy": {
                     "type": "number",
                     "minimum": 0.5,
@@ -591,11 +573,7 @@ def prison_pomdp_contract() -> ModelContract:
                 "capture_cost": {"type": "number", "minimum": 0.0},
                 "submit_reward": {"type": "number"},
                 "scout_cost": {"type": "number", "minimum": 0.0},
-                "discount": {
-                    "type": "number",
-                    "minimum": 0.0,
-                    "maximum": 1.0,
-                },
+                "discount": {"type": "number", "minimum": 0.0, "maximum": 1.0},
                 "horizon": {"type": "integer", "minimum": 1, "maximum": 2},
             },
         ),
@@ -613,87 +591,38 @@ def prison_pomdp_contract() -> ModelContract:
             ),
             "event_data": {
                 "belief_state": _object_schema(
-                    required=("prior_weak", "horizon"),
-                    properties={
+                    ("prior_weak", "horizon"),
+                    {
                         "prior_weak": {
                             "type": "number",
                             "minimum": 0.0,
                             "maximum": 1.0,
                         },
-                        "horizon": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 2,
-                        },
+                        "horizon": {"type": "integer", "minimum": 1, "maximum": 2},
                     },
                 ),
-                "initial_decision": _object_schema(
-                    required=("action", "policy", "values", "draw"),
-                    properties={
-                        "action": {"type": "string", "enum": _INITIAL_ACTIONS},
-                        "policy": _policy_schema(_INITIAL_ACTIONS),
-                        "values": _values_schema(_INITIAL_ACTIONS),
-                        "draw": {
-                            "type": "number",
-                            "minimum": 0.0,
-                            "maximum": 1.0,
-                        },
-                    },
-                ),
+                "initial_decision": _decision_event_schema(_INITIAL_ACTIONS),
                 "observation_received": _object_schema(
-                    required=("signal", "posterior_weak", "draw"),
-                    properties={
+                    ("signal", "posterior_weak", "draw"),
+                    {
                         "signal": {"type": "string", "enum": _SIGNALS},
                         "posterior_weak": {
                             "type": "number",
                             "minimum": 0.0,
                             "maximum": 1.0,
                         },
-                        "draw": {
-                            "type": "number",
-                            "minimum": 0.0,
-                            "maximum": 1.0,
-                        },
+                        "draw": {"type": "number", "minimum": 0.0, "maximum": 1.0},
                     },
                 ),
-                "terminal_decision": _object_schema(
-                    required=("action", "policy", "values", "draw"),
-                    properties={
-                        "action": {"type": "string", "enum": _TERMINAL_ACTIONS},
-                        "policy": _policy_schema(_TERMINAL_ACTIONS),
-                        "values": _values_schema(_TERMINAL_ACTIONS),
-                        "draw": {
-                            "type": "number",
-                            "minimum": 0.0,
-                            "maximum": 1.0,
-                        },
-                    },
-                ),
+                "terminal_decision": _decision_event_schema(_TERMINAL_ACTIONS),
                 "episode_ended": _object_schema(
-                    required=(
-                        "terminal_action",
-                        "escaped",
-                        "utility",
-                        "steps",
-                        "state_draw",
-                    ),
-                    properties={
-                        "terminal_action": {
-                            "type": "string",
-                            "enum": _TERMINAL_ACTIONS,
-                        },
+                    ("terminal_action", "escaped", "utility", "steps", "state_draw"),
+                    {
+                        "terminal_action": {"type": "string", "enum": _TERMINAL_ACTIONS},
                         "escaped": {"type": "boolean"},
                         "utility": {"type": "number"},
-                        "steps": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 2,
-                        },
-                        "state_draw": {
-                            "type": "number",
-                            "minimum": 0.0,
-                            "maximum": 1.0,
-                        },
+                        "steps": {"type": "integer", "minimum": 1, "maximum": 2},
+                        "state_draw": {"type": "number", "minimum": 0.0, "maximum": 1.0},
                     },
                 ),
             },
@@ -704,7 +633,7 @@ def prison_pomdp_contract() -> ModelContract:
         name="finite-prison-pomdp-outcome",
         version=_MODEL_VERSION,
         definition=_object_schema(
-            required=(
+            (
                 "initial_policy",
                 "initial_values",
                 "initial_action",
@@ -719,41 +648,19 @@ def prison_pomdp_contract() -> ModelContract:
                 "expected_escape_success",
                 "expected_utility",
             ),
-            properties={
+            {
                 "initial_policy": _policy_schema(_INITIAL_ACTIONS),
                 "initial_values": _values_schema(_INITIAL_ACTIONS),
                 "initial_action": {"type": "string", "enum": _INITIAL_ACTIONS},
-                "terminal_action": {
-                    "type": "string",
-                    "enum": _TERMINAL_ACTIONS,
-                },
-                "signal": {
-                    "type": "string",
-                    "enum": ("none",) + _SIGNALS,
-                },
-                "posterior_weak": {
-                    "type": "number",
-                    "minimum": 0.0,
-                    "maximum": 1.0,
-                },
+                "terminal_action": {"type": "string", "enum": _TERMINAL_ACTIONS},
+                "signal": {"type": "string", "enum": ("none",) + _SIGNALS},
+                "posterior_weak": {"type": "number", "minimum": 0.0, "maximum": 1.0},
                 "escaped": {"type": "boolean"},
                 "utility": {"type": "number"},
                 "steps": {"type": "integer", "minimum": 1, "maximum": 2},
-                "expected_terminal_escape": {
-                    "type": "number",
-                    "minimum": 0.0,
-                    "maximum": 1.0,
-                },
-                "expected_terminal_submit": {
-                    "type": "number",
-                    "minimum": 0.0,
-                    "maximum": 1.0,
-                },
-                "expected_escape_success": {
-                    "type": "number",
-                    "minimum": 0.0,
-                    "maximum": 1.0,
-                },
+                "expected_terminal_escape": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                "expected_terminal_submit": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                "expected_escape_success": {"type": "number", "minimum": 0.0, "maximum": 1.0},
                 "expected_utility": {"type": "number"},
             },
         ),
@@ -768,10 +675,7 @@ def prison_pomdp_contract() -> ModelContract:
     )
 
 
-def prison_pomdp_source(
-    *,
-    limits: ProcessLimits | None = None,
-) -> SubprocessModel:
+def prison_pomdp_source(*, limits: ProcessLimits | None = None) -> SubprocessModel:
     return SubprocessModel(
         name=_MODEL_NAME,
         factory=(
@@ -789,8 +693,7 @@ def prison_policy_metrics(trace: SimulationTrace) -> dict[str, float]:
     initial_policy = outcome.get("initial_policy")
     if not isinstance(initial_policy, Mapping):
         raise ValueError("prison POMDP trace is missing its initial policy")
-
-    metrics = {
+    raw_metrics = {
         "initial.scout": initial_policy.get("scout"),
         "initial.escape": initial_policy.get("escape"),
         "initial.submit": initial_policy.get("submit"),
@@ -799,11 +702,10 @@ def prison_policy_metrics(trace: SimulationTrace) -> dict[str, float]:
         "escape.success": outcome.get("expected_escape_success"),
         "utility.expected": outcome.get("expected_utility"),
     }
-    canonical: dict[str, float] = {}
-    for name, raw_value in metrics.items():
-        value = _finite_number(raw_value, label=f"metric {name}")
-        canonical[name] = value
-    return canonical
+    return {
+        name: _finite_number(value, label=f"metric {name}")
+        for name, value in raw_metrics.items()
+    }
 
 
 prison_policy_metrics.version = _MODEL_VERSION
