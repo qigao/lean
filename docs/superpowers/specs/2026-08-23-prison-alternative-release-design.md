@@ -100,24 +100,57 @@ beta > 0
 
 `beta` is an inverse-temperature / choice-sharpness parameter. No additional signal-weight, bias, persistence, or utility parameter is introduced in V1. This keeps candidate freedom directly comparable to the one-parameter baseline.
 
-### Policy semantics
+### Exact policy semantics
 
-For horizon 1:
+Define the direct escape value at prior `p` as:
 
-- scouting is unavailable;
-- direct escape value is computed from `prior_weak`, `escape_reward`, and `capture_cost`;
-- submit value is `submit_reward`;
-- a numerically stable softmax with `beta` produces escape/submit probabilities.
+```text
+V_escape = p * escape_reward - (1 - p) * capture_cost
+V_submit = submit_reward
+```
 
-For horizon 2:
+For horizon 1, scouting is unavailable and the model applies its own numerically stable softmax with inverse temperature `beta` to `(V_escape, V_submit)`.
 
-- direct escape and submit retain the horizon-1 values;
-- the scout action is evaluated by expected signal-reactive terminal behavior minus `scout_cost`, discounted by `discount`;
-- `clear` is treated as favorable evidence for escape and `alarm` as unfavorable evidence, but the model does not normalize these cues into a posterior state probability;
-- the cue-responsive terminal values are derived directly from the scenario's cue reliability and reward/cost surface;
-- initial `scout | escape | submit` probabilities are produced by the same model-local stable softmax.
+For horizon 2, define cue strength and scale without introducing a fitted parameter:
 
-The model must expose deterministic expected policy coordinates for calibration and stochastic seeded episode traces for execution-boundary validation, as the baseline does.
+```text
+cue_strength = 2 * signal_accuracy - 1
+cue_scale    = (escape_reward + capture_cost) / 2
+```
+
+The signal-responsive escape value is:
+
+```text
+V_escape(clear) = V_escape + cue_strength * cue_scale
+V_escape(alarm) = V_escape - cue_strength * cue_scale
+V_submit(clear) = V_submit(alarm) = submit_reward
+```
+
+The terminal reactive policy for each signal is the stable softmax of that signal's escape/submit values. This is a direct cue-to-value rule: no posterior weak-state probability is formed.
+
+The model may use the environment's signal probability only to calculate the expected value of choosing `scout`:
+
+```text
+P(clear) = prior_weak * signal_accuracy
+           + (1 - prior_weak) * (1 - signal_accuracy)
+P(alarm) = 1 - P(clear)
+
+V_scout = -scout_cost
+          + discount * sum_signal P(signal)
+              * sum_action pi(action | signal) * V(action | signal)
+```
+
+The initial horizon-2 policy is the stable softmax over:
+
+```text
+scout | escape | submit
+```
+
+using `(V_scout, V_escape, V_submit)`.
+
+`guard_persistence` does not enter the alternative model's policy calculation. It is used only by the simulated environment when realizing the actual post-scout escape outcome. Consequently, varying persistence creates a genuine discriminating scenario between the planning and reactive hypotheses.
+
+The model exposes deterministic expected initial-policy coordinates for calibration plus stochastic seeded episode traces for execution-boundary validation.
 
 ### Runtime API
 
@@ -156,7 +189,7 @@ New public function:
 prison_initial_action_metrics(trace)
 ```
 
-It may live in a small shared adapter-metrics module or another focused module, but must not alter the existing `prison_policy_metrics` API.
+It lives in a focused shared adapter-metrics module unless the implementation plan finds an equally small existing home. It must not alter the existing `prison_policy_metrics` API.
 
 The extractor must:
 
@@ -166,7 +199,7 @@ The extractor must:
 - rely on the existing categorical-loss boundary to enforce non-negative normalized probability mass;
 - have a stable callable/version identity suitable for preregistration.
 
-Both baseline and alternative must emit the same trusted `initial_policy` schema so one extractor is used for both models.
+Both baseline and alternative emit the same trusted `initial_policy` shape so one extractor is used for both models.
 
 ## Component 3: versioned synthetic observational fixture
 
@@ -182,7 +215,7 @@ It uses the existing record-oriented `ObservationDataset` JSON schema and loader
 
 ### Required provenance labels
 
-The fixture must explicitly identify itself as synthetic and non-empirical. Its source/provenance payload must include semantics equivalent to:
+The fixture explicitly identifies itself as synthetic and non-empirical. Its source/provenance payload includes semantics equivalent to:
 
 ```text
 kind: synthetic_fixture
@@ -211,7 +244,7 @@ Scenarios span multiple values of at least:
 - `signal_accuracy`;
 - horizon 1 and horizon 2 where useful.
 
-`guard_persistence` may vary as well because it distinguishes the planning and reactive hypotheses, but the fixture remains small enough for full CI execution.
+`guard_persistence` varies in at least one pair of otherwise comparable horizon-2 scenarios so the final comparison has a scenario dimension on which planning and reactive assumptions differ.
 
 ### Counts
 
@@ -235,7 +268,52 @@ initial.submit
 
 using the existing deterministic target-construction path.
 
-## Component 4: witnessed protocol release
+## Component 4: explicit training-target fitting
+
+Record-oriented `CategoricalTargetSpec` reports intentionally do not carry per-case simulation seeds. The full pipeline therefore uses explicit stage-level seed plans rather than pretending record targets are held-out suites.
+
+Add a small training helper, expected API:
+
+```python
+fit_training_target_grid(
+    *,
+    runner,
+    model,
+    target_report,
+    parameter_grid,
+    simulation_seeds,
+    extractor,
+    loss,
+) -> TrainingFitReport
+```
+
+Rules:
+
+- `target_report.role` must be `TRAIN`;
+- the same declared training seed tuple is used for every train case and candidate;
+- each finite-grid candidate is evaluated across all train cases;
+- candidate ranking is by mean proper-score loss, then worst-case loss, then canonical parameter tuple;
+- the report records per-case losses, run-manifest hashes, extractor identity, loss identity, target-report content hash, training seed plan, and model identity;
+- it returns the complete ranked finite candidate set, not only the best point;
+- it does not expose or inspect selection-validation or final-test data.
+
+A dedicated experiment stage may be added for this report if needed; otherwise the implementation plan must document which existing stage accurately represents this multi-case training fit. It must not misuse a held-out/final-test stage.
+
+Selection-validation is then built explicitly from the selection target report:
+
+```text
+selection target cases
++ declared selection seed tuple
+→ HeldOutCase values
+→ HeldOutSuite(role=SELECTION_VALIDATION)
+→ select_on_validation_suite(...)
+```
+
+Only candidates produced by `TrainingFitReport` are eligible for selection. The selection step returns a real `SelectionValidationReport`, whose manifest is used when freezing the model candidate.
+
+Final-test simulation seeds remain those frozen in `PreregisteredEvaluationProtocol` and are independent of training and selection seed plans.
+
+## Component 5: witnessed protocol release
 
 ### Motivation
 
@@ -256,6 +334,7 @@ ProtocolRelease
 WitnessReceipt
 VerifiedProtocolRelease
 ProtocolReleaseVerificationError
+ReleasedModelComparisonReport
 ```
 
 ### `ProtocolRelease`
@@ -270,13 +349,13 @@ protocol content hash
 dataset content hash
 target-spec content hash
 ordered candidate content hashes
-source repository identity or explicitly declared source revision identity
+source_revision identity
 release content hash
 ```
 
-The release must be reconstructible from its payload and reject a stale or forged declared content hash.
+`source_revision` is canonical provenance data supplied by the caller, such as repository name plus commit SHA. It is part of release identity but is not automatically trusted repository attestation.
 
-The release does not contain mutable execution results.
+The release is reconstructible from its payload and rejects a stale or forged declared content hash. It does not contain mutable execution results.
 
 ### `WitnessReceipt`
 
@@ -297,9 +376,9 @@ Rules:
 
 - `subject_hash` must be a canonical SHA-256 content hash;
 - the receipt's own content hash is recomputed and validated;
-- `claimed_at` is data supplied by the witness, not a trusted time merely because it parses;
+- `claimed_at` is data supplied by the witness, not trusted time merely because it parses;
 - `proof` is canonical detached metadata whose interpretation belongs to the external verifier;
-- duplicate receipt identities are rejected in a release-verification request.
+- duplicate receipt identities are rejected in one verification request.
 
 ### Trusted verifier boundary
 
@@ -319,7 +398,7 @@ verify_protocol_release(
 
 The verifier is a trusted callable/component supplied by the caller. It receives the canonical release and receipt and returns a positive verification result only after checking the actual external evidence according to its provider-specific policy.
 
-Before calling the verifier, core code must fail closed if:
+Before calling the verifier, core code fails closed if:
 
 - the release does not match the supplied protocol;
 - dataset, target spec, or candidate identities differ;
@@ -341,11 +420,13 @@ At least one receipt must be successfully verified. A syntactically valid but un
 
 ### External-witness scope
 
-V1 deliberately specifies a verifier interface, not a concrete network backend. Tests use a deterministic test verifier that validates fixture evidence; production callers can later implement GitHub, transparency-log, timestamp-authority, institutional-registry, or signature-backed verifiers without changing the release identity model.
+V1 specifies a verifier interface, not a concrete network backend. Tests use a deterministic test verifier that validates fixture evidence; production callers can later implement GitHub, transparency-log, timestamp-authority, institutional-registry, or signature-backed verifiers without changing the release identity model.
 
-The deterministic test verifier must be clearly named and documented as test-only and must never be exported as a production trust provider.
+The deterministic test verifier is clearly named and documented as test-only and is never exported as a production trust provider.
 
-## Component 5: released final comparison gate
+Verifier identity is recorded using the existing callable/component identity mechanism. V1 does not claim that this identity is automatically a transitive implementation hash.
+
+## Component 6: released final comparison gate
 
 New orchestration entry point:
 
@@ -367,7 +448,7 @@ existing preregistered final-comparison preflight
 model execution
 ```
 
-The function must reject release/protocol drift before any model call. It then delegates to the existing final comparison, preserving the existing checks for:
+The function rejects release/protocol drift before any model call. It then delegates to the existing final comparison, preserving the existing checks for:
 
 - final target payload and lineage;
 - metric extractor identity;
@@ -377,9 +458,17 @@ The function must reject release/protocol drift before any model call. It then d
 - runtime model identity;
 - mutable-source reuse.
 
-The resulting comparison manifest/report records the verified release identity and verified witness/verifier identity in addition to the existing comparison lineage.
+The result is a new immutable `ReleasedModelComparisonReport` containing:
 
-No execution path may accept a raw `ProtocolRelease` where `VerifiedProtocolRelease` is required.
+```text
+verified release identity
+underlying ModelComparisonReport
+release-aware ExperimentManifest
+```
+
+Its manifest parents include the underlying model-comparison manifest, avoiding modification of the existing comparison report type. The report remains compatible with `attest_report(...).require_integrity()`.
+
+No execution path accepts a raw `ProtocolRelease` where `VerifiedProtocolRelease` is required.
 
 ## Complete train → selection → final pipeline
 
@@ -387,23 +476,19 @@ The integration fixture test follows this exact order.
 
 ### 1. Load fixture
 
-```text
-load_observation_dataset
-```
-
-Assert the committed declared hash and synthetic provenance.
+Use `load_observation_dataset` and assert the committed declared hash and synthetic provenance.
 
 ### 2. Construct training targets
 
-Use only the train partition to construct categorical targets.
+Construct categorical targets only from the train partition.
 
-Training targets are used to rank a small finite `beta` grid independently for each model. The implementation may use the existing grid-calibration primitive over the train cases or add one thin multi-case helper if necessary, but final-test APIs must not be reused for training.
+For each model, call `fit_training_target_grid` with a small finite `beta` grid and an explicit training seed tuple. The resulting `TrainingFitReport` is the sole source of candidate parameters for selection.
 
 ### 3. Selection-validation
 
-Use only the selection-validation partition to choose one frozen `beta` per model from the train-derived candidate set.
+Construct categorical targets only from the selection-validation partition. Convert those target cases to a `HeldOutSuite(role=SELECTION_VALIDATION)` using an explicit selection seed tuple. Run `select_on_validation_suite` independently for each model over only the training-derived candidate set.
 
-The result must be a real `SelectionValidationReport`, not a fabricated manifest hash.
+The result is a real `SelectionValidationReport`, not a fabricated manifest hash.
 
 ### 4. Freeze candidates
 
@@ -422,7 +507,7 @@ Freeze:
 - final target payload + construction manifest;
 - shared extractor;
 - categorical proper-scoring loss;
-- common simulation seeds;
+- common final simulation seeds;
 - baseline name;
 - both frozen candidates;
 - adequacy thresholds.
@@ -433,17 +518,17 @@ Create `ProtocolRelease`, attach at least one `WitnessReceipt`, and pass it thro
 
 ### 7. Execute untouched final comparison
 
-Construct final targets from the final-test partition and call `compare_released_models` using the frozen candidates. No calibration, candidate selection, threshold change, seed change, extractor change, or loss change is allowed after the release identity is created.
+Construct final targets only from the final-test partition and call `compare_released_models` using the frozen candidates. No calibration, candidate selection, threshold change, final seed change, extractor change, loss change, or candidate change is allowed after the release identity is created.
 
 ### 8. Attest report
 
-The final model-comparison report must remain compatible with `attest_report(...).require_integrity()` and retain parent lineage to the underlying final evaluations.
+The `ReleasedModelComparisonReport` must pass `attest_report(...).require_integrity()` and retain parent lineage to the underlying final comparison and final evaluations.
 
 ## Failure semantics
 
 The new layer fails closed on identity and trust drift.
 
-The following conditions must fail before any candidate model executes:
+The following conditions fail before any final candidate model executes:
 
 - release content hash mismatch;
 - protocol hash mismatch;
@@ -454,9 +539,10 @@ The following conditions must fail before any candidate model executes:
 - forged/stale receipt content hash;
 - duplicate receipt identity;
 - verifier rejects all receipts;
-- verifier identity drift when compared against a previously verified release payload;
 - raw/unverified release supplied to final comparison;
 - existing final-comparison preflight mismatch for targets, extractor, loss, seeds, frozen candidate, or runtime model.
+
+Training fails before simulation if a non-train target report is supplied. Selection fails before simulation if its candidates are not derived from the declared training-fit report or if a non-selection suite is supplied.
 
 Model/schema/process failures after successful preflight continue to use the existing typed runtime errors; the release layer does not wrap or erase them.
 
@@ -464,7 +550,7 @@ Model/schema/process failures after successful preflight continue to use the exi
 
 New release identities are canonical data objects. They do not create a circular hash graph.
 
-A released comparison report includes the verified release identity in its report payload/manifest inputs and continues to inherit final evaluation manifests through the existing comparison report.
+A released comparison report includes the verified release identity in its own manifest inputs and uses the underlying model-comparison manifest as a parent.
 
 The release itself references protocol/dataset/spec/candidate hashes but not the eventual final result artifact.
 
@@ -480,11 +566,16 @@ prison_reactive_contract
 prison_reactive_source
 prison_initial_action_metrics
 
+# training fit
+TrainingFitReport
+fit_training_target_grid
+
 # release layer
 ProtocolRelease
 WitnessReceipt
 VerifiedProtocolRelease
 ProtocolReleaseVerificationError
+ReleasedModelComparisonReport
 verify_protocol_release
 compare_released_models
 ```
@@ -493,21 +584,23 @@ Test-only witness implementations are not exported from `narrative_dynamics`.
 
 ## Expected files
 
-Production and fixture scope should remain focused around:
+Production and fixture scope remains focused around:
 
 ```text
 narrative_dynamics/adapters/prison_reactive.py
-narrative_dynamics/adapters/prison_metrics.py          # if a dedicated shared-metrics module is useful
+narrative_dynamics/adapters/prison_metrics.py
+narrative_dynamics/observations/training.py
 narrative_dynamics/observations/release.py
 narrative_dynamics/observations/__init__.py
-narrative_dynamics/__init__.py                         # public exports only if project convention requires it
+narrative_dynamics/__init__.py                         # exports only
 fixtures/observations/prison_initial_choice_v1.json
 ```
 
-Tests should be split by obligation, for example:
+Tests are split by obligation, for example:
 
 ```text
 tests/test_prison_reactive_model.py
+tests/test_observation_training_fit.py
 tests/test_protocol_release.py
 tests/test_observational_fixture_pipeline.py
 ```
@@ -518,20 +611,22 @@ No `.lean` file belongs in the change set.
 
 Implementation follows strict RED → GREEN.
 
-The initial RED must establish at minimum:
+The initial RED establishes at minimum:
 
 1. the independent reactive adapter/API does not yet exist;
-2. release verification requires an external verifier and at least one verified receipt;
-3. release/receipt/protocol identity drift is rejected before model execution;
-4. raw release values cannot unlock final comparison;
-5. committed fixture identity and partition roles are enforced;
-6. train data is used only for candidate generation, selection-validation only for parameter freezing, and final-test only after release verification;
-7. both models use the same final targets, seeds, extractor, loss, and adequacy thresholds;
-8. alternative production source still passes external implementation pinning, fresh subprocess execution, and parameter/scenario/event/outcome schema validation;
-9. report attestation remains valid;
-10. no `.lean` source change is introduced.
+2. the reactive implementation cannot import or delegate to the POMDP adapter;
+3. training-grid fitting rejects non-train targets and records stage seeds/lineage;
+4. release verification requires an external verifier and at least one verified receipt;
+5. release/receipt/protocol identity drift is rejected before final model execution;
+6. raw release values cannot unlock final comparison;
+7. committed fixture identity and partition roles are enforced;
+8. train data is used only for candidate generation, selection-validation only for parameter freezing, and final-test only after release verification;
+9. both models use the same final targets, seeds, extractor, loss, and adequacy thresholds;
+10. alternative production source still passes external implementation pinning, fresh subprocess execution, and parameter/scenario/event/outcome schema validation;
+11. released report attestation remains valid;
+12. no `.lean` source change is introduced.
 
-Final feature CI and the subsequent PR #2 merge-context CI must both pass:
+Final feature CI and the subsequent PR #2 merge-context CI both pass:
 
 ```text
 Lean-generated conformance vectors
@@ -545,10 +640,10 @@ complete Python unittest suite
 After this increment the project may accurately claim:
 
 - two independently specified finite prison behavioral hypotheses can be compared under the same preregistered observational protocol;
-- candidate parameters are frozen before final evaluation;
+- candidate parameters are generated on train data, selected on selection-validation data, and frozen before final evaluation;
 - the protocol release has a canonical identity;
 - final execution can be conditioned on at least one receipt accepted by a caller-supplied trusted verifier;
-- the verified witness identity is carried into final comparison provenance;
+- the verified witness/verifier identity is carried into final comparison provenance;
 - committed synthetic data exercises the full protocol deterministically in CI.
 
 It must not claim:
@@ -559,4 +654,4 @@ It must not claim:
 - either prison model is scientifically validated by the synthetic fixture;
 - alternative-model comparison proves causal or population-level adequacy;
 - process isolation is a complete sandbox;
-- implementation hashing proves the full transitive software supply chain.
+- implementation hashing or verifier identity proves the full transitive software supply chain.
