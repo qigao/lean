@@ -5,8 +5,11 @@ from narrative_dynamics.attestation.implementation import (
     ImplementationArtifact,
     ImplementationAttestation,
     ImplementationAttestationUnavailable,
-    implementation_attestation_identity,
     measure_implementation,
+)
+from narrative_dynamics.attestation.policy import (
+    ImplementationAttestationMismatch,
+    implementation_attestation_identity,
 )
 from narrative_dynamics.attestation.repository import (
     REPOSITORY_IDENTITY_SCHEMA_VERSION,
@@ -24,6 +27,7 @@ __all__ = [
     "RESULT_ARTIFACT_SCHEMA_VERSION",
     "ImplementationArtifact",
     "ImplementationAttestation",
+    "ImplementationAttestationMismatch",
     "ImplementationAttestationUnavailable",
     "RepositoryIdentity",
     "ResultArtifact",

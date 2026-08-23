@@ -1,6 +1,7 @@
 import importlib
 import unittest
 
+from narrative_dynamics.attestation import measure_implementation
 from narrative_dynamics.calibration import calibrate_grid
 from narrative_dynamics.contracts import ModelRun, Scenario
 from narrative_dynamics.manifest import stable_content_hash
@@ -70,7 +71,7 @@ def registry_contract_types(test_case):
     return tuple(getattr(registry, name) for name in names)
 
 
-def complete_contract(test_case):
+def complete_contract(test_case, source):
     _, schema_type, contract_type = registry_contract_types(test_case)
     parameter_source = {
         "type": "object",
@@ -95,12 +96,23 @@ def complete_contract(test_case):
         version="1.0.0",
         definition={"event_kinds": ()},
     )
+    outcome_schema = schema_type(
+        name="value-outcome",
+        version="1.0.0",
+        definition={
+            "type": "object",
+            "required": ("value",),
+            "properties": {"value": {"type": "number"}},
+        },
+    )
     contract = contract_type(
         version="3.2.0",
         implementation_revision="git:abc123",
+        expected_implementation_hash=measure_implementation(source).content_hash,
         parameter_schema=parameter_schema,
         scenario_schema=scenario_schema,
         event_schema=event_schema,
+        outcome_schema=outcome_schema,
     )
     return contract, parameter_source
 
@@ -149,7 +161,6 @@ class ModelSchemaTests(unittest.TestCase):
 class RegistryContractTests(unittest.TestCase):
     def test_factory_lifecycle_and_contract_are_bound_into_run_manifests(self):
         lifecycle_type, _, _ = registry_contract_types(self)
-        contract, _ = complete_contract(self)
         instances = []
 
         def create_model():
@@ -163,6 +174,7 @@ class RegistryContractTests(unittest.TestCase):
             version="3.2.0",
             implementation_revision="git:abc123",
         )
+        contract, _ = complete_contract(self, factory)
         registry = ModelRegistry()
         descriptor = registry.register(
             factory,
@@ -202,6 +214,10 @@ class RegistryContractTests(unittest.TestCase):
             model_identity["schemas"]["parameters"]["content_hash"],
             contract.parameter_schema.content_hash,
         )
+        self.assertEqual(
+            model_identity["schemas"]["outcome"]["content_hash"],
+            contract.outcome_schema.content_hash,
+        )
 
     def test_legacy_models_remain_resolvable_but_are_explicitly_incomplete(self):
         lifecycle_type, _, _ = registry_contract_types(self)
@@ -216,26 +232,30 @@ class RegistryContractTests(unittest.TestCase):
             descriptor.contract.implementation_revision,
             "unversioned",
         )
+        self.assertIsNone(descriptor.contract.expected_implementation_hash)
         self.assertFalse(descriptor.contract.parameter_schema.specified)
+        self.assertFalse(descriptor.contract.outcome_schema.specified)
         self.assertFalse(descriptor.production_ready)
         with self.assertRaises(ValueError):
             registry.require_production_ready("legacy-level")
 
     def test_explicit_contract_cannot_disagree_with_declared_source_identity(self):
         _, _, contract_type = registry_contract_types(self)
-        contract, _ = complete_contract(self)
-        mismatched = contract_type(
-            version="9.9.9",
-            implementation_revision=contract.implementation_revision,
-            parameter_schema=contract.parameter_schema,
-            scenario_schema=contract.scenario_schema,
-            event_schema=contract.event_schema,
-        )
         factory = ModelFactory(
             name="versioned-stateful",
             create=VersionedStatefulModel,
             version="3.2.0",
             implementation_revision="git:abc123",
+        )
+        contract, _ = complete_contract(self, factory)
+        mismatched = contract_type(
+            version="9.9.9",
+            implementation_revision=contract.implementation_revision,
+            expected_implementation_hash=contract.expected_implementation_hash,
+            parameter_schema=contract.parameter_schema,
+            scenario_schema=contract.scenario_schema,
+            event_schema=contract.event_schema,
+            outcome_schema=contract.outcome_schema,
         )
 
         with self.assertRaises(ValueError):

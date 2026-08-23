@@ -34,9 +34,9 @@ from narrative_dynamics.process_execution import (
     ProcessExecutionResult,
     SubprocessModel,
 )
+from narrative_dynamics.result_validation import validate_contract_result
 from narrative_dynamics.schema_validation import (
     ModelSchemaViolation,
-    validate_contract_events,
     validate_contract_inputs,
 )
 
@@ -273,9 +273,10 @@ class SimulationRunner:
         if not isinstance(model_name, str) or not model_name:
             raise ValueError("model source name must be a non-empty string")
 
-        schema_validation = validate_contract_events(
+        schema_validation = validate_contract_result(
             identity_source,
             result.events,
+            result.outcome,
             input_schema_validation,
             execution=execution,
         )

@@ -9,6 +9,7 @@ import threading
 import time
 import unittest
 
+from narrative_dynamics.attestation import measure_implementation
 from narrative_dynamics.contracts import ModelRun, Scenario
 from narrative_dynamics.model_contract import ModelContract, ModelLifecycle, ModelSchema
 from narrative_dynamics.registry import ModelRegistry
@@ -51,10 +52,11 @@ class IncidentalExecuteModel:
         )
 
 
-def full_contract():
+def full_contract(source):
     return ModelContract(
         version="1.0.0",
         implementation_revision="git:test-process-v1",
+        expected_implementation_hash=measure_implementation(source).content_hash,
         parameter_schema=ModelSchema(
             name="process-parameters",
             version="1.0.0",
@@ -69,6 +71,11 @@ def full_contract():
             name="process-events",
             version="1.0.0",
             definition={"event_kinds": ("echo",)},
+        ),
+        outcome_schema=ModelSchema(
+            name="process-outcome",
+            version="1.0.0",
+            definition={"type": "object"},
         ),
     )
 
@@ -338,11 +345,12 @@ class SubprocessRegistryTests(unittest.TestCase):
             implementation_revision="git:test-process-v1",
             limits=api.ProcessLimits(timeout_seconds=2.0),
         )
+        contract = full_contract(source)
         registry = ModelRegistry()
         descriptor = registry.register(
             source,
             kind="pomdp",
-            contract=full_contract(),
+            contract=contract,
         )
 
         self.assertEqual(
@@ -361,7 +369,7 @@ class SubprocessRegistryTests(unittest.TestCase):
         identity = trace.manifest.inputs["model"]
         self.assertEqual(identity["kind"], "pomdp")
         self.assertEqual(identity["lifecycle"], "fresh_process_per_run")
-        self.assertEqual(identity["contract_hash"], full_contract().content_hash)
+        self.assertEqual(identity["contract_hash"], contract.content_hash)
         self.assertEqual(
             identity["factory"],
             "tests.subprocess_fixtures:create_echo_model",
