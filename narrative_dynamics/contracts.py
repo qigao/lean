@@ -122,6 +122,7 @@ class ExperimentStage(str, Enum):
     ALTERNATIVE_MODEL_COMPARISON = "alternative_model_comparison"
     OBSERVATION_TARGET_CONSTRUCTION = "observation_target_construction"
     MODEL_COMPARISON = "model_comparison"
+    RELEASED_MODEL_COMPARISON = "released_model_comparison"
 
 
 @dataclass(frozen=True)
