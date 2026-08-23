@@ -129,6 +129,9 @@ class ExperimentStage(str, Enum):
     SELECTION_VALIDATION = "selection_validation"
     FINAL_TEST = "final_test"
     LOCAL_SENSITIVITY = "local_sensitivity"
+    MODEL_MISSPECIFICATION = "model_misspecification"
+    INTERACTION_SENSITIVITY = "interaction_sensitivity"
+    FINAL_TEST_COVERAGE = "final_test_coverage"
 
 
 @dataclass(frozen=True)

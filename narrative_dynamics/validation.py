@@ -12,6 +12,12 @@ from narrative_dynamics.contracts import (
     ExperimentStage,
     Scenario,
 )
+from narrative_dynamics.losses import (
+    DEFAULT_METRIC_LOSS,
+    MetricLoss,
+    evaluate_metric_loss,
+    metric_loss_identity,
+)
 from narrative_dynamics.manifest import (
     callable_identity,
     component_identity,
@@ -19,11 +25,7 @@ from narrative_dynamics.manifest import (
     scenario_identity,
     stable_content_hash,
 )
-from narrative_dynamics.metrics import (
-    MetricExtractor,
-    aggregate_metrics,
-    weighted_squared_error,
-)
+from narrative_dynamics.metrics import MetricExtractor, aggregate_metrics
 from narrative_dynamics.simulation import ModelSource, SimulationRunner
 from narrative_dynamics.uncertainty import ParameterAcceptanceSet
 
@@ -39,12 +41,7 @@ class SyntheticRecoveryReport:
 
 @dataclass(frozen=True)
 class HeldOutCase:
-    """One external scenario and target excluded from parameter calibration.
-
-    ``name`` is an experiment label. When omitted, the stable scenario id is
-    used. Keeping both fields lets multiple validation suites describe cases
-    without weakening the requirement that scenario ids remain unique.
-    """
+    """One external scenario and target excluded from parameter calibration."""
 
     scenario: Scenario
     seeds: tuple[int, ...]
@@ -85,15 +82,11 @@ class HeldOutValidationReport:
 
     @property
     def max_loss(self) -> float:
-        """Alias emphasizing that the report retains the worst held-out case."""
-
         return self.worst_loss
 
 
 @dataclass(frozen=True)
 class AcceptedParameterHeldOutEvaluation:
-    """External-validation result for one uncertainty-retained parameter tuple."""
-
     parameters: tuple[tuple[str, float], ...]
     validation: HeldOutValidationReport
 
@@ -104,8 +97,6 @@ class AcceptedParameterHeldOutEvaluation:
 
 @dataclass(frozen=True)
 class HeldOutAcceptanceReport:
-    """Rank and optionally filter an accepted parameter set on held-out cases."""
-
     evaluations: tuple[AcceptedParameterHeldOutEvaluation, ...]
     retained_parameters: ParameterAcceptanceSet
     best: AcceptedParameterHeldOutEvaluation
@@ -113,16 +104,12 @@ class HeldOutAcceptanceReport:
 
 
 class EvaluationRole(str, Enum):
-    """Declare whether an external suite may select candidates or only test one."""
-
     SELECTION_VALIDATION = "selection_validation"
     FINAL_TEST = "final_test"
 
 
 @dataclass(frozen=True)
 class HeldOutSuite:
-    """Named external scenario suite with an explicit statistical role."""
-
     name: str
     role: EvaluationRole
     cases: tuple[HeldOutCase, ...]
@@ -149,8 +136,6 @@ class HeldOutSuite:
 
 @dataclass(frozen=True)
 class SelectionValidationReport:
-    """Candidate selection performed only on a selection-validation suite."""
-
     suite_name: str
     role: EvaluationRole
     candidate_report: HeldOutAcceptanceReport
@@ -160,8 +145,6 @@ class SelectionValidationReport:
 
 @dataclass(frozen=True)
 class FinalTestReport:
-    """One fixed parameter mapping evaluated without candidate ranking."""
-
     suite_name: str
     role: EvaluationRole
     validation: HeldOutValidationReport
@@ -170,8 +153,6 @@ class FinalTestReport:
 
 @dataclass(frozen=True)
 class LocalParameterSensitivity:
-    """Central finite-difference sensitivity for one parameter coordinate."""
-
     name: str
     baseline_value: float
     step: float
@@ -213,8 +194,6 @@ class LocalParameterSensitivity:
 
 @dataclass(frozen=True)
 class LocalSensitivityReport:
-    """One-at-a-time held-out loss sensitivity around fixed parameters."""
-
     baseline: HeldOutValidationReport
     parameters: tuple[LocalParameterSensitivity, ...]
     manifest: ExperimentManifest | None = None
@@ -231,9 +210,8 @@ def synthetic_recovery(
     calibration_seeds: Iterable[int],
     extractor: MetricExtractor,
     weights: Mapping[str, float] | None = None,
+    loss: MetricLoss | None = None,
 ) -> SyntheticRecoveryReport:
-    """Generate synthetic targets and test finite-grid parameter recovery."""
-
     observed_seed_tuple = tuple(observation_seeds)
     calibrated_seed_tuple = tuple(calibration_seeds)
     if not observed_seed_tuple:
@@ -257,6 +235,7 @@ def synthetic_recovery(
         extractor=extractor,
         target=target,
         weights=weights,
+        loss=loss,
     )
     canonical_true = observed_traces[0].parameters
     recovered = calibration.best.parameters == canonical_true
@@ -268,6 +247,7 @@ def synthetic_recovery(
         calibration,
         label="synthetic recovery calibration",
     )
+    selected_loss = DEFAULT_METRIC_LOSS if loss is None else loss
     manifest = ExperimentManifest(
         stage=ExperimentStage.SYNTHETIC_RECOVERY,
         inputs={
@@ -278,6 +258,7 @@ def synthetic_recovery(
             "calibration_seeds": calibrated_seed_tuple,
             "metric": callable_identity(extractor),
             "target_hash": stable_content_hash(target),
+            "loss": metric_loss_identity(selected_loss),
         },
         parent_hashes=observation_hashes + (calibration_hash,),
     )
@@ -297,14 +278,8 @@ def validate_held_out(
     parameters: Mapping[str, float],
     cases: Iterable[HeldOutCase],
     extractor: MetricExtractor,
+    loss: MetricLoss | None = None,
 ) -> HeldOutValidationReport:
-    """Evaluate fixed parameters on scenarios excluded from calibration.
-
-    The function never modifies or re-calibrates ``parameters``. It reports
-    each case, the mean loss, and the worst loss so a single failing world
-    cannot be hidden by an aggregate score.
-    """
-
     held_out_cases = tuple(cases)
     if not held_out_cases:
         raise ValueError("held-out validation requires at least one case")
@@ -312,13 +287,14 @@ def validate_held_out(
     scenario_ids = tuple(case.scenario.id for case in held_out_cases)
     if len(set(scenario_ids)) != len(scenario_ids):
         raise ValueError("held-out scenario ids must be unique")
-
     names = tuple(case.effective_name for case in held_out_cases)
     if any(not isinstance(name, str) or not name for name in names):
         raise ValueError("held-out case names must be non-empty strings")
     if len(set(names)) != len(names):
         raise ValueError("held-out case names must be unique")
 
+    selected_loss = DEFAULT_METRIC_LOSS if loss is None else loss
+    loss_identity = metric_loss_identity(selected_loss)
     evaluations: list[HeldOutCaseEvaluation] = []
     case_inputs: list[dict[str, object]] = []
     run_parent_hashes: list[str] = []
@@ -327,7 +303,6 @@ def validate_held_out(
         seeds = tuple(case.seeds)
         if not seeds:
             raise ValueError("every held-out case must contain at least one seed")
-
         traces = runner.run_batch(
             model,
             case.scenario,
@@ -345,7 +320,8 @@ def validate_held_out(
         )
         run_parent_hashes.extend(run_hashes)
         metrics = aggregate_metrics(traces, extractor)
-        loss = weighted_squared_error(
+        case_loss = evaluate_metric_loss(
+            selected_loss,
             metrics,
             case.target,
             weights=case.weights,
@@ -356,9 +332,12 @@ def validate_held_out(
                 scenario_id=case.scenario.id,
                 metrics=tuple(sorted(metrics.items())),
                 target=tuple(
-                    sorted((name, float(value)) for name, value in case.target.items())
+                    sorted(
+                        (metric_name, float(value))
+                        for metric_name, value in case.target.items()
+                    )
                 ),
-                loss=loss,
+                loss=case_loss,
                 run_manifest_hashes=run_hashes,
             )
         )
@@ -385,10 +364,7 @@ def validate_held_out(
             "parameters": canonical_parameters,
             "cases": tuple(case_inputs),
             "metric": callable_identity(extractor),
-            "loss": {
-                "name": "weighted_squared_error",
-                "version": "1",
-            },
+            "loss": loss_identity,
         },
         parent_hashes=tuple(run_parent_hashes),
     )
@@ -423,14 +399,8 @@ def validate_acceptance_set_held_out(
     extractor: MetricExtractor,
     max_mean_loss: float | None = None,
     max_worst_loss: float | None = None,
+    loss: MetricLoss | None = None,
 ) -> HeldOutAcceptanceReport:
-    """Externally validate every candidate in a finite parameter acceptance set.
-
-    Candidates are ranked by mean held-out loss and then worst-case loss.
-    Optional non-negative limits turn the external suite into a second-stage
-    filter without re-calibrating any candidate.
-    """
-
     acceptance_set = (
         accepted_parameters
         if isinstance(accepted_parameters, ParameterAcceptanceSet)
@@ -442,21 +412,23 @@ def validate_acceptance_set_held_out(
     held_out_cases = tuple(cases)
     mean_limit = _optional_loss_limit(max_mean_loss, label="maximum mean loss")
     worst_limit = _optional_loss_limit(max_worst_loss, label="maximum worst loss")
+    selected_loss = DEFAULT_METRIC_LOSS if loss is None else loss
 
     evaluations = tuple(
         sorted(
             (
                 AcceptedParameterHeldOutEvaluation(
-                    parameters=parameters,
+                    parameters=candidate_parameters,
                     validation=validate_held_out(
                         runner=runner,
                         model=model,
-                        parameters=dict(parameters),
+                        parameters=dict(candidate_parameters),
                         cases=held_out_cases,
                         extractor=extractor,
+                        loss=selected_loss,
                     ),
                 )
-                for parameters in acceptance_set.parameters
+                for candidate_parameters in acceptance_set.parameters
             ),
             key=lambda evaluation: (
                 evaluation.validation.mean_loss,
@@ -485,6 +457,7 @@ def validate_acceptance_set_held_out(
             "accepted_parameter_set_hash": acceptance_set.content_hash,
             "max_mean_loss": mean_limit,
             "max_worst_loss": worst_limit,
+            "loss": metric_loss_identity(selected_loss),
         },
         parent_hashes=(
             acceptance_set.source_manifest_hashes + validation_hashes
@@ -511,9 +484,8 @@ def select_on_validation_suite(
     extractor: MetricExtractor,
     max_mean_loss: float | None = None,
     max_worst_loss: float | None = None,
+    loss: MetricLoss | None = None,
 ) -> SelectionValidationReport:
-    """Select among candidates only on a suite explicitly marked for selection."""
-
     if suite.role is not EvaluationRole.SELECTION_VALIDATION:
         raise ValueError("candidate selection requires a selection-validation suite")
     candidate_report = validate_acceptance_set_held_out(
@@ -524,6 +496,7 @@ def select_on_validation_suite(
         extractor=extractor,
         max_mean_loss=max_mean_loss,
         max_worst_loss=max_worst_loss,
+        loss=loss,
     )
     retained = set(candidate_report.retained_parameters.parameters)
     if not retained:
@@ -537,6 +510,7 @@ def select_on_validation_suite(
         candidate_report,
         label="selection candidate report",
     )
+    selected_loss = DEFAULT_METRIC_LOSS if loss is None else loss
     manifest = ExperimentManifest(
         stage=ExperimentStage.SELECTION_VALIDATION,
         inputs={
@@ -544,6 +518,7 @@ def select_on_validation_suite(
             "role": suite.role.value,
             "max_mean_loss": max_mean_loss,
             "max_worst_loss": max_worst_loss,
+            "loss": metric_loss_identity(selected_loss),
         },
         parent_hashes=(candidate_hash,),
     )
@@ -563,9 +538,8 @@ def evaluate_on_final_test_suite(
     parameters: Mapping[str, float],
     suite: HeldOutSuite,
     extractor: MetricExtractor,
+    loss: MetricLoss | None = None,
 ) -> FinalTestReport:
-    """Evaluate one fixed parameter mapping on an explicitly final test suite."""
-
     if suite.role is not EvaluationRole.FINAL_TEST:
         raise ValueError("final-test evaluation requires a final-test suite")
     validation = validate_held_out(
@@ -574,17 +548,20 @@ def evaluate_on_final_test_suite(
         parameters=parameters,
         cases=suite.cases,
         extractor=extractor,
+        loss=loss,
     )
     validation_hash = required_manifest_hash(
         validation,
         label="final-test validation",
     )
+    selected_loss = DEFAULT_METRIC_LOSS if loss is None else loss
     manifest = ExperimentManifest(
         stage=ExperimentStage.FINAL_TEST,
         inputs={
             "suite_name": suite.name,
             "role": suite.role.value,
             "parameters": validation.parameters,
+            "loss": metric_loss_identity(selected_loss),
         },
         parent_hashes=(validation_hash,),
     )
@@ -604,16 +581,17 @@ def local_sensitivity_report(
     cases: Iterable[HeldOutCase],
     extractor: MetricExtractor,
     step_sizes: Mapping[str, float],
+    loss: MetricLoss | None = None,
 ) -> LocalSensitivityReport:
-    """Compute one-at-a-time central finite differences on held-out losses."""
-
     held_out_cases = tuple(cases)
+    selected_loss = DEFAULT_METRIC_LOSS if loss is None else loss
     baseline = validate_held_out(
         runner=runner,
         model=model,
         parameters=parameters,
         cases=held_out_cases,
         extractor=extractor,
+        loss=selected_loss,
     )
     baseline_parameters = dict(baseline.parameters)
     if not step_sizes:
@@ -631,7 +609,9 @@ def local_sensitivity_report(
         try:
             step = float(step_sizes[name])
         except (TypeError, ValueError) as error:
-            raise ValueError(f"sensitivity step for {name!r} must be numeric") from error
+            raise ValueError(
+                f"sensitivity step for {name!r} must be numeric"
+            ) from error
         if not math.isfinite(step) or step <= 0.0:
             raise ValueError("local sensitivity steps must be finite and positive")
 
@@ -639,7 +619,9 @@ def local_sensitivity_report(
         lower_value = baseline_value - step
         upper_value = baseline_value + step
         if not math.isfinite(lower_value) or not math.isfinite(upper_value):
-            raise ValueError("local sensitivity perturbations must remain finite")
+            raise ValueError(
+                "local sensitivity perturbations must remain finite"
+            )
 
         lower_parameters = dict(baseline_parameters)
         upper_parameters = dict(baseline_parameters)
@@ -651,6 +633,7 @@ def local_sensitivity_report(
             parameters=lower_parameters,
             cases=held_out_cases,
             extractor=extractor,
+            loss=selected_loss,
         )
         upper = validate_held_out(
             runner=runner,
@@ -658,11 +641,18 @@ def local_sensitivity_report(
             parameters=upper_parameters,
             cases=held_out_cases,
             extractor=extractor,
+            loss=selected_loss,
         )
         parent_hashes.extend(
             (
-                required_manifest_hash(lower, label="sensitivity lower report"),
-                required_manifest_hash(upper, label="sensitivity upper report"),
+                required_manifest_hash(
+                    lower,
+                    label="sensitivity lower report",
+                ),
+                required_manifest_hash(
+                    upper,
+                    label="sensitivity upper report",
+                ),
             )
         )
         canonical_steps.append((name, step))
@@ -682,6 +672,7 @@ def local_sensitivity_report(
         inputs={
             "baseline_parameters": baseline.parameters,
             "step_sizes": tuple(canonical_steps),
+            "loss": metric_loss_identity(selected_loss),
         },
         parent_hashes=tuple(parent_hashes),
     )

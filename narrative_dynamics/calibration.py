@@ -10,6 +10,12 @@ from narrative_dynamics.contracts import (
     ExperimentStage,
     Scenario,
 )
+from narrative_dynamics.losses import (
+    DEFAULT_METRIC_LOSS,
+    MetricLoss,
+    evaluate_metric_loss,
+    metric_loss_identity,
+)
 from narrative_dynamics.manifest import (
     callable_identity,
     component_identity,
@@ -17,11 +23,7 @@ from narrative_dynamics.manifest import (
     scenario_identity,
     stable_content_hash,
 )
-from narrative_dynamics.metrics import (
-    MetricExtractor,
-    aggregate_metrics,
-    weighted_squared_error,
-)
+from narrative_dynamics.metrics import MetricExtractor, aggregate_metrics
 from narrative_dynamics.simulation import ModelSource, SimulationRunner
 
 
@@ -88,13 +90,16 @@ def calibrate_grid(
     extractor: MetricExtractor,
     target: Mapping[str, float],
     weights: Mapping[str, float] | None = None,
+    loss: MetricLoss | None = None,
 ) -> CalibrationResult:
-    """Exhaustively rank a finite parameter grid by trace-summary loss."""
+    """Exhaustively rank a finite parameter grid by a declared metric loss."""
 
     ordered_seeds = tuple(seeds)
     if not ordered_seeds:
         raise ValueError("calibration requires at least one simulation seed")
 
+    selected_loss = DEFAULT_METRIC_LOSS if loss is None else loss
+    loss_identity = metric_loss_identity(selected_loss)
     candidates = _grid_candidates(parameter_grid)
     evaluations: list[CandidateEvaluation] = []
     run_parent_hashes: list[str] = []
@@ -111,12 +116,17 @@ def calibrate_grid(
         )
         run_parent_hashes.extend(run_hashes)
         metrics = aggregate_metrics(traces, extractor)
-        loss = weighted_squared_error(metrics, target, weights=weights)
+        candidate_loss = evaluate_metric_loss(
+            selected_loss,
+            metrics,
+            target,
+            weights=weights,
+        )
         evaluations.append(
             CandidateEvaluation(
                 parameters=parameters,
                 metrics=tuple(sorted(metrics.items())),
-                loss=loss,
+                loss=candidate_loss,
                 run_manifest_hashes=run_hashes,
             )
         )
@@ -139,10 +149,7 @@ def calibrate_grid(
             "weights_hash": (
                 None if weights is None else stable_content_hash(weights)
             ),
-            "loss": {
-                "name": "weighted_squared_error",
-                "version": "1",
-            },
+            "loss": loss_identity,
         },
         parent_hashes=tuple(run_parent_hashes),
     )
