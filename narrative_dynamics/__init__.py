@@ -20,6 +20,16 @@ from narrative_dynamics.contracts import (
     SimulatorModel,
     TraceEvent,
 )
+from narrative_dynamics.losses import (
+    DEFAULT_METRIC_LOSS,
+    CategoricalBrierLoss,
+    CategoricalLogLoss,
+    CategoricalMetricGroup,
+    MetricLoss,
+    WeightedSquaredErrorLoss,
+    evaluate_metric_loss,
+    metric_loss_identity,
+)
 from narrative_dynamics.manifest import stable_content_hash
 from narrative_dynamics.process_execution import (
     CancellationToken,
@@ -52,12 +62,17 @@ from narrative_dynamics.simulation import ModelFactory, SimulationRunner
 
 __all__ = [
     "CancellationToken",
+    "CategoricalBrierLoss",
+    "CategoricalLogLoss",
+    "CategoricalMetricGroup",
     "ConformanceDefinitionError",
     "ConformanceMismatch",
+    "DEFAULT_METRIC_LOSS",
     "ExactRational",
     "ExecutionCapture",
     "ExperimentManifest",
     "ExperimentStage",
+    "MetricLoss",
     "ModelCancelled",
     "ModelContract",
     "ModelExecutionError",
@@ -86,9 +101,12 @@ __all__ = [
     "SimulatorModel",
     "SubprocessModel",
     "TraceEvent",
+    "WeightedSquaredErrorLoss",
     "assert_reference_conformance",
     "default_operation_evaluators",
+    "evaluate_metric_loss",
     "load_reference_suite",
+    "metric_loss_identity",
     "stable_content_hash",
     "validate_schema_value",
 ]
