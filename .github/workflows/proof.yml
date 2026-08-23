@@ -76,3 +76,7 @@ jobs:
           lake env lean NarrativeDynamics/Tests/GroundedGoalSoftmax.lean
       - name: Python numerical tests
         run: python3 -m unittest discover -s tests -v
+      - name: Narrative story theorem tests
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          lake env lean NarrativeDynamics/Tests/StoryState.lean
