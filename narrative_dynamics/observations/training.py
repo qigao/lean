@@ -109,13 +109,14 @@ def fit_training_target_grid(
     first_candidates = candidate_sets[0]
     if any(candidate_set != first_candidates for candidate_set in candidate_sets[1:]):
         raise RuntimeError("training target fit changed its finite candidate set")
+    canonical_candidates = tuple(sorted(first_candidates))
 
     calibration_hashes = tuple(
         required_manifest_hash(calibration, label="training calibration")
         for calibration in calibrations
     )
     ranking_entries: list[TrainingCandidateFit] = []
-    for parameters in sorted(first_candidates):
+    for parameters in canonical_candidates:
         case_fits: list[TrainingCaseFit] = []
         for case, calibration, calibration_hash in zip(
             target_report.cases,
@@ -162,9 +163,7 @@ def fit_training_target_grid(
             "simulation_seeds": seeds,
             "metric": callable_identity(extractor),
             "loss": metric_loss_identity(loss),
-            "parameter_grid": tuple(sorted(
-                (name, tuple(values)) for name, values in replayable_grid.items()
-            )),
+            "parameter_candidates": canonical_candidates,
             "cases": tuple({
                 "name": case.name,
                 "scenario": scenario_identity(case.scenario),
