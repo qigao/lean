@@ -93,11 +93,20 @@ class ComparisonPreregistrationTests(unittest.TestCase):
             flexible_spec.selection_manifest_hash,
             flexible_selection.manifest.content_hash,
         )
-        self.assertEqual(tuple(model.name for model in registration.models), ("conservative", "flexible"))
+        self.assertEqual(
+            tuple(model.name for model in registration.models),
+            ("conservative", "flexible"),
+        )
         self.assertEqual(registration.dataset_hash, final_targets.dataset_hash)
         self.assertEqual(registration.final_partition_hash, final_targets.partition_hash)
-        self.assertEqual(registration.target_construction_manifest_hash, final_targets.manifest.content_hash)
-        self.assertEqual(registration.ranking_rule, ("mean_loss", "worst_loss", "model_name"))
+        self.assertEqual(
+            registration.target_construction_manifest_hash,
+            final_targets.manifest.content_hash,
+        )
+        self.assertEqual(
+            registration.ranking_rule,
+            ("mean_loss", "worst_loss", "model_name"),
+        )
         self.assertTrue(registration.content_hash.startswith("sha256:"))
 
     def test_invalid_selection_thresholds_duplicates_and_non_final_targets_fail_closed(self):
@@ -105,24 +114,36 @@ class ComparisonPreregistrationTests(unittest.TestCase):
         report = selection_report(flexible, ((("p", 0.8),),))
         spec = FrozenModelSpec.from_selection("flexible", flexible, report)
         with self.assertRaises(ValueError):
-            AdequacyThresholds(-1.0, 0.0)
+            AdequacyThresholds(max_mean_loss=-1.0, max_worst_loss=0.0)
         with self.assertRaises((TypeError, ValueError)):
-            FrozenModelSpec.from_selection("not-selection", flexible, target_report(ObservationPartitionRole.FINAL_TEST)))
-        with self.assertRaises(ValueError):
-            ComparisonPreregistration.create(
-                name="not-final", version="1",
-                target_report=target_report(ObservationPartitionRole.SELECTION_VALIDATION),
-                extractor=choice_metrics,
-                loss=CategoricalBrierLoss((CategoricalMetricGroup("choice", ("choice.a", "choice.b")),)),
-                thresholds=AdequacyThresholds(1.0, 1.0), models=(spec,),
+            FrozenModelSpec.from_selection(
+                "not-selection",
+                flexible,
+                target_report(ObservationPartitionRole.FINAL_TEST),
             )
         with self.assertRaises(ValueError):
             ComparisonPreregistration.create(
-                name="duplicate", version="1",
+                name="not-final",
+                version="1",
+                target_report=target_report(ObservationPartitionRole.SELECTION_VALIDATION),
+                extractor=choice_metrics,
+                loss=CategoricalBrierLoss(
+                    (CategoricalMetricGroup("choice", ("choice.a", "choice.b")),)
+                ),
+                thresholds=AdequacyThresholds(1.0, 1.0),
+                models=(spec,),
+            )
+        with self.assertRaises(ValueError):
+            ComparisonPreregistration.create(
+                name="duplicate",
+                version="1",
                 target_report=target_report(ObservationPartitionRole.FINAL_TEST),
                 extractor=choice_metrics,
-                loss=CategoricalBrierLoss((CategoricalMetricGroup("choice", ("choice.a", "choice.b")),)),
-                thresholds=AdequacyThresholds(1.0, 1.0), models=(spec, spec),
+                loss=CategoricalBrierLoss(
+                    (CategoricalMetricGroup("choice", ("choice.a", "choice.b")),)
+                ),
+                thresholds=AdequacyThresholds(1.0, 1.0),
+                models=(spec, spec),
             )
 
 
