@@ -5,7 +5,7 @@ import unittest
 
 from narrative_dynamics.contracts import ExperimentStage, Scenario, stable_content_hash
 from narrative_dynamics.losses import CategoricalBrierLoss, CategoricalMetricGroup
-from narrative_dynamics.manifest import component_identity
+from narrative_dynamics.manifest import callable_identity, component_identity
 from narrative_dynamics.observations import (
     AdequacyThresholds,
     CategoricalTargetSpec,
@@ -26,6 +26,13 @@ class ProtocolModel:
 
     def simulate(self, scenario, parameters, rng):
         raise AssertionError("dataset protocol tests must not execute a model")
+
+
+def protocol_metrics(trace):
+    return {
+        "choice.a": float(trace.outcome["policy"]["a"]),
+        "choice.b": float(trace.outcome["policy"]["b"]),
+    }
 
 
 def record(
@@ -129,7 +136,6 @@ class ObservationDatasetTests(unittest.TestCase):
     def test_cross_partition_ids_and_renamed_observations_are_rejected(self):
         base = dataset()
         train = base.partition(ObservationPartitionRole.TRAIN)
-        selection = base.partition(ObservationPartitionRole.SELECTION_VALIDATION)
         final = base.partition(ObservationPartitionRole.FINAL_TEST)
 
         duplicate_id = ObservationPartition(
@@ -173,6 +179,32 @@ class ObservationDatasetTests(unittest.TestCase):
                 source="test",
                 provenance={},
                 partitions=(train, duplicate_content, final),
+            )
+
+    def test_metadata_cannot_disguise_a_reused_source_observation(self):
+        base = dataset()
+        train = base.partition(ObservationPartitionRole.TRAIN)
+        final = base.partition(ObservationPartitionRole.FINAL_TEST)
+        source_record = train.records[0]
+        disguised_copy = ObservationRecord(
+            id="metadata-disguised-copy",
+            scenario=source_record.scenario,
+            counts=source_record.counts,
+            metadata={"source_group": "selection", "annotation": "changed"},
+        )
+        selection = ObservationPartition(
+            name="selection",
+            role=ObservationPartitionRole.SELECTION_VALIDATION,
+            records=(disguised_copy,),
+        )
+
+        with self.assertRaises(ValueError):
+            ObservationDataset(
+                name="metadata-content-leak",
+                version="1",
+                source="test",
+                provenance={},
+                partitions=(train, selection, final),
             )
 
 
@@ -250,6 +282,7 @@ class PreregisteredProtocolTests(unittest.TestCase):
             version="1",
             dataset=observations,
             target_spec=spec,
+            extractor=protocol_metrics,
             loss=loss,
             simulation_seeds=(101, 102),
             baseline_name="baseline",
@@ -266,6 +299,7 @@ class PreregisteredProtocolTests(unittest.TestCase):
         self.assertEqual(protocol.candidate_names, ("alternative", "baseline"))
         self.assertEqual(protocol.content_hash, protocol.declared_precommitment_hash)
         self.assertEqual(protocol.thresholds, thresholds)
+        self.assertEqual(protocol.metric_identity, callable_identity(protocol_metrics))
         self.assertEqual(
             baseline.model_identity,
             component_identity(model),

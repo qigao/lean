@@ -24,14 +24,18 @@ from narrative_dynamics.observations import (
     construct_categorical_targets,
 )
 from narrative_dynamics.report_artifact import attest_report
-from narrative_dynamics.simulation import SimulationRunner
+from narrative_dynamics.simulation import ModelFactory, SimulationRunner
 
 
 class ProbabilityModel:
     name = "comparison-probability-model"
     version = "1.0.0"
 
+    def __init__(self):
+        self.calls = 0
+
     def simulate(self, scenario, parameters, rng):
+        self.calls += 1
         probability = float(parameters["p"])
         return ModelRun(
             events=(),
@@ -51,10 +55,21 @@ class DriftedProbabilityModel:
         )
 
 
+def create_probability_model():
+    return ProbabilityModel()
+
+
 def policy_metrics(trace):
     return {
         "choice.a": float(trace.outcome["policy"]["a"]),
         "choice.b": float(trace.outcome["policy"]["b"]),
+    }
+
+
+def swapped_policy_metrics(trace):
+    return {
+        "choice.a": float(trace.outcome["policy"]["b"]),
+        "choice.b": float(trace.outcome["policy"]["a"]),
     }
 
 
@@ -105,17 +120,18 @@ def protocol_fixture():
     loss = CategoricalBrierLoss(
         (CategoricalMetricGroup("choice", ("choice.a", "choice.b")),)
     )
-    model = ProbabilityModel()
+    baseline_model = ProbabilityModel()
+    alternative_model = ProbabilityModel()
     selection_hash = stable_content_hash({"selection": "complete"})
     baseline = FrozenModelCandidate.freeze(
         name="baseline",
-        model=model,
+        model=baseline_model,
         parameters={"p": 0.8},
         selection_manifest_hash=selection_hash,
     )
     alternative = FrozenModelCandidate.freeze(
         name="alternative",
-        model=model,
+        model=alternative_model,
         parameters={"p": 0.2},
         selection_manifest_hash=selection_hash,
     )
@@ -124,6 +140,7 @@ def protocol_fixture():
         version="1",
         dataset=dataset,
         target_spec=spec,
+        extractor=policy_metrics,
         loss=loss,
         simulation_seeds=(11, 12),
         baseline_name="baseline",
@@ -135,7 +152,17 @@ def protocol_fixture():
         role=ObservationPartitionRole.FINAL_TEST,
         spec=spec,
     )
-    return dataset, spec, loss, model, baseline, alternative, protocol, final_targets
+    return (
+        dataset,
+        spec,
+        loss,
+        baseline_model,
+        alternative_model,
+        baseline,
+        alternative,
+        protocol,
+        final_targets,
+    )
 
 
 class FairModelComparisonTests(unittest.TestCase):
@@ -144,7 +171,8 @@ class FairModelComparisonTests(unittest.TestCase):
             _dataset,
             _spec,
             loss,
-            model,
+            baseline_model,
+            alternative_model,
             baseline,
             alternative,
             protocol,
@@ -154,8 +182,8 @@ class FairModelComparisonTests(unittest.TestCase):
         report = compare_models_on_final_partition(
             runner=SimulationRunner(),
             models=(
-                ComparisonModel(frozen=alternative, model=model),
-                ComparisonModel(frozen=baseline, model=model),
+                ComparisonModel(frozen=alternative, model=alternative_model),
+                ComparisonModel(frozen=baseline, model=baseline_model),
             ),
             target_set=final_targets,
             extractor=policy_metrics,
@@ -175,24 +203,25 @@ class FairModelComparisonTests(unittest.TestCase):
         self.assertEqual(len(report.manifest.parent_hashes), 2)
         self.assertIs(attest_report(report).require_integrity(), report)
 
-    def test_comparison_rejects_partition_loss_seed_candidate_and_runtime_drift(self):
+    def test_comparison_rejects_partition_loss_seed_candidate_runtime_and_extractor_drift(self):
         (
             dataset,
             spec,
             loss,
-            model,
+            baseline_model,
+            alternative_model,
             baseline,
             alternative,
             protocol,
             final_targets,
         ) = protocol_fixture()
         models = (
-            ComparisonModel(frozen=baseline, model=model),
-            ComparisonModel(frozen=alternative, model=model),
+            ComparisonModel(frozen=baseline, model=baseline_model),
+            ComparisonModel(frozen=alternative, model=alternative_model),
         )
 
-        with self.assertRaises(ValueError):
-            compare_models_on_final_partition(
+        bad_calls = (
+            lambda: compare_models_on_final_partition(
                 runner=SimulationRunner(),
                 models=models,
                 target_set=construct_categorical_targets(
@@ -204,10 +233,8 @@ class FairModelComparisonTests(unittest.TestCase):
                 loss=loss,
                 simulation_seeds=(11, 12),
                 protocol=protocol,
-            )
-
-        with self.assertRaises(ValueError):
-            compare_models_on_final_partition(
+            ),
+            lambda: compare_models_on_final_partition(
                 runner=SimulationRunner(),
                 models=models,
                 target_set=final_targets,
@@ -215,48 +242,119 @@ class FairModelComparisonTests(unittest.TestCase):
                 loss=loss,
                 simulation_seeds=(11, 99),
                 protocol=protocol,
-            )
-
-        different_loss = CategoricalLogLoss(
-            (CategoricalMetricGroup("choice", ("choice.a", "choice.b")),)
-        )
-        with self.assertRaises(ValueError):
-            compare_models_on_final_partition(
+            ),
+            lambda: compare_models_on_final_partition(
                 runner=SimulationRunner(),
                 models=models,
                 target_set=final_targets,
                 extractor=policy_metrics,
-                loss=different_loss,
+                loss=CategoricalLogLoss(
+                    (CategoricalMetricGroup("choice", ("choice.a", "choice.b")),)
+                ),
                 simulation_seeds=(11, 12),
                 protocol=protocol,
-            )
-
-        substituted = FrozenModelCandidate.freeze(
-            name="alternative",
-            model=model,
-            parameters={"p": 0.3},
-            selection_manifest_hash=alternative.selection_manifest_hash,
-        )
-        with self.assertRaises(ValueError):
-            compare_models_on_final_partition(
+            ),
+            lambda: compare_models_on_final_partition(
+                runner=SimulationRunner(),
+                models=models,
+                target_set=final_targets,
+                extractor=swapped_policy_metrics,
+                loss=loss,
+                simulation_seeds=(11, 12),
+                protocol=protocol,
+            ),
+            lambda: compare_models_on_final_partition(
                 runner=SimulationRunner(),
                 models=(
-                    ComparisonModel(frozen=baseline, model=model),
-                    ComparisonModel(frozen=substituted, model=model),
+                    ComparisonModel(frozen=baseline, model=baseline_model),
+                    ComparisonModel(
+                        frozen=FrozenModelCandidate.freeze(
+                            name="alternative",
+                            model=alternative_model,
+                            parameters={"p": 0.3},
+                            selection_manifest_hash=alternative.selection_manifest_hash,
+                        ),
+                        model=alternative_model,
+                    ),
                 ),
                 target_set=final_targets,
                 extractor=policy_metrics,
                 loss=loss,
                 simulation_seeds=(11, 12),
                 protocol=protocol,
-            )
-
-        with self.assertRaises(ValueError):
-            compare_models_on_final_partition(
+            ),
+            lambda: compare_models_on_final_partition(
                 runner=SimulationRunner(),
                 models=(
                     ComparisonModel(frozen=baseline, model=DriftedProbabilityModel()),
-                    ComparisonModel(frozen=alternative, model=model),
+                    ComparisonModel(frozen=alternative, model=alternative_model),
+                ),
+                target_set=final_targets,
+                extractor=policy_metrics,
+                loss=loss,
+                simulation_seeds=(11, 12),
+                protocol=protocol,
+            ),
+        )
+        for call in bad_calls:
+            with self.subTest(call=call):
+                before = baseline_model.calls + alternative_model.calls
+                with self.assertRaises(ValueError):
+                    call()
+                self.assertEqual(
+                    baseline_model.calls + alternative_model.calls,
+                    before,
+                )
+
+    def test_one_mutable_raw_model_instance_cannot_serve_multiple_candidates(self):
+        dataset = observation_dataset()
+        spec = CategoricalTargetSpec(
+            name="choice-target",
+            version="1",
+            categories=("a", "b"),
+            metric_prefix="choice",
+        )
+        loss = CategoricalBrierLoss(
+            (CategoricalMetricGroup("choice", ("choice.a", "choice.b")),)
+        )
+        shared = ProbabilityModel()
+        selection_hash = stable_content_hash({"selection": "shared-source"})
+        baseline = FrozenModelCandidate.freeze(
+            name="baseline",
+            model=shared,
+            parameters={"p": 0.8},
+            selection_manifest_hash=selection_hash,
+        )
+        alternative = FrozenModelCandidate.freeze(
+            name="alternative",
+            model=shared,
+            parameters={"p": 0.2},
+            selection_manifest_hash=selection_hash,
+        )
+        protocol = PreregisteredEvaluationProtocol.create(
+            name="shared-source-protocol",
+            version="1",
+            dataset=dataset,
+            target_spec=spec,
+            extractor=policy_metrics,
+            loss=loss,
+            simulation_seeds=(11, 12),
+            baseline_name="baseline",
+            candidates=(baseline, alternative),
+            thresholds=AdequacyThresholds(1.0, 1.0),
+        )
+        final_targets = construct_categorical_targets(
+            dataset,
+            role=ObservationPartitionRole.FINAL_TEST,
+            spec=spec,
+        )
+
+        with self.assertRaises(ValueError):
+            compare_models_on_final_partition(
+                runner=SimulationRunner(),
+                models=(
+                    ComparisonModel(frozen=baseline, model=shared),
+                    ComparisonModel(frozen=alternative, model=shared),
                 ),
                 target_set=final_targets,
                 extractor=policy_metrics,
@@ -264,6 +362,69 @@ class FairModelComparisonTests(unittest.TestCase):
                 simulation_seeds=(11, 12),
                 protocol=protocol,
             )
+        self.assertEqual(shared.calls, 0)
+
+    def test_fresh_factory_source_can_be_reused_across_candidates(self):
+        dataset = observation_dataset()
+        spec = CategoricalTargetSpec(
+            name="choice-target",
+            version="1",
+            categories=("a", "b"),
+            metric_prefix="choice",
+        )
+        loss = CategoricalBrierLoss(
+            (CategoricalMetricGroup("choice", ("choice.a", "choice.b")),)
+        )
+        factory = ModelFactory(
+            name=ProbabilityModel.name,
+            create=create_probability_model,
+            version="1.0.0",
+            implementation_revision="test-fixture-v1",
+        )
+        selection_hash = stable_content_hash({"selection": "factory-source"})
+        baseline = FrozenModelCandidate.freeze(
+            name="baseline",
+            model=factory,
+            parameters={"p": 0.8},
+            selection_manifest_hash=selection_hash,
+        )
+        alternative = FrozenModelCandidate.freeze(
+            name="alternative",
+            model=factory,
+            parameters={"p": 0.2},
+            selection_manifest_hash=selection_hash,
+        )
+        protocol = PreregisteredEvaluationProtocol.create(
+            name="factory-source-protocol",
+            version="1",
+            dataset=dataset,
+            target_spec=spec,
+            extractor=policy_metrics,
+            loss=loss,
+            simulation_seeds=(11, 12),
+            baseline_name="baseline",
+            candidates=(baseline, alternative),
+            thresholds=AdequacyThresholds(1.0, 1.0),
+        )
+        final_targets = construct_categorical_targets(
+            dataset,
+            role=ObservationPartitionRole.FINAL_TEST,
+            spec=spec,
+        )
+
+        report = compare_models_on_final_partition(
+            runner=SimulationRunner(),
+            models=(
+                ComparisonModel(frozen=alternative, model=factory),
+                ComparisonModel(frozen=baseline, model=factory),
+            ),
+            target_set=final_targets,
+            extractor=policy_metrics,
+            loss=loss,
+            simulation_seeds=(11, 12),
+            protocol=protocol,
+        )
+        self.assertEqual(report.best.name, "baseline")
 
 
 if __name__ == "__main__":
