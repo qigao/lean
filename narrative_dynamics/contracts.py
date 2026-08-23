@@ -30,19 +30,14 @@ def _freeze_canonical_value(value: object, *, label: str) -> object:
         for key, item in value.items():
             if not isinstance(key, str) or not key:
                 raise ValueError(f"{label} keys must be non-empty strings")
-            frozen[key] = _freeze_canonical_value(
-                item,
-                label=f"{label}.{key}",
-            )
+            frozen[key] = _freeze_canonical_value(item, label=f"{label}.{key}")
         return MappingProxyType(frozen)
     if isinstance(value, (list, tuple)):
         return tuple(
             _freeze_canonical_value(item, label=f"{label}[{index}]")
             for index, item in enumerate(value)
         )
-    raise TypeError(
-        f"{label} values must be canonical scalars, mappings, lists, or tuples"
-    )
+    raise TypeError(f"{label} values must be canonical scalars, mappings, lists, or tuples")
 
 
 def _freeze_mapping(value: Mapping[str, object], *, label: str) -> Mapping[str, object]:
@@ -74,15 +69,7 @@ def _canonical_hash_value(value: object, *, label: str) -> object:
             raise ValueError(f"{label} keys must be non-empty strings")
         items: list[tuple[str, object]] = []
         for key in sorted(keys):
-            items.append(
-                (
-                    key,
-                    _canonical_hash_value(
-                        value[key],
-                        label=f"{label}.{key}",
-                    ),
-                )
-            )
+            items.append((key, _canonical_hash_value(value[key], label=f"{label}.{key}")))
         return ("mapping", tuple(items))
     if isinstance(value, (list, tuple)):
         return (
@@ -92,9 +79,7 @@ def _canonical_hash_value(value: object, *, label: str) -> object:
                 for index, item in enumerate(value)
             ),
         )
-    raise TypeError(
-        f"{label} values must be canonical scalars, mappings, lists, or tuples"
-    )
+    raise TypeError(f"{label} values must be canonical scalars, mappings, lists, or tuples")
 
 
 def stable_content_hash(value: object) -> str:
@@ -132,6 +117,10 @@ class ExperimentStage(str, Enum):
     MODEL_MISSPECIFICATION = "model_misspecification"
     INTERACTION_SENSITIVITY = "interaction_sensitivity"
     FINAL_TEST_COVERAGE = "final_test_coverage"
+    TARGET_CONSTRUCTION = "target_construction"
+    ALTERNATIVE_MODEL_COMPARISON = "alternative_model_comparison"
+    OBSERVATION_TARGET_CONSTRUCTION = "observation_target_construction"
+    MODEL_COMPARISON = "model_comparison"
 
 
 @dataclass(frozen=True)
@@ -151,43 +140,25 @@ class ExperimentManifest:
         ):
             raise ValueError("manifest schema version must be a positive integer")
         try:
-            stage = (
-                self.stage
-                if isinstance(self.stage, ExperimentStage)
-                else ExperimentStage(self.stage)
-            )
+            stage = self.stage if isinstance(self.stage, ExperimentStage) else ExperimentStage(self.stage)
         except (TypeError, ValueError) as error:
             raise ValueError("manifest stage must be supported") from error
-
-        parent_hashes = tuple(
-            sorted(
-                {
-                    _validated_content_hash(
-                        parent_hash,
-                        label="manifest parent hash",
-                    )
-                    for parent_hash in self.parent_hashes
-                }
-            )
-        )
+        parent_hashes = tuple(sorted({
+            _validated_content_hash(parent_hash, label="manifest parent hash")
+            for parent_hash in self.parent_hashes
+        }))
         object.__setattr__(self, "stage", stage)
-        object.__setattr__(
-            self,
-            "inputs",
-            _freeze_mapping(self.inputs, label="manifest inputs"),
-        )
+        object.__setattr__(self, "inputs", _freeze_mapping(self.inputs, label="manifest inputs"))
         object.__setattr__(self, "parent_hashes", parent_hashes)
 
     @property
     def content_hash(self) -> str:
-        return stable_content_hash(
-            {
-                "schema_version": self.schema_version,
-                "stage": self.stage.value,
-                "inputs": self.inputs,
-                "parent_hashes": self.parent_hashes,
-            }
-        )
+        return stable_content_hash({
+            "schema_version": self.schema_version,
+            "stage": self.stage.value,
+            "inputs": self.inputs,
+            "parent_hashes": self.parent_hashes,
+        })
 
 
 @dataclass(frozen=True)
@@ -200,11 +171,7 @@ class Scenario:
     def __post_init__(self) -> None:
         if not self.id:
             raise ValueError("scenario id must be non-empty")
-        object.__setattr__(
-            self,
-            "payload",
-            _freeze_mapping(self.payload, label="scenario payload"),
-        )
+        object.__setattr__(self, "payload", _freeze_mapping(self.payload, label="scenario payload"))
 
     @property
     def content_hash(self) -> str:
@@ -224,11 +191,7 @@ class TraceEvent:
             raise ValueError("event tick must be non-negative")
         if not self.kind:
             raise ValueError("event kind must be non-empty")
-        object.__setattr__(
-            self,
-            "data",
-            _freeze_mapping(self.data, label="event data"),
-        )
+        object.__setattr__(self, "data", _freeze_mapping(self.data, label="event data"))
 
 
 @dataclass(frozen=True)
@@ -243,11 +206,7 @@ class ModelRun:
         if any(not isinstance(event, TraceEvent) for event in events):
             raise TypeError("model run events must contain TraceEvent values")
         object.__setattr__(self, "events", events)
-        object.__setattr__(
-            self,
-            "outcome",
-            _freeze_mapping(self.outcome, label="model outcome"),
-        )
+        object.__setattr__(self, "outcome", _freeze_mapping(self.outcome, label="model outcome"))
 
 
 @dataclass(frozen=True)
@@ -294,22 +253,12 @@ class SimulationTrace:
         events = tuple(self.events)
         if any(not isinstance(event, TraceEvent) for event in events):
             raise TypeError("simulation trace events must contain TraceEvent values")
-        if self.manifest is not None and not isinstance(
-            self.manifest,
-            ExperimentManifest,
-        ):
+        if self.manifest is not None and not isinstance(self.manifest, ExperimentManifest):
             raise TypeError("simulation trace manifest must be an ExperimentManifest")
-        if self.execution is not None and not isinstance(
-            self.execution,
-            ExecutionCapture,
-        ):
+        if self.execution is not None and not isinstance(self.execution, ExecutionCapture):
             raise TypeError("simulation trace execution must be an ExecutionCapture")
         object.__setattr__(self, "events", events)
-        object.__setattr__(
-            self,
-            "outcome",
-            _freeze_mapping(self.outcome, label="trace outcome"),
-        )
+        object.__setattr__(self, "outcome", _freeze_mapping(self.outcome, label="trace outcome"))
 
     @property
     def parameter_map(self) -> dict[str, float]:
