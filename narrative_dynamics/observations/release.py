@@ -3,13 +3,25 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 import re
-from types import MappingProxyType
 
-from narrative_dynamics.contracts import stable_content_hash
+from narrative_dynamics.contracts import (
+    ExperimentManifest,
+    ExperimentStage,
+    stable_content_hash,
+)
+from narrative_dynamics.losses import MetricLoss
 from narrative_dynamics.manifest import component_identity
+from narrative_dynamics.model_comparison import (
+    ComparisonModel,
+    ModelComparisonEntry,
+    ModelComparisonReport,
+    compare_models_on_final_partition,
+)
+from narrative_dynamics.simulation import SimulationRunner
 
 from .dataset import _freeze_mapping
 from .preregistration import PreregisteredEvaluationProtocol
+from .targets import TargetConstructionReport
 
 
 PROTOCOL_RELEASE_SCHEMA_VERSION = 1
@@ -357,6 +369,30 @@ class VerifiedProtocolRelease:
         return stable_content_hash(self.identity_payload())
 
 
+@dataclass(frozen=True)
+class ReleasedModelComparisonReport:
+    release_hash: str
+    verification_hash: str
+    comparison: ModelComparisonReport
+    manifest: ExperimentManifest
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "release_hash", _hash(self.release_hash, label="released comparison release hash"))
+        object.__setattr__(self, "verification_hash", _hash(self.verification_hash, label="released comparison verification hash"))
+        if not isinstance(self.comparison, ModelComparisonReport):
+            raise TypeError("released comparison must wrap ModelComparisonReport")
+        if not isinstance(self.manifest, ExperimentManifest):
+            raise TypeError("released comparison manifest must be ExperimentManifest")
+
+    @property
+    def best(self) -> ModelComparisonEntry:
+        return self.comparison.best
+
+    @property
+    def entry_map(self):
+        return self.comparison.entry_map
+
+
 def _require_release_matches_protocol(
     release: ProtocolRelease,
     protocol: PreregisteredEvaluationProtocol,
@@ -423,12 +459,57 @@ def verify_protocol_release(
     )
 
 
+def compare_released_models(
+    *,
+    runner: SimulationRunner,
+    verified_release: VerifiedProtocolRelease,
+    protocol: PreregisteredEvaluationProtocol,
+    models: tuple[ComparisonModel, ...],
+    target_set: TargetConstructionReport,
+    extractor: object,
+    loss: MetricLoss,
+) -> ReleasedModelComparisonReport:
+    if not isinstance(verified_release, VerifiedProtocolRelease):
+        raise TypeError("released comparison requires VerifiedProtocolRelease")
+    verified_release.require_matches(protocol)
+
+    comparison = compare_models_on_final_partition(
+        runner=runner,
+        models=models,
+        target_set=target_set,
+        extractor=extractor,
+        loss=loss,
+        simulation_seeds=protocol.simulation_seeds,
+        protocol=protocol,
+    )
+    manifest = ExperimentManifest(
+        stage=ExperimentStage.RELEASED_MODEL_COMPARISON,
+        inputs={
+            "verified_release_hash": verified_release.content_hash,
+            "release_hash": verified_release.release_hash,
+            "protocol_hash": protocol.content_hash,
+            "verifier_identity": verified_release.verifier_identity,
+            "verified_receipt_hashes": verified_release.verified_receipt_hashes,
+            "comparison_manifest_hash": comparison.manifest.content_hash,
+        },
+        parent_hashes=(comparison.manifest.content_hash,),
+    )
+    return ReleasedModelComparisonReport(
+        release_hash=verified_release.release_hash,
+        verification_hash=verified_release.content_hash,
+        comparison=comparison,
+        manifest=manifest,
+    )
+
+
 __all__ = [
     "PROTOCOL_RELEASE_SCHEMA_VERSION",
     "WITNESS_RECEIPT_SCHEMA_VERSION",
     "ProtocolRelease",
     "ProtocolReleaseVerificationError",
+    "ReleasedModelComparisonReport",
     "VerifiedProtocolRelease",
     "WitnessReceipt",
+    "compare_released_models",
     "verify_protocol_release",
 ]
