@@ -6,6 +6,8 @@ import math
 import random
 
 from narrative_dynamics.contracts import ModelRun, TraceEvent
+from narrative_dynamics.model_contract import ModelContract, ModelSchema
+from narrative_dynamics.process_execution import ProcessLimits, SubprocessModel
 
 
 _MODEL_NAME = "finite-prison-reactive"
@@ -383,7 +385,186 @@ def create_prison_reactive_model() -> FinitePrisonReactiveModel:
     return FinitePrisonReactiveModel()
 
 
+def _object_schema(
+    required: tuple[str, ...], properties: Mapping[str, object]
+) -> dict[str, object]:
+    return {
+        "type": "object",
+        "required": required,
+        "properties": properties,
+        "additional_properties": False,
+    }
+
+
+def _policy_schema(actions: tuple[str, ...]) -> dict[str, object]:
+    return _object_schema(
+        actions,
+        {
+            action: {"type": "number", "minimum": 0.0, "maximum": 1.0}
+            for action in actions
+        },
+    )
+
+
+def _values_schema(actions: tuple[str, ...]) -> dict[str, object]:
+    return _object_schema(
+        actions,
+        {action: {"type": "number"} for action in actions},
+    )
+
+
+def _decision_event_schema(actions: tuple[str, ...]) -> dict[str, object]:
+    return _object_schema(
+        ("action", "policy", "values", "draw"),
+        {
+            "action": {"type": "string", "enum": actions},
+            "policy": _policy_schema(actions),
+            "values": _values_schema(actions),
+            "draw": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+        },
+    )
+
+
+def prison_reactive_contract() -> ModelContract:
+    scenario_fields = (
+        "prior_weak",
+        "signal_accuracy",
+        "guard_persistence",
+        "escape_reward",
+        "capture_cost",
+        "submit_reward",
+        "scout_cost",
+        "discount",
+        "horizon",
+    )
+    parameter_schema = ModelSchema(
+        name="finite-prison-reactive-parameters",
+        version=_MODEL_VERSION,
+        definition=_object_schema(
+            ("beta",),
+            {"beta": {"type": "number", "minimum": 1e-12}},
+        ),
+    )
+    scenario_schema = ModelSchema(
+        name="finite-prison-reactive-scenario",
+        version=_MODEL_VERSION,
+        definition=_object_schema(
+            scenario_fields,
+            {
+                "prior_weak": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                "signal_accuracy": {
+                    "type": "number",
+                    "minimum": 0.5,
+                    "maximum": 1.0,
+                },
+                "guard_persistence": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                },
+                "escape_reward": {"type": "number", "minimum": 0.0},
+                "capture_cost": {"type": "number", "minimum": 0.0},
+                "submit_reward": {"type": "number"},
+                "scout_cost": {"type": "number", "minimum": 0.0},
+                "discount": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                "horizon": {"type": "integer", "minimum": 1, "maximum": 2},
+            },
+        ),
+    )
+    event_schema = ModelSchema(
+        name="finite-prison-reactive-events",
+        version=_MODEL_VERSION,
+        definition={
+            "event_kinds": (
+                "initial_decision",
+                "observation_received",
+                "terminal_decision",
+                "episode_ended",
+            ),
+            "event_data": {
+                "initial_decision": _decision_event_schema(_INITIAL_ACTIONS),
+                "observation_received": _object_schema(
+                    ("signal", "draw"),
+                    {
+                        "signal": {"type": "string", "enum": _SIGNALS},
+                        "draw": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                    },
+                ),
+                "terminal_decision": _decision_event_schema(_TERMINAL_ACTIONS),
+                "episode_ended": _object_schema(
+                    ("terminal_action", "escaped", "utility", "steps", "state_draw"),
+                    {
+                        "terminal_action": {"type": "string", "enum": _TERMINAL_ACTIONS},
+                        "escaped": {"type": "boolean"},
+                        "utility": {"type": "number"},
+                        "steps": {"type": "integer", "minimum": 1, "maximum": 2},
+                        "state_draw": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                    },
+                ),
+            },
+            "allow_unlisted_events": False,
+        },
+    )
+    outcome_schema = ModelSchema(
+        name="finite-prison-reactive-outcome",
+        version=_MODEL_VERSION,
+        definition=_object_schema(
+            (
+                "initial_policy",
+                "initial_values",
+                "cue_values",
+                "initial_action",
+                "terminal_action",
+                "signal",
+                "escaped",
+                "utility",
+                "steps",
+            ),
+            {
+                "initial_policy": _policy_schema(_INITIAL_ACTIONS),
+                "initial_values": _values_schema(_INITIAL_ACTIONS),
+                "cue_values": _object_schema(
+                    _SIGNALS,
+                    {
+                        signal: _values_schema(_TERMINAL_ACTIONS)
+                        for signal in _SIGNALS
+                    },
+                ),
+                "initial_action": {"type": "string", "enum": _INITIAL_ACTIONS},
+                "terminal_action": {"type": "string", "enum": _TERMINAL_ACTIONS},
+                "signal": {"type": "string", "enum": ("none",) + _SIGNALS},
+                "escaped": {"type": "boolean"},
+                "utility": {"type": "number"},
+                "steps": {"type": "integer", "minimum": 1, "maximum": 2},
+            },
+        ),
+    )
+    return ModelContract(
+        version=_MODEL_VERSION,
+        implementation_revision=_IMPLEMENTATION_REVISION,
+        parameter_schema=parameter_schema,
+        scenario_schema=scenario_schema,
+        event_schema=event_schema,
+        outcome_schema=outcome_schema,
+    )
+
+
+def prison_reactive_source(*, limits: ProcessLimits | None = None) -> SubprocessModel:
+    return SubprocessModel(
+        name=_MODEL_NAME,
+        factory=(
+            "narrative_dynamics.adapters.prison_reactive:"
+            "create_prison_reactive_model"
+        ),
+        version=_MODEL_VERSION,
+        implementation_revision=_IMPLEMENTATION_REVISION,
+        limits=ProcessLimits() if limits is None else limits,
+    )
+
+
 __all__ = [
     "FinitePrisonReactiveModel",
     "create_prison_reactive_model",
+    "prison_reactive_contract",
+    "prison_reactive_source",
 ]
