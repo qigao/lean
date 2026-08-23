@@ -5,6 +5,7 @@ import unittest
 
 from narrative_dynamics.contracts import ModelRun, Scenario, stable_content_hash
 from narrative_dynamics.losses import CategoricalBrierLoss, CategoricalMetricGroup
+from narrative_dynamics.model_comparison import ComparisonModel
 from narrative_dynamics.observations import (
     AdequacyThresholds,
     CategoricalTargetSpec,
@@ -14,7 +15,10 @@ from narrative_dynamics.observations import (
     ObservationPartitionRole,
     ObservationRecord,
     PreregisteredEvaluationProtocol,
+    construct_categorical_targets,
 )
+from narrative_dynamics.report_artifact import attest_report
+from narrative_dynamics.simulation import SimulationRunner
 
 
 class ReleaseProbabilityModel:
@@ -22,13 +26,15 @@ class ReleaseProbabilityModel:
     version = "1.0.0"
     implementation_revision = "release-probability-v1"
 
+    def __init__(self):
+        self.calls = 0
+
     def simulate(self, scenario, parameters, rng):
+        self.calls += 1
         probability = float(parameters["p"])
         return ModelRun(
             events=(),
-            outcome={
-                "policy": {"a": probability, "b": 1.0 - probability}
-            },
+            outcome={"policy": {"a": probability, "b": 1.0 - probability}},
         )
 
 
@@ -37,13 +43,15 @@ class ReleaseAlternativeModel:
     version = "1.0.0"
     implementation_revision = "release-alternative-v1"
 
+    def __init__(self):
+        self.calls = 0
+
     def simulate(self, scenario, parameters, rng):
+        self.calls += 1
         probability = float(parameters["p"])
         return ModelRun(
             events=(),
-            outcome={
-                "policy": {"a": probability, "b": 1.0 - probability}
-            },
+            outcome={"policy": {"a": probability, "b": 1.0 - probability}},
         )
 
 
@@ -126,6 +134,62 @@ def protocol_fixture(*, name: str = "release-protocol") -> PreregisteredEvaluati
         baseline_name="baseline",
         candidates=(baseline, alternative),
         thresholds=AdequacyThresholds(1.0, 1.0),
+    )
+
+
+def comparison_fixture():
+    dataset = observation_dataset()
+    spec = CategoricalTargetSpec(
+        name="release-choice-target",
+        version="1",
+        categories=("a", "b"),
+        metric_prefix="choice",
+    )
+    loss = CategoricalBrierLoss(
+        (CategoricalMetricGroup("choice", ("choice.a", "choice.b")),)
+    )
+    baseline_model = ReleaseProbabilityModel()
+    alternative_model = ReleaseAlternativeModel()
+    selection_hash = stable_content_hash({"selection": "frozen"})
+    baseline = FrozenModelCandidate.freeze(
+        name="baseline",
+        model=baseline_model,
+        parameters={"p": 0.8},
+        selection_manifest_hash=selection_hash,
+    )
+    alternative = FrozenModelCandidate.freeze(
+        name="alternative",
+        model=alternative_model,
+        parameters={"p": 0.2},
+        selection_manifest_hash=selection_hash,
+    )
+    protocol = PreregisteredEvaluationProtocol.create(
+        name="release-protocol",
+        version="1",
+        dataset=dataset,
+        target_spec=spec,
+        extractor=policy_metrics,
+        loss=loss,
+        simulation_seeds=(11, 12),
+        baseline_name="baseline",
+        candidates=(baseline, alternative),
+        thresholds=AdequacyThresholds(1.0, 1.0),
+    )
+    final_targets = construct_categorical_targets(
+        dataset,
+        role=ObservationPartitionRole.FINAL_TEST,
+        spec=spec,
+    )
+    return (
+        dataset,
+        spec,
+        loss,
+        baseline_model,
+        alternative_model,
+        baseline,
+        alternative,
+        protocol,
+        final_targets,
     )
 
 
@@ -287,6 +351,171 @@ class ProtocolReleaseVerificationTests(unittest.TestCase):
         self.assertEqual(verified.verified_receipt_hashes, (receipt.content_hash,))
         self.assertEqual(verified.verifier_identity["name"], verifier.name)
         self.assertTrue(verified.content_hash.startswith("sha256:"))
+
+
+class ProtocolReleaseComparisonTests(unittest.TestCase):
+    def _verified_fixture(self):
+        api = release_api(self)
+        (
+            dataset,
+            spec,
+            loss,
+            baseline_model,
+            alternative_model,
+            baseline,
+            alternative,
+            protocol,
+            final_targets,
+        ) = comparison_fixture()
+        release = api.ProtocolRelease.create(
+            name="prison-comparison-release",
+            version="1",
+            protocol=protocol,
+            source_revision={"repository": "qigao/lean", "revision": "fixture"},
+        )
+        receipt = api.WitnessReceipt.create(
+            provider="test-fixture",
+            authority="unit-test",
+            subject_hash=release.content_hash,
+            reference="fixture-receipt-1",
+            claimed_at="2026-08-23T00:00:00Z",
+            proof={"nonce": "release-v1"},
+        )
+        verified = api.verify_protocol_release(
+            release,
+            protocol=protocol,
+            receipts=(receipt,),
+            verifier=FixtureWitnessVerifier(),
+        )
+        models = (
+            ComparisonModel(frozen=baseline, model=baseline_model),
+            ComparisonModel(frozen=alternative, model=alternative_model),
+        )
+        return (
+            api,
+            dataset,
+            spec,
+            loss,
+            baseline_model,
+            alternative_model,
+            protocol,
+            final_targets,
+            release,
+            verified,
+            models,
+        )
+
+    def test_raw_release_cannot_unlock_final_model_execution(self):
+        (
+            api,
+            _dataset,
+            _spec,
+            loss,
+            baseline_model,
+            alternative_model,
+            protocol,
+            final_targets,
+            release,
+            _verified,
+            models,
+        ) = self._verified_fixture()
+        compare = getattr(api, "compare_released_models", None)
+        self.assertIsNotNone(compare, "released comparison API is missing")
+        before = baseline_model.calls + alternative_model.calls
+        with self.assertRaises(TypeError):
+            compare(
+                runner=SimulationRunner(),
+                verified_release=release,
+                protocol=protocol,
+                models=models,
+                target_set=final_targets,
+                extractor=policy_metrics,
+                loss=loss,
+            )
+        self.assertEqual(baseline_model.calls + alternative_model.calls, before)
+
+    def test_verified_release_gates_existing_comparison_and_attests_wrapper(self):
+        (
+            api,
+            _dataset,
+            _spec,
+            loss,
+            _baseline_model,
+            _alternative_model,
+            protocol,
+            final_targets,
+            release,
+            verified,
+            models,
+        ) = self._verified_fixture()
+        compare = getattr(api, "compare_released_models", None)
+        self.assertIsNotNone(compare, "released comparison API is missing")
+        report = compare(
+            runner=SimulationRunner(),
+            verified_release=verified,
+            protocol=protocol,
+            models=models,
+            target_set=final_targets,
+            extractor=policy_metrics,
+            loss=loss,
+        )
+        self.assertEqual(report.release_hash, release.content_hash)
+        self.assertEqual(report.best.name, report.comparison.best.name)
+        self.assertEqual(
+            report.manifest.inputs["verified_release_hash"],
+            verified.content_hash,
+        )
+        self.assertIs(attest_report(report).require_integrity(), report)
+
+    def test_verified_release_for_other_protocol_fails_before_model_execution(self):
+        (
+            api,
+            _dataset,
+            _spec,
+            loss,
+            baseline_model,
+            alternative_model,
+            protocol,
+            final_targets,
+            _release,
+            _verified,
+            models,
+        ) = self._verified_fixture()
+        other = protocol_fixture(name="different-protocol")
+        other_release = api.ProtocolRelease.create(
+            name="other-release",
+            version="1",
+            protocol=other,
+            source_revision={"repository": "qigao/lean", "revision": "other"},
+        )
+        other_receipt = api.WitnessReceipt.create(
+            provider="test-fixture",
+            authority="unit-test",
+            subject_hash=other_release.content_hash,
+            reference="other-receipt",
+            claimed_at="2026-08-23T00:00:00Z",
+            proof={"nonce": "release-v1"},
+        )
+        other_verified = api.verify_protocol_release(
+            other_release,
+            protocol=other,
+            receipts=(other_receipt,),
+            verifier=FixtureWitnessVerifier(),
+        )
+        compare = getattr(api, "compare_released_models", None)
+        self.assertIsNotNone(compare, "released comparison API is missing")
+        before = baseline_model.calls + alternative_model.calls
+        with self.assertRaises(api.ProtocolReleaseVerificationError):
+            compare(
+                runner=SimulationRunner(),
+                verified_release=other_verified,
+                protocol=protocol,
+                models=models,
+                target_set=final_targets,
+                extractor=policy_metrics,
+                loss=loss,
+            )
+        self.assertEqual(baseline_model.calls + alternative_model.calls, before)
 
 
 if __name__ == "__main__":
