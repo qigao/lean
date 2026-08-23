@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+import math
+from statistics import fmean
 from types import MappingProxyType
 
 from narrative_dynamics.contracts import ExperimentManifest, ExperimentStage
@@ -21,6 +23,34 @@ from narrative_dynamics.observations.preregistration import (
     PreregisteredEvaluationProtocol,
 )
 from narrative_dynamics.observations.targets import TargetConstructionReport
+
+
+_NUMERIC_ZERO_ABS_TOL = 1e-15
+
+
+def _canonical_loss(value: float) -> float:
+    numeric = float(value)
+    return 0.0 if math.isclose(
+        numeric,
+        0.0,
+        rel_tol=0.0,
+        abs_tol=_NUMERIC_ZERO_ABS_TOL,
+    ) else numeric
+
+
+def _canonical_final_test(report: FinalTestReport) -> FinalTestReport:
+    cases = tuple(
+        replace(case, loss=_canonical_loss(case.loss))
+        for case in report.validation.cases
+    )
+    losses = tuple(case.loss for case in cases)
+    validation = replace(
+        report.validation,
+        cases=cases,
+        mean_loss=fmean(losses),
+        worst_loss=max(losses),
+    )
+    return replace(report, validation=validation)
 
 
 @dataclass(frozen=True)
@@ -141,7 +171,6 @@ def compare_models_on_final_partition(
             for case in target_set.cases
         ),
     )
-
     raw_entries: list[tuple[ComparisonModel, FinalTestReport]] = []
     for item in resolved:
         final_test = evaluate_on_final_test_suite(
@@ -152,7 +181,7 @@ def compare_models_on_final_partition(
             extractor=extractor,
             loss=loss,
         )
-        raw_entries.append((item, final_test))
+        raw_entries.append((item, _canonical_final_test(final_test)))
 
     baseline_report = next(
         report for item, report in raw_entries
@@ -192,6 +221,7 @@ def compare_models_on_final_partition(
             "loss_identity": protocol.loss_identity,
             "simulation_seeds": protocol.simulation_seeds,
             "baseline_name": protocol.baseline_name,
+            "numeric_zero_abs_tol": _NUMERIC_ZERO_ABS_TOL,
             "ranking_rule": ("mean_loss", "worst_loss", "model_name"),
             "entries": tuple({
                 "name": entry.name,
