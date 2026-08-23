@@ -273,6 +273,7 @@ class PreregisteredEvaluationProtocol:
     target_spec_hash: str
     final_target_hash: str
     final_target_manifest_hash: str
+    metric_identity: Mapping[str, object]
     loss_identity: Mapping[str, object]
     simulation_seeds: tuple[int, ...]
     baseline_name: str
@@ -293,7 +294,16 @@ class PreregisteredEvaluationProtocol:
             ("final_target_manifest_hash", "protocol target-construction manifest hash"),
         ):
             object.__setattr__(self, attribute, _hash(getattr(self, attribute), label=label))
-        object.__setattr__(self, "loss_identity", _freeze_mapping(self.loss_identity, label="protocol loss identity"))
+        object.__setattr__(
+            self,
+            "metric_identity",
+            _freeze_mapping(self.metric_identity, label="protocol metric identity"),
+        )
+        object.__setattr__(
+            self,
+            "loss_identity",
+            _freeze_mapping(self.loss_identity, label="protocol loss identity"),
+        )
         object.__setattr__(self, "simulation_seeds", _seed_plan(self.simulation_seeds))
         object.__setattr__(self, "baseline_name", _text(self.baseline_name, label="protocol baseline name"))
         candidates = tuple(sorted(self.candidates, key=lambda item: item.name))
@@ -323,6 +333,7 @@ class PreregisteredEvaluationProtocol:
         version: str,
         dataset: ObservationDataset,
         target_spec: CategoricalTargetSpec,
+        extractor: object,
         loss: MetricLoss,
         simulation_seeds: tuple[int, ...],
         baseline_name: str,
@@ -340,6 +351,8 @@ class PreregisteredEvaluationProtocol:
         )
         canonical_name = _text(name, label="evaluation protocol name")
         canonical_version = _text(version, label="evaluation protocol version")
+        canonical_metric_identity = callable_identity(extractor)
+        canonical_loss_identity = metric_loss_identity(loss)
         canonical_seeds = _seed_plan(simulation_seeds)
         canonical_baseline = _text(baseline_name, label="evaluation protocol baseline name")
         canonical_candidates = tuple(sorted(candidates, key=lambda item: item.name))
@@ -353,7 +366,8 @@ class PreregisteredEvaluationProtocol:
             "target_spec_hash": target_spec.content_hash,
             "final_target_hash": final_targets.content_hash,
             "final_target_manifest_hash": final_targets.manifest.content_hash,
-            "loss_identity": metric_loss_identity(loss),
+            "metric_identity": canonical_metric_identity,
+            "loss_identity": canonical_loss_identity,
             "simulation_seeds": canonical_seeds,
             "baseline_name": canonical_baseline,
             "candidates": tuple(candidate.identity_payload() for candidate in canonical_candidates),
@@ -370,7 +384,8 @@ class PreregisteredEvaluationProtocol:
             target_spec_hash=target_spec.content_hash,
             final_target_hash=final_targets.content_hash,
             final_target_manifest_hash=final_targets.manifest.content_hash,
-            loss_identity=metric_loss_identity(loss),
+            metric_identity=canonical_metric_identity,
+            loss_identity=canonical_loss_identity,
             simulation_seeds=canonical_seeds,
             baseline_name=canonical_baseline,
             candidates=canonical_candidates,
@@ -393,6 +408,7 @@ class PreregisteredEvaluationProtocol:
             "target_spec_hash": self.target_spec_hash,
             "final_target_hash": self.final_target_hash,
             "final_target_manifest_hash": self.final_target_manifest_hash,
+            "metric_identity": self.metric_identity,
             "loss_identity": self.loss_identity,
             "simulation_seeds": self.simulation_seeds,
             "baseline_name": self.baseline_name,

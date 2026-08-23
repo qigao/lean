@@ -181,7 +181,6 @@ class ObservationRecord:
         return stable_content_hash({
             "scenario": {"id": self.scenario.id, "content_hash": self.scenario.content_hash},
             "counts": self.counts,
-            "metadata": self.metadata,
         })
 
 

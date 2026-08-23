@@ -7,7 +7,11 @@ from types import MappingProxyType
 
 from narrative_dynamics.contracts import ExperimentManifest, ExperimentStage
 from narrative_dynamics.losses import MetricLoss, metric_loss_identity
-from narrative_dynamics.manifest import component_identity, required_manifest_hash
+from narrative_dynamics.manifest import (
+    callable_identity,
+    component_identity,
+    required_manifest_hash,
+)
 from narrative_dynamics.simulation import ModelSource, SimulationRunner
 from narrative_dynamics.validation import (
     EvaluationRole,
@@ -26,6 +30,10 @@ from narrative_dynamics.observations.targets import TargetConstructionReport
 
 
 _NUMERIC_ZERO_ABS_TOL = 1e-15
+_FRESH_SOURCE_LIFECYCLES = frozenset({
+    "fresh_per_batch",
+    "fresh_process_per_run",
+})
 
 
 def _canonical_loss(value: float) -> float:
@@ -51,6 +59,14 @@ def _canonical_final_test(report: FinalTestReport) -> FinalTestReport:
         worst_loss=max(losses),
     )
     return replace(report, validation=validation)
+
+
+def _runtime_source_is_reusable(source: ModelSource) -> bool:
+    """Return whether one source object guarantees isolated model state per run batch."""
+
+    if callable(getattr(source, "instantiate", None)):
+        return True
+    return getattr(source, "lifecycle", None) in _FRESH_SOURCE_LIFECYCLES
 
 
 @dataclass(frozen=True)
@@ -119,6 +135,8 @@ def _preflight(
         raise ValueError("final model comparison target payload changed")
     if target_set.manifest.content_hash != protocol.final_target_manifest_hash:
         raise ValueError("final model comparison target lineage changed")
+    if callable_identity(extractor) != dict(protocol.metric_identity):
+        raise ValueError("final model comparison metric extractor changed")
     if metric_loss_identity(loss) != dict(protocol.loss_identity):
         raise ValueError("final model comparison loss changed")
     if tuple(simulation_seeds) != protocol.simulation_seeds:
@@ -130,8 +148,18 @@ def _preflight(
     names = tuple(item.frozen.name for item in resolved)
     if names != protocol.candidate_names:
         raise ValueError("final model comparison requires exactly the preregistered candidates")
+
+    seen_runtime_sources: set[int] = set()
     frozen_by_name = {candidate.name: candidate for candidate in protocol.candidates}
     for item in resolved:
+        if not _runtime_source_is_reusable(item.model):
+            source_identity = id(item.model)
+            if source_identity in seen_runtime_sources:
+                raise ValueError(
+                    "one mutable runtime model instance cannot serve multiple candidates"
+                )
+            seen_runtime_sources.add(source_identity)
+
         expected = frozen_by_name[item.frozen.name]
         if item.frozen.content_hash != expected.content_hash:
             raise ValueError(f"frozen candidate changed for {item.frozen.name!r}")
@@ -218,6 +246,7 @@ def compare_models_on_final_partition(
             "final_partition_hash": protocol.final_partition_hash,
             "final_target_hash": protocol.final_target_hash,
             "final_target_manifest_hash": protocol.final_target_manifest_hash,
+            "metric_identity": protocol.metric_identity,
             "loss_identity": protocol.loss_identity,
             "simulation_seeds": protocol.simulation_seeds,
             "baseline_name": protocol.baseline_name,
