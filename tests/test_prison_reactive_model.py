@@ -3,8 +3,10 @@ from __future__ import annotations
 import math
 import unittest
 
-from narrative_dynamics.attestation import RepositoryIdentity
+from narrative_dynamics.attestation import RepositoryIdentity, measure_implementation
 from narrative_dynamics.contracts import Scenario, SimulationTrace
+from narrative_dynamics.execution_policy import TrustedExecutionPolicy, TrustedModelPin
+from narrative_dynamics.process_execution import ProcessLimits
 from narrative_dynamics.simulation import SimulationRunner
 
 
@@ -136,6 +138,56 @@ class PrisonReactiveModelTests(unittest.TestCase):
         self.assertNotIn("adapters.prison_pomdp", source)
         self.assertNotIn("_posterior_weak", source)
         self.assertNotIn("_future_weak_probability", source)
+
+    def test_reactive_production_source_is_pinned_isolated_and_schema_attested(self):
+        from narrative_dynamics.adapters.prison_reactive import (
+            prison_reactive_contract,
+            prison_reactive_source,
+        )
+
+        source = prison_reactive_source(
+            limits=ProcessLimits(
+                timeout_seconds=3.0,
+                max_output_bytes=64 * 1024,
+                max_trace_bytes=128 * 1024,
+            )
+        )
+        contract = prison_reactive_contract()
+        policy = TrustedExecutionPolicy(
+            name="reactive-test-policy",
+            version="1",
+            pins=(
+                TrustedModelPin(
+                    model_name=source.name,
+                    declared_contract_hash=contract.content_hash,
+                    expected_implementation_hash=(
+                        measure_implementation(source).content_hash
+                    ),
+                ),
+            ),
+        )
+        bound = policy.bind(source, contract=contract)
+        trace = self.runner.run_once(
+            bound,
+            prison_scenario("reactive-production"),
+            {"beta": 2.0},
+            seed=23,
+        )
+
+        self.assertIsNotNone(trace.execution)
+        self.assertTrue(trace.execution.isolated)
+        for boundary in ("parameters", "scenario", "events", "outcome"):
+            self.assertEqual(
+                trace.manifest.inputs["schema_validation"][boundary]["status"],
+                "validated",
+            )
+        self.assertEqual(
+            trace.manifest.inputs["model"]["implementation_attestation"][
+                "verification"
+            ],
+            "matched",
+        )
+        self.assertIn("result_artifact", trace.manifest.inputs)
 
 
 if __name__ == "__main__":
