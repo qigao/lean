@@ -106,6 +106,7 @@ class ExperimentStage(str, Enum):
 
     SIMULATION_RUN = "simulation_run"
     GRID_CALIBRATION = "grid_calibration"
+    TRAINING_TARGET_FIT = "training_target_fit"
     REPEATED_CALIBRATION = "repeated_calibration"
     SEED_BLOCK_VARIATION = "seed_block_variation"
     SYNTHETIC_RECOVERY = "synthetic_recovery"
