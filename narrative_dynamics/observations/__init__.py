@@ -19,6 +19,15 @@ from .preregistration import (
     FrozenModelSpec,
     PreregisteredEvaluationProtocol,
 )
+from .release import (
+    ProtocolRelease,
+    ProtocolReleaseVerificationError,
+    ReleasedModelComparisonReport,
+    VerifiedProtocolRelease,
+    WitnessReceipt,
+    compare_released_models,
+    verify_protocol_release,
+)
 from .targets import (
     CategoricalTargetPlan,
     CategoricalTargetSpec,
@@ -26,6 +35,12 @@ from .targets import (
     ConstructedTargetSet,
     TargetConstructionReport,
     construct_categorical_targets,
+)
+from .training import (
+    TrainingCandidateFit,
+    TrainingCaseFit,
+    TrainingFitReport,
+    fit_training_target_grid,
 )
 
 __all__ = [
@@ -46,8 +61,19 @@ __all__ = [
     "ObservationPartitionRole",
     "ObservationRecord",
     "PreregisteredEvaluationProtocol",
+    "ProtocolRelease",
+    "ProtocolReleaseVerificationError",
+    "ReleasedModelComparisonReport",
     "TargetConstructionReport",
+    "TrainingCandidateFit",
+    "TrainingCaseFit",
+    "TrainingFitReport",
+    "VerifiedProtocolRelease",
+    "WitnessReceipt",
     "compare_registered_models",
+    "compare_released_models",
     "construct_categorical_targets",
+    "fit_training_target_grid",
     "load_observation_dataset",
+    "verify_protocol_release",
 ]
