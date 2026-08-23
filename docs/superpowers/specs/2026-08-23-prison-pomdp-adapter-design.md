@@ -6,7 +6,7 @@ Approved by the user’s explicit `go` after the trusted Python runtime gates we
 
 ## Purpose
 
-Add the first finite POMDP adapter as a concrete consumer of the existing runtime boundary. The adapter models a prisoner choosing whether to inspect guard conditions and then attempt escape through a gate or tunnel under a hidden guard-alert state.
+Add the first finite POMDP adapter as a concrete consumer of the existing runtime boundary. The adapter models a prisoner choosing whether to scout guard conditions, attempt escape, or submit under a hidden weak/strong guard state.
 
 The adapter is an empirical/research hypothesis. It is not a claim that the finite state, observation, reward, or policy equations are a true description of human behavior.
 
@@ -14,31 +14,42 @@ The adapter is an empirical/research hypothesis. It is not a claim that the fini
 
 Hidden state:
 
-- `quiet`
-- `alert`
+- `weak`
+- `strong`
 
-Observations after the optional `inspect` action:
+Observations after the optional `scout` action:
 
 - `clear`
 - `alarm`
 
-Actions:
+Initial actions:
 
-- `inspect`
-- `gate`
-- `tunnel`
+- `scout`
+- `escape`
+- `submit`
 
-The hidden state is static during one short episode. The scenario supplies the true alert prior, sensor accuracy, route success probabilities, inspection cost, success reward, and capture cost. Model parameters supply a belief log-odds bias, risk-aversion multiplier, and inverse temperature.
+Terminal actions after scouting:
 
-The solver performs exact finite enumeration for the one-information-step horizon:
+- `escape`
+- `submit`
 
-1. compute route expected utilities under the current belief;
-2. compute the value of inspection by enumerating both observations and their Bayesian posteriors;
-3. form a Boltzmann policy over `inspect`, `gate`, and `tunnel`;
-4. if inspection is selected, update the belief from the sampled observation and form a second Boltzmann policy over the two routes;
-5. sample the terminal escape outcome from the scenario’s state-conditional success probability.
+The scenario supplies the prior probability of a weak guard, signal accuracy, symmetric guard-state persistence, escape reward, capture cost, submit reward, scouting cost, discount, and horizon. `guard_persistence = p` means a weak guard remains weak with probability `p`, while a strong guard becomes weak with probability `1 - p`.
 
-The outcome also includes deterministic expected policy/escape/utility coordinates. Calibration uses these expectation coordinates, avoiding Monte Carlo noise in parameter-identification tests while preserving seeded stochastic episode traces.
+The only fitted model parameter is a positive inverse temperature `beta`.
+
+For horizon 1, scouting is unavailable and the solver forms a softmax policy over direct escape and submit values. For horizon 2, it performs exact finite enumeration:
+
+1. compute direct escape and submit values under the current belief;
+2. enumerate clear/alarm observation masses and Bayesian posteriors;
+3. propagate each posterior through the guard-persistence transition;
+4. form a terminal softmax over escape and submit;
+5. integrate the discounted value of scouting;
+6. form the initial softmax over scout, escape, and submit;
+7. sample one episode using only the runner-supplied seeded RNG.
+
+The outcome also includes deterministic expected terminal-action, escape-success, and utility coordinates. Those expectations integrate the true hidden-state prior, observation process, transition, and selected terminal policy, allowing finite-grid calibration without Monte Carlo noise while preserving stochastic episode traces.
+
+Softmax evaluation subtracts the maximum action value before exponentiation. The floating-point normalization residual is assigned to the largest policy coordinate, preventing an underflowed tail action from receiving a tiny negative mass.
 
 ## Runtime Boundary
 
@@ -67,18 +78,28 @@ The adapter never embeds or self-generates its trusted expected implementation h
 
 ## Events and Outcome
 
-Events are fixed-schema records for prior belief, initial decision, optional observation, posterior belief, optional route decision, and terminal outcome. The outcome contains the sampled episode result plus deterministic expectation coordinates used by metrics.
+Events use the fixed vocabulary:
+
+- `belief_state`;
+- `initial_decision`;
+- optional `observation_received`;
+- optional `terminal_decision`;
+- `episode_ended`.
+
+The outcome contains the sampled initial and terminal actions, optional signal and posterior, sampled escape/utility result, and deterministic expectation coordinates used by the metric extractor.
 
 ## Validation Workflow
 
 Tests exercise:
 
-- exact Bayesian updates and finite policy normalization;
-- same-seed replay and different-seed stochastic variation;
+- finite-horizon information value and policy normalization;
+- horizon-1 removal of scouting;
+- exact same-seed replay;
+- non-negative normalized policy mass under an underflow edge case;
 - production-ready policy-bound POMDP registration;
-- subprocess isolation and all four schema attestations;
-- finite-grid synthetic recovery;
-- repeated seed-block acceptance;
+- fresh-process isolation and all four schema attestations;
+- invalid-scenario rejection before worker launch;
+- finite-grid recovery of `beta`;
 - selection-validation and untouched final-test APIs;
 - aggregate final-report artifact integrity.
 
