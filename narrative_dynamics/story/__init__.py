@@ -22,6 +22,23 @@ from narrative_dynamics.story.schema import (
     StoryEntitiesV1,
     load_narrative_case,
 )
+from narrative_dynamics.story.schema_v2 import (
+    LocationReportV2,
+    NarrativeCaseV2,
+    NarrativeOracleV2,
+    ReportReceptionV2,
+    load_narrative_case_v2,
+)
+from narrative_dynamics.story.scenario_v2 import (
+    NarrativeScenarioV2,
+    decode_testimony_scenario,
+    project_testimony_scenario,
+)
+from narrative_dynamics.story.replay_v2 import (
+    EpistemicLocationStateV2,
+    latest_epistemic_location,
+    testimony_state,
+)
 
 __all__ = [
     "StoryEntitiesV1",
@@ -40,4 +57,15 @@ __all__ = [
     "project_narrative_scenario",
     "decode_narrative_scenario",
     "story_choice_metrics",
+    "LocationReportV2",
+    "ReportReceptionV2",
+    "NarrativeOracleV2",
+    "NarrativeCaseV2",
+    "load_narrative_case_v2",
+    "NarrativeScenarioV2",
+    "project_testimony_scenario",
+    "decode_testimony_scenario",
+    "EpistemicLocationStateV2",
+    "testimony_state",
+    "latest_epistemic_location",
 ]
