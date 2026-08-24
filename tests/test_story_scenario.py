@@ -117,6 +117,13 @@ class NarrativeScenarioProjectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "decision actor"):
             decode_narrative_scenario(scenario_from_payload(payload))
 
+        payload = NarrativeScenarioV1.from_case(self.case).to_payload()
+        payload["observations"] = ()
+        with self.assertRaisesRegex(
+            ValueError, "decision actor must have observed a relocation"
+        ):
+            decode_narrative_scenario(scenario_from_payload(payload))
+
 
 if __name__ == "__main__":
     unittest.main()
