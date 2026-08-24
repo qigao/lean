@@ -15,6 +15,7 @@ from narrative_dynamics.narrative.decision import (
 )
 from narrative_dynamics.narrative.domain import DomainSpec, validate_narrative
 from narrative_dynamics.narrative.ir import (
+    EntityRef,
     GenericNarrative,
     StateCellRef,
     TypedValue,
@@ -150,6 +151,36 @@ def _alternate_values(domain: DomainSpec, value_type_name: str, current: TypedVa
     return ()
 
 
+def _claim_alternate_values(
+    story: GenericNarrative,
+    domain: DomainSpec,
+    value_type_name: str,
+    current: TypedValue,
+) -> tuple[TypedValue, ...]:
+    simple = _alternate_values(domain, value_type_name, current)
+    if simple:
+        return simple
+
+    value_type = domain._value_type(value_type_name)
+    if value_type.kind != "entity_ref":
+        return ()
+    if not isinstance(current.value, EntityRef):
+        raise TypeError("entity_ref domain value must contain an EntityRef")
+
+    return tuple(
+        TypedValue(
+            value_type.name,
+            EntityRef(entity.id, entity.type_name),
+        )
+        for entity in sorted(
+            story.entities,
+            key=lambda item: (item.type_name, item.id),
+        )
+        if entity.type_name == value_type.entity_type
+        and EntityRef(entity.id, entity.type_name) != current.value
+    )
+
+
 def _decision_time(story: GenericNarrative, scope: AnalysisScope) -> int:
     matches = tuple(item for item in story.decisions if item.id == scope.decision_id)
     if len(matches) != 1:
@@ -230,7 +261,8 @@ def generate_minimal_interventions(
         ):
             continue
         state_variable = domain._state_variable(claim.proposition.state_variable)
-        for alternate in _alternate_values(
+        for alternate in _claim_alternate_values(
+            story,
             domain,
             state_variable.value_type,
             claim.proposition.value,
