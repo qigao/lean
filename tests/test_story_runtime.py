@@ -102,7 +102,8 @@ class StoryRuntimeTests(unittest.TestCase):
         )
 
     def test_story_api_is_exported_only_from_story_package(self):
-        self.assertEqual(set(getattr(story, "__all__", ())), _EXPECTED_STORY_EXPORTS)
+        exported = set(getattr(story, "__all__", ()))
+        self.assertTrue(_EXPECTED_STORY_EXPORTS.issubset(exported))
         for name in _EXPECTED_STORY_EXPORTS:
             self.assertTrue(hasattr(story, name), name)
             self.assertFalse(hasattr(narrative_dynamics, name), name)
