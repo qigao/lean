@@ -5,6 +5,7 @@ import unittest
 from narrative_dynamics.story.evolution_v2 import (
     EvolutionCounterfactualV2,
     EvolutionInterventionV2,
+    _first_divergence,
     analyze_testimony_evolution,
 )
 from narrative_dynamics.story.scenario_v2 import NarrativeScenarioV2
@@ -111,6 +112,111 @@ class NarrativeEvolutionBaselineTests(unittest.TestCase):
                 rejection_reason=None,
                 rejection_logical_time=None,
             )
+
+
+class NarrativeEvolutionValidCounterfactualTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.truthful = NarrativeScenarioV2.from_case(load_narrative_case_v2(_TRUTHFUL))
+        self.stale = NarrativeScenarioV2.from_case(load_narrative_case_v2(_STALE))
+
+    @staticmethod
+    def by_kind(analysis, kind: str):
+        return tuple(
+            item
+            for item in analysis.counterfactuals
+            if item.intervention.kind == kind
+        )
+
+    def test_remove_reception_exposes_provenance_and_action_difference(self):
+        item = self.by_kind(
+            analyze_testimony_evolution(self.truthful), "remove_reception"
+        )[0]
+        self.assertEqual(item.status, "valid")
+        self.assertEqual(item.trajectory.selected_action, "search_drawer")
+        self.assertEqual(item.first_divergence.logical_time, 3)
+        self.assertTrue(item.first_divergence.action_changed)
+        self.assertIn(
+            "agents.bob.evidence_kind", item.first_divergence.changed_fields
+        )
+        self.assertIn(
+            "agents.bob.supporting_id", item.first_divergence.changed_fields
+        )
+        bob = item.trajectory.snapshots[2].agents["bob"]
+        self.assertEqual(
+            (bob.evidence_kind, bob.supporting_id),
+            ("direct_perception", "e1"),
+        )
+
+        stale = self.by_kind(
+            analyze_testimony_evolution(self.stale), "remove_reception"
+        )[0]
+        self.assertEqual(stale.status, "valid")
+        self.assertEqual(stale.trajectory.selected_action, "search_drawer")
+        self.assertEqual(stale.first_divergence.logical_time, 3)
+        self.assertFalse(stale.first_divergence.action_changed)
+        self.assertIn(
+            "agents.bob.evidence_kind", stale.first_divergence.changed_fields
+        )
+
+    def test_change_report_content_diverges_at_report_time_and_flips_action(self):
+        item = self.by_kind(
+            analyze_testimony_evolution(self.truthful), "change_report_content"
+        )[0]
+        self.assertEqual(
+            (
+                item.intervention.subject_id,
+                item.intervention.from_value,
+                item.intervention.to_value,
+            ),
+            ("r1", "box", "drawer"),
+        )
+        self.assertEqual(item.status, "valid")
+        self.assertEqual(item.first_divergence.logical_time, 3)
+        self.assertTrue(item.first_divergence.action_changed)
+        self.assertEqual(item.trajectory.selected_action, "search_drawer")
+        self.assertIn(
+            "agents.bob.testimony_location",
+            item.first_divergence.changed_fields,
+        )
+
+        stale = self.by_kind(
+            analyze_testimony_evolution(self.stale), "change_report_content"
+        )[0]
+        self.assertEqual(
+            (stale.intervention.from_value, stale.intervention.to_value),
+            ("drawer", "box"),
+        )
+        self.assertEqual(stale.first_divergence.logical_time, 3)
+        self.assertEqual(stale.trajectory.selected_action, "search_box")
+        self.assertTrue(stale.first_divergence.action_changed)
+
+    def test_identical_trajectory_has_no_first_divergence(self):
+        baseline = analyze_testimony_evolution(self.truthful).baseline
+        self.assertIsNone(_first_divergence(baseline, baseline))
+
+    def test_counterfactual_order_and_changed_paths_are_deterministic(self):
+        analysis = analyze_testimony_evolution(self.truthful)
+        keys = tuple(
+            (
+                item.intervention.kind,
+                -1
+                if item.intervention.logical_time is None
+                else item.intervention.logical_time,
+                item.intervention.subject_id,
+                ""
+                if item.intervention.to_value is None
+                else item.intervention.to_value,
+                "" if item.intervention.agent is None else item.intervention.agent,
+            )
+            for item in analysis.counterfactuals
+        )
+        self.assertEqual(keys, tuple(sorted(keys)))
+        for item in analysis.counterfactuals:
+            if item.first_divergence is not None:
+                self.assertEqual(
+                    item.first_divergence.changed_fields,
+                    tuple(sorted(item.first_divergence.changed_fields)),
+                )
 
 
 if __name__ == "__main__":
