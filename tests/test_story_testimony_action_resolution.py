@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# Task 4 remains test-only RED here; this comment only retriggers exact-head CI.
+
 import random
 import unittest
 
