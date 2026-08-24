@@ -2,17 +2,17 @@
 
 Date: 2026-08-24
 
-Status: design approved in chat; implementation not started
+Status: approved architecture; implementation not started
 
 Base research SHA: `82096098dda907aec04330b5ddf357ac6f753d2a`
 
-Target branch: `work/generic-narrative-engine-v1`
+Feature branch: `work/generic-narrative-engine-v1`
 
 ## 1. Purpose
 
 Generic Narrative Engine V1 generalizes the existing location/testimony research path into a reusable structured narrative research engine without weakening the current provenance, fail-closed, deterministic replay, anti-leak, or mechanism-identification boundaries.
 
-The engine is intended to study canonical chains of the form:
+It studies canonical chains of the form:
 
 ```text
 world event
@@ -27,7 +27,7 @@ world event
 
 The engine is not a free-form story generator and is not a general natural-language understanding system. It executes only validated canonical narrative semantics.
 
-The main architectural goal is to make domain semantics pluggable while keeping information propagation, epistemic replay, counterfactual validation, provenance handling, and analysis semantics common across domains.
+The architectural goal is to make domain semantics pluggable while keeping information propagation, epistemic replay, counterfactual validation, provenance handling, and analysis semantics common across domains.
 
 ## 2. Scientific boundary
 
@@ -49,28 +49,28 @@ This design does not establish:
 
 Final action alone must never be treated as proof of the internal information mechanism that produced it.
 
-## 3. Architectural decision summary
+## 3. Approved architecture
 
-The approved architecture has the following hard boundaries:
+The following are hard boundaries:
 
 1. LLM/NLP extraction is external and non-canonical.
 2. The compiler core is deterministic.
-3. Domain semantics are expressed through a typed `DomainSpec` plus narrowly scoped pure semantic hooks.
-4. The canonical narrative uses a typed event-sourced semantic IR.
-5. Objective world state, direct agent evidence, and communicated testimony/claims remain separate replay paths.
+3. Domain semantics use a typed `DomainSpec` plus narrowly scoped pure state-transition hooks.
+4. Canonical narrative semantics use a typed event-sourced IR.
+5. Objective world state, direct agent evidence, and communicated claims are separate replay paths.
 6. Belief-like views are derived, not authored as truth.
 7. Decision facts and decision mechanisms are separate.
 8. Decision models receive capability-limited immutable views, not the full scenario.
-9. Counterfactuals modify only upstream canonical history through typed single-variable interventions.
+9. Counterfactuals modify upstream canonical history through typed single-variable interventions.
 10. Derived world, epistemic, or decision state cannot be patched directly.
-11. Analysis artifacts separate baseline trajectories, mechanism comparisons, and counterfactuals.
+11. Analysis separates baseline trajectories, mechanism comparisons, and counterfactuals.
 12. Source/compiler provenance identity is separate from canonical semantic identity.
-13. Domain declaration identity and semantic-hook implementation identity are both bound into `DomainSpec` identity.
+13. Domain declarations and semantic-hook implementation identities are both bound into `DomainSpec` identity.
 14. Legacy Narrative Testimony V2 remains unchanged and becomes the primary conformance reference domain.
-15. A second synthetic non-location domain is required to prove the generic path is not location semantics with renamed fields.
-16. The first Generic Engine increment does not require new Lean core semantics; all existing Lean proof gates remain mandatory regressions.
+15. A second synthetic non-location domain proves the generic path is not location semantics with renamed fields.
+16. Generic Engine V1 does not require new Lean core semantics; all existing Lean proof gates remain mandatory regressions.
 
-## 4. High-level dependency direction
+## 4. Dependency direction
 
 ```text
 External extractor
@@ -111,15 +111,15 @@ Generic Narrative IR
 Generic replay / decision / analysis
 ```
 
-The generic story layer must never import story adapters or model runtime adapters in order to implement semantic replay.
+The generic narrative package must not depend on runtime adapters to implement semantic replay.
 
-## 5. External extraction versus deterministic compilation
+## 5. Extraction versus compilation
 
 ### 5.1 External candidate extractor
 
 LLM/NLP systems may propose candidate entities, events, propositions, claims, observations, receptions, decisions, and temporal relations.
 
-The extractor is not a truth authority and must not directly create canonical runtime semantics.
+The extractor is not a truth authority and cannot directly create canonical runtime semantics.
 
 Extractor outputs may contain:
 
@@ -135,11 +135,11 @@ These values live only in compiler provenance.
 
 ### 5.2 Deterministic compiler
 
-The compiler performs only deterministic operations over:
+The compiler operates deterministically over:
 
 - candidate records;
 - resolution records;
-- a selected `DomainSpec`;
+- one selected `DomainSpec`;
 - canonical validation rules.
 
 The compiler must not:
@@ -148,12 +148,12 @@ The compiler must not:
 - call the network;
 - use RNG;
 - depend on wall-clock time;
-- silently choose the highest-confidence candidate when semantic ambiguity remains;
+- silently select the highest-confidence candidate when semantic ambiguity remains;
 - infer canonical truth from extraction confidence.
 
 Compilation either yields a fully validated canonical narrative or yields no canonical narrative.
 
-## 6. Source and candidate provenance model
+## 6. Source, candidate, and resolution provenance
 
 ### 6.1 Source records
 
@@ -173,7 +173,7 @@ SourceSpan
   exact_text_hash
 ```
 
-A source span must be verifiable against its source document content identity.
+A source span must be verifiable against the source document identity.
 
 ### 6.2 Candidate records
 
@@ -185,9 +185,7 @@ CandidateEntity
   proposed_type
   source_refs
   confidence
-```
 
-```text
 CandidateEvent
   proposed_type
   logical_time?
@@ -195,9 +193,7 @@ CandidateEvent
   arguments
   source_refs
   confidence
-```
 
-```text
 CandidateProposition
   subject
   state_variable
@@ -205,32 +201,24 @@ CandidateProposition
   value
   source_refs
   confidence
-```
 
-```text
 CandidateClaim
   speaker
   proposition
   support_refs?
   source_refs
   confidence
-```
 
-```text
 CandidateObservation
   agent
   observed_ref
   source_refs
-```
 
-```text
 CandidateReception
   recipient
   claim_ref
   source_refs
-```
 
-```text
 CandidateDecision
   actor
   logical_time?
@@ -240,11 +228,11 @@ CandidateDecision
   source_refs
 ```
 
-Confidence must be finite but must never affect canonical semantic validation.
+Confidence must be finite but never affects canonical semantic validation.
 
 ### 6.3 Resolution records
 
-Candidate bindings have exactly three semantic states:
+Candidate bindings have exactly three states:
 
 ```text
 accepted
@@ -252,58 +240,85 @@ rejected
 unresolved
 ```
 
-A trusted resolver may provide structured decisions such as:
+A trusted resolver may:
 
-- accept a candidate;
-- reject a candidate;
+- accept or reject a candidate;
 - bind a candidate entity to a canonical entity;
 - choose one value from explicit alternatives;
 - supply a required typed field;
 - select a temporal ordering.
 
-Each resolution is recorded in a `ResolutionRecord` containing at least:
+Every resolution is recorded:
 
 ```text
-candidate_id
-resolution_kind
-selected_value?
-resolver_identity
-reason?
+ResolutionRecord
+  candidate_id
+  resolution_kind
+  selected_value?
+  resolver_identity
+  reason?
 ```
 
-Resolution records are compiler provenance and do not enter model-visible canonical IR.
+Resolution records remain compiler provenance and never enter model-visible Generic IR.
 
 ### 6.4 Fail closed on semantic ambiguity
 
-If any unresolved candidate is required to determine canonical semantics, compilation returns:
+If any unresolved candidate is required to determine canonical semantics:
 
 ```text
 status = incomplete
 canonical_scenario = None
 ```
 
-The compiler may not silently guess.
+The compiler may not guess.
 
-Conflicting communicated claims are allowed if they are represented as distinct claims. Extractor uncertainty about what a source means is not the same as a canonical conflicting claim.
+Conflicting communicated claims are allowed when represented as distinct claims. Extractor uncertainty about what a source means is ambiguity and is not a canonical conflicting claim.
+
+### 6.5 CompilationResult
+
+Successful compilation returns a versioned immutable artifact:
+
+```text
+CompilationResult
+  status = canonical
+  domain_id
+  domain_version
+  source_bundle_hash
+  candidate_bundle_hash
+  resolution_bundle_hash
+  canonical_scenario
+  canonical_hash
+  diagnostics
+```
+
+Incomplete or rejected compilation returns:
+
+```text
+CompilationResult
+  status = incomplete | rejected
+  canonical_scenario = None
+  canonical_hash = None
+  diagnostics
+```
+
+No analysis may execute from an incomplete/rejected result.
 
 ## 7. Generic typed event-sourced IR
 
-The Generic IR stores canonical typed facts and event history. It does not store redundant derived world-state snapshots as input truth.
+Generic IR stores canonical typed facts and event history. Derived world-state snapshots are never authored as input truth.
 
 ### 7.1 Entity types and entities
 
 ```text
 EntityTypeSpec
   name
-```
 
-```text
 Entity
   id
   type
 ```
 
-Entity IDs must be unique inside one narrative.
+Entity IDs are unique inside one narrative.
 
 ### 7.2 Value types
 
@@ -315,7 +330,7 @@ ValueTypeSpec
   referenced_entity_type?
 ```
 
-V1 `kind` values:
+V1 kinds:
 
 ```text
 enum
@@ -325,7 +340,7 @@ text
 entity_ref
 ```
 
-No arbitrary Python objects are valid canonical values.
+Arbitrary Python objects are invalid canonical values.
 
 ### 7.3 State variables
 
@@ -337,17 +352,9 @@ StateVariableSpec
   cardinality
 ```
 
-V1 supports only:
+V1 supports only `cardinality = one`.
 
-```text
-cardinality = one
-```
-
-A state cell is identified by:
-
-```text
-(subject_id, state_variable)
-```
+A state cell is `(subject_id, state_variable)`.
 
 Examples:
 
@@ -381,11 +388,11 @@ Event
 
 Events are the only authored mechanism that changes objective world state in V1.
 
-Events must be strictly ordered by canonical logical time under Generic Narrative validation.
+Canonical `logical_time` is a strict total order for state-changing events, claims, and decisions. Coarse source timestamps remain provenance; unresolved ordering required for semantics makes compilation incomplete. Partial-order/simultaneous-event semantics are a V1 non-goal.
 
 ### 7.5 Proposition
 
-V1 propositions are deliberately restricted typed state assertions:
+V1 propositions are restricted typed state assertions:
 
 ```text
 Proposition
@@ -402,9 +409,9 @@ equals
 not_equals
 ```
 
-V1 does not support arbitrary predicate code, quantifiers, free-form formulas, or user-defined logical operators.
+V1 excludes arbitrary predicate code, quantifiers, free-form formulas, and user-defined logical operators.
 
-An `equals` proposition may resolve a current value. A `not_equals` proposition is retained as a constraint and does not cause the engine to invent a unique value.
+An `equals` proposition may resolve a current value. A `not_equals` proposition remains a constraint and does not cause the engine to invent a unique value.
 
 ### 7.6 Observation
 
@@ -415,9 +422,9 @@ Observation
   channel
 ```
 
-V1 direct evidence derives only from the actual typed state delta produced by the observed event.
+Direct evidence derives only from the typed state delta produced by the observed event.
 
-Observing an event does not grant access to all objective world state.
+Observing an event never grants access to all objective world state.
 
 ### 7.7 Claim
 
@@ -428,12 +435,18 @@ Claim
   speaker_id
   proposition
   support_refs
-  claim_type
+  claim_type = state_claim
 ```
 
-Claim support is provenance, not truth.
+`support_refs` is non-empty in V1 and may reference only earlier canonical events or earlier canonical claims.
 
-A supported claim may disagree with objective world state.
+Generic provenance validation requires the support to have been available to the speaker before the new claim:
+
+- event support requires a direct observation of that event by the speaker;
+- prior-claim support requires reception of that prior claim by the speaker;
+- every support item must precede the new claim in canonical logical time.
+
+Claim support establishes an information path, not claim truth. A supported claim may disagree with objective world state.
 
 ### 7.8 Reception
 
@@ -444,11 +457,13 @@ Reception
   channel
 ```
 
-Reception controls whether a communicated claim can enter a recipient's epistemic evidence history.
+V1 receptions do not have independent logical time; reception availability is tied to the supported claim time, matching the existing V2 boundary. Independent delayed-delivery semantics are deferred.
+
+Reception controls whether a claim enters the recipient's epistemic evidence history.
 
 ### 7.9 Decision and actions
 
-Canonical IR stores only the decision fact and its allowed actions:
+Canonical IR stores only decision facts and allowed actions:
 
 ```text
 Decision
@@ -460,7 +475,7 @@ Decision
   action_options
 ```
 
-The canonical decision must not contain `decision_model_ref`.
+Canonical Decision never contains `decision_model_ref`.
 
 Decision mechanism selection belongs to the experiment/analysis layer.
 
@@ -481,24 +496,24 @@ DomainSpec
   semantic_hooks
 ```
 
-The declarative portion must be canonicalizable and content-hashed.
+The declarative portion is canonicalizable and content-hashed.
 
 ### 8.2 Pure semantic hooks
 
-V1 semantic hooks are limited to objective state transitions.
-
-Conceptual contract:
+V1 semantic hooks are limited to objective state transitions:
 
 ```text
 apply_event(prior_state, typed_event) -> StateDelta
 ```
 
-`StateDelta` V1 operations:
+V1 `StateDelta` operations:
 
 ```text
 set(subject, state_variable, value)
 clear(subject, state_variable)
 ```
+
+A direct observation of `clear` produces evidence that the state cell became unresolved/absent, with the event as provenance; it does not synthesize an `equals` or `not_equals` proposition.
 
 Hooks may not:
 
@@ -508,9 +523,7 @@ Hooks may not:
 - use RNG;
 - call an LLM;
 - mutate global state;
-- create entities;
-- create events;
-- create claims;
+- create entities/events/claims;
 - decide observations;
 - author beliefs;
 - select actions;
@@ -520,36 +533,34 @@ A hook answers only:
 
 > What deterministic objective state delta does this already-valid event produce?
 
-Python purity is not treated as mathematically proven. Formal trust is based on immutable contracts, deterministic conformance tests, and implementation identity.
+Python purity is not treated as mathematically proven. Trust is based on immutable contracts, determinism tests, and implementation identity.
 
-### 8.3 Generic semantics that domains cannot redefine
+### 8.3 Generic semantics domains cannot redefine
 
 A domain cannot override:
 
-- strict canonical time ordering;
+- canonical time ordering;
 - observation ownership;
 - claim speaker semantics;
-- claim/reception relationship;
-- objective state versus agent evidence separation;
+- claim/reception information-path rules;
+- objective versus agent-evidence separation;
 - support provenance versus truth separation;
 - no-objective-fallback behavior;
 - counterfactual fail-closed reconstruction;
-- analysis first-divergence semantics.
+- first-divergence semantics.
 
-## 9. Generic semantic validation
-
-Validation is split into four layers.
+## 9. Four validation layers
 
 ### 9.1 Candidate validation
 
-Checks only source/extractor structural integrity:
+Checks source/extractor structural integrity only:
 
 - source span exists;
 - source hashes match;
 - confidence is finite;
-- candidate reference structure is valid.
+- candidate references are structurally valid.
 
-Candidate validation never certifies truth.
+It never certifies truth.
 
 ### 9.2 Compiler validation
 
@@ -563,19 +574,16 @@ Checks:
 
 ### 9.3 Canonical narrative validation
 
-This validation ignores LLM confidence and source prose.
-
-It checks:
+Ignores LLM confidence and source prose. It checks:
 
 - `DomainSpec` identity;
-- entity typing;
-- state variable typing;
+- entity/state/event typing;
 - event argument typing;
 - event transition legality;
-- strict event/claim/decision ordering constraints;
+- global canonical ordering;
 - observation references;
 - claim proposition typing;
-- support references and provenance rules;
+- support accessibility/provenance;
 - reception references;
 - decision/action typing;
 - Generic Engine invariants.
@@ -588,43 +596,43 @@ Checks:
 - DecisionModel evidence-access contract;
 - model identity;
 - intervention validity;
-- complete revalidation of every counterfactual candidate narrative.
+- complete revalidation of each counterfactual candidate narrative.
 
-No earlier validation layer may be used to bypass a later one.
+No validation layer may be used to bypass a later one.
 
 ## 10. Objective and epistemic replay
 
-Generic replay remains event-sourced.
-
-### 10.1 Objective world state
+### 10.1 Objective state
 
 ```text
 WorldState
   StateCell -> CanonicalValue
 ```
 
-Objective replay applies every valid event's deterministic `StateDelta` in logical-time order.
+Objective replay applies valid event deltas in canonical order.
 
-Objective replay does not read observations, claims, receptions, or decisions.
+It never reads observations, claims, receptions, or decisions.
 
 ### 10.2 Direct evidence
 
-An agent directly observing an event receives evidence only for the state delta produced by that event.
+An agent observing an event receives evidence only for state cells changed by that event.
 
-Conceptual record:
+Conceptual evidence record:
 
 ```text
 EpistemicEvidence
   subject_id
   state_variable
-  relation
-  value
+  assertion_kind
+  value?
   evidence_kind
   supporting_id
   source_agent
   logical_time
   provenance_refs
 ```
+
+`assertion_kind` is `equals`, `not_equals`, or internal `cleared`. Canonical Claim propositions may use only `equals` and `not_equals`.
 
 For direct perception:
 
@@ -638,9 +646,7 @@ No objective fallback is permitted.
 
 ### 10.3 Communicated evidence
 
-A received claim contributes testimony evidence to the recipient's evidence history.
-
-For testimony:
+A received Claim contributes testimony evidence:
 
 ```text
 evidence_kind = testimony
@@ -648,11 +654,11 @@ supporting_id = claim.id
 source_agent = claim.speaker
 ```
 
-Claim truth is not inferred from claim support.
+Claim truth is never inferred from claim support.
 
-### 10.4 Evidence history and derived views
+### 10.4 Evidence history and views
 
-Generic replay retains full evidence history.
+Generic replay retains full evidence history:
 
 ```text
 EpistemicState
@@ -662,7 +668,7 @@ EpistemicState
   constraints
 ```
 
-The standard replay views are:
+Standard replay views:
 
 ```text
 objective_state(story, at_time)
@@ -674,27 +680,21 @@ Domains cannot redefine these access paths.
 
 ### 10.5 Conflict handling
 
-Conflicting evidence is preserved explicitly.
-
-A generic epistemic view may report:
+Conflicting evidence remains explicit:
 
 ```text
 status = resolved | unknown | conflicted
 ```
 
-The Generic Engine does not choose which source is more trustworthy.
-
-Decision models may implement explicit conflict-handling strategies.
+The Generic Engine never chooses which source is more trustworthy. Decision models may implement explicit conflict-handling strategies.
 
 ## 11. Decision Model architecture
 
-### 11.1 Separation from canonical narrative
+### 11.1 Separation
 
-`Decision` is a narrative fact.
+`Decision` is a narrative fact. `DecisionModel` is an experiment mechanism.
 
-`DecisionModel` is an experiment mechanism.
-
-The same canonical narrative must be executable under multiple competing DecisionModels without changing narrative identity.
+The same canonical narrative executes under multiple competing DecisionModels without changing narrative identity.
 
 ### 11.2 DecisionModelSpec
 
@@ -723,12 +723,10 @@ Definitions:
 
 - `direct_only`: actor direct evidence only;
 - `epistemic`: actor direct evidence plus received claims;
-- `omniscient`: objective world state, allowed only as an explicit baseline;
-- `custom_epistemic`: actor evidence history and provenance, but no objective world state.
+- `omniscient`: objective state, explicit baseline only;
+- `custom_epistemic`: actor evidence history/provenance, never objective state.
 
-A model receives a capability-limited immutable `DecisionContext`, not the raw scenario.
-
-Conceptual context:
+The engine constructs an immutable capability-limited context:
 
 ```text
 DecisionContext
@@ -741,6 +739,8 @@ DecisionContext
   permitted_metadata
 ```
 
+DecisionModel never receives the raw scenario.
+
 ### 11.4 DecisionResult
 
 ```text
@@ -752,29 +752,23 @@ DecisionResult
   basis
 ```
 
-`basis` includes canonical evidence references and state-cell resolutions needed to audit the decision.
+`basis` records canonical evidence/state-cell references needed to audit the decision.
 
 The selected action must be exactly one declared action option.
 
 ### 11.5 V1 determinism
 
-Generic DecisionModel V1 is deterministic by default.
-
-Probabilistic choice, seeded sampling, calibration, and fitted parameters remain future extensions that may reuse the repository's existing runtime/calibration infrastructure.
+Generic DecisionModel V1 is deterministic. Probabilistic choice, seeded sampling, calibration, and fitted parameters are deferred and may later reuse existing runtime/calibration infrastructure.
 
 ### 11.6 Mechanism-identification boundary
 
-A model matching observed behavior establishes only behavioral compatibility under the declared scenario and model contract.
-
-The engine must never emit `true_mechanism`, `unique_cause`, or equivalent hidden-mechanism claims.
+Behavioral agreement establishes only compatibility under the declared scenario and model contract. The engine never emits `true_mechanism`, `unique_cause`, or equivalent hidden-mechanism claims.
 
 ## 12. Generic counterfactual architecture
 
-### 12.1 Intervention principle
+### 12.1 Principle
 
-V1 interventions are typed, upstream, single-variable changes to canonical history.
-
-Derived world, epistemic, and decision state must always be recomputed.
+V1 interventions are typed, upstream, single-variable changes to canonical history. Derived world, epistemic, and decision state are always recomputed.
 
 ### 12.2 V1 intervention kinds
 
@@ -786,26 +780,25 @@ change_claim_value
 remove_reception
 ```
 
-`change_event_argument` may modify only a parameter marked `intervenable` by the `EventTypeSpec`.
+`change_event_argument` may modify only an `EventTypeSpec.intervenable_parameters` field.
 
-`change_claim_value` changes only proposition value while keeping subject, state variable, relation, speaker, support, and reception structure fixed.
+`change_claim_value` changes only proposition value while holding subject, state variable, relation, speaker, support, and reception structure fixed.
 
-### 12.3 Forbidden counterfactual mutations
+### 12.3 Forbidden mutations
 
 V1 forbids:
 
 - arbitrary JSON patching;
 - replacing a whole event;
-- changing actor, time, and payload together;
+- changing actor/time/payload together;
 - injecting undeclared entities;
-- modifying derived world state;
-- modifying derived epistemic state;
+- modifying derived world/epistemic state;
 - modifying `DecisionContext` directly;
 - changing DecisionModel under the name of a narrative counterfactual.
 
 Changing DecisionModel is mechanism comparison, not narrative intervention.
 
-### 12.4 Counterfactual evaluation pipeline
+### 12.4 Evaluation pipeline
 
 ```text
 baseline canonical narrative
@@ -818,11 +811,9 @@ baseline canonical narrative
 → trajectory comparison
 ```
 
-Rejected counterfactuals are retained as rejected records; they are never repaired into fake valid trajectories.
+Rejected counterfactuals are retained and never repaired into fake valid trajectories.
 
 ### 12.5 Rejection stages
-
-V1 generic rejection stages:
 
 ```text
 domain_validation
@@ -831,17 +822,15 @@ epistemic_resolution
 decision_resolution
 ```
 
-`epistemic_resolution` is used only when a DecisionModel contract requires a unique resolved value and the valid epistemic state remains unknown or conflicted.
+`epistemic_resolution` is used only when a DecisionModel requires unique resolution but the valid epistemic state remains unknown/conflicted.
 
-### 12.6 No automatic intervention powerset
+### 12.6 No powerset
 
-V1 automatically generates or accepts only single interventions.
-
-Multi-step `InterventionSequence` is explicitly deferred.
+V1 accepts/generates single interventions only. Multi-step `InterventionSequence` is deferred.
 
 ## 13. Generic analysis surface
 
-Generic Analysis V1 is a typed research artifact, not a matrix-specific data format.
+Generic Analysis V1 is a typed research artifact, not a matrix-specific data format:
 
 ```text
 NarrativeAnalysis
@@ -860,21 +849,15 @@ AnalysisScope
   snapshot_policy
 ```
 
-Default scope derives from decision context targets and directly relevant event/claim paths.
-
-Researchers may explicitly expand the scope, but the scope is immutable during one analysis.
+Default scope derives from decision context targets and directly relevant event/claim paths. Researchers may explicitly expand it, but scope is immutable during one analysis.
 
 ### 13.2 Snapshot policy
 
-V1 snapshots occur at:
+V1 snapshots occur at every relevant event time, claim time, and selected decision time.
 
-- every relevant event time;
-- every relevant claim time;
-- the selected decision time.
+Because V1 receptions have no independent timestamp, they are visible at their Claim logical time.
 
-If future receptions acquire independent timestamps, relevant reception times also become snapshot times.
-
-### 13.3 EvolutionSnapshot
+### 13.3 Snapshot records
 
 ```text
 EvolutionSnapshot
@@ -883,15 +866,11 @@ EvolutionSnapshot
   objective_cells
   agent_views
   decision_result?
-```
 
-```text
 AgentEvolutionView
   direct_cells
   epistemic_cells
-```
 
-```text
 EpistemicCellView
   status
   resolved_value?
@@ -905,34 +884,11 @@ EpistemicCellView
 
 ### 13.4 First divergence
 
-First divergence compares only canonical analysis fields such as:
+First divergence compares only canonical analysis fields, including objective state-cell values, direct/epistemic cell values/status/provenance, and selected action.
 
-```text
-objective.<cell>.value
-agent.<agent>.direct.<cell>.value
-agent.<agent>.direct.<cell>.supporting_id
-agent.<agent>.epistemic.<cell>.status
-agent.<agent>.epistemic.<cell>.resolved_value
-agent.<agent>.epistemic.<cell>.constraints
-agent.<agent>.epistemic.<cell>.evidence_kind
-agent.<agent>.epistemic.<cell>.supporting_id
-agent.<agent>.epistemic.<cell>.source_agent
-agent.<agent>.epistemic.<cell>.evidence_logical_time
-decision.selected_action
-```
-
-It does not compare:
-
-- source text;
-- extractor confidence;
-- compiler diagnostics;
-- human notes;
-- display labels;
-- renderer metadata.
+It excludes source text, extractor confidence, compiler diagnostics, human notes, display labels, and renderer metadata.
 
 ### 13.5 Mechanism comparison
-
-Mechanism comparison is first-class:
 
 ```text
 MechanismComparison
@@ -944,24 +900,15 @@ MechanismComparison
   mechanism_uniqueness_claimed = False
 ```
 
-The analysis may show:
+The analysis may report `action_equal = True` and `basis_equal = False` without identifying a true hidden mechanism.
 
-```text
-action_equal = True
-basis_equal = False
-```
+### 13.6 Renderers
 
-without claiming either mechanism is the true hidden mechanism.
-
-### 13.6 Matrix and graph renderers
-
-Matrix, timeline, information-flow graph, and counterfactual diff are derived views over typed analysis records.
-
-UI/rendering metadata is not canonical research semantics and does not affect analysis identity.
+Matrix, timeline, information-flow graph, and counterfactual diff are derived views over typed analysis records. Rendering metadata is non-canonical and does not affect analysis identity.
 
 ## 14. Identity and trust model
 
-### 14.1 Source/compiler identity chain
+### 14.1 Source/compiler chain
 
 ```text
 SourceBundleHash
@@ -970,9 +917,9 @@ SourceBundleHash
 → CompilationArtifactHash
 ```
 
-This chain answers how a canonical narrative was produced.
+This answers how a canonical narrative was produced.
 
-### 14.2 Canonical semantic identity chain
+### 14.2 Semantic chain
 
 ```text
 DomainSpecHash
@@ -981,9 +928,7 @@ GenericNarrativePayload
 → CanonicalNarrativeHash
 ```
 
-This chain answers what executable semantics the narrative contains independent of source material.
-
-Two different source/compiler lineages may legitimately produce the same canonical narrative hash.
+Different source/compiler lineages may produce the same canonical semantic hash.
 
 ### 14.3 DomainSpec identity
 
@@ -997,7 +942,7 @@ DomainSpecIdentity
   content_hash
 ```
 
-Each semantic hook identity includes at least:
+Each hook identity binds:
 
 ```text
 hook_name
@@ -1009,7 +954,7 @@ Changing hook implementation changes DomainSpec identity even if declarations re
 
 ### 14.4 TrustedDomainPolicy
 
-Formal/canonical runs may use a narrow external allow-list analogous in spirit to the existing trusted model execution policy:
+V1 implements an external allow-list for trusted/canonical domain execution:
 
 ```text
 TrustedDomainPolicy
@@ -1017,33 +962,15 @@ TrustedDomainPolicy
   expected_hook_implementation_hashes
 ```
 
-A development domain may be unpinned, but resulting manifests must clearly report:
+A development domain may be unpinned, but its manifest must state `trust_status = unpinned`. A domain cannot self-authorize trust.
 
-```text
-trust_status = unpinned
-```
+### 14.5 Canonical narrative identity exclusions
 
-A domain cannot self-authorize its own trusted identity.
-
-### 14.5 Generic narrative identity exclusions
-
-Canonical narrative identity excludes:
-
-- source text;
-- candidate confidence;
-- extractor identity;
-- human resolution notes;
-- objective replay results;
-- derived epistemic state;
-- selected actions;
-- analysis snapshots;
-- counterfactual results;
-- oracle/gold labels;
-- renderer/UI state.
+Canonical identity excludes source text, candidate confidence, extractor identity, human resolution notes, replay results, derived epistemic state, selected action, analysis/counterfactual results, oracle/gold labels, and UI state.
 
 ### 14.6 DecisionModel identity
 
-DecisionModel identity binds at least:
+DecisionModel identity binds:
 
 ```text
 model_id
@@ -1054,7 +981,7 @@ parameter_schema
 implementation_hash
 ```
 
-Evidence-access capability must be part of model identity.
+Evidence-access capability is part of model identity.
 
 ### 14.7 Analysis artifact lineage
 
@@ -1075,11 +1002,11 @@ If source compilation exists, `compilation_artifact_hash` is recorded as lineage
 
 Narrative Testimony V2 remains unchanged.
 
-The first Generic Engine must include a `LocationTestimonyDomainAdapter` that maps:
+`LocationTestimonyDomainAdapter` maps:
 
 ```text
 Object                  → Entity(type=Object)
-Location                → typed value/entity in the location domain
+Location                → typed location value/entity
 object.location          → StateVariable
 RelocationEventV1       → Event(type=relocation)
 DirectObservationV1     → Observation
@@ -1089,7 +1016,7 @@ SearchDecisionV1        → Decision(type=search-location)
 SearchActionV1          → typed action option
 ```
 
-The adapter must not modify existing V1/V2 fixtures, schemas, runtime payloads, hashes, IDs, or APIs.
+The adapter does not modify existing V1/V2 fixtures, schemas, runtime payloads, hashes, IDs, or APIs.
 
 ### 15.1 Required equivalence locks
 
@@ -1109,20 +1036,13 @@ For committed truthful and stale V2 cases, legacy and Generic paths must agree o
 - first divergence time;
 - `action_changed`.
 
-The following must remain exact:
-
-- V1 fixture hashes;
-- V1 runtime IDs;
-- V2 fixture hashes;
-- V2 runtime IDs;
-- V1/V2 public API surfaces;
-- all existing story tests.
+Exact legacy identities that must not change include V1/V2 fixture hashes, runtime IDs, public API surfaces, and all existing story regressions.
 
 ## 16. Second conformance domain: Service Incident
 
-Generic Engine V1 must include a small synthetic non-location domain to prove the engine is not location-specific under generic names.
+Generic Engine V1 includes one explicit non-location synthetic conformance domain.
 
-Suggested domain:
+### 16.1 Domain
 
 ```text
 EntityType: Service
@@ -1130,100 +1050,146 @@ ValueType: HealthState = healthy | failed | recovered
 StateVariable: service.health
 ```
 
-Suggested event family:
+Event types:
 
 ```text
 ServiceFailure
+  health: healthy → failed
+
 ServiceRecovery
+  health: failed → recovered
 ```
 
-Suggested story shape:
+Decision type:
 
 ```text
-e1: service fails
-Alice observes e1
-e2: service recovers
-Bob does not observe e2
-c1: Alice communicates service.health = recovered
-Bob receives / does not receive c1
-d1: Bob chooses a declared operational action
+service-response
 ```
 
-The domain is synthetic and is used only for generic conformance, not empirical systems reliability claims.
+Action options:
 
-The concrete decision/action names should be chosen during implementation planning so that they have deterministic, domain-local semantics without introducing utility or probabilistic policy assumptions.
+```text
+restart_service
+leave_running
+```
 
-## 17. Public API boundary
+The deterministic reference decision rule is:
 
-Generic Engine APIs should live in a dedicated package namespace rather than expanding the legacy `narrative_dynamics.story` surface indefinitely.
+```text
+resolved health == failed    → restart_service
+resolved health == recovered → leave_running
+otherwise                    → decision_resolution rejection
+```
 
-The exact package path and export list will be fixed in the implementation plan, but the design requires separation among:
+### 16.2 Matched synthetic pair
 
-- generic IR types;
-- DomainSpec types;
-- compiler provenance types;
-- replay types;
-- DecisionModel contracts;
-- analysis records;
-- legacy story compatibility adapter.
+Both scenarios share the same objective events, observations, speaker/support path, reception, decision, and actions:
 
-Legacy V1/V2/V3 APIs remain source-compatible and identity-compatible.
+```text
+e1 @ 1: service fails
+         Bob directly observes e1
 
-Internal hook identities, trust policy internals, and compatibility implementation details should not leak into the package root unless an existing repository-wide trust API already requires them.
+e2 @ 2: service recovers
+         Alice directly observes e2
+
+c1 @ 3: Alice communicates one service.health proposition
+         support = e2
+         Bob receives c1
+
+d1 @ 4: Bob decides restart_service / leave_running
+```
+
+The pair differs only in `c1` proposition value:
+
+```text
+recovered-claim: service.health == recovered
+stale-claim:     service.health == failed
+```
+
+The stale claim remains admissible because support provenance is not a truth predicate.
+
+Expected model contrast:
+
+```text
+                    recovered-claim   stale-claim
+direct-only         restart_service   restart_service
+omniscient           leave_running     leave_running
+epistemic            leave_running     restart_service
+```
+
+This domain is synthetic and supports only generic conformance claims, not empirical systems-reliability conclusions.
+
+## 17. Public package boundary
+
+Generic Engine V1 lives under the dedicated namespace:
+
+```text
+narrative_dynamics.narrative
+```
+
+Required module boundaries:
+
+```text
+narrative_dynamics/narrative/
+  __init__.py
+  ir.py
+  domain.py
+  compiler.py
+  replay.py
+  decision.py
+  interventions.py
+  analysis.py
+  trust.py
+  compat_story_v2.py
+  domains/
+    __init__.py
+    service_incident.py
+```
+
+The exact public symbol list will be enumerated in the implementation plan from the types/functions fixed by this design, but V1 has two API constraints:
+
+1. canonical Generic Engine APIs are exported from `narrative_dynamics.narrative`;
+2. the package root `narrative_dynamics` gains no Generic Narrative Engine exports in V1.
+
+Legacy `narrative_dynamics.story` V1/V2/V3 APIs remain unchanged.
+
+Internal hook identities, trust-policy helpers, and compatibility details do not leak into the package root.
 
 ## 18. Error handling
 
 All semantic errors fail closed.
 
-Programming/type/runtime errors must not be silently converted into semantic counterfactual rejection records.
+Programming/type/runtime errors are not silently converted into semantic counterfactual rejection records.
 
-Only expected validation/resolution failures are represented as structured analysis rejections.
+Only expected validation/resolution failures become structured rejections.
 
-Compiler errors distinguish at least:
+Compiler results distinguish `canonical`, `incomplete`, and `rejected`.
 
-```text
-incomplete
-rejected
-```
-
-Canonical execution requires a fully validated narrative.
-
-No canonical analysis is produced from an incomplete compilation.
+No canonical analysis is produced from an incomplete/rejected compilation.
 
 ## 19. Determinism and immutability
 
-All public canonical records and analysis records are immutable.
+All public canonical and analysis records are immutable. Nested sequence/mapping fields are defensively frozen/canonicalized.
 
-Nested sequence/mapping fields must be defensively frozen or canonicalized.
+Serialization is deterministic and JSON-serializable.
 
-`to_dict()` / serialization methods must be deterministic and JSON-serializable.
+Stable identity uses the repository's typed canonical `stable_content_hash` semantics, not ad hoc JSON hashing.
 
-Stable identity must use the repository's typed canonical `stable_content_hash` semantics rather than ad hoc JSON hashing.
-
-No generic semantic output may depend on dict insertion accidents, wall-clock time, process-local object IDs, or RNG in V1.
+No Generic semantic output depends on dict insertion accidents, wall-clock time, process-local object IDs, or RNG in V1.
 
 ## 20. Lean boundary
 
-Generic Narrative Engine V1 does not require new Lean core semantics.
+Generic Narrative Engine V1 does not add new Lean core semantics.
 
-Existing Lean proofs remain authoritative for their current formal boundaries, including information-path and testimony-related invariants.
+Existing Lean proofs remain authoritative for current formal boundaries, including information-path and testimony invariants.
 
-Every Generic Engine increment must continue running the full existing Lean build and theorem suite.
+Every Generic Engine increment continues running the full existing Lean build and theorem suite.
 
-Possible future formalization targets after Python generic semantics stabilize include:
-
-- generic strict event ordering;
-- observation visibility invariants;
-- claim reception information-path invariants;
-- no-objective-fallback properties.
-
-The design intentionally avoids prematurely freezing the evolving Generic IR directly into Lean.
+Possible later formalization targets, after Python semantics stabilize, include generic event ordering, observation visibility, claim reception information paths, and no-objective-fallback properties.
 
 ## 21. Implementation decomposition requirement
 
-This architecture is larger than a single monolithic code drop.
-
-The implementation plan should decompose V1 into strict RED→GREEN increments, likely along these boundaries:
+The implementation plan must use strict RED→GREEN increments and preserve architecture boundaries. Expected increments are:
 
 1. generic value/type/state IR;
 2. DomainSpec declaration + state-transition hook identity;
@@ -1234,60 +1200,63 @@ The implementation plan should decompose V1 into strict RED→GREEN increments, 
 7. generic interventions/counterfactual rejection;
 8. Location/Testimony V2 compatibility adapter + equivalence vectors;
 9. Service Incident conformance domain;
-10. compiler provenance/candidate/resolution model;
+10. compiler source/candidate/resolution records;
 11. deterministic compiler;
 12. trust/identity lineage and public API finalization.
 
-The final implementation plan may split these further but must not collapse the architectural boundaries above.
+The plan may split these further but must not collapse the approved boundaries.
 
 ## 22. Testing requirements
 
-At minimum, tests must cover:
+At minimum, tests cover:
 
-- typed value and entity validation;
+- typed value/entity validation;
 - event parameter typing;
 - hook output legality;
-- deterministic hook identity drift;
-- strict logical time;
+- hook implementation identity drift;
+- strict total canonical ordering;
 - objective replay independence from epistemic inputs;
 - direct evidence no-objective-fallback;
-- received versus unreceived claim behavior;
+- received versus unreceived claims;
+- claim support accessibility for event and prior-claim support;
 - supported stale/conflicting claims without truth coercion;
-- `not_equals` remaining a constraint rather than invented resolution;
-- conflicted epistemic status;
+- `not_equals` remaining a constraint;
+- explicit `conflicted` epistemic state;
 - DecisionModel capability isolation;
-- explicit omniscient baseline isolation;
-- action membership and exact resolution;
+- explicit omniscient-baseline isolation;
+- exact action membership/resolution;
 - single-variable intervention enforcement;
 - rejection-stage correctness;
 - first-divergence determinism;
 - same action with different evidence basis;
-- source/compiler provenance identity versus canonical semantic identity;
+- source/compiler provenance identity versus semantic identity;
 - DomainSpec declaration and hook implementation identities;
 - V2 truthful/stale legacy equivalence;
 - exact preservation of legacy V1/V2 identities;
-- non-location Service Incident generic conformance;
+- non-location Service Incident matched-pair conformance;
 - deterministic JSON serialization;
-- package-root isolation rules;
+- package-root isolation;
 - full Python regression;
 - full Lean regression.
 
-## 23. Non-goals for Generic Narrative Engine V1
+## 23. Non-goals for V1
 
-V1 deliberately does not include:
+V1 deliberately excludes:
 
 - embedded LLM inference;
 - automatic truth adjudication among sources;
 - learned source trust;
 - deception intent;
 - recursive Theory of Mind;
-- arbitrary logical theorem proving over propositions;
+- arbitrary logical theorem proving;
 - arbitrary graph query language;
 - utility optimization framework;
 - probabilistic world transitions;
 - stochastic DecisionModel API;
 - automatic multi-intervention powersets;
 - unrestricted branching story generation;
+- partial-order/simultaneous-event execution semantics;
+- independent reception timestamps/delivery delays;
 - UI/product visualization implementation;
 - empirical domain calibration;
 - complete OS sandboxing of semantic hooks;
@@ -1297,23 +1266,22 @@ V1 deliberately does not include:
 
 Generic Narrative Engine V1 is complete only when all of the following hold:
 
-1. A typed non-location narrative can execute without importing or depending on location-specific story semantics.
-2. Legacy V2 truthful/stale scenarios map through the compatibility adapter and produce required equivalence results.
+1. A typed non-location narrative executes without location-specific story semantics.
+2. Legacy V2 truthful/stale scenarios map through the compatibility adapter and satisfy required equivalence locks.
 3. Objective, direct, and communicated evidence remain structurally separated.
 4. Decision models cannot read data outside their declared capability.
 5. Counterfactuals recompute the full canonical pipeline from one typed upstream change.
 6. Invalid counterfactuals remain rejected rather than repaired.
 7. Source/compiler provenance and canonical semantic identity remain distinct.
-8. Domain declaration and semantic hook implementation both affect DomainSpec identity.
-9. Generic analysis can expose identical actions with different evidence bases without claiming a unique mechanism.
-10. All existing V1/V2/V3 identities and APIs remain intact.
-11. Full Python and existing Lean regression suites are green on the exact final feature head.
+8. Domain declarations and semantic hook implementation both affect DomainSpec identity.
+9. Generic analysis exposes identical actions with different evidence bases without claiming a unique mechanism.
+10. The Service Incident matched pair produces the declared three-model contrast.
+11. Existing V1/V2/V3 identities and APIs remain intact.
+12. Full Python and existing Lean regression suites are green on the exact final feature head.
 
 ## 25. Final architecture statement
 
-Generic Narrative Engine V1 turns the current canonical testimony research path into a domain-pluggable structured narrative engine while keeping the epistemic and scientific boundaries strict.
-
-The intended architecture is:
+Generic Narrative Engine V1 turns the current canonical testimony research path into a domain-pluggable structured narrative engine while keeping epistemic and scientific boundaries strict:
 
 ```text
 source material
@@ -1342,4 +1310,4 @@ typed Generic Analysis
     └─ single-variable counterfactuals
 ```
 
-The central invariant is that uncertainty, provenance, world truth, agent evidence, decision mechanism, and analysis result are different layers and must remain separately represented, validated, hashed, and auditable.
+The central invariant is that uncertainty, provenance, world truth, agent evidence, decision mechanism, and analysis result are different layers and remain separately represented, validated, hashed, and auditable.
