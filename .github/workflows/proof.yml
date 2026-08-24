@@ -80,3 +80,7 @@ jobs:
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
           lake env lean NarrativeDynamics/Tests/StoryState.lean
+      - name: Narrative testimony theorem tests
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          lake env lean NarrativeDynamics/Tests/Testimony.lean
