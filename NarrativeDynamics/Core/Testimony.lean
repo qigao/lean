@@ -55,7 +55,9 @@ theorem reportedLocation_append_unreceived
     reportedLocation world (reports ++ [report]) recipient object =
       reportedLocation world reports recipient object := by
   classical
-  simp [reportedLocation, reportAvailableTo, hnot]
+  have hobs : ¬ world.observed report.reportEvent recipient := by
+    simpa [reportAvailableTo] using hnot
+  simp [reportedLocation, reportAvailableTo, hobs]
 
 /-- A received appended report about the queried object becomes the latest
 reported location. -/
@@ -71,7 +73,9 @@ theorem reportedLocation_append_received
     reportedLocation world (reports ++ [report]) recipient object =
       some report.location := by
   classical
-  simp [reportedLocation, reportAvailableTo, hreceived, hobject]
+  have hobs : world.observed report.reportEvent recipient := by
+    simpa [reportAvailableTo] using hreceived
+  simp [reportedLocation, reportAvailableTo, hobs, hobject]
 
 /-- Existing WorldInvariant information reachability remains authoritative for
 report reception. -/
