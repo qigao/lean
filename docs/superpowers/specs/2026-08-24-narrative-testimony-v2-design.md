@@ -319,15 +319,15 @@ V2 should reuse existing provenance/observation primitives where possible. If a 
 
 ## Python module architecture
 
-V2 should extend the existing `narrative_dynamics.story` subsystem rather than create a second story package.
+V2 extends the existing `narrative_dynamics.story` subsystem rather than creating a second story package.
 
-Expected files are likely:
+Planned files:
 
 ```text
-narrative_dynamics/story/schema.py          # add V2 testimony dataclasses/validation
-narrative_dynamics/story/replay.py          # add testimony-aware pure replay
-narrative_dynamics/story/scenario.py        # extend exact visible V2 projection/decoder
-narrative_dynamics/story/__init__.py         # export canonical testimony schema/replay only
+narrative_dynamics/story/schema.py          # V2 testimony dataclasses/validation while preserving V1 behavior
+narrative_dynamics/story/replay.py          # testimony-aware pure replay while preserving V1 replay
+narrative_dynamics/story/scenario.py        # exact V2 visible projection/decoder alongside V1
+narrative_dynamics/story/__init__.py         # canonical testimony schema/replay exports only
 narrative_dynamics/adapters/story_testimony_search.py
 NarrativeDynamics/Core/Testimony.lean
 NarrativeDynamics/Tests/Testimony.lean
@@ -335,7 +335,7 @@ fixtures/stories/key_location_truthful_testimony_v2.json
 fixtures/stories/key_location_stale_testimony_v2.json
 ```
 
-The implementation plan may choose version-specific files if that produces a cleaner compatibility boundary. It must not break V1 fixture loading or V1 scenario IDs.
+The implementation plan may split V2 logic into version-specific modules if that is required to preserve V1 identity and API behavior exactly; such a split must remain inside the same `narrative_dynamics.story` subsystem and must not introduce a parallel runtime.
 
 ## Schema versioning and V1 compatibility
 
@@ -369,7 +369,7 @@ decision
 
 It still excludes fixture name/version/source/provenance/source_text/oracle and any gold model answer.
 
-The runtime ID is derived solely from this model-visible payload, using a version-neutral prefix that distinguishes V2, for example:
+The runtime ID is derived solely from this model-visible payload with a V2-specific neutral prefix:
 
 ```text
 story-v2-<payload sha256 hex>
@@ -455,9 +455,9 @@ Minimum test families:
 1. **Schema V2:** frozen values, exact keys, content hash, support references, global time order, speaker observation provenance, reception uniqueness/channel, V1 compatibility.
 2. **Replay:** direct-only baseline preserved; truthful received testimony updates Bob to box; stale received testimony keeps/updates Bob to drawer; unreceived testimony has no effect; historical `at_time` queries are deterministic; no objective fallback.
 3. **Scenario:** exact six-key V2 payload; neutral `story-v2-*` ID; metadata/oracle leakage resistance; malformed runtime payload cannot bypass shared validation.
-4. **Models:** testimony-search behavior on matched pair; omniscient remains box in both; existing V1 belief model remains drawer on the V2 false-belief direct-perception history when run on an appropriate V1 projection or compatibility witness; empty parameters only; exact one-hot policy.
+4. **Models:** testimony-search behavior on matched pair; omniscient remains box in both; existing V1 belief model remains drawer on the direct-perception-only state; empty parameters only; exact one-hot policy.
 5. **Trusted runtime:** deterministic seed replay, manifest presence, common metrics compatibility, package export isolation, no prison imports.
-6. **Lean:** generic testimony properties plus concrete truthful/stale witness and information-path/provenance checks.
+6. **Lean:** generic testimony properties plus concrete matched-pair witness and information-path/provenance checks.
 7. **Regression:** all V1 fixture hashes, V1 scenario IDs, V1 tests, existing 311 Python tests, conformance, Lean build, and pre-existing theorem suite remain green.
 
 ## Integration boundaries
@@ -482,12 +482,13 @@ V2 is complete only when:
 - testimony-aware Bob state is `key@box` for truthful testimony and `key@drawer` for stale/false testimony;
 - testimony-search predicts box versus drawer across the pair;
 - omniscient predicts box in both;
+- V1 agent-belief-search remains direct-perception-only and therefore predicts drawer for this direct-observation history;
 - report admissibility does not imply report truth;
 - unreceived testimony has no effect;
 - malformed runtime V2 scenarios cannot bypass provenance/reception validation;
-- V1 fixtures, hashes, scenario IDs, APIs, and models are unchanged;
+- V1 fixtures, hashes, scenario IDs, APIs, and model outcomes are unchanged;
 - no source/oracle/gold label leaks into runtime input or ID;
-- both models remain parameter-free;
+- all three story models remain parameter-free;
 - all existing proof and Python gates remain green;
 - final review records the exact SHA, proof run, Python test count, and explicit research limitations.
 
