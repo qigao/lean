@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import unittest
 
-from narrative_dynamics.story.evolution_v2 import analyze_testimony_evolution
+from narrative_dynamics.story.evolution_v2 import (
+    EvolutionCounterfactualV2,
+    EvolutionInterventionV2,
+    analyze_testimony_evolution,
+)
 from narrative_dynamics.story.scenario_v2 import NarrativeScenarioV2
 from narrative_dynamics.story.schema_v2 import load_narrative_case_v2
 
@@ -37,12 +41,9 @@ class NarrativeEvolutionBaselineTests(unittest.TestCase):
             tuple(s.agents["bob"].testimony_location for s in baseline.snapshots),
             ("drawer", "drawer", "box", "box"),
         )
+        report_state = baseline.snapshots[2].agents["bob"]
         self.assertEqual(
-            (
-                baseline.snapshots[2].agents["bob"].evidence_kind,
-                baseline.snapshots[2].agents["bob"].supporting_id,
-                baseline.snapshots[2].agents["bob"].source_agent,
-            ),
+            (report_state.evidence_kind, report_state.supporting_id, report_state.source_agent),
             ("testimony", "r1", "alice"),
         )
         self.assertEqual(
@@ -66,16 +67,50 @@ class NarrativeEvolutionBaselineTests(unittest.TestCase):
             tuple(item.testimony_location for item in bob),
             ("drawer", "drawer", "drawer", "drawer"),
         )
-        self.assertEqual(bob[1].evidence_kind, "direct_perception")
-        self.assertEqual(bob[1].supporting_id, "e1")
-        self.assertEqual(bob[2].evidence_kind, "testimony")
-        self.assertEqual(bob[2].supporting_id, "r1")
-        self.assertEqual(bob[2].source_agent, "alice")
+        self.assertEqual(
+            (bob[1].evidence_kind, bob[1].supporting_id),
+            ("direct_perception", "e1"),
+        )
+        self.assertEqual(
+            (bob[2].evidence_kind, bob[2].supporting_id, bob[2].source_agent),
+            ("testimony", "r1", "alice"),
+        )
         self.assertEqual(baseline.selected_action, "search_drawer")
 
     def test_analysis_requires_validated_v2_scenario(self):
         with self.assertRaisesRegex(TypeError, "validated NarrativeScenarioV2"):
             analyze_testimony_evolution(object())
+
+    def test_public_records_freeze_nested_values_and_reject_invalid_enums(self):
+        analysis = analyze_testimony_evolution(self.truthful)
+        with self.assertRaises(TypeError):
+            analysis.baseline.snapshots[0].agents["bob"] = object()
+        with self.assertRaisesRegex(ValueError, "intervention kind"):
+            EvolutionInterventionV2(
+                kind="compound",
+                subject_id="x",
+                agent=None,
+                from_value=None,
+                to_value=None,
+                logical_time=None,
+            )
+        with self.assertRaisesRegex(ValueError, "counterfactual status"):
+            EvolutionCounterfactualV2(
+                intervention=EvolutionInterventionV2(
+                    kind="remove_reception",
+                    subject_id="r1",
+                    agent="bob",
+                    from_value="received",
+                    to_value=None,
+                    logical_time=3,
+                ),
+                status="unknown",
+                trajectory=None,
+                first_divergence=None,
+                rejection_stage=None,
+                rejection_reason=None,
+                rejection_logical_time=None,
+            )
 
 
 if __name__ == "__main__":
