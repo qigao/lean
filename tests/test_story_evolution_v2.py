@@ -9,6 +9,11 @@ from narrative_dynamics.story.evolution_v2 import (
     analyze_testimony_evolution,
 )
 from narrative_dynamics.story.scenario_v2 import NarrativeScenarioV2
+from narrative_dynamics.story.schema import (
+    SearchActionV1,
+    SearchDecisionV1,
+    StoryEntitiesV1,
+)
 from narrative_dynamics.story.schema_v2 import load_narrative_case_v2
 
 _TRUTHFUL = "fixtures/stories/key_location_truthful_testimony_v2.json"
@@ -217,6 +222,133 @@ class NarrativeEvolutionValidCounterfactualTests(unittest.TestCase):
                     item.first_divergence.changed_fields,
                     tuple(sorted(item.first_divergence.changed_fields)),
                 )
+
+
+class NarrativeEvolutionBoundaryTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.truthful = NarrativeScenarioV2.from_case(load_narrative_case_v2(_TRUTHFUL))
+        self.stale = NarrativeScenarioV2.from_case(load_narrative_case_v2(_STALE))
+
+    @staticmethod
+    def one(analysis, kind: str):
+        items = tuple(
+            item
+            for item in analysis.counterfactuals
+            if item.intervention.kind == kind
+        )
+        if len(items) != 1:
+            raise AssertionError((kind, len(items)))
+        return items[0]
+
+    def test_remove_actor_only_observation_is_scenario_validation_rejection(self):
+        item = self.one(
+            analyze_testimony_evolution(self.truthful), "remove_direct_observation"
+        )
+        self.assertEqual(
+            (
+                item.intervention.subject_id,
+                item.intervention.agent,
+                item.intervention.logical_time,
+            ),
+            ("e1", "bob", 1),
+        )
+        self.assertEqual(item.status, "rejected")
+        self.assertIsNone(item.trajectory)
+        self.assertIsNone(item.first_divergence)
+        self.assertEqual(item.rejection_stage, "scenario_validation")
+        self.assertEqual(item.rejection_logical_time, 1)
+        self.assertIn(
+            "decision actor must have observed a relocation of the target object",
+            item.rejection_reason,
+        )
+
+    def test_remove_speaker_support_is_provenance_validation_rejection(self):
+        item = self.one(
+            analyze_testimony_evolution(self.truthful), "remove_support_observation"
+        )
+        self.assertEqual(
+            (
+                item.intervention.subject_id,
+                item.intervention.agent,
+                item.intervention.from_value,
+                item.intervention.logical_time,
+            ),
+            ("r1", "alice", "e2", 2),
+        )
+        self.assertEqual(item.status, "rejected")
+        self.assertIsNone(item.trajectory)
+        self.assertIsNone(item.first_divergence)
+        self.assertEqual(item.rejection_stage, "scenario_validation")
+        self.assertEqual(item.rejection_logical_time, 2)
+        self.assertIn(
+            "report speaker must have directly observed the support_event",
+            item.rejection_reason,
+        )
+
+    def test_remove_reception_can_be_action_resolution_rejection(self):
+        entities = StoryEntitiesV1(
+            agents=self.truthful.entities.agents,
+            objects=self.truthful.entities.objects,
+            locations=("drawer", "box", "shelf"),
+        )
+        decision = SearchDecisionV1(
+            id="d1",
+            time=4,
+            actor="bob",
+            object="key",
+            actions=(
+                SearchActionV1(id="search_box", location="box"),
+                SearchActionV1(id="search_shelf", location="shelf"),
+            ),
+        )
+        story = NarrativeScenarioV2(
+            entities=entities,
+            events=self.truthful.events,
+            observations=self.truthful.observations,
+            reports=self.truthful.reports,
+            receptions=self.truthful.receptions,
+            decision=decision,
+        )
+        analysis = analyze_testimony_evolution(story)
+        self.assertEqual(analysis.baseline.selected_action, "search_box")
+        item = self.one(analysis, "remove_reception")
+        self.assertEqual(item.status, "rejected")
+        self.assertEqual(item.rejection_stage, "action_resolution")
+        self.assertEqual(item.rejection_logical_time, 3)
+        self.assertIn("exactly one decision action", item.rejection_reason)
+        self.assertIsNone(item.trajectory)
+        self.assertIsNone(item.first_divergence)
+
+    def test_same_action_can_have_different_information_mechanisms(self):
+        analysis = analyze_testimony_evolution(self.stale)
+        reception_removed = self.one(analysis, "remove_reception")
+        self.assertEqual(analysis.baseline.selected_action, "search_drawer")
+        self.assertEqual(reception_removed.trajectory.selected_action, "search_drawer")
+        self.assertEqual(
+            analysis.baseline.snapshots[2].agents["bob"].evidence_kind,
+            "testimony",
+        )
+        self.assertEqual(
+            reception_removed.trajectory.snapshots[2].agents["bob"].evidence_kind,
+            "direct_perception",
+        )
+        self.assertFalse(reception_removed.first_divergence.action_changed)
+        self.assertFalse(analysis.mechanism_uniqueness_claimed)
+
+    def test_full_intervention_kind_set_is_exact(self):
+        kinds = {
+            item.intervention.kind
+            for item in analyze_testimony_evolution(self.truthful).counterfactuals
+        }
+        self.assertEqual(
+            kinds,
+            {
+                "change_report_content",
+                "remove_direct_observation",
+                "remove_reception",
+                "remove_support_observation",
+            },
+        )
 
 
 if __name__ == "__main__":
