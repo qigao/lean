@@ -89,9 +89,11 @@ Reception has no independent timestamp in V2. Therefore, consistent with existin
 
 ## Data model
 
-All public V3 values are immutable dataclasses and must contain only canonical, JSON-serializable values or tuples/mappings of such values.
+All canonical V3 analysis values are immutable dataclasses and must contain only deterministic, JSON-serializable values or tuples/mappings of such values.
 
-### `EvolutionAgentStateV2`
+Two support records are implementation-internal and are not exported from `narrative_dynamics.story`: `_EvolutionAgentStateV2` and `_EvolutionDivergenceV2`. They exist only to keep the public objects typed without widening the approved package API.
+
+### Internal `_EvolutionAgentStateV2`
 
 Represents one tracked agent's state for the decision target at one snapshot.
 
@@ -118,7 +120,7 @@ Fields:
 - `trigger_kind: str`
 - `trigger_ids: tuple[str, ...]`
 - `objective_location: str | None`
-- `agents: Mapping[str, EvolutionAgentStateV2]`
+- `agents: Mapping[str, _EvolutionAgentStateV2]`
 - `selected_action: str | None`
 
 `trigger_kind` is one of:
@@ -136,13 +138,14 @@ The current V2 validator makes relocation and report times globally unique and r
 
 Fields:
 
-- `scenario_id: str`
 - `target_object: str`
 - `tracked_agents: tuple[str, ...]`
 - `snapshots: tuple[EvolutionSnapshotV2, ...]`
 - `selected_action: str`
 
 The trajectory is deterministic for a canonical scenario.
+
+The trajectory deliberately does not contain a runtime `scenario_id`. `NarrativeScenarioV2` is a typed semantic value and does not carry the runtime `Scenario.id`; V3 must not duplicate or depend on private runtime-ID derivation merely to decorate a derived analysis artifact.
 
 ### `EvolutionInterventionV2`
 
@@ -166,7 +169,7 @@ Supported kinds in V3 are exactly:
 
 No compound intervention is allowed.
 
-### `EvolutionDivergenceV2`
+### Internal `_EvolutionDivergenceV2`
 
 Fields:
 
@@ -190,10 +193,15 @@ Fields:
 - `intervention: EvolutionInterventionV2`
 - `status: str` where value is exactly `valid` or `rejected`
 - `trajectory: EvolutionTrajectoryV2 | None`
-- `first_divergence: EvolutionDivergenceV2 | None`
+- `first_divergence: _EvolutionDivergenceV2 | None`
 - `rejection_stage: str | None`
 - `rejection_reason: str | None`
 - `rejection_logical_time: int | None`
+
+`rejection_stage`, when present, is exactly one of:
+
+- `scenario_validation`
+- `action_resolution`
 
 For a valid counterfactual, `trajectory` is present and rejection fields are `None`.
 
@@ -211,13 +219,11 @@ Fields:
 
 ## Public API
 
-Export from `narrative_dynamics.story`, but not from package root:
+Export exactly these new names from `narrative_dynamics.story`, but not from package root:
 
-- `EvolutionAgentStateV2`
 - `EvolutionSnapshotV2`
 - `EvolutionTrajectoryV2`
 - `EvolutionInterventionV2`
-- `EvolutionDivergenceV2`
 - `EvolutionCounterfactualV2`
 - `EvolutionAnalysisV2`
 - `analyze_testimony_evolution`
@@ -230,7 +236,7 @@ analyze_testimony_evolution(story: NarrativeScenarioV2) -> EvolutionAnalysisV2
 
 The function must reject any value that is not a validated `NarrativeScenarioV2`.
 
-No V3 API is exported from `narrative_dynamics` package root.
+No V3 API is exported from `narrative_dynamics` package root. The two internal support records are not added to `narrative_dynamics.story.__all__`.
 
 ## Baseline trajectory algorithm
 
@@ -288,6 +294,8 @@ For every direct observation by the decision actor of a relocation involving the
 
 The modified scenario is then reconstructed through the ordinary canonical validator. If the V2 semantics reject it, record a rejected counterfactual rather than repairing, weakening, or bypassing validation.
 
+For the two committed testimony fixtures, Bob has exactly one target observation, `e1`. Removing it is therefore deterministically rejected by the existing shared story validator with the boundary that the decision actor must have observed a relocation of the target object.
+
 ### 4. Remove speaker support observation
 
 For every target report, generate one counterfactual that removes the speaker's direct observation of that report's declared support event.
@@ -302,11 +310,14 @@ Every intervention follows the same pipeline:
 
 1. construct a modified typed V2 scenario value from the baseline fields;
 2. allow normal `NarrativeScenarioV2` validation to run;
-3. if valid, build a trajectory using the same baseline trajectory builder;
-4. if validation fails, record `status="rejected"`, the failure stage, exact reason, and intervention logical time when known;
-5. never catch a validation error and silently coerce the scenario into a valid one.
+3. if scenario validation fails because of the intervention, record `status="rejected"` with `rejection_stage="scenario_validation"`, exact reason, and intervention logical time when known;
+4. if the modified scenario is valid, build a trajectory using the same baseline trajectory builder;
+5. if deterministic action resolution fails for the otherwise valid modified scenario, record `status="rejected"` with `rejection_stage="action_resolution"` and the exact reason;
+6. never catch a validation/action-boundary error and silently coerce the scenario into a valid trajectory.
 
 The analysis layer must not consult authored oracle fields because `NarrativeScenarioV2` does not contain them.
+
+Expected domain-boundary failures caused by a well-formed intervention become rejected counterfactual records. Unexpected programming/type errors unrelated to canonical validation or action resolution propagate as top-level errors.
 
 ## First-divergence algorithm
 
@@ -377,9 +388,13 @@ Changing only `r1.location` from `box` to `drawer` in the truthful fixture produ
 
 Changing only `r1.location` from `drawer` to `box` in the stale fixture produces first divergence at `t=3` and changes the final action to `search_box`.
 
+### Decision-actor observation removal
+
+Removing Bob's only target observation `e1` from either committed fixture is rejected during `scenario_validation` because the decision actor no longer has any observed relocation of the target object.
+
 ### Support-observation removal
 
-Removing Alice's observation of `e2` makes the existing `r1` unsupported under V2 provenance validation and must be recorded as rejected.
+Removing Alice's observation of `e2` makes the existing `r1` unsupported under V2 provenance validation and is rejected during `scenario_validation`.
 
 ## Mechanism-identification safety
 
@@ -405,21 +420,26 @@ All analysis objects must provide a deterministic structural representation suit
 - counterfactuals in a documented stable order by intervention kind, logical time, subject ID, and alternate value;
 - changed field paths lexicographically sorted.
 
-The first version does not require a new persisted content hash or runtime ID for the analysis result. It is a derived analysis artifact, not a new simulation scenario identity.
+The first version does not require a new persisted content hash, runtime ID, or duplicated scenario ID for the analysis result. It is a derived analysis artifact, not a new simulation scenario identity.
 
 ## Error handling
 
-Fail closed on:
+Baseline analysis fails closed on:
 
 - non-`NarrativeScenarioV2` input;
 - missing decision-target epistemic support at action resolution;
-- zero or multiple matching decision actions;
-- malformed intervention construction;
-- any counterfactual that violates existing V2 semantics.
+- zero or multiple matching decision actions.
 
-Rejected counterfactuals are data, not top-level analysis failures, when the rejection is the expected result of applying a validly specified intervention to a valid baseline scenario.
+Counterfactual records are rejected, rather than aborting the whole analysis, when a well-formed single intervention causes:
 
-Unexpected programming/type errors unrelated to canonical validation must propagate rather than be misclassified as a rejected scientific counterfactual.
+- canonical V2 scenario validation failure; or
+- deterministic action-resolution failure in an otherwise valid modified scenario.
+
+Malformed intervention construction is an implementation error and must propagate rather than be mislabeled as scientific counterfactual rejection.
+
+Rejected counterfactuals are data, not top-level analysis failures, only when the rejection is the expected result of applying a validly specified intervention to a valid baseline scenario.
+
+Unexpected programming/type errors unrelated to canonical validation or action resolution must propagate.
 
 ## Public-boundary constraints
 
@@ -459,8 +479,8 @@ Lock:
 
 - remove Bob reception: valid; provenance changes to direct perception; truthful final action changes, stale final action does not;
 - change report content: valid; first divergence exactly at report time; final action flips;
-- remove Bob direct observation: canonical validation decides whether the resulting scenario remains valid; expected committed-fixture behavior must be asserted explicitly from observed RED/GREEN evidence rather than bypassing validation;
-- remove Alice support observation: rejected by speaker-support validation.
+- remove Bob's only direct target observation: rejected at `scenario_validation` by the existing decision-actor observation boundary;
+- remove Alice support observation: rejected at `scenario_validation` by speaker-support validation.
 
 ### Divergence tests
 
@@ -484,7 +504,7 @@ Lock:
 - V2 projection remains exactly six visible keys;
 - V1 and V2 decoders remain mutually rejecting;
 - all existing story runtime/model tests remain green;
-- exact story package export set is updated to include only the approved V3 analysis surface;
+- exact story package export set is updated with exactly the six approved V3 names and no internal helper types;
 - package root still exposes none of the V2/V3 story-specific APIs;
 - `TestimonySearchModel` output/event/policy contract remains byte-for-structure equivalent for the committed fixtures before and after shared-resolver refactor.
 
