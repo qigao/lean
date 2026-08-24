@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 
 from narrative_dynamics.story.evolution_v2 import (
@@ -86,6 +87,15 @@ class NarrativeEvolutionBaselineTests(unittest.TestCase):
     def test_analysis_requires_validated_v2_scenario(self):
         with self.assertRaisesRegex(TypeError, "validated NarrativeScenarioV2"):
             analyze_testimony_evolution(object())
+
+    def test_analysis_to_dict_is_deterministic_json_serializable(self):
+        analysis = analyze_testimony_evolution(self.truthful)
+        first = analysis.to_dict()
+        second = analyze_testimony_evolution(self.truthful).to_dict()
+        self.assertEqual(first, second)
+        encoded = json.dumps(first, sort_keys=True, separators=(",", ":"))
+        self.assertEqual(json.loads(encoded), first)
+        self.assertFalse(first["mechanism_uniqueness_claimed"])
 
     def test_public_records_freeze_nested_values_and_reject_invalid_enums(self):
         analysis = analyze_testimony_evolution(self.truthful)
