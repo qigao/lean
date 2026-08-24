@@ -6,6 +6,7 @@ import random
 from narrative_dynamics.contracts import ModelRun, Scenario, TraceEvent
 from narrative_dynamics.story.replay_v2 import (
     latest_epistemic_location,
+    resolve_testimony_action,
     testimony_state,
 )
 from narrative_dynamics.story.scenario_v2 import decode_testimony_scenario
@@ -33,17 +34,7 @@ class TestimonySearchModel:
             at_time=decision.time,
         )
         location = latest_epistemic_location(state, decision.object)
-        matching = [
-            action.id
-            for action in decision.actions
-            if action.location == location.location
-        ]
-        if len(matching) != 1:
-            raise ValueError(
-                "testimony-aware target location must match exactly one decision action"
-            )
-
-        selected = matching[0]
+        selected = resolve_testimony_action(story)
         scores = {
             action.id: 1.0 if action.id == selected else 0.0
             for action in decision.actions

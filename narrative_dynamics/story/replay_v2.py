@@ -109,3 +109,27 @@ def latest_epistemic_location(
             "testimony replay state must contain EpistemicLocationStateV2 values"
         )
     return value
+
+
+def resolve_testimony_action(story: NarrativeScenarioV2) -> str:
+    """Resolve the unique decision action supported by the actor's latest evidence."""
+
+    if not isinstance(story, NarrativeScenarioV2):
+        raise TypeError(
+            "testimony action resolution requires a validated NarrativeScenarioV2"
+        )
+    decision = story.decision
+    location = latest_epistemic_location(
+        testimony_state(story, decision.actor, at_time=decision.time),
+        decision.object,
+    )
+    matching = tuple(
+        action.id
+        for action in decision.actions
+        if action.location == location.location
+    )
+    if len(matching) != 1:
+        raise ValueError(
+            "testimony-aware target location must match exactly one decision action"
+        )
+    return matching[0]
