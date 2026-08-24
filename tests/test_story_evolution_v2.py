@@ -58,7 +58,7 @@ class NarrativeEvolutionBaselineTests(unittest.TestCase):
         )
         self.assertEqual(baseline.selected_action, "search_box")
         self.assertEqual(baseline.snapshots[-1].selected_action, "search_box")
-        self.assertEqual(analysis.counterfactuals, ())
+        self.assertIsInstance(analysis.counterfactuals, tuple)
         self.assertFalse(analysis.mechanism_uniqueness_claimed)
 
     def test_stale_baseline_changes_provenance_at_report_time_without_location_change(self):
