@@ -255,3 +255,30 @@ def make_model(model_id, access, hook):
 
 def make_health_model(model_id, access):
     return make_model(model_id, access, HealthActionHook())
+
+
+def make_analysis_case():
+    from narrative_dynamics.narrative.decision import EvidenceAccess
+
+    story = make_test_story()
+    domain = make_test_domain()
+    return (
+        story,
+        domain,
+        make_health_model("direct-health", EvidenceAccess.DIRECT_ONLY),
+        make_health_model("epistemic-health", EvidenceAccess.EPISTEMIC),
+        make_health_model("omniscient-health", EvidenceAccess.OMNISCIENT),
+    )
+
+
+def make_same_action_different_basis_case():
+    from narrative_dynamics.narrative.decision import EvidenceAccess
+
+    story = make_test_story(claim_value="failed")
+    domain = make_test_domain()
+    return (
+        story,
+        domain,
+        make_health_model("direct-health", EvidenceAccess.DIRECT_ONLY),
+        make_health_model("epistemic-health", EvidenceAccess.EPISTEMIC),
+    )
