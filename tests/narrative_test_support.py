@@ -195,3 +195,63 @@ def make_test_story(
             ),
         ),
     )
+
+
+class RecordingFirstActionHook:
+    def __init__(self) -> None:
+        self.context = None
+
+    def __call__(self, context):
+        from narrative_dynamics.narrative.decision import DecisionChoice
+
+        self.context = context
+        return DecisionChoice(context.decision.actions[0].id, (), ())
+
+
+class HealthActionHook:
+    def __call__(self, context):
+        from narrative_dynamics.narrative.decision import (
+            DecisionChoice,
+            DecisionResolutionError,
+            require_resolved_cell,
+        )
+
+        view = require_resolved_cell(context, target_cell())
+        value = view.resolved_value.value
+        if value == "failed":
+            action = "restart"
+        elif value == "recovered":
+            action = "leave"
+        else:
+            raise DecisionResolutionError(
+                "resolved health does not map to a declared service response"
+            )
+        return DecisionChoice(
+            action,
+            () if view.supporting_id is None else (view.supporting_id,),
+            (target_cell(),),
+        )
+
+
+class MissingActionHook:
+    def __call__(self, context):
+        from narrative_dynamics.narrative.decision import DecisionChoice
+
+        return DecisionChoice("missing", (), ())
+
+
+def make_model(model_id, access, hook):
+    from narrative_dynamics.narrative.decision import DecisionModelSpec
+
+    return DecisionModelSpec(
+        model_id=model_id,
+        version="1",
+        supported_decision_types=("service-response",),
+        evidence_access=access,
+        parameter_schema=(),
+        decision_hook=hook,
+    )
+
+
+def make_health_model(model_id, access):
+    return make_model(model_id, access, HealthActionHook())
