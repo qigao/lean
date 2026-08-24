@@ -81,6 +81,14 @@ class GenericNarrativeIRTests(unittest.TestCase):
                 "HealthState", "healthy"
             )
 
+    def test_entity_reference_is_not_plain_text(self) -> None:
+        if _IMPORT_ERROR is not None:
+            self.fail(f"generic narrative IR is missing: {_IMPORT_ERROR}")
+
+        entity = TypedValue("ServiceRef", EntityRef("svc", "Service"))
+        text = TypedValue("ServiceRef", "svc")
+        self.assertNotEqual(entity.to_dict(), text.to_dict())
+
 
 if __name__ == "__main__":
     unittest.main()
