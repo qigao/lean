@@ -6,7 +6,20 @@ from types import MappingProxyType
 
 from narrative_dynamics.attestation import measure_implementation
 from narrative_dynamics.contracts import stable_content_hash
-from narrative_dynamics.narrative.ir import Entity, EntityRef, NarrativeEvent, TypedValue
+from narrative_dynamics.narrative.ir import (
+    ActionOption,
+    Claim,
+    Decision,
+    Entity,
+    EntityRef,
+    GenericNarrative,
+    NarrativeEvent,
+    Observation,
+    Proposition,
+    Reception,
+    StateCellRef,
+    TypedValue,
+)
 
 
 _VALUE_KINDS = frozenset({"enum", "bool", "integer", "text", "entity_ref"})
@@ -25,6 +38,14 @@ def _unique_named(values: tuple[object, ...], *, label: str) -> None:
         raise TypeError(f"{label} values must expose non-empty names")
     if len(set(names)) != len(names):
         raise ValueError(f"{label} names must be unique")
+
+
+def _unique_ids(values: tuple[object, ...], *, label: str) -> None:
+    ids = tuple(getattr(value, "id", None) for value in values)
+    if any(not isinstance(item, str) or not item for item in ids):
+        raise TypeError(f"{label} values must expose non-empty ids")
+    if len(set(ids)) != len(ids):
+        raise ValueError(f"{label} ids must be unique")
 
 
 @dataclass(frozen=True)
@@ -88,7 +109,6 @@ class ValueTypeSpec:
             raise ValueError(
                 f"typed value type must be {self.name!r}, got {value.type_name!r}"
             )
-
         raw = value.value
         if self.kind == "enum":
             if not isinstance(raw, str) or raw not in self.allowed_values:
@@ -389,7 +409,6 @@ class DomainSpec:
     def __post_init__(self) -> None:
         object.__setattr__(self, "domain_id", _text(self.domain_id, label="domain id"))
         object.__setattr__(self, "version", _text(self.version, label="domain version"))
-
         typed_fields = (
             ("entity_types", EntityTypeSpec),
             ("value_types", ValueTypeSpec),
@@ -406,8 +425,9 @@ class DomainSpec:
                     f"domain {name} must contain {expected.__name__} values"
                 )
             _unique_named(values, label=f"domain {name}")
-            values = tuple(sorted(values, key=lambda item: item.name))
-            object.__setattr__(self, name, values)
+            object.__setattr__(
+                self, name, tuple(sorted(values, key=lambda item: item.name))
+            )
 
         entity_types = {item.name: item for item in self.entity_types}
         value_types = {item.name: item for item in self.value_types}
@@ -416,18 +436,13 @@ class DomainSpec:
         hooks = {item.name: item for item in self.semantic_hooks}
 
         for value_type in self.value_types:
-            if (
-                value_type.kind == "entity_ref"
-                and value_type.entity_type not in entity_types
-            ):
+            if value_type.kind == "entity_ref" and value_type.entity_type not in entity_types:
                 raise ValueError("entity_ref value type must reference a declared entity type")
-
         for state_variable in self.state_variables:
             if state_variable.subject_type not in entity_types:
                 raise ValueError("state variable subject type must be declared")
             if state_variable.value_type not in value_types:
                 raise ValueError("state variable value type must be declared")
-
         for event_type in self.event_types:
             if event_type.actor_type is not None and event_type.actor_type not in entity_types:
                 raise ValueError("event actor type must be declared")
@@ -452,12 +467,10 @@ class DomainSpec:
                     )
             if event_type.transition_hook not in hooks:
                 raise ValueError("event transition hook must be declared")
-
         for action_type in self.action_types:
             for parameter in action_type.parameters:
                 if parameter.value_type not in value_types:
                     raise ValueError("action parameter value type must be declared")
-
         for decision_type in self.decision_types:
             if decision_type.actor_type not in entity_types:
                 raise ValueError("decision actor type must be declared")
@@ -481,6 +494,12 @@ class DomainSpec:
     def content_hash(self) -> str:
         return stable_content_hash(self.to_dict())
 
+    def _entity_type(self, name: str) -> EntityTypeSpec:
+        for item in self.entity_types:
+            if item.name == name:
+                return item
+        raise ValueError(f"undeclared entity type {name!r}")
+
     def _value_type(self, name: str) -> ValueTypeSpec:
         for item in self.value_types:
             if item.name == name:
@@ -498,6 +517,18 @@ class DomainSpec:
             if item.name == name:
                 return item
         raise ValueError(f"undeclared event type {name!r}")
+
+    def _action_type(self, name: str) -> ActionTypeSpec:
+        for item in self.action_types:
+            if item.name == name:
+                return item
+        raise ValueError(f"undeclared action type {name!r}")
+
+    def _decision_type(self, name: str) -> DecisionTypeSpec:
+        for item in self.decision_types:
+            if item.name == name:
+                return item
+        raise ValueError(f"undeclared decision type {name!r}")
 
     def _hook(self, name: str) -> SemanticHookBinding:
         for item in self.semantic_hooks:
@@ -541,12 +572,11 @@ class DomainSpec:
         if set(event.arguments) != set(parameter_map):
             raise ValueError("event arguments must match declared parameters exactly")
         for name, parameter in parameter_map.items():
-            self._value_type(parameter.value_type).validate(
-                event.arguments[name], entity_map
-            )
+            self._value_type(parameter.value_type).validate(event.arguments[name], entity_map)
 
-        hook = self._hook(event_type.transition_hook)
-        result = hook.hook(MappingProxyType(dict(prior_state)), event)
+        result = self._hook(event_type.transition_hook).hook(
+            MappingProxyType(dict(prior_state)), event
+        )
         if not isinstance(result, StateDelta):
             raise TypeError("semantic hook must return StateDelta")
 
@@ -566,13 +596,11 @@ class DomainSpec:
             if cell in seen_cells:
                 raise ValueError("semantic hook cannot write one state cell more than once")
             seen_cells.add(cell)
-
             subject = entity_map.get(operation.subject_id)
             if subject is None:
                 raise ValueError("state delta subject must reference a declared entity")
             if subject.type_name != state_variable.subject_type:
                 raise ValueError("state delta subject type does not match state variable")
-
             if operation.kind == "clear":
                 if operation.value is not None:
                     raise ValueError("clear state delta cannot contain a value")
@@ -582,5 +610,168 @@ class DomainSpec:
                 self._value_type(state_variable.value_type).validate(
                     operation.value, entity_map
                 )
-
         return result
+
+
+def _validate_proposition(
+    proposition: Proposition,
+    domain: DomainSpec,
+    entities: Mapping[str, Entity],
+) -> None:
+    if not isinstance(proposition, Proposition):
+        raise TypeError("claim proposition must be a Proposition")
+    subject = entities.get(proposition.subject.entity_id)
+    if subject is None:
+        raise ValueError("proposition subject must reference a declared entity")
+    if subject.type_name != proposition.subject.entity_type:
+        raise ValueError("proposition subject entity type does not match declaration")
+    state_variable = domain._state_variable(proposition.state_variable)
+    if subject.type_name != state_variable.subject_type:
+        raise ValueError("proposition subject type does not match state variable")
+    domain._value_type(state_variable.value_type).validate(proposition.value, entities)
+
+
+def _validate_action(
+    action: ActionOption,
+    action_type: ActionTypeSpec,
+    domain: DomainSpec,
+    entities: Mapping[str, Entity],
+) -> None:
+    if action.type_name != action_type.name:
+        raise ValueError("decision action type must match declared decision type")
+    parameter_map = {item.name: item for item in action_type.parameters}
+    if set(action.arguments) != set(parameter_map):
+        raise ValueError("decision action arguments must match declared parameters exactly")
+    for name, parameter in parameter_map.items():
+        domain._value_type(parameter.value_type).validate(action.arguments[name], entities)
+
+
+def validate_narrative(story: GenericNarrative, domain: DomainSpec) -> None:
+    if not isinstance(story, GenericNarrative):
+        raise TypeError("generic narrative validation requires GenericNarrative")
+    if not isinstance(domain, DomainSpec):
+        raise TypeError("generic narrative validation requires DomainSpec")
+    if (
+        story.domain_id,
+        story.domain_version,
+        story.domain_spec_hash,
+    ) != (domain.domain_id, domain.version, domain.content_hash):
+        raise ValueError("generic narrative domain identity does not match DomainSpec")
+
+    _unique_ids(story.entities, label="entity")
+    _unique_ids(story.events, label="event")
+    _unique_ids(story.observations, label="observation")
+    _unique_ids(story.claims, label="claim")
+    _unique_ids(story.receptions, label="reception")
+    _unique_ids(story.decisions, label="decision")
+
+    entity_by_id = {item.id: item for item in story.entities}
+    for entity in story.entities:
+        domain._entity_type(entity.type_name)
+
+    event_by_id = {item.id: item for item in story.events}
+    claim_by_id = {item.id: item for item in story.claims}
+    if set(event_by_id) & set(claim_by_id):
+        raise ValueError("event and claim support ids must be globally unique")
+
+    timed = (
+        tuple((item.logical_time, "event", item.id) for item in story.events)
+        + tuple((item.logical_time, "claim", item.id) for item in story.claims)
+        + tuple((item.logical_time, "decision", item.id) for item in story.decisions)
+    )
+    if len({item[0] for item in timed}) != len(timed):
+        raise ValueError("event, claim, and decision logical times must be globally unique")
+
+    world_state: dict[StateCellRef, TypedValue] = {}
+    for event in sorted(story.events, key=lambda item: item.logical_time):
+        delta = domain.apply_event(world_state, event, entity_by_id)
+        for operation in delta.operations:
+            subject = entity_by_id[operation.subject_id]
+            cell = StateCellRef(
+                EntityRef(subject.id, subject.type_name), operation.state_variable
+            )
+            if operation.kind == "clear":
+                world_state.pop(cell, None)
+            else:
+                assert operation.value is not None
+                world_state[cell] = operation.value
+
+    observed_pairs: set[tuple[str, str]] = set()
+    for observation in story.observations:
+        if observation.channel != "direct":
+            raise ValueError("observation channel must be direct")
+        if observation.event_id not in event_by_id:
+            raise ValueError("observation event must reference a declared event")
+        if observation.agent_id not in entity_by_id:
+            raise ValueError("observation agent must reference a declared entity")
+        pair = (observation.event_id, observation.agent_id)
+        if pair in observed_pairs:
+            raise ValueError("observation event-agent pairs must be unique")
+        observed_pairs.add(pair)
+
+    reception_pairs: set[tuple[str, str]] = set()
+    for reception in story.receptions:
+        if reception.channel != "direct_testimony":
+            raise ValueError("reception channel must be direct_testimony")
+        if reception.claim_id not in claim_by_id:
+            raise ValueError("reception claim must reference a declared claim")
+        if reception.recipient_id not in entity_by_id:
+            raise ValueError("reception recipient must reference a declared entity")
+        pair = (reception.claim_id, reception.recipient_id)
+        if pair in reception_pairs:
+            raise ValueError("reception claim-recipient pairs must be unique")
+        reception_pairs.add(pair)
+
+    for claim in story.claims:
+        if claim.speaker_id not in entity_by_id:
+            raise ValueError("claim speaker must reference a declared entity")
+        _validate_proposition(claim.proposition, domain, entity_by_id)
+        if not claim.support_refs:
+            raise ValueError("claim requires at least one support reference")
+        if len(set(claim.support_refs)) != len(claim.support_refs):
+            raise ValueError("claim support references must be unique")
+        for support_ref in claim.support_refs:
+            support_event = event_by_id.get(support_ref)
+            if support_event is not None:
+                if support_event.logical_time >= claim.logical_time:
+                    raise ValueError("claim support must occur before the claim")
+                if (support_event.id, claim.speaker_id) not in observed_pairs:
+                    raise ValueError(
+                        "claim speaker must have access to every support reference"
+                    )
+                continue
+            support_claim = claim_by_id.get(support_ref)
+            if support_claim is None:
+                raise ValueError("claim support must reference a declared event or claim")
+            if support_claim.logical_time >= claim.logical_time:
+                raise ValueError("claim support must occur before the claim")
+            if (support_claim.id, claim.speaker_id) not in reception_pairs:
+                raise ValueError(
+                    "claim speaker must have access to every support reference"
+                )
+
+    for decision in story.decisions:
+        decision_type = domain._decision_type(decision.type_name)
+        actor = entity_by_id.get(decision.actor_id)
+        if actor is None:
+            raise ValueError("decision actor must reference a declared entity")
+        if actor.type_name != decision_type.actor_type:
+            raise ValueError("decision actor type must match declared decision type")
+        if not decision.context_cells:
+            raise ValueError("decision requires at least one context state cell")
+        for cell in decision.context_cells:
+            subject = entity_by_id.get(cell.subject.entity_id)
+            if subject is None:
+                raise ValueError("decision context subject must reference a declared entity")
+            if subject.type_name != cell.subject.entity_type:
+                raise ValueError("decision context subject type does not match entity")
+            state_variable = domain._state_variable(cell.state_variable)
+            if subject.type_name != state_variable.subject_type:
+                raise ValueError("decision context subject type does not match state variable")
+        if not decision.actions:
+            raise ValueError("decision requires at least one action")
+        if len({item.id for item in decision.actions}) != len(decision.actions):
+            raise ValueError("decision action ids must be unique")
+        action_type = domain._action_type(decision_type.action_type)
+        for action in decision.actions:
+            _validate_action(action, action_type, domain, entity_by_id)
