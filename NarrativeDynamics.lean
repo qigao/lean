@@ -28,3 +28,4 @@ import NarrativeDynamics.Core.GroundedGoalScoreCovariance
 import NarrativeDynamics.Core.GroundedGoalRankingReversal
 import NarrativeDynamics.Core.GroundedGoalSoftmax
 import NarrativeDynamics.Core.StoryState
+import NarrativeDynamics.Core.Testimony
