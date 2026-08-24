@@ -1,5 +1,13 @@
 """Canonical Narrative Microstory V1 schema, replay, projection, and metrics."""
 
+from narrative_dynamics.story.evolution_v2 import (
+    EvolutionAnalysisV2,
+    EvolutionCounterfactualV2,
+    EvolutionInterventionV2,
+    EvolutionSnapshotV2,
+    EvolutionTrajectoryV2,
+    analyze_testimony_evolution,
+)
 from narrative_dynamics.story.metrics import story_choice_metrics
 from narrative_dynamics.story.replay import (
     ObjectLocationState,
@@ -68,4 +76,10 @@ __all__ = [
     "EpistemicLocationStateV2",
     "testimony_state",
     "latest_epistemic_location",
+    "EvolutionSnapshotV2",
+    "EvolutionTrajectoryV2",
+    "EvolutionInterventionV2",
+    "EvolutionCounterfactualV2",
+    "EvolutionAnalysisV2",
+    "analyze_testimony_evolution",
 ]
