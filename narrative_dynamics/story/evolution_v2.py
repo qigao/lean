@@ -350,6 +350,175 @@ def _build_trajectory(story: NarrativeScenarioV2) -> EvolutionTrajectoryV2:
     )
 
 
+def _snapshot_fields(snapshot: EvolutionSnapshotV2) -> dict[str, object]:
+    fields: dict[str, object] = {
+        "objective_location": snapshot.objective_location,
+        "selected_action": snapshot.selected_action,
+    }
+    for agent, state in snapshot.agents.items():
+        prefix = f"agents.{agent}."
+        fields[prefix + "direct_location"] = state.direct_location
+        fields[prefix + "direct_supporting_id"] = state.direct_supporting_id
+        fields[prefix + "testimony_location"] = state.testimony_location
+        fields[prefix + "evidence_kind"] = state.evidence_kind
+        fields[prefix + "supporting_id"] = state.supporting_id
+        fields[prefix + "source_agent"] = state.source_agent
+        fields[prefix + "evidence_logical_time"] = state.evidence_logical_time
+    return fields
+
+
+def _first_divergence(
+    baseline: EvolutionTrajectoryV2,
+    candidate: EvolutionTrajectoryV2,
+) -> _EvolutionDivergenceV2 | None:
+    if baseline.target_object != candidate.target_object:
+        raise RuntimeError("evolution trajectories must analyze the same target object")
+    if baseline.tracked_agents != candidate.tracked_agents:
+        raise RuntimeError("evolution trajectories must track the same agents")
+    baseline_times = tuple(item.logical_time for item in baseline.snapshots)
+    candidate_times = tuple(item.logical_time for item in candidate.snapshots)
+    if baseline_times != candidate_times:
+        raise RuntimeError("evolution trajectories must share canonical snapshot times")
+
+    for baseline_snapshot, candidate_snapshot in zip(
+        baseline.snapshots,
+        candidate.snapshots,
+        strict=True,
+    ):
+        baseline_fields = _snapshot_fields(baseline_snapshot)
+        candidate_fields = _snapshot_fields(candidate_snapshot)
+        if set(baseline_fields) != set(candidate_fields):
+            raise RuntimeError("evolution trajectories must share canonical field paths")
+        changed = tuple(
+            sorted(
+                key
+                for key in baseline_fields
+                if baseline_fields[key] != candidate_fields[key]
+            )
+        )
+        if changed:
+            return _EvolutionDivergenceV2(
+                logical_time=baseline_snapshot.logical_time,
+                changed_fields=changed,
+                action_changed=(
+                    baseline.selected_action != candidate.selected_action
+                ),
+            )
+    return None
+
+
+def _valid_counterfactual(
+    baseline: EvolutionTrajectoryV2,
+    intervention: EvolutionInterventionV2,
+    candidate: NarrativeScenarioV2,
+) -> EvolutionCounterfactualV2:
+    trajectory = _build_trajectory(candidate)
+    return EvolutionCounterfactualV2(
+        intervention=intervention,
+        status="valid",
+        trajectory=trajectory,
+        first_divergence=_first_divergence(baseline, trajectory),
+        rejection_stage=None,
+        rejection_reason=None,
+        rejection_logical_time=None,
+    )
+
+
+def _remove_reception_counterfactuals(
+    story: NarrativeScenarioV2,
+    baseline: EvolutionTrajectoryV2,
+) -> tuple[EvolutionCounterfactualV2, ...]:
+    target = story.decision.object
+    actor = story.decision.actor
+    results: list[EvolutionCounterfactualV2] = []
+    for report in story.reports:
+        if report.object != target:
+            continue
+        if not any(
+            reception.report == report.id and reception.recipient == actor
+            for reception in story.receptions
+        ):
+            continue
+        intervention = EvolutionInterventionV2(
+            kind="remove_reception",
+            subject_id=report.id,
+            agent=actor,
+            from_value="received",
+            to_value=None,
+            logical_time=report.logical_time,
+        )
+        candidate = NarrativeScenarioV2(
+            entities=story.entities,
+            events=story.events,
+            observations=story.observations,
+            reports=story.reports,
+            receptions=tuple(
+                reception
+                for reception in story.receptions
+                if not (
+                    reception.report == report.id
+                    and reception.recipient == actor
+                )
+            ),
+            decision=story.decision,
+        )
+        results.append(_valid_counterfactual(baseline, intervention, candidate))
+    return tuple(results)
+
+
+def _change_report_content_counterfactuals(
+    story: NarrativeScenarioV2,
+    baseline: EvolutionTrajectoryV2,
+) -> tuple[EvolutionCounterfactualV2, ...]:
+    target = story.decision.object
+    results: list[EvolutionCounterfactualV2] = []
+    for report in story.reports:
+        if report.object != target:
+            continue
+        for action in story.decision.actions:
+            alternate_location = action.location
+            if alternate_location == report.location:
+                continue
+            intervention = EvolutionInterventionV2(
+                kind="change_report_content",
+                subject_id=report.id,
+                agent=report.speaker,
+                from_value=report.location,
+                to_value=alternate_location,
+                logical_time=report.logical_time,
+            )
+            candidate = NarrativeScenarioV2(
+                entities=story.entities,
+                events=story.events,
+                observations=story.observations,
+                reports=tuple(
+                    replace(item, location=alternate_location)
+                    if item.id == report.id
+                    else item
+                    for item in story.reports
+                ),
+                receptions=story.receptions,
+                decision=story.decision,
+            )
+            results.append(
+                _valid_counterfactual(baseline, intervention, candidate)
+            )
+    return tuple(results)
+
+
+def _counterfactual_sort_key(
+    item: EvolutionCounterfactualV2,
+) -> tuple[str, int, str, str, str]:
+    intervention = item.intervention
+    return (
+        intervention.kind,
+        -1 if intervention.logical_time is None else intervention.logical_time,
+        intervention.subject_id,
+        "" if intervention.to_value is None else intervention.to_value,
+        "" if intervention.agent is None else intervention.agent,
+    )
+
+
 def analyze_testimony_evolution(
     story: NarrativeScenarioV2,
 ) -> EvolutionAnalysisV2:
@@ -357,7 +526,12 @@ def analyze_testimony_evolution(
         raise TypeError(
             "evolution analysis requires a validated NarrativeScenarioV2"
         )
+    baseline = _build_trajectory(story)
+    counterfactuals = (
+        _change_report_content_counterfactuals(story, baseline)
+        + _remove_reception_counterfactuals(story, baseline)
+    )
     return EvolutionAnalysisV2(
-        baseline=_build_trajectory(story),
-        counterfactuals=(),
+        baseline=baseline,
+        counterfactuals=tuple(sorted(counterfactuals, key=_counterfactual_sort_key)),
     )
