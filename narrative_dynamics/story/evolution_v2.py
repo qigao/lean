@@ -407,12 +407,45 @@ def _first_divergence(
     return None
 
 
-def _valid_counterfactual(
+def _rejected_counterfactual(
+    intervention: EvolutionInterventionV2,
+    stage: str,
+    error: ValueError,
+) -> EvolutionCounterfactualV2:
+    return EvolutionCounterfactualV2(
+        intervention=intervention,
+        status="rejected",
+        trajectory=None,
+        first_divergence=None,
+        rejection_stage=stage,
+        rejection_reason=str(error),
+        rejection_logical_time=intervention.logical_time,
+    )
+
+
+def _evaluate_candidate(
     baseline: EvolutionTrajectoryV2,
     intervention: EvolutionInterventionV2,
-    candidate: NarrativeScenarioV2,
+    build_story: Callable[[], NarrativeScenarioV2],
 ) -> EvolutionCounterfactualV2:
-    trajectory = _build_trajectory(candidate)
+    try:
+        candidate = build_story()
+    except ValueError as error:
+        return _rejected_counterfactual(
+            intervention,
+            "scenario_validation",
+            error,
+        )
+
+    try:
+        trajectory = _build_trajectory(candidate)
+    except ValueError as error:
+        return _rejected_counterfactual(
+            intervention,
+            "action_resolution",
+            error,
+        )
+
     return EvolutionCounterfactualV2(
         intervention=intervention,
         status="valid",
@@ -447,22 +480,28 @@ def _remove_reception_counterfactuals(
             to_value=None,
             logical_time=report.logical_time,
         )
-        candidate = NarrativeScenarioV2(
-            entities=story.entities,
-            events=story.events,
-            observations=story.observations,
-            reports=story.reports,
-            receptions=tuple(
-                reception
-                for reception in story.receptions
-                if not (
-                    reception.report == report.id
-                    and reception.recipient == actor
-                )
-            ),
-            decision=story.decision,
+        receptions = tuple(
+            reception
+            for reception in story.receptions
+            if not (
+                reception.report == report.id
+                and reception.recipient == actor
+            )
         )
-        results.append(_valid_counterfactual(baseline, intervention, candidate))
+        results.append(
+            _evaluate_candidate(
+                baseline,
+                intervention,
+                lambda receptions=receptions: NarrativeScenarioV2(
+                    entities=story.entities,
+                    events=story.events,
+                    observations=story.observations,
+                    reports=story.reports,
+                    receptions=receptions,
+                    decision=story.decision,
+                ),
+            )
+        )
     return tuple(results)
 
 
@@ -487,22 +526,112 @@ def _change_report_content_counterfactuals(
                 to_value=alternate_location,
                 logical_time=report.logical_time,
             )
-            candidate = NarrativeScenarioV2(
-                entities=story.entities,
-                events=story.events,
-                observations=story.observations,
-                reports=tuple(
-                    replace(item, location=alternate_location)
-                    if item.id == report.id
-                    else item
-                    for item in story.reports
-                ),
-                receptions=story.receptions,
-                decision=story.decision,
+            reports = tuple(
+                replace(item, location=alternate_location)
+                if item.id == report.id
+                else item
+                for item in story.reports
             )
             results.append(
-                _valid_counterfactual(baseline, intervention, candidate)
+                _evaluate_candidate(
+                    baseline,
+                    intervention,
+                    lambda reports=reports: NarrativeScenarioV2(
+                        entities=story.entities,
+                        events=story.events,
+                        observations=story.observations,
+                        reports=reports,
+                        receptions=story.receptions,
+                        decision=story.decision,
+                    ),
+                )
             )
+    return tuple(results)
+
+
+def _remove_direct_observation_counterfactuals(
+    story: NarrativeScenarioV2,
+    baseline: EvolutionTrajectoryV2,
+) -> tuple[EvolutionCounterfactualV2, ...]:
+    target = story.decision.object
+    actor = story.decision.actor
+    event_by_id = {event.id: event for event in story.events}
+    results: list[EvolutionCounterfactualV2] = []
+    for observation in story.observations:
+        event = event_by_id[observation.event]
+        if observation.agent != actor or event.object != target:
+            continue
+        intervention = EvolutionInterventionV2(
+            kind="remove_direct_observation",
+            subject_id=event.id,
+            agent=actor,
+            from_value="observed",
+            to_value=None,
+            logical_time=event.logical_time,
+        )
+        observations = tuple(
+            item
+            for item in story.observations
+            if not (item.event == event.id and item.agent == actor)
+        )
+        results.append(
+            _evaluate_candidate(
+                baseline,
+                intervention,
+                lambda observations=observations: NarrativeScenarioV2(
+                    entities=story.entities,
+                    events=story.events,
+                    observations=observations,
+                    reports=story.reports,
+                    receptions=story.receptions,
+                    decision=story.decision,
+                ),
+            )
+        )
+    return tuple(results)
+
+
+def _remove_support_observation_counterfactuals(
+    story: NarrativeScenarioV2,
+    baseline: EvolutionTrajectoryV2,
+) -> tuple[EvolutionCounterfactualV2, ...]:
+    target = story.decision.object
+    event_by_id = {event.id: event for event in story.events}
+    results: list[EvolutionCounterfactualV2] = []
+    for report in story.reports:
+        if report.object != target:
+            continue
+        support = event_by_id[report.support_event]
+        intervention = EvolutionInterventionV2(
+            kind="remove_support_observation",
+            subject_id=report.id,
+            agent=report.speaker,
+            from_value=report.support_event,
+            to_value=None,
+            logical_time=support.logical_time,
+        )
+        observations = tuple(
+            item
+            for item in story.observations
+            if not (
+                item.event == report.support_event
+                and item.agent == report.speaker
+            )
+        )
+        results.append(
+            _evaluate_candidate(
+                baseline,
+                intervention,
+                lambda observations=observations: NarrativeScenarioV2(
+                    entities=story.entities,
+                    events=story.events,
+                    observations=observations,
+                    reports=story.reports,
+                    receptions=story.receptions,
+                    decision=story.decision,
+                ),
+            )
+        )
     return tuple(results)
 
 
@@ -529,7 +658,9 @@ def analyze_testimony_evolution(
     baseline = _build_trajectory(story)
     counterfactuals = (
         _change_report_content_counterfactuals(story, baseline)
+        + _remove_direct_observation_counterfactuals(story, baseline)
         + _remove_reception_counterfactuals(story, baseline)
+        + _remove_support_observation_counterfactuals(story, baseline)
     )
     return EvolutionAnalysisV2(
         baseline=baseline,
