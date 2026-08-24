@@ -48,6 +48,15 @@ _V2_EXPORTS = {
     "latest_epistemic_location",
 }
 
+_V3_EXPORTS = {
+    "EvolutionSnapshotV2",
+    "EvolutionTrajectoryV2",
+    "EvolutionInterventionV2",
+    "EvolutionCounterfactualV2",
+    "EvolutionAnalysisV2",
+    "analyze_testimony_evolution",
+}
+
 
 class TestimonyRuntimeTests(unittest.TestCase):
     def test_testimony_model_runs_through_simulation_runner(self):
@@ -100,15 +109,22 @@ class TestimonyRuntimeTests(unittest.TestCase):
         self.assertEqual(a.outcome, b.outcome)
         self.assertNotEqual(a.seed, b.seed)
 
-    def test_story_package_exports_exact_v1_plus_v2_canonical_surface(self):
-        expected = _V1_EXPORTS | _V2_EXPORTS
+    def test_story_package_exports_exact_v1_plus_v2_plus_v3_canonical_surface(self):
+        expected = _V1_EXPORTS | _V2_EXPORTS | _V3_EXPORTS
         self.assertEqual(set(getattr(story, "__all__", ())), expected)
         for name in expected:
             self.assertTrue(hasattr(story, name), name)
 
-    def test_v2_surface_and_model_do_not_leak_to_package_root(self):
-        for name in _V2_EXPORTS:
+    def test_v2_v3_surface_and_model_do_not_leak_to_package_root(self):
+        for name in _V2_EXPORTS | _V3_EXPORTS:
             self.assertFalse(hasattr(narrative_dynamics, name), name)
+
+        for name in (
+            "resolve_testimony_action",
+            "_EvolutionAgentStateV2",
+            "_EvolutionDivergenceV2",
+        ):
+            self.assertNotIn(name, getattr(story, "__all__", ()))
 
         self.assertFalse(hasattr(story, "TestimonySearchModel"))
         self.assertFalse(hasattr(narrative_dynamics, "TestimonySearchModel"))
