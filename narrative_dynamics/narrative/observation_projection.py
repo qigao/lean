@@ -1,25 +1,41 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 import re
+from types import MappingProxyType
 
 from narrative_dynamics.attestation import (
     ImplementationAttestationUnavailable,
     measure_implementation,
 )
 from narrative_dynamics.contracts import stable_content_hash
-from narrative_dynamics.narrative.domain import DomainSpec, validate_narrative
+from narrative_dynamics.narrative.domain import (
+    DomainSpec,
+    StateDelta,
+    StateDeltaOp,
+    validate_narrative,
+)
 from narrative_dynamics.narrative.ir import (
+    ActionOption,
+    Entity,
+    EntityRef,
     GenericNarrative,
     StateCellRef,
     TypedValue,
 )
-from narrative_dynamics.narrative.world import WorldStepResult
+from narrative_dynamics.narrative.world import (
+    ActionIntent,
+    ActionTransitionRecord,
+    WorldState,
+    WorldStepResult,
+)
 
 
 _HASH = re.compile(r"^sha256:[0-9a-f]{64}$")
 _SCOPES = frozenset({"observer", "any"})
 _RELATIONS = frozenset({"equals", "clear"})
+_FACT_STAGE_ERROR = "fact truth acceptance is unavailable in this stage"
 
 
 class ObservationProjectionError(ValueError):
@@ -135,21 +151,13 @@ class ObserverProjectionSpec:
             raise ValueError("projection read capabilities must be non-empty")
         if not emits:
             raise ValueError("projection emit capabilities must be non-empty")
-        if any(
-            not isinstance(item, ObservationCapabilitySpec)
-            for item in reads
-        ):
+        if any(not isinstance(item, ObservationCapabilitySpec) for item in reads):
             raise TypeError(
-                "projection read capabilities must contain "
-                "ObservationCapabilitySpec values"
+                "projection read capabilities must contain ObservationCapabilitySpec values"
             )
-        if any(
-            not isinstance(item, ObservationCapabilitySpec)
-            for item in emits
-        ):
+        if any(not isinstance(item, ObservationCapabilitySpec) for item in emits):
             raise TypeError(
-                "projection emit capabilities must contain "
-                "ObservationCapabilitySpec values"
+                "projection emit capabilities must contain ObservationCapabilitySpec values"
             )
         read_keys = tuple(_capability_key(item) for item in reads)
         emit_keys = tuple(_capability_key(item) for item in emits)
@@ -204,32 +212,21 @@ class ObservationFact:
     def __post_init__(self) -> None:
         if not isinstance(self.cell, StateCellRef):
             raise TypeError("observation fact cell must be a StateCellRef")
-        relation = _text(
-            self.relation,
-            label="observation fact relation",
-        )
+        relation = _text(self.relation, label="observation fact relation")
         if relation not in _RELATIONS:
-            raise ValueError(
-                "observation fact relation must be equals or clear"
-            )
+            raise ValueError("observation fact relation must be equals or clear")
         object.__setattr__(self, "relation", relation)
         if relation == "equals":
             if not isinstance(self.value, TypedValue):
-                raise TypeError(
-                    "equals observation fact requires a TypedValue"
-                )
+                raise TypeError("equals observation fact requires a TypedValue")
         elif self.value is not None:
-            raise ValueError(
-                "clear observation fact cannot contain a value"
-            )
+            raise ValueError("clear observation fact cannot contain a value")
 
     def to_dict(self) -> dict[str, object]:
         return {
             "cell": self.cell.to_dict(),
             "relation": self.relation,
-            "value": (
-                None if self.value is None else self.value.to_dict()
-            ),
+            "value": None if self.value is None else self.value.to_dict(),
         }
 
     @property
@@ -291,22 +288,18 @@ class ProjectedObservation:
             raise TypeError(
                 "projected observation source transition hashes must be a tuple"
             )
-        transition_hashes = tuple(
+        hashes = tuple(
             _hash(
                 item,
                 label="projected observation source transition hash",
             )
             for item in self.source_transition_hashes
         )
-        if len(set(transition_hashes)) != len(transition_hashes):
+        if len(set(hashes)) != len(hashes):
             raise ValueError(
                 "projected observation source transition hashes must be unique"
             )
-        object.__setattr__(
-            self,
-            "source_transition_hashes",
-            tuple(sorted(transition_hashes)),
-        )
+        object.__setattr__(self, "source_transition_hashes", tuple(sorted(hashes)))
         object.__setattr__(
             self,
             "projection_spec_hash",
@@ -324,9 +317,7 @@ class ProjectedObservation:
             "step_index": self.step_index,
             "source_world_state_hash": self.source_world_state_hash,
             "source_world_step_hash": self.source_world_step_hash,
-            "source_transition_hashes": list(
-                self.source_transition_hashes
-            ),
+            "source_transition_hashes": list(self.source_transition_hashes),
             "projection_spec_hash": self.projection_spec_hash,
         }
 
@@ -387,10 +378,7 @@ class ObservationProjectionModelSpec:
                 "observation projection model projections must be a tuple"
             )
         projections = tuple(self.projections)
-        if any(
-            not isinstance(item, ObserverProjectionSpec)
-            for item in projections
-        ):
+        if any(not isinstance(item, ObserverProjectionSpec) for item in projections):
             raise TypeError(
                 "observation projection model projections must contain "
                 "ObserverProjectionSpec values"
@@ -413,9 +401,7 @@ class ObservationProjectionModelSpec:
             "domain_id": self.domain_id,
             "domain_version": self.domain_version,
             "domain_spec_hash": self.domain_spec_hash,
-            "projections": [
-                item.to_dict() for item in self.projections
-            ],
+            "projections": [item.to_dict() for item in self.projections],
         }
 
     @property
@@ -454,10 +440,7 @@ class ObservationProjectionResult:
         object.__setattr__(
             self,
             "model_hash",
-            _hash(
-                self.model_hash,
-                label="observation projection result model hash",
-            ),
+            _hash(self.model_hash, label="observation projection result model hash"),
         )
         object.__setattr__(
             self,
@@ -488,10 +471,7 @@ class ObservationProjectionResult:
                 "observation projection result observations must be a tuple"
             )
         observations = tuple(self.observations)
-        if any(
-            not isinstance(item, ProjectedObservation)
-            for item in observations
-        ):
+        if any(not isinstance(item, ProjectedObservation) for item in observations):
             raise TypeError(
                 "observation projection result observations must contain "
                 "ProjectedObservation values"
@@ -524,9 +504,7 @@ class ObservationProjectionResult:
             "source_world_step_hash": self.source_world_step_hash,
             "source_world_state_hash": self.source_world_state_hash,
             "step_index": self.step_index,
-            "observations": [
-                item.to_dict() for item in self.observations
-            ],
+            "observations": [item.to_dict() for item in self.observations],
         }
 
     @property
@@ -552,12 +530,86 @@ def _model_hash(model: ObservationProjectionModelSpec) -> str:
         ) from error
 
 
-def _validate_blackout_source(
+def _record_key(
+    record: ActionTransitionRecord,
+) -> tuple[str, str, str]:
+    return (
+        record.actor_id,
+        record.intent.decision_id,
+        record.action.id,
+    )
+
+
+def _batch_hash(
+    records: tuple[ActionTransitionRecord, ...],
+) -> str:
+    return stable_content_hash(
+        [record.to_dict() for record in sorted(records, key=_record_key)]
+    )
+
+
+def _validate_state_values(
+    state: WorldState,
+    domain: DomainSpec,
+    entities: Mapping[str, Entity],
+    *,
+    label: str,
+) -> None:
+    if not isinstance(state, WorldState):
+        raise TypeError(f"{label} world state must be WorldState")
+    if not isinstance(state.values, Mapping):
+        raise TypeError(f"{label} world values must be a mapping")
+    for cell, value in state.values.items():
+        if not isinstance(cell, StateCellRef):
+            raise TypeError(f"{label} world cell must be StateCellRef")
+        if not isinstance(value, TypedValue):
+            raise TypeError(f"{label} world value must be TypedValue")
+        subject = entities.get(cell.subject.entity_id)
+        if subject is None or subject.type_name != cell.subject.entity_type:
+            raise ValueError(f"{label} world cell subject is not canonical")
+        variable = domain._state_variable(cell.state_variable)
+        if variable.subject_type != subject.type_name:
+            raise ValueError(f"{label} world cell subject type mismatch")
+        domain._value_type(variable.value_type).validate(value, entities)
+
+
+def _resolve_canonical_action(
+    story: GenericNarrative,
+    record: ActionTransitionRecord,
+) -> tuple[object, ActionOption]:
+    decision = next(
+        (
+            item
+            for item in story.decisions
+            if item.id == record.intent.decision_id
+        ),
+        None,
+    )
+    if decision is None:
+        raise ValueError("transition intent decision is not canonical")
+    action = next(
+        (
+            item
+            for item in decision.actions
+            if item.id == record.intent.selected_action
+        ),
+        None,
+    )
+    if action is None:
+        raise ValueError("transition intent action is not canonical")
+    if record.actor_id != decision.actor_id:
+        raise ValueError("transition actor does not match canonical decision")
+    if record.action is not action:
+        raise ValueError("transition action is not the canonical selected action")
+    return decision, action
+
+
+def _validate_source_world_step(
     story: GenericNarrative,
     domain: DomainSpec,
     world_step: WorldStepResult,
     model: ObservationProjectionModelSpec,
-) -> None:
+) -> dict[str, Entity]:
     if not isinstance(story, GenericNarrative):
         raise TypeError("observation projection requires GenericNarrative")
     if not isinstance(domain, DomainSpec):
@@ -612,6 +664,214 @@ def _validate_blackout_source(
             "observation projection next world state must bind exact prior state"
         )
 
+    entities = {entity.id: entity for entity in story.entities}
+    _validate_state_values(prior, domain, entities, label="prior")
+    _validate_state_values(next_state, domain, entities, label="next")
+
+    if not isinstance(world_step.transitions, tuple) or not world_step.transitions:
+        raise ValueError("observation projection world step requires transitions")
+    records = tuple(world_step.transitions)
+    if any(not isinstance(record, ActionTransitionRecord) for record in records):
+        raise TypeError(
+            "observation projection transitions must be ActionTransitionRecord values"
+        )
+
+    actors: set[str] = set()
+    written: set[StateCellRef] = set()
+    replayed = dict(prior.values)
+    prior_hash = prior.content_hash
+
+    for record in records:
+        if not isinstance(record.intent, ActionIntent):
+            raise TypeError("transition record intent must be ActionIntent")
+        if record.prior_state_hash != prior_hash:
+            raise ValueError("transition record does not bind exact prior state")
+
+        decision, _ = _resolve_canonical_action(story, record)
+        if (
+            prior.source_at_time is not None
+            and decision.logical_time > prior.source_at_time
+        ):
+            raise ValueError("transition decision occurs after source cutoff")
+        if record.actor_id in actors:
+            raise ValueError("one actor may appear at most once per world step")
+        actors.add(record.actor_id)
+
+        if not isinstance(record.delta, StateDelta):
+            raise TypeError("transition delta must be StateDelta")
+        if not isinstance(record.delta.operations, tuple):
+            raise TypeError("transition delta operations must be a tuple")
+        local_written: set[StateCellRef] = set()
+        for operation in record.delta.operations:
+            if not isinstance(operation, StateDeltaOp):
+                raise TypeError("transition delta operation must be StateDeltaOp")
+            subject = entities.get(operation.subject_id)
+            if subject is None:
+                raise ValueError("transition delta subject is not canonical")
+            variable = domain._state_variable(operation.state_variable)
+            if variable.subject_type != subject.type_name:
+                raise ValueError("transition delta subject type mismatch")
+            cell = StateCellRef(
+                EntityRef(subject.id, subject.type_name),
+                variable.name,
+            )
+            if cell in local_written:
+                raise ValueError("one transition cannot write one cell twice")
+            if cell in written:
+                raise ValueError("world transition records cannot overlap writes")
+            local_written.add(cell)
+            written.add(cell)
+
+            if operation.kind == "clear":
+                if operation.value is not None:
+                    raise ValueError("clear transition delta cannot contain a value")
+                replayed.pop(cell, None)
+            elif operation.kind == "set":
+                if operation.value is None:
+                    raise ValueError("set transition delta requires a value")
+                domain._value_type(variable.value_type).validate(
+                    operation.value,
+                    entities,
+                )
+                replayed[cell] = operation.value
+            else:
+                raise ValueError("transition delta operation kind is unsupported")
+
+    if replayed != dict(next_state.values):
+        raise ValueError(
+            "next world state is not the extensional result of transition deltas"
+        )
+    if next_state.transition_batch_hash != _batch_hash(records):
+        raise ValueError(
+            "next world state does not bind exact transition batch identity"
+        )
+    return entities
+
+
+def _validate_projection_declarations(
+    domain: DomainSpec,
+    model: ObservationProjectionModelSpec,
+) -> dict[tuple[str, str], str]:
+    hashes: dict[tuple[str, str], str] = {}
+    for spec in model.projections:
+        domain._entity_type(spec.observer_type)
+        for capability in (
+            spec.read_capabilities + spec.emit_capabilities
+        ):
+            variable = domain._state_variable(capability.state_variable)
+            if (
+                capability.subject_scope == "observer"
+                and variable.subject_type != spec.observer_type
+            ):
+                raise ValueError(
+                    "observer-scoped capability state subject type "
+                    "must match observer type"
+                )
+        hashes[_projection_key(spec)] = _projection_hash(spec)
+    return hashes
+
+
+def _can_read(
+    capability: ObservationCapabilitySpec,
+    cell: StateCellRef,
+    observer: Entity,
+) -> bool:
+    if capability.state_variable != cell.state_variable:
+        return False
+    return (
+        capability.subject_scope == "any"
+        or cell.subject.entity_id == observer.id
+    )
+
+
+def _visible_values(
+    values: Mapping[StateCellRef, TypedValue],
+    capabilities: tuple[ObservationCapabilitySpec, ...],
+    observer: Entity,
+) -> Mapping[StateCellRef, TypedValue]:
+    visible = {
+        cell: value
+        for cell, value in values.items()
+        if any(
+            _can_read(capability, cell, observer)
+            for capability in capabilities
+        )
+    }
+    return MappingProxyType(
+        dict(sorted(visible.items(), key=lambda item: _cell_key(item[0])))
+    )
+
+
+def _emit_covers(
+    capability: ObservationCapabilitySpec,
+    cell: StateCellRef,
+    observer: Entity,
+) -> bool:
+    if capability.state_variable != cell.state_variable:
+        return False
+    return (
+        capability.subject_scope == "any"
+        or cell.subject.entity_id == observer.id
+    )
+
+
+def _hook_facts(
+    spec: ObserverProjectionSpec,
+    prior_visible: Mapping[StateCellRef, TypedValue],
+    next_visible: Mapping[StateCellRef, TypedValue],
+    observer: Entity,
+    step_index: int,
+) -> tuple[ObservationFact, ...]:
+    try:
+        raw = spec.projection_hook(
+            prior_visible,
+            next_visible,
+            observer,
+            step_index,
+        )
+    except Exception as error:
+        raise ObservationProjectionError(
+            "observation projection hook execution failed"
+        ) from error
+    if type(raw) is not tuple:
+        raise ObservationProjectionError(
+            "observation projection hook must return an exact tuple"
+        )
+    if any(not isinstance(fact, ObservationFact) for fact in raw):
+        raise ObservationProjectionError(
+            "observation projection hook tuple must contain ObservationFact values"
+        )
+    cells = tuple(fact.cell for fact in raw)
+    if len(set(cells)) != len(cells):
+        raise ObservationProjectionError(
+            "observation projection hook cannot emit one cell twice"
+        )
+    return raw
+
+
+def _validate_fact_cell_shape(
+    fact: ObservationFact,
+    domain: DomainSpec,
+    entities: Mapping[str, Entity],
+) -> None:
+    subject = entities.get(fact.cell.subject.entity_id)
+    if (
+        subject is None
+        or subject.type_name != fact.cell.subject.entity_type
+    ):
+        raise ValueError("observation fact subject is not canonical")
+    variable = domain._state_variable(fact.cell.state_variable)
+    if variable.subject_type != subject.type_name:
+        raise ValueError("observation fact subject type mismatch")
+
+
+def _accept_facts(
+    facts: tuple[ObservationFact, ...],
+) -> tuple[ProjectedObservation, ...]:
+    if facts:
+        raise ObservationProjectionError(_FACT_STAGE_ERROR)
+    return ()
+
 
 def project_world_observations(
     story: GenericNarrative,
@@ -622,18 +882,64 @@ def project_world_observations(
     """Project one validated world step into runtime observations."""
 
     try:
-        _validate_blackout_source(story, domain, world_step, model)
-        if model.projections:
-            raise ObservationProjectionError(
-                "non-empty projection execution is unavailable in this stage"
+        entities = _validate_source_world_step(
+            story,
+            domain,
+            world_step,
+            model,
+        )
+        model_hash = _model_hash(model)
+        spec_hashes = _validate_projection_declarations(domain, model)
+
+        observations: list[ProjectedObservation] = []
+        for spec in sorted(model.projections, key=_projection_key):
+            spec_hash = spec_hashes[_projection_key(spec)]
+            observers = tuple(
+                sorted(
+                    (
+                        entity
+                        for entity in story.entities
+                        if entity.type_name == spec.observer_type
+                    ),
+                    key=lambda entity: entity.id,
+                )
             )
+            for observer in observers:
+                prior_visible = _visible_values(
+                    world_step.prior_state.values,
+                    spec.read_capabilities,
+                    observer,
+                )
+                next_visible = _visible_values(
+                    world_step.next_state.values,
+                    spec.read_capabilities,
+                    observer,
+                )
+                facts = _hook_facts(
+                    spec,
+                    prior_visible,
+                    next_visible,
+                    observer,
+                    world_step.next_state.step_index,
+                )
+                for fact in facts:
+                    if not any(
+                        _emit_covers(capability, fact.cell, observer)
+                        for capability in spec.emit_capabilities
+                    ):
+                        raise ObservationProjectionError(
+                            "observation fact is outside emit capability"
+                        )
+                    _validate_fact_cell_shape(fact, domain, entities)
+                observations.extend(_accept_facts(facts))
+
         return ObservationProjectionResult(
             model_id=model.model_id,
-            model_hash=_model_hash(model),
+            model_hash=model_hash,
             source_world_step_hash=world_step.content_hash,
             source_world_state_hash=world_step.next_state.content_hash,
             step_index=world_step.next_state.step_index,
-            observations=(),
+            observations=tuple(observations),
         )
     except ObservationProjectionError:
         raise
