@@ -99,6 +99,17 @@ from narrative_dynamics.narrative.trust import (
     TrustedDomainPin,
     TrustedDomainPolicy,
 )
+from narrative_dynamics.narrative.uncertain import (
+    BeliefDistribution,
+    BeliefLikelihood,
+    BeliefMass,
+    BeliefUpdateStep,
+    UncertainBeliefCellView,
+    UncertainBeliefModelSpec,
+    UncertainBeliefResolutionError,
+    UncertainBeliefState,
+    uncertain_epistemic_state,
+)
 
 
 __all__ = (
@@ -134,6 +145,15 @@ __all__ = (
     "objective_state",
     "direct_state",
     "epistemic_state",
+    "BeliefMass",
+    "BeliefLikelihood",
+    "BeliefDistribution",
+    "BeliefUpdateStep",
+    "UncertainBeliefCellView",
+    "UncertainBeliefState",
+    "UncertainBeliefModelSpec",
+    "UncertainBeliefResolutionError",
+    "uncertain_epistemic_state",
     "EvidenceAccess",
     "DecisionCellView",
     "DecisionContext",
