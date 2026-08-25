@@ -45,26 +45,28 @@ def _health_hashes() -> dict[str, str]:
     }
 
 
-def _prior_hook(agent_id, cell, hypotheses, parameters):
-    del agent_id, cell
-    configured = parameters["prior"]
-    return {_value_hash(h): float(configured[h.value]) for h in hypotheses}
+class _PriorHook:
+    def __call__(self, agent_id, cell, hypotheses, parameters):
+        del agent_id, cell
+        configured = parameters["prior"]
+        return {_value_hash(h): float(configured[h.value]) for h in hypotheses}
 
 
-def _likelihood_hook(agent_id, evidence, hypotheses, parameters):
-    del agent_id
-    strength = float(parameters["strength"])
-    if evidence.relation == "clear" or evidence.value is None:
-        return {_value_hash(h): 1.0 for h in hypotheses}
-    if evidence.relation == "equals":
+class _LikelihoodHook:
+    def __call__(self, agent_id, evidence, hypotheses, parameters):
+        del agent_id
+        strength = float(parameters["strength"])
+        if evidence.relation == "clear" or evidence.value is None:
+            return {_value_hash(h): 1.0 for h in hypotheses}
+        if evidence.relation == "equals":
+            return {
+                _value_hash(h): strength if h == evidence.value else (1.0 - strength)
+                for h in hypotheses
+            }
         return {
-            _value_hash(h): strength if h == evidence.value else (1.0 - strength)
+            _value_hash(h): (1.0 - strength) if h == evidence.value else strength
             for h in hypotheses
         }
-    return {
-        _value_hash(h): (1.0 - strength) if h == evidence.value else strength
-        for h in hypotheses
-    }
 
 
 def _belief_model(
@@ -81,8 +83,8 @@ def _belief_model(
             or {"failed": 0.50, "healthy": 0.25, "recovered": 0.25},
             "strength": strength,
         },
-        prior_hook=_prior_hook,
-        likelihood_hook=_likelihood_hook,
+        prior_hook=_PriorHook(),
+        likelihood_hook=_LikelihoodHook(),
     )
 
 
