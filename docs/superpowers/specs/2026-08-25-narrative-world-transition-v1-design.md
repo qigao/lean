@@ -9,14 +9,14 @@ This design adds the first narrative-native execution layer in which selected ac
 ```text
 canonical narrative + current world state
     -> selected action intents
-    -> per-action state deltas from one shared snapshot
-    -> conflict validation
+    -> per-action deltas from one shared snapshot
+    -> capability/type/conflict validation
     -> atomic next world state
 ```
 
-Implementation is intentionally not part of this design commit. The first implementation step after review is a written implementation plan followed by test-only RED.
+Implementation is intentionally not part of this design commit. After written-spec review, the next step is an implementation plan followed by test-only RED.
 
-Base research branch at design start:
+Design base:
 
 ```text
 proof/narrative-dynamics-v0
@@ -25,7 +25,7 @@ fa4df6c7607130f7b5364b0e02ef9ce1dcee16ec
 
 ## Problem
 
-The Generic Narrative Engine now has a complete one-decision cognitive chain:
+The engine now has a complete one-decision cognitive chain:
 
 ```text
 admitted evidence
@@ -35,7 +35,7 @@ admitted evidence
     -> observable action policy / selected action
 ```
 
-It also already has a typed authored-world transition system:
+It also already has a typed authored-world transition path:
 
 ```text
 NarrativeEvent
@@ -44,250 +44,156 @@ NarrativeEvent
     -> objective_state(...)
 ```
 
-However, these two capabilities are still disconnected. A selected `ActionOption` is currently an explanatory output only. It does not itself update objective world state.
+These capabilities are still disconnected. A selected `ActionOption` is an explanatory output; it does not itself update objective world state.
 
-As a result, the engine can explain why an agent chose an action but cannot yet execute multiple chosen actions against one shared state and produce the next state of the world. This blocks the next research layer:
-
-```text
-X_t
-    -> agent decisions/actions
-    -> X_t+1
-    -> later observations/beliefs/decisions
-```
-
-Narrative World Transition V1 closes only the first missing edge:
+World Transition V1 closes only this edge:
 
 ```text
 (A_1,t, ..., A_N,t, X_t) -> X_t+1
 ```
 
-It does not yet generate observations or schedule another cognitive round.
+It does not yet generate observations, update beliefs, or schedule another cognitive round.
 
-## Scientific and simulation goal
+## Scientific semantics
 
-V1 defines an explicit simultaneous-action transition semantics for a finite multi-agent world.
-
-For one world step with current state `X_t` and resolved action intents `a_1, ..., a_N`, each action transition is evaluated against the same immutable prior snapshot:
+For one world step with current state `X_t` and resolved actions `a_1, ..., a_N`, every transition is evaluated against the same immutable prior snapshot:
 
 ```text
 Delta_i = T_i(X_t, a_i)
 ```
 
-All deltas are validated before any write becomes visible. If their actual write sets are pairwise disjoint, they are committed atomically:
+No delta becomes visible while another hook is running.
+
+After all deltas pass validation, V1 computes their actual write sets. If those sets are pairwise disjoint, the deltas are committed atomically:
 
 ```text
 X_t+1 = commit(X_t, Delta_1, ..., Delta_N)
 ```
 
-If two deltas write the same state cell, V1 rejects the whole step with a typed conflict instead of inventing an implicit priority or execution order.
+If two deltas write the same `StateCellRef`, the entire step fails with a typed conflict, even if the writers propose the same value.
 
-This is deliberately a simulation mechanism, not a claim that simultaneous action is always the correct model of social interaction. Later model families may implement explicit ordering, bargaining, combat resolution, auctions, resource contention, or stochastic environment dynamics as separately testable mechanisms.
+V1 therefore models simultaneous action explicitly. It does not silently introduce actor priority, last-writer-wins, or sequential order.
+
+This is one falsifiable simulation mechanism, not a claim that simultaneous action is universally correct. Later models may add explicit ordering, bargaining, combat resolution, auctions, resource contention, or stochastic environment dynamics.
 
 ## Design goals
 
-Narrative World Transition V1 must:
+V1 must:
 
-1. reuse the existing `StateDelta` / `StateDeltaOp` representation rather than introduce a second state-mutation language;
-2. seed an explicit immutable `WorldState` from the existing `objective_state()` replay path;
-3. keep `GenericNarrative`, `DomainSpec`, `ActionTypeSpec`, authored event semantics, and their content hashes unchanged;
-4. bind the world-transition model to one exact `DomainSpec` identity by domain ID, version, and content hash;
-5. resolve the real actor and `ActionOption` from the canonical `Decision` in the narrative rather than trust caller-supplied actor/action payloads;
-6. allow action-transition hooks to read exactly one immutable prior world snapshot;
-7. declare an explicit capability boundary describing which state cells an action transition may write;
-8. validate every returned `StateDelta` against the canonical domain types and declared effect capability;
-9. evaluate every action transition before applying any delta;
-10. reject overlapping actual write sets with `WorldTransitionConflictError`, even when two writers propose the same value;
-11. make successful non-conflicting steps invariant to input-intent ordering;
-12. reject duplicate actors within one step so one actor contributes at most one action intent in V1;
-13. preserve action-selection provenance through stable content hashes without coupling world execution to one particular decision-model family;
-14. preserve exact parent-state and transition-batch lineage in the resulting world step artifact;
-15. export the new API only from `narrative_dynamics.narrative`; the top-level `narrative_dynamics` package remains unchanged;
-16. keep existing deterministic decision, uncertain belief, intentional decision, replay, intervention, movie conformance, and Lean behavior unchanged.
+1. reuse existing `StateDelta` / `StateDeltaOp` instead of inventing another mutation language;
+2. seed immutable `WorldState` from existing `objective_state()` replay;
+3. leave `GenericNarrative`, `DomainSpec`, `ActionTypeSpec`, authored event semantics, and their identities unchanged;
+4. bind each world-transition model to one exact domain ID/version/content hash;
+5. re-resolve actor and action payload from canonical `Decision` / `ActionOption` rather than trust caller-supplied duplicates;
+6. validate a supplied `WorldState` against the canonical story/domain before any transition hook runs;
+7. give every transition hook exactly one immutable prior world snapshot;
+8. declare an explicit action-effect capability boundary;
+9. validate every returned delta against canonical entities, state variables, value types, and allowed effects;
+10. evaluate all hooks before applying any write;
+11. reject overlapping actual write sets with `WorldTransitionConflictError`;
+12. make successful non-conflicting steps invariant to input-intent order;
+13. allow at most one action per canonical actor in one step;
+14. preserve upstream selection provenance without coupling world execution to one selection-model class;
+15. bind parent-state and transition-batch lineage into the resulting state/result;
+16. export the new API only from `narrative_dynamics.narrative`;
+17. preserve all existing deterministic-decision, uncertain-belief, intentional-decision, replay, intervention, movie-conformance, root-isolation, and Lean semantics.
 
 ## Non-goals
 
-V1 does **not** add:
+V1 does not add:
 
-- a new `GenericNarrative` schema version;
-- action effects or transition hooks directly to `ActionTypeSpec`;
-- mutation of authored `NarrativeEvent` history;
-- conversion of selected actions into synthetic `NarrativeEvent` values;
-- automatic observation generation from action outcomes;
-- automatic testimony or reception generation;
-- belief update after the world step;
+- a new GenericNarrative schema version;
+- action effects/hooks directly to `ActionTypeSpec`;
+- synthetic `NarrativeEvent` generation from actions;
+- mutation of authored event history;
+- automatic observations, claims, receptions, or belief updates;
 - a multi-round scheduler;
-- dynamically created decisions not already declared in the canonical narrative;
-- stochastic environment transitions;
-- stochastic sampling from an action policy;
-- actor priority, initiative, last-writer-wins, or sequential execution semantics;
-- conflict-resolution rules for combat, auctions, races, or resource contention;
-- resource locks or transactions beyond whole-step atomic validation;
+- dynamically generated decisions;
+- stochastic transition mechanics;
+- stochastic action sampling;
+- initiative, actor priority, sequential execution, or last-writer-wins;
+- conflict resolvers for combat, auctions, races, or contested resources;
 - continuous time;
-- reversible execution / rollback API;
-- learned action-transition hooks;
+- rollback/reversible execution;
+- learned transition hooks;
 - POMDP planning integration;
 - Theory-of-Mind recursion;
-- calibration or empirical validation of transition mechanics;
-- Lean formalization of the action-transition layer.
-
-These are later increments after the atomic state-transition contract is stable.
+- calibration or empirical-validity claims;
+- Lean formalization of the new action-transition layer.
 
 ## Existing foundations and compatibility constraints
 
-### Existing authored event transition system
+### Authored event transition system
 
-`DomainSpec.apply_event()` already provides the canonical pattern for typed world mutation:
+`DomainSpec.apply_event()` already establishes the canonical typed-mutation pattern:
 
 ```text
 prior state + NarrativeEvent
-    -> semantic transition hook
+    -> semantic hook
     -> StateDelta
 ```
 
-It validates:
+It validates actor type, parameters, event-effect capability, state-variable subject types, typed values, result shape, and duplicate writes inside one event delta.
 
-- actor type;
-- exact event parameters;
-- typed values;
-- declared event effects;
-- state-variable subject types;
-- returned `StateDelta` shape;
-- no duplicate write to one cell inside one event delta.
+`objective_state()` replays authored events through that path.
 
-`objective_state()` replays authored events through this path and applies the resulting deltas.
+World Transition V1 reuses the same state and type concepts but does not alter `DomainSpec.apply_event()`: simulated action consequences and authored events remain distinct provenance layers.
 
-World Transition V1 reuses the same `StateDelta` representation and domain typing assumptions, but it does not alter `DomainSpec.apply_event()` because an executed choice is not an authored event.
+### Canonical decisions/actions
 
-### Existing action and decision declarations
+`Decision` already declares `id`, `logical_time`, `actor_id`, `type_name`, `context_cells`, and `ActionOption` alternatives. `ActionOption` already declares `id`, `type_name`, and typed arguments. `validate_narrative()` already checks each declared action against its domain action type.
 
-`Decision` already declares:
+Therefore the canonical narrative is authoritative for actor identity and action payload. An `ActionIntent` may name a decision/action, but execution re-resolves both from the story.
 
-- `id`;
-- `logical_time`;
-- `actor_id`;
-- `type_name`;
-- `context_cells`;
-- declared `ActionOption` values.
+### Selection-model independence
 
-`ActionOption` already declares:
+Existing selected actions may come from deterministic `DecisionResult`, probabilistic `IntentionalDecisionResult`, or later reactive/planner/POMDP families. The world layer must not depend on one result class.
 
-- `id`;
-- `type_name`;
-- typed action arguments.
-
-`validate_narrative()` already verifies action type and parameter compatibility against `DecisionTypeSpec` / `ActionTypeSpec`.
-
-World Transition V1 therefore treats the canonical narrative as the authority for actor identity and action payload. An `ActionIntent` names a decision and selected action, but execution re-resolves the exact canonical `Decision` and `ActionOption` from the story.
-
-### Existing selected-action models
-
-The world-transition layer must remain independent of how an action was selected. Existing selection families include at least:
-
-- deterministic `DecisionResult`;
-- probabilistic `IntentionalDecisionResult` with deterministic MAP projection;
-- future reactive, planner, or POMDP adapters.
-
-For that reason `ActionIntent` carries stable selection provenance but does not embed a concrete decision-result class.
+`ActionIntent` therefore carries selection provenance as stable identifiers/hashes but does not embed a concrete result object.
 
 ## Alternatives considered
 
-### A. Convert selected actions into synthetic `NarrativeEvent` values
+### A. Action -> synthetic NarrativeEvent
 
-Structure:
+Rejected. It would mechanically reuse replay but collapse authored facts and simulated consequences into one event class, weakening provenance and model comparison.
 
-```text
-selected action -> generated event -> existing event replay
-```
+### B. Extend ActionTypeSpec directly
 
-Rejected for V1. It would reuse the event pipeline mechanically, but it would conflate two different sources of truth:
+Rejected for V1. Adding action effects/hooks to `DomainSpec` would change every domain content hash and force unrelated narrative/movie fixtures through a migration before the transition semantics are proven.
 
-- authored canonical facts already present in the narrative;
-- simulated consequences generated by a model after a decision.
+### C. Sidecar WorldTransitionModelSpec
 
-That distinction matters for provenance, counterfactual analysis, empirical data roles, and later comparison of alternative transition models.
-
-### B. Add effects and hooks directly to `ActionTypeSpec`
-
-Structure:
-
-```text
-DomainSpec.ActionTypeSpec
-    -> parameters + effects + transition hook
-```
-
-Rejected for V1. It is conceptually elegant, but it would change `DomainSpec.content_hash` for every domain fixture and would unnecessarily force all existing narratives, movie conformance fixtures, and domain identities through a schema-like migration.
-
-The transition mechanism is a model assumption and can remain sidecar data until its semantics are stable.
-
-### C. Independent sidecar `WorldTransitionModelSpec`
-
-Structure:
-
-```text
-canonical DomainSpec identity
-    + action transition declarations
-    + attested hooks
-```
-
-Chosen. It keeps the factual narrative/domain schema stable, makes transition mechanics independently swappable and comparable, and permits a strict RED/GREEN boundary without disturbing existing replay semantics.
+Chosen. It binds exact domain identity while keeping transition mechanics independently swappable, attestable, testable, and comparable.
 
 ## Architecture
 
-### New module
-
-Add:
+Add one new production module:
 
 ```text
 narrative_dynamics/narrative/world.py
 ```
 
-The module owns:
+It owns:
 
-- immutable world-state snapshots;
-- action-transition capability declarations;
-- action-intent provenance records;
-- action-transition hook attestation and model identity;
-- canonical decision/action resolution;
-- per-action delta validation;
-- simultaneous snapshot evaluation;
-- write-set conflict detection;
+- immutable world-state artifacts;
+- sidecar action-effect/transition declarations;
+- action-intent provenance;
+- canonical intent resolution;
+- transition-hook attestation;
+- prior-world validation;
+- per-action capability/type validation;
+- snapshot evaluation;
+- write-conflict detection;
 - atomic commit;
-- step/result lineage.
+- transition/result lineage.
 
-The module does not own:
+It does not own authored replay, evidence admission, belief/goal/choice models, observation projection, scheduling, stochastic sampling, or calibration/comparison infrastructure.
 
-- authored event replay;
-- evidence admission;
-- belief updates;
-- goal or choice models;
-- observation projection;
-- scheduling;
-- stochastic sampling;
-- model calibration/comparison infrastructure.
-
-### Files unchanged by design
-
-V1 does not change behavior in:
-
-- `narrative_dynamics/narrative/ir.py`;
-- `narrative_dynamics/narrative/domain.py`;
-- `narrative_dynamics/narrative/replay.py`;
-- `narrative_dynamics/narrative/decision.py`;
-- `narrative_dynamics/narrative/uncertain.py`;
-- `narrative_dynamics/narrative/intention.py`;
-- existing domain/movie fixtures;
-- Lean source.
-
-The expected production changes are only:
-
-- new `narrative_dynamics/narrative/world.py`;
-- `narrative_dynamics/narrative/__init__.py` for scoped exports.
+Production behavior outside new `world.py` must remain unchanged. The only other production change is scoped export wiring in `narrative_dynamics/narrative/__init__.py`.
 
 ## Public records
 
-### `ActionEffectSpec`
-
-Immutable capability declaration for one potential state-cell target:
+### ActionEffectSpec
 
 ```python
 ActionEffectSpec(
@@ -297,25 +203,20 @@ ActionEffectSpec(
 )
 ```
 
-`subject_source` is exactly one of:
+`subject_source` is exactly:
 
 ```text
-actor
-argument
+actor | argument
 ```
 
 Semantics:
 
-- `actor`: the target subject is `Decision.actor_id`; `subject_argument` must be `None`;
-- `argument`: the target subject is an `EntityRef` stored in the named action argument; `subject_argument` is required.
+- `actor`: target subject is the canonical `Decision.actor_id`; `subject_argument` must be `None`.
+- `argument`: target subject is the `EntityRef` in the named canonical action argument; `subject_argument` is required.
 
-The spec identifies a possible write target. It does not require that the hook write the target on every execution. A returned `StateDelta` may write any subset of the resolved declared effects, including the empty set.
+The declaration is a capability upper bound. A hook may return a delta writing any subset of its resolved declared effects, including the empty set. There is no implicit write for an unused effect.
 
-This permits explicit no-op / conditional actions without making undeclared writes possible.
-
-### `ActionTransitionSpec`
-
-Immutable action-type transition declaration:
+### ActionTransitionSpec
 
 ```python
 ActionTransitionSpec(
@@ -325,27 +226,25 @@ ActionTransitionSpec(
 )
 ```
 
-The transition hook contract is:
+Hook contract:
 
 ```python
 hook(prior_state, decision, action) -> StateDelta
 ```
 
-where:
+Inputs are:
 
-- `prior_state` is an immutable mapping of `StateCellRef -> TypedValue` containing exactly the current `WorldState.values` snapshot;
-- `decision` is the exact canonical `Decision` resolved from the story;
-- `action` is the exact canonical selected `ActionOption` from that decision.
+- immutable `Mapping[StateCellRef, TypedValue]` equal to the current world snapshot;
+- exact canonical `Decision`;
+- exact canonical selected `ActionOption`.
 
-The hook must be callable and implementation-attestable under the repository's existing implementation-attestation rules. Model identity includes the measured implementation identity.
+The hook must be callable and measurable under existing implementation-attestation rules. Its `content_hash` binds action type, canonical effect declarations, and measured implementation identity.
 
-`effects` may be empty for an explicitly modeled no-op transition.
+Effect declarations may be empty for an explicitly modeled no-op action. Duplicate declarations reject.
 
-Duplicate effect declarations are rejected canonically.
+Transition hooks are model code; V1 does not add hidden instance-parameter identity. Any model parameter that must affect reproducibility must therefore be represented by canonical action/world data or by measured implementation code in this increment, rather than mutable unrecorded hook state.
 
-### `WorldTransitionModelSpec`
-
-Immutable sidecar model:
+### WorldTransitionModelSpec
 
 ```python
 WorldTransitionModelSpec(
@@ -360,17 +259,15 @@ WorldTransitionModelSpec(
 
 Requirements:
 
-- non-empty model ID/version/domain identity;
-- valid SHA-256 domain content hash;
+- non-empty canonical IDs/version;
+- valid SHA-256 domain hash;
 - unique transition entry per action type;
-- deterministic canonical ordering by action type;
-- model content hash binds model identity, exact domain identity, all effect declarations, and every measured transition-hook implementation identity.
+- canonical ordering by action type;
+- content hash binds model identity, exact domain identity, effect declarations, and measured transition implementations.
 
-The model is not required to cover every `ActionTypeSpec` in the domain. An action type without a transition declaration is simply not executable through this world model and fails closed if selected.
+The model need not cover every domain action type. Selecting an uncovered type fails closed.
 
-### `ActionIntent`
-
-Immutable selection/provenance envelope:
+### ActionIntent
 
 ```python
 ActionIntent(
@@ -381,19 +278,15 @@ ActionIntent(
 )
 ```
 
-`selection_result_hash` is the stable content hash of the exact upstream selection-result payload. For result types exposing `to_dict()`, the canonical convention is:
+Canonical convention for upstream result records with `to_dict()`:
 
 ```python
-stable_content_hash(result.to_dict())
+selection_result_hash = stable_content_hash(result.to_dict())
 ```
 
-The intent is deliberately **not** an authorization token. It does not allow a caller to inject an actor, action type, or action arguments. `advance_world_step()` always resolves those from the canonical story.
+The intent is provenance, not authorization. It cannot inject actor ID, action type, or action arguments. `advance_world_step()` always re-resolves those from the story.
 
-This keeps the world layer independent of deterministic, intentional, reactive, planner, or future POMDP result classes while preserving traceable upstream selection identity.
-
-### `WorldState`
-
-Immutable world-state artifact:
+### WorldState
 
 ```python
 WorldState(
@@ -409,7 +302,7 @@ WorldState(
 )
 ```
 
-Initial states produced by `world_state_from_story()` have:
+Step-zero states produced by `world_state_from_story()` have:
 
 ```text
 step_index = 0
@@ -417,21 +310,21 @@ parent_state_hash = None
 transition_batch_hash = None
 ```
 
-A successfully advanced state has:
+Advanced states have:
 
 ```text
 step_index = prior.step_index + 1
 parent_state_hash = prior.content_hash
-transition_batch_hash = stable hash of the canonical committed transition batch
+transition_batch_hash = hash(canonical transition batch)
 ```
 
-`values` is immutable and canonically serialized by `(entity_type, entity_id, state_variable)`.
+`values` is immutable and serialized by `(entity_type, entity_id, state_variable)`.
 
-Including both parent-state and transition-batch identity means two identical value maps reached through different transition histories remain distinguishable as research artifacts. Callers interested only in extensional state values can compare the canonical values payload separately.
+The state content hash includes provenance. Two equal value maps reached by different transition histories may therefore have different artifact hashes; extensional equality can be tested by comparing canonical values payloads.
 
-### `ActionTransitionRecord`
+Structural construction checks record shape. Domain/story compatibility of all state cells/values is revalidated at execution time because callers can construct public `WorldState` instances directly.
 
-Immutable validated transition record for one intent:
+### ActionTransitionRecord
 
 ```python
 ActionTransitionRecord(
@@ -444,21 +337,19 @@ ActionTransitionRecord(
 )
 ```
 
-The record stores the canonical resolved actor/action rather than caller-provided duplicates.
+The record stores canonical resolved actor/action plus the exact transition spec and prior-state identity.
 
-It therefore gives the lineage:
+Lineage:
 
 ```text
 selection_result_hash
     -> ActionIntent
-    -> canonical Decision / ActionOption
+    -> canonical Decision/ActionOption
     -> ActionTransitionSpec
     -> StateDelta
 ```
 
-### `WorldStepResult`
-
-Immutable atomic step result:
+### WorldStepResult
 
 ```python
 WorldStepResult(
@@ -472,26 +363,26 @@ WorldStepResult(
 
 Requirements:
 
-- at least one transition;
-- every record binds the exact `prior_state.content_hash`;
-- canonical transition ordering independent of input intent order;
-- `next_state.parent_state_hash == prior_state.content_hash`;
-- `next_state.step_index == prior_state.step_index + 1`;
-- `next_state.transition_batch_hash` equals the stable hash of the canonical transition payload;
-- model ID/hash match the executing `WorldTransitionModelSpec`.
+- non-empty transitions;
+- canonical transition ordering;
+- every record binds `prior_state.content_hash`;
+- next step index is prior + 1;
+- next parent hash equals prior hash;
+- next transition-batch hash equals the canonical transition payload hash;
+- model ID/hash match the executing model.
 
-### Error types
+The result exposes a stable `content_hash` over its complete canonical payload.
+
+### Errors
 
 ```python
 class WorldTransitionError(ValueError): ...
 class WorldTransitionConflictError(WorldTransitionError): ...
 ```
 
-`WorldTransitionConflictError` is reserved for multi-intent write collisions. Other declaration, lineage, type, capability, unsupported-action, and transition-hook failures use `WorldTransitionError` with the original error chained when useful.
+`WorldTransitionConflictError` is reserved for cross-intent actual-write collisions. Other model/state/declaration/capability/type/hook failures use `WorldTransitionError`, chaining the original cause when useful.
 
-## Initial world-state construction
-
-Public API:
+## world_state_from_story()
 
 ```python
 world_state_from_story(
@@ -504,296 +395,219 @@ world_state_from_story(
 
 Semantics:
 
-1. validate the canonical narrative/domain relationship through the existing replay path;
-2. call existing `objective_state(story, domain, at_time=at_time)` rather than duplicate event replay;
-3. snapshot the returned state into immutable `WorldState.values`;
-4. bind the exact story content hash and requested cutoff;
-5. initialize step/provenance fields to zero/`None`.
+1. use existing narrative/domain validation through `objective_state()`;
+2. call `objective_state(story, domain, at_time=at_time)` rather than duplicate replay;
+3. snapshot its values immutably;
+4. bind exact story/domain identity and requested cutoff;
+5. set step/provenance fields to zero/`None`.
 
-`at_time=None` means full authored objective replay, matching existing `objective_state()` semantics.
+`at_time=None` retains existing full authored replay semantics. Numeric cutoffs use existing non-negative replay rules and are stored exactly.
 
-A numeric cutoff is retained exactly in `source_at_time` and must be a non-negative integer under the same replay rules.
+## Prior-state validation boundary
 
-## Model/domain validation
+`advance_world_step()` must not assume a supplied `WorldState` came from `world_state_from_story()`.
 
-Before evaluating any intent, `advance_world_step()` validates that:
-
-```text
-(prior_state.domain_id,
- prior_state.domain_version,
- prior_state.domain_spec_hash)
-==
-(domain.domain_id,
- domain.version,
- domain.content_hash)
-==
-(model.domain_id,
- model.domain_version,
- model.domain_spec_hash)
-```
-
-It also requires:
+Before any hook executes, it validates:
 
 ```text
-prior_state.source_story_hash == story.content_hash
+prior domain identity == supplied DomainSpec identity == model domain identity
+prior source_story_hash == story.content_hash
 ```
 
-This prevents a state/model generated for another domain or canonical story from being silently reused.
+It then validates **every** `prior_state.values` entry against the canonical story/domain:
 
-Every configured `ActionTransitionSpec.action_type` must name a declared `ActionTypeSpec` in the supplied domain when the model is executed.
+1. key is a `StateCellRef`;
+2. referenced subject entity exists in `story.entities`;
+3. `StateCellRef.subject.entity_type` matches that canonical entity;
+4. state variable exists in `DomainSpec`;
+5. state variable subject type matches the entity type;
+6. value is a `TypedValue`;
+7. value validates against the state variable's declared `ValueTypeSpec`, including entity-ref targets.
+
+Any forged/invalid prior cell or value fails with `WorldTransitionError` before a transition hook runs.
+
+This closes the public-record trust boundary without changing `DomainSpec` or replay APIs.
 
 ## Canonical intent resolution
 
-For each `ActionIntent`:
+For every intent:
 
-1. `decision_id` must resolve to exactly one canonical `Decision` in `story.decisions`;
-2. `selected_action` must resolve to exactly one `ActionOption` in that decision;
-3. the selected action type must have one matching `ActionTransitionSpec` in the model;
-4. actor ID comes from the canonical decision;
-5. action type and typed arguments come from the canonical action;
-6. caller-supplied provenance fields are retained but never used to override canonical execution data.
+1. resolve `decision_id` to one canonical story decision;
+2. resolve `selected_action` to one canonical action in that decision;
+3. take actor ID from the canonical decision;
+4. take action type/arguments from the canonical action;
+5. require a matching `ActionTransitionSpec` for the selected action type.
 
-Within one world step:
+Within one step:
 
+- at least one intent is required;
 - decision IDs must be unique;
-- resolved actor IDs must be unique;
-- at least one intent is required.
+- canonical actor IDs must be unique.
 
-If the initial `WorldState` was created with a numeric `source_at_time`, each selected authored decision must have `decision.logical_time <= source_at_time`. A full-story state (`source_at_time=None`) is considered to include every authored decision time.
+If `prior_state.source_at_time` is numeric, every selected authored decision must satisfy:
 
-This prevents a cutoff world snapshot from executing an authored decision that has not occurred yet.
+```text
+decision.logical_time <= source_at_time
+```
+
+A full-story source (`None`) is considered to include all authored decision times.
+
+The world layer does not claim that decisions grouped into one transition step were selected simultaneously; scheduling/decision-time synchronization is a later subsystem. V1 only guarantees simultaneous **effect evaluation and commit** for the supplied intents.
 
 ## Effect-target capability resolution
 
-For a resolved `ActionEffectSpec`, V1 computes one allowed `StateCellRef`.
+Each `ActionEffectSpec` resolves to one allowed `StateCellRef`.
 
-### Actor target
+### actor source
 
-For:
+The canonical decision actor is the subject. The configured state variable must exist and its subject type must match the actor's canonical entity type.
 
-```text
-subject_source = actor
-```
+### argument source
 
-subject ID/type come from the canonical decision actor.
+The named parameter must exist on the selected domain `ActionTypeSpec`. The canonical selected action argument must contain an `EntityRef`. The referenced entity must exist and its type must match the target state variable subject type.
 
-The configured state variable must exist and its declared `subject_type` must match the actor entity type.
-
-### Action-argument target
-
-For:
-
-```text
-subject_source = argument
-subject_argument = p
-```
-
-`p` must be a declared parameter of the selected `ActionTypeSpec` and the canonical `ActionOption.arguments[p]` must contain an `EntityRef`.
-
-The referenced entity must exist in the canonical story, and its entity type must match the declared state-variable subject type.
-
-### Capability set
-
-The union of resolved effect targets is the action's allowed write set:
+The resolved set is the capability upper bound:
 
 ```text
 Allowed_i
 ```
 
-The hook may return a delta whose actual write set is any subset:
+The returned delta must satisfy:
 
 ```text
 Write_i subseteq Allowed_i
 ```
 
-No implicit default write occurs for declared-but-unused effects.
+Overlapping effect declarations that resolve to one allowed cell collapse only as a capability set; a returned delta still may not contain duplicate writes to that cell.
 
-## Transition-hook execution
+## Hook execution and delta validation
 
-Every transition hook receives an immutable snapshot derived from the exact same prior values:
-
-```text
-X_t = prior_state.values
-```
+Every hook receives an immutable snapshot with extensional content exactly equal to `prior_state.values`.
 
 Conceptually:
 
 ```text
-Delta_i = hook_i(readonly_copy(X_t), decision_i, action_i)
+Delta_i = hook_i(readonly_copy(X_t), canonical_decision_i, canonical_action_i)
 ```
 
-No delta is applied before all hooks have returned and all deltas have passed validation.
+No hook receives another action's delta, next-state view, belief state, goal state, or a mutable shared world object.
 
-A hook must return `StateDelta`. Any other return type fails with `WorldTransitionError`.
+A hook must return `StateDelta`.
 
-The hook must not receive `WorldStepResult`, other actions' deltas, a mutable shared world object, evidence state, belief state, or objective story replay beyond the supplied prior snapshot.
+Every returned operation is validated:
 
-## Delta validation
+1. subject entity exists;
+2. state variable exists;
+3. entity type matches state-variable subject type;
+4. target belongs to the resolved action capability;
+5. one delta cannot write the same cell twice;
+6. `clear` carries no value;
+7. `set` carries a value;
+8. set value validates against the state variable's canonical value type.
 
-For every returned `StateDelta`:
-
-1. every operation must target a canonical declared entity;
-2. every state variable must exist in the domain;
-3. subject entity type must match the state variable's `subject_type`;
-4. each operation target must belong to the action's resolved allowed write set;
-5. one action delta may not write the same state cell more than once;
-6. `clear` operations must contain no value;
-7. `set` operations must contain a value;
-8. set values must validate against the state variable's declared `ValueTypeSpec` and canonical entity map;
-9. empty deltas are valid.
-
-Validation reuses the existing `DomainSpec` state/value definitions; it does not create a second type system.
+Empty deltas are valid for explicit no-op/conditional transitions.
 
 ## Simultaneous multi-agent semantics
 
 ### Snapshot isolation
 
-For one step containing intents `I = {i_1, ..., i_N}`, every hook is evaluated against the same extensional snapshot:
+For all intents in one step:
 
 ```text
-forall k: InputState(hook_k) == X_t
+InputState(hook_i) == X_t
 ```
 
-No hook observes another hook's proposed writes.
+No earlier evaluated action can influence the state read by a later hook.
 
-### Actual write sets
+### Conflict detection
 
-After validation, each transition record has an actual write set:
+After delta validation, compute actual write sets:
 
 ```text
-Write_k = {StateCellRef written by Delta_k}
+Write_i = {cells actually written by Delta_i}
 ```
 
-Conflict detection uses actual writes, not the larger declared capability sets. Two actions may have overlapping possible effects but still coexist if their returned deltas do not write the same cell in this execution.
+Conflict detection uses actual writes, not declared capability sets.
 
-### Conflict rule
-
-For any two distinct transition records:
+For distinct `i, j`:
 
 ```text
 Write_i intersect Write_j != empty
 ```
 
-causes the whole step to fail with `WorldTransitionConflictError`.
+raises `WorldTransitionConflictError`.
 
-This applies even when both operations:
+This includes same-value set/set and clear/clear collisions.
 
-- are `set` with identical values;
-- are both `clear`;
-- would otherwise commute accidentally.
+### Atomicity
 
-V1 intentionally refuses to infer that two independent writers are semantically equivalent.
+No mutation occurs until every hook/delta/capability/type/conflict check passes.
 
-### Atomic commit
+Successful commit applies all pairwise-disjoint operations to a fresh copy. Failed execution returns no `WorldStepResult` or next state and never mutates the immutable prior state.
 
-Only after all hook and conflict validation succeeds does V1 construct a fresh mutable copy internally and apply all non-overlapping operations.
+## Canonical order and invariance
 
-Because actual write sets are disjoint, commit order cannot change extensional state. Nevertheless, implementation uses canonical sorted transition/operation order for reproducibility.
+Input intent order is non-semantic.
 
-If any intent, hook, delta, type check, capability check, or conflict check fails, no `WorldStepResult` and no `next_state` is returned. The immutable input `WorldState` is never mutated.
-
-## Canonical ordering and order invariance
-
-Input intent ordering is not semantic.
-
-After canonical resolution, transition records are sorted by:
+Resolved transition records are canonicalized by:
 
 ```text
 (actor_id, decision_id, action.id)
 ```
 
-Operations used for canonical transition-batch serialization are sorted by resolved state-cell key:
+Operations for transition-batch serialization are canonicalized by state-cell key:
 
 ```text
 (entity_type, entity_id, state_variable)
 ```
 
-For any valid pairwise-disjoint intent set:
+For a valid disjoint batch:
 
 ```text
-advance_world_step(X, [a, b])
+advance(X, (a, b)).content_hash
 ==
-advance_world_step(X, [b, a])
+advance(X, (b, a)).content_hash
 ```
 
-for:
+and transition order, batch hash, next-state payload/hash, and result hash are identical.
 
-- transition record order;
-- transition batch hash;
-- next-state payload;
-- next-state content hash;
-- whole-result content hash.
+## Identity and lineage
 
-## Lineage and identity
-
-### Transition model identity
+### Model identity
 
 `WorldTransitionModelSpec.content_hash` binds:
 
 - model ID/version;
-- domain ID/version/spec hash;
-- canonical action-transition declarations;
-- all effect capabilities;
-- measured transition-hook implementation identities.
-
-Changing a transition hook's measured module bytes or changing any effect declaration changes model identity.
+- exact domain ID/version/hash;
+- canonical action transition declarations;
+- effect capabilities;
+- measured transition-hook implementations.
 
 ### Initial state lineage
 
-An initial `WorldState` binds:
-
-```text
-canonical story hash
-canonical domain identity
-objective replay cutoff
-extensional values
-```
+Step-zero state binds canonical story hash, domain identity, objective replay cutoff, and values.
 
 ### Step lineage
 
-Each `ActionTransitionRecord` binds:
+Each transition record binds intent, canonical actor/action, transition spec, prior state, and returned delta.
 
-```text
-ActionIntent
-canonical actor/action
-transition spec hash
-prior world-state hash
-returned StateDelta
-```
+The canonical transition batch is content-hashed and bound into `next_state.transition_batch_hash`.
 
-`WorldStepResult` binds:
-
-```text
-transition model hash
-prior state
-canonical transition batch
-next state
-```
-
-The next state binds both parent-state hash and canonical transition-batch hash.
-
-Therefore a later research artifact can reconstruct:
+The result therefore supports:
 
 ```text
 selection result
     -> action intent
-    -> action transition
+    -> canonical action
+    -> transition model
     -> delta
     -> world step
     -> next world state
 ```
 
-without claiming that the world-transition layer independently verifies the psychological correctness of the upstream action-selection model.
+`selection_result_hash` is provenance only. The world layer does not independently prove that a psychological model really selected the named action; it proves that the named action is canonical and that its execution is tied to the supplied upstream result identity.
 
-## Public functions
-
-### `world_state_from_story()`
-
-Creates step-zero `WorldState` from existing authored objective replay.
-
-### `advance_world_step()`
-
-Proposed signature:
+## advance_world_step()
 
 ```python
 advance_world_step(
@@ -805,25 +619,27 @@ advance_world_step(
 ) -> WorldStepResult
 ```
 
-The function performs:
+Execution order:
 
 ```text
-validate story/domain/state/model identity
-    -> resolve canonical intents
-    -> verify one action per actor
+validate canonical story/domain
+    -> validate prior world state completely
+    -> validate model/domain identity
+    -> resolve canonical intents/actions/actors
+    -> enforce one intent per actor
     -> resolve effect capabilities
-    -> execute all hooks against the same snapshot
-    -> validate all StateDelta values
+    -> execute every hook against one shared snapshot
+    -> validate every delta
     -> reject actual write conflicts
-    -> canonically commit
-    -> produce lineage-bound next state/result
+    -> canonical atomic commit
+    -> build lineage-bound next state/result
 ```
 
 No RNG or execution-order parameter exists in V1.
 
 ## Public API surface
 
-`narrative_dynamics.narrative` adds exactly these names:
+`narrative_dynamics.narrative` adds exactly 11 names:
 
 ```text
 ActionEffectSpec
@@ -841,175 +657,73 @@ advance_world_step
 
 The top-level `narrative_dynamics` package must not export them.
 
-## Error handling
+## Fail-closed error boundary
 
-V1 is fail-closed.
+`WorldTransitionError` covers at least:
 
-`WorldTransitionError` covers, among other cases:
-
-- invalid or mismatched story/domain/model/world-state identity;
+- story/domain mismatch;
+- world-state/domain/model mismatch;
+- forged/invalid prior state cell or value;
 - empty intent batch;
 - duplicate decision IDs;
-- duplicate resolved actor IDs;
-- missing decision;
-- missing selected action;
-- action type without a configured transition;
-- action transition referring to undeclared action type;
-- malformed actor/argument effect target;
-- state-variable / entity-type mismatch;
-- hook attestation unavailable when model identity is requested;
-- transition hook exception wrapped with cause;
+- duplicate canonical actors;
+- missing decision/action;
+- unsupported action type;
+- transition model naming undeclared action type;
+- invalid actor/argument effect target;
+- undeclared or mistyped state variable;
+- hook attestation unavailable when identity is requested;
+- transition-hook exception (wrapped/chained);
 - hook returning non-`StateDelta`;
-- duplicate cell write inside one delta;
-- write outside resolved capability;
-- invalid `set`/`clear` shape;
+- duplicate cell writes inside one delta;
+- writes outside effect capability;
+- invalid set/clear shape;
 - invalid typed set value;
-- authored decision after a numeric source cutoff.
+- decision after a numeric source cutoff.
 
-`WorldTransitionConflictError` covers only cross-intent actual write overlap.
-
-The input `WorldState` remains immutable and reusable after any failure.
+`WorldTransitionConflictError` covers only cross-intent actual-write overlap.
 
 ## Test strategy
 
-Implementation must follow test-only RED before production code.
+Implementation follows test-only RED before production code.
 
-The new primary test module is expected to be:
+Primary new test file:
 
 ```text
 tests/test_narrative_world_transition.py
 ```
 
-World-transition-specific fixtures remain local to that test module unless a second production consumer demonstrates a real shared-fixture need. Existing `tests/narrative_test_support.py` is not expanded solely for this feature.
+World-specific test fixtures stay local to that module unless a later independent consumer proves a shared-fixture need. `tests/narrative_test_support.py` is not expanded solely for V1.
 
-### RED invariants
+The initial RED must lock at least:
 
-The first RED must lock at least the following behaviors.
+1. `world_state_from_story(...).values == objective_state(...)` for the same cutoff and exact source lineage;
+2. single canonical action produces the declared state change and parent/step lineage;
+3. a manually forged prior state with wrong subject/state/value typing rejects before hook execution;
+4. two hooks in one step observe exactly the same prior snapshot;
+5. disjoint action batches are order-invariant in payload and content hash;
+6. different-value writes to one cell reject with `WorldTransitionConflictError`;
+7. identical-value writes to one cell also reject;
+8. any invalid intent/delta causes atomic whole-step failure and leaves prior state unchanged;
+9. two decisions by the same canonical actor in one step reject;
+10. missing decision, missing action, and uncovered action type reject typed;
+11. actor-target effect capability enforces canonical actor type;
+12. argument-target effect capability requires the named canonical `EntityRef` argument and correct subject type;
+13. a hook writing a valid domain cell outside declared capability rejects;
+14. duplicate writes inside one action delta reject;
+15. invalid set/clear shape, unknown state variable/entity, and wrong value type reject;
+16. explicit no-op transition (empty effects + empty delta) succeeds, increments lineage, and preserves extensional values;
+17. numeric source cutoff rejects a later authored decision;
+18. model identity changes with domain hash, effect declaration, or measured hook implementation, but not transition tuple insertion order;
+19. transition/result lineage hashes bind exact prior state, intent, action, delta, and model;
+20. exact scoped public API adds the 11 names while root isolation remains unchanged;
+21. full existing Python/movie/Lean regressions remain green.
 
-#### 1. Initial state reuses authored replay
-
-For a canonical story/cutoff:
-
-```text
-world_state_from_story(...).values == objective_state(...)
-```
-
-and source story/domain/cutoff lineage is exact.
-
-#### 2. Single action changes declared world state
-
-A canonical selected action writes a declared target and produces:
-
-```text
-step_index = 1
-parent_state_hash = prior.content_hash
-```
-
-with exact action/delta lineage.
-
-#### 3. Snapshot isolation
-
-Two transition hooks in one step must both observe the same prior-state payload even when the first intent would change a cell read by the second hook.
-
-The second hook must not observe first-intent writes.
-
-#### 4. Non-conflicting order invariance
-
-For two actions writing different cells:
-
-```text
-advance(X, (a, b)).content_hash
-==
-advance(X, (b, a)).content_hash
-```
-
-and next-state payloads are exactly equal.
-
-#### 5. Cross-intent conflict rejection
-
-Two actual deltas writing one common `StateCellRef` raise `WorldTransitionConflictError`.
-
-Test both:
-
-- different proposed values;
-- identical proposed values.
-
-#### 6. Atomic failure
-
-If one of several actions is invalid, the call raises and the original prior-state payload/hash remains unchanged. No partial result is returned.
-
-#### 7. One action per actor
-
-Two different decisions by the same canonical actor in one step reject with `WorldTransitionError`.
-
-#### 8. Canonical action resolution
-
-Missing decision ID, undeclared selected action ID, and unsupported action type each fail typed resolution.
-
-#### 9. Actor effect capability
-
-An `actor` effect may write only a state variable whose subject type matches the canonical actor type.
-
-#### 10. Argument effect capability
-
-An `argument` effect requires the named canonical action argument to be an `EntityRef` of the correct subject type.
-
-#### 11. Capability escape rejection
-
-A hook that writes a valid domain cell not declared by its `ActionEffectSpec` still fails with `WorldTransitionError`.
-
-#### 12. Delta shape/type rejection
-
-Lock typed rejection for:
-
-- duplicate writes inside one action delta;
-- `set` with missing value;
-- `clear` with a value;
-- wrong value type;
-- unknown state variable;
-- unknown subject entity.
-
-#### 13. Explicit no-op support
-
-A configured action transition with empty effects and an empty `StateDelta` succeeds, records the action, and preserves extensional values while still incrementing the step and lineage.
-
-#### 14. Cutoff discipline
-
-A state created with numeric `source_at_time=t` rejects an intent for an authored decision whose logical time is greater than `t`.
-
-#### 15. Model identity
-
-Changing any of the following changes world-transition model content hash:
-
-- domain hash;
-- effect target declaration;
-- transition hook implementation identity.
-
-Input ordering of transition declarations does not change identity.
-
-#### 16. Existing regression isolation
-
-The existing full suite must remain green, including:
-
-- GenericNarrative validation;
-- objective/direct/epistemic replay;
-- deterministic decision tests;
-- uncertain-belief tests;
-- intentional-decision tests;
-- interventions/analysis;
-- Knives Out, The Matrix, and Memento conformance;
-- root API isolation;
-- Lean conformance/build/theorem gates.
-
-### Public-surface RED
-
-`tests/test_narrative_trust_api.py` is expected to add the exact 11 new scoped exports above while retaining root-package isolation.
-
-As with Intentional Decision V1, the implementation should first achieve semantic GREEN in the dedicated world-transition tests before opening the final scoped public exports if that separation makes the RED boundary clearer.
+As with Intentional Decision V1, semantic world-transition GREEN should be established before final scoped export wiring if that produces a cleaner RED boundary.
 
 ## Expected implementation files
 
-The complete V1 implementation is expected to touch only:
+The complete V1 increment is limited to:
 
 ```text
 docs/superpowers/specs/2026-08-25-narrative-world-transition-v1-design.md
@@ -1020,26 +734,25 @@ tests/test_narrative_world_transition.py
 tests/test_narrative_trust_api.py
 ```
 
-No `GenericNarrative` schema, `DomainSpec`, existing replay, existing decision model, movie fixture, root package, registry, observational protocol, prison model, or Lean-source changes are part of this increment.
+No GenericNarrative schema, DomainSpec, replay, deterministic decision, uncertain belief, intentional decision, existing domain/movie fixture, top-level package, registry, observational protocol, prison model, or Lean-source change belongs to this increment.
 
-If implementation discovers that one of those files must change to make V1 correct, the work must stop and the architecture must be re-reviewed rather than silently expanding scope.
+If correct implementation appears to require one of those files, stop and re-review the architecture rather than silently broadening scope.
 
 ## Relationship to later increments
 
-World Transition V1 creates:
+V1 establishes:
 
 ```text
 X_t + selected actions -> X_t+1
 ```
 
-The next intended increment can add observation projection:
+The next independent increment can add observation projection:
 
 ```text
-X_t+1 + visibility/channel model
-    -> O_i,t+1
+X_t+1 + visibility/channel model -> O_i,t+1
 ```
 
-A later scheduler can then connect the loop:
+A later scheduler can close the loop:
 
 ```text
 X_t
@@ -1052,19 +765,19 @@ X_t
     -> ...
 ```
 
-At that point the Generic Narrative Engine becomes a multi-round cognitive multi-agent simulator while retaining separable model families for perception, belief, goal selection, action selection, transition mechanics, and planning.
+This preserves separately testable model families for perception, belief, goal selection, action selection, world mechanics, and planning.
 
 ## Acceptance boundary
 
-Narrative World Transition V1 is complete only when all of the following are true on one exact feature head:
+World Transition V1 is complete only when one exact feature head satisfies all of:
 
-1. dedicated world-transition tests are green;
-2. existing Python tests are green;
-3. exact narrative public-surface/root-isolation tests are green;
-4. Lean/Python conformance is green;
-5. full Lean build is green;
-6. Lean theorem tests are green;
-7. Narrative StoryState theorem gate is green;
-8. Narrative Testimony theorem gate is green;
-9. diff remains inside the approved file boundary;
-10. the verified feature head is integrated into `proof/narrative-dynamics-v0` only after explicit human merge approval.
+1. dedicated world-transition tests green;
+2. full existing Python suite green;
+3. exact narrative public-surface/root-isolation green;
+4. Lean/Python conformance green;
+5. full Lean build green;
+6. Lean theorem tests green;
+7. Narrative StoryState theorem gate green;
+8. Narrative Testimony theorem gate green;
+9. diff remains inside the approved six-file boundary;
+10. integration into `proof/narrative-dynamics-v0` occurs only after explicit human merge approval.
