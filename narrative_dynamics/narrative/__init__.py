@@ -85,6 +85,16 @@ from narrative_dynamics.narrative.ir import (
     StateCellRef,
     TypedValue,
 )
+from narrative_dynamics.narrative.observation_projection import (
+    ObservationCapabilitySpec,
+    ObservationFact,
+    ObservationProjectionError,
+    ObservationProjectionModelSpec,
+    ObservationProjectionResult,
+    ObserverProjectionSpec,
+    ProjectedObservation,
+    project_world_observations,
+)
 from narrative_dynamics.narrative.replay import (
     EpistemicCellView,
     EpistemicEvidence,
@@ -200,6 +210,14 @@ __all__ = (
     "WorldTransitionConflictError",
     "world_state_from_story",
     "advance_world_step",
+    "ObservationCapabilitySpec",
+    "ObserverProjectionSpec",
+    "ObservationProjectionModelSpec",
+    "ObservationFact",
+    "ProjectedObservation",
+    "ObservationProjectionResult",
+    "ObservationProjectionError",
+    "project_world_observations",
     "EvidenceAccess",
     "DecisionCellView",
     "DecisionContext",
