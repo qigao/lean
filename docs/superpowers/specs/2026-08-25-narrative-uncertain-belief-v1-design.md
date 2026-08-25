@@ -4,7 +4,7 @@
 
 Proposed architectural increment for the Generic Narrative Engine. This document defines the first probabilistic epistemic layer that later persuasion, source reliability, expectation, and institutional-behavior work will build on.
 
-Implementation is intentionally not part of this commit. The first implementation step after approval is test-only RED.
+Implementation is intentionally not part of this design commit. The first implementation step after approval is test-only RED.
 
 ## Problem
 
@@ -25,10 +25,10 @@ Narrative Uncertain Belief V1 must:
 
 1. derive a finite probability distribution over possible values of selected narrative state cells for one agent;
 2. consume the Generic Narrative Engine's existing `EpistemicEvidence` stream, preserving observation/testimony provenance and time order;
-3. use explicit model assumptions for priors and evidence likelihoods rather than silently inventing confidence values;
+3. use explicit, content-hashed model assumptions for priors and evidence likelihoods rather than silently inventing confidence values;
 4. reuse the repository's existing finite Bayesian normalization semantics instead of creating a second probability algorithm;
 5. leave existing `objective_state`, `direct_state`, `epistemic_state`, `EpistemicCellView`, decision models, movie conformance fixtures, and GenericNarrative schema behavior unchanged;
-6. expose a deterministic, content-hashed model identity so an uncertain-belief result is attributable to a specific prior/likelihood model;
+6. expose deterministic result/model identity that changes when either probability-model code or explicit probability parameters change;
 7. fail closed on unsupported hypothesis spaces, invalid probability inputs, impossible evidence updates, or undeclared cells;
 8. retain enough stepwise update provenance that a later persuasion layer can compare prior and posterior belief around a specific communication event.
 
@@ -69,6 +69,12 @@ The repository already contains:
 - `grounded_hypothesis_space.GroundedHypothesisSpace` and `grounded_belief_update.posterior_belief_states()` for probability updates tied to `TypedNode`, `BeliefKB`, `WorldState`, and proof-graph provenance.
 
 The grounded subsystem cannot be imported wholesale into narrative replay because its coordinate system is structurally different from narrative `StateCellRef`/`TypedValue` evidence. V1 therefore reuses the finite posterior-normalization function and the repository's Bayesian semantics while introducing narrative-native records. It does not duplicate `GroundedHypothesisSpace` or pretend the two provenance systems are identical.
+
+### Existing implementation attestation
+
+`measure_implementation()` measures backing module bytes and callable/class identity. It does not bind arbitrary instance or closure configuration. Therefore V1 must not treat hook implementation hashes alone as a complete probability-model identity.
+
+All behavior-affecting prior/likelihood configuration is required to live in an explicit canonical `parameters` payload on `UncertainBeliefModelSpec`. That payload is recursively frozen and included directly in the model content hash. Hooks receive that explicit payload as an argument. Hidden mutable hook state is outside the supported V1 contract.
 
 ## Alternatives considered
 
@@ -115,6 +121,21 @@ Validation:
 
 Serialization is deterministic through `to_dict()`.
 
+#### `BeliefLikelihood`
+
+Immutable conditional-likelihood pair:
+
+- `value: TypedValue`
+- `likelihood: float`
+
+Validation:
+
+- likelihood must be finite;
+- likelihood must be in `[0, 1]`;
+- `value` must be a `TypedValue`.
+
+The likelihood vector is not required to sum to 1 because it represents `P(evidence | hypothesis)` independently for each hypothesis.
+
 #### `BeliefDistribution`
 
 Immutable normalized finite distribution:
@@ -138,10 +159,8 @@ Immutable provenance record for one admitted narrative evidence item:
 
 - `evidence: EpistemicEvidence`
 - `prior: BeliefDistribution`
-- `likelihoods: tuple[BeliefMass, ...]`
+- `likelihoods: tuple[BeliefLikelihood, ...]`
 - `posterior: BeliefDistribution`
-
-`likelihoods` uses `BeliefMass` as a typed `(hypothesis, numeric weight)` carrier, but likelihood weights are not required to sum to 1. A private validator therefore validates them as finite non-negative weights rather than constructing a normalized `BeliefDistribution`.
 
 The step proves which evidence changed which distribution and preserves the original evidence source, logical time, support ID, and provenance refs.
 
@@ -173,23 +192,33 @@ Only explicitly tracked cells are returned. The API does not invent beliefs for 
 
 #### `UncertainBeliefModelSpec`
 
-A content-hashed model declaration:
+A configured, content-hashed model declaration:
 
 - `model_id: str`
 - `version: str`
+- `parameters: Mapping[str, object]`
 - `prior_hook: callable`
 - `likelihood_hook: callable`
 
-Both hooks are measured with the repository's existing implementation-measurement mechanism and both implementation hashes enter `content_hash`.
+`parameters` must be recursively canonical JSON-like data: `None`, booleans, integers, finite floats, strings, mappings with non-empty string keys, lists, or tuples. It is detached/frozen at construction.
 
-The engine, not the hooks, owns hypothesis enumeration, validation, normalization, update ordering, and provenance.
+`to_dict()` includes:
+
+- model ID/version;
+- canonical parameters;
+- measured prior-hook implementation identity;
+- measured likelihood-hook implementation identity.
+
+Therefore changing code **or** changing explicit prior/likelihood parameters changes `content_hash`.
+
+The engine, not the hooks, owns hypothesis enumeration, validation, update ordering, Bayesian normalization, and provenance.
 
 ##### Prior hook contract
 
 Conceptual signature:
 
 ```python
-prior_hook(agent_id, cell, hypotheses) -> Mapping[str, float]
+prior_hook(agent_id, cell, hypotheses, parameters) -> Mapping[str, float]
 ```
 
 where mapping keys are the stable content hashes of the exact hypotheses supplied by the engine.
@@ -197,25 +226,25 @@ where mapping keys are the stable content hashes of the exact hypotheses supplie
 Requirements:
 
 - exact hypothesis-key coverage;
-- finite non-negative probabilities;
-- total mass strictly positive;
-- V1 normalizes the prior before first use, but the hook output is still recorded as a model assumption through model identity;
+- finite probabilities in `[0, 1]`;
+- probabilities sum to 1 within the declared numerical tolerance;
+- no automatic renormalization of malformed priors;
 - no access to objective state, later evidence, or decision outcomes is passed to the hook.
 
-The hook therefore cannot silently inspect canonical truth through the official interface.
+The hook therefore cannot inspect canonical truth through the official interface, and the engine does not silently “fix” an invalid prior into a different model assumption.
 
 ##### Likelihood hook contract
 
 Conceptual signature:
 
 ```python
-likelihood_hook(agent_id, evidence, hypotheses) -> Mapping[str, float]
+likelihood_hook(agent_id, evidence, hypotheses, parameters) -> Mapping[str, float]
 ```
 
 Requirements:
 
 - exact hypothesis-key coverage;
-- finite non-negative likelihoods;
+- finite conditional likelihoods in `[0, 1]`;
 - positive total posterior mass when combined with the current prior;
 - no evidence outside the supplied `EpistemicEvidence` item is passed to the hook.
 
@@ -264,11 +293,11 @@ Processing:
 3. call existing `epistemic_state(story, domain, agent_id, at_time=...)`;
 4. reuse its ordered `evidence_history` as the only admitted evidence stream;
 5. enumerate finite hypotheses for each tracked cell;
-6. ask the model for the prior and normalize it;
+6. ask the model for the prior and validate it as an already normalized distribution;
 7. filter admitted evidence to that exact cell;
 8. process evidence in the existing canonical evidence order;
-9. for each evidence item, request likelihood weights from the model;
-10. call existing `posterior_distribution()` with the current distribution as priors and the validated likelihood weights;
+9. for each evidence item, request conditional likelihoods from the model;
+10. validate likelihood coverage/range and call existing `posterior_distribution()` with the current distribution as priors and the likelihood vector;
 11. record a `BeliefUpdateStep` with prior, likelihoods, posterior, and exact evidence provenance;
 12. return the final `UncertainBeliefState`.
 
@@ -294,9 +323,11 @@ Examples:
 - tracked cell is undeclared or subject type mismatches the state variable;
 - value type is not finitely enumerable in V1;
 - prior hook omits or invents hypothesis keys;
-- prior or likelihood contains negative, NaN, or infinite weights;
+- prior is not normalized;
+- prior or likelihood contains negative, out-of-range, NaN, or infinite values;
 - a Bayesian update has zero total posterior mass;
 - hook result is not a mapping;
+- model parameters are not canonical/finitely hashable;
 - model or hook type is invalid.
 
 Existing narrative/domain validation errors remain their existing types. V1 does not relabel structural errors as probabilistic errors.
@@ -306,6 +337,7 @@ Existing narrative/domain validation errors remain their existing types. V1 does
 Export from `narrative_dynamics.narrative` only:
 
 - `BeliefMass`
+- `BeliefLikelihood`
 - `BeliefDistribution`
 - `BeliefUpdateStep`
 - `UncertainBeliefCellView`
@@ -323,7 +355,7 @@ Do **not** export these symbols from the top-level `narrative_dynamics` package.
 For a finite cell `policy.outcome ∈ {passes, fails}`:
 
 ```text
-explicit prior model
+explicit configured model
 P(passes)=0.40, P(fails)=0.60
         |
         v
@@ -392,13 +424,15 @@ The initial RED must fail only because `narrative_dynamics.narrative.uncertain` 
 
 7. **Probability validation**
    - missing/extra hypothesis keys reject;
-   - negative/non-finite prior and likelihood values reject;
+   - prior that does not sum to 1 rejects rather than being auto-normalized;
+   - negative/out-of-range/non-finite prior and likelihood values reject;
    - zero posterior mass rejects;
    - model hooks cannot return malformed types.
 
 8. **Model identity**
-   - same model/hook implementations produce stable content hash;
+   - same model code + same canonical parameters produce a stable content hash;
    - changing either hook implementation changes model identity;
+   - changing explicit parameters changes model identity even when hook code is unchanged;
    - result records model ID/hash.
 
 9. **Compatibility and isolation**
@@ -430,7 +464,7 @@ Expected production changes for V1 are limited to:
 - exact public-surface test adjustment;
 - new uncertain-belief tests.
 
-A small import of `hypothesis_competition.posterior_distribution` is expected.
+A small import of `hypothesis_competition.posterior_distribution` is expected. A private canonical-freezing helper may be implemented locally or extracted only if tests prove reuse is necessary; no unrelated contracts refactor is part of V1.
 
 No changes are expected to:
 
@@ -449,7 +483,7 @@ If implementation requires changing GenericNarrative schema, existing discrete e
 V1 is intentionally the foundation for separate later increments:
 
 1. **Source reliability and conflicting evidence**
-   - derive likelihood weights from explicit agent-to-source trust/reliability state;
+   - derive likelihoods from explicit agent-to-source trust/reliability state;
    - preserve source-specific evidence provenance.
 
 2. **Persuasion analysis**
