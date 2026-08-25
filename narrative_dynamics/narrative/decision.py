@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
+import math
 from types import MappingProxyType
 
 from narrative_dynamics.attestation import measure_implementation
@@ -68,6 +69,95 @@ class DecisionChoice:
         object.__setattr__(self, "evidence_refs", evidence_refs)
         object.__setattr__(self, "inspected_cells", inspected_cells)
 
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "selected_action": self.selected_action,
+            "evidence_refs": list(self.evidence_refs),
+            "inspected_cells": [item.to_dict() for item in self.inspected_cells],
+        }
+
+
+@dataclass(frozen=True)
+class DecisionCellView(EpistemicCellView):
+    """Immutable state-cell view exposed across the decision capability boundary."""
+
+    @classmethod
+    def from_epistemic(cls, view: EpistemicCellView) -> DecisionCellView:
+        if not isinstance(view, EpistemicCellView):
+            raise TypeError("decision cell view requires EpistemicCellView")
+        return cls(
+            cell=view.cell,
+            status=view.status,
+            resolved_value=view.resolved_value,
+            constraints=view.constraints,
+            evidence_kind=view.evidence_kind,
+            supporting_id=view.supporting_id,
+            source_agent=view.source_agent,
+            evidence_logical_time=view.evidence_logical_time,
+            evidence_refs=view.evidence_refs,
+        )
+
+
+
+def _action_vector(value: Mapping[str, float], *, label: str) -> Mapping[str, float]:
+    if not isinstance(value, Mapping):
+        raise TypeError(f"{label} must be a mapping")
+    frozen: dict[str, float] = {}
+    for action_id, raw in value.items():
+        key = _text(action_id, label=f"{label} action id")
+        if not isinstance(raw, (int, float)) or isinstance(raw, bool):
+            raise TypeError(f"{label} values must be numeric")
+        score = float(raw)
+        if not math.isfinite(score):
+            raise ValueError(f"{label} values must be finite")
+        frozen[key] = score
+    if not frozen:
+        raise ValueError(f"{label} must contain at least one action")
+    return MappingProxyType(frozen)
+
+
+@dataclass(frozen=True)
+class DecisionResult(DecisionChoice):
+    model_id: str
+    action_scores: Mapping[str, float]
+    policy: Mapping[str, float]
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        object.__setattr__(self, "model_id", _text(self.model_id, label="decision result model id"))
+        scores = _action_vector(self.action_scores, label="decision action scores")
+        policy = _action_vector(self.policy, label="decision policy")
+        if set(scores) != set(policy):
+            raise ValueError("decision result action scores and policy must cover the same actions")
+        if self.selected_action not in scores:
+            raise ValueError("decision result selected action must be covered by action vectors")
+        for action_id in scores:
+            expected = 1.0 if action_id == self.selected_action else 0.0
+            if scores[action_id] != expected or policy[action_id] != expected:
+                raise ValueError("deterministic decision result vectors must be one-hot")
+        object.__setattr__(self, "action_scores", scores)
+        object.__setattr__(self, "policy", policy)
+
+    @property
+    def basis(self) -> DecisionChoice:
+        return DecisionChoice(
+            self.selected_action,
+            self.evidence_refs,
+            self.inspected_cells,
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "model_id": self.model_id,
+            "selected_action": self.selected_action,
+            "action_scores": dict(self.action_scores),
+            "policy": dict(self.policy),
+            "basis": {
+                "evidence_refs": list(self.evidence_refs),
+                "inspected_cells": [item.to_dict() for item in self.inspected_cells],
+            },
+        }
+
 
 @dataclass(frozen=True)
 class DecisionModelSpec:
@@ -123,7 +213,7 @@ class DecisionModelSpec:
 class DecisionContext:
     decision: Decision
     evidence_history: tuple[EpistemicEvidence, ...]
-    cells: Mapping[StateCellRef, EpistemicCellView]
+    cells: Mapping[StateCellRef, DecisionCellView]
 
     def __post_init__(self) -> None:
         if not isinstance(self.decision, Decision):
@@ -131,16 +221,22 @@ class DecisionContext:
         history = tuple(self.evidence_history)
         if any(not isinstance(item, EpistemicEvidence) for item in history):
             raise TypeError("decision evidence history must contain EpistemicEvidence")
-        cells = dict(self.cells)
-        if any(
-            not isinstance(cell, StateCellRef)
-            or not isinstance(view, EpistemicCellView)
-            or view.cell != cell
-            for cell, view in cells.items()
-        ):
-            raise TypeError(
-                "decision context cells must map StateCellRef to matching views"
+        cells: dict[StateCellRef, DecisionCellView] = {}
+        for cell, view in dict(self.cells).items():
+            if not isinstance(cell, StateCellRef) or not isinstance(view, EpistemicCellView):
+                raise TypeError(
+                    "decision context cells must map StateCellRef to matching views"
+                )
+            normalized = (
+                view
+                if isinstance(view, DecisionCellView)
+                else DecisionCellView.from_epistemic(view)
             )
+            if normalized.cell != cell:
+                raise TypeError(
+                    "decision context cells must map StateCellRef to matching views"
+                )
+            cells[cell] = normalized
         object.__setattr__(self, "evidence_history", history)
         object.__setattr__(self, "cells", MappingProxyType(cells))
 
@@ -148,7 +244,7 @@ class DecisionContext:
 def require_resolved_cell(
     context: DecisionContext,
     cell: StateCellRef,
-) -> EpistemicCellView:
+) -> DecisionCellView:
     if not isinstance(context, DecisionContext):
         raise TypeError("resolved-cell lookup requires DecisionContext")
     if not isinstance(cell, StateCellRef):
@@ -169,10 +265,10 @@ def _objective_context(
     decision: Decision,
 ) -> DecisionContext:
     state = objective_state(story, domain, at_time=decision.logical_time)
-    cells: dict[StateCellRef, EpistemicCellView] = {}
+    cells: dict[StateCellRef, DecisionCellView] = {}
     for cell in decision.context_cells:
         value: TypedValue | None = state.get(cell)
-        cells[cell] = EpistemicCellView(
+        cells[cell] = DecisionCellView(
             cell=cell,
             status="resolved" if value is not None else "unknown",
             resolved_value=value,
@@ -234,12 +330,31 @@ def _validate_choice(context: DecisionContext, choice: DecisionChoice) -> None:
         )
 
 
+def _result_for(
+    context: DecisionContext,
+    model: DecisionModelSpec,
+    choice: DecisionChoice,
+) -> DecisionResult:
+    vector = {
+        action.id: 1.0 if action.id == choice.selected_action else 0.0
+        for action in context.decision.actions
+    }
+    return DecisionResult(
+        selected_action=choice.selected_action,
+        evidence_refs=choice.evidence_refs,
+        inspected_cells=choice.inspected_cells,
+        model_id=model.model_id,
+        action_scores=vector,
+        policy=vector,
+    )
+
+
 def run_decision_model(
     story: GenericNarrative,
     domain: DomainSpec,
     decision_id: str,
     model: DecisionModelSpec,
-) -> DecisionChoice:
+) -> DecisionResult:
     validate_narrative(story, domain)
     if not isinstance(model, DecisionModelSpec):
         raise TypeError("decision execution requires DecisionModelSpec")
@@ -257,4 +372,4 @@ def run_decision_model(
     if not isinstance(choice, DecisionChoice):
         raise DecisionResolutionError("decision model hook must return DecisionChoice")
     _validate_choice(context, choice)
-    return choice
+    return _result_for(context, model, choice)
