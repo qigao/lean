@@ -688,6 +688,8 @@ L_k
 
 Scheduler V1 must define an explicit runtime decision consumer. Existing authored `run_intentional_decision()` is not silently repurposed.
 
+The runtime decision model must receive a provenance-free cognition semantic view (for example posterior distributions, resolved cells, goals, and declared decision context), not `ledger_hash`, world/projection hashes, or runtime evidence lineage. Full cognition artifact hashes may be attached to the decision result for audit, but they must not be model-visible inputs that can change action policy.
+
 ## Non-goals
 
 This V1 does not implement:
