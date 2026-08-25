@@ -60,6 +60,16 @@ _EXPECTED_PUBLIC_API = {
     "objective_state",
     "direct_state",
     "epistemic_state",
+    # Uncertain belief.
+    "BeliefMass",
+    "BeliefLikelihood",
+    "BeliefDistribution",
+    "BeliefUpdateStep",
+    "UncertainBeliefCellView",
+    "UncertainBeliefState",
+    "UncertainBeliefModelSpec",
+    "UncertainBeliefResolutionError",
+    "uncertain_epistemic_state",
     # Decision mechanisms.
     "EvidenceAccess",
     "DecisionCellView",
