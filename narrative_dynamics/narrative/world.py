@@ -72,7 +72,20 @@ def _freeze_values(value: object) -> Mapping[StateCellRef, TypedValue]:
 
 
 def _delta_payload(delta: StateDelta) -> dict[str, object]:
-    return delta.to_dict()
+    operations = tuple(
+        sorted(
+            delta.operations,
+            key=lambda operation: (
+                operation.subject_id,
+                operation.state_variable,
+            ),
+        )
+    )
+    return {
+        "operations": [
+            operation.to_dict() for operation in operations
+        ]
+    }
 
 
 @dataclass(frozen=True)
@@ -492,8 +505,11 @@ def _transition_record_key(
 def _transition_batch_hash(
     transitions: tuple[ActionTransitionRecord, ...],
 ) -> str:
+    canonical = tuple(
+        sorted(transitions, key=_transition_record_key)
+    )
     return stable_content_hash(
-        [item.to_dict() for item in transitions]
+        [item.to_dict() for item in canonical]
     )
 
 
@@ -928,7 +944,21 @@ def _validated_delta(
             "action transition produced an invalid state delta"
         ) from error
 
-    return delta
+    canonical_operations = tuple(
+        sorted(
+            delta.operations,
+            key=lambda operation: _cell_key(
+                StateCellRef(
+                    EntityRef(
+                        entities[operation.subject_id].id,
+                        entities[operation.subject_id].type_name,
+                    ),
+                    operation.state_variable,
+                )
+            ),
+        )
+    )
+    return StateDelta(canonical_operations)
 
 
 def _attested_transition_hash(
@@ -1003,27 +1033,68 @@ def _execute_one(
     )
 
 
-def _single_action_result(
-    prior: WorldState,
-    model: WorldTransitionModelSpec,
+def _record_write_cells(
     record: ActionTransitionRecord,
     entities: Mapping[str, Entity],
-) -> WorldStepResult:
-    records = (record,)
-    next_values = dict(prior.values)
-    for operation in record.delta.operations:
-        subject = entities[operation.subject_id]
-        cell = StateCellRef(
-            EntityRef(subject.id, subject.type_name),
+) -> tuple[StateCellRef, ...]:
+    return tuple(
+        StateCellRef(
+            EntityRef(
+                entities[operation.subject_id].id,
+                entities[operation.subject_id].type_name,
+            ),
             operation.state_variable,
         )
-        if operation.kind == "clear":
-            next_values.pop(cell, None)
-        else:
-            assert operation.value is not None
-            next_values[cell] = operation.value
+        for operation in record.delta.operations
+    )
 
-    batch_hash = _transition_batch_hash(records)
+
+def _reject_write_conflicts(
+    records: tuple[ActionTransitionRecord, ...],
+    entities: Mapping[str, Entity],
+) -> None:
+    owner_by_cell: dict[
+        StateCellRef,
+        ActionTransitionRecord,
+    ] = {}
+    for record in records:
+        for cell in _record_write_cells(record, entities):
+            previous = owner_by_cell.get(cell)
+            if previous is not None:
+                raise WorldTransitionConflictError(
+                    "world step writes "
+                    f"{cell.state_variable!r} for "
+                    f"{cell.subject.entity_id!r} more than once"
+                )
+            owner_by_cell[cell] = record
+
+
+def _atomic_result(
+    prior: WorldState,
+    model: WorldTransitionModelSpec,
+    records: tuple[ActionTransitionRecord, ...],
+    entities: Mapping[str, Entity],
+) -> WorldStepResult:
+    canonical_records = tuple(
+        sorted(records, key=_transition_record_key)
+    )
+    _reject_write_conflicts(canonical_records, entities)
+
+    next_values = dict(prior.values)
+    for record in canonical_records:
+        for operation in record.delta.operations:
+            subject = entities[operation.subject_id]
+            cell = StateCellRef(
+                EntityRef(subject.id, subject.type_name),
+                operation.state_variable,
+            )
+            if operation.kind == "clear":
+                next_values.pop(cell, None)
+            else:
+                assert operation.value is not None
+                next_values[cell] = operation.value
+
+    batch_hash = _transition_batch_hash(canonical_records)
     next_state = WorldState(
         domain_id=prior.domain_id,
         domain_version=prior.domain_version,
@@ -1039,7 +1110,7 @@ def _single_action_result(
         model_id=model.model_id,
         model_hash=_attested_model_hash(model),
         prior_state=prior,
-        transitions=records,
+        transitions=canonical_records,
         next_state=next_state,
     )
 
@@ -1051,7 +1122,7 @@ def advance_world_step(
     model: WorldTransitionModelSpec,
     intents: tuple[ActionIntent, ...],
 ) -> WorldStepResult:
-    """Execute one canonical action against an immutable prior world snapshot."""
+    """Execute canonical actions simultaneously against one prior snapshot."""
 
     entities = _validate_prior_state(
         story,
@@ -1067,22 +1138,22 @@ def advance_world_step(
         intents,
     )
 
-    if len(resolved) != 1:
-        raise WorldTransitionError(
-            "multi-agent world steps are not implemented yet"
+    snapshot = MappingProxyType(dict(prior_state.values))
+    records: list[ActionTransitionRecord] = []
+    for item in resolved:
+        records.append(
+            _execute_one(
+                snapshot,
+                domain,
+                entities,
+                prior_state,
+                item,
+            )
         )
 
-    snapshot = MappingProxyType(dict(prior_state.values))
-    record = _execute_one(
-        snapshot,
-        domain,
-        entities,
-        prior_state,
-        resolved[0],
-    )
-    return _single_action_result(
+    return _atomic_result(
         prior_state,
         model,
-        record,
+        tuple(records),
         entities,
     )
