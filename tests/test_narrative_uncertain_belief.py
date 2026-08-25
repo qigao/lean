@@ -669,6 +669,46 @@ class ParameterRawLikelihoodHook:
         }
 
 
+class NaNPriorHook:
+    def __call__(self, agent_id, cell, hypotheses, parameters):
+        result = {
+            _value_hash(value): 1.0 / len(hypotheses)
+            for value in hypotheses
+        }
+        result[_value_hash(hypotheses[0])] = math.nan
+        return result
+
+
+class InfinitePriorHook:
+    def __call__(self, agent_id, cell, hypotheses, parameters):
+        result = {
+            _value_hash(value): 1.0 / len(hypotheses)
+            for value in hypotheses
+        }
+        result[_value_hash(hypotheses[0])] = math.inf
+        return result
+
+
+class NaNLikelihoodHook:
+    def __call__(self, agent_id, evidence, hypotheses, parameters):
+        result = {
+            _value_hash(value): 0.5
+            for value in hypotheses
+        }
+        result[_value_hash(hypotheses[0])] = math.nan
+        return result
+
+
+class InfiniteLikelihoodHook:
+    def __call__(self, agent_id, evidence, hypotheses, parameters):
+        result = {
+            _value_hash(value): 0.5
+            for value in hypotheses
+        }
+        result[_value_hash(hypotheses[0])] = math.inf
+        return result
+
+
 class ZeroLikelihoodHook:
     def __call__(self, agent_id, evidence, hypotheses, parameters):
         return {
@@ -713,7 +753,7 @@ class UncertainBeliefResolutionValidationTests(unittest.TestCase):
             "failed": 0.50,
             "recovered": 0.30,
         }
-        for bad in (-0.01, 1.01, math.nan, math.inf):
+        for bad in (-0.01, 1.01):
             with self.subTest(bad=bad):
                 raw = dict(baseline)
                 raw["failed"] = bad
@@ -733,6 +773,12 @@ class UncertainBeliefResolutionValidationTests(unittest.TestCase):
                     uncertain.UncertainBeliefResolutionError
                 ):
                     self._state(model)
+        for hook in (NaNPriorHook(), InfinitePriorHook()):
+            with self.subTest(hook=hook.__class__.__name__):
+                with self.assertRaises(
+                    uncertain.UncertainBeliefResolutionError
+                ):
+                    self._state(make_uncertain_model(prior_hook=hook))
 
     def test_likelihood_numeric_boundaries_fail_closed(self):
         baseline = {
@@ -740,7 +786,7 @@ class UncertainBeliefResolutionValidationTests(unittest.TestCase):
             "failed": 0.20,
             "recovered": 0.90,
         }
-        for bad in (-0.01, 1.01, math.nan, math.inf):
+        for bad in (-0.01, 1.01):
             with self.subTest(bad=bad):
                 raw = dict(baseline)
                 raw["failed"] = bad
@@ -762,6 +808,12 @@ class UncertainBeliefResolutionValidationTests(unittest.TestCase):
                     uncertain.UncertainBeliefResolutionError
                 ):
                     self._state(model)
+        for hook in (NaNLikelihoodHook(), InfiniteLikelihoodHook()):
+            with self.subTest(hook=hook.__class__.__name__):
+                with self.assertRaises(
+                    uncertain.UncertainBeliefResolutionError
+                ):
+                    self._state(make_uncertain_model(likelihood_hook=hook))
 
     def test_zero_posterior_mass_fails_closed(self):
         with self.assertRaises(
