@@ -14,7 +14,8 @@
 
 - Exact base: `2a45278bfaee75c69cdafc8c7abd9516cd41c1c7` on `proof/narrative-dynamics-v0`.
 - Work only on `work/narrative-runtime-percept-admission-v1`.
-- Authored cognition seed is exactly `epistemic_state(..., at_time=source_at_time)` / `uncertain_epistemic_state(..., at_time=source_at_time)`.
+- Deterministic authored seed is exactly `epistemic_state(story, domain, agent_id, at_time=source_at_time)`.
+- Authored uncertain seed is exactly `uncertain_epistemic_state(story, domain, agent_id, seed_model, tracked_cells, at_time=source_at_time)`.
 - Authored `logical_time` and runtime `step_index` remain distinct; no conversion exists.
 - Admission accepts no naked `ProjectedObservation`; it must execute `project_world_observations()` internally for the current world step.
 - Every admitted world step appends exactly one `RuntimeEvidenceBatch`, including blackout steps with empty evidence.
@@ -85,7 +86,7 @@ class NarrativeRuntimePerceptionTests(unittest.TestCase):
             )
 ```
 
-Reuse the existing World Transition / Observation Projection public APIs to build real world-step values. Define these module-level hooks so implementation attestation is measurable:
+Define module-level measurable projection hooks:
 
 ```python
 class ObserveAgentPhase:
@@ -106,9 +107,18 @@ class ObserveServiceAlert:
 class NoPercepts:
     def __call__(self, prior_visible, next_visible, observer, step_index):
         return ()
+
+
+class RecordingPhaseHook(ObserveAgentPhase):
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, prior_visible, next_visible, observer, step_index):
+        self.calls.append((dict(prior_visible), dict(next_visible), observer.id, step_index))
+        return super().__call__(prior_visible, next_visible, observer, step_index)
 ```
 
-Define helpers named `make_runtime_domain`, `make_runtime_story`, `make_world_transition_model`, `make_projection_model`, and `advance_runtime_world`. The domain must include `Agent`, `Service`, and finite enum state variables `agent.phase` and `service.alert`; the story must include two agents and one service, authored seed observations/claims, and two canonical decisions. `advance_runtime_world(story, domain, prior_state, transition_model, *, phase_value, clear_alert=False)` must call existing `advance_world_step()` with canonical `ActionIntent` values rather than fabricating `WorldStepResult`.
+Define local helpers named `make_runtime_domain`, `make_runtime_story`, `make_world_transition_model`, `make_projection_model`, and `advance_runtime_world`. The domain must contain entity types `Agent|Service`, finite enum value types `PhaseState={ready,active,waiting}` and `AlertState={on,off}`, and state variables `agent.phase` / `service.alert`. The story must contain `a1:Agent`, `a2:Agent`, `svc:Service`, authored seed events/observations/claims, and two canonical decisions whose action options are covered by the transition model. `advance_runtime_world(story, domain, prior_state, transition_model, *, phase_value, clear_alert=False)` must construct canonical `ActionIntent` values and call existing `advance_world_step()`; it must never fabricate `WorldStepResult`.
 
 - [ ] **Step 2: Add the 10 perception tests with exact method names**
 
@@ -142,7 +152,7 @@ self.assertFalse(hasattr(evidence.percept_view, "source_world_step_hash"))
 
 The empty-ledger test must compute the expected initial state through existing `world_state_from_story` and assert exact domain/story/cutoff/hash binding and `current_step_index == 0`.
 
-The first-admission test must assert one batch at step 1, `prior_ledger_hash == prior_ledger.content_hash`, exact prior/next world hashes, exact projection result hash/model hash, and for each evidence record:
+The first-admission test must assert one batch at step 1, `prior_ledger_hash == prior_ledger.content_hash`, exact prior/next world hashes, exact projection result hash/model hash, and for each projected/runtime pair:
 
 ```python
 self.assertEqual(item.projected_observation_hash, projected.content_hash)
@@ -157,15 +167,17 @@ The continuity test must admit two real consecutive world steps and assert batch
 
 The duplicate/skipped/reordered test must attempt admission against a ledger whose current world/step does not equal the supplied world-step prior and assert `RuntimePerceptAdmissionError`.
 
-For the mismatch pre-projection test use a recording projection hook class with `calls = []`; forge each mismatch using `dataclasses.replace` and assert both:
+For the mismatch pre-projection test use `RecordingPhaseHook`; forge domain/story/cutoff/prior-world mismatches using `dataclasses.replace`, then assert:
 
 ```python
-with self.assertRaises(RuntimePerceptAdmissionError):
+with self.assertRaises(RuntimePerceptAdmissionError) as caught:
     admit_world_percepts(story, domain, world_step, model, bad_ledger)
 self.assertEqual(hook.calls, [])
+self.assertNotEqual(
+    str(caught.exception),
+    "runtime percept admission execution is unavailable in this stage",
+)
 ```
-
-Do not accept the generic staged-sentinel message as proof of pre-projection validation. Explicitly assert the exception string does not equal `"runtime percept admission execution is unavailable in this stage"`.
 
 The order test must build equivalent projection specs whose constructor-permitted input order differs, then assert equal batch evidence order and equal ledger/result hashes within one fixed provenance branch.
 
@@ -226,11 +238,9 @@ class SemanticRuntimeLikelihood:
 
 class ClearRuntimeLikelihood:
     def __call__(self, agent_id, percept_view, hypotheses, parameters):
-        self_relation = percept_view.relation
+        weight = parameters["clear"] if percept_view.relation == "clear" else 1.0
         return {
-            stable_content_hash(value.to_dict()): (
-                parameters["clear"] if self_relation == "clear" else 1.0
-            )
+            stable_content_hash(value.to_dict()): weight
             for value in hypotheses
         }
 
@@ -268,9 +278,21 @@ test_runtime_clear_uses_existing_hypotheses_and_never_invents_absent
 test_blackout_only_steps_preserve_cognition_and_posterior_while_advancing_step
 ```
 
-For the seed test compare the embedded `seed_state.to_dict()` exactly with authored `epistemic_state(..., at_time=ledger.source_at_time).to_dict()`. Assert runtime state has `step_index`, authored seed evidence retains `logical_time`, and no runtime evidence object has a `logical_time` field.
+For the seed test compare `state.seed_state.to_dict()` exactly with:
 
-For equals/clear/unperceived tests assert exact cell status, resolved value, constraints, basis, runtime support hashes, and `resolved_values` membership.
+```python
+authored_seed = epistemic_state(
+    story,
+    domain,
+    agent_id,
+    at_time=ledger.source_at_time,
+)
+self.assertEqual(state.seed_state.to_dict(), authored_seed.to_dict())
+```
+
+Assert runtime state has `step_index`, authored seed evidence retains `logical_time`, and no runtime evidence object has a `logical_time` field.
+
+For equals/clear/unperceived tests assert exact cell status, resolved value, constraints, basis, runtime support hashes, and `resolved_values` membership. Include one runtime-observed cell that is absent from authored `seed_state.cells`; assert it appears in the runtime state so the implementation must use `seed cells ∪ runtime-observed cells`.
 
 For multi-channel same-cell use two valid projection channels that observe the same exact post-step value. Assert one runtime cell view, all same-step evidence hashes retained in canonical order, and no conflict status.
 
@@ -298,7 +320,7 @@ self.assertEqual(cognition_semantics(left), cognition_semantics(right))
 self.assertNotEqual(left.ledger_hash, right.ledger_hash)
 ```
 
-For the runtime-belief seed test use an empty ledger and assert `posterior == seed_posterior`, `updates == ()`, and the embedded seed belief exactly matches authored `uncertain_epistemic_state()`.
+For the runtime-belief seed test use an empty ledger and assert `posterior == seed_posterior`, `updates == ()`, and the embedded seed belief exactly matches authored `uncertain_epistemic_state(story, domain, agent_id, model.seed_model, tracked_cells, at_time=ledger.source_at_time)`.
 
 For model identity compare same model, changed seed model, changed runtime parameters, and a distinct module-level runtime likelihood hook; only exact same semantics/code should share content hash.
 
@@ -306,7 +328,7 @@ For provenance-free hook visibility inspect every captured `RuntimePerceptView` 
 
 For hidden-provenance posterior equality, replay two provenance-different but semantically equal ledgers with the same runtime model and assert each tracked cell's posterior distributions are equal, while full state `ledger_hash` values differ.
 
-For likelihood validation cover: non-mapping return, missing hypothesis key, extra hypothesis key, bool value, negative value, value > 1, NaN, infinity. Each must raise `RuntimeBeliefResolutionError`.
+For likelihood validation cover: non-mapping return, missing hypothesis key, extra hypothesis key, bool value, negative value, value greater than 1, NaN, and infinity. Each must raise `RuntimeBeliefResolutionError`.
 
 For zero posterior mass return all-zero likelihoods and assert typed rejection.
 
@@ -324,7 +346,7 @@ For blackout-only steps compare cognition semantics before/after blackout and as
 
 - [ ] **Step 5: Lock API signatures against objective-world inputs**
 
-Within the cognition test module add assertions in the seed and runtime-belief tests using `inspect.signature`:
+Within the cognition test module add assertions using `inspect.signature`:
 
 ```python
 self.assertEqual(
@@ -411,7 +433,7 @@ Open a Draft PR to `proof/narrative-dynamics-v0`. Exact-head `proof` CI must sho
 
 - [ ] **Step 1: Add canonical structural helpers and public error**
 
-Use exact structural constants/helpers:
+Use exact helpers:
 
 ```python
 _HASH = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -446,7 +468,7 @@ def _cell_key(cell: StateCellRef) -> tuple[str, str, str]:
 
 - [ ] **Step 2: Implement `RuntimePerceptView` and `RuntimeEpistemicEvidence`**
 
-`RuntimePerceptView` fields are exactly:
+`RuntimePerceptView` is exactly:
 
 ```python
 @dataclass(frozen=True)
@@ -461,7 +483,7 @@ class RuntimePerceptView:
 
 Validate exact relation/value semantics. Its `to_dict()` contains no provenance fields.
 
-`RuntimeEpistemicEvidence` fields are exactly those in the spec. Add:
+`RuntimeEpistemicEvidence` uses the exact fields from the spec. Add:
 
 ```python
 @property
@@ -478,9 +500,9 @@ def percept_view(self) -> RuntimePerceptView:
 
 Canonicalize transition hashes lexically and expose `to_dict()` / `content_hash`.
 
-- [ ] **Step 3: Implement `RuntimeEvidenceBatch`, `RuntimeEvidenceLedger`, and `RuntimePerceptAdmissionResult` constructors**
+- [ ] **Step 3: Implement batch, ledger, and admission-result constructors**
 
-Store tuple fields as tuples and immutable mappings only where a mapping exists. Define batch evidence ordering by:
+Define batch evidence ordering:
 
 ```python
 def _evidence_key(item: RuntimeEpistemicEvidence):
@@ -497,9 +519,9 @@ def current_step_index(self) -> int:
     return 0 if not self.batches else self.batches[-1].step_index
 ```
 
-Validate first/later step continuity, prior/next world hash chain, current-world hash, and each batch prior-ledger prefix hash by constructing the exact prefix payload through one private `_ledger_payload(...)` helper. Do not claim direct construction certifies historic execution.
+Validate first/later step continuity, prior/next world hash chain, current-world hash, and each batch prior-ledger prefix hash by constructing the exact prefix payload through private `_ledger_payload(domain_id, domain_version, domain_spec_hash, source_story_hash, source_at_time, initial_world_state_hash, current_world_state_hash, batches)` and hashing that canonical payload. The prefix's `current_world_state_hash` is the initial hash for zero batches and the previous batch's next-world hash otherwise.
 
-`RuntimePerceptAdmissionResult` validates the embedded projection result, batch, and exact final one-batch ledger extension.
+`RuntimePerceptAdmissionResult` validates that its batch is the last batch in `next_ledger`, that recomputing the prefix before that last batch yields `prior_ledger_hash`, and that projection/batch source hashes match exactly.
 
 - [ ] **Step 4: Implement `runtime_evidence_ledger_from_story` completely**
 
@@ -526,11 +548,11 @@ def runtime_evidence_ledger_from_story(
     )
 ```
 
-Normalize/validate `at_time` consistently with existing authored/world APIs; do not synthesize logical time.
+Validate `at_time` consistently with existing authored/world APIs; do not synthesize logical time.
 
-- [ ] **Step 5: Add a typed stage boundary for `admit_world_percepts`**
+- [ ] **Step 5: Add the exact typed stage boundary for admission**
 
-Expose the final signature now:
+Expose:
 
 ```python
 def admit_world_percepts(
@@ -547,7 +569,20 @@ def admit_world_percepts(
 
 - [ ] **Step 6: Verify staged GREEN/RED and commit**
 
-Run the constructor and empty-ledger tests explicitly; they must pass. Run the whole perception module; admission tests must still fail only at the exact stage-boundary message. Cognition remains module-missing RED. Public API remains RED.
+Run only:
+
+```bash
+python3 -m unittest \
+  tests.test_narrative_runtime_perception.NarrativeRuntimePerceptionTests.test_runtime_perception_record_constructors_are_canonical_data_not_certification \
+  tests.test_narrative_runtime_perception.NarrativeRuntimePerceptionTests.test_empty_ledger_binds_exact_branch_point_and_initial_world_state \
+  -v
+```
+
+Expected: both pass.
+
+Run the full perception module; the remaining eight admission methods must fail only at the exact stage-boundary message. Cognition remains module-missing RED. Public API remains RED.
+
+Commit:
 
 ```bash
 git add narrative_dynamics/narrative/runtime_perception.py
@@ -569,7 +604,7 @@ Obtain exact-head CI evidence before Task 3.
 
 - [ ] **Step 1: Validate ledger/world branch identity before projection execution**
 
-Implement `_validate_admission_source(...)` and require before calling projection:
+Implement `_validate_admission_source` with these exact checks before projection:
 
 ```python
 validate_narrative(story, domain)
@@ -589,9 +624,13 @@ if prior_ledger.current_step_index != world_step.prior_state.step_index:
     raise ValueError("runtime ledger step does not match world-step prior")
 if prior_ledger.source_at_time != world_step.prior_state.source_at_time:
     raise ValueError("runtime ledger source cutoff does not match world-step prior")
+if world_step.next_state.source_at_time != prior_ledger.source_at_time:
+    raise ValueError("runtime ledger source cutoff does not match world-step next state")
+if world_step.next_state.step_index != prior_ledger.current_step_index + 1:
+    raise ValueError("runtime admission world step must advance exactly one step")
 ```
 
-Also require the world-step next state preserves source cutoff and advances exactly one step. Any mismatch must occur before projection hook execution.
+Any mismatch must occur before projection hook execution.
 
 - [ ] **Step 2: Execute Observation Projection internally and derive evidence only from its result**
 
@@ -612,7 +651,7 @@ No public helper may accept a caller-supplied projected observation as admission
 
 - [ ] **Step 3: Construct one batch including blackout**
 
-Create a batch for every successful projection call:
+Create:
 
 ```python
 batch = RuntimeEvidenceBatch(
@@ -650,7 +689,7 @@ Return `RuntimePerceptAdmissionResult(prior_ledger.content_hash, projection_resu
 
 - [ ] **Step 5: Wrap operational errors without erasing projection causes**
 
-Re-raise existing `RuntimePerceptAdmissionError`. Catch `ObservationProjectionError`, `TypeError`, and `ValueError`, and wrap as `RuntimePerceptAdmissionError` with exception chaining. Pre-projection continuity errors must still be distinguishable by their chained cause/message in tests.
+Re-raise existing `RuntimePerceptAdmissionError`. Catch `ObservationProjectionError`, `TypeError`, and `ValueError`, and wrap as `RuntimePerceptAdmissionError` with exception chaining. Pre-projection continuity errors must remain distinguishable from projection failure by their chained cause/message.
 
 - [ ] **Step 6: Verify all perception semantics GREEN and commit**
 
@@ -658,13 +697,6 @@ Run:
 
 ```bash
 python3 -m unittest tests.test_narrative_runtime_perception -v
-```
-
-Expected: all 10 methods pass.
-
-Then run Observation Projection and World Transition regressions:
-
-```bash
 python3 -m unittest \
   tests.test_narrative_observation_projection \
   tests.test_narrative_world_transition \
@@ -691,7 +723,7 @@ Exact-head CI should now have all 10 perception tests GREEN, 16 cognition module
 
 **Interfaces:**
 - Consumes: `RuntimeEvidenceLedger`, `RuntimeEpistemicEvidence`, `RuntimePerceptView`, authored `epistemic_state`, authored uncertain-belief records/model.
-- Produces: deterministic runtime epistemic state semantics plus all runtime belief public records/model identity. `runtime_uncertain_belief_state()` remains an explicit typed stage boundary for non-empty Bayesian execution.
+- Produces: deterministic runtime epistemic state semantics plus all runtime belief public records/model identity. `runtime_uncertain_belief_state()` remains an explicit typed stage boundary for Bayesian execution.
 
 - [ ] **Step 1: Add public runtime cognition errors and canonical helpers**
 
@@ -751,9 +783,17 @@ seed = epistemic_state(
 )
 ```
 
-Filter runtime evidence to `observer_id == agent_id`, group by cell and step, then apply:
+Filter runtime evidence to `observer_id == agent_id`. Build:
 
-- no runtime evidence => preserve seed view exactly, `basis="authored_seed"`;
+```python
+runtime_cells = {item.cell for item in runtime_history}
+all_cells = set(seed.cells) | runtime_cells
+```
+
+For each cell in canonical `_cell_key` order, group runtime evidence by step and apply:
+
+- no runtime evidence => copy seed view status/value/constraints, `basis="authored_seed"`, no runtime support hashes;
+- runtime evidence for a seed-absent cell => create a new runtime cell view from the latest runtime percept;
 - latest runtime `equals` => resolved to the one truth-compatible value, empty stale constraints, `basis="runtime_perception"`;
 - latest runtime `clear` => unknown with no resolved value and empty constraints;
 - multiple same-step channels for one cell must agree on relation/value semantics or reject as corrupted ledger input; retain all supporting evidence hashes sorted.
@@ -762,7 +802,7 @@ The function must not accept any world/projection argument.
 
 - [ ] **Step 4: Implement `RuntimeBeliefModelSpec` and runtime belief record constructors**
 
-Define exact model fields:
+Define:
 
 ```python
 @dataclass(frozen=True)
@@ -776,19 +816,11 @@ class RuntimeBeliefModelSpec:
 
 Freeze parameters canonically and bind `seed_model.content_hash` plus `measure_implementation(runtime_likelihood_hook).manifest_identity()` in `to_dict()` / `content_hash`.
 
-Implement:
-
-```text
-RuntimeBeliefUpdateStep
-RuntimeUncertainBeliefCellView
-RuntimeUncertainBeliefState
-```
-
-with exact chain invariants from the spec. `RuntimeBeliefUpdateStep` stores full `RuntimeEpistemicEvidence` for audit, but later execution will pass only `evidence.percept_view` to the hook.
+Implement `RuntimeBeliefUpdateStep`, `RuntimeUncertainBeliefCellView`, and `RuntimeUncertainBeliefState` with the exact chain invariants from the spec. `RuntimeBeliefUpdateStep` stores full `RuntimeEpistemicEvidence` for audit, but later execution passes only `evidence.percept_view` to the hook.
 
 - [ ] **Step 5: Add exact stage boundary for `runtime_uncertain_belief_state`**
 
-Expose only the approved signature:
+Expose only:
 
 ```python
 def runtime_uncertain_belief_state(
@@ -804,11 +836,33 @@ def runtime_uncertain_belief_state(
     )
 ```
 
-- [ ] **Step 6: Verify deterministic cognition/model GREEN and Bayesian RED, then commit**
+- [ ] **Step 6: Verify exact Task 4 staged GREEN/RED and commit**
 
-Run the first nine cognition methods: deterministic epistemic methods, seed-with-no-runtime-evidence constructor/model tests, and model identity. They must pass except any method that invokes runtime Bayesian execution; those must fail only at the exact stage boundary above.
+These cognition methods must pass:
 
-Run the whole cognition test module and verify remaining failures are confined to runtime Bayesian execution semantics, not imports/record constructors.
+```text
+test_runtime_epistemic_seed_equals_authored_seed_and_keeps_clocks_separate
+test_runtime_equals_supersedes_stale_authored_cell_semantics
+test_runtime_clear_makes_cell_unknown_and_clears_stale_constraints
+test_unperceived_cells_preserve_authored_seed_semantics
+test_multi_channel_same_cell_is_deterministic_and_keeps_all_runtime_support
+test_runtime_epistemic_state_filters_other_agents_evidence
+test_same_semantic_percepts_preserve_cognition_semantics_across_provenance_branches
+test_runtime_belief_model_identity_binds_seed_parameters_and_hook
+```
+
+These Bayesian execution methods must remain RED only at `"runtime uncertain belief execution is unavailable in this stage"`:
+
+```text
+test_runtime_belief_seed_equals_authored_uncertain_seed_without_runtime_evidence
+test_runtime_likelihood_receives_only_provenance_free_percept_view
+test_hidden_provenance_changes_cannot_change_posterior_semantics
+test_invalid_runtime_likelihood_shape_keys_and_probabilities_reject_typed
+test_zero_runtime_posterior_mass_rejects_typed
+test_runtime_belief_updates_form_exact_chain_from_seed_posterior
+test_runtime_clear_uses_existing_hypotheses_and_never_invents_absent
+test_blackout_only_steps_preserve_cognition_and_posterior_while_advancing_step
+```
 
 Commit:
 
@@ -817,7 +871,7 @@ git add narrative_dynamics/narrative/runtime_cognition.py
 git commit -m "feat: replay runtime epistemic cognition"
 ```
 
-Obtain exact-head staged CI evidence before Task 5.
+Exact-head CI must show 10 perception + 8 deterministic/model cognition tests GREEN, 8 Bayesian staged RED, and one public API RED. Obtain this evidence before Task 5.
 
 ---
 
@@ -847,15 +901,20 @@ seed = uncertain_epistemic_state(
 )
 ```
 
-This is the only source of the initial prior/posterior state for each tracked cell.
+This is the only source of the initial posterior for each tracked cell.
 
 - [ ] **Step 2: Filter and canonicalize runtime evidence semantically**
 
-Select only evidence satisfying both:
+Select only evidence satisfying:
 
 ```python
-item.observer_id == agent_id
-item.cell in set(tracked_cells)
+tracked = set(tracked_cells)
+runtime_history = tuple(
+    item
+    for batch in ledger.batches
+    for item in batch.evidence
+    if item.observer_id == agent_id and item.cell in tracked
+)
 ```
 
 Sort by `(step_index, channel, cell)` and never use provenance hashes to choose semantic order.
@@ -890,7 +949,7 @@ Do not pass ledger hash, evidence hash, world hash, projection hash, transition 
 
 Require a mapping keyed by the exact stable-content hashes of current hypotheses; reject missing/extra keys. Validate every likelihood is numeric, finite, non-bool, and in `[0,1]`.
 
-Use existing:
+Use:
 
 ```python
 posterior_vector = posterior_distribution(
@@ -926,13 +985,6 @@ Run:
 
 ```bash
 python3 -m unittest tests.test_narrative_runtime_cognition -v
-```
-
-Expected: all 16 methods pass.
-
-Then run authored cognition regressions:
-
-```bash
 python3 -m unittest \
   tests.test_narrative_replay \
   tests.test_narrative_uncertain_belief \
@@ -1017,7 +1069,7 @@ python3 -m unittest \
 python3 -m unittest discover -s tests -v
 ```
 
-Expected: API/root-isolation passes; all 26 new methods pass; full suite exits 0. Baseline before this feature is 487 tests, so unchanged discovery plus 26 methods must report **513 tests**. Any other count requires explicit investigation before integration.
+Expected: API/root-isolation passes; all 26 new methods pass; full suite exits 0. Baseline before this feature is 487 tests, so unchanged discovery plus 26 methods must report exactly **513 tests**. Any other count requires explicit investigation before integration.
 
 - [ ] **Step 4: Commit export-only change**
 
@@ -1042,13 +1094,7 @@ Narrative story theorem tests
 Narrative testimony theorem tests
 ```
 
-Fetch the full job log and explicitly confirm:
-
-```text
-Ran 513 tests ... OK
-```
-
-and every `NarrativeRuntimePerceptionTests`, every `NarrativeRuntimeCognitionTests`, and `test_exact_public_surface_and_root_isolation` is `ok`.
+Fetch the full job log and confirm the unittest summary line begins with `Ran 513 tests in`, followed by `OK`. Also confirm every `NarrativeRuntimePerceptionTests`, every `NarrativeRuntimeCognitionTests`, and `test_exact_public_surface_and_root_isolation` is `ok`.
 
 - [ ] **Step 6: Verify exact final eight-path diff**
 
@@ -1070,6 +1116,29 @@ Any additional path stops integration.
 - [ ] **Step 7: Update Draft PR evidence and mark Ready for review**
 
 Record exact base, test-only RED head/run, Task 2 staged head/run, Task 3 perception-GREEN/cognition-RED head/run, Task 4 deterministic-cognition staged head/run, Task 5 semantic head/run proving export-only RED, and final head/run. State explicitly that authored replay/uncertain/intention, GenericNarrative IR, DomainSpec, World Transition, Observation Projection, root package, movie fixtures, model-comparison infrastructure, and Lean sources are unchanged. Mark Ready for review; do not merge.
+
+## Spec Coverage Map
+
+- Invariants 1-2: empty-ledger test.
+- Invariants 3, 12-13: first-admission lineage test.
+- Invariants 4-6: consecutive-batch hash-chain test.
+- Invariants 7-8: blackout admission + blackout cognition tests.
+- Invariants 9-10: duplicate/skipped/reordered admission test.
+- Invariant 11: pre-projection mismatch test.
+- Invariants 14-15: order/canonical-record constructor tests.
+- Invariants 16, 18-19: runtime epistemic seed/clock test plus unchanged regression suite.
+- Invariants 20-23: equals/clear/unperceived/multi-channel deterministic tests.
+- Invariant 24: multi-agent isolation test.
+- Invariants 25-26: semantic-equality/provenance-difference test.
+- Invariants 17, 34: runtime uncertain seed/no-runtime-evidence test.
+- Invariants 27-29: runtime model identity, provenance-free hook, hidden-provenance posterior tests.
+- Invariants 30-31: invalid likelihood + zero-posterior tests.
+- Invariant 32: exact runtime posterior-chain test.
+- Invariant 33: clear-with-existing-hypotheses test.
+- Invariant 35: blackout-only runtime cognition/posterior test.
+- Invariant 36: exact public function-signature assertions.
+- Invariant 37: trust API/root isolation test.
+- Invariant 38: full Python + Lean exact-head CI.
 
 ## Completion Evidence Checklist
 
