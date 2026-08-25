@@ -8,7 +8,7 @@ Exact base: `2a45278bfaee75c69cdafc8c7abd9516cd41c1c7` on `proof/narrative-dynam
 
 Feature branch: `work/narrative-runtime-percept-admission-v1`.
 
-This design closes the next missing link in the runtime cognitive loop:
+Target bridge:
 
 ```text
 WorldStepResult
@@ -19,219 +19,183 @@ WorldStepResult
   -> Runtime uncertain belief state
 ```
 
-It does not add the multi-step scheduler, action scheduling, runtime intentional decision execution, communication, noisy sensors, stochastic transitions, planning, or learning.
+This phase does not add the multi-step scheduler or runtime action selection.
 
-## Motivation
+## Core semantic decision
 
-The integrated engine now has a clean distinction between authored narrative semantics and runtime simulation semantics:
-
-```text
-Authored narrative:
-  events / observations / claims / receptions / decisions
-  -> authored epistemic replay
-  -> authored uncertain belief
-  -> authored intentional decision
-
-Runtime simulation:
-  ActionIntent batch
-  -> WorldStepResult
-  -> ObservationProjectionResult
-```
-
-The remaining break is that a `ProjectedObservation` is currently a runtime percept artifact only. It does not legally enter `epistemic_state()` or `uncertain_epistemic_state()`.
-
-That separation is intentional. Existing authored replay is indexed by authored `logical_time`; Observation Projection is indexed by simulation `step_index`. Reusing the authored `Observation` or `EpistemicEvidence` records for runtime projection would collapse two different clocks and would blur authored evidence with simulated evidence.
-
-The approved initial-cognition semantics are:
+Runtime cognition inherits authored cognition exactly at the simulation branch point:
 
 ```text
 B_runtime,0^i = B_authored^i(source_at_time)
 ```
 
-and then:
+Then only admitted runtime percepts update cognition:
 
 ```text
 B_runtime,k+1^i = Update(B_runtime,k^i, E_runtime,k+1^i)
 ```
 
-with the invariant:
+The clocks remain distinct:
 
 ```text
-logical_time != step_index
+authored: logical_time
+runtime:  step_index
 ```
 
-Runtime cognition therefore inherits authored cognition exactly at the simulation branch point and then evolves only through runtime evidence.
+No V1 API maps one clock into the other.
 
-## Architectural decision
+## Architecture
 
-Use two sidecar units rather than modifying authored replay records.
+Use two sidecar modules and leave authored replay records unchanged.
 
-### Unit A: Runtime Perception
-
-File:
-
-```text
-narrative_dynamics/narrative/runtime_perception.py
-```
+### `runtime_perception.py`
 
 Responsibilities:
 
-- initialize an empty runtime evidence ledger from one authored branch point;
+- initialize an immutable runtime evidence ledger from one authored branch point;
 - call `project_world_observations()` internally;
-- convert engine-produced `ProjectedObservation` records into runtime epistemic evidence;
-- append one immutable evidence batch for every world step, including blackout steps;
-- enforce world-step and ledger continuity;
-- preserve exact projection/world provenance;
+- admit only engine-produced projected observations;
+- append one evidence batch per runtime world step, including blackout steps;
+- enforce ledger/world continuity;
+- preserve exact world/projection provenance;
 - never update belief directly.
 
-### Unit B: Runtime Cognition
-
-File:
-
-```text
-narrative_dynamics/narrative/runtime_cognition.py
-```
+### `runtime_cognition.py`
 
 Responsibilities:
 
-- reconstruct the authored epistemic seed at `source_at_time`;
-- replay runtime evidence into a deterministic runtime epistemic state;
-- reconstruct the authored uncertain-belief seed using the existing `UncertainBeliefModelSpec`;
-- apply runtime likelihood updates using a separate runtime likelihood model;
-- produce deterministic, provenance-bound runtime belief state artifacts;
+- recompute authored epistemic and uncertain-belief seeds at `source_at_time`;
+- replay only admitted runtime evidence after the seed;
+- expose deterministic runtime epistemic state;
+- expose runtime finite Bayesian belief updates through a separate likelihood model;
 - never read objective `WorldState` or `WorldStepResult` during cognition materialization.
 
-The scheduler will consume these interfaces later. This V1 deliberately does not decide how runtime belief is fed into the next action-selection model.
+The future scheduler consumes these outputs. Existing authored `run_intentional_decision()` remains unchanged in this V1.
 
 ## Rejected alternatives
 
-### Modify `EpistemicEvidence` to carry both clocks
+### Extend `EpistemicEvidence` with runtime time
 
-Rejected because it would change the semantics, public identity, ordering, and hashes of an already stable authored replay record. Existing authored replay is explicitly organized around `logical_time`.
+Rejected because existing authored replay, sorting, identity, and hashes are already defined around `logical_time`.
 
-### Synthesize authored logical times from simulation step indices
+### Synthesize logical time from `step_index`
 
-Rejected because it makes runtime-generated evidence appear authored. It also creates an arbitrary ordering relationship between story times and simulation steps.
+Rejected because simulated percepts would masquerade as authored evidence.
 
-### Append projected observations directly to `GenericNarrative.observations`
+### Mutate `GenericNarrative.observations`
 
-Rejected because runtime simulation must not mutate or masquerade as canonical authored narrative.
+Rejected because runtime simulation must not mutate canonical authored narrative.
 
 ### Let Observation Projection update belief directly
 
-Rejected because perception and cognition are distinct mechanisms. Observation Projection answers what an agent is permitted to perceive from the world; belief update answers how that percept changes an internal hypothesis distribution.
-
-## Clock model
-
-There are two independent time coordinates.
-
-### Authored time
-
-```text
-logical_time: int
-```
-
-Used only by authored events, observations, claims, receptions, decisions, authored epistemic replay, and the authored seed belief.
-
-### Runtime time
-
-```text
-step_index: int
-```
-
-Used only by world transitions, projected observations, runtime evidence batches, runtime epistemic state, and runtime uncertain belief state.
-
-The simulation branch point is identified by `source_at_time: int | None`.
-
-An empty runtime ledger always corresponds to simulation world step `0` produced by:
-
-```text
-world_state_from_story(story, domain, at_time=source_at_time)
-```
-
-The first admitted runtime world step therefore produces batch step `1`.
-
-No API in this V1 maps `step_index` to `logical_time`.
+Rejected because world visibility and cognitive interpretation are different mechanisms and should remain independently testable.
 
 ## Runtime Perception records
 
 ### `RuntimeEpistemicEvidence`
 
-Represents one admitted runtime percept.
+One admitted runtime percept with full provenance.
 
 Fields:
 
 ```text
-observer_id: str
-channel: str
-cell: StateCellRef
+observer_id
+channel
+cell
 relation: equals | clear
-value: TypedValue | None
-step_index: int
-projected_observation_hash: str
-projection_result_hash: str
-projection_model_hash: str
-source_world_state_hash: str
-source_world_step_hash: str
-source_transition_hashes: tuple[str, ...]
-projection_spec_hash: str
+value
+step_index
+projected_observation_hash
+projection_result_hash
+projection_model_hash
+source_world_state_hash
+source_world_step_hash
+source_transition_hashes
+projection_spec_hash
 ```
 
 Rules:
 
-- `observer_id`, `channel`, and state cell identity must be structurally valid;
-- only `equals` and `clear` are supported in V1;
 - `equals` requires one `TypedValue`;
 - `clear` requires `value is None`;
-- `step_index` is non-negative and never interpreted as authored time;
-- all hash fields are syntactically valid canonical SHA-256 content hashes;
-- transition hashes are unique and canonically sorted;
-- all fields come from the engine-produced projection records during admission, not from hook return values;
-- direct construction creates data, not independent certification.
+- `step_index` is runtime time only;
+- provenance hashes are canonical SHA-256 content hashes;
+- transition hashes are unique and sorted;
+- all lineage fields are engine-derived by admission;
+- direct construction is data, not independent certification.
 
-`content_hash` is the stable content hash of the canonical payload.
+### `RuntimePerceptView`
+
+A provenance-free semantic view passed to runtime cognition hooks.
+
+Fields:
+
+```text
+observer_id
+channel
+cell
+relation
+value
+step_index
+```
+
+This record deliberately omits:
+
+```text
+projected_observation_hash
+projection_result_hash
+projection_model_hash
+source_world_state_hash
+source_world_step_hash
+source_transition_hashes
+projection_spec_hash
+```
+
+Reason: a likelihood hook must not infer hidden objective branch identity from provenance hashes. Runtime model behavior may depend on what was perceived, its channel, and runtime step; it may not depend on opaque world/projection lineage identifiers.
+
+`RuntimeEpistemicEvidence.percept_view` is derived from the semantic fields above.
 
 ### `RuntimeEvidenceBatch`
 
-Represents admission for exactly one runtime world step, even if no percept was emitted.
+One admitted runtime step, even when no percept is emitted.
 
 Fields:
 
 ```text
-prior_ledger_hash: str
-step_index: int
-source_prior_world_state_hash: str
-source_world_state_hash: str
-source_world_step_hash: str
-projection_model_hash: str
-projection_result_hash: str
+prior_ledger_hash
+step_index
+source_prior_world_state_hash
+source_world_state_hash
+source_world_step_hash
+projection_model_hash
+projection_result_hash
 evidence: tuple[RuntimeEpistemicEvidence, ...]
 ```
 
-Rules:
+Invariants:
 
-- evidence is canonicalized by `(observer_id, channel, cell, content_hash)`;
-- every evidence record must bind the batch step, world-state hash, world-step hash, projection model hash, and projection-result hash exactly;
-- evidence records may contain different observer ids;
-- the same observer/cell may appear on different channels in one batch;
-- blackout is represented by `evidence == ()`, never by omitting the batch;
-- the batch binds the exact hash of the ledger prefix it extends.
+- evidence order is canonical by `(observer_id, channel, cell)`;
+- Observation Projection already guarantees uniqueness for one `(observer, channel, cell)` key, so provenance hashes are not used as semantic ordering keys;
+- all evidence binds the batch step/world/projection identities exactly;
+- multiple channels may observe the same cell;
+- blackout is `evidence == ()`, not absence of a batch;
+- the batch binds the exact prior ledger hash.
 
 ### `RuntimeEvidenceLedger`
 
-Represents the immutable runtime evidence history for all agents in one simulation branch.
+Immutable simulation-level evidence history for all agents.
 
 Fields:
 
 ```text
-domain_id: str
-domain_version: str
-domain_spec_hash: str
-source_story_hash: str
-source_at_time: int | None
-initial_world_state_hash: str
-current_world_state_hash: str
-batches: tuple[RuntimeEvidenceBatch, ...]
+domain_id
+domain_version
+domain_spec_hash
+source_story_hash
+source_at_time
+initial_world_state_hash
+current_world_state_hash
+batches
 ```
 
 Derived:
@@ -240,51 +204,33 @@ Derived:
 current_step_index = 0 if batches == () else batches[-1].step_index
 ```
 
-Ledger invariants:
+Required continuity:
 
-1. domain identity is exact and immutable;
-2. `source_story_hash` and `source_at_time` are immutable;
-3. the empty ledger binds exactly one initial world-state hash;
-4. the first batch has `step_index == 1`;
-5. each later batch increments step by exactly one;
-6. the first batch prior-world hash equals `initial_world_state_hash`;
-7. each later batch prior-world hash equals the previous batch next-world hash;
-8. `current_world_state_hash` equals the initial state hash when empty, otherwise the last batch next-world hash;
-9. each batch `prior_ledger_hash` equals the stable hash of the exact ledger prefix before that batch;
-10. batch order is part of ledger identity and cannot be reordered without changing or invalidating the chain.
+1. first batch step is `1`;
+2. later batches increment by exactly one;
+3. first batch prior-world hash equals `initial_world_state_hash`;
+4. each later prior-world hash equals the previous next-world hash;
+5. `current_world_state_hash` equals the latest next-world hash, or initial hash when empty;
+6. each batch `prior_ledger_hash` equals the stable hash of the exact ledger prefix before it.
 
-The constructor verifies all internal hash-chain and continuity invariants it can derive from the stored data.
-
-A directly constructed ledger is still only a self-consistent data artifact; it is not proof that historic world transitions or historic projections actually executed. Runtime truth trust comes from retaining admission results or, later, the scheduler trajectory that contains the corresponding world/projection artifacts.
+The ledger constructor can verify internal chain consistency, but a directly constructed ledger is still data rather than proof that historic world/projection execution occurred.
 
 ### `RuntimePerceptAdmissionResult`
-
-Represents one successful append operation.
 
 Fields:
 
 ```text
-prior_ledger_hash: str
+prior_ledger_hash
 projection_result: ObservationProjectionResult
 evidence_batch: RuntimeEvidenceBatch
 next_ledger: RuntimeEvidenceLedger
 ```
 
-Constructor invariants:
-
-- `evidence_batch.prior_ledger_hash == prior_ledger_hash`;
-- batch projection-result hash equals `projection_result.content_hash`;
-- batch projection-model hash equals `projection_result.model_hash`;
-- all source hashes and step index equal the projection result;
-- `next_ledger` equals the exact one-batch extension of the supplied prior ledger lineage.
-
-As with other public runtime records, direct construction is data, not certification.
+The result verifies that the batch is the exact final extension represented by `next_ledger`, and that batch projection/world identities match the embedded projection result.
 
 ## Runtime Perception APIs
 
 ### `runtime_evidence_ledger_from_story`
-
-Signature:
 
 ```text
 runtime_evidence_ledger_from_story(
@@ -297,15 +243,12 @@ runtime_evidence_ledger_from_story(
 
 Behavior:
 
-1. validate the narrative/domain;
-2. call `world_state_from_story(story, domain, at_time=at_time)`;
-3. return an empty ledger bound to exact domain identity, story hash, source cutoff, and initial world-state hash;
-4. do not create any evidence batch;
-5. do not materialize belief.
+1. validate story/domain;
+2. call `world_state_from_story(..., at_time=at_time)`;
+3. return an empty ledger bound to exact domain, story, cutoff, and initial world-state hash;
+4. create no evidence batch and no belief state.
 
 ### `admit_world_percepts`
-
-Signature:
 
 ```text
 admit_world_percepts(
@@ -317,62 +260,52 @@ admit_world_percepts(
 ) -> RuntimePerceptAdmissionResult
 ```
 
-Behavior:
+Pre-projection checks:
 
-1. validate story/domain and ledger source identity;
-2. require `prior_ledger.current_world_state_hash == world_step.prior_state.content_hash`;
-3. require `prior_ledger.current_step_index == world_step.prior_state.step_index`;
-4. require ledger and world-step `source_at_time` to match exactly;
-5. call `project_world_observations(story, domain, world_step, projection_model)` internally;
-6. convert only the returned engine-produced projected observations into runtime evidence;
-7. create exactly one batch for `world_step.next_state.step_index`, even when the projection result is empty;
-8. append the batch immutably and return the prior hash, projection result, batch, and next ledger.
+- ledger domain/story identity matches exactly;
+- `prior_ledger.current_world_state_hash == world_step.prior_state.content_hash`;
+- ledger current step equals `world_step.prior_state.step_index`;
+- ledger/world `source_at_time` match exactly.
+
+Then:
+
+1. call `project_world_observations()` internally;
+2. convert only that engine-produced projection result to runtime evidence;
+3. create exactly one batch for the next world step;
+4. append immutably;
+5. return projection result, batch, and next ledger.
 
 Consequences:
 
-- a caller cannot pass a naked `ProjectedObservation` to admission;
-- a caller cannot skip a world step without breaking prior-world hash/step continuity;
-- a caller cannot admit the same world step twice to the same ledger;
-- a caller can branch simulation by reusing an earlier immutable ledger with a different valid next world step;
-- different projection models may be used on different steps, with each batch retaining its exact model hash.
+- no API admits a naked caller-supplied `ProjectedObservation`;
+- the same world step cannot be admitted twice to the same ledger;
+- skipped or reordered world steps reject;
+- an old immutable ledger may be reused to form a counterfactual branch;
+- projection model may vary by step, with each batch retaining its exact model hash.
 
-`admit_world_percepts` raises `RuntimePerceptAdmissionError` for typed runtime rejection. It preserves lower-level projection errors as causes.
+Operational failures use `RuntimePerceptAdmissionError`.
 
 ## Blackout semantics
 
-Blackout is first-class runtime history.
-
-If:
+A projection result with no observations still appends an empty batch.
 
 ```text
-ObservationProjectionResult.observations == ()
+step 2 existed, no percept was received
 ```
 
-then admission still appends:
+must remain distinguishable from:
 
 ```text
-RuntimeEvidenceBatch(step_index=k, evidence=())
+step 2 never occurred
 ```
 
-This is required because:
-
-```text
-no percept at step 2
-```
-
-is not equivalent to:
-
-```text
-step 2 did not exist
-```
-
-A blackout batch advances the ledger/world continuity and the runtime cognition state's `step_index`, but does not change any agent's epistemic or uncertain-belief content.
+A blackout batch advances ledger/world/step provenance but does not change deterministic epistemic content or uncertain posterior content.
 
 ## Runtime deterministic epistemic replay
 
-### Seed semantics
+### Authored seed
 
-For an agent `i`, runtime epistemic replay begins from:
+For agent `i`:
 
 ```text
 seed_state = epistemic_state(
@@ -383,59 +316,55 @@ seed_state = epistemic_state(
 )
 ```
 
-The authored seed is recomputed deterministically from canonical story/domain data. It is not copied from mutable caller state.
+The seed is recomputed from canonical story/domain state each time; no mutable caller-owned belief snapshot is trusted.
 
 ### `RuntimeEpistemicCellView`
 
 Fields:
 
 ```text
-cell: StateCellRef
+cell
 status: resolved | unknown | conflicted
-resolved_value: TypedValue | None
-constraints: tuple[TypedValue, ...]
+resolved_value
+constraints
 basis: authored_seed | runtime_perception
-supporting_runtime_evidence_hashes: tuple[str, ...]
-last_runtime_step: int | None
+supporting_runtime_evidence_hashes
+last_runtime_step
 ```
 
 Semantics:
 
-- when a cell has no runtime percept, copy the semantic seed status/value/constraints and use `basis=authored_seed`;
-- runtime percepts are direct-perception evidence and supersede prior authored epistemic content for that cell;
-- a latest-step runtime `equals` resolves the cell to the observed value and clears stale authored constraints;
-- a latest-step runtime `clear` makes the cell unknown with no resolved value and clears stale authored constraints;
-- if multiple channels emit the same cell on the same latest step, all truth-validated percepts have the same world truth; their hashes are retained canonically as joint support;
-- runtime V1 has no testimony and no `not_equals` percepts.
+- no runtime percept for a cell => preserve authored seed status/value/constraints;
+- runtime percept is direct perception and supersedes stale authored content for that cell;
+- latest runtime `equals` => resolved to observed value, stale authored constraints cleared;
+- latest runtime `clear` => unknown, no resolved value, stale authored constraints cleared;
+- if several channels perceive the same cell in the same latest step, all are truth-compatible because projection was validated against one next world state; retain all evidence hashes as support;
+- runtime V1 has no testimony and no runtime `not_equals` relation.
 
 ### `RuntimeEpistemicState`
 
 Fields:
 
 ```text
-agent_id: str
-source_at_time: int | None
-step_index: int
-ledger_hash: str
+agent_id
+source_at_time
+step_index
+ledger_hash
 seed_state: EpistemicState
-runtime_evidence_history: tuple[RuntimeEpistemicEvidence, ...]
-cells: Mapping[StateCellRef, RuntimeEpistemicCellView]
-resolved_values: Mapping[StateCellRef, TypedValue]
+runtime_evidence_history
+cells
+resolved_values
 ```
 
-The state contains the full authored seed plus the filtered runtime evidence history for that agent.
-
-Runtime evidence history is canonicalized by:
+Per-agent evidence order is canonical by:
 
 ```text
-(step_index, channel, cell, content_hash)
+(step_index, channel, cell)
 ```
 
-The state never contains another agent's runtime evidence.
+The state contains only evidence where `observer_id == agent_id`.
 
 ### `runtime_epistemic_state`
-
-Signature:
 
 ```text
 runtime_epistemic_state(
@@ -446,35 +375,26 @@ runtime_epistemic_state(
 ) -> RuntimeEpistemicState
 ```
 
-Behavior:
+It accepts no objective world-state argument.
 
-1. validate story/domain/agent and ledger source identity;
-2. recompute the authored seed at `ledger.source_at_time`;
-3. filter ledger evidence to exactly `observer_id == agent_id`;
-4. apply runtime direct-perception semantics step by step;
-5. return a state whose step index equals the ledger current step, including blackout-only advances;
-6. never accept or inspect `WorldState`, `WorldStepResult`, or objective state values.
-
-Failures are typed as `RuntimeEpistemicResolutionError`.
+Operational failures use `RuntimeEpistemicResolutionError`.
 
 ## Runtime uncertain belief replay
 
-### Why a separate runtime likelihood model is required
+### Separate model identity
 
-Existing `UncertainBeliefModelSpec.likelihood_hook` consumes authored `EpistemicEvidence`. Existing models may legitimately depend on authored fields such as `supporting_id`, authored source agent, and authored provenance.
+Existing `UncertainBeliefModelSpec` continues to define authored seed belief.
 
-Runtime evidence has different semantics and a different clock. It therefore gets a separate likelihood hook rather than being disguised as authored `EpistemicEvidence`.
-
-### `RuntimeBeliefModelSpec`
-
-Fields:
+Runtime evidence uses:
 
 ```text
-model_id: str
-version: str
-seed_model: UncertainBeliefModelSpec
-runtime_parameters: Mapping[str, canonical value]
-runtime_likelihood_hook: callable
+RuntimeBeliefModelSpec(
+    model_id,
+    version,
+    seed_model,
+    runtime_parameters,
+    runtime_likelihood_hook,
+)
 ```
 
 Identity binds:
@@ -484,30 +404,24 @@ Identity binds:
 - canonical runtime parameters;
 - measured implementation identity of the runtime likelihood hook.
 
-The seed model remains responsible for:
+### Runtime likelihood hook boundary
 
-```text
-authored evidence -> B_runtime,0
-```
-
-The runtime likelihood hook is responsible only for:
-
-```text
-RuntimeEpistemicEvidence -> likelihood vector over the current finite hypotheses
-```
-
-Hook signature:
+The hook signature is:
 
 ```text
 runtime_likelihood_hook(
     agent_id,
-    runtime_evidence,
+    percept_view: RuntimePerceptView,
     hypotheses,
     runtime_parameters,
 ) -> Mapping[hypothesis_hash, likelihood]
 ```
 
-The hook receives no objective world state, world step, or projection model object.
+The hook does **not** receive full `RuntimeEpistemicEvidence`.
+
+Therefore it cannot inspect world-state hashes, world-step hashes, projection hashes, transition hashes, or projection-spec hashes.
+
+This is the runtime analogue of capability-filtered Observation Projection: provenance is retained for audit, but hidden lineage is not model-visible cognition input.
 
 ### `RuntimeBeliefUpdateStep`
 
@@ -520,54 +434,48 @@ likelihoods: tuple[BeliefLikelihood, ...]
 posterior: BeliefDistribution
 ```
 
-Rules match existing finite uncertain-belief update rules:
+The stored update keeps full provenance evidence for audit, while the likelihood hook sees only `evidence.percept_view`.
+
+Rules:
 
 - evidence/prior/posterior describe one cell;
-- hypothesis sets match exactly;
-- likelihood values are finite probabilities in `[0,1]`;
-- zero total posterior mass rejects;
-- posterior is computed through the existing canonical `posterior_distribution` mechanism.
+- finite hypothesis sets match exactly;
+- likelihoods are finite probabilities in `[0,1]`;
+- zero posterior mass rejects;
+- posterior uses the existing canonical `posterior_distribution` mechanism.
 
 ### `RuntimeUncertainBeliefCellView`
 
 Fields:
 
 ```text
-cell: StateCellRef
-seed_posterior: BeliefDistribution
-posterior: BeliefDistribution
-updates: tuple[RuntimeBeliefUpdateStep, ...]
+cell
+seed_posterior
+posterior
+updates
 ```
 
-Rules:
-
-- `seed_posterior` is the exact posterior produced by the authored seed model at `source_at_time`;
-- the first runtime update prior equals `seed_posterior`;
-- each later update prior equals the previous posterior;
-- final `posterior` equals the update-chain tail;
-- no runtime evidence means `posterior == seed_posterior` and `updates == ()`.
+The first runtime update prior equals the authored seed posterior. Later updates form an exact chain. With no runtime evidence, posterior equals seed posterior.
 
 ### `RuntimeUncertainBeliefState`
 
 Fields:
 
 ```text
-agent_id: str
-model_id: str
-model_hash: str
-source_at_time: int | None
-step_index: int
-ledger_hash: str
+agent_id
+model_id
+model_hash
+source_at_time
+step_index
+ledger_hash
 seed_belief_state: UncertainBeliefState
-runtime_evidence_history: tuple[RuntimeEpistemicEvidence, ...]
-cells: Mapping[StateCellRef, RuntimeUncertainBeliefCellView]
+runtime_evidence_history
+cells
 ```
 
-The full authored seed belief state is retained, not merely its hash, so the resulting artifact is inspectable without hiding the inherited cognition basis.
+The full authored seed belief state is retained for inspectability.
 
 ### `runtime_uncertain_belief_state`
-
-Signature:
 
 ```text
 runtime_uncertain_belief_state(
@@ -582,64 +490,68 @@ runtime_uncertain_belief_state(
 
 Behavior:
 
-1. validate story/domain/agent, ledger, model, and unique tracked cells;
-2. call the existing `uncertain_epistemic_state()` using `model.seed_model` and `at_time=ledger.source_at_time`;
-3. use each tracked cell's authored seed posterior as the runtime prior;
-4. filter runtime evidence to the selected agent and tracked cell;
-5. apply the runtime likelihood hook in canonical evidence order;
-6. validate vectors and posterior continuity exactly;
-7. return a state at `ledger.current_step_index`;
-8. never read objective world state or call Observation Projection.
+1. validate story/domain/agent/ledger/model/tracked cells;
+2. compute the authored seed with existing `uncertain_epistemic_state()` at `ledger.source_at_time` using `model.seed_model`;
+3. filter runtime evidence to the selected agent and tracked cell;
+4. call runtime likelihood hook only with provenance-free `RuntimePerceptView`;
+5. validate likelihood vectors and posterior continuity;
+6. return a state at ledger current step.
 
-Failures are typed as `RuntimeBeliefResolutionError`.
+It accepts no objective world-state argument.
+
+Operational failures use `RuntimeBeliefResolutionError`.
 
 ## Clear evidence in uncertain belief
 
-A runtime `clear` percept means the projected world cell is absent after the step and the clear was explicitly written by the current world transition.
+Runtime `clear` means the projected cell is absent after the step and Observation Projection verified an explicit current-step clear transition.
 
-V1 does not add a synthetic `absent` hypothesis to finite state variables.
+V1 does not invent an `absent` hypothesis.
 
-Instead, `clear` is an evidence relation passed to `runtime_likelihood_hook`, exactly as a likelihood-bearing observation. The model author decides how absence changes probability over the existing finite hypotheses.
+`clear` is passed as a semantic relation in `RuntimePerceptView`; the runtime likelihood hook specifies how that observation changes probability over the existing finite hypotheses.
 
-This preserves current finite-hypothesis machinery and avoids silently changing domain value spaces.
+## No-objective-leakage invariant
 
-## No objective-state leakage invariant
+There are two different equality notions and V1 must not confuse them.
 
-The central cognition boundary is:
+### Cognitive semantic equality
+
+If two branches give agent `i` the same authored seed and the same semantic runtime percept sequence:
 
 ```text
-runtime epistemic/belief state depends only on
-  authored seed + runtime evidence ledger
+(step_index, channel, cell, relation, value)
 ```
 
-It does not depend on objective world state directly.
+then the agent's:
 
-A required discriminating invariant is:
+- deterministic cell statuses/resolved values/constraints;
+- uncertain posterior distributions;
+- likelihood-driven cognitive semantics
 
-```text
-Given two simulation branches with different objective world states,
-if one agent has the same authored seed and an identical runtime evidence ledger,
-then that agent's runtime epistemic state and runtime uncertain-belief state
 must be identical.
-```
 
-Formally:
+### Artifact/provenance identity
+
+The full runtime state artifacts may have different content hashes when the underlying world/projection lineage differs, because `ledger_hash` and stored `RuntimeEpistemicEvidence` intentionally preserve provenance.
+
+Thus:
 
 ```text
-Seed_i = Seed'_i
-L_i,k = L'_i,k
---------------------------------
-Epi_i,k = Epi'_i,k
-Belief_i,k = Belief'_i,k
+same percept semantics -> same cognition semantics
 ```
 
-No runtime cognition API accepts `WorldState` or `WorldStepResult`, making direct objective leakage impossible through the framework interface.
+but not necessarily:
+
+```text
+same percept semantics -> same provenance artifact hash
+```
+
+This distinction is required for both scientific non-leakage and auditability.
+
+The runtime likelihood hook sees only percept semantics, so provenance differences cannot alter posterior behavior.
 
 ## Multi-agent isolation
 
-One ledger stores all agents' admitted runtime evidence because it is a simulation-level history artifact.
-
-Cognition materialization is per agent:
+The ledger is simulation-wide; cognition is agent-specific.
 
 ```text
 RuntimeEvidenceLedger
@@ -648,86 +560,54 @@ RuntimeEvidenceLedger
   -> RuntimeUncertainBeliefState_i
 ```
 
-Evidence for agent A must never appear in agent B's state unless a later explicit communication/testimony mechanism is added. V1 has no such mechanism.
+Agent A's evidence cannot enter agent B's cognition in V1. Communication/testimony requires a future explicit mechanism.
 
-## Determinism and canonical ordering
+## Determinism
 
-Canonical order rules:
+Canonical ordering is semantic, not provenance-driven:
 
 ```text
-RuntimeEpistemicEvidence within a batch:
-  observer_id, channel, cell, content_hash
+batch evidence:
+  observer_id, channel, cell
 
-RuntimeEvidenceBatch:
-  step_index only; ledger chain fixes total order
+per-agent replay:
+  step_index, channel, cell
 
-Per-agent runtime evidence replay:
-  step_index, channel, cell, content_hash
-
-Runtime tracked cells:
+tracked cells:
   entity_type, entity_id, state_variable
 ```
 
-Equivalent caller insertion order for evidence/model mappings must not affect hashes.
-
-Same canonical story, domain, branch cutoff, world/projection sequence, ledger, runtime belief model, and tracked cells must produce the same final content hashes.
+Equivalent caller insertion order cannot change cognitive semantics or stable artifact hashes within one fixed provenance branch.
 
 ## Trust boundary
 
-### Certified-by-execution claims
+`admit_world_percepts()` certifies the current append operation by executing existing Observation Projection against the supplied world step and by deriving runtime evidence itself.
 
-`admit_world_percepts()` can guarantee for the current step that:
+Public records remain ordinary deterministic data records. Direct construction does not prove historic execution.
 
-- the world step passed Observation Projection's existing source validation;
-- the projection model was measured and validated;
-- projected observations were truth-checked against the next world state;
-- admitted runtime evidence was derived from those exact projected observations;
-- the new batch extends the exact supplied ledger and exact world-state lineage.
+Future Scheduler V1 can retain complete world-step plus admission artifacts for stronger end-to-end trajectory revalidation without changing these V1 records.
 
-### Public-record limitation
+## Public errors
 
-All public runtime records remain ordinary deterministic data records.
+Constructors use ordinary `TypeError` / `ValueError`.
 
-Direct construction of:
-
-- `RuntimeEpistemicEvidence`;
-- `RuntimeEvidenceBatch`;
-- `RuntimeEvidenceLedger`;
-- `RuntimePerceptAdmissionResult`;
-- runtime cognition states
-
-does not independently certify historical execution.
-
-This matches the project's existing provenance philosophy: content identity plus explicit lineage, with runtime entrypoints responsible for semantic validation.
-
-A future scheduler trajectory can retain full world-step and admission artifacts to make end-to-end trajectory revalidation stronger without changing these V1 records.
-
-## Error handling
-
-Public constructors use ordinary `TypeError` / `ValueError` for malformed record construction.
-
-Runtime entrypoints expose typed operational failures:
+Runtime entrypoints use:
 
 ```text
-RuntimePerceptAdmissionError(ValueError)
-RuntimeEpistemicResolutionError(ValueError)
-RuntimeBeliefResolutionError(ValueError)
+RuntimePerceptAdmissionError
+RuntimeEpistemicResolutionError
+RuntimeBeliefResolutionError
 ```
 
-Existing lower-level errors are chained as causes where useful.
+Admission rejects ledger/world continuity errors before projection execution.
 
-Admission must reject before projection execution when ledger/world continuity is already invalid.
+Cognition rejects story/domain/agent/ledger/model/tracked-cell errors before any runtime likelihood hook call.
 
-Runtime cognition replay must reject before any likelihood-hook call when story/domain/agent/ledger/model/tracked-cell identity is invalid.
-
-## Public API
-
-V1 public names are narrative-scoped only and must not leak to root `narrative_dynamics`.
-
-Proposed exact names:
+## Proposed narrative-scoped public API
 
 ```text
 RuntimeEpistemicEvidence
+RuntimePerceptView
 RuntimeEvidenceBatch
 RuntimeEvidenceLedger
 RuntimePerceptAdmissionResult
@@ -747,90 +627,86 @@ runtime_epistemic_state
 runtime_uncertain_belief_state
 ```
 
-`GenericNarrative`, authored `Observation`, authored `EpistemicEvidence`, `EpistemicState`, `UncertainBeliefState`, `UncertainBeliefModelSpec`, and their existing hashes/public behavior remain unchanged.
+These names are exported only from `narrative_dynamics.narrative`, never root `narrative_dynamics`.
+
+Existing authored `Observation`, `EpistemicEvidence`, `EpistemicState`, `UncertainBeliefState`, `UncertainBeliefModelSpec`, and authored intention APIs remain unchanged.
 
 ## Required V1 invariants
 
-The implementation tests must lock all of the following.
-
-1. empty ledger is exact-domain/story/cutoff bound;
-2. initial ledger world hash equals `world_state_from_story` at the cutoff;
+1. empty ledger binds exact domain/story/cutoff;
+2. initial ledger hash binds `world_state_from_story` at the cutoff;
 3. first admitted batch is step 1;
 4. later batches are strictly consecutive;
-5. current world-state hash chains exactly through batches;
-6. batch prior-ledger hash binds the exact prefix;
-7. blackout produces an empty batch rather than no batch;
-8. blackout advances step/world lineage but not cognition content;
-9. re-admitting one world step to the same ledger rejects;
-10. skipping or reordering world steps rejects;
-11. admission rejects mismatched domain/story/source cutoff before projection;
-12. admission internally executes projection and does not accept naked projected observations;
-13. each runtime evidence record binds projected observation, projection result/model/spec, world state/step, and transition hashes;
-14. evidence ordering and ledger hashes are insertion-order invariant;
-15. direct public-record construction is data, not certification;
-16. runtime epistemic seed equals authored `epistemic_state(... at_time=source_at_time)`;
-17. runtime uncertain seed equals authored `uncertain_epistemic_state(... at_time=source_at_time)`;
-18. authored records and authored replay remain unchanged;
+5. world-state hashes chain exactly;
+6. each batch binds the exact prior ledger prefix hash;
+7. blackout creates an explicit empty batch;
+8. blackout advances step/world lineage without changing cognition semantics;
+9. duplicate admission of the same step rejects;
+10. skipped or reordered world steps reject;
+11. source/domain/story/cutoff mismatches reject before projection;
+12. admission executes projection internally and accepts no naked projected observation;
+13. runtime evidence binds exact projected observation/projection/world/transition lineage;
+14. evidence/ledger identity is insertion-order invariant;
+15. public record construction is data, not certification;
+16. runtime epistemic seed equals authored `epistemic_state(..., at_time=source_at_time)`;
+17. runtime uncertain seed equals authored `uncertain_epistemic_state(..., at_time=source_at_time)`;
+18. authored records/replay/hashes remain unchanged;
 19. runtime `step_index` never populates authored `logical_time`;
-20. runtime equals percept supersedes stale authored state for the observed cell;
-21. runtime clear percept makes deterministic runtime cell state unknown;
-22. cells with no runtime percept retain authored seed semantics;
-23. multi-channel same-cell percepts are deterministic and provenance-preserving;
-24. one agent's evidence never appears in another agent's cognition state;
-25. same seed + same agent ledger yields identical cognition even when external objective branches differ;
-26. runtime belief model identity binds seed model, runtime parameters, and runtime likelihood implementation;
-27. runtime likelihood hook receives only agent/evidence/hypotheses/runtime parameters;
-28. invalid likelihood shape/probabilities reject typed;
-29. zero posterior mass rejects typed;
-30. runtime belief updates form an exact posterior chain from authored seed posterior;
-31. clear evidence does not invent a new hidden `absent` hypothesis;
-32. no runtime evidence leaves posterior equal to seed posterior;
-33. blackout-only steps preserve posterior while advancing runtime step metadata;
-34. runtime cognition APIs accept no objective world-state argument;
-35. public surface exports exactly the approved narrative-scoped names and preserves root isolation;
-36. all pre-existing replay, uncertain belief, intention, world transition, observation projection, compiler, intervention, movie-conformance, runtime/model-comparison, and Lean gates remain green.
+20. runtime equals supersedes stale authored cell semantics;
+21. runtime clear makes deterministic runtime cell state unknown;
+22. unperceived cells preserve authored seed semantics;
+23. multi-channel same-cell percepts remain deterministic and provenance-preserving;
+24. one agent's evidence never appears in another agent's cognition;
+25. equal semantic percept sequences produce equal cognition semantics even when provenance branches differ;
+26. provenance-different branches may retain different artifact hashes;
+27. runtime belief model identity binds seed model, parameters, and runtime likelihood implementation;
+28. runtime likelihood hook receives `RuntimePerceptView`, never provenance-bearing runtime evidence;
+29. changing only hidden provenance hashes cannot change likelihood inputs or posterior semantics;
+30. invalid likelihood shape/probabilities reject typed;
+31. zero posterior mass rejects typed;
+32. runtime updates form an exact posterior chain from the authored seed posterior;
+33. clear evidence does not invent an `absent` hypothesis;
+34. no runtime evidence leaves posterior equal to seed posterior;
+35. blackout-only steps preserve posterior while advancing runtime step metadata;
+36. runtime cognition APIs accept no objective world-state argument;
+37. public surface exports exactly the approved narrative-scoped names and preserves root isolation;
+38. all pre-existing replay, uncertain belief, intention, world transition, observation projection, compiler, intervention, movie, model-comparison, and Lean gates remain green.
 
-## Interaction with the future scheduler
+## Future Scheduler contract
 
-This V1 intentionally stops at runtime cognition materialization.
-
-The next Scheduler V1 can then define a round without inventing any new perception semantics:
+After this V1, Scheduler V1 can implement a round as:
 
 ```text
-1. start with RuntimeEvidenceLedger L_k
-2. materialize RuntimeEpistemicState_i / RuntimeUncertainBeliefState_i
-3. run a runtime-compatible decision model for eligible agents
-4. collect ActionIntent batch
-5. advance_world_step
-6. admit_world_percepts -> L_k+1
-7. repeat
+L_k
+ -> materialize runtime cognition per eligible agent
+ -> runtime-compatible decision execution
+ -> ActionIntent batch
+ -> advance_world_step
+ -> admit_world_percepts
+ -> L_k+1
 ```
 
-The scheduler must later define an explicit runtime decision consumer. Existing `run_intentional_decision()` remains authored-replay based and is unchanged by this V1.
+Scheduler V1 must define an explicit runtime decision consumer. Existing authored `run_intentional_decision()` is not silently repurposed.
 
 ## Non-goals
 
-Runtime Percept Admission V1 does not implement:
+This V1 does not implement:
 
-- the multi-step scheduler;
-- runtime action-selection APIs;
-- modifying `run_intentional_decision()`;
-- authored narrative mutation;
-- synthetic authored observations/events/claims/receptions;
-- communication or testimony between runtime agents;
+- scheduler/trajectory loop;
+- runtime action-selection API;
+- modification of `run_intentional_decision()`;
+- authored IR mutation;
+- runtime testimony/communication;
 - attention or selective admission after projection;
-- memory decay or forgetting;
-- sensor noise or stochastic observation;
+- memory decay/forgetting;
+- sensor noise;
 - stochastic world transitions;
-- hidden `absent` hypotheses;
-- planning/lookahead/POMDP integration;
-- learning model parameters from runtime history;
-- conflict resolution beyond existing World Transition V1 semantics;
-- RNG or seed management.
+- new hidden `absent` hypotheses;
+- planning/POMDP integration;
+- parameter learning;
+- RNG/seed management.
 
 ## Expected implementation scope
-
-The implementation plan should be able to remain within these paths:
 
 ```text
 docs/superpowers/specs/2026-08-25-narrative-runtime-percept-admission-v1-design.md
@@ -843,20 +719,18 @@ tests/test_narrative_runtime_cognition.py
 tests/test_narrative_trust_api.py
 ```
 
-If implementation requires changes to authored replay/uncertain/intention/world/observation-projection modules, GenericNarrative IR, DomainSpec, root package exports, or Lean sources, that is an architectural scope expansion and must stop for review rather than being folded into V1 silently.
+Any required change to authored replay/uncertain/intention/world/observation-projection modules, GenericNarrative IR, DomainSpec, root exports, or Lean sources is an architectural scope expansion and stops implementation for review.
 
 ## Success criterion
 
-The phase is complete when the engine can take one or more validated runtime world steps and produce, for any agent, a deterministic cognition state satisfying:
+For any agent and any admitted runtime history through step `k`:
 
 ```text
 Authored cognition at source_at_time
-  +
-Admitted runtime percept history through step k
-  =
-Runtime cognition at step k
+  + admitted semantic runtime percepts through step k
+  = runtime cognition semantics at step k
 ```
 
-with no objective-state read path and exact provenance back through projection and world-transition artifacts.
+while exact world/projection provenance remains attached for audit and remains unavailable as a hidden input to the cognition model.
 
-This establishes the missing runtime perception-to-belief bridge required before Multi-Step Scheduler V1.
+That is the perception-to-belief bridge required before Multi-Step Scheduler V1.
