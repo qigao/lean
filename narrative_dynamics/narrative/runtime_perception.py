@@ -11,8 +11,10 @@ from narrative_dynamics.narrative.ir import (
     TypedValue,
 )
 from narrative_dynamics.narrative.observation_projection import (
+    ObservationProjectionError,
     ObservationProjectionModelSpec,
     ObservationProjectionResult,
+    project_world_observations,
 )
 from narrative_dynamics.narrative.world import (
     WorldStepResult,
@@ -615,6 +617,51 @@ def runtime_evidence_ledger_from_story(
     )
 
 
+def _validate_admission_source(
+    story: GenericNarrative,
+    domain: DomainSpec,
+    world_step: WorldStepResult,
+    projection_model: ObservationProjectionModelSpec,
+    prior_ledger: RuntimeEvidenceLedger,
+) -> None:
+    if not isinstance(story, GenericNarrative):
+        raise TypeError("runtime percept admission requires GenericNarrative")
+    if not isinstance(domain, DomainSpec):
+        raise TypeError("runtime percept admission requires DomainSpec")
+    if not isinstance(world_step, WorldStepResult):
+        raise TypeError("runtime percept admission requires WorldStepResult")
+    if not isinstance(projection_model, ObservationProjectionModelSpec):
+        raise TypeError(
+            "runtime percept admission requires ObservationProjectionModelSpec"
+        )
+    if not isinstance(prior_ledger, RuntimeEvidenceLedger):
+        raise TypeError("runtime percept admission requires RuntimeEvidenceLedger")
+
+    validate_narrative(story, domain)
+    if prior_ledger.domain_id != domain.domain_id:
+        raise ValueError("runtime ledger domain id mismatch")
+    if prior_ledger.domain_version != domain.version:
+        raise ValueError("runtime ledger domain version mismatch")
+    if prior_ledger.domain_spec_hash != domain.content_hash:
+        raise ValueError("runtime ledger domain spec hash mismatch")
+    if prior_ledger.source_story_hash != story.content_hash:
+        raise ValueError("runtime ledger source story mismatch")
+    if prior_ledger.current_world_state_hash != world_step.prior_state.content_hash:
+        raise ValueError(
+            "runtime ledger current world state does not match world-step prior"
+        )
+    if prior_ledger.current_step_index != world_step.prior_state.step_index:
+        raise ValueError("runtime ledger step does not match world-step prior")
+    if prior_ledger.source_at_time != world_step.prior_state.source_at_time:
+        raise ValueError("runtime ledger source cutoff does not match world-step prior")
+    if world_step.next_state.source_at_time != prior_ledger.source_at_time:
+        raise ValueError(
+            "runtime ledger source cutoff does not match world-step next state"
+        )
+    if world_step.next_state.step_index != prior_ledger.current_step_index + 1:
+        raise ValueError("runtime admission world step must advance exactly one step")
+
+
 def admit_world_percepts(
     story: GenericNarrative,
     domain: DomainSpec,
@@ -622,6 +669,82 @@ def admit_world_percepts(
     projection_model: ObservationProjectionModelSpec,
     prior_ledger: RuntimeEvidenceLedger,
 ) -> RuntimePerceptAdmissionResult:
-    raise RuntimePerceptAdmissionError(
-        "runtime percept admission execution is unavailable in this stage"
-    )
+    try:
+        _validate_admission_source(
+            story,
+            domain,
+            world_step,
+            projection_model,
+            prior_ledger,
+        )
+    except RuntimePerceptAdmissionError:
+        raise
+    except (TypeError, ValueError) as error:
+        raise RuntimePerceptAdmissionError(
+            "runtime percept admission source validation failed"
+        ) from error
+
+    try:
+        projection_result = project_world_observations(
+            story,
+            domain,
+            world_step,
+            projection_model,
+        )
+    except ObservationProjectionError as error:
+        raise RuntimePerceptAdmissionError(
+            "runtime percept projection failed"
+        ) from error
+
+    try:
+        projection_result_hash = projection_result.content_hash
+        runtime_evidence = tuple(
+            RuntimeEpistemicEvidence(
+                observer_id=projected.observer_id,
+                channel=projected.channel,
+                cell=projected.fact.cell,
+                relation=projected.fact.relation,
+                value=projected.fact.value,
+                step_index=projected.step_index,
+                projected_observation_hash=projected.content_hash,
+                projection_result_hash=projection_result_hash,
+                projection_model_hash=projection_result.model_hash,
+                source_world_state_hash=projected.source_world_state_hash,
+                source_world_step_hash=projected.source_world_step_hash,
+                source_transition_hashes=projected.source_transition_hashes,
+                projection_spec_hash=projected.projection_spec_hash,
+            )
+            for projected in projection_result.observations
+        )
+        batch = RuntimeEvidenceBatch(
+            prior_ledger_hash=prior_ledger.content_hash,
+            step_index=world_step.next_state.step_index,
+            source_prior_world_state_hash=world_step.prior_state.content_hash,
+            source_world_state_hash=world_step.next_state.content_hash,
+            source_world_step_hash=world_step.content_hash,
+            projection_model_hash=projection_result.model_hash,
+            projection_result_hash=projection_result_hash,
+            evidence=runtime_evidence,
+        )
+        next_ledger = RuntimeEvidenceLedger(
+            domain_id=prior_ledger.domain_id,
+            domain_version=prior_ledger.domain_version,
+            domain_spec_hash=prior_ledger.domain_spec_hash,
+            source_story_hash=prior_ledger.source_story_hash,
+            source_at_time=prior_ledger.source_at_time,
+            initial_world_state_hash=prior_ledger.initial_world_state_hash,
+            current_world_state_hash=world_step.next_state.content_hash,
+            batches=prior_ledger.batches + (batch,),
+        )
+        return RuntimePerceptAdmissionResult(
+            prior_ledger_hash=prior_ledger.content_hash,
+            projection_result=projection_result,
+            evidence_batch=batch,
+            next_ledger=next_ledger,
+        )
+    except RuntimePerceptAdmissionError:
+        raise
+    except (TypeError, ValueError) as error:
+        raise RuntimePerceptAdmissionError(
+            "runtime percept admission result construction failed"
+        ) from error
