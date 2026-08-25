@@ -141,9 +141,8 @@ class MementoConformanceTests(unittest.TestCase):
         self.assertEqual(changed.first_divergence.logical_time, 4)
         self.assertTrue(changed.first_divergence.action_changed)
         self.assertEqual(changed.trajectory.selected_action, "continue_search")
-        self.assertNotIn(
-            _CASE_CELL,
-            changed.trajectory.snapshots[-1].objective_cells,
+        self.assertIsNone(
+            changed.trajectory.snapshots[-1].objective_cells[_CASE_CELL]
         )
         self.assertEqual(
             changed.trajectory.snapshots[-1].objective_cells[_RECORD_AUTHOR_CELL],
