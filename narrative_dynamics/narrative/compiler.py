@@ -690,3 +690,598 @@ class ResolutionRecord:
             "resolver_id": self.resolver_id,
             "rationale": self.rationale,
         }
+
+
+# Deterministic candidate-to-canonical compiler (V1).
+from dataclasses import replace as _replace
+
+from narrative_dynamics.narrative.domain import DomainSpec, validate_narrative
+from narrative_dynamics.narrative.ir import (
+    ActionOption,
+    Claim,
+    Decision,
+    Entity,
+    EntityRef,
+    GenericNarrative,
+    NarrativeEvent,
+    Observation,
+    Proposition,
+    Reception,
+    StateCellRef,
+    TypedValue,
+)
+
+
+_COMPILATION_STATUSES = frozenset({"canonical", "incomplete", "rejected"})
+_ALLOWED_RESOLUTION_FIELDS = {
+    CandidateEntity: frozenset({"entity_id", "type_name"}),
+    CandidateEvent: frozenset({"logical_time", "type_name", "actor_candidate_id"}),
+    CandidateObservation: frozenset({"agent_candidate_id", "event_candidate_id"}),
+    CandidateClaim: frozenset({"logical_time", "speaker_candidate_id"}),
+    CandidateReception: frozenset({"claim_candidate_id", "recipient_candidate_id"}),
+    CandidateDecision: frozenset({"logical_time", "actor_candidate_id", "type_name"}),
+}
+
+
+@dataclass(frozen=True)
+class CompilationDiagnostic:
+    code: str
+    candidate_id: str | None
+    field: str | None
+    message: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "code", _text(self.code, label="compilation diagnostic code"))
+        object.__setattr__(
+            self,
+            "candidate_id",
+            _optional_text(self.candidate_id, label="compilation diagnostic candidate id"),
+        )
+        object.__setattr__(
+            self,
+            "field",
+            _optional_text(self.field, label="compilation diagnostic field"),
+        )
+        object.__setattr__(
+            self,
+            "message",
+            _text(self.message, label="compilation diagnostic message"),
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "code": self.code,
+            "candidate_id": self.candidate_id,
+            "field": self.field,
+            "message": self.message,
+        }
+
+
+@dataclass(frozen=True)
+class CompilationResult:
+    status: str
+    domain_id: str
+    domain_version: str
+    source_bundle_hash: str
+    candidate_bundle_hash: str
+    resolution_bundle_hash: str
+    canonical_scenario: GenericNarrative | None
+    canonical_hash: str | None
+    diagnostics: tuple[CompilationDiagnostic, ...]
+
+    def __post_init__(self) -> None:
+        status = _text(self.status, label="compilation status")
+        if status not in _COMPILATION_STATUSES:
+            raise ValueError("compilation status must be canonical, incomplete, or rejected")
+        object.__setattr__(self, "status", status)
+        object.__setattr__(self, "domain_id", _text(self.domain_id, label="compilation domain id"))
+        object.__setattr__(
+            self,
+            "domain_version",
+            _text(self.domain_version, label="compilation domain version"),
+        )
+        for name in (
+            "source_bundle_hash",
+            "candidate_bundle_hash",
+            "resolution_bundle_hash",
+        ):
+            object.__setattr__(
+                self,
+                name,
+                _text(getattr(self, name), label=f"compilation {name.replace('_', ' ')}"),
+            )
+        diagnostics = tuple(self.diagnostics)
+        if any(not isinstance(item, CompilationDiagnostic) for item in diagnostics):
+            raise TypeError("compilation diagnostics must contain CompilationDiagnostic values")
+        object.__setattr__(
+            self,
+            "diagnostics",
+            tuple(
+                sorted(
+                    diagnostics,
+                    key=lambda item: (
+                        "" if item.candidate_id is None else item.candidate_id,
+                        "" if item.field is None else item.field,
+                        item.code,
+                        item.message,
+                    ),
+                )
+            ),
+        )
+        if status == "canonical":
+            if not isinstance(self.canonical_scenario, GenericNarrative):
+                raise TypeError("canonical compilation requires a GenericNarrative")
+            if self.canonical_hash != self.canonical_scenario.content_hash:
+                raise ValueError("canonical compilation hash must match canonical scenario")
+            if self.canonical_scenario.domain_id != self.domain_id:
+                raise ValueError("canonical compilation domain id must match scenario")
+            if self.canonical_scenario.domain_version != self.domain_version:
+                raise ValueError("canonical compilation domain version must match scenario")
+        elif self.canonical_scenario is not None or self.canonical_hash is not None:
+            raise ValueError("non-canonical compilation cannot contain canonical output")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "status": self.status,
+            "domain_id": self.domain_id,
+            "domain_version": self.domain_version,
+            "source_bundle_hash": self.source_bundle_hash,
+            "candidate_bundle_hash": self.candidate_bundle_hash,
+            "resolution_bundle_hash": self.resolution_bundle_hash,
+            "canonical_scenario": (
+                None if self.canonical_scenario is None else self.canonical_scenario.to_dict()
+            ),
+            "canonical_hash": self.canonical_hash,
+            "diagnostics": [item.to_dict() for item in self.diagnostics],
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_dict())
+
+
+def _resolution_bundle_hash(resolutions: tuple[ResolutionRecord, ...]) -> str:
+    ordered = tuple(
+        sorted(
+            resolutions,
+            key=lambda item: (
+                item.candidate_id,
+                item.decision,
+                stable_content_hash(item.to_dict()),
+            ),
+        )
+    )
+    return stable_content_hash(tuple(item.to_dict() for item in ordered))
+
+
+def _compilation_result(
+    *,
+    status: str,
+    domain: DomainSpec,
+    source: SourceBundle,
+    candidates: CandidateBundle,
+    resolution_bundle_hash: str,
+    canonical_scenario: GenericNarrative | None = None,
+    diagnostics: tuple[CompilationDiagnostic, ...] = (),
+) -> CompilationResult:
+    return CompilationResult(
+        status=status,
+        domain_id=domain.domain_id,
+        domain_version=domain.version,
+        source_bundle_hash=source.content_hash,
+        candidate_bundle_hash=candidates.content_hash,
+        resolution_bundle_hash=resolution_bundle_hash,
+        canonical_scenario=canonical_scenario,
+        canonical_hash=(None if canonical_scenario is None else canonical_scenario.content_hash),
+        diagnostics=diagnostics,
+    )
+
+
+def _rejected_compilation(
+    *,
+    domain: DomainSpec,
+    source: SourceBundle,
+    candidates: CandidateBundle,
+    resolution_bundle_hash: str,
+    code: str,
+    error: ValueError,
+    candidate_id: str | None = None,
+    field: str | None = None,
+) -> CompilationResult:
+    return _compilation_result(
+        status="rejected",
+        domain=domain,
+        source=source,
+        candidates=candidates,
+        resolution_bundle_hash=resolution_bundle_hash,
+        diagnostics=(CompilationDiagnostic(code, candidate_id, field, str(error)),),
+    )
+
+
+def _candidate_lookup(candidates: CandidateBundle) -> dict[str, CandidateRecord]:
+    return {item.candidate_id: item for item in candidates.candidates}
+
+
+def _validate_source_spans(source: SourceBundle, candidates: CandidateBundle) -> None:
+    for candidate in candidates.candidates:
+        for span in candidate.source_spans:
+            source.validate_span(span)
+
+
+def _apply_resolutions(
+    candidates: CandidateBundle,
+    resolutions: tuple[ResolutionRecord, ...],
+) -> tuple[tuple[CandidateRecord, ...], set[str]]:
+    by_id = _candidate_lookup(candidates)
+    resolution_by_id: dict[str, ResolutionRecord] = {}
+    for resolution in resolutions:
+        if resolution.candidate_id not in by_id:
+            raise ValueError("resolution candidate must reference a declared candidate")
+        if resolution.candidate_id in resolution_by_id:
+            raise ValueError("candidate may have at most one resolution record")
+        candidate = by_id[resolution.candidate_id]
+        allowed = _ALLOWED_RESOLUTION_FIELDS[type(candidate)]
+        if set(resolution.selected_fields) - set(allowed):
+            raise ValueError("resolution selected field is not allowed for candidate type")
+        resolution_by_id[resolution.candidate_id] = resolution
+
+    resolved: list[CandidateRecord] = []
+    explicitly_unresolved: set[str] = set()
+    for candidate in candidates.candidates:
+        resolution = resolution_by_id.get(candidate.candidate_id)
+        if resolution is None:
+            resolved.append(candidate)
+        elif resolution.decision == "rejected":
+            continue
+        elif resolution.decision == "unresolved":
+            explicitly_unresolved.add(candidate.candidate_id)
+            resolved.append(candidate)
+        else:
+            selected = dict(resolution.selected_fields)
+            resolved.append(_replace(candidate, **selected) if selected else candidate)
+    return tuple(resolved), explicitly_unresolved
+
+
+def _required_fields(candidate: CandidateRecord, domain: DomainSpec) -> tuple[str, ...]:
+    if isinstance(candidate, CandidateEntity):
+        return ("entity_id", "type_name")
+    if isinstance(candidate, CandidateEvent):
+        fields = ["logical_time", "type_name"]
+        if candidate.type_name is not None and domain._event_type(candidate.type_name).actor_type is not None:
+            fields.append("actor_candidate_id")
+        return tuple(fields)
+    if isinstance(candidate, CandidateObservation):
+        return ("agent_candidate_id", "event_candidate_id")
+    if isinstance(candidate, CandidateClaim):
+        return ("logical_time", "speaker_candidate_id")
+    if isinstance(candidate, CandidateReception):
+        return ("claim_candidate_id", "recipient_candidate_id")
+    if isinstance(candidate, CandidateDecision):
+        return ("logical_time", "actor_candidate_id", "type_name")
+    raise TypeError("unsupported candidate record")
+
+
+def _incomplete_diagnostics(
+    candidates: tuple[CandidateRecord, ...],
+    explicitly_unresolved: set[str],
+    domain: DomainSpec,
+) -> tuple[CompilationDiagnostic, ...]:
+    diagnostics: list[CompilationDiagnostic] = []
+    for candidate in candidates:
+        required = _required_fields(candidate, domain)
+        missing = tuple(field for field in required if getattr(candidate, field) is None)
+        if candidate.candidate_id in explicitly_unresolved:
+            diagnostics.append(
+                CompilationDiagnostic(
+                    "unresolved_required_field",
+                    candidate.candidate_id,
+                    missing[0] if missing else "resolution",
+                    "required semantic field is unresolved",
+                )
+            )
+            continue
+        for field in missing:
+            diagnostics.append(
+                CompilationDiagnostic(
+                    "unresolved_required_field",
+                    candidate.candidate_id,
+                    field,
+                    "required semantic field is unresolved",
+                )
+            )
+    return tuple(diagnostics)
+
+
+def _require_entity_ref(
+    candidate_id: str | None,
+    entity_refs: Mapping[str, EntityRef],
+    *,
+    label: str,
+) -> EntityRef:
+    if candidate_id is None or candidate_id not in entity_refs:
+        raise ValueError(f"{label} must reference an accepted entity candidate")
+    return entity_refs[candidate_id]
+
+
+def _compile_candidate_value(
+    value: CandidateValue,
+    entity_refs: Mapping[str, EntityRef],
+) -> TypedValue:
+    raw: object = value.value
+    if isinstance(raw, CandidateEntityRef):
+        raw = _require_entity_ref(
+            raw.candidate_id,
+            entity_refs,
+            label="candidate value entity reference",
+        )
+    return TypedValue(value.type_name, raw)
+
+
+def _compile_story(
+    candidates: tuple[CandidateRecord, ...],
+    domain: DomainSpec,
+) -> GenericNarrative:
+    entity_refs: dict[str, EntityRef] = {}
+    entities_by_id: dict[str, Entity] = {}
+    for candidate in candidates:
+        if not isinstance(candidate, CandidateEntity):
+            continue
+        assert candidate.entity_id is not None and candidate.type_name is not None
+        existing = entities_by_id.get(candidate.entity_id)
+        if existing is not None and existing.type_name != candidate.type_name:
+            raise ValueError("duplicate canonical entity id must have one entity type")
+        if existing is None:
+            existing = Entity(candidate.entity_id, candidate.type_name)
+            entities_by_id[candidate.entity_id] = existing
+        entity_refs[candidate.candidate_id] = EntityRef(existing.id, existing.type_name)
+
+    event_ids = {
+        item.candidate_id: item.event_id
+        for item in candidates
+        if isinstance(item, CandidateEvent)
+    }
+    claim_ids = {
+        item.candidate_id: item.claim_id
+        for item in candidates
+        if isinstance(item, CandidateClaim)
+    }
+    support_ids = {**event_ids, **claim_ids}
+
+    events: list[NarrativeEvent] = []
+    for candidate in candidates:
+        if not isinstance(candidate, CandidateEvent):
+            continue
+        assert candidate.logical_time is not None and candidate.type_name is not None
+        actor_id = None
+        if candidate.actor_candidate_id is not None:
+            actor_id = _require_entity_ref(
+                candidate.actor_candidate_id,
+                entity_refs,
+                label="candidate event actor",
+            ).entity_id
+        events.append(
+            NarrativeEvent(
+                candidate.event_id,
+                candidate.logical_time,
+                candidate.type_name,
+                actor_id,
+                {
+                    key: _compile_candidate_value(value, entity_refs)
+                    for key, value in candidate.arguments.items()
+                },
+            )
+        )
+
+    observations: list[Observation] = []
+    for candidate in candidates:
+        if not isinstance(candidate, CandidateObservation):
+            continue
+        assert candidate.agent_candidate_id is not None
+        assert candidate.event_candidate_id is not None
+        if candidate.event_candidate_id not in event_ids:
+            raise ValueError("candidate observation event must reference an accepted event")
+        observations.append(
+            Observation(
+                candidate.observation_id,
+                _require_entity_ref(
+                    candidate.agent_candidate_id,
+                    entity_refs,
+                    label="candidate observation agent",
+                ).entity_id,
+                event_ids[candidate.event_candidate_id],
+            )
+        )
+
+    claims: list[Claim] = []
+    for candidate in candidates:
+        if not isinstance(candidate, CandidateClaim):
+            continue
+        assert candidate.logical_time is not None
+        assert candidate.speaker_candidate_id is not None
+        support: list[str] = []
+        for ref in candidate.support_candidate_ids:
+            if ref not in support_ids:
+                raise ValueError("candidate claim support must reference an accepted record")
+            support.append(support_ids[ref])
+        claims.append(
+            Claim(
+                candidate.claim_id,
+                candidate.logical_time,
+                _require_entity_ref(
+                    candidate.speaker_candidate_id,
+                    entity_refs,
+                    label="candidate claim speaker",
+                ).entity_id,
+                Proposition(
+                    _require_entity_ref(
+                        candidate.proposition.subject_candidate_id,
+                        entity_refs,
+                        label="candidate proposition subject",
+                    ),
+                    candidate.proposition.state_variable,
+                    candidate.proposition.relation,
+                    _compile_candidate_value(candidate.proposition.value, entity_refs),
+                ),
+                tuple(support),
+            )
+        )
+
+    receptions: list[Reception] = []
+    for candidate in candidates:
+        if not isinstance(candidate, CandidateReception):
+            continue
+        assert candidate.claim_candidate_id is not None
+        assert candidate.recipient_candidate_id is not None
+        if candidate.claim_candidate_id not in claim_ids:
+            raise ValueError("candidate reception claim must reference an accepted claim")
+        receptions.append(
+            Reception(
+                candidate.reception_id,
+                claim_ids[candidate.claim_candidate_id],
+                _require_entity_ref(
+                    candidate.recipient_candidate_id,
+                    entity_refs,
+                    label="candidate reception recipient",
+                ).entity_id,
+            )
+        )
+
+    decisions: list[Decision] = []
+    for candidate in candidates:
+        if not isinstance(candidate, CandidateDecision):
+            continue
+        assert candidate.logical_time is not None
+        assert candidate.actor_candidate_id is not None
+        assert candidate.type_name is not None
+        decisions.append(
+            Decision(
+                candidate.decision_id,
+                candidate.logical_time,
+                _require_entity_ref(
+                    candidate.actor_candidate_id,
+                    entity_refs,
+                    label="candidate decision actor",
+                ).entity_id,
+                candidate.type_name,
+                tuple(
+                    StateCellRef(
+                        _require_entity_ref(
+                            cell.subject_candidate_id,
+                            entity_refs,
+                            label="candidate decision context cell",
+                        ),
+                        cell.state_variable,
+                    )
+                    for cell in candidate.context_cells
+                ),
+                tuple(
+                    ActionOption(
+                        action.id,
+                        action.type_name,
+                        {
+                            key: _compile_candidate_value(value, entity_refs)
+                            for key, value in action.arguments.items()
+                        },
+                    )
+                    for action in candidate.actions
+                ),
+            )
+        )
+
+    story = GenericNarrative(
+        domain_id=domain.domain_id,
+        domain_version=domain.version,
+        domain_spec_hash=domain.content_hash,
+        entities=tuple(entities_by_id.values()),
+        events=tuple(events),
+        observations=tuple(observations),
+        claims=tuple(claims),
+        receptions=tuple(receptions),
+        decisions=tuple(decisions),
+    )
+    validate_narrative(story, domain)
+    return story
+
+
+def compile_candidates(
+    source: SourceBundle,
+    candidates: CandidateBundle,
+    resolutions: tuple[ResolutionRecord, ...],
+    domain: DomainSpec,
+) -> CompilationResult:
+    if not isinstance(source, SourceBundle):
+        raise TypeError("narrative compiler requires a SourceBundle")
+    if not isinstance(candidates, CandidateBundle):
+        raise TypeError("narrative compiler requires a CandidateBundle")
+    if not isinstance(domain, DomainSpec):
+        raise TypeError("narrative compiler requires a DomainSpec")
+    resolution_values = tuple(resolutions)
+    if any(not isinstance(item, ResolutionRecord) for item in resolution_values):
+        raise TypeError("narrative compiler resolutions must be ResolutionRecord values")
+    resolution_hash = _resolution_bundle_hash(resolution_values)
+
+    try:
+        _validate_source_spans(source, candidates)
+    except ValueError as error:
+        return _rejected_compilation(
+            domain=domain,
+            source=source,
+            candidates=candidates,
+            resolution_bundle_hash=resolution_hash,
+            code="invalid_source_span",
+            error=error,
+        )
+
+    try:
+        resolved, explicitly_unresolved = _apply_resolutions(candidates, resolution_values)
+    except ValueError as error:
+        return _rejected_compilation(
+            domain=domain,
+            source=source,
+            candidates=candidates,
+            resolution_bundle_hash=resolution_hash,
+            code="invalid_resolution",
+            error=error,
+        )
+
+    try:
+        diagnostics = _incomplete_diagnostics(resolved, explicitly_unresolved, domain)
+    except ValueError as error:
+        return _rejected_compilation(
+            domain=domain,
+            source=source,
+            candidates=candidates,
+            resolution_bundle_hash=resolution_hash,
+            code="compiler_validation",
+            error=error,
+        )
+    if diagnostics:
+        return _compilation_result(
+            status="incomplete",
+            domain=domain,
+            source=source,
+            candidates=candidates,
+            resolution_bundle_hash=resolution_hash,
+            diagnostics=diagnostics,
+        )
+
+    try:
+        story = _compile_story(resolved, domain)
+    except ValueError as error:
+        return _rejected_compilation(
+            domain=domain,
+            source=source,
+            candidates=candidates,
+            resolution_bundle_hash=resolution_hash,
+            code="semantic_validation",
+            error=error,
+        )
+
+    return _compilation_result(
+        status="canonical",
+        domain=domain,
+        source=source,
+        candidates=candidates,
+        resolution_bundle_hash=resolution_hash,
+        canonical_scenario=story,
+    )
