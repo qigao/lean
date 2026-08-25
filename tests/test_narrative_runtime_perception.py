@@ -18,6 +18,7 @@ from narrative_dynamics.narrative.world import (
     world_state_from_story,
 )
 from tests.test_narrative_observation_projection import (
+    _forge,
     make_projection_domain,
     make_projection_story,
     make_transition_model,
@@ -352,10 +353,10 @@ class NarrativeRuntimePerceptionTests(unittest.TestCase):
         domain, story, world_step = make_first_world_step()
         initial = runtime_evidence_ledger_from_story(story, domain, at_time=11)
         cases = (
-            replace(initial, domain_id="other-domain"),
-            replace(initial, source_story_hash=_hash("other-story")),
-            replace(initial, source_at_time=10),
-            replace(initial, current_world_state_hash=_hash("other-world")),
+            _forge(initial, domain_id="other-domain"),
+            _forge(initial, source_story_hash=_hash("other-story")),
+            _forge(initial, source_at_time=10),
+            _forge(initial, current_world_state_hash=_hash("other-world")),
         )
         for bad_ledger in cases:
             hook = RecordingPhaseHook()
