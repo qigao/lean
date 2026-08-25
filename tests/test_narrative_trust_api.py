@@ -104,6 +104,15 @@ _EXPECTED_PUBLIC_API = {
     "WorldTransitionConflictError",
     "world_state_from_story",
     "advance_world_step",
+    # Runtime observation projection.
+    "ObservationCapabilitySpec",
+    "ObserverProjectionSpec",
+    "ObservationProjectionModelSpec",
+    "ObservationFact",
+    "ProjectedObservation",
+    "ObservationProjectionResult",
+    "ObservationProjectionError",
+    "project_world_observations",
     # Analysis.
     "AnalysisScope",
     "TriggerRef",
