@@ -92,6 +92,18 @@ _EXPECTED_PUBLIC_API = {
     "GoalResolutionError",
     "ChoiceResolutionError",
     "run_intentional_decision",
+    # World transition.
+    "ActionEffectSpec",
+    "ActionTransitionSpec",
+    "WorldTransitionModelSpec",
+    "ActionIntent",
+    "WorldState",
+    "ActionTransitionRecord",
+    "WorldStepResult",
+    "WorldTransitionError",
+    "WorldTransitionConflictError",
+    "world_state_from_story",
+    "advance_world_step",
     # Analysis.
     "AnalysisScope",
     "TriggerRef",
