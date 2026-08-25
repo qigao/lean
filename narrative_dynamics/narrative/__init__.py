@@ -122,6 +122,19 @@ from narrative_dynamics.narrative.intention import (
     IntentionalDecisionResult,
     run_intentional_decision,
 )
+from narrative_dynamics.narrative.world import (
+    ActionEffectSpec,
+    ActionIntent,
+    ActionTransitionRecord,
+    ActionTransitionSpec,
+    WorldState,
+    WorldStepResult,
+    WorldTransitionConflictError,
+    WorldTransitionError,
+    WorldTransitionModelSpec,
+    advance_world_step,
+    world_state_from_story,
+)
 
 
 __all__ = (
@@ -176,6 +189,17 @@ __all__ = (
     "GoalResolutionError",
     "ChoiceResolutionError",
     "run_intentional_decision",
+    "ActionEffectSpec",
+    "ActionTransitionSpec",
+    "WorldTransitionModelSpec",
+    "ActionIntent",
+    "WorldState",
+    "ActionTransitionRecord",
+    "WorldStepResult",
+    "WorldTransitionError",
+    "WorldTransitionConflictError",
+    "world_state_from_story",
+    "advance_world_step",
     "EvidenceAccess",
     "DecisionCellView",
     "DecisionContext",
