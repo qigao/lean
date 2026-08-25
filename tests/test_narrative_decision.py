@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
 import unittest
 
 _IMPORT_ERROR: ImportError | None = None
@@ -12,6 +13,12 @@ try:
     )
 except ImportError as error:
     _IMPORT_ERROR = error
+
+_RESULT_IMPORT_ERROR: ImportError | None = None
+try:
+    from narrative_dynamics.narrative.decision import DecisionCellView, DecisionResult
+except ImportError as error:
+    _RESULT_IMPORT_ERROR = error
 
 from narrative_test_support import (
     MissingActionHook,
@@ -49,6 +56,31 @@ class GenericDecisionTests(unittest.TestCase):
                 for item in hook.context.evidence_history
             )
         )
+
+    def test_result_and_cell_view_are_typed_one_hot_records(self) -> None:
+        self.require_decision()
+        if _RESULT_IMPORT_ERROR is not None:
+            self.fail(f"decision result surface is missing: {_RESULT_IMPORT_ERROR}")
+
+        hook = RecordingFirstActionHook()
+        model = make_model("result", EvidenceAccess.DIRECT_ONLY, hook)
+        result = run_decision_model(
+            make_test_story(), make_test_domain(), "d1", model
+        )
+
+        self.assertIsInstance(result, DecisionResult)
+        self.assertEqual(result.model_id, "result")
+        self.assertEqual(result.selected_action, "restart")
+        self.assertEqual(dict(result.action_scores), {"restart": 1.0, "leave": 0.0})
+        self.assertEqual(dict(result.policy), {"restart": 1.0, "leave": 0.0})
+        self.assertEqual(result.basis.selected_action, result.selected_action)
+        self.assertIsNotNone(hook.context)
+        self.assertTrue(
+            all(isinstance(view, DecisionCellView) for view in hook.context.cells.values())
+        )
+        view = next(iter(hook.context.cells.values()))
+        with self.assertRaises(FrozenInstanceError):
+            view.status = "unknown"
 
     def test_three_capabilities_produce_expected_reference_actions(self) -> None:
         self.require_decision()
