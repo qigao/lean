@@ -530,10 +530,14 @@ class NarrativeRuntimeCognitionTests(unittest.TestCase):
                         "mode": mode,
                     },
                 )
-                with self.assertRaises(RuntimeBeliefResolutionError):
+                with self.assertRaises(RuntimeBeliefResolutionError) as caught:
                     runtime_uncertain_belief_state(
                         story, domain, "a1", ledger, model, (phase_cell(),)
                     )
+                self.assertNotEqual(
+                    str(caught.exception),
+                    "runtime uncertain belief execution is unavailable in this stage",
+                )
 
     def test_zero_runtime_posterior_mass_rejects_typed(self):
         self.require_cognition()
@@ -552,10 +556,14 @@ class NarrativeRuntimeCognitionTests(unittest.TestCase):
             branch="zero",
         )
         model = make_runtime_belief_model(hook=ZeroRuntimeLikelihood())
-        with self.assertRaises(RuntimeBeliefResolutionError):
+        with self.assertRaises(RuntimeBeliefResolutionError) as caught:
             runtime_uncertain_belief_state(
                 story, domain, "a1", ledger, model, (phase_cell(),)
             )
+        self.assertNotEqual(
+            str(caught.exception),
+            "runtime uncertain belief execution is unavailable in this stage",
+        )
 
     def test_runtime_belief_updates_form_exact_chain_from_seed_posterior(self):
         self.require_cognition()
