@@ -81,6 +81,17 @@ _EXPECTED_PUBLIC_API = {
     "DecisionResolutionError",
     "require_resolved_cell",
     "run_decision_model",
+    # Intentional decision.
+    "GoalSpec",
+    "GoalModelSpec",
+    "GoalState",
+    "ChoiceModelSpec",
+    "IntentionalDecisionModelSpec",
+    "IntentionalDecisionResult",
+    "IntentionalDecisionResolutionError",
+    "GoalResolutionError",
+    "ChoiceResolutionError",
+    "run_intentional_decision",
     # Analysis.
     "AnalysisScope",
     "TriggerRef",
