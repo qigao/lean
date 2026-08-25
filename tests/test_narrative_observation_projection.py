@@ -55,6 +55,8 @@ try:
 except ImportError as error:
     _PROJECTION_IMPORT_ERROR = error
 
+_STAGE_ERROR = "non-empty projection execution is unavailable in this stage"
+
 
 class SeedAgentPhaseHook:
     def __call__(self, prior_state, event):
@@ -336,6 +338,9 @@ class NarrativeObservationProjectionTests(unittest.TestCase):
         if _PROJECTION_IMPORT_ERROR is not None:
             self.fail("narrative observation projection boundary is missing: " f"{_PROJECTION_IMPORT_ERROR}")
 
+    def assert_not_stage_error(self, caught) -> None:
+        self.assertNotEqual(str(caught.exception), _STAGE_ERROR)
+
     def test_record_constructors_fail_closed_and_public_records_are_data_not_certification(self):
         self.require_projection()
         cell = _cell("a1", "Agent", "agent.location")
@@ -418,8 +423,9 @@ class NarrativeObservationProjectionTests(unittest.TestCase):
         for spec in specs:
             hook = spec.projection_hook
             with self.subTest(spec=spec):
-                with self.assertRaises(ObservationProjectionError):
+                with self.assertRaises(ObservationProjectionError) as caught:
                     project_world_observations(story, domain, world_step, projection_model(domain, spec))
+                self.assert_not_stage_error(caught)
                 self.assertEqual(hook.calls, [])
 
     def test_hook_sees_only_read_capability_cells_and_scope_is_exact(self):
@@ -500,9 +506,12 @@ class NarrativeObservationProjectionTests(unittest.TestCase):
         invalid_cells = (_cell("missing", "Agent", "agent.location"), _cell("a1", "Service", "agent.location"), _cell("a1", "Agent", "missing.state"), _cell("svc", "Service", "agent.location"))
         for cell in invalid_cells:
             with self.subTest(cell=cell):
-                spec = _spec(ConstantFactsHook((ObservationFact(cell, "equals", TypedValue("LocationState", "hall")),)), read=(ObservationCapabilitySpec("agent.location", "any"),), emit=(ObservationCapabilitySpec("agent.location", "any"),))
-                with self.assertRaises(ObservationProjectionError):
+                hook = ConstantFactsHook((ObservationFact(cell, "equals", TypedValue("LocationState", "hall")),))
+                spec = _spec(hook, read=(ObservationCapabilitySpec("agent.location", "any"),), emit=(ObservationCapabilitySpec("agent.location", "any"),))
+                with self.assertRaises(ObservationProjectionError) as caught:
                     project_world_observations(story, domain, world_step, projection_model(domain, spec))
+                self.assert_not_stage_error(caught)
+                self.assertGreater(hook.calls, 0)
 
     def test_two_observers_can_receive_different_percepts_from_same_world_step(self):
         self.require_projection()
@@ -583,8 +592,9 @@ class NarrativeObservationProjectionTests(unittest.TestCase):
             hook = RecordViewsHook(())
             spec = _spec(hook, read=(ObservationCapabilitySpec("agent.location", "any"),), emit=(ObservationCapabilitySpec("agent.location", "any"),))
             with self.subTest(forged=forged):
-                with self.assertRaises(ObservationProjectionError):
+                with self.assertRaises(ObservationProjectionError) as caught:
                     project_world_observations(story, domain, forged, projection_model(domain, spec))
+                self.assert_not_stage_error(caught)
                 self.assertEqual(hook.calls, [])
 
     def test_transition_decision_action_actor_and_cutoff_reject_before_hook(self):
@@ -602,8 +612,9 @@ class NarrativeObservationProjectionTests(unittest.TestCase):
             spec = _spec(hook, read=(ObservationCapabilitySpec("agent.location", "any"),), emit=(ObservationCapabilitySpec("agent.location", "any"),))
             forged_step = _forge(world_step, transitions=(record,) + world_step.transitions[1:])
             with self.subTest(record=record):
-                with self.assertRaises(ObservationProjectionError):
+                with self.assertRaises(ObservationProjectionError) as caught:
                     project_world_observations(story, domain, forged_step, projection_model(domain, spec))
+                self.assert_not_stage_error(caught)
                 self.assertEqual(hook.calls, [])
         cutoff = 7
         prior = _forge(world_step.prior_state, source_at_time=cutoff)
@@ -611,8 +622,9 @@ class NarrativeObservationProjectionTests(unittest.TestCase):
         cutoff_step = _forge(world_step, prior_state=prior, next_state=next_state)
         hook = RecordViewsHook(())
         spec = _spec(hook, read=(ObservationCapabilitySpec("agent.location", "any"),), emit=(ObservationCapabilitySpec("agent.location", "any"),))
-        with self.assertRaises(ObservationProjectionError):
+        with self.assertRaises(ObservationProjectionError) as caught:
             project_world_observations(story, domain, cutoff_step, projection_model(domain, spec))
+        self.assert_not_stage_error(caught)
         self.assertEqual(hook.calls, [])
 
     def test_extensional_forgery_duplicate_actor_and_write_collisions_reject_before_hook(self):
@@ -634,8 +646,9 @@ class NarrativeObservationProjectionTests(unittest.TestCase):
             hook = RecordViewsHook(())
             spec = _spec(hook, read=(ObservationCapabilitySpec("agent.location", "any"),), emit=(ObservationCapabilitySpec("agent.location", "any"),))
             with self.subTest(forged=forged):
-                with self.assertRaises(ObservationProjectionError):
+                with self.assertRaises(ObservationProjectionError) as caught:
                     project_world_observations(story, domain, forged, projection_model(domain, spec))
+                self.assert_not_stage_error(caught)
                 self.assertEqual(hook.calls, [])
 
     def test_projection_order_hash_and_inputs_are_immutable(self):
