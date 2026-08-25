@@ -35,7 +35,6 @@ from narrative_dynamics.narrative.world import (
 _HASH = re.compile(r"^sha256:[0-9a-f]{64}$")
 _SCOPES = frozenset({"observer", "any"})
 _RELATIONS = frozenset({"equals", "clear"})
-_FACT_STAGE_ERROR = "fact truth acceptance is unavailable in this stage"
 
 
 class ObservationProjectionError(ValueError):
@@ -865,12 +864,84 @@ def _validate_fact_cell_shape(
         raise ValueError("observation fact subject type mismatch")
 
 
+def _records_writing_cell(
+    world_step: WorldStepResult,
+    cell: StateCellRef,
+) -> tuple[ActionTransitionRecord, ...]:
+    matches = []
+    for record in world_step.transitions:
+        if any(
+            operation.subject_id == cell.subject.entity_id
+            and operation.state_variable == cell.state_variable
+            for operation in record.delta.operations
+        ):
+            matches.append(record)
+    return tuple(sorted(matches, key=_record_key))
+
+
 def _accept_facts(
     facts: tuple[ObservationFact, ...],
+    *,
+    domain: DomainSpec,
+    entities: Mapping[str, Entity],
+    world_step: WorldStepResult,
+    observer: Entity,
+    spec: ObserverProjectionSpec,
+    spec_hash: str,
 ) -> tuple[ProjectedObservation, ...]:
-    if facts:
-        raise ObservationProjectionError(_FACT_STAGE_ERROR)
-    return ()
+    accepted: list[ProjectedObservation] = []
+    for fact in facts:
+        cell = fact.cell
+        _validate_fact_cell_shape(fact, domain, entities)
+        variable = domain._state_variable(cell.state_variable)
+        writing_records = _records_writing_cell(world_step, cell)
+
+        if fact.relation == "equals":
+            assert fact.value is not None
+            domain._value_type(variable.value_type).validate(
+                fact.value,
+                entities,
+            )
+            expected = world_step.next_state.values.get(cell)
+            if expected is None or fact.value != expected:
+                raise ValueError(
+                    "equals observation does not match post-step truth"
+                )
+        else:
+            if cell in world_step.next_state.values:
+                raise ValueError(
+                    "clear observation requires post-step absence"
+                )
+            clear_records = tuple(
+                record
+                for record in writing_records
+                if any(
+                    operation.kind == "clear"
+                    and operation.subject_id == cell.subject.entity_id
+                    and operation.state_variable == cell.state_variable
+                    for operation in record.delta.operations
+                )
+            )
+            if len(clear_records) != 1:
+                raise ValueError(
+                    "clear observation requires one explicit current-step clear"
+                )
+
+        accepted.append(
+            ProjectedObservation(
+                observer_id=observer.id,
+                channel=spec.channel,
+                fact=fact,
+                step_index=world_step.next_state.step_index,
+                source_world_state_hash=world_step.next_state.content_hash,
+                source_world_step_hash=world_step.content_hash,
+                source_transition_hashes=tuple(
+                    record.content_hash for record in writing_records
+                ),
+                projection_spec_hash=spec_hash,
+            )
+        )
+    return tuple(accepted)
 
 
 def project_world_observations(
@@ -931,7 +1002,17 @@ def project_world_observations(
                             "observation fact is outside emit capability"
                         )
                     _validate_fact_cell_shape(fact, domain, entities)
-                observations.extend(_accept_facts(facts))
+                observations.extend(
+                    _accept_facts(
+                        facts,
+                        domain=domain,
+                        entities=entities,
+                        world_step=world_step,
+                        observer=observer,
+                        spec=spec,
+                        spec_hash=spec_hash,
+                    )
+                )
 
         return ObservationProjectionResult(
             model_id=model.model_id,
