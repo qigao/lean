@@ -44,17 +44,26 @@ class KnivesOutConformanceTests(unittest.TestCase):
         story = knives_out_confession_story()
         domain = knives_out_domain()
 
+        self.assertEqual(
+            tuple((event.id, event.logical_time) for event in story.events),
+            (("tamper-medication", 1), ("restore-medication-evidence", 2)),
+        )
         self.assertEqual(objective_state(story, domain, at_time=1)[_CASE_CELL], _RANSOM)
 
-        fran = direct_state(story, domain, "fran", at_time=1)
-        self.assertEqual(fran.cells[_CASE_CELL].resolved_value, _RANSOM)
-        self.assertEqual(fran.cells[_CASE_CELL].evidence_kind, "direct_perception")
-        self.assertEqual(fran.cells[_CASE_CELL].supporting_id, "tamper-medication")
+        fran_before = direct_state(story, domain, "fran", at_time=1)
+        self.assertNotIn(_CASE_CELL, fran_before.cells)
+        fran_after = direct_state(story, domain, "fran", at_time=2)
+        self.assertEqual(fran_after.cells[_CASE_CELL].resolved_value, _RANSOM)
+        self.assertEqual(fran_after.cells[_CASE_CELL].evidence_kind, "direct_perception")
+        self.assertEqual(
+            fran_after.cells[_CASE_CELL].supporting_id,
+            "restore-medication-evidence",
+        )
 
-        blanc_direct = direct_state(story, domain, "blanc", at_time=2)
+        blanc_direct = direct_state(story, domain, "blanc", at_time=3)
         self.assertNotIn(_CASE_CELL, blanc_direct.cells)
 
-        blanc_epistemic = epistemic_state(story, domain, "blanc", at_time=2)
+        blanc_epistemic = epistemic_state(story, domain, "blanc", at_time=3)
         view = blanc_epistemic.cells[_CASE_CELL]
         self.assertEqual(view.resolved_value, _RANSOM)
         self.assertEqual(view.evidence_kind, "testimony")
@@ -108,7 +117,7 @@ class KnivesOutConformanceTests(unittest.TestCase):
         self.assertIsNotNone(changed.first_divergence)
         assert changed.trajectory is not None
         assert changed.first_divergence is not None
-        self.assertEqual(changed.first_divergence.logical_time, 2)
+        self.assertEqual(changed.first_divergence.logical_time, 3)
         self.assertTrue(changed.first_divergence.action_changed)
         self.assertEqual(changed.trajectory.selected_action, "focus_marta")
         self.assertEqual(changed.trajectory.snapshots[-1].objective_cells[_CASE_CELL], _RANSOM)
