@@ -475,7 +475,7 @@ class IntentionalDecisionModelSpec:
             "goal_model_hash": self.goal_model.content_hash,
             "choice_model_hash": self.choice_model.content_hash,
             "implementation_identity": measure_implementation(
-                run_intentional_decision
+                IntentionalDecisionModelSpec
             ).manifest_identity(),
         }
 
