@@ -18,50 +18,36 @@ World Transition V1 closed the action-to-world half-step:
 X_t + {A_t^i} -> {Delta_t^i} -> X_{t+1}
 ```
 
-The next architectural boundary is to make post-transition perception explicit:
+Observation Projection V1 closes the next explicit runtime boundary:
 
 ```text
 X_{t+1} -> {O_{t+1}^i}
 ```
 
-Observation Projection V1 defines a deterministic, typed, capability-limited, provenance-linked runtime projection from one completed `WorldStepResult` to per-agent runtime percepts.
+The increment defines a deterministic, typed, capability-limited, provenance-linked projection from one completed `WorldStepResult` to per-agent runtime percepts.
 
-This increment deliberately stops at the percept boundary. It does not yet update beliefs, schedule the next decision round, or mutate the canonical authored story.
+It stops at the percept boundary. It does not update beliefs, schedule another round, or mutate the authored canonical story.
 
-## 2. Problem statement
+## 2. Why this is a separate sidecar
 
-The existing `GenericNarrative.Observation` record is an authored-story record. It contains an `event_id`, and `validate_narrative()` requires that ID to resolve to an authored `NarrativeEvent`. Existing `direct_state()` then replays the referenced authored event delta and turns it into `EpistemicEvidence`.
+The existing `GenericNarrative.Observation` is an authored-story record. It points to an authored `NarrativeEvent.event_id`, and `validate_narrative()` requires that reference to resolve inside the canonical story. Existing `direct_state()` then replays that authored event delta into `EpistemicEvidence`.
 
-A simulated `ActionTransitionRecord` is not a `NarrativeEvent`. Converting a runtime action delta into a synthetic authored event would collapse two different semantic layers:
+A runtime `ActionTransitionRecord` is not an authored `NarrativeEvent`. Turning it into a synthetic authored event would collapse two semantic layers:
 
-- authored canonical narrative facts; and
+- authored canonical facts; and
 - generated runtime simulation results.
 
-Observation Projection V1 must therefore preserve that distinction rather than extending or mutating `GenericNarrative.observations`.
-
-## 3. Architectural decision
-
-Use an independent sidecar module:
+Therefore V1 adds an independent module:
 
 ```text
 narrative_dynamics/narrative/observation_projection.py
 ```
 
-The module consumes the existing canonical story/domain plus a completed `WorldStepResult` and an explicit projection model. It returns separate runtime `ProjectedObservation` records.
+The canonical IR, `DomainSpec`, authored `Observation`, replay, belief, decision, intention, and World Transition V1 remain unchanged.
 
-The canonical IR, `DomainSpec`, authored `Observation`, replay logic, uncertain belief, deterministic decision, intentional decision, and World Transition V1 remain unchanged.
+## 3. Chosen architecture
 
-### 3.1 Rejected alternative: synthesize NarrativeEvent + Observation
-
-This would reuse current replay machinery, but it would make generated simulation output look authored and would require dynamically extending a canonical immutable `GenericNarrative`. Rejected.
-
-### 3.2 Rejected alternative: emit EpistemicEvidence directly
-
-This is smaller but couples the environment/sensor layer directly to cognition and forces a premature decision about mapping simulation `step_index` to authored `logical_time`. Rejected for V1.
-
-### 3.3 Chosen alternative: runtime projected-observation sidecar
-
-The chosen boundary is:
+The chosen runtime boundary is:
 
 ```text
 WorldStepResult
@@ -69,24 +55,27 @@ WorldStepResult
   -> ProjectedObservation[]
 ```
 
-A later Multi-Step Scheduler increment will define the explicit bridge from runtime projected observations into the next-round belief/evidence state.
+Rejected alternatives:
+
+1. **Synthetic NarrativeEvent + Observation** — rejected because generated simulation state would masquerade as authored canonical history.
+2. **Emit EpistemicEvidence directly** — rejected because it would couple the environment/sensor layer to cognition and prematurely equate runtime `step_index` with authored `logical_time`.
+
+A later Multi-Step Scheduler V1 will define the explicit adapter from projected runtime observations into next-round evidence/belief.
 
 ## 4. Time semantics
 
-Observation Projection V1 has two distinct clocks and must not silently equate them.
+V1 keeps two clocks distinct:
 
-- `Decision.logical_time` and `NarrativeEvent.logical_time` are authored canonical story time.
-- `WorldState.step_index` is runtime simulation-step time.
+- `NarrativeEvent.logical_time` / `Decision.logical_time`: authored story time.
+- `WorldState.step_index`: runtime simulation-step time.
 
-A projected runtime observation records the post-step `WorldState.step_index`. It does not invent or claim an authored `logical_time`.
-
-For a world step from `step_index = t` to `step_index = t + 1`, every projected observation produced by that step has:
+A projected observation records only:
 
 ```text
 step_index = world_step.next_state.step_index
 ```
 
-This is simulation ordering metadata only.
+It does not invent an authored `logical_time`.
 
 ## 5. Public API
 
@@ -103,7 +92,7 @@ ObservationProjectionError
 project_world_observations
 ```
 
-They are exported from `narrative_dynamics.narrative` only. They are not exported from the root `narrative_dynamics` package.
+They are exported from `narrative_dynamics.narrative` only, not from the root `narrative_dynamics` package.
 
 ## 6. ObservationCapabilitySpec
 
@@ -114,27 +103,23 @@ class ObservationCapabilitySpec:
     subject_scope: str  # "observer" | "any"
 ```
 
-Purpose: declare which objective state cells a projection hook may read or emit.
+Purpose: declare objective-state cells that a projection hook may read or emit.
 
-### 6.1 Subject scopes
+`subject_scope="observer"` means only the cell whose subject is the current observer entity.
 
-`observer` means only the state cell whose subject is the current observer entity may be included.
-
-`any` means any canonical entity whose type is compatible with the declared state variable may be included.
+`subject_scope="any"` means every canonical subject compatible with that state variable.
 
 No other V1 scope exists.
 
-For an `observer` capability, the declared state variable's `subject_type` must equal the containing `ObserverProjectionSpec.observer_type`.
+The record is immutable, exposes `to_dict()`, and has a stable `content_hash`.
 
-### 6.2 Canonical identity
-
-The record is immutable, has `to_dict()`, and has a stable `content_hash`. Duplicate capability keys are rejected.
-
-Canonical capability key:
+Canonical key:
 
 ```text
 (state_variable, subject_scope)
 ```
+
+Structural constructor checks validate non-empty names and the exact scope enum. Domain-dependent checks occur later during `project_world_observations()` because the record does not carry a `DomainSpec`.
 
 ## 7. ObserverProjectionSpec
 
@@ -148,35 +133,43 @@ class ObserverProjectionSpec:
     projection_hook: object
 ```
 
-Each spec defines one observation channel for one canonical observer entity type.
+One spec defines one runtime observation channel for one observer entity type.
 
-### 7.1 Declaration requirements
+### 7.1 Structural constructor checks
 
-- `observer_type` must be a declared domain entity type.
-- `channel` is a non-empty trimmed runtime channel name.
-- read capabilities are unique and non-empty.
-- emit capabilities are unique and non-empty.
-- every referenced state variable must exist in the bound `DomainSpec` at execution time.
-- `projection_hook` must be callable.
+The constructor validates:
 
-The channel is declared by this exact spec. A hook cannot return a different channel because `ObservationFact` does not contain a channel; the engine assigns the spec channel.
+- `observer_type` and `channel` are non-empty trimmed strings;
+- read capabilities are non-empty and unique;
+- emit capabilities are non-empty and unique;
+- every emit capability is semantically contained by a read capability;
+- `projection_hook` is callable;
+- capability ordering is canonicalized.
 
-### 7.2 Read vs emit capability
+### 7.2 Domain-dependent execution checks
 
-Read capability and emit capability are intentionally distinct.
+Before any hook executes, `project_world_observations()` validates against the exact bound `DomainSpec` that:
 
-A hook may need a state cell to decide visibility without being allowed to expose that cell. Example:
+- `observer_type` is a declared entity type;
+- every referenced state variable exists;
+- every `observer`-scoped capability refers to a state variable whose subject type equals `observer_type`.
+
+No constructor claims to have performed these domain-dependent checks.
+
+### 7.3 Read vs emit capability
+
+Read capability and emit capability are intentionally different.
+
+Example:
 
 ```text
 read: lighting(any), location(any)
 emit: location(any)
 ```
 
-The hook may use lighting to decide whether a location is visible, but it may not emit lighting itself.
+The hook may use lighting to decide whether location is visible but cannot emit lighting.
 
-Every emit capability must be semantically contained by a read capability.
-
-Containment is defined as follows for the same state variable:
+For the same state variable, semantic containment is:
 
 ```text
 read(any)      contains emit(any)
@@ -185,9 +178,11 @@ read(observer) contains emit(observer)
 read(observer) does not contain emit(any)
 ```
 
-This is stronger and more useful than requiring literal tuple equality.
+### 7.4 Channel ownership
 
-### 7.3 Hook identity
+`ObservationFact` does not contain a channel. The engine assigns the exact `ObserverProjectionSpec.channel`, so a hook cannot silently emit through a different undeclared channel.
+
+### 7.5 Hook identity
 
 `ObserverProjectionSpec.content_hash` binds:
 
@@ -197,11 +192,11 @@ This is stronger and more useful than requiring literal tuple equality.
 - canonical emit capabilities; and
 - `measure_implementation(projection_hook).manifest_identity()`.
 
-Changing hook implementation changes the spec identity.
+Changing the hook implementation changes the spec identity.
 
 ## 8. Projection hook contract
 
-The V1 hook signature is conceptually:
+Conceptual signature:
 
 ```python
 hook(
@@ -212,35 +207,47 @@ hook(
 ) -> tuple[ObservationFact, ...]
 ```
 
-The engine supplies immutable mappings.
+The engine passes immutable mappings and the exact canonical observer entity.
 
-### 8.1 Critical visibility rule
+### 8.1 Hidden-state boundary
 
-The hook never receives the complete objective world state.
+The hook never receives the complete objective world.
 
-`prior_visible` and `next_visible` contain only cells allowed by the spec's `read_capabilities` for the current observer.
+`prior_visible` and `next_visible` contain only cells admitted by the spec's read capabilities for the current observer.
 
-The hook also does not receive:
+The hook does not receive:
 
-- the complete `WorldStepResult`;
-- action transition records;
+- `WorldStepResult`;
+- transition records;
 - action intents;
-- other hidden world cells;
+- hidden objective cells;
 - canonical claims/receptions;
 - belief state;
 - goal state.
 
-This prevents a hook from inspecting a hidden objective fact merely to decide whether to leak another fact.
+Therefore framework APIs do not give a hook an undeclared hidden fact that it can inspect merely to decide whether to leak another fact.
 
-### 8.2 Observer value
+### 8.2 Capability-filtered mappings
 
-The observer argument is the exact canonical `Entity` resolved from `story.entities`. The caller cannot supply a trusted observer copy.
+For `observer` scope, the mapping includes only:
+
+```text
+StateCellRef(observer, state_variable)
+```
+
+when present.
+
+For `any` scope, the mapping includes all present canonical cells of that state variable.
+
+Absent state remains absent from the mapping.
 
 ### 8.3 Determinism boundary
 
-The engine adds no RNG, timestamps, unordered iteration, or implicit scheduling to the hook contract. Specs, observers, capabilities, and outputs are canonically ordered.
+The framework introduces no RNG, clock time, unordered iteration, or implicit scheduling into the hook call.
 
-As with existing semantic/model hooks, deterministic behavior of the supplied hook implementation is part of the attested model contract; V1 does not attempt to prove Python-callable purity.
+Specs, observers, capabilities, facts, and accepted observations are canonically ordered.
+
+As with existing semantic/model hooks, deterministic behavior of the supplied Python callable is part of the attested model contract. V1 does not claim to prove callable purity.
 
 ## 9. ObservationFact
 
@@ -252,46 +259,41 @@ class ObservationFact:
     value: TypedValue | None
 ```
 
-This is an untrusted hook proposal, not yet an accepted observation.
+This is an untrusted hook proposal, not an accepted observation.
 
-### 9.1 Shape rules
+Rules:
 
-For `equals`:
+- `equals` requires a `TypedValue`;
+- `clear` requires `value=None`;
+- no `not_equals` direct-perception fact exists in V1;
+- the hook must return an exact tuple of `ObservationFact` values;
+- lists, generators, mappings, scalars, or arbitrary records reject;
+- one observer/spec invocation may propose at most one fact per cell.
 
-- `value` must be a `TypedValue`.
+The record is immutable, exposes `to_dict()`, and has a stable `content_hash`.
 
-For `clear`:
+## 10. Truth and emit validation
 
-- `value` must be `None`.
+The hook decides **what is visible**, not **what is true**.
 
-No `not_equals` direct-perception fact exists in V1.
-
-The hook returns an exact tuple of `ObservationFact` values. Lists, generators, mappings, scalars, or arbitrary records are rejected.
-
-Within one observer/spec invocation, the hook may propose at most one fact per `StateCellRef`.
-
-## 10. Truthfulness and emit validation
-
-The hook decides what is visible. It does not decide what is true.
-
-Every proposed fact is validated by the engine after the hook returns.
+Every proposed fact is validated after the hook returns.
 
 ### 10.1 Canonical cell validation
 
-The fact cell must resolve to:
+The cell must resolve to:
 
 - a canonical story entity;
-- the exact entity type declared in the `EntityRef`;
-- a declared domain state variable; and
+- the exact entity type named by its `EntityRef`;
+- a declared state variable; and
 - the state variable's declared subject type.
 
-### 10.2 Emit capability validation
+### 10.2 Emit capability
 
-The fact cell must be covered by the current spec's `emit_capabilities` for the exact observer.
+The cell must be covered by the current spec's emit capabilities for the exact observer.
 
 A readable but non-emittable cell cannot be returned.
 
-### 10.3 Equals truth rule
+### 10.3 Equals truth
 
 For:
 
@@ -299,17 +301,17 @@ For:
 relation = equals
 ```
 
-the exact `next_state` must contain the cell and:
+`next_state` must contain the exact cell and:
 
 ```text
 fact.value == world_step.next_state.values[fact.cell]
 ```
 
-The `TypedValue` is also validated against the domain value type.
+The value is also validated against the domain value type.
 
-A hook cannot fabricate or transform the value in V1.
+No value transformation exists in V1.
 
-### 10.4 Clear truth rule
+### 10.4 Clear truth
 
 For:
 
@@ -317,18 +319,16 @@ For:
 relation = clear
 ```
 
-both conditions are required:
+both must hold:
 
-1. the post-step `next_state` does not contain the cell; and
-2. an exact `StateDeltaOp(kind="clear", ...)` for that cell exists in one transition record in this world step.
+1. the post-step state does not contain the cell; and
+2. one current-step transition record contains an exact `StateDeltaOp(kind="clear", ...)` for that cell.
 
-Absence alone is not observable `clear` evidence. A cell that never existed cannot be turned into an observation of clearing merely because it is absent.
+Absence alone is not observable clear evidence.
 
-This rule also permits an explicit clear operation on an already-absent cell because the transition itself is an explicit world operation.
+An explicit clear on an already-absent cell remains eligible because an explicit world operation occurred.
 
 ## 11. ProjectedObservation
-
-Accepted facts become engine-produced observations:
 
 ```python
 @dataclass(frozen=True)
@@ -343,47 +343,42 @@ class ProjectedObservation:
     projection_spec_hash: str
 ```
 
-The caller does not supply these lineage fields.
+### 11.1 Engine-derived lineage
 
-### 11.1 Source state
+Inside `project_world_observations()`, the projection hook supplies only `ObservationFact` values. The engine derives and populates all lineage fields.
 
-`source_world_state_hash` is exactly:
-
-```text
-world_step.next_state.content_hash
-```
-
-### 11.2 Source world step
-
-`source_world_step_hash` is exactly:
+Exact source bindings:
 
 ```text
-world_step.content_hash
+source_world_state_hash = world_step.next_state.content_hash
+source_world_step_hash  = world_step.content_hash
+step_index              = world_step.next_state.step_index
+projection_spec_hash    = exact ObserverProjectionSpec.content_hash
 ```
 
-### 11.3 Source transition provenance
+### 11.2 Transition provenance uses actual write-set membership
 
-The engine derives transition provenance from the actual write set.
+For an observed cell, `source_transition_hashes` contains the content hash of every current-step `ActionTransitionRecord` whose delta **wrote** that cell.
 
-For an observed cell, `source_transition_hashes` contains the `ActionTransitionRecord.content_hash` of every transition record whose delta wrote that cell.
+This is based on the write set, not on whether the extensional value changed. A `set` to the same value still contributes transition provenance.
 
-Under World Transition V1 conflict semantics this tuple has length zero or one, but it remains a tuple so a future explicit conflict resolver does not require changing the record shape.
+Under World Transition V1 conflict semantics the tuple has length zero or one, but a tuple is retained for future explicit conflict-resolution semantics.
 
-If an unchanged persistent value is observed and no current-step transition touched that cell:
+If a persistent value is observed and no current-step transition wrote its cell:
 
 ```text
 source_transition_hashes = ()
 ```
 
-The observation is still bound to the exact source world state and source world step.
+For `clear`, exactly one matching clear transition must exist under V1 semantics.
 
-For `clear`, exactly one matching clear transition must exist in V1.
+### 11.3 Public-record trust boundary
 
-### 11.4 Identity
+`ProjectedObservation` is a public data record. Directly constructing one with syntactically valid hashes does **not** certify provenance.
 
-`ProjectedObservation` is immutable, canonical, serializable, and content-hashed.
+The trust claim is specifically about values returned by `project_world_observations()`: its hook cannot supply lineage fields, and the function derives those fields from the validated source world step.
 
-Its identity commits to the observer, channel, fact, runtime step, source state/step lineage, source transition lineage, and projection spec.
+The record constructor validates shape, hash formats, tuple uniqueness/canonicality, and internal field types only.
 
 ## 12. ObservationProjectionModelSpec
 
@@ -398,17 +393,11 @@ class ObservationProjectionModelSpec:
     projections: tuple[ObserverProjectionSpec, ...]
 ```
 
-### 12.1 Domain identity
-
 The model binds the exact domain triple:
 
 ```text
 (domain_id, domain_version, domain_spec_hash)
 ```
-
-Execution against any other `DomainSpec` fails before any projection hook runs.
-
-### 12.2 Projection uniqueness
 
 Projection specs are unique by:
 
@@ -416,13 +405,13 @@ Projection specs are unique by:
 (observer_type, channel)
 ```
 
-One observer type may have multiple explicitly named channels.
+One observer type may have multiple explicit channels.
 
-### 12.3 Canonical model identity
+Specs are canonically sorted by `(observer_type, channel)` before hashing.
 
-Specs are sorted by `(observer_type, channel)` before hashing. Capability declaration order does not affect model identity.
+A model with an empty `projections` tuple is valid and explicitly represents a no-observation / blackout projection condition. This is useful for information-ablation experiments without requiring a dummy hook.
 
-The model content hash changes if domain identity, channel, visibility capability, emit capability, or hook implementation changes.
+The model hash changes when domain identity, channel, capability declaration, or hook implementation changes.
 
 ## 13. ObservationProjectionResult
 
@@ -437,19 +426,36 @@ class ObservationProjectionResult:
     observations: tuple[ProjectedObservation, ...]
 ```
 
-The result is immutable and has a stable `content_hash`.
+The result is immutable and content-hashed.
 
-An empty observation tuple is valid when all invoked projection hooks return no facts.
+An empty observation tuple is valid.
 
-Canonical observation ordering is:
+Canonical ordering:
 
 ```text
 (observer_id, channel, subject_type, subject_id, state_variable)
 ```
 
-No caller input ordering contributes to result identity.
+The result constructor checks that every contained observation matches its declared source state/step, runtime step index, and model-produced projection identity relationships that can be checked from contained data.
 
-## 14. project_world_observations()
+Like other public records, direct construction is data construction, not independent certification that the source world step actually existed. Runtime trust comes from `project_world_observations()` validation.
+
+## 14. ObservationProjectionError
+
+Runtime projection failures use:
+
+```python
+class ObservationProjectionError(ValueError):
+    ...
+```
+
+Public-record constructor shape failures retain ordinary `TypeError` / `ValueError` semantics.
+
+`project_world_observations()` wraps source resolution, domain mismatch, attestation, hook execution, hook-output shape, capability, and truth failures as `ObservationProjectionError`, chaining the original exception where appropriate.
+
+An arbitrary exception raised by a projection hook must not escape untyped.
+
+## 15. project_world_observations()
 
 Public function:
 
@@ -463,98 +469,77 @@ def project_world_observations(
     ...
 ```
 
-### 14.1 Execution sequence
-
-The function performs these phases in order:
+Execution order:
 
 1. validate canonical story/domain identity;
 2. validate projection model/domain identity;
-3. validate the supplied world-step structural and extensional consistency;
-4. resolve canonical entity map;
-5. validate projection declarations against the exact domain;
+3. validate supplied world-step structural and extensional consistency;
+4. resolve the canonical entity map;
+5. validate all domain-dependent projection declarations;
 6. sort projection specs canonically;
-7. resolve all canonical observer entities matching each spec's observer type;
-8. build capability-filtered immutable prior/next views;
+7. resolve all canonical observer entities matching each spec observer type;
+8. build immutable capability-filtered prior/next mappings;
 9. invoke each hook exactly once for each `(observer, spec)` pair;
-10. validate the exact hook return shape;
-11. validate fact cells, emit capabilities, typed values, and truthfulness;
-12. derive world-state/world-step/transition provenance automatically;
-13. canonicalize all accepted observations; and
+10. validate exact tuple return shape;
+11. validate fact cells, emit capability, typed values, and objective truth;
+12. derive state/step/transition/spec lineage automatically;
+13. canonicalize accepted observations; and
 14. return one atomic `ObservationProjectionResult`.
 
 If any phase fails, no partial result is returned.
 
-## 15. Upstream WorldStepResult validation
+For an empty-model blackout condition, phases 7–13 produce no hook calls and an empty observation tuple while still returning a model/source-bound result.
 
-`WorldStepResult` is a public record, so Observation Projection V1 does not assume every instance originated from `advance_world_step()`.
+## 16. Upstream WorldStepResult trust boundary
 
-Before any projection hook runs, the projection engine validates enough upstream structure to trust the extensional post-step world used for observation truth checks.
+`WorldStepResult` is public, so V1 does not assume every instance originated from `advance_world_step()`.
 
-### 15.1 Required checks
+Before any projection hook runs, `project_world_observations()` validates enough upstream structure to trust the extensional post-step world used for truth checking.
 
-The function must verify:
+Required checks:
 
 - `world_step` is a `WorldStepResult`;
-- prior and next world states bind the same exact canonical story/domain identity;
-- both state value maps contain only canonical, typed domain cells/values;
+- prior and next states bind the exact canonical story/domain identity;
+- both value maps contain only canonical typed domain cells/values;
 - `next_state.step_index == prior_state.step_index + 1`;
 - `next_state.parent_state_hash == prior_state.content_hash`;
 - every transition record binds the exact prior-state hash;
 - every transition intent resolves to a canonical story decision;
-- transition `actor_id` equals that decision actor;
-- transition action equals the canonical selected `ActionOption` from that decision;
-- if the source world has an authored cutoff, a selected decision may not occur after that cutoff;
-- one actor appears at most once in the world step;
-- every delta operation has a canonical subject/state-variable/value shape;
-- no one transition writes one cell twice;
-- no two transition records write the same cell under World Transition V1 semantics;
-- applying all validated deltas to the prior values reproduces the exact `next_state.values`; and
-- the next state's transition batch hash matches the canonical transition-record batch identity.
+- record actor equals the canonical decision actor;
+- record action equals the canonical selected `ActionOption` from that decision;
+- if `source_at_time` is numeric, the decision is not later than that authored cutoff;
+- one actor appears at most once in the step;
+- every delta operation has canonical subject/state-variable/value shape;
+- no transition writes one cell twice;
+- no two transition records write the same cell under V1 conflict semantics;
+- applying all validated deltas to prior values reproduces exact `next_state.values`; and
+- the next state's transition-batch hash matches the canonical transition-record batch identity.
 
-These checks reject structurally inconsistent or extensionally forged world-step payloads before observation hooks execute.
+These checks reject structurally inconsistent or extensionally forged world-step payloads before observation hooks run.
 
-### 15.2 Trust non-claim
+### 16.1 Narrow trust non-claim
 
-Observation Projection V1 does not receive `WorldTransitionModelSpec`, so it does not re-run or independently authorize the upstream transition model implementation. `world_step.model_hash`, transition-spec hashes, and selection-result hashes remain upstream provenance identities, not a second authorization token.
+Observation Projection V1 does not receive `WorldTransitionModelSpec`, so it does not re-run or independently authorize the upstream transition implementation.
 
-This layer's trust claim is narrower: the observed post-step world must be canonical, typed, lineage-consistent, and extensionally equal to applying the supplied canonical action transition records.
+`world_step.model_hash`, transition-spec hashes, and selection-result hashes remain upstream provenance identities, not a second authorization token.
 
-## 16. Capability-filtered views
+The projection-layer trust claim is narrower: the observed post-step state is canonical, typed, lineage-consistent, and extensionally equal to applying the supplied canonical action transition records.
 
-For one observer/spec, the engine constructs two immutable mappings:
+## 17. Observer iteration
 
-```text
-prior_visible
-next_visible
-```
+For each projection spec, the engine selects every canonical story entity whose `type_name` exactly equals `spec.observer_type`.
 
-For each read capability:
+Observers are processed in lexical entity-ID order.
 
-### 16.1 observer scope
+A model may omit a type entirely, meaning those entities receive no projection through that model.
 
-Include only:
+A model may attach multiple channels to one observer type using multiple unique specs.
 
-```text
-StateCellRef(observer, state_variable)
-```
+## 18. Information interventions
 
-when present in the corresponding world state.
+No separate information-intervention API is required in V1.
 
-### 16.2 any scope
-
-Include every present canonical state cell for that state variable.
-
-Because state variables already declare their subject type in `DomainSpec`, unrelated entity types are never included.
-
-### 16.3 Hidden-state guarantee
-
-Cells outside the read capability set do not appear in either mapping. The hook receives no complete world-state reference from which to recover them.
-
-## 17. Information interventions
-
-V1 requires no separate intervention API.
-
-The same exact `WorldStepResult` may be projected with two different attested `ObservationProjectionModelSpec` values.
+The exact same `WorldStepResult` may be projected with two different `ObservationProjectionModelSpec` values.
 
 Therefore an experiment can hold:
 
@@ -570,25 +555,10 @@ Expected invariant:
 same source_world_step_hash
 same source_world_state_hash
 different projection model hash
-potentially different ProjectedObservation set
+potentially different projected-observation set
 ```
 
-This is the intended primitive for later information-manipulation and identifiability experiments.
-
-## 18. Errors
-
-Runtime projection failures use:
-
-```python
-class ObservationProjectionError(ValueError):
-    ...
-```
-
-Constructor-level shape errors for the immutable public records retain normal `TypeError` / `ValueError` semantics, consistent with existing narrative records.
-
-`project_world_observations()` wraps resolution, source validation, model-attestation, hook execution, hook-output, capability, and truthfulness failures as `ObservationProjectionError` with the original error chained where appropriate.
-
-A projection-hook exception must never escape as an arbitrary untyped runtime exception.
+An empty projection model is the explicit blackout witness.
 
 ## 19. Atomicity and mutation boundary
 
@@ -599,70 +569,77 @@ It must not mutate:
 - `GenericNarrative`;
 - `DomainSpec`;
 - `WorldStepResult`;
-- prior `WorldState`;
-- next `WorldState`;
+- prior or next `WorldState`;
 - any `ActionTransitionRecord`;
-- caller-owned mappings or tuples.
+- caller-owned tuples or mappings.
 
-If one observer/spec emits an invalid fact, the whole projection call fails. No partial observation result is returned.
+If one hook or fact fails, the whole call raises. No partial result is returned.
 
 ## 20. Required RED invariants
 
-The test-only RED must lock at least the following behaviors before production implementation is added.
+The test-only RED must lock at least the following before production code exists.
 
 ### 20.1 Records and identity
 
-1. public record constructors fail closed on malformed strings, scopes, relations, hashes, types, and tuple shapes;
-2. projection model identity binds exact domain, read/emit capabilities, channel, and hook implementation;
-3. capability/spec declaration ordering does not change model hash;
-4. duplicate capabilities and duplicate `(observer_type, channel)` specs reject.
+1. public constructors fail closed on malformed strings, scopes, relations, hashes, types, tuple shapes, and duplicate transition-hash entries;
+2. `ObservationFact`, capability, spec, model, projected observation, and result hashes are stable and canonical;
+3. projection model identity binds exact domain, read/emit capabilities, channel, and hook implementation;
+4. capability/spec declaration ordering does not change model hash;
+5. duplicate capabilities and duplicate `(observer_type, channel)` specs reject;
+6. empty projection model is valid and produces an explicit blackout result.
 
-### 20.2 Visibility boundary
+### 20.2 Domain declaration boundary
 
-5. a hook receives only read-capability cells, never a hidden objective cell;
-6. `observer` scope exposes only the current observer's own compatible cell;
-7. `any` scope exposes all canonical compatible subjects for that state variable;
-8. a readable but non-emittable cell cannot be emitted;
-9. semantic read/emit containment follows the explicit `any`/`observer` rules.
+7. undeclared observer type rejects before hook execution;
+8. undeclared state variable rejects before hook execution;
+9. incompatible `observer`-scope state variable rejects before hook execution;
+10. semantic read/emit containment follows the exact `any` / `observer` rules.
 
-### 20.3 Truth boundary
+### 20.3 Visibility boundary
 
-10. `equals` succeeds only for the exact typed post-step objective value;
-11. a fabricated or transformed value is rejected;
-12. `clear` succeeds only when the cell is absent post-step and an explicit current-step clear operation exists;
-13. absence without explicit clear is rejected;
-14. unknown entity, mismatched entity type, undeclared variable, or incompatible subject rejects.
+11. a hook receives only read-capability cells and never an undeclared hidden objective cell;
+12. `observer` scope exposes only the current observer's compatible cell;
+13. `any` scope exposes every present canonical compatible subject for the variable;
+14. a readable but non-emittable cell cannot be emitted.
 
-### 20.4 Per-agent behavior
+### 20.4 Truth boundary
 
-15. two observers can receive different projected observations from the same exact world step;
-16. one observer type may have multiple explicitly declared channels;
-17. hooks may validly return an empty fact tuple.
+15. `equals` succeeds only for the exact typed post-step value;
+16. fabricated or transformed value rejects;
+17. `clear` succeeds only when post-step state is absent and an explicit current-step clear write exists;
+18. absence without an explicit clear rejects;
+19. unknown subject, mismatched entity type, undeclared variable, or incompatible subject rejects.
 
-### 20.5 Provenance
+### 20.5 Per-agent behavior
 
-18. changed-cell observation binds the exact transition-record content hash automatically;
-19. unchanged persistent-state observation has empty transition provenance but exact world-state/world-step provenance;
-20. projected observation step index equals the exact next world-state step index;
-21. caller cannot forge observation provenance because accepted records are engine-constructed.
+20. two observers can receive different observations from the same exact world step;
+21. one observer type may have multiple explicit channels;
+22. a hook may return an empty fact tuple.
 
-### 20.6 Source trust boundary
+### 20.6 Provenance
 
-22. story/domain/source-world identity mismatch rejects before hook execution;
-23. malformed prior or next world-state cell/value rejects before hook execution;
-24. canonical decision/action/actor mismatch in a transition record rejects before hook execution;
-25. extensionally forged next-state values reject before hook execution;
-26. duplicate actor, duplicate delta write, or cross-transition write collision rejects before hook execution.
+23. observation of a cell written by a current-step transition binds that exact transition-record hash automatically, including same-value `set` writes;
+24. observation of an unwritten persistent cell has empty transition provenance but exact source-world-state and source-world-step hashes;
+25. projected observation step index equals exact next-state step index;
+26. hooks cannot provide provenance fields because their only output type is `ObservationFact`; runtime function-derived provenance is asserted exactly.
 
-### 20.7 Determinism and isolation
+### 20.7 Source validation before hooks
 
-27. observer/spec/fact input order does not change observation ordering or result hash;
-28. projection does not mutate story, domain, world step, state, or transition records;
-29. exact narrative-scoped public API adds only the eight approved names;
-30. root package remains isolated from these new names;
-31. existing replay, uncertain belief, deterministic decision, intentional decision, world transition, compiler, intervention, movie conformance, research-runtime, and Lean tests retain their existing semantics.
+27. story/domain/source-world identity mismatch rejects before hook execution;
+28. malformed prior or next state cell/value rejects before hook execution;
+29. canonical decision/action/actor mismatch in a transition record rejects before hook execution;
+30. extensionally forged next-state values reject before hook execution;
+31. duplicate actor, duplicate per-delta write, or cross-transition write collision rejects before hook execution.
 
-## 21. Example capability witness
+### 20.8 Determinism and isolation
+
+32. observer/spec/fact input order does not change accepted observation ordering or result hash;
+33. projection does not mutate story, domain, world step, states, or transition records;
+34. exact narrative-scoped public API adds only the eight approved names;
+35. root package remains isolated;
+36. existing replay, uncertain belief, deterministic decision, intentional decision, world transition, compiler, intervention, movie conformance, research-runtime, and Lean tests retain existing semantics.
+
+## 21. Capability witness
 
 Suppose the world contains:
 
@@ -673,7 +650,7 @@ room-1.lighting = dark
 service-1.health = degraded
 ```
 
-and the observer spec declares:
+and a projection spec declares:
 
 ```text
 read:
@@ -684,11 +661,11 @@ emit:
   location(any)
 ```
 
-The hook can use `lighting` and `location` to decide whether locations are perceptible. It cannot read `service-1.health`, and it cannot emit `lighting` even though it can read it.
+The hook can use lighting and location to decide whether locations are visible. It cannot read `service-1.health`, and it cannot emit lighting.
 
-A second projection model with the same world step but different read/emit capabilities produces a different projection-model hash while preserving the exact same source-world hashes. This is the V1 information-intervention witness.
+A second projection model may change only capabilities while using the same world step. Source world hashes stay fixed while projection-model identity and percepts may change.
 
-## 22. Example clear witness
+## 22. Clear witness
 
 Prior world:
 
@@ -696,66 +673,65 @@ Prior world:
 service-1.alert = true
 ```
 
-Current world-step transition contains:
+Current transition contains:
 
 ```text
 clear service-1.alert
 ```
 
-Post-step world omits `service-1.alert`.
+Post-step world omits the alert cell.
 
-A hook with emit capability for `alert(any)` may emit:
+A hook with emit capability for `alert(any)` may propose:
 
 ```text
-ObservationFact(cell=service-1.alert, relation="clear", value=None)
+ObservationFact(service-1.alert, relation="clear", value=None)
 ```
 
-The engine accepts it and automatically binds the transition-record hash that performed the clear.
+The engine accepts it and derives the exact clear-transition record hash.
 
-If `service-1.alert` was simply absent before and after, with no explicit clear delta, the same proposed fact is rejected.
+If the cell is merely absent before and after with no explicit clear write, the same proposal rejects.
 
 ## 23. V1 exclusions
 
 Observation Projection V1 intentionally does not implement:
 
+- initial-state projection before any `WorldStepResult` exists;
 - automatic conversion to `EpistemicEvidence`;
-- belief update from runtime projected observations;
+- belief update from projected observations;
 - multi-step scheduling;
 - authored `logical_time` allocation for runtime observations;
 - mutation or extension of `GenericNarrative.observations`;
 - synthetic `NarrativeEvent` creation;
-- testimony generation or reception;
-- observation of pure action/event occurrence independent of state cells;
-- probabilistic or noisy sensors;
+- testimony generation/reception;
+- pure event/action occurrence observations independent of state cells;
+- noisy/probabilistic sensors;
 - RNG or seed management;
-- latency, bandwidth, occlusion geometry, or distance models as framework primitives;
+- latency, bandwidth, occlusion geometry, or distance as framework primitives;
 - recursive theory of mind;
 - World Transition conflict resolution;
 - GenericNarrative schema changes;
 - DomainSpec identity changes.
 
-Domain-specific hooks may implement deterministic visibility rules using declared readable state, but the framework does not elevate any particular geometry or sensor ontology into V1 core semantics.
+Domain-specific deterministic hooks may implement visibility rules using declared readable state, but the framework does not elevate a specific geometry or sensor ontology into V1 core semantics.
 
-## 24. Scientific claims and non-claims
+## 24. Scientific claim boundary
 
-After V1 the engine may claim:
+After V1 the software may claim:
 
-> Given a canonical typed world step and an attested observation-projection model, the runtime deterministically produces capability-limited, truth-validated, provenance-linked per-agent percepts without exposing undeclared objective state to the projection hook.
+> Given a canonical typed world step and an attested observation-projection model, the runtime produces canonically ordered, capability-limited, truth-validated, provenance-linked per-agent percepts without exposing undeclared objective cells through the projection-hook API.
 
 It does not establish:
 
-- that a human or fictional character actually perceived those facts;
+- that a real human or fictional character actually perceived those facts;
 - perceptual realism;
 - psychological validity;
 - unique identification of latent cognition;
-- population or external validity;
+- external/population validity;
 - stochastic sensor realism.
-
-Those require empirical or model-comparison evidence beyond this software contract.
 
 ## 25. Expected implementation files
 
-The complete V1 feature is expected to touch exactly these six paths relative to base:
+The complete feature is expected to touch exactly these six paths relative to the base commit:
 
 ```text
 docs/superpowers/specs/2026-08-25-narrative-observation-projection-v1-design.md
@@ -766,58 +742,74 @@ tests/test_narrative_observation_projection.py
 tests/test_narrative_trust_api.py
 ```
 
-No Lean source, Generic Narrative IR, DomainSpec, replay, uncertain belief, deterministic decision, intentional decision, World Transition V1, compiler, movie fixture, root package export, model registry, observational protocol, or prison-model file is in scope.
+Out of scope:
 
-If implementation reveals a genuine need to change one of those boundaries, stop and return to architectural review instead of silently widening the diff.
+- Lean sources;
+- Generic Narrative IR;
+- DomainSpec;
+- replay;
+- uncertain belief;
+- deterministic decision;
+- intentional decision;
+- World Transition V1;
+- compiler;
+- movie fixtures;
+- root package exports;
+- runtime/model registry;
+- observational protocol;
+- prison models.
+
+If implementation reveals a genuine need to alter an out-of-scope boundary, stop and return to architectural review instead of silently widening the diff.
 
 ## 26. TDD and CI sequence
 
-Implementation follows strict RED -> GREEN discipline.
+Implementation follows strict RED -> GREEN discipline:
 
 1. commit design spec only;
-2. after spec approval, write and commit implementation plan only;
+2. after written-spec approval, write and commit implementation plan only;
 3. add all V1 semantic tests plus exact public-surface expectation as one test-only RED commit;
-4. obtain exact-head CI evidence that new tests fail for the intended missing implementation/API reasons while existing gates remain green;
-5. add the minimum sidecar records/model/projection implementation in reviewable GREEN increments;
-6. keep public exports deferred until semantic tests are green, so API surface remains an explicit final gate;
-7. run final exact-head CI with full Lean/Python regression plus narrative theorem gates;
+4. obtain exact-head CI evidence that failures are only the intended missing implementation/API failures while existing gates remain green;
+5. implement the minimum sidecar in reviewable GREEN increments;
+6. defer public exports until semantic tests are green so API surface remains the final explicit gate;
+7. run final exact-head CI with the full Lean/Python and narrative theorem gates;
 8. verify final diff is exactly the approved paths before integration.
 
 No merge to `proof/narrative-dynamics-v0` occurs without explicit user instruction.
 
 ## 27. Definition of done
 
-Observation Projection V1 is complete when the engine can take one validated `WorldStepResult` and produce zero or more canonical runtime projected observations such that:
+Observation Projection V1 is complete when one validated `WorldStepResult` can produce zero or more runtime projected observations through:
 
 ```text
 X_{t+1}
-  -> capability-filtered observation hook input
+  -> capability-filtered hook input
   -> untrusted ObservationFact proposals
   -> truth/capability validation
-  -> provenance-linked ProjectedObservation records
+  -> engine-derived provenance
+  -> ProjectedObservation records
 ```
 
 with all of the following true:
 
 - hooks cannot inspect undeclared objective cells through the framework API;
 - hooks cannot emit undeclared cells;
-- accepted values exactly match post-step objective truth;
-- clear observations require an explicit current-step clear operation;
-- changed-cell provenance binds the exact transition record automatically;
-- unchanged-cell observations remain bound to the exact source world state/step;
-- per-agent observation differences are explicit and deterministic;
+- accepted `equals` values match exact post-step objective truth;
+- clear observations require an explicit current-step clear write;
+- written-cell provenance binds the exact transition record automatically;
+- unwritten persistent observations remain bound to exact source state/step;
+- per-agent observation differences are explicit and deterministic at the framework ordering level;
 - simulation `step_index` remains separate from authored `logical_time`;
-- canonical authored story observations remain untouched;
+- canonical authored observations remain untouched;
 - public surface is scoped only to `narrative_dynamics.narrative`; and
 - all existing regression/conformance gates remain green.
 
-This closes the explicit runtime boundary:
+This closes:
 
 ```text
 Action -> World Transition -> Observation
 ```
 
-The next issue #27 increment is Multi-Step Scheduler V1, which will define the explicit bridge:
+The next #27 increment, Multi-Step Scheduler V1, will define:
 
 ```text
 ProjectedObservation -> next-round evidence/belief -> goal -> action
