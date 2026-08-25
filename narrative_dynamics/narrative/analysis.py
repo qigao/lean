@@ -25,6 +25,35 @@ from narrative_dynamics.narrative.replay import (
 )
 
 
+def _cell_key(cell: StateCellRef) -> tuple[str, str, str]:
+    return (
+        cell.subject.entity_type,
+        cell.subject.entity_id,
+        cell.state_variable,
+    )
+
+
+def _cell_value_rows(
+    values: Mapping[StateCellRef, TypedValue | None],
+) -> list[dict[str, object]]:
+    return [
+        {
+            "cell": cell.to_dict(),
+            "value": None if value is None else value.to_dict(),
+        }
+        for cell, value in sorted(values.items(), key=lambda item: _cell_key(item[0]))
+    ]
+
+
+def _cell_view_rows(
+    values: Mapping[StateCellRef, EpistemicCellView],
+) -> list[dict[str, object]]:
+    return [
+        {"cell": cell.to_dict(), "view": view.to_dict()}
+        for cell, view in sorted(values.items(), key=lambda item: _cell_key(item[0]))
+    ]
+
+
 @dataclass(frozen=True)
 class TriggerRef:
     kind: str
@@ -35,6 +64,9 @@ class TriggerRef:
             raise ValueError("analysis trigger kind is not supported")
         if not isinstance(self.ref_id, str) or not self.ref_id:
             raise ValueError("analysis trigger ref id must be non-empty")
+
+    def to_dict(self) -> dict[str, object]:
+        return {"kind": self.kind, "ref_id": self.ref_id}
 
 
 @dataclass(frozen=True)
@@ -73,6 +105,14 @@ class AnalysisScope:
     def tracked_cells(self) -> tuple[StateCellRef, ...]:
         return self.tracked_state_cells
 
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "decision_id": self.decision_id,
+            "tracked_state_cells": [item.to_dict() for item in self.tracked_state_cells],
+            "tracked_agents": list(self.tracked_agents),
+            "snapshot_times": list(self.snapshot_times),
+        }
+
 
 @dataclass(frozen=True)
 class AgentEvolutionView:
@@ -95,6 +135,13 @@ class AgentEvolutionView:
                 raise TypeError("analysis agent cells must map StateCellRef to matching views")
         object.__setattr__(self, "direct_cells", MappingProxyType(direct))
         object.__setattr__(self, "epistemic_cells", MappingProxyType(epistemic))
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "agent_id": self.agent_id,
+            "direct_cells": _cell_view_rows(self.direct_cells),
+            "epistemic_cells": _cell_view_rows(self.epistemic_cells),
+        }
 
 
 @dataclass(frozen=True)
@@ -138,6 +185,20 @@ class EvolutionSnapshot:
         object.__setattr__(self, "objective_cells", MappingProxyType(objective))
         object.__setattr__(self, "agent_views", MappingProxyType(views))
 
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "logical_time": self.logical_time,
+            "triggers": [item.to_dict() for item in self.triggers],
+            "objective_cells": _cell_value_rows(self.objective_cells),
+            "agent_views": [
+                self.agent_views[agent_id].to_dict()
+                for agent_id in sorted(self.agent_views)
+            ],
+            "decision_result": (
+                None if self.decision_result is None else self.decision_result.to_dict()
+            ),
+        }
+
 
 @dataclass(frozen=True)
 class NarrativeTrajectory:
@@ -173,6 +234,14 @@ class NarrativeTrajectory:
     def selected_action(self) -> str:
         return self.decision_result.selected_action
 
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "scope": self.scope.to_dict(),
+            "model_id": self.model_id,
+            "model_hash": self.model_hash,
+            "snapshots": [item.to_dict() for item in self.snapshots],
+        }
+
 
 @dataclass(frozen=True)
 class MechanismPairwiseComparison:
@@ -180,6 +249,14 @@ class MechanismPairwiseComparison:
     right_model_id: str
     action_equal: bool
     basis_equal: bool
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "left_model_id": self.left_model_id,
+            "right_model_id": self.right_model_id,
+            "action_equal": self.action_equal,
+            "basis_equal": self.basis_equal,
+        }
 
 
 @dataclass(frozen=True)
@@ -201,6 +278,14 @@ class MechanismComparison:
         object.__setattr__(self, "trajectories", trajectories)
         object.__setattr__(self, "pairwise", pairwise)
 
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "decision_id": self.decision_id,
+            "trajectories": [item.to_dict() for item in self.trajectories],
+            "pairwise": [item.to_dict() for item in self.pairwise],
+            "mechanism_uniqueness_claimed": self.mechanism_uniqueness_claimed,
+        }
+
 
 @dataclass(frozen=True)
 class NarrativeAnalysis:
@@ -210,6 +295,12 @@ class NarrativeAnalysis:
     @property
     def baseline_trajectory(self) -> NarrativeTrajectory:
         return self.baseline
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "baseline": self.baseline.to_dict(),
+            "mechanism_comparison": self.mechanism_comparison.to_dict(),
+        }
 
 
 
