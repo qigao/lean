@@ -6,6 +6,7 @@ import math
 import re
 from types import MappingProxyType
 
+from hypothesis_competition import posterior_distribution
 from narrative_dynamics.attestation import measure_implementation
 from narrative_dynamics.contracts import stable_content_hash
 from narrative_dynamics.narrative.domain import DomainSpec, validate_narrative
@@ -18,8 +19,10 @@ from narrative_dynamics.narrative.runtime_perception import (
 from narrative_dynamics.narrative.uncertain import (
     BeliefDistribution,
     BeliefLikelihood,
+    BeliefMass,
     UncertainBeliefModelSpec,
     UncertainBeliefState,
+    uncertain_epistemic_state,
 )
 
 
@@ -58,6 +61,17 @@ def _cutoff(value: object, *, label: str) -> int | None:
     if value is None:
         return None
     return _step(value, label=label)
+
+
+def _probability(value: object, *, label: str) -> float:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise TypeError(f"{label} must be numeric")
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError(f"{label} must be finite")
+    if number < 0.0 or number > 1.0:
+        raise ValueError(f"{label} must be in [0, 1]")
+    return number
 
 
 def _cell_key(cell: StateCellRef) -> tuple[str, str, str]:
@@ -662,6 +676,66 @@ class RuntimeUncertainBeliefState:
         return stable_content_hash(self.to_dict())
 
 
+def _distribution_from_vector(
+    cell: StateCellRef,
+    hypotheses: tuple[TypedValue, ...],
+    vector: Mapping[str, float],
+) -> BeliefDistribution:
+    return BeliefDistribution(
+        cell,
+        tuple(
+            BeliefMass(value, vector[_value_key(value)])
+            for value in hypotheses
+        ),
+    )
+
+
+def _validated_runtime_likelihoods(
+    raw: object,
+    hypotheses: tuple[TypedValue, ...],
+) -> dict[str, float]:
+    if not isinstance(raw, Mapping):
+        raise RuntimeBeliefResolutionError(
+            "runtime likelihood must be a mapping"
+        )
+    expected = {_value_key(value) for value in hypotheses}
+    if set(raw) != expected:
+        raise RuntimeBeliefResolutionError(
+            "runtime likelihood keys must match the finite hypotheses exactly"
+        )
+    result: dict[str, float] = {}
+    for key in expected:
+        try:
+            result[key] = _probability(
+                raw[key],
+                label="runtime likelihood value",
+            )
+        except (TypeError, ValueError) as error:
+            raise RuntimeBeliefResolutionError(
+                "runtime likelihood contains an invalid probability"
+            ) from error
+    return result
+
+
+def _call_runtime_likelihood_hook(
+    model: RuntimeBeliefModelSpec,
+    agent_id: str,
+    evidence: RuntimeEpistemicEvidence,
+    hypotheses: tuple[TypedValue, ...],
+) -> object:
+    try:
+        return model.runtime_likelihood_hook(
+            agent_id,
+            evidence.percept_view,
+            hypotheses,
+            model.runtime_parameters,
+        )
+    except (TypeError, ValueError, KeyError) as error:
+        raise RuntimeBeliefResolutionError(
+            "runtime likelihood hook could not produce a valid vector"
+        ) from error
+
+
 def runtime_uncertain_belief_state(
     story: GenericNarrative,
     domain: DomainSpec,
@@ -670,6 +744,118 @@ def runtime_uncertain_belief_state(
     model: RuntimeBeliefModelSpec,
     tracked_cells: tuple[StateCellRef, ...],
 ) -> RuntimeUncertainBeliefState:
-    raise RuntimeBeliefResolutionError(
-        "runtime uncertain belief execution is unavailable in this stage"
-    )
+    try:
+        _validate_ledger_identity(story, domain, ledger)
+        if not isinstance(model, RuntimeBeliefModelSpec):
+            raise TypeError("runtime belief replay requires RuntimeBeliefModelSpec")
+        if not isinstance(tracked_cells, tuple):
+            raise TypeError("tracked cells must be a tuple")
+        cells = tuple(tracked_cells)
+        if not cells or any(not isinstance(cell, StateCellRef) for cell in cells):
+            raise TypeError(
+                "tracked cells must be a non-empty tuple of StateCellRef values"
+            )
+        if len(set(cells)) != len(cells):
+            raise ValueError("tracked cells must be unique")
+
+        seed = uncertain_epistemic_state(
+            story,
+            domain,
+            agent_id,
+            model.seed_model,
+            cells,
+            at_time=ledger.source_at_time,
+        )
+        tracked = set(cells)
+        history = tuple(
+            sorted(
+                (
+                    item
+                    for batch in ledger.batches
+                    for item in batch.evidence
+                    if item.observer_id == agent_id and item.cell in tracked
+                ),
+                key=_runtime_history_key,
+            )
+        )
+        by_cell: dict[StateCellRef, list[RuntimeEpistemicEvidence]] = {
+            cell: [] for cell in cells
+        }
+        for item in history:
+            by_cell[item.cell].append(item)
+
+        views: dict[StateCellRef, RuntimeUncertainBeliefCellView] = {}
+        for cell in cells:
+            seed_posterior = seed.cells[cell].posterior
+            current = seed_posterior
+            updates: list[RuntimeBeliefUpdateStep] = []
+            for evidence in by_cell[cell]:
+                hypotheses = tuple(mass.value for mass in current.masses)
+                raw_likelihoods = _call_runtime_likelihood_hook(
+                    model,
+                    agent_id,
+                    evidence,
+                    hypotheses,
+                )
+                likelihood_vector = _validated_runtime_likelihoods(
+                    raw_likelihoods,
+                    hypotheses,
+                )
+                prior_vector = {
+                    _value_key(mass.value): mass.probability
+                    for mass in current.masses
+                }
+                try:
+                    posterior_vector = posterior_distribution(
+                        prior_vector,
+                        likelihood_vector,
+                    )
+                except ValueError as error:
+                    raise RuntimeBeliefResolutionError(
+                        "runtime evidence update has zero posterior mass"
+                    ) from error
+                posterior = _distribution_from_vector(
+                    cell,
+                    hypotheses,
+                    posterior_vector,
+                )
+                likelihoods = tuple(
+                    BeliefLikelihood(
+                        value,
+                        likelihood_vector[_value_key(value)],
+                    )
+                    for value in hypotheses
+                )
+                updates.append(
+                    RuntimeBeliefUpdateStep(
+                        evidence=evidence,
+                        prior=current,
+                        likelihoods=likelihoods,
+                        posterior=posterior,
+                    )
+                )
+                current = posterior
+            views[cell] = RuntimeUncertainBeliefCellView(
+                cell=cell,
+                seed_posterior=seed_posterior,
+                posterior=current,
+                updates=tuple(updates),
+            )
+
+        return RuntimeUncertainBeliefState(
+            agent_id=agent_id,
+            model_id=model.model_id,
+            model_hash=model.content_hash,
+            source_at_time=ledger.source_at_time,
+            step_index=ledger.current_step_index,
+            ledger_hash=ledger.content_hash,
+            seed_belief_state=seed,
+            runtime_evidence_history=history,
+            cells=views,
+        )
+    except RuntimeBeliefResolutionError:
+        raise
+    except (TypeError, ValueError, KeyError) as error:
+        raise RuntimeBeliefResolutionError(
+            "runtime uncertain belief state could not be resolved"
+        ) from error
