@@ -119,25 +119,9 @@ StateVariableSpec("service.alert", "Service", "AlertState")
 StateVariableSpec("room.lighting", "Room", "LightState")
 ```
 
-Seed authored state through ordinary `EventTypeSpec` hooks, then declare two decisions owned by different agents so valid multi-actor `WorldStepResult` values can be produced through existing `advance_world_step()`. Include one action that sets `a1.agent.phase` and one action that clears `svc.service.alert`. Provide helper functions with these signatures:
+Seed authored state through ordinary `EventTypeSpec` hooks, then declare two decisions owned by different agents so valid multi-actor `WorldStepResult` values can be produced through existing `advance_world_step()`. Include one action that sets `a1.agent.phase` and one action that clears `svc.service.alert`.
 
-```python
-def make_projection_domain() -> DomainSpec: ...
-def make_projection_story(domain: DomainSpec) -> GenericNarrative: ...
-def make_transition_model(domain: DomainSpec) -> WorldTransitionModelSpec: ...
-def make_world_step(
-    *,
-    phase: str = "active",
-    clear_alert: bool = False,
-    source_at_time: int | None = None,
-) -> tuple[DomainSpec, GenericNarrative, WorldStepResult]: ...
-def projection_model(
-    domain: DomainSpec,
-    *specs: ObserverProjectionSpec,
-) -> ObservationProjectionModelSpec: ...
-```
-
-The bodies must construct real current production records; do not mock `WorldStepResult` on positive paths.
+Define helpers named `make_projection_domain`, `make_projection_story`, `make_transition_model`, `make_world_step`, and `projection_model`. `make_world_step` accepts keyword arguments `phase="active"`, `clear_alert=False`, and `source_at_time=None`, constructs `world_state_from_story`, builds canonical `ActionIntent` values from the story decisions, and calls `advance_world_step`; it returns `(domain, story, world_step)`. `projection_model(domain, *specs)` constructs `ObservationProjectionModelSpec("projection", "1", domain.domain_id, domain.version, domain.content_hash, tuple(specs))`. Positive-path helpers must use real current production records, not mocked world-step objects.
 
 Add:
 
@@ -308,7 +292,10 @@ def test_hook_sees_only_read_capability_cells_and_scope_is_exact(self):
         expected = StateCellRef(EntityRef(observer.id, "Agent"), "agent.location")
         self.assertEqual(set(prior), {expected})
         self.assertEqual(set(next_values), {expected})
-        self.assertNotIn(StateCellRef(EntityRef("svc", "Service"), "service.health"), next_values)
+        self.assertNotIn(
+            StateCellRef(EntityRef("svc", "Service"), "service.health"),
+            next_values,
+        )
     any_hook = RecordViewsHook(())
     any_spec = ObserverProjectionSpec(
         "Agent", "vision",
@@ -330,7 +317,7 @@ The hook class used for immutability must attempt assignment to each supplied ma
 
 Use one hook class per invalid return shape (`list`, generator, mapping, scalar, tuple containing a string) and one hook returning duplicate facts for the same cell. Assert every call raises `ObservationProjectionError`.
 
-For readable-but-not-emittable:
+For readable-but-not-emittable use:
 
 ```python
 lighting = StateCellRef(EntityRef("room", "Room"), "room.lighting")
@@ -371,15 +358,7 @@ For clear, assert accepted provenance equals the exact transition record hash th
 
 - [ ] **Step 6: Add per-agent/provenance/determinism tests**
 
-Implement five methods:
-
-```python
-def test_two_observers_can_receive_different_percepts_from_same_world_step(self): ...
-def test_multiple_channels_and_empty_fact_tuple_are_supported(self): ...
-def test_transition_provenance_binds_written_cells_including_same_value_set(self): ...
-def test_unwritten_persistent_value_has_empty_transition_provenance_and_exact_source_hashes(self): ...
-def test_runtime_derives_step_and_lineage_and_hook_cannot_supply_it(self): ...
-```
+Add methods named `test_two_observers_can_receive_different_percepts_from_same_world_step`, `test_multiple_channels_and_empty_fact_tuple_are_supported`, `test_transition_provenance_binds_written_cells_including_same_value_set`, `test_unwritten_persistent_value_has_empty_transition_provenance_and_exact_source_hashes`, and `test_runtime_derives_step_and_lineage_and_hook_cannot_supply_it`.
 
 Use these exact assertions across them:
 
@@ -388,29 +367,45 @@ self.assertEqual(
     {obs.observer_id: obs.fact.value.value for obs in result.observations},
     {"a1": "hall", "a2": "vault"},
 )
-self.assertTrue(all(obs.source_world_step_hash == world_step.content_hash for obs in result.observations))
-self.assertTrue(all(obs.source_world_state_hash == world_step.next_state.content_hash for obs in result.observations))
-self.assertTrue(all(obs.step_index == world_step.next_state.step_index for obs in result.observations))
+self.assertTrue(
+    all(obs.source_world_step_hash == world_step.content_hash for obs in result.observations)
+)
+self.assertTrue(
+    all(
+        obs.source_world_state_hash == world_step.next_state.content_hash
+        for obs in result.observations
+    )
+)
+self.assertTrue(
+    all(obs.step_index == world_step.next_state.step_index for obs in result.observations)
+)
 ```
 
-For same-value `set`, create a world step whose action writes `a1.agent.phase="ready"` when prior already contains `"ready"`; assert `source_transition_hashes == (writing_record.content_hash,)`.
+For same-value `set`, create a world step whose action writes `a1.agent.phase="ready"` when prior already contains `"ready"`; locate the writing transition and assert:
 
-For unwritten persistence, observe `room.lighting` while no transition writes it and assert `source_transition_hashes == ()`.
+```python
+self.assertEqual(observation.source_transition_hashes, (writing_record.content_hash,))
+```
 
-For multiple channels, use two `ObserverProjectionSpec` values with the same `observer_type="Agent"` and channels `vision` and `status`; one hook returns a fact and the other returns `()`. Assert both hooks are invoked once per Agent, only the emitting channel appears in result observations, and channel is always the spec channel.
+For unwritten persistence, observe `room.lighting` while no transition writes it and assert:
+
+```python
+self.assertEqual(observation.source_transition_hashes, ())
+self.assertEqual(observation.source_world_step_hash, world_step.content_hash)
+self.assertEqual(observation.source_world_state_hash, world_step.next_state.content_hash)
+```
+
+For multiple channels, use two `ObserverProjectionSpec` values with `observer_type="Agent"`, channels `vision` and `status`; one hook returns one fact and the other returns `()`. Assert both hooks are invoked once per Agent, only the emitting channel appears in result observations, and every result channel equals the owning spec channel.
 
 - [ ] **Step 7: Add pre-hook source validation and mutation/order tests**
 
-Implement four methods:
+Add methods named `test_source_identity_and_state_payload_reject_before_hook`, `test_transition_decision_action_actor_and_cutoff_reject_before_hook`, `test_extensional_forgery_duplicate_actor_and_write_collisions_reject_before_hook`, and `test_projection_order_hash_and_inputs_are_immutable`.
+
+For every forged source case, use `RecordViewsHook(())`, call runtime inside `assertRaises(ObservationProjectionError)`, then assert:
 
 ```python
-def test_source_identity_and_state_payload_reject_before_hook(self): ...
-def test_transition_decision_action_actor_and_cutoff_reject_before_hook(self): ...
-def test_extensional_forgery_duplicate_actor_and_write_collisions_reject_before_hook(self): ...
-def test_projection_order_hash_and_inputs_are_immutable(self): ...
+self.assertEqual(hook.calls, [])
 ```
-
-For every forged source case, use `RecordViewsHook(())`, call runtime inside `assertRaises(ObservationProjectionError)`, then assert `hook.calls == []`.
 
 Forge only public-record-valid but semantically inconsistent payloads using `dataclasses.replace`: wrong story/domain hash; unknown canonical cell subject; wrong typed state value; next-state step/parent mismatch; transition intent decision/action mismatch; record actor mismatch; cutoff earlier than selected decision; duplicate actor records; duplicate writes within one `StateDelta`; cross-record write collision; and `next_state.values` that do not equal applying the supplied deltas. When a dependent hash must remain syntactically valid, recompute it with `stable_content_hash` rather than inserting malformed text.
 
@@ -485,34 +480,45 @@ Do not begin Task 2 until that RED is observed.
 
 - [ ] **Step 1: Add structural helpers and record classes**
 
-Start with:
+Start with exact helpers:
 
 ```python
 _HASH = re.compile(r"^sha256:[0-9a-f]{64}$")
 _SCOPES = frozenset({"observer", "any"})
 _RELATIONS = frozenset({"equals", "clear"})
 
+
 class ObservationProjectionError(ValueError):
     """A runtime world step could not be projected safely."""
 
-def _text(value: object, *, label: str) -> str: ...
-def _hash(value: object, *, label: str) -> str: ...
-def _step_index(value: object, *, label: str) -> int: ...
-def _cell_key(cell: StateCellRef) -> tuple[str, str, str]: ...
+
+def _text(value: object, *, label: str) -> str:
+    if not isinstance(value, str) or not value.strip() or value != value.strip():
+        raise ValueError(f"{label} must be a non-empty trimmed string")
+    return value
+
+
+def _hash(value: object, *, label: str) -> str:
+    if not isinstance(value, str) or _HASH.fullmatch(value) is None:
+        raise ValueError(f"{label} must be a sha256 content hash")
+    return value
+
+
+def _step_index(value: object, *, label: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise ValueError(f"{label} must be a non-negative integer")
+    return value
+
+
+def _cell_key(cell: StateCellRef) -> tuple[str, str, str]:
+    return (
+        cell.subject.entity_type,
+        cell.subject.entity_id,
+        cell.state_variable,
+    )
 ```
 
-Implement `_text`, `_hash`, and `_step_index` with the exact same trimmed-string/hash/non-negative-integer rules used in `world.py`.
-
-Implement:
-
-```python
-@dataclass(frozen=True)
-class ObservationCapabilitySpec:
-    state_variable: str
-    subject_scope: str
-```
-
-with exact scopes `observer|any`, canonical `to_dict()`, and `content_hash`.
+Implement `ObservationCapabilitySpec` with exact scopes `observer|any`, canonical `to_dict()`, and `content_hash`.
 
 Containment must be:
 
@@ -524,7 +530,7 @@ def _contains(read, emit):
     )
 ```
 
-Implement `ObserverProjectionSpec` to require non-empty unique read/emit tuples, semantic containment for every emit entry, callable hook, canonical capability ordering, and hook identity through `measure_implementation(...).manifest_identity()`.
+Implement `ObserverProjectionSpec` to require non-empty unique read/emit tuples, semantic containment for every emit entry, callable hook, canonical capability ordering, and hook identity through `measure_implementation(self.projection_hook).manifest_identity()`.
 
 Implement `ObservationFact` with only `equals|clear`; equals requires `TypedValue`, clear requires `None`.
 
@@ -597,7 +603,7 @@ Obtain exact-head CI evidence for this staged boundary before Task 3.
 
 Implement local `_record_key`, `_batch_hash`, `_validate_state_values`, and `_validate_source_world_step`.
 
-`_validate_source_world_step` must:
+`_validate_source_world_step` must call:
 
 ```python
 validate_narrative(story, domain)
@@ -677,7 +683,18 @@ for fact in facts:
         )
 ```
 
-After this check, call a private `_accept_facts(...)` stage marker that raises `ObservationProjectionError("fact truth acceptance is unavailable in this stage")` for non-empty fact tuples. Empty tuples succeed and contribute no observations.
+Use this stage helper for fact tuples that passed hook-shape and emit checks:
+
+```python
+def _accept_facts(facts: tuple) -> tuple:
+    if facts:
+        raise ObservationProjectionError(
+            "fact truth acceptance is unavailable in this stage"
+        )
+    return ()
+```
+
+Empty tuples succeed and contribute no observations.
 
 - [ ] **Step 6: Verify Task 3 staged GREEN and commit**
 
@@ -716,7 +733,7 @@ variable = domain._state_variable(cell.state_variable)
 domain._value_type(variable.value_type).validate(fact.value, entities)
 ```
 
-For `clear`, require cell absent from `next_state` and exactly one current transition with matching `StateDeltaOp(kind="clear", subject_id=..., state_variable=...)`. Absence without explicit clear rejects.
+For `clear`, require the cell to be absent from `next_state` and require exactly one current transition containing a `StateDeltaOp` whose kind is `clear`, whose `subject_id` equals `cell.subject.entity_id`, and whose `state_variable` equals `cell.state_variable`. Absence without that explicit write rejects.
 
 - [ ] **Step 3: Derive write-set provenance inside the engine**
 
@@ -814,7 +831,7 @@ from narrative_dynamics.narrative.observation_projection import (
 )
 ```
 
-Add exactly:
+Add exactly these eight strings to narrative `__all__`:
 
 ```python
 "ObservationCapabilitySpec"
@@ -827,7 +844,7 @@ Add exactly:
 "project_world_observations"
 ```
 
-to narrative `__all__`; do not edit root `narrative_dynamics/__init__.py`.
+Do not edit root `narrative_dynamics/__init__.py`.
 
 - [ ] **Step 2: Run exact API, dedicated semantics, then full Python suite**
 
