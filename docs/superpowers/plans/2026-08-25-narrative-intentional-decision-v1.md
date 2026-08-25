@@ -49,7 +49,7 @@
 - Do not create: `narrative_dynamics/narrative/intention.py`
 
 **Interfaces:**
-- Consumes: existing `make_test_domain()`, `make_test_story()`, `target_cell()` from `tests.narrative_test_support`; existing `UncertainBeliefModelSpec`; existing `stable_content_hash`.
+- Consumes: existing `make_test_domain()`, `make_test_story()`, `target_cell()` from `tests.narrative_test_support`; existing `UncertainBeliefModelSpec`; existing `EpistemicEvidence.relation` / `.value`; existing `stable_content_hash`.
 - Produces: executable RED contract for `GoalSpec`, `GoalModelSpec`, `GoalState`, `ChoiceModelSpec`, `IntentionalDecisionModelSpec`, `IntentionalDecisionResult`, `IntentionalDecisionResolutionError`, `GoalResolutionError`, `ChoiceResolutionError`, and `run_intentional_decision`.
 
 - [ ] **Step 1: Add a guarded import boundary and deterministic test helpers**
@@ -89,104 +89,133 @@ def prior_hook(agent_id, cell, hypotheses, parameters):
 
 def likelihood_hook(agent_id, evidence, hypotheses, parameters):
     strength = float(parameters["strength"])
-    claimed = evidence.proposition.value if evidence.proposition is not None else None
+    if evidence.relation == "clear" or evidence.value is None:
+        return {value_hash(h): 1.0 for h in hypotheses}
+    if evidence.relation == "equals":
+        return {
+            value_hash(h): strength if h == evidence.value else (1.0 - strength)
+            for h in hypotheses
+        }
     return {
-        value_hash(h): (
-            strength if claimed is not None and h == claimed else (1.0 - strength)
-        )
+        value_hash(h): (1.0 - strength) if h == evidence.value else strength
         for h in hypotheses
     }
 ```
 
 Use a three-value `HealthState` prior with positive mass everywhere, for example `failed=.50`, `recovered=.25`, `healthy=.25`, so testimony can move mass without zero-support artifacts.
 
+Add a local `require_intention(testcase)` helper that calls `testcase.fail(...)` with `_IMPORT_ERROR` when the production module is absent. Every intentional test calls it first, so the initial RED is explicit and stable.
+
 - [ ] **Step 2: Add semantic-chain tests with explicit assertions**
 
-Create test methods with these exact responsibilities:
+Implement `test_admitted_evidence_changes_belief_goal_and_action` with matched `make_test_story(receive=False)` / `make_test_story(receive=True)` stories, one shared belief model, two goals (`restore-service`, `avoid-work`), and two actions (`restart`, `leave`). Configure `restore-service` to prefer posterior mass on `failed` and `avoid-work` to prefer `recovered`; configure the choice table so `restore-service` prefers `restart` and `avoid-work` prefers `leave`. Assert:
 
 ```python
-def test_admitted_evidence_changes_belief_goal_and_action():
-    # matched receive=False / receive=True stories
-    # same belief/goal/choice model
-    # assert posterior differs
-    # assert goal policy differs in expected direction
-    # assert final action policy differs in expected direction
-
-
-def test_unobserved_objective_change_does_not_leak_into_intention():
-    # objective story differs while bob receives/observes no changed fact
-    # assert belief_state.to_dict(), goal_state.to_dict(), conditional policies,
-    # action_scores, action_policy, selected_action all equal
-
-
-def test_same_belief_different_goal_model_changes_only_downstream_layers():
-    # assert exact same belief_state
-    # assert changed goal_state and action_policy
-
-
-def test_same_belief_and_goal_different_choice_model_preserves_goal_state():
-    # assert exact same belief_state and goal_state
-    # assert changed conditional_action_policies and action_policy
+self.assertNotEqual(
+    no_receive.belief_state.to_dict(),
+    received.belief_state.to_dict(),
+)
+self.assertNotEqual(dict(no_receive.goal_state.policy), dict(received.goal_state.policy))
+self.assertNotEqual(dict(no_receive.action_policy), dict(received.action_policy))
+self.assertGreater(
+    received.goal_state.policy["avoid-work"],
+    no_receive.goal_state.policy["avoid-work"],
+)
+self.assertGreater(
+    received.action_policy["leave"],
+    no_receive.action_policy["leave"],
+)
 ```
+
+Implement `test_unobserved_objective_change_does_not_leak_into_intention` by using two stories where Bob has `bob_observes_failure=False` and `receive=False`, then replacing only an objective event's `health` argument in one story while retaining a valid domain/narrative. Assert exact equality of:
+
+```python
+belief_state.to_dict()
+goal_state.to_dict()
+conditional_action_policies
+action_scores
+action_policy
+selected_action
+```
+
+Implement `test_same_belief_different_goal_model_changes_only_downstream_layers`: same story/belief/choice, changed goal pressure or instrumentality; assert exact equal belief payload and different goal/action policies.
+
+Implement `test_same_belief_and_goal_different_choice_model_preserves_goal_state`: same story/belief/goal, changed action values or `beta_action`; assert exact equal belief and goal payloads, different conditional and final action policies.
 
 - [ ] **Step 3: Add model-separation and mathematical-identity tests**
 
-Add:
+Implement `test_beta_goal_and_beta_action_control_distinct_layers` with four otherwise matched composite models. For higher `beta_goal`, assert the probability of the already-leading goal increases while `conditional_action_policies` remain exactly equal. For higher `beta_action`, assert `goal_state.to_dict()` is exactly equal while each non-degenerate conditional policy has larger max probability.
+
+Implement `test_hypothesis_independent_instrumentality_blocks_belief_effect` using instrumentality tables constant across `healthy`/`failed`/`recovered`. Use receive false/true stories, assert belief payload changes, and assert exact equality of goal scores, goal policy, conditional policies, and final action policy.
+
+Implement `test_action_policy_is_latent_goal_mixture_not_softmax_of_action_scores` with asymmetric goal/action values. Recompute:
 
 ```python
-def test_beta_goal_and_beta_action_control_distinct_layers():
-    # higher beta_goal concentrates goal policy with identical conditional policies
-    # higher beta_action leaves goal_state exactly equal and concentrates conditionals
-
-
-def test_hypothesis_independent_instrumentality_blocks_belief_effect():
-    # admitted evidence changes posterior
-    # constant I_g,c(h) across all h keeps goal scores/policy and action policy equal
-
-
-def test_action_policy_is_latent_goal_mixture_not_softmax_of_action_scores():
-    # construct asymmetric goal/action table where the two formulas differ
-    # compute expected mixture directly with math.fsum
-    # assert result.action_policy == mixture within 1e-12
-    # compute finite_softmax(result.action_scores, beta=beta_action)
-    # assert at least one action differs materially
+expected = {
+    action: math.fsum(
+        result.goal_state.policy[goal]
+        * result.conditional_action_policies[goal][action]
+        for goal in sorted(result.goal_state.policy)
+    )
+    for action in sorted(result.action_policy)
+}
+for action in expected:
+    self.assertAlmostEqual(result.action_policy[action], expected[action], places=12)
+wrong = finite_softmax(result.action_scores, beta=model.choice_model.beta_action)
+self.assertTrue(
+    any(abs(result.action_policy[a] - wrong[a]) > 1e-6 for a in expected)
+)
 ```
 
 - [ ] **Step 4: Add deterministic tie, exact-coverage, and numeric fail-closed tests**
 
-Add tests that explicitly cover:
+Implement `test_exact_ties_use_lexical_ids_and_ignore_input_order`: construct exactly equal goal scores and identical conditional values so final actions tie. Build the same semantic model with reversed goal tuple and reversed nested dict insertion order; assert `selected_goal` is the lexical minimum, `selected_action` is the lexical minimum, and `result.content_hash` is identical.
+
+Implement context/hypothesis coverage cases with `dataclasses.replace` or dedicated constructors:
 
 ```python
-def test_exact_ties_use_lexical_ids_and_ignore_input_order(): ...
-def test_goal_context_coverage_fails_closed(): ...
-def test_goal_hypothesis_coverage_fails_closed(): ...
-def test_choice_goal_coverage_fails_closed(): ...
-def test_choice_action_coverage_fails_closed(): ...
-def test_invalid_goal_numeric_values_fail_closed(): ...
-def test_invalid_choice_numeric_values_fail_closed(): ...
+with self.subTest(case="missing-context"):
+    with self.assertRaises(GoalResolutionError):
+        run_intentional_decision(story, domain, "d1", missing_context_model)
+with self.subTest(case="extra-context"):
+    with self.assertRaises(GoalResolutionError):
+        run_intentional_decision(story, domain, "d1", extra_context_model)
+with self.subTest(case="missing-hypothesis"):
+    with self.assertRaises(GoalResolutionError):
+        run_intentional_decision(story, domain, "d1", missing_hypothesis_model)
+with self.subTest(case="extra-hypothesis"):
+    with self.assertRaises(GoalResolutionError):
+        run_intentional_decision(story, domain, "d1", extra_hypothesis_model)
 ```
 
-Use `subTest` cases for missing and extra keys. Require `GoalResolutionError` for context/hypothesis failures and `ChoiceResolutionError` for goal/action-table failures. Constructor-time malformed finite/positive fields may raise `TypeError`/`ValueError` according to the spec; runtime coverage mismatches must use the typed resolution subclasses.
+Implement choice coverage cases similarly and require `ChoiceResolutionError` for missing/extra goal and missing/invented action.
+
+Implement constructor numeric cases covering negative/NaN/Inf pressure, cost, risk, weight; non-normalized runtime cell weights; non-finite instrumentality/action value; zero/negative/NaN/Inf betas. Constructor-shape errors may be `TypeError`/`ValueError`; runtime exact-coverage/normalization failures must be the typed goal/choice errors.
 
 - [ ] **Step 5: Add identity-lineage and result-typing tests**
 
-Add:
+Implement `test_model_identity_binds_belief_goal_choice_configuration` by constructing matched models differing one field at a time and asserting:
 
 ```python
-def test_model_identity_binds_belief_goal_choice_configuration():
-    # changed belief parameters -> composite hash differs
-    # changed beta_goal / instrumentality -> goal and composite hashes differ
-    # changed beta_action / action values -> choice and composite hashes differ
+self.assertNotEqual(base.belief_model.content_hash, changed_belief.belief_model.content_hash)
+self.assertNotEqual(base.content_hash, changed_belief.content_hash)
+self.assertNotEqual(base.goal_model.content_hash, changed_goal.goal_model.content_hash)
+self.assertNotEqual(base.content_hash, changed_goal.content_hash)
+self.assertNotEqual(base.choice_model.content_hash, changed_choice.choice_model.content_hash)
+self.assertNotEqual(base.content_hash, changed_choice.content_hash)
+```
 
+Implement `test_result_binds_exact_upstream_belief_payload`:
 
-def test_result_binds_exact_upstream_belief_payload():
-    result = run_intentional_decision(...)
-    assert isinstance(result, IntentionalDecisionResult)
-    assert result.goal_state.belief_state_hash == stable_content_hash(
-        result.belief_state.to_dict()
-    )
-    assert result.model_hash == model.content_hash
-    assert result.content_hash == stable_content_hash(result.to_dict())
+```python
+result = run_intentional_decision(story, domain, "d1", model)
+self.assertIsInstance(result, IntentionalDecisionResult)
+self.assertEqual(
+    result.goal_state.belief_state_hash,
+    stable_content_hash(result.belief_state.to_dict()),
+)
+self.assertEqual(result.model_hash, model.content_hash)
+self.assertEqual(result.content_hash, stable_content_hash(result.to_dict()))
 ```
 
 - [ ] **Step 6: Update exact narrative public API expectation only**
@@ -353,7 +382,7 @@ Rules:
 - composite supported decision types non-empty/unique;
 - exact goal-ID equality between goal and choice model at composite construction;
 - `content_hash` for each spec is `stable_content_hash(to_dict())`;
-- composite `to_dict()` includes submodel content hashes and measured implementation identity for `run_intentional_decision` via a helper whose reference is resolved at call time, avoiding module-construction ordering issues.
+- composite `to_dict()` includes submodel content hashes and measured implementation identity for `run_intentional_decision`. Resolve the callable when `to_dict()` executes; class definition occurring before the function definition is acceptable because `to_dict()` is not invoked during class creation.
 
 - [ ] **Step 4: Implement `GoalState` and `IntentionalDecisionResult` validation**
 
@@ -386,22 +415,22 @@ Validation must enforce exact key agreement, finite scores, normalized non-negat
 
 - [ ] **Step 5: Run constructor/identity/tie/numeric tests**
 
-Run targeted tests selecting methods from `tests.test_narrative_intention` that do not require full execution, plus full file once enough exists:
+Run:
 
 ```bash
 python3 -m unittest tests.test_narrative_intention
 ```
 
-Expected: record construction/identity validation tests move GREEN; execution-chain tests may still fail because `run_intentional_decision()` is not implemented.
+Expected: record construction/identity validation tests move GREEN; execution-chain tests may still fail only because `run_intentional_decision()` has not yet acquired full semantics.
 
 - [ ] **Step 6: Commit the records/identity increment**
 
 ```bash
-git add narrative_dynamics/narrative/intention.py tests/test_narrative_intention.py
+git add narrative_dynamics/narrative/intention.py
 git commit -m "feat: add intentional decision model records"
 ```
 
-No export file change yet.
+Do not modify RED tests merely to accommodate the implementation. No export file change yet.
 
 ---
 
@@ -432,9 +461,6 @@ First steps must be:
 
 ```python
 validate_narrative(story, domain)
-# validate model type, normalized decision id, locate exact decision
-# reject unsupported decision type
-# require unique non-empty decision.context_cells and at least one declared action
 belief_state = uncertain_epistemic_state(
     story,
     domain,
@@ -445,6 +471,8 @@ belief_state = uncertain_epistemic_state(
 )
 ```
 
+Before the belief call, implement concrete checks: normalize `decision_id`; reject non-`IntentionalDecisionModelSpec`; locate the exact decision; missing decision ID raises `IntentionalDecisionResolutionError("decision id is not declared by the narrative")`; unsupported type raises `IntentionalDecisionResolutionError("decision type is not supported by the intentional model")`; empty/duplicate context or empty actions raises `IntentionalDecisionResolutionError` before uncertain replay.
+
 Do not import or call `objective_state()` anywhere in `intention.py`.
 
 - [ ] **Step 2: Validate exact goal/context/hypothesis coverage and compute scores**
@@ -453,12 +481,16 @@ For each `GoalSpec`:
 
 ```python
 if set(goal.cell_weights) != set(decision.context_cells):
-    raise GoalResolutionError(...)
+    raise GoalResolutionError("goal weights must cover decision context cells exactly")
 if set(goal.instrumentality) != set(decision.context_cells):
-    raise GoalResolutionError(...)
-if not math.isclose(math.fsum(goal.cell_weights.values()), 1.0,
-                    rel_tol=0.0, abs_tol=1e-12):
-    raise GoalResolutionError(...)
+    raise GoalResolutionError("goal instrumentality must cover decision context cells exactly")
+if not math.isclose(
+    math.fsum(goal.cell_weights.values()),
+    1.0,
+    rel_tol=0.0,
+    abs_tol=1e-12,
+):
+    raise GoalResolutionError("goal cell weights must sum to 1")
 ```
 
 For each context cell, derive the exact posterior hypothesis-hash set from `belief_state.cells[cell].posterior.masses` and require exact equality with the configured instrumentality keys.
@@ -466,14 +498,16 @@ For each context cell, derive the exact posterior hypothesis-hash set from `beli
 Compute:
 
 ```python
-expected = math.fsum(
-    goal.cell_weights[cell]
-    * math.fsum(
-        mass.probability * goal.instrumentality[cell][stable_content_hash(mass.value.to_dict())]
+expected_by_cell = []
+for cell in sorted(decision.context_cells, key=_cell_key):
+    posterior = belief_state.cells[cell].posterior
+    expected_cell = math.fsum(
+        mass.probability
+        * goal.instrumentality[cell][stable_content_hash(mass.value.to_dict())]
         for mass in posterior.masses
     )
-    for cell, posterior in sorted_cells
-)
+    expected_by_cell.append(goal.cell_weights[cell] * expected_cell)
+expected = math.fsum(expected_by_cell)
 score = goal.pressure * expected - goal.cost - goal.risk
 ```
 
@@ -486,12 +520,14 @@ Use only:
 ```python
 goal_policy = finite_softmax(goal_scores, beta=model.goal_model.beta_goal)
 selected_goal = _map_choice(goal_policy)
-```
-
-Create `GoalState` with:
-
-```python
-belief_state_hash=stable_content_hash(belief_state.to_dict())
+goal_state = GoalState(
+    model_id=model.goal_model.model_id,
+    model_hash=model.goal_model.content_hash,
+    belief_state_hash=stable_content_hash(belief_state.to_dict()),
+    scores=goal_scores,
+    policy=goal_policy,
+    selected_goal=selected_goal,
+)
 ```
 
 Do not sample a goal.
@@ -501,16 +537,13 @@ Do not sample a goal.
 Require:
 
 ```python
-set(model.choice_model.values) == set(goal_policy)
+if set(model.choice_model.values) != set(goal_policy):
+    raise ChoiceResolutionError("choice goals must match goal policy exactly")
+declared_actions = {action.id for action in decision.actions}
+for goal_id in goal_policy:
+    if set(model.choice_model.values[goal_id]) != declared_actions:
+        raise ChoiceResolutionError("choice actions must match declared actions exactly")
 ```
-
-and for every goal:
-
-```python
-set(model.choice_model.values[goal_id]) == {action.id for action in decision.actions}
-```
-
-Else raise `ChoiceResolutionError`.
 
 Compute conditional policies with:
 
@@ -544,15 +577,35 @@ Do not call `finite_softmax(action_scores, ...)` to build the observable policy.
 
 Validate every marginal probability finite/non-negative and total within `1e-12` of `1.0`. If outside tolerance, raise `ChoiceResolutionError`.
 
-If inside tolerance but not exact, compute `residual = 1.0 - total` and add it to the action with the largest current probability, using lexical action ID as the exact-tie breaker. Revalidate non-negativity and normalized total.
+If inside tolerance but not exact, compute `residual = 1.0 - total`. Select the correction coordinate by maximum probability, breaking an exact probability tie lexically:
 
-This is the only normalization correction in V1.
+```python
+max_probability = max(action_policy.values())
+correction_action = min(
+    action_id
+    for action_id, probability in action_policy.items()
+    if probability == max_probability
+)
+action_policy[correction_action] += residual
+```
+
+Revalidate non-negativity and normalized total. This is the only normalization correction in V1.
 
 - [ ] **Step 7: Build deterministic result and run all intentional semantic tests**
 
 ```python
 selected_action = _map_choice(action_policy)
-return IntentionalDecisionResult(...)
+return IntentionalDecisionResult(
+    model_id=model.model_id,
+    model_hash=model.content_hash,
+    decision_id=decision.id,
+    belief_state=belief_state,
+    goal_state=goal_state,
+    conditional_action_policies=conditional,
+    action_scores=action_scores,
+    action_policy=action_policy,
+    selected_action=selected_action,
+)
 ```
 
 Run:
@@ -580,7 +633,7 @@ Expected: unchanged GREEN. Any failure here is a design-boundary violation; stop
 - [ ] **Step 9: Commit execution semantics**
 
 ```bash
-git add narrative_dynamics/narrative/intention.py tests/test_narrative_intention.py
+git add narrative_dynamics/narrative/intention.py
 git commit -m "feat: add belief goal choice execution"
 ```
 
@@ -617,7 +670,22 @@ from narrative_dynamics.narrative.intention import (
 
 - [ ] **Step 2: Append exactly the same ten names to `__all__`**
 
-Do not reorder or remove existing names except where the formatter naturally requires wrapping. Do not edit package-root exports.
+Append:
+
+```python
+"GoalSpec",
+"GoalModelSpec",
+"GoalState",
+"ChoiceModelSpec",
+"IntentionalDecisionModelSpec",
+"IntentionalDecisionResult",
+"IntentionalDecisionResolutionError",
+"GoalResolutionError",
+"ChoiceResolutionError",
+"run_intentional_decision",
+```
+
+Do not remove existing names and do not edit package-root exports.
 
 - [ ] **Step 3: Verify scoped public surface and root isolation**
 
@@ -632,9 +700,11 @@ Expected: both GREEN; every new name exists on `narrative_dynamics.narrative` an
 - [ ] **Step 4: Commit scoped exports**
 
 ```bash
-git add narrative_dynamics/narrative/__init__.py tests/test_narrative_trust_api.py
+git add narrative_dynamics/narrative/__init__.py
 git commit -m "feat: export narrative intentional decision api"
 ```
+
+The trust test was already committed in the RED commit; do not rewrite the expected surface at GREEN time.
 
 ---
 
