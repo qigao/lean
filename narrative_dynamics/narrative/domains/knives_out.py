@@ -3,9 +3,10 @@ from __future__ import annotations
 """Small film-conformance slice for the Generic Narrative Engine.
 
 The fixture abstracts revealed plot facts from *Knives Out* into canonical
-semantics.  It intentionally stores no screenplay dialogue: medication
-tampering establishes the objective culprit, Fran directly observes the
-tampering, and Ransom's later confession is received by Blanc and Marta.
+semantics. It intentionally stores no screenplay dialogue: Ransom's original
+medication tampering establishes the objective culprit, Fran later observes
+Ransom restoring/handling the medication evidence, and Ransom's confession is
+received by Blanc and Marta.
 """
 
 from narrative_dynamics.narrative.decision import (
@@ -57,6 +58,10 @@ def _agent_ref(agent_id: str) -> EntityRef:
     return EntityRef(agent_id, "Agent")
 
 
+def _culprit_value(agent_id: str) -> TypedValue:
+    return TypedValue("AgentRef", _agent_ref(agent_id))
+
+
 class MedicationTamperingHook:
     def __call__(self, prior_state, event):
         del prior_state
@@ -71,7 +76,31 @@ class MedicationTamperingHook:
                     "set",
                     case.entity_id,
                     "case.culprit",
-                    TypedValue("AgentRef", _agent_ref(event.actor_id)),
+                    _culprit_value(event.actor_id),
+                ),
+            )
+        )
+
+
+class MedicationEvidenceRestorationHook:
+    def __call__(self, prior_state, event):
+        case = event.arguments["case"].value
+        if not isinstance(case, EntityRef):
+            raise TypeError("medication evidence restoration requires a CaseRef")
+        if event.actor_id is None:
+            raise ValueError("medication evidence restoration requires an actor")
+        expected = _culprit_value(event.actor_id)
+        if prior_state.get(StateCellRef(case, "case.culprit")) != expected:
+            raise ValueError(
+                "medication evidence restoration must match the established culprit"
+            )
+        return StateDelta(
+            (
+                StateDeltaOp(
+                    "set",
+                    case.entity_id,
+                    "case.culprit",
+                    expected,
                 ),
             )
         )
@@ -97,6 +126,13 @@ def knives_out_domain() -> DomainSpec:
                 (StateEffectSpec("case.culprit", "case"),),
                 "medication_tampering",
             ),
+            EventTypeSpec(
+                "MedicationEvidenceRestoration",
+                "Agent",
+                (ParameterSpec("case", "CaseRef"),),
+                (StateEffectSpec("case.culprit", "case"),),
+                "medication_evidence_restoration",
+            ),
         ),
         action_types=(ActionTypeSpec("investigation-action", ()),),
         decision_types=(
@@ -111,6 +147,11 @@ def knives_out_domain() -> DomainSpec:
                 "medication_tampering",
                 "record the agent responsible for medication tampering",
                 MedicationTamperingHook(),
+            ),
+            SemanticHookBinding(
+                "medication_evidence_restoration",
+                "confirm the established culprit when medication evidence is restored",
+                MedicationEvidenceRestorationHook(),
             ),
         ),
     )
@@ -139,15 +180,26 @@ def knives_out_confession_story() -> GenericNarrative:
                 "ransom",
                 {"case": TypedValue("CaseRef", case)},
             ),
+            NarrativeEvent(
+                "restore-medication-evidence",
+                2,
+                "MedicationEvidenceRestoration",
+                "ransom",
+                {"case": TypedValue("CaseRef", case)},
+            ),
         ),
         observations=(
             Observation("obs-ransom-tamper", "ransom", "tamper-medication"),
-            Observation("obs-fran-tamper", "fran", "tamper-medication"),
+            Observation(
+                "obs-fran-restore",
+                "fran",
+                "restore-medication-evidence",
+            ),
         ),
         claims=(
             Claim(
                 "ransom-confession",
-                2,
+                3,
                 "ransom",
                 Proposition(
                     case,
@@ -165,7 +217,7 @@ def knives_out_confession_story() -> GenericNarrative:
         decisions=(
             Decision(
                 "blanc-focus",
-                3,
+                4,
                 "blanc",
                 "investigative-focus",
                 (_case_cell(),),
