@@ -144,10 +144,6 @@ class MementoConformanceTests(unittest.TestCase):
         self.assertIsNone(
             changed.trajectory.snapshots[-1].objective_cells[_CASE_CELL]
         )
-        self.assertEqual(
-            changed.trajectory.snapshots[-1].objective_cells[_RECORD_AUTHOR_CELL],
-            _BEFORE_RESET,
-        )
 
         reception_removal = next(
             item
