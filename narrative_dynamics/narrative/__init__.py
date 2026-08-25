@@ -110,6 +110,18 @@ from narrative_dynamics.narrative.uncertain import (
     UncertainBeliefState,
     uncertain_epistemic_state,
 )
+from narrative_dynamics.narrative.intention import (
+    ChoiceModelSpec,
+    ChoiceResolutionError,
+    GoalModelSpec,
+    GoalResolutionError,
+    GoalSpec,
+    GoalState,
+    IntentionalDecisionModelSpec,
+    IntentionalDecisionResolutionError,
+    IntentionalDecisionResult,
+    run_intentional_decision,
+)
 
 
 __all__ = (
@@ -154,6 +166,16 @@ __all__ = (
     "UncertainBeliefModelSpec",
     "UncertainBeliefResolutionError",
     "uncertain_epistemic_state",
+    "GoalSpec",
+    "GoalModelSpec",
+    "GoalState",
+    "ChoiceModelSpec",
+    "IntentionalDecisionModelSpec",
+    "IntentionalDecisionResult",
+    "IntentionalDecisionResolutionError",
+    "GoalResolutionError",
+    "ChoiceResolutionError",
+    "run_intentional_decision",
     "EvidenceAccess",
     "DecisionCellView",
     "DecisionContext",
