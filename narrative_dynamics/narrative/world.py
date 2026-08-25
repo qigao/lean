@@ -5,11 +5,21 @@ from dataclasses import dataclass, field
 import re
 from types import MappingProxyType
 
-from narrative_dynamics.attestation import measure_implementation
+from narrative_dynamics.attestation import (
+    ImplementationAttestationUnavailable,
+    measure_implementation,
+)
 from narrative_dynamics.contracts import stable_content_hash
-from narrative_dynamics.narrative.domain import DomainSpec, StateDelta
+from narrative_dynamics.narrative.domain import (
+    DomainSpec,
+    StateDelta,
+    validate_narrative,
+)
 from narrative_dynamics.narrative.ir import (
     ActionOption,
+    Decision,
+    Entity,
+    EntityRef,
     GenericNarrative,
     StateCellRef,
     TypedValue,
@@ -597,6 +607,443 @@ def world_state_from_story(
     )
 
 
+def _validate_prior_state(
+    story: GenericNarrative,
+    domain: DomainSpec,
+    prior: WorldState,
+    model: WorldTransitionModelSpec,
+) -> dict[str, Entity]:
+    try:
+        validate_narrative(story, domain)
+    except (TypeError, ValueError) as error:
+        raise WorldTransitionError(
+            "world execution narrative/domain validation failed"
+        ) from error
+
+    if not isinstance(prior, WorldState):
+        raise WorldTransitionError("world execution requires WorldState")
+    if not isinstance(model, WorldTransitionModelSpec):
+        raise WorldTransitionError(
+            "world execution requires WorldTransitionModelSpec"
+        )
+
+    domain_identity = (
+        domain.domain_id,
+        domain.version,
+        domain.content_hash,
+    )
+    if (
+        prior.domain_id,
+        prior.domain_version,
+        prior.domain_spec_hash,
+    ) != domain_identity:
+        raise WorldTransitionError(
+            "world state domain identity does not match DomainSpec"
+        )
+    if (
+        model.domain_id,
+        model.domain_version,
+        model.domain_spec_hash,
+    ) != domain_identity:
+        raise WorldTransitionError(
+            "world transition model domain identity does not match DomainSpec"
+        )
+    if prior.source_story_hash != story.content_hash:
+        raise WorldTransitionError(
+            "world state source story does not match canonical narrative"
+        )
+
+    entities = {entity.id: entity for entity in story.entities}
+    try:
+        for cell, value in prior.values.items():
+            if not isinstance(cell, StateCellRef):
+                raise TypeError("world state cell must be StateCellRef")
+            if not isinstance(value, TypedValue):
+                raise TypeError("world state value must be TypedValue")
+            subject = entities.get(cell.subject.entity_id)
+            if (
+                subject is None
+                or subject.type_name != cell.subject.entity_type
+            ):
+                raise ValueError(
+                    "world state cell subject is not canonical"
+                )
+            state_variable = domain._state_variable(
+                cell.state_variable
+            )
+            if state_variable.subject_type != subject.type_name:
+                raise ValueError(
+                    "world state cell subject type does not match "
+                    "state variable"
+                )
+            domain._value_type(
+                state_variable.value_type
+            ).validate(value, entities)
+    except (TypeError, ValueError) as error:
+        raise WorldTransitionError(
+            "world state contains an invalid canonical value"
+        ) from error
+
+    return entities
+
+
+def _validate_transition_declarations(
+    domain: DomainSpec,
+    model: WorldTransitionModelSpec,
+) -> None:
+    try:
+        for transition in model.transitions:
+            domain._action_type(transition.action_type)
+    except (TypeError, ValueError) as error:
+        raise WorldTransitionError(
+            "world transition model names an undeclared action type"
+        ) from error
+
+
+def _resolve_intents(
+    story: GenericNarrative,
+    prior: WorldState,
+    model: WorldTransitionModelSpec,
+    intents: tuple[ActionIntent, ...],
+) -> tuple[
+    tuple[
+        ActionIntent,
+        Decision,
+        ActionOption,
+        ActionTransitionSpec,
+    ],
+    ...,
+]:
+    try:
+        values = tuple(intents)
+    except TypeError as error:
+        raise WorldTransitionError(
+            "world step intents must be an iterable of ActionIntent values"
+        ) from error
+
+    if not values:
+        raise WorldTransitionError(
+            "world step requires at least one action intent"
+        )
+    if any(not isinstance(item, ActionIntent) for item in values):
+        raise WorldTransitionError(
+            "world step intents must be ActionIntent values"
+        )
+    if len({item.decision_id for item in values}) != len(values):
+        raise WorldTransitionError(
+            "world step decision ids must be unique"
+        )
+
+    decisions = {decision.id: decision for decision in story.decisions}
+    transitions = {
+        transition.action_type: transition
+        for transition in model.transitions
+    }
+    resolved: list[
+        tuple[
+            ActionIntent,
+            Decision,
+            ActionOption,
+            ActionTransitionSpec,
+        ]
+    ] = []
+    actors: set[str] = set()
+
+    for item in values:
+        decision = decisions.get(item.decision_id)
+        if decision is None:
+            raise WorldTransitionError(
+                "action intent decision is not declared"
+            )
+        if (
+            prior.source_at_time is not None
+            and decision.logical_time > prior.source_at_time
+        ):
+            raise WorldTransitionError(
+                "action intent decision occurs after world source cutoff"
+            )
+        if decision.actor_id in actors:
+            raise WorldTransitionError(
+                "one actor may contribute at most one action "
+                "per world step"
+            )
+        actors.add(decision.actor_id)
+
+        action = next(
+            (
+                candidate
+                for candidate in decision.actions
+                if candidate.id == item.selected_action
+            ),
+            None,
+        )
+        if action is None:
+            raise WorldTransitionError(
+                "action intent action is not declared by its decision"
+            )
+        transition = transitions.get(action.type_name)
+        if transition is None:
+            raise WorldTransitionError(
+                "selected action type is not executable "
+                "by this world model"
+            )
+        resolved.append((item, decision, action, transition))
+
+    return tuple(resolved)
+
+
+def _allowed_cells(
+    domain: DomainSpec,
+    entities: Mapping[str, Entity],
+    decision: Decision,
+    action: ActionOption,
+    transition: ActionTransitionSpec,
+) -> frozenset[StateCellRef]:
+    try:
+        action_type = domain._action_type(action.type_name)
+        parameters = {
+            parameter.name: parameter
+            for parameter in action_type.parameters
+        }
+        allowed: set[StateCellRef] = set()
+
+        for effect in transition.effects:
+            state_variable = domain._state_variable(
+                effect.state_variable
+            )
+            if effect.subject_source == "actor":
+                subject = entities.get(decision.actor_id)
+                if subject is None:
+                    raise ValueError(
+                        "canonical action actor is not declared"
+                    )
+            else:
+                argument_name = effect.subject_argument
+                parameter = parameters.get(argument_name)
+                if parameter is None:
+                    raise ValueError(
+                        "action effect subject argument "
+                        "is not a declared parameter"
+                    )
+                argument = action.arguments.get(argument_name)
+                if argument is None:
+                    raise ValueError(
+                        "action effect subject argument "
+                        "is missing from canonical action"
+                    )
+                value = argument.value
+                if not isinstance(value, EntityRef):
+                    raise TypeError(
+                        "action effect subject argument "
+                        "must contain EntityRef"
+                    )
+                subject = entities.get(value.entity_id)
+                if (
+                    subject is None
+                    or subject.type_name != value.entity_type
+                ):
+                    raise ValueError(
+                        "action effect subject argument "
+                        "is not canonical"
+                    )
+
+            if subject.type_name != state_variable.subject_type:
+                raise ValueError(
+                    "action effect target type does not match "
+                    "state variable"
+                )
+            allowed.add(
+                StateCellRef(
+                    EntityRef(subject.id, subject.type_name),
+                    state_variable.name,
+                )
+            )
+    except (TypeError, ValueError) as error:
+        raise WorldTransitionError(
+            "action transition has an invalid effect capability"
+        ) from error
+
+    return frozenset(allowed)
+
+
+def _validated_delta(
+    domain: DomainSpec,
+    entities: Mapping[str, Entity],
+    allowed: frozenset[StateCellRef],
+    delta: object,
+) -> StateDelta:
+    if not isinstance(delta, StateDelta):
+        raise WorldTransitionError(
+            "action transition hook must return StateDelta"
+        )
+
+    seen: set[StateCellRef] = set()
+    try:
+        for operation in delta.operations:
+            subject = entities.get(operation.subject_id)
+            if subject is None:
+                raise ValueError(
+                    "state delta subject is not declared"
+                )
+            state_variable = domain._state_variable(
+                operation.state_variable
+            )
+            if subject.type_name != state_variable.subject_type:
+                raise ValueError(
+                    "state delta subject type mismatch"
+                )
+            cell = StateCellRef(
+                EntityRef(subject.id, subject.type_name),
+                state_variable.name,
+            )
+            if cell not in allowed:
+                raise ValueError(
+                    "state delta wrote outside action effect capability"
+                )
+            if cell in seen:
+                raise ValueError(
+                    "one action delta cannot write one state cell twice"
+                )
+            seen.add(cell)
+
+            if operation.kind == "clear":
+                if operation.value is not None:
+                    raise ValueError(
+                        "clear state delta cannot contain a value"
+                    )
+            elif operation.kind == "set":
+                if operation.value is None:
+                    raise ValueError(
+                        "set state delta requires a value"
+                    )
+                domain._value_type(
+                    state_variable.value_type
+                ).validate(operation.value, entities)
+            else:
+                raise ValueError(
+                    "state delta operation kind is unsupported"
+                )
+    except (TypeError, ValueError) as error:
+        raise WorldTransitionError(
+            "action transition produced an invalid state delta"
+        ) from error
+
+    return delta
+
+
+def _attested_transition_hash(
+    transition: ActionTransitionSpec,
+) -> str:
+    try:
+        return transition.content_hash
+    except ImplementationAttestationUnavailable as error:
+        raise WorldTransitionError(
+            "action transition implementation attestation is unavailable"
+        ) from error
+
+
+def _attested_model_hash(
+    model: WorldTransitionModelSpec,
+) -> str:
+    try:
+        return model.content_hash
+    except ImplementationAttestationUnavailable as error:
+        raise WorldTransitionError(
+            "world transition model implementation "
+            "attestation is unavailable"
+        ) from error
+
+
+def _execute_one(
+    snapshot: Mapping[StateCellRef, TypedValue],
+    domain: DomainSpec,
+    entities: Mapping[str, Entity],
+    prior: WorldState,
+    resolved: tuple[
+        ActionIntent,
+        Decision,
+        ActionOption,
+        ActionTransitionSpec,
+    ],
+) -> ActionTransitionRecord:
+    item, decision, action, transition = resolved
+    allowed = _allowed_cells(
+        domain,
+        entities,
+        decision,
+        action,
+        transition,
+    )
+    try:
+        raw_delta = transition.transition_hook(
+            snapshot,
+            decision,
+            action,
+        )
+    except Exception as error:
+        raise WorldTransitionError(
+            "action transition hook failed"
+        ) from error
+
+    delta = _validated_delta(
+        domain,
+        entities,
+        allowed,
+        raw_delta,
+    )
+    return ActionTransitionRecord(
+        intent=item,
+        actor_id=decision.actor_id,
+        action=action,
+        transition_spec_hash=_attested_transition_hash(
+            transition
+        ),
+        prior_state_hash=prior.content_hash,
+        delta=delta,
+    )
+
+
+def _single_action_result(
+    prior: WorldState,
+    model: WorldTransitionModelSpec,
+    record: ActionTransitionRecord,
+    entities: Mapping[str, Entity],
+) -> WorldStepResult:
+    records = (record,)
+    next_values = dict(prior.values)
+    for operation in record.delta.operations:
+        subject = entities[operation.subject_id]
+        cell = StateCellRef(
+            EntityRef(subject.id, subject.type_name),
+            operation.state_variable,
+        )
+        if operation.kind == "clear":
+            next_values.pop(cell, None)
+        else:
+            assert operation.value is not None
+            next_values[cell] = operation.value
+
+    batch_hash = _transition_batch_hash(records)
+    next_state = WorldState(
+        domain_id=prior.domain_id,
+        domain_version=prior.domain_version,
+        domain_spec_hash=prior.domain_spec_hash,
+        source_story_hash=prior.source_story_hash,
+        source_at_time=prior.source_at_time,
+        step_index=prior.step_index + 1,
+        parent_state_hash=prior.content_hash,
+        transition_batch_hash=batch_hash,
+        values=next_values,
+    )
+    return WorldStepResult(
+        model_id=model.model_id,
+        model_hash=_attested_model_hash(model),
+        prior_state=prior,
+        transitions=records,
+        next_state=next_state,
+    )
+
+
 def advance_world_step(
     story: GenericNarrative,
     domain: DomainSpec,
@@ -604,6 +1051,38 @@ def advance_world_step(
     model: WorldTransitionModelSpec,
     intents: tuple[ActionIntent, ...],
 ) -> WorldStepResult:
-    """Task-2 importable placeholder; execution semantics arrive in Task 3."""
+    """Execute one canonical action against an immutable prior world snapshot."""
 
-    raise NotImplementedError("world step execution is not implemented")
+    entities = _validate_prior_state(
+        story,
+        domain,
+        prior_state,
+        model,
+    )
+    _validate_transition_declarations(domain, model)
+    resolved = _resolve_intents(
+        story,
+        prior_state,
+        model,
+        intents,
+    )
+
+    if len(resolved) != 1:
+        raise WorldTransitionError(
+            "multi-agent world steps are not implemented yet"
+        )
+
+    snapshot = MappingProxyType(dict(prior_state.values))
+    record = _execute_one(
+        snapshot,
+        domain,
+        entities,
+        prior_state,
+        resolved[0],
+    )
+    return _single_action_result(
+        prior_state,
+        model,
+        record,
+        entities,
+    )
