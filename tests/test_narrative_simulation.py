@@ -1070,8 +1070,12 @@ class NarrativeSimulationTests(unittest.TestCase):
         )
         prior = simulation_state_from_story(story, domain, model, at_time=9)
         forged = _forge(prior, step_index=1)
-        with self.assertRaises(SimulationStepError):
+        with self.assertRaises(SimulationStepError) as caught:
             simulate_step(story, domain, forged, model)
+        self.assertNotEqual(
+            str(caught.exception),
+            "simulation step execution is unavailable in this stage",
+        )
         self.assertEqual(a_runtime.calls, [])
         self.assertEqual(b_runtime.calls, [])
         self.assertEqual(alert_hook.calls, 0)
