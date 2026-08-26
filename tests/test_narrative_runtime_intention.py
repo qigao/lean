@@ -350,12 +350,13 @@ class NarrativeRuntimeIntentionTests(unittest.TestCase):
     def test_decision_template_cutoff_actor_type_and_context_fail_closed_before_likelihood(self):
         self.require_runtime_intention()
         domain, story, ledger = empty_runtime_case()
+        stage_error = "runtime intentional execution is unavailable in this stage"
 
         hook = SemanticRuntimeLikelihood()
         supported = make_runtime_intentional_model(
             belief=make_runtime_belief_model(hook=hook)
         )
-        with self.assertRaises(RuntimeIntentionalDecisionResolutionError):
+        with self.assertRaises(RuntimeIntentionalDecisionResolutionError) as caught:
             run_runtime_intentional_decision(
                 story,
                 domain,
@@ -363,6 +364,7 @@ class NarrativeRuntimeIntentionTests(unittest.TestCase):
                 ledger,
                 supported,
             )
+        self.assertNotEqual(str(caught.exception), stage_error)
         self.assertEqual(hook.inputs, [])
 
         hook = SemanticRuntimeLikelihood()
@@ -374,7 +376,7 @@ class NarrativeRuntimeIntentionTests(unittest.TestCase):
             make_goal_model(),
             make_choice_model(),
         )
-        with self.assertRaises(RuntimeIntentionalDecisionResolutionError):
+        with self.assertRaises(RuntimeIntentionalDecisionResolutionError) as caught:
             run_runtime_intentional_decision(
                 story,
                 domain,
@@ -382,6 +384,7 @@ class NarrativeRuntimeIntentionTests(unittest.TestCase):
                 ledger,
                 unsupported,
             )
+        self.assertNotEqual(str(caught.exception), stage_error)
         self.assertEqual(hook.inputs, [])
 
         hook = SemanticRuntimeLikelihood()
@@ -393,7 +396,7 @@ class NarrativeRuntimeIntentionTests(unittest.TestCase):
             domain,
             at_time=7,
         )
-        with self.assertRaises(RuntimeIntentionalDecisionResolutionError):
+        with self.assertRaises(RuntimeIntentionalDecisionResolutionError) as caught:
             run_runtime_intentional_decision(
                 story,
                 domain,
@@ -401,6 +404,7 @@ class NarrativeRuntimeIntentionTests(unittest.TestCase):
                 cutoff_ledger,
                 cutoff_model,
             )
+        self.assertNotEqual(str(caught.exception), stage_error)
         self.assertEqual(hook.inputs, [])
 
         decision = next(item for item in story.decisions if item.id == "d-a1-phase")
@@ -415,7 +419,7 @@ class NarrativeRuntimeIntentionTests(unittest.TestCase):
         malformed_model = make_runtime_intentional_model(
             belief=make_runtime_belief_model(hook=hook)
         )
-        with self.assertRaises(RuntimeIntentionalDecisionResolutionError):
+        with self.assertRaises(RuntimeIntentionalDecisionResolutionError) as caught:
             run_runtime_intentional_decision(
                 malformed,
                 domain,
@@ -423,6 +427,7 @@ class NarrativeRuntimeIntentionTests(unittest.TestCase):
                 ledger,
                 malformed_model,
             )
+        self.assertNotEqual(str(caught.exception), stage_error)
         self.assertEqual(hook.inputs, [])
 
         bad_actor = replace(
@@ -436,7 +441,7 @@ class NarrativeRuntimeIntentionTests(unittest.TestCase):
         bad_actor_model = make_runtime_intentional_model(
             belief=make_runtime_belief_model(hook=hook)
         )
-        with self.assertRaises(RuntimeIntentionalDecisionResolutionError):
+        with self.assertRaises(RuntimeIntentionalDecisionResolutionError) as caught:
             run_runtime_intentional_decision(
                 bad_actor,
                 domain,
@@ -444,6 +449,7 @@ class NarrativeRuntimeIntentionTests(unittest.TestCase):
                 ledger,
                 bad_actor_model,
             )
+        self.assertNotEqual(str(caught.exception), stage_error)
         self.assertEqual(hook.inputs, [])
 
     def test_context_cells_are_exact_runtime_tracked_cells(self):
