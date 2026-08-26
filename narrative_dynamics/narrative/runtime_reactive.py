@@ -9,8 +9,9 @@ from types import MappingProxyType
 from grounded_goal_softmax import finite_softmax
 from narrative_dynamics.attestation import measure_implementation
 from narrative_dynamics.contracts import stable_content_hash
+from narrative_dynamics.narrative.domain import DomainSpec, validate_narrative
 from narrative_dynamics.narrative.ir import GenericNarrative, StateCellRef, TypedValue
-from narrative_dynamics.narrative.domain import DomainSpec
+from narrative_dynamics.narrative.replay import direct_state
 from narrative_dynamics.narrative.runtime_perception import RuntimeEvidenceLedger
 
 
@@ -490,6 +491,121 @@ class RuntimeReactiveDecisionResult:
         return stable_content_hash(self.to_dict())
 
 
+def _validated_model(model: object) -> RuntimeReactiveDecisionModelSpec:
+    if not isinstance(model, RuntimeReactiveDecisionModelSpec):
+        raise TypeError(
+            "runtime reactive execution requires RuntimeReactiveDecisionModelSpec"
+        )
+    return RuntimeReactiveDecisionModelSpec(
+        model.model_id,
+        model.version,
+        model.supported_decision_types,
+        model.cue_cells,
+        model.parameters,
+        model.beta,
+        model.score_hook,
+    )
+
+
+def _validated_ledger(
+    story: GenericNarrative,
+    domain: DomainSpec,
+    ledger: object,
+) -> RuntimeEvidenceLedger:
+    if not isinstance(ledger, RuntimeEvidenceLedger):
+        raise TypeError("runtime reactive execution requires RuntimeEvidenceLedger")
+    canonical = RuntimeEvidenceLedger(
+        domain_id=ledger.domain_id,
+        domain_version=ledger.domain_version,
+        domain_spec_hash=ledger.domain_spec_hash,
+        source_story_hash=ledger.source_story_hash,
+        source_at_time=ledger.source_at_time,
+        initial_world_state_hash=ledger.initial_world_state_hash,
+        current_world_state_hash=ledger.current_world_state_hash,
+        batches=ledger.batches,
+    )
+    if canonical.domain_id != domain.domain_id:
+        raise ValueError("runtime reactive ledger domain id mismatch")
+    if canonical.domain_version != domain.version:
+        raise ValueError("runtime reactive ledger domain version mismatch")
+    if canonical.domain_spec_hash != domain.content_hash:
+        raise ValueError("runtime reactive ledger domain spec mismatch")
+    if canonical.source_story_hash != story.content_hash:
+        raise ValueError("runtime reactive ledger source story mismatch")
+    return canonical
+
+
+def _current_cue_snapshot(
+    story: GenericNarrative,
+    domain: DomainSpec,
+    decision,
+    ledger: RuntimeEvidenceLedger,
+    model: RuntimeReactiveDecisionModelSpec,
+) -> RuntimeReactiveCueSnapshot:
+    step_index = ledger.current_step_index
+    cues: dict[StateCellRef, ReactiveCueView] = {}
+
+    if step_index == 0:
+        state = direct_state(
+            story,
+            domain,
+            decision.actor_id,
+            at_time=ledger.source_at_time,
+        )
+        for cell in model.cue_cells:
+            view = state.cells.get(cell)
+            if (
+                view is not None
+                and view.status == "resolved"
+                and view.resolved_value is not None
+            ):
+                cues[cell] = ReactiveCueView(
+                    cell,
+                    "resolved",
+                    view.resolved_value,
+                    step_index,
+                )
+            else:
+                cues[cell] = ReactiveCueView(cell, "unknown", None, step_index)
+    else:
+        if not ledger.batches:
+            raise ValueError("runtime reactive current step requires an evidence batch")
+        batch = ledger.batches[-1]
+        if batch.step_index != step_index:
+            raise ValueError("runtime reactive latest batch must equal current step")
+        for cell in model.cue_cells:
+            rows = tuple(
+                item
+                for item in batch.evidence
+                if item.observer_id == decision.actor_id and item.cell == cell
+            )
+            if not rows:
+                cues[cell] = ReactiveCueView(cell, "unknown", None, step_index)
+                continue
+            semantics = {(item.relation, item.value) for item in rows}
+            if len(semantics) != 1:
+                raise RuntimeReactiveDecisionResolutionError(
+                    "same-step reactive cues disagree semantically"
+                )
+            relation, value = next(iter(semantics))
+            if relation == "equals":
+                if not isinstance(value, TypedValue):
+                    raise ValueError("reactive equals cue requires TypedValue")
+                cues[cell] = ReactiveCueView(cell, "resolved", value, step_index)
+            elif relation == "clear":
+                cues[cell] = ReactiveCueView(cell, "unknown", None, step_index)
+            else:
+                raise ValueError("runtime reactive cue relation is unsupported")
+
+    return RuntimeReactiveCueSnapshot(
+        actor_id=decision.actor_id,
+        decision_id=decision.id,
+        step_index=step_index,
+        ledger_hash=ledger.content_hash,
+        cues=cues,
+    )
+
+
 def run_runtime_reactive_decision(
     story: GenericNarrative,
     domain: DomainSpec,
@@ -497,9 +613,100 @@ def run_runtime_reactive_decision(
     ledger: RuntimeEvidenceLedger,
     model: RuntimeReactiveDecisionModelSpec,
 ) -> RuntimeReactiveDecisionResult:
-    raise RuntimeReactiveDecisionResolutionError(
-        "runtime reactive execution is not implemented"
-    )
+    try:
+        validate_narrative(story, domain)
+        resolved_model = _validated_model(model)
+        resolved_ledger = _validated_ledger(story, domain, ledger)
+        resolved_decision_id = _text(decision_id, label="runtime reactive decision id")
+        decision = next(
+            (item for item in story.decisions if item.id == resolved_decision_id),
+            None,
+        )
+        if decision is None:
+            raise ValueError("runtime reactive decision template is not declared")
+        if decision.type_name not in resolved_model.supported_decision_types:
+            raise ValueError("runtime reactive decision type is not supported")
+        if not decision.context_cells or len(set(decision.context_cells)) != len(
+            decision.context_cells
+        ):
+            raise ValueError("runtime reactive decision context must be non-empty and unique")
+        if not set(resolved_model.cue_cells).issubset(set(decision.context_cells)):
+            raise ValueError("runtime reactive cue cells exceed decision context capability")
+        action_ids = tuple(action.id for action in decision.actions)
+        if not action_ids or len(set(action_ids)) != len(action_ids):
+            raise ValueError("runtime reactive decision actions must be non-empty and unique")
+        if (
+            resolved_ledger.source_at_time is not None
+            and decision.logical_time > resolved_ledger.source_at_time
+        ):
+            raise ValueError("runtime reactive decision template occurs after source cutoff")
+        snapshot = _current_cue_snapshot(
+            story,
+            domain,
+            decision,
+            resolved_ledger,
+            resolved_model,
+        )
+        context = RuntimeReactiveDecisionContext(
+            decision_id=decision.id,
+            actor_id=decision.actor_id,
+            decision_type=decision.type_name,
+            step_index=snapshot.step_index,
+            actions=tuple(action_ids),
+            cues=snapshot.cues,
+            parameters=resolved_model.parameters,
+        )
+    except RuntimeReactiveDecisionResolutionError:
+        raise
+    except (TypeError, ValueError, KeyError, OverflowError) as error:
+        raise RuntimeReactiveDecisionResolutionError(
+            "runtime reactive prerequisites could not be resolved"
+        ) from error
+
+    try:
+        raw_scores = resolved_model.score_hook(context)
+    except Exception as error:
+        raise RuntimeReactiveDecisionResolutionError(
+            "runtime reactive score hook failed"
+        ) from error
+
+    try:
+        scores = _freeze_scores(raw_scores, label="runtime reactive action scores")
+        if set(scores) != set(context.actions):
+            raise ValueError(
+                "runtime reactive scores must cover authored actions exactly"
+            )
+        try:
+            raw_policy = finite_softmax(scores, beta=resolved_model.beta)
+        except (TypeError, ValueError, OverflowError) as error:
+            raise RuntimeReactiveDecisionResolutionError(
+                "runtime reactive softmax could not produce a policy"
+            ) from error
+        policy = _freeze_policy(raw_policy, label="runtime reactive action policy")
+        if set(policy) != set(context.actions):
+            raise ValueError(
+                "runtime reactive policy must cover authored actions exactly"
+            )
+        selected = _map_choice(policy)
+        return RuntimeReactiveDecisionResult(
+            model_id=resolved_model.model_id,
+            model_hash=resolved_model.content_hash,
+            decision_id=decision.id,
+            actor_id=decision.actor_id,
+            step_index=snapshot.step_index,
+            ledger_hash=resolved_ledger.content_hash,
+            cue_snapshot_hash=snapshot.content_hash,
+            cue_snapshot=snapshot,
+            action_scores=scores,
+            action_policy=policy,
+            selected_action=selected,
+        )
+    except RuntimeReactiveDecisionResolutionError:
+        raise
+    except (TypeError, ValueError, KeyError, OverflowError) as error:
+        raise RuntimeReactiveDecisionResolutionError(
+            "runtime reactive action selection could not be resolved"
+        ) from error
 
 
 __all__ = [
