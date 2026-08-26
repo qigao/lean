@@ -12,18 +12,24 @@ from narrative_dynamics.narrative.observation_projection import (
 )
 from narrative_dynamics.narrative.runtime_intention import (
     RuntimeIntentionalDecisionModelSpec,
+    RuntimeIntentionalDecisionResolutionError,
     RuntimeIntentionalDecisionResult,
+    run_runtime_intentional_decision,
 )
 from narrative_dynamics.narrative.runtime_perception import (
     RuntimeEvidenceLedger,
+    RuntimePerceptAdmissionError,
     RuntimePerceptAdmissionResult,
+    admit_world_percepts,
     runtime_evidence_ledger_from_story,
 )
 from narrative_dynamics.narrative.world import (
     ActionIntent,
     WorldState,
     WorldStepResult,
+    WorldTransitionError,
     WorldTransitionModelSpec,
+    advance_world_step,
     world_state_from_story,
 )
 
@@ -637,6 +643,56 @@ def _validate_execution_bindings(
             )
 
 
+def _validate_prior_state(
+    story: GenericNarrative,
+    domain: DomainSpec,
+    prior_state: SimulationState,
+    model: SimulationModelSpec,
+) -> None:
+    if not isinstance(prior_state, SimulationState):
+        raise TypeError("simulation prior state must be SimulationState")
+    if not isinstance(model, SimulationModelSpec):
+        raise TypeError("simulation step requires SimulationModelSpec")
+    if prior_state.model_id != model.model_id:
+        raise ValueError("simulation prior state model id does not match model")
+    if prior_state.model_hash != model.content_hash:
+        raise ValueError("simulation prior state model hash does not match model")
+
+    # Reconstruct the public state so constructor-bypassing forgeries are
+    # rejected before any runtime cognition, world, or projection hook.
+    SimulationState(
+        model_id=prior_state.model_id,
+        model_hash=prior_state.model_hash,
+        step_index=prior_state.step_index,
+        world_state=prior_state.world_state,
+        evidence_ledger=prior_state.evidence_ledger,
+    )
+
+    cutoff = prior_state.world_state.source_at_time
+    _validate_execution_bindings(story, domain, model, cutoff)
+    domain_identity = _domain_identity(
+        domain.domain_id,
+        domain.version,
+        domain.content_hash,
+    )
+    if _domain_identity(
+        prior_state.world_state.domain_id,
+        prior_state.world_state.domain_version,
+        prior_state.world_state.domain_spec_hash,
+    ) != domain_identity:
+        raise ValueError("simulation prior world domain identity does not match domain")
+    if _domain_identity(
+        prior_state.evidence_ledger.domain_id,
+        prior_state.evidence_ledger.domain_version,
+        prior_state.evidence_ledger.domain_spec_hash,
+    ) != domain_identity:
+        raise ValueError("simulation prior ledger domain identity does not match domain")
+    if prior_state.world_state.source_story_hash != story.content_hash:
+        raise ValueError("simulation prior world does not bind exact story")
+    if prior_state.evidence_ledger.source_story_hash != story.content_hash:
+        raise ValueError("simulation prior ledger does not bind exact story")
+
+
 def simulation_state_from_story(
     story: GenericNarrative,
     domain: DomainSpec,
@@ -674,9 +730,109 @@ def simulate_step(
     prior_state: SimulationState,
     model: SimulationModelSpec,
 ) -> SimulationStepResult:
-    raise SimulationStepError(
-        "simulation step execution is unavailable in this stage"
-    )
+    try:
+        _validate_prior_state(story, domain, prior_state, model)
+    except SimulationStepError:
+        raise
+    except (TypeError, ValueError, KeyError) as error:
+        raise SimulationStepError(
+            "simulation prior state validation failed"
+        ) from error
+
+    agent_steps: list[SimulationAgentStep] = []
+    for agent in model.agents:
+        try:
+            result = run_runtime_intentional_decision(
+                story,
+                domain,
+                agent.decision_template_id,
+                prior_state.evidence_ledger,
+                agent.intentional_model,
+            )
+        except RuntimeIntentionalDecisionResolutionError as error:
+            raise SimulationStepError(
+                f"simulation cognition failed for agent {agent.agent_id}"
+            ) from error
+
+        if result.step_index != prior_state.step_index:
+            raise SimulationStepError(
+                "runtime decision step does not match simulation prior"
+            )
+        if (
+            result.belief_state.ledger_hash
+            != prior_state.evidence_ledger.content_hash
+        ):
+            raise SimulationStepError(
+                "runtime decision does not bind shared prior ledger"
+            )
+        try:
+            intent = ActionIntent(
+                decision_id=result.decision_id,
+                selected_action=result.selected_action,
+                selection_model_id=result.model_id,
+                selection_result_hash=result.content_hash,
+            )
+            agent_steps.append(
+                SimulationAgentStep(
+                    agent_id=agent.agent_id,
+                    decision_template_id=agent.decision_template_id,
+                    decision_result=result,
+                    action_intent=intent,
+                )
+            )
+        except (TypeError, ValueError, KeyError) as error:
+            raise SimulationStepError(
+                f"simulation action intent failed for agent {agent.agent_id}"
+            ) from error
+
+    try:
+        world_step = advance_world_step(
+            story,
+            domain,
+            prior_state.world_state,
+            model.world_model,
+            tuple(item.action_intent for item in agent_steps),
+        )
+    except WorldTransitionError as error:
+        raise SimulationStepError(
+            "simulation world transition failed"
+        ) from error
+
+    try:
+        admission = admit_world_percepts(
+            story,
+            domain,
+            world_step,
+            model.observation_model,
+            prior_state.evidence_ledger,
+        )
+    except RuntimePerceptAdmissionError as error:
+        raise SimulationStepError(
+            "simulation percept admission failed"
+        ) from error
+
+    try:
+        next_state = SimulationState(
+            model_id=model.model_id,
+            model_hash=model.content_hash,
+            step_index=prior_state.step_index + 1,
+            world_state=world_step.next_state,
+            evidence_ledger=admission.next_ledger,
+        )
+        return SimulationStepResult(
+            model_id=model.model_id,
+            model_hash=model.content_hash,
+            step_index=next_state.step_index,
+            prior_state=prior_state,
+            agent_steps=tuple(agent_steps),
+            world_step=world_step,
+            admission_result=admission,
+            next_state=next_state,
+        )
+    except (TypeError, ValueError, KeyError) as error:
+        raise SimulationStepError(
+            "simulation next-state construction failed"
+        ) from error
 
 
 def simulate_trajectory(
@@ -687,6 +843,45 @@ def simulate_trajectory(
     *,
     rounds: int,
 ) -> SimulationTrajectory:
-    raise SimulationTrajectoryError(
-        "simulation trajectory execution is unavailable in this stage"
-    )
+    if not isinstance(rounds, int) or isinstance(rounds, bool) or rounds <= 0:
+        raise SimulationTrajectoryError(
+            "simulation rounds must be a positive integer"
+        )
+    if not isinstance(initial_state, SimulationState):
+        raise SimulationTrajectoryError(
+            "simulation initial state must be SimulationState"
+        )
+    if not isinstance(model, SimulationModelSpec):
+        raise SimulationTrajectoryError(
+            "simulation trajectory requires SimulationModelSpec"
+        )
+
+    current = initial_state
+    steps: list[SimulationStepResult] = []
+    for _ in range(rounds):
+        try:
+            result = simulate_step(
+                story,
+                domain,
+                current,
+                model,
+            )
+        except SimulationStepError as error:
+            raise SimulationTrajectoryError(
+                f"simulation trajectory failed at step {current.step_index + 1}"
+            ) from error
+        steps.append(result)
+        current = result.next_state
+
+    try:
+        return SimulationTrajectory(
+            model_id=model.model_id,
+            model_hash=model.content_hash,
+            initial_state=initial_state,
+            steps=tuple(steps),
+            final_state=current,
+        )
+    except (TypeError, ValueError, KeyError) as error:
+        raise SimulationTrajectoryError(
+            "simulation trajectory construction failed"
+        ) from error
