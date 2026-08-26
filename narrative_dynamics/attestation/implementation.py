@@ -6,6 +6,7 @@ import importlib.util
 import os
 from pathlib import Path
 import sys
+from types import FunctionType
 
 from narrative_dynamics.attestation._common import (
     validated_hash,
@@ -345,7 +346,7 @@ def _unwrap_registered_source(source: object) -> object:
 
 
 def measure_implementation(source: object) -> ImplementationAttestation:
-    """Measure directly located module bytes for a model, factory, or process source."""
+    """Measure directly located module bytes for a model, function, factory, or process source."""
 
     source = _unwrap_registered_source(source)
     factory_path = getattr(source, "factory", None)
@@ -378,6 +379,22 @@ def measure_implementation(source: object) -> ImplementationAttestation:
             )
         if not isinstance(qualname, str) or not qualname:
             qualname = create.__class__.__qualname__
+        return ImplementationAttestation(
+            target=f"python-callable:{module_name}.{qualname}",
+            artifacts=(_measure_module(module_name),),
+        )
+
+    if isinstance(source, FunctionType):
+        module_name = getattr(source, "__module__", None)
+        qualname = getattr(source, "__qualname__", None)
+        if not isinstance(module_name, str) or not module_name:
+            raise ImplementationAttestationUnavailable(
+                "python function has no module identity"
+            )
+        if not isinstance(qualname, str) or not qualname:
+            raise ImplementationAttestationUnavailable(
+                "python function has no qualified name"
+            )
         return ImplementationAttestation(
             target=f"python-callable:{module_name}.{qualname}",
             artifacts=(_measure_module(module_name),),
