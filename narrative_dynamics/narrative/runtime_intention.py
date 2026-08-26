@@ -8,17 +8,25 @@ from types import MappingProxyType
 
 from narrative_dynamics.attestation import measure_implementation
 from narrative_dynamics.contracts import stable_content_hash
-from narrative_dynamics.narrative.domain import DomainSpec
+from narrative_dynamics.narrative.domain import DomainSpec, validate_narrative
 from narrative_dynamics.narrative.intention import (
     ChoiceModelSpec,
+    ChoiceResolutionError,
     GoalModelSpec,
+    GoalResolutionError,
     GoalState,
     IntentionalDecisionModelSpec,
+    _conditional_action_policies,
+    _goal_scores,
+    _goal_state,
+    _marginal_action_policy,
 )
 from narrative_dynamics.narrative.ir import GenericNarrative, StateCellRef
 from narrative_dynamics.narrative.runtime_cognition import (
     RuntimeBeliefModelSpec,
+    RuntimeBeliefResolutionError,
     RuntimeUncertainBeliefState,
+    runtime_uncertain_belief_state,
 )
 from narrative_dynamics.narrative.runtime_perception import RuntimeEvidenceLedger
 from narrative_dynamics.narrative.uncertain import BeliefDistribution
@@ -405,6 +413,109 @@ def run_runtime_intentional_decision(
     ledger: RuntimeEvidenceLedger,
     model: RuntimeIntentionalDecisionModelSpec,
 ) -> RuntimeIntentionalDecisionResult:
-    raise RuntimeIntentionalDecisionResolutionError(
-        "runtime intentional execution is unavailable in this stage"
-    )
+    try:
+        validate_narrative(story, domain)
+        if not isinstance(model, RuntimeIntentionalDecisionModelSpec):
+            raise TypeError(
+                "runtime intentional execution requires "
+                "RuntimeIntentionalDecisionModelSpec"
+            )
+        if not isinstance(ledger, RuntimeEvidenceLedger):
+            raise TypeError("runtime intentional execution requires RuntimeEvidenceLedger")
+        decision_id = _text(decision_id, label="runtime decision id")
+        decision = next(
+            (item for item in story.decisions if item.id == decision_id),
+            None,
+        )
+        if decision is None:
+            raise ValueError("runtime decision template is not declared")
+        if decision.type_name not in model.supported_decision_types:
+            raise ValueError("runtime decision template type is not supported")
+        if (
+            not decision.context_cells
+            or len(set(decision.context_cells)) != len(decision.context_cells)
+        ):
+            raise ValueError(
+                "runtime decision context cells must be non-empty and unique"
+            )
+        if (
+            not decision.actions
+            or len({item.id for item in decision.actions}) != len(decision.actions)
+        ):
+            raise ValueError("runtime decision actions must be non-empty and unique")
+        if (
+            ledger.source_at_time is not None
+            and decision.logical_time > ledger.source_at_time
+        ):
+            raise ValueError("runtime decision template occurs after source cutoff")
+
+        belief_state = runtime_uncertain_belief_state(
+            story,
+            domain,
+            decision.actor_id,
+            ledger,
+            model.belief_model,
+            decision.context_cells,
+        )
+        semantic = _posterior_semantic_view(belief_state)
+        scores = _goal_scores(
+            decision.context_cells,
+            semantic,
+            model.goal_model,
+        )
+        goal_state = _goal_state(
+            semantic,
+            model.goal_model,
+            scores,
+        )
+
+        declared_actions = {action.id for action in decision.actions}
+        conditional = _conditional_action_policies(
+            model.choice_model,
+            goal_state.policy,
+            declared_actions,
+        )
+        action_scores = {
+            action_id: math.fsum(
+                goal_state.policy[goal_id]
+                * model.choice_model.values[goal_id][action_id]
+                for goal_id in sorted(goal_state.policy)
+            )
+            for action_id in sorted(declared_actions)
+        }
+        if any(not math.isfinite(value) for value in action_scores.values()):
+            raise ChoiceResolutionError(
+                "runtime diagnostic action scores must be finite"
+            )
+        action_policy = _marginal_action_policy(
+            goal_state.policy,
+            conditional,
+            declared_actions,
+        )
+        selected_action = _map_choice(action_policy)
+
+        return RuntimeIntentionalDecisionResult(
+            model_id=model.model_id,
+            model_hash=model.content_hash,
+            decision_id=decision.id,
+            step_index=belief_state.step_index,
+            belief_state=belief_state,
+            goal_state=goal_state,
+            conditional_action_policies=conditional,
+            action_scores=action_scores,
+            action_policy=action_policy,
+            selected_action=selected_action,
+        )
+    except RuntimeIntentionalDecisionResolutionError:
+        raise
+    except (
+        RuntimeBeliefResolutionError,
+        GoalResolutionError,
+        ChoiceResolutionError,
+        TypeError,
+        ValueError,
+        OverflowError,
+    ) as error:
+        raise RuntimeIntentionalDecisionResolutionError(
+            "runtime intentional decision could not be resolved"
+        ) from error
