@@ -15,13 +15,13 @@
 - Integrated research base before this feature: `ea45389354bf9b8dff4c18917e2bca3e3e83a939` on `proof/narrative-dynamics-v0`.
 - Approved spec commit: `e10ed369d1908b12a2592c07aa8ffb241e526cb2` on `work/narrative-multi-step-scheduler-v1`.
 - Work only on `work/narrative-multi-step-scheduler-v1`; do not modify `proof/narrative-dynamics-v0` or `master` during implementation.
-- Static scheduling only: every configured agent decides exactly once per round; no silent skip. Inactivity is an explicit authored `wait`/`noop` action.
+- Static scheduling only: every configured agent decides exactly once per round; no silent skip. Inactivity is an explicit authored wait/noop action.
 - Reuse authored `Decision` only as immutable actor/type/context/action-space template. Never synthesize runtime `Decision` or `ActionOption` values.
 - Authored `logical_time` and runtime `step_index` remain distinct. If `source_at_time` is numeric, every configured decision template must satisfy `decision.logical_time <= source_at_time`.
 - `decision.context_cells` are exactly the tracked runtime belief cells used for that runtime decision.
 - Runtime intentional action selection may depend only on canonical decision template semantics, posterior distributions, `GoalModelSpec`, and `ChoiceModelSpec`; it must not read ledger/world/projection/transition identities or objective world objects.
 - `intention.py` must remain byte-for-byte unchanged. `measure_implementation()` measures complete module bytes, so moving helpers out of it would silently change existing authored intentional model identity.
-- `runtime_intention.py` may import the existing private helpers `_goal_scores`, `_goal_state`, `_conditional_action_policies`, and `_marginal_action_policy` from `intention.py`; it must pass them a private posterior-only semantic adapter, never a full `RuntimeUncertainBeliefState`.
+- `runtime_intention.py` may import exactly `_goal_scores`, `_goal_state`, `_conditional_action_policies`, and `_marginal_action_policy` from `intention.py`; these helpers receive a private posterior-only semantic adapter, never a full `RuntimeUncertainBeliefState`.
 - Runtime intentional model identity binds both the runtime sidecar implementation identity and the existing authored `IntentionalDecisionModelSpec` implementation identity.
 - Scheduler never calls `project_world_observations()` directly. It calls `admit_world_percepts()` exactly once after a successful world transition; admission owns the projection trust boundary.
 - Observation Projection may emit evidence for passive observers not configured as scheduled actors. The simulation-wide ledger keeps it; only configured agents are materialized for cognition/decision.
@@ -94,9 +94,9 @@
 - Consumes: merged Runtime Perception/Cognition V1, existing authored intention records/helpers, World Transition V1, Observation Projection V1, and current trust API surface.
 - Produces: the exact 28 new behavior methods above plus the exact 16-name scoped public API expectation.
 
-- [ ] **Step 1: Add guarded runtime-intention imports and stable fixture helpers**
+- [ ] **Step 1: Add guarded runtime-intention imports and exact existing-fixture helpers**
 
-At the top of `tests/test_narrative_runtime_intention.py`, import existing fixtures rather than rebuilding the runtime evidence ledger:
+At the top of `tests/test_narrative_runtime_intention.py`:
 
 ```python
 from narrative_dynamics.attestation import measure_implementation
@@ -105,10 +105,11 @@ from narrative_dynamics.narrative.intention import (
     ChoiceModelSpec,
     GoalModelSpec,
     GoalSpec,
+    GoalState,
     IntentionalDecisionModelSpec,
     run_intentional_decision,
 )
-from narrative_dynamics.narrative.ir import StateCellRef, TypedValue
+from narrative_dynamics.narrative.ir import TypedValue
 from tests.test_narrative_runtime_cognition import (
     SemanticRuntimeLikelihood,
     empty_runtime_case,
@@ -129,7 +130,7 @@ except ImportError as error:
     _RUNTIME_INTENTION_IMPORT_ERROR = error
 ```
 
-Every test begins with:
+Every method begins with `self.require_runtime_intention()`, implemented as:
 
 ```python
 def require_runtime_intention(self) -> None:
@@ -140,7 +141,9 @@ def require_runtime_intention(self) -> None:
         )
 ```
 
-Define deterministic helper constructors in this test module:
+The existing canonical runtime story uses `d-a1-phase`, decision type `phase-choice`, context cell `phase_cell()`, and actions `a1-ready|a1-active`. Use those exact values.
+
+Define:
 
 ```python
 def _value_hash(value: TypedValue) -> str:
@@ -173,7 +176,10 @@ def make_choice_model(*, reverse: bool = False):
         "engage": {"a1-ready": 0.0, "a1-active": 3.0},
     }
     if reverse:
-        values = {key: dict(reversed(tuple(value.items()))) for key, value in reversed(tuple(values.items()))}
+        values = {
+            key: dict(reversed(tuple(value.items())))
+            for key, value in reversed(tuple(values.items()))
+        }
     return ChoiceModelSpec("runtime-choice", "1", 8.0, values)
 
 
@@ -181,18 +187,16 @@ def make_runtime_intentional_model(*, belief=None, goal=None, choice=None):
     return RuntimeIntentionalDecisionModelSpec(
         "runtime-intentional",
         "1",
-        ("phase_choice",),
+        ("phase-choice",),
         make_runtime_belief_model() if belief is None else belief,
         make_goal_model() if goal is None else goal,
         make_choice_model() if choice is None else choice,
     )
 ```
 
-Use the actual decision type from `make_runtime_story()` when implementing the test; if its canonical type is not `phase_choice`, set the constructor's supported type to the exact `story.decisions` entry type instead of altering the story.
-
 - [ ] **Step 2: Add all 12 runtime-intention RED methods**
 
-The tests must make the following exact assertions:
+Lock the exact public signature:
 
 ```python
 self.assertEqual(
@@ -200,7 +204,10 @@ self.assertEqual(
     ("story", "domain", "decision_id", "ledger", "model"),
 )
 for forbidden in ("world_state", "world_step", "projection_result", "step_index"):
-    self.assertNotIn(forbidden, inspect.signature(run_runtime_intentional_decision).parameters)
+    self.assertNotIn(
+        forbidden,
+        inspect.signature(run_runtime_intentional_decision).parameters,
+    )
 ```
 
 Model identity test must compare nested model changes and exact measured identities:
@@ -217,7 +224,21 @@ self.assertEqual(
 )
 ```
 
-Hidden-provenance test must build two ledgers with `extend_ledger(..., branch="left")` and `branch="right"`, identical semantic percept rows, and assert:
+Hidden-provenance test builds two ledgers with the same semantic row:
+
+```python
+row = (
+    "a1",
+    "vision",
+    phase_cell(),
+    "equals",
+    TypedValue("PhaseState", "active"),
+)
+left_ledger = extend_ledger(initial, (row,), branch="left")
+right_ledger = extend_ledger(initial, (row,), branch="right")
+```
+
+and asserts:
 
 ```python
 self.assertNotEqual(left.belief_state.ledger_hash, right.belief_state.ledger_hash)
@@ -227,34 +248,74 @@ self.assertEqual(left.selected_action, right.selected_action)
 self.assertNotEqual(left.content_hash, right.content_hash)
 ```
 
-The cutoff/context validation method must attach a counting runtime likelihood hook and prove invalid template/domain/actor/cutoff conditions reject before its first call.
-
-The authored compatibility method must run the existing `run_intentional_decision()` on the unchanged story fixture and assert its known selected action/policy plus:
+For the record-constructor test, build an empty-ledger runtime belief using `runtime_uncertain_belief_state()` and compute its exact semantic hash in the test with:
 
 ```python
+semantic_payload = {
+    "cells": [
+        {
+            "cell": phase_cell().to_dict(),
+            "posterior": belief.cells[phase_cell()].posterior.to_dict(),
+        }
+    ]
+}
+semantic_hash = stable_content_hash(semantic_payload)
+```
+
+Construct `GoalState` with that hash and valid two-goal score/policy values, then construct `RuntimeIntentionalDecisionResult`; a GoalState bound to `belief.content_hash` instead of `semantic_hash` must reject.
+
+The authored compatibility test constructs:
+
+```python
+authored_model = IntentionalDecisionModelSpec(
+    "authored-intentional-regression",
+    "1",
+    ("phase-choice",),
+    make_runtime_belief_model().seed_model,
+    make_goal_model(),
+    make_choice_model(),
+)
+result = run_intentional_decision(
+    story,
+    domain,
+    "d-a1-phase",
+    authored_model,
+)
+self.assertEqual(result.selected_action, "a1-ready")
 self.assertEqual(
-    measure_implementation(IntentionalDecisionModelSpec).manifest_identity()["artifacts"][0]["locator"],
+    measure_implementation(IntentionalDecisionModelSpec)
+    .manifest_identity()["artifacts"][0]["locator"],
     "python-module:narrative_dynamics.narrative.intention",
 )
 ```
 
-The repository-level byte-for-byte guarantee is additionally enforced in every implementation task by `git diff --exit-code e10ed369d1908b12a2592c07aa8ffb241e526cb2 -- narrative_dynamics/narrative/intention.py`.
+The repository-level byte identity is additionally enforced in implementation tasks with:
 
-- [ ] **Step 3: Add guarded simulation imports and two-agent scheduling fixtures**
+```bash
+git diff --exit-code e10ed369d1908b12a2592c07aa8ffb241e526cb2 -- \
+  narrative_dynamics/narrative/intention.py
+```
 
-At the top of `tests/test_narrative_simulation.py` use:
+- [ ] **Step 3: Add guarded simulation imports and the exact two-agent causal fixture**
+
+Reuse the mature projection test domain as a base but create a scheduler-specific extension inside `tests/test_narrative_simulation.py`.
+
+Imports must include:
 
 ```python
-from dataclasses import replace
-import inspect
-import unittest
-
-from narrative_dynamics.narrative.domain import StateDelta, StateDeltaOp
+from dataclasses import fields, replace
+from narrative_dynamics.narrative.domain import (
+    ActionTypeSpec,
+    DecisionTypeSpec,
+    ParameterSpec,
+    StateDelta,
+    StateDeltaOp,
+)
 from narrative_dynamics.narrative.ir import (
     ActionOption,
     Decision,
+    Entity,
     EntityRef,
-    StateCellRef,
     TypedValue,
 )
 from narrative_dynamics.narrative.observation_projection import (
@@ -263,84 +324,212 @@ from narrative_dynamics.narrative.observation_projection import (
     ObservationProjectionModelSpec,
     ObserverProjectionSpec,
 )
-from narrative_dynamics.narrative.runtime_cognition import RuntimeBeliefModelSpec
+from narrative_dynamics.narrative.uncertain import UncertainBeliefModelSpec
 from narrative_dynamics.narrative.world import (
     ActionEffectSpec,
     ActionTransitionSpec,
     WorldTransitionModelSpec,
 )
-from tests.test_narrative_runtime_cognition import (
-    SeedLikelihoodHook,
-    SeedPriorHook,
+from tests.test_narrative_observation_projection import (
+    make_projection_domain,
+    make_projection_story,
 )
-
-_SIMULATION_IMPORT_ERROR: ImportError | None = None
-try:
-    from narrative_dynamics.narrative.runtime_intention import (
-        RuntimeIntentionalDecisionModelSpec,
-        RuntimeIntentionalDecisionResolutionError,
-    )
-    from narrative_dynamics.narrative.simulation import (
-        RuntimeAgentSpec,
-        SimulationAgentStep,
-        SimulationError,
-        SimulationModelSpec,
-        SimulationState,
-        SimulationStepError,
-        SimulationStepResult,
-        SimulationTrajectory,
-        SimulationTrajectoryError,
-        simulation_state_from_story,
-        simulate_step,
-        simulate_trajectory,
-    )
-except ImportError as error:
-    _SIMULATION_IMPORT_ERROR = error
 ```
 
-Create a dedicated fixture rather than mutating production fixtures. It must contain:
+Guard new modules exactly as in Task 1 runtime intention. Every simulation method begins with `self.require_simulation()`.
 
-```text
-agents: a1, a2
-service: svc
-state: service.alert : bool
-A decision template: raise_alert | wait
-B decision template: respond | wait
-source_at_time: after both templates exist
-```
-
-Both authored templates are present before the simulation cutoff and are reused unchanged each round.
-
-The world transition hooks are deterministic:
+Build the extended domain exactly:
 
 ```python
-class RaiseAlert:
-    def __call__(self, snapshot, decision, action):
-        return StateDelta((StateDeltaOp("set", "svc", "service.alert", TypedValue("AlertState", True)),))
-
-
-class NoWorldChange:
-    def __call__(self, snapshot, decision, action):
-        return StateDelta(())
+def make_scheduler_domain():
+    base = make_projection_domain()
+    return replace(
+        base,
+        action_types=base.action_types
+        + (
+            ActionTypeSpec(
+                "alert-control-action",
+                (
+                    ParameterSpec("service", "ServiceRef"),
+                    ParameterSpec("raise", "AlertState"),
+                ),
+            ),
+            ActionTypeSpec(
+                "response-action",
+                (ParameterSpec("respond", "AlertState"),),
+            ),
+        ),
+        decision_types=base.decision_types
+        + (
+            DecisionTypeSpec(
+                "scheduler-alert-choice",
+                "Agent",
+                "alert-control-action",
+            ),
+            DecisionTypeSpec(
+                "scheduler-response-choice",
+                "Agent",
+                "response-action",
+            ),
+        ),
+    )
 ```
 
-B's observation hook reads and emits only `service.alert`:
+Create the story with source cutoff **9**. Start from `make_projection_story(domain)`, change seed event `e6` from `service.alert=true` to `false`, append passive Agent `a3`, remove authored observations/claims/receptions, and replace decisions with exactly:
 
 ```python
-class ObserveAlert:
+Decision(
+    "d-a1-scheduler",
+    8,
+    "a1",
+    "scheduler-alert-choice",
+    (alert_cell(),),
+    (
+        ActionOption(
+            "a1-raise-alert",
+            "alert-control-action",
+            {
+                "service": TypedValue("ServiceRef", EntityRef("svc", "Service")),
+                "raise": TypedValue("AlertState", True),
+            },
+        ),
+        ActionOption(
+            "a1-wait",
+            "alert-control-action",
+            {
+                "service": TypedValue("ServiceRef", EntityRef("svc", "Service")),
+                "raise": TypedValue("AlertState", False),
+            },
+        ),
+    ),
+),
+Decision(
+    "d-a2-scheduler",
+    9,
+    "a2",
+    "scheduler-response-choice",
+    (alert_cell(),),
+    (
+        ActionOption(
+            "a2-respond",
+            "response-action",
+            {"respond": TypedValue("AlertState", True)},
+        ),
+        ActionOption(
+            "a2-wait",
+            "response-action",
+            {"respond": TypedValue("AlertState", False)},
+        ),
+    ),
+),
+```
+
+Define `alert_cell()` as `StateCellRef(EntityRef("svc", "Service"), "service.alert")`.
+
+World hooks use action arguments so wait is an explicit action with an empty delta under the same canonical action type:
+
+```python
+class AlertControlTransition:
+    def __init__(self):
+        self.calls = 0
+
+    def __call__(self, snapshot, decision, action):
+        self.calls += 1
+        if action.arguments["raise"].value is False:
+            return StateDelta(())
+        return StateDelta(
+            (
+                StateDeltaOp(
+                    "set",
+                    "svc",
+                    "service.alert",
+                    TypedValue("AlertState", True),
+                ),
+            )
+        )
+
+
+class ResponseTransition:
+    def __init__(self):
+        self.calls = 0
+
+    def __call__(self, snapshot, decision, action):
+        self.calls += 1
+        if action.arguments["respond"].value is False:
+            return StateDelta(())
+        return StateDelta(
+            (
+                StateDeltaOp(
+                    "set",
+                    decision.actor_id,
+                    "agent.phase",
+                    TypedValue("PhaseState", "active"),
+                ),
+            )
+        )
+```
+
+World model contains exactly these transitions:
+
+```python
+ActionTransitionSpec(
+    "alert-control-action",
+    (ActionEffectSpec("service.alert", "argument", "service"),),
+    alert_hook,
+)
+ActionTransitionSpec(
+    "response-action",
+    (ActionEffectSpec("agent.phase", "actor"),),
+    response_hook,
+)
+```
+
+Projection emits the persistent alert only to B and passive observer a3:
+
+```python
+class ObserveAlertForBAndPassive:
+    def __init__(self):
+        self.calls = []
+
     def __call__(self, prior_visible, next_visible, observer, step_index):
-        cell = StateCellRef(EntityRef("svc", "Service"), "service.alert")
-        value = next_visible.get(cell)
-        return () if value is None else (ObservationFact(cell, "equals", value),)
+        self.calls.append((observer.id, step_index))
+        if observer.id not in {"a2", "a3"}:
+            return ()
+        value = next_visible.get(alert_cell())
+        return () if value is None else (
+            ObservationFact(alert_cell(), "equals", value),
+        )
 ```
 
-The fixture's runtime likelihood for B favors the observed alert strongly. Goal/choice configuration must make B choose `wait` from the authored seed and `respond` after admitted `alert=true`. A's configuration must choose `raise_alert` in round 0 and may choose explicit `wait` in later rounds; the acceptance test only relies on A's first-round action.
+Use one `ObserverProjectionSpec` for Agent/vision with `service.alert` read+emit capability scoped `any`.
 
-Use counting wrapper hooks for runtime likelihood, world transition, and projection so failure-order tests assert exact call counts.
+Define a scheduler seed prior that makes B initially favor `false`:
+
+```python
+class SchedulerPriorHook:
+    def __call__(self, agent_id, cell, hypotheses, parameters):
+        result = {}
+        for value in hypotheses:
+            if agent_id == "a2" and value.value is False:
+                result[_value_hash(value)] = 0.9
+            elif agent_id == "a2":
+                result[_value_hash(value)] = 0.1
+            else:
+                result[_value_hash(value)] = 0.5
+        return result
+```
+
+There is no authored evidence for `service.alert`, so this prior is B's round-0 posterior. Runtime alert likelihood uses `0.99` for the observed boolean value and `0.01` for the other hypothesis.
+
+A's goal model must prefer an `act` goal regardless of alert hypothesis by assigning equal instrumentality to both hypotheses but a larger pressure; A's choice model maps `act -> a1-raise-alert` and `idle -> a1-wait`.
+
+B's goal model uses `respond` instrumentality `{false: 0, true: 1}` and `idle` instrumentality `{false: 1, true: 0}`; B's choice model maps `respond -> a2-respond` and `idle -> a2-wait`. Use `beta_goal=8.0` and `beta_action=8.0`. These exact settings must yield round-0 `a2-wait` from the 0.9 false prior and round-1 `a2-respond` after the admitted true percept.
+
+Scheduled agents are exactly a1 and a2. Agent a3 is never scheduled.
 
 - [ ] **Step 4: Add all 16 simulation RED methods**
 
-Lock the exact public signatures:
+Lock signatures:
 
 ```python
 self.assertEqual(
@@ -357,58 +546,27 @@ self.assertEqual(
 )
 ```
 
-The shared-snapshot test must assert for every returned agent step:
+The shared-snapshot method asserts every returned runtime belief binds `prior.evidence_ledger.content_hash` and every runtime decision step equals `prior.step_index`. It also checks `ActionIntent` fields exactly equal their decision-result source fields.
 
-```python
-self.assertEqual(
-    agent_step.decision_result.belief_state.ledger_hash,
-    prior.evidence_ledger.content_hash,
-)
-self.assertEqual(agent_step.decision_result.step_index, prior.step_index)
+The two-round acceptance method uses `simulation_state_from_story(..., at_time=9)` and `simulate_trajectory(..., rounds=2)`. Convert each `agent_steps` tuple to a local mapping by `agent_id` and assert:
+
+```text
+round 0 a1 == a1-raise-alert
+round 0 a2 == a2-wait
+round 0 next world service.alert == true
+round 0 admission ledger contains step-1 equals-true alert evidence for a2
+round 0 admission ledger also contains evidence for passive a3
+round 1 a2 runtime posterior differs from its seed posterior
+round 1 a2 == a2-respond
 ```
 
-and exact intent bridging:
+Snapshot and compare `story.content_hash`, `story.decisions`, `story.observations`, `story.claims`, and `story.receptions` before/after both rounds.
 
-```python
-self.assertEqual(agent_step.action_intent.decision_id, agent_step.decision_result.decision_id)
-self.assertEqual(agent_step.action_intent.selected_action, agent_step.decision_result.selected_action)
-self.assertEqual(agent_step.action_intent.selection_result_hash, agent_step.decision_result.content_hash)
-```
-
-The two-round acceptance test must assert all of:
-
-```python
-original_hash = story.content_hash
-original_decisions = story.decisions
-original_observations = story.observations
-original_claims = story.claims
-original_receptions = story.receptions
-trajectory = simulate_trajectory(story, domain, initial, model, rounds=2)
-self.assertEqual(len(trajectory.steps), 2)
-self.assertEqual(trajectory.steps[0].agent_steps_by_id["a1"].decision_result.selected_action, "raise_alert")
-self.assertEqual(trajectory.steps[0].agent_steps_by_id["a2"].decision_result.selected_action, "wait")
-self.assertEqual(trajectory.steps[1].agent_steps_by_id["a2"].decision_result.selected_action, "respond")
-self.assertEqual(story.content_hash, original_hash)
-self.assertEqual(story.decisions, original_decisions)
-self.assertEqual(story.observations, original_observations)
-self.assertEqual(story.claims, original_claims)
-self.assertEqual(story.receptions, original_receptions)
-```
-
-Do not add `agent_steps_by_id` to the public spec merely for this assertion. In the actual test use:
-
-```python
-step0 = {item.agent_id: item for item in trajectory.steps[0].agent_steps}
-step1 = {item.agent_id: item for item in trajectory.steps[1].agent_steps}
-```
-
-and assert through those mappings.
-
-The test must additionally prove B's round-1 belief contains admitted runtime evidence at step 1 and that its posterior differs from its round-0 seed posterior.
+Failure-order tests use hook call counters. A cognition failure must leave both world hook counters and projection calls at zero. A world write-conflict variant must leave projection calls at zero. A raising projection hook must make `simulate_step()` raise without returning a next `SimulationState` while the prior state remains equal to its pre-call value.
 
 - [ ] **Step 5: Extend the exact narrative API expectation by 16 names**
 
-In `tests/test_narrative_trust_api.py`, add exactly:
+Add exactly:
 
 ```text
 RuntimeIntentionalDecisionModelSpec
@@ -431,7 +589,7 @@ simulate_trajectory
 
 Keep all 16 absent from `narrative_dynamics.__all__` and absent as root attributes.
 
-- [ ] **Step 6: Verify the test-only RED locally or in exact-head CI**
+- [ ] **Step 6: Verify the test-only RED**
 
 Run:
 
@@ -441,23 +599,10 @@ python3 -m unittest \
   tests.test_narrative_simulation \
   tests.test_narrative_trust_api.NarrativeTrustTests.test_exact_public_surface_and_root_isolation \
   -v
-```
-
-Expected before production exists:
-
-```text
-12 runtime-intention methods fail only at require_runtime_intention()
-16 simulation methods fail only at require_simulation()
-1 exact API method fails only for the 16 missing approved names
-```
-
-Then run full discovery:
-
-```bash
 python3 -m unittest discover -s tests -v
 ```
 
-Expected count: exactly **541 tests**. Expected feature failures: exactly **29**. All prior 513 tests must remain `ok`.
+Expected full discovery: exactly **541 tests** with exactly **29 feature failures**: 12 runtime-intention module-gate failures, 16 simulation module-gate failures, and one exact API failure. All prior 513 methods remain `ok`.
 
 - [ ] **Step 7: Commit only the RED contract and open a Draft PR**
 
@@ -469,7 +614,7 @@ git add \
 git commit -m "test: define narrative multi-step scheduler v1"
 ```
 
-Verify the commit changes exactly those three paths relative to the plan head. Open a Draft PR to `proof/narrative-dynamics-v0` and record the exact RED head/run. Do not write production until full CI proves the intended RED boundary.
+Verify this commit changes exactly those three paths relative to the plan head. Open a Draft PR to `proof/narrative-dynamics-v0` and record exact RED head/run. Do not write production until full CI proves the intended RED boundary.
 
 ---
 
@@ -483,8 +628,6 @@ Verify the commit changes exactly those three paths relative to the plan head. O
 - Produces: `RuntimeIntentionalDecisionModelSpec`, `RuntimeIntentionalDecisionResult`, `RuntimeIntentionalDecisionResolutionError`, private posterior-semantic records/helpers, and a typed stage boundary for `run_runtime_intentional_decision()`.
 
 - [ ] **Step 1: Add canonical validation helpers and the typed error**
-
-Use local helpers rather than importing private validation helpers from unrelated modules:
 
 ```python
 class RuntimeIntentionalDecisionResolutionError(ValueError):
@@ -503,11 +646,9 @@ def _step(value: object, *, label: str) -> int:
     return value
 ```
 
-Also add local finite-policy freezing matching authored intention tolerance `1e-12` so public runtime-result constructors validate independently rather than trusting private authored constructors.
+Add local finite-vector/policy freezing using authored intention tolerance `1e-12` so public runtime result constructors validate independently.
 
-- [ ] **Step 2: Add private posterior-only semantic adapter**
-
-Define private immutable records:
+- [ ] **Step 2: Add the private posterior-only semantic adapter**
 
 ```python
 @dataclass(frozen=True)
@@ -519,6 +660,17 @@ class _PosteriorSemanticCell:
 @dataclass(frozen=True)
 class _PosteriorSemanticView:
     cells: Mapping[StateCellRef, _PosteriorSemanticCell]
+
+    def __post_init__(self) -> None:
+        frozen = dict(self.cells)
+        if any(
+            not isinstance(cell, StateCellRef)
+            or not isinstance(view, _PosteriorSemanticCell)
+            or view.cell != cell
+            for cell, view in frozen.items()
+        ):
+            raise TypeError("posterior semantic cells must be canonical")
+        object.__setattr__(self, "cells", MappingProxyType(frozen))
 
     def to_dict(self) -> dict[str, object]:
         ordered = tuple(sorted(self.cells, key=_cell_key))
@@ -537,60 +689,48 @@ class _PosteriorSemanticView:
         return stable_content_hash(self.to_dict())
 ```
 
-Build it only from `RuntimeUncertainBeliefState.cells`:
+Build it only from runtime posterior values:
 
 ```python
 def _posterior_semantic_view(
     belief_state: RuntimeUncertainBeliefState,
 ) -> _PosteriorSemanticView:
     return _PosteriorSemanticView(
-        MappingProxyType(
-            {
-                cell: _PosteriorSemanticCell(cell, view.posterior)
-                for cell, view in belief_state.cells.items()
-            }
-        )
+        {
+            cell: _PosteriorSemanticCell(cell, view.posterior)
+            for cell, view in belief_state.cells.items()
+        }
     )
 ```
 
-This type intentionally has no ledger/evidence/world/projection/step provenance fields.
+This adapter has no ledger/evidence/world/projection/transition/step provenance attributes.
 
 - [ ] **Step 3: Implement `RuntimeIntentionalDecisionModelSpec` identity**
 
-Fields and exact `to_dict()` payload:
+Use exact fields from the spec. Constructor requires exact nested types, non-empty unique supported types sorted lexically, and choice-goal id equality with goal model ids.
+
+`to_dict()` is exactly:
 
 ```python
-@dataclass(frozen=True)
-class RuntimeIntentionalDecisionModelSpec:
-    model_id: str
-    version: str
-    supported_decision_types: tuple[str, ...]
-    belief_model: RuntimeBeliefModelSpec
-    goal_model: GoalModelSpec
-    choice_model: ChoiceModelSpec
-
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "model_id": self.model_id,
-            "version": self.version,
-            "supported_decision_types": list(self.supported_decision_types),
-            "belief_model_hash": self.belief_model.content_hash,
-            "goal_model_hash": self.goal_model.content_hash,
-            "choice_model_hash": self.choice_model.content_hash,
-            "runtime_implementation_identity": measure_implementation(
-                RuntimeIntentionalDecisionModelSpec
-            ).manifest_identity(),
-            "authored_intentional_implementation_identity": measure_implementation(
-                IntentionalDecisionModelSpec
-            ).manifest_identity(),
-        }
+return {
+    "model_id": self.model_id,
+    "version": self.version,
+    "supported_decision_types": list(self.supported_decision_types),
+    "belief_model_hash": self.belief_model.content_hash,
+    "goal_model_hash": self.goal_model.content_hash,
+    "choice_model_hash": self.choice_model.content_hash,
+    "runtime_implementation_identity": measure_implementation(
+        RuntimeIntentionalDecisionModelSpec
+    ).manifest_identity(),
+    "authored_intentional_implementation_identity": measure_implementation(
+        IntentionalDecisionModelSpec
+    ).manifest_identity(),
+}
 ```
-
-Constructor validation must require exact nested model types, non-empty unique supported types canonicalized lexically, and exact choice-goal id equality with `goal_model.goals`.
 
 - [ ] **Step 4: Implement `RuntimeIntentionalDecisionResult` as audit + semantic record**
 
-Use the exact public fields from the spec. Validate:
+Use exact spec fields. Validate:
 
 ```python
 semantic = _posterior_semantic_view(self.belief_state)
@@ -600,11 +740,9 @@ if self.step_index != self.belief_state.step_index:
     raise ValueError("runtime intentional result step must match belief step")
 ```
 
-Validate conditional policies, scores, final policy, and lexical MAP action with the same normalization tolerance as authored intention. `to_dict()` includes the full `belief_state.to_dict()` so audit hashes differ when hidden provenance differs.
+Validate conditional policies, scores, final policy, common action coverage, finite normalization, and lexical MAP. `to_dict()` includes full `belief_state.to_dict()` for audit identity.
 
 - [ ] **Step 5: Add the exact typed execution stage boundary**
-
-Expose the final signature now but deliberately leave selection unavailable until Task 3:
 
 ```python
 def run_runtime_intentional_decision(
@@ -619,40 +757,27 @@ def run_runtime_intentional_decision(
     )
 ```
 
-- [ ] **Step 6: Verify staged GREEN/RED**
+- [ ] **Step 6: Verify staged GREEN/RED and commit**
 
-Run the 12 runtime-intention methods. Expected Task 2 split:
+Expected Task 2 runtime-intention GREEN methods: model identity, result record binding, public signature, authored intentional compatibility. Remaining eight runtime-execution methods fail only at the exact stage sentinel. All 16 simulation methods remain module-missing RED; API remains RED. Full discovery must show 541 tests and exactly **25 feature failures**.
 
-```text
-GREEN:
-- model identity
-- result record semantic/audit binding
-- public signature/no world inputs
-- authored intentional runner compatibility
-
-RED at exact stage sentinel:
-- remaining 8 runtime execution methods
-```
-
-All 16 simulation tests remain module-missing RED; API remains RED. Full discovery remains 541 tests with expected **25 feature failures** (`8 + 16 + 1`).
-
-Also run:
+Run:
 
 ```bash
-git diff --exit-code e10ed369d1908b12a2592c07aa8ffb241e526cb2 -- narrative_dynamics/narrative/intention.py
+python3 -m unittest tests.test_narrative_runtime_intention -v
 python3 -m unittest tests.test_narrative_intention -v
+git diff --exit-code e10ed369d1908b12a2592c07aa8ffb241e526cb2 -- \
+  narrative_dynamics/narrative/intention.py
 ```
 
-Both must succeed.
-
-- [ ] **Step 7: Commit only `runtime_intention.py`**
+Commit only:
 
 ```bash
 git add narrative_dynamics/narrative/runtime_intention.py
 git commit -m "feat: add runtime intentional records"
 ```
 
-Obtain exact-head CI staged evidence before Task 3.
+Obtain exact-head CI before Task 3.
 
 ---
 
@@ -666,8 +791,6 @@ Obtain exact-head CI staged evidence before Task 3.
 - Produces: complete `run_runtime_intentional_decision()`; all 12 runtime-intention methods GREEN.
 
 - [ ] **Step 1: Import only the allowed authored intention dependency surface**
-
-Use:
 
 ```python
 from narrative_dynamics.narrative.intention import (
@@ -684,16 +807,18 @@ from narrative_dynamics.narrative.intention import (
 )
 ```
 
-Do not import or call `run_intentional_decision()` from the runtime path.
+Do not call `run_intentional_decision()` from the runtime path.
 
-- [ ] **Step 2: Resolve and validate the canonical authored template before runtime likelihood execution**
+- [ ] **Step 2: Resolve and validate the canonical template before runtime likelihood execution**
 
-Implement a private validator that performs, in order:
+Perform in this order:
 
 ```python
 validate_narrative(story, domain)
 if not isinstance(model, RuntimeIntentionalDecisionModelSpec):
-    raise TypeError("runtime intentional execution requires RuntimeIntentionalDecisionModelSpec")
+    raise TypeError(
+        "runtime intentional execution requires RuntimeIntentionalDecisionModelSpec"
+    )
 decision_id = _text(decision_id, label="runtime decision id")
 decision = next((item for item in story.decisions if item.id == decision_id), None)
 if decision is None:
@@ -708,11 +833,9 @@ if ledger.source_at_time is not None and decision.logical_time > ledger.source_a
     raise ValueError("runtime decision template occurs after source cutoff")
 ```
 
-`runtime_uncertain_belief_state()` performs exact story/domain/ledger identity validation next. No runtime likelihood hook may be called before the checks above finish.
+`runtime_uncertain_belief_state()` then performs exact ledger/story/domain identity validation. Invalid template/type/cutoff cases must produce zero runtime likelihood calls.
 
-- [ ] **Step 3: Materialize runtime belief using exactly the template context cells**
-
-Call exactly:
+- [ ] **Step 3: Materialize runtime belief with exactly `decision.context_cells`**
 
 ```python
 belief_state = runtime_uncertain_belief_state(
@@ -725,17 +848,12 @@ belief_state = runtime_uncertain_belief_state(
 )
 ```
 
-No alternate tracked-cell input exists.
+No scheduler/runtime-intention parameter may override tracked cells.
 
-- [ ] **Step 4: Convert full audit belief to posterior-only semantic view before intentional mathematics**
+- [ ] **Step 4: Strip to posterior semantics before goal evaluation**
 
 ```python
 semantic = _posterior_semantic_view(belief_state)
-```
-
-Then pass `semantic`, not `belief_state`, to the existing goal helpers:
-
-```python
 scores = _goal_scores(
     decision.context_cells,
     semantic,
@@ -748,9 +866,9 @@ goal_state = _goal_state(
 )
 ```
 
-The semantic adapter's `to_dict()` produces exactly the payload hashed into `GoalState.belief_state_hash`.
+Never pass the full runtime belief to `_goal_scores` or `_goal_state`.
 
-- [ ] **Step 5: Reuse authored conditional/marginal action policy helpers exactly**
+- [ ] **Step 5: Reuse existing action-policy helpers exactly**
 
 ```python
 declared_actions = {action.id for action in decision.actions}
@@ -780,9 +898,7 @@ selected_action = min(
 )
 ```
 
-Do not pass `step_index`, ledger hash, evidence hashes, or world objects to these helpers.
-
-- [ ] **Step 6: Return full audit result and wrap failures with typed cause**
+- [ ] **Step 6: Return the full audit result and preserve typed causes**
 
 ```python
 return RuntimeIntentionalDecisionResult(
@@ -799,11 +915,9 @@ return RuntimeIntentionalDecisionResult(
 )
 ```
 
-Re-raise `RuntimeIntentionalDecisionResolutionError`. Wrap runtime belief, `GoalResolutionError`, `ChoiceResolutionError`, structural `TypeError`/`ValueError`, and numerical `OverflowError` as `RuntimeIntentionalDecisionResolutionError("runtime intentional decision could not be resolved")` with chaining.
+Re-raise existing `RuntimeIntentionalDecisionResolutionError`. Wrap runtime-belief, goal, choice, structural, and numerical failures as `RuntimeIntentionalDecisionResolutionError("runtime intentional decision could not be resolved")` with exception chaining.
 
-- [ ] **Step 7: Verify all runtime-intention semantics GREEN**
-
-Run:
+- [ ] **Step 7: Verify all runtime-intention semantics GREEN and commit**
 
 ```bash
 python3 -m unittest tests.test_narrative_runtime_intention -v
@@ -811,14 +925,13 @@ python3 -m unittest \
   tests.test_narrative_intention \
   tests.test_narrative_runtime_cognition \
   -v
-git diff --exit-code e10ed369d1908b12a2592c07aa8ffb241e526cb2 -- narrative_dynamics/narrative/intention.py
+git diff --exit-code e10ed369d1908b12a2592c07aa8ffb241e526cb2 -- \
+  narrative_dynamics/narrative/intention.py
 ```
 
-Expected: all 12 new runtime-intention methods pass; authored intention and runtime cognition regression pass; `intention.py` has no diff.
+Expected: all 12 runtime-intention methods `ok`; authored intention/runtime cognition regressions `ok`; no `intention.py` diff. Full CI should now have exactly **17 feature failures**: 16 simulation module gates plus API.
 
-Full exact-head CI should now have only 16 simulation module-gate failures plus one API failure: **17 feature failures**.
-
-- [ ] **Step 8: Commit semantic GREEN**
+Commit:
 
 ```bash
 git add narrative_dynamics/narrative/runtime_intention.py
@@ -853,23 +966,21 @@ class SimulationTrajectoryError(SimulationError):
     """A finite runtime simulation trajectory failed."""
 ```
 
-Add `_text`, `_hash`, `_step`, `_cutoff`, and agent-key helpers locally. Do not import private helpers from world/runtime modules.
+Add local `_text`, `_hash`, `_step`, `_cutoff`, and agent-sort helpers.
 
-- [ ] **Step 2: Implement `RuntimeAgentSpec` and `SimulationModelSpec` data validation**
+- [ ] **Step 2: Implement `RuntimeAgentSpec` and `SimulationModelSpec`**
 
-`RuntimeAgentSpec` validates canonical ids and exact runtime intentional model type. `SimulationModelSpec` validates:
+`RuntimeAgentSpec.to_dict()` is:
 
-```text
-non-empty agents
-unique agent_id
-unique decision_template_id
-agents sorted by agent_id
-exact world/observation model types
-world domain identity == simulation domain identity
-observation domain identity == simulation domain identity
+```python
+return {
+    "agent_id": self.agent_id,
+    "decision_template_id": self.decision_template_id,
+    "intentional_model_hash": self.intentional_model.content_hash,
+}
 ```
 
-Its `to_dict()` includes nested model hashes plus:
+`SimulationModelSpec` validates non-empty agents, unique agent ids, unique template ids, lexical agent order, exact nested types, and exact world/observation domain identity equality. Its payload includes each agent spec, nested world/observation model hashes, and:
 
 ```python
 "scheduler_implementation_identity": measure_implementation(
@@ -877,9 +988,9 @@ Its `to_dict()` includes nested model hashes plus:
 ).manifest_identity()
 ```
 
-- [ ] **Step 3: Implement `SimulationState` internal alignment invariants**
+- [ ] **Step 3: Implement `SimulationState` exact alignment**
 
-Require exact types and:
+Validate exact world/ledger types and:
 
 ```python
 if self.step_index != self.world_state.step_index:
@@ -890,63 +1001,38 @@ if self.evidence_ledger.current_world_state_hash != self.world_state.content_has
     raise ValueError("simulation ledger must bind exact current world state")
 ```
 
-Compare world/ledger tuples exactly:
-
-```python
-(
-    world.domain_id,
-    world.domain_version,
-    world.domain_spec_hash,
-    world.source_story_hash,
-    world.source_at_time,
-) == (
-    ledger.domain_id,
-    ledger.domain_version,
-    ledger.domain_spec_hash,
-    ledger.source_story_hash,
-    ledger.source_at_time,
-)
-```
-
-`SimulationState` stores model id/hash but does not certify that those fields correspond to a supplied model until execution.
+Require exact equality of world/ledger domain id, domain version, domain spec hash, story hash, and source cutoff.
 
 - [ ] **Step 4: Implement `SimulationAgentStep`, `SimulationStepResult`, and `SimulationTrajectory` record validation**
 
-`SimulationAgentStep` validates the mechanical bridge between `RuntimeIntentionalDecisionResult` and `ActionIntent`.
+`SimulationAgentStep` validates exact result -> `ActionIntent` bridge fields.
 
-`SimulationStepResult` validates exact prior/next/world/admission binding and canonical agent-step order. It must verify the set of `ActionIntent.to_dict()` payloads in `agent_steps` equals the set of transition-record intent payloads in `world_step.transitions`; no missing or extra transition is allowed.
-
-`SimulationTrajectory` requires a non-empty exact tuple of step results and validates exact state chain:
+`SimulationStepResult` validates model/step/prior/next/world/admission bindings and lexical agent order. Compare intent payload multisets exactly:
 
 ```python
-current = self.initial_state
-for result in self.steps:
-    if result.prior_state != current:
-        raise ValueError("simulation trajectory prior state chain is discontinuous")
-    current = result.next_state
-if current != self.final_state:
-    raise ValueError("simulation trajectory final state must equal chain tail")
+scheduled = tuple(
+    sorted(
+        (item.action_intent.to_dict() for item in self.agent_steps),
+        key=lambda value: (value["decision_id"], value["selected_action"]),
+    )
+)
+executed = tuple(
+    sorted(
+        (item.intent.to_dict() for item in self.world_step.transitions),
+        key=lambda value: (value["decision_id"], value["selected_action"]),
+    )
+)
+if scheduled != executed:
+    raise ValueError("simulation step transitions must equal scheduled intents exactly")
 ```
 
-- [ ] **Step 5: Add execution-level simulation model/story/template certification**
+`SimulationTrajectory` requires non-empty tuple steps and exact prior->next chain ending at `final_state`.
 
-Implement `_validate_execution_bindings(story, domain, model, source_at_time)` that validates before any runtime likelihood hook:
+- [ ] **Step 5: Implement execution-level story/template certification**
 
-```text
-story/domain canonical validation
-simulation model domain identity
-world model domain identity
-observation model domain identity
-agent ids resolve to canonical story entities
-template ids resolve to canonical decisions
-template actor == configured agent id
-template decision type supported by configured runtime model
-numeric source cutoff contains every template logical_time
-```
+Before model hooks, validate story/domain and exact simulation model domain identity. Resolve every `RuntimeAgentSpec` to a canonical entity and decision. Require template actor == agent id, template type supported by runtime model, and template logical time <= numeric source cutoff. Do not require projected observers to equal scheduled agents.
 
-Passive observers are not validated against the scheduled set; they remain legal.
-
-- [ ] **Step 6: Implement `simulation_state_from_story()` completely**
+- [ ] **Step 6: Implement `simulation_state_from_story()`**
 
 ```python
 def simulation_state_from_story(
@@ -978,7 +1064,9 @@ def simulate_step(
     prior_state: SimulationState,
     model: SimulationModelSpec,
 ) -> SimulationStepResult:
-    raise SimulationStepError("simulation step execution is unavailable in this stage")
+    raise SimulationStepError(
+        "simulation step execution is unavailable in this stage"
+    )
 
 
 def simulate_trajectory(
@@ -996,35 +1084,9 @@ def simulate_trajectory(
 
 - [ ] **Step 8: Verify staged GREEN/RED and commit**
 
-Expected simulation split:
+The first four simulation methods (model identity, model rejection, initial state binding, initialization rejection) must be GREEN; remaining 12 must fail only at the stage boundaries. Runtime intention 12 remain GREEN; API remains RED. Full discovery expected exactly **13 feature failures**.
 
-```text
-GREEN:
-- model canonical identity
-- model duplicate/domain rejection
-- exact initial state binding
-- initialization story/agent/template/type/cutoff rejection
-
-RED at stage boundaries:
-- remaining 12 step/trajectory methods
-```
-
-Runtime-intention 12 stay green; API stays RED. Full discovery expected **13 feature failures** (`12 + 1`).
-
-Run regression and scope guard:
-
-```bash
-python3 -m unittest tests.test_narrative_simulation -v
-python3 -m unittest tests.test_narrative_runtime_intention -v
-git diff --exit-code e10ed369d1908b12a2592c07aa8ffb241e526cb2 -- \
-  narrative_dynamics/narrative/intention.py \
-  narrative_dynamics/narrative/world.py \
-  narrative_dynamics/narrative/observation_projection.py \
-  narrative_dynamics/narrative/runtime_cognition.py \
-  narrative_dynamics/narrative/runtime_perception.py
-```
-
-Commit only:
+Run scope guard against all forbidden production paths, then commit only `simulation.py`:
 
 ```bash
 git add narrative_dynamics/narrative/simulation.py
@@ -1035,7 +1097,7 @@ Obtain exact-head CI before Task 5.
 
 ---
 
-### Task 5: Implement atomic simulation steps and finite deterministic trajectories
+### Task 5: Implement atomic simulation steps and finite trajectories
 
 **Files:**
 - Modify: `narrative_dynamics/narrative/simulation.py`
@@ -1044,45 +1106,37 @@ Obtain exact-head CI before Task 5.
 - Consumes: Task 4 records/init, complete runtime intention, existing `advance_world_step`, and existing `admit_world_percepts`.
 - Produces: complete `simulate_step()` and `simulate_trajectory()`; all 28 feature behavior methods GREEN.
 
-- [ ] **Step 1: Validate the exact prior simulation snapshot before any model hook**
+- [ ] **Step 1: Reject mismatched/forged prior state before every agent hook**
 
-At the start of `simulate_step()`:
+Require exact `SimulationState`/`SimulationModelSpec` types, exact model id/hash equality, internal state alignment, story/domain/model bindings, and template cutoff before calling `run_runtime_intentional_decision()`.
 
-```python
-if not isinstance(prior_state, SimulationState):
-    raise SimulationStepError("simulation step requires SimulationState")
-if not isinstance(model, SimulationModelSpec):
-    raise SimulationStepError("simulation step requires SimulationModelSpec")
-if prior_state.model_id != model.model_id or prior_state.model_hash != model.content_hash:
-    raise SimulationStepError("simulation prior state model identity mismatch")
-_validate_execution_bindings(
-    story,
-    domain,
-    model,
-    prior_state.world_state.source_at_time,
-)
-```
-
-Then reconstruct a `SimulationState` from its own fields or call a private alignment validator so forged records produced by bypassing dataclass construction still reject before agent hooks.
+The forged-prior test must bypass dataclass construction with the existing `fields()` pattern, change one of `step_index`, ledger world hash, story hash, or model hash, and prove every runtime likelihood/world/projection counter remains zero.
 
 - [ ] **Step 2: Evaluate every configured agent against the exact same prior ledger**
-
-Iterate `model.agents`, already canonicalized by `agent_id`:
 
 ```python
 agent_steps = []
 for agent in model.agents:
-    result = run_runtime_intentional_decision(
-        story,
-        domain,
-        agent.decision_template_id,
-        prior_state.evidence_ledger,
-        agent.intentional_model,
-    )
+    try:
+        result = run_runtime_intentional_decision(
+            story,
+            domain,
+            agent.decision_template_id,
+            prior_state.evidence_ledger,
+            agent.intentional_model,
+        )
+    except RuntimeIntentionalDecisionResolutionError as error:
+        raise SimulationStepError(
+            f"simulation cognition failed for agent {agent.agent_id}"
+        ) from error
     if result.step_index != prior_state.step_index:
-        raise SimulationStepError("runtime decision step does not match simulation prior")
+        raise SimulationStepError(
+            "runtime decision step does not match simulation prior"
+        )
     if result.belief_state.ledger_hash != prior_state.evidence_ledger.content_hash:
-        raise SimulationStepError("runtime decision does not bind shared prior ledger")
+        raise SimulationStepError(
+            "runtime decision does not bind shared prior ledger"
+        )
     intent = ActionIntent(
         decision_id=result.decision_id,
         selected_action=result.selected_action,
@@ -1099,41 +1153,43 @@ for agent in model.agents:
     )
 ```
 
-Do not call world transition inside this loop.
+No world hook executes inside this loop.
 
-If any agent fails, wrap with `SimulationStepError(f"simulation cognition failed for agent {agent.agent_id}")` and chain the original typed runtime-intention error. Previously computed immutable agent results are discarded and no world hook runs.
-
-- [ ] **Step 3: Execute exactly one atomic world transition after every selection succeeds**
+- [ ] **Step 3: Execute one atomic world transition only after all selections succeed**
 
 ```python
-world_step = advance_world_step(
-    story,
-    domain,
-    prior_state.world_state,
-    model.world_model,
-    tuple(item.action_intent for item in agent_steps),
-)
+try:
+    world_step = advance_world_step(
+        story,
+        domain,
+        prior_state.world_state,
+        model.world_model,
+        tuple(item.action_intent for item in agent_steps),
+    )
+except WorldTransitionError as error:
+    raise SimulationStepError("simulation world transition failed") from error
 ```
 
-Catch `WorldTransitionError` and wrap as `SimulationStepError("simulation world transition failed")` with chaining. Do not invoke admission in the exception path.
+A world failure must leave projection/admission counters at zero.
 
-- [ ] **Step 4: Admit next percepts exactly once through the existing admission boundary**
+- [ ] **Step 4: Admit next percepts exactly once through admission**
 
 ```python
-admission = admit_world_percepts(
-    story,
-    domain,
-    world_step,
-    model.observation_model,
-    prior_state.evidence_ledger,
-)
+try:
+    admission = admit_world_percepts(
+        story,
+        domain,
+        world_step,
+        model.observation_model,
+        prior_state.evidence_ledger,
+    )
+except RuntimePerceptAdmissionError as error:
+    raise SimulationStepError("simulation percept admission failed") from error
 ```
 
-Do not import or invoke `project_world_observations()` in `simulation.py`.
+`simulation.py` must not import `project_world_observations`.
 
-Catch `RuntimePerceptAdmissionError` and wrap as `SimulationStepError("simulation percept admission failed")` with chaining.
-
-- [ ] **Step 5: Construct next state only after successful admission**
+- [ ] **Step 5: Construct next state and exact result only after successful admission**
 
 ```python
 next_state = SimulationState(
@@ -1155,45 +1211,23 @@ return SimulationStepResult(
 )
 ```
 
-Any constructor failure is wrapped as `SimulationStepError("simulation next-state construction failed")` with chaining.
+Constructor failures wrap as `SimulationStepError("simulation next-state construction failed")` with cause.
 
-- [ ] **Step 6: Implement positive-integer finite trajectory execution**
+- [ ] **Step 6: Implement positive-integer trajectory execution**
 
-Validate `rounds` before calling `simulate_step()`:
-
-```python
-if not isinstance(rounds, int) or isinstance(rounds, bool) or rounds <= 0:
-    raise SimulationTrajectoryError("simulation rounds must be a positive integer")
-```
-
-Then:
+Reject non-int, bool, zero, and negative rounds before step execution. Then repeatedly call `simulate_step()` exactly `rounds` times. If a round fails, raise:
 
 ```python
-current = initial_state
-steps = []
-for offset in range(rounds):
-    try:
-        result = simulate_step(story, domain, current, model)
-    except SimulationStepError as error:
-        raise SimulationTrajectoryError(
-            f"simulation trajectory failed at step {current.step_index + 1}"
-        ) from error
-    steps.append(result)
-    current = result.next_state
-return SimulationTrajectory(
-    model_id=model.model_id,
-    model_hash=model.content_hash,
-    initial_state=initial_state,
-    steps=tuple(steps),
-    final_state=current,
+SimulationTrajectoryError(
+    f"simulation trajectory failed at step {current.step_index + 1}"
 )
 ```
 
-No stop predicate or terminal condition is consulted.
+with the `SimulationStepError` as cause. Successful return is `SimulationTrajectory(model_id, model_hash, initial_state, tuple(steps), current)`.
 
-- [ ] **Step 7: Prove the central two-round causal closure**
+- [ ] **Step 7: Prove the two-round causal closure in isolation**
 
-Run only:
+Run:
 
 ```bash
 python3 -m unittest \
@@ -1201,29 +1235,21 @@ python3 -m unittest \
   -v
 ```
 
-Expected `ok`. Inspect the test artifacts and require the causal sequence:
+Require `ok` and inspect the assertions proving the exact causal chain:
 
 ```text
-round 0 a1 selected_action == raise_alert
-round 0 a2 selected_action == wait
-round 0 next world service.alert == true
-round 0 admission ledger contains step-1 alert percept for a2
-round 1 a2 belief posterior differs from its seed posterior
-round 1 a2 selected_action == respond
-canonical story hash/decisions/observations/claims/receptions unchanged
+a1-raise-alert
+-> WorldState service.alert=true
+-> admitted a2 equals-true alert percept at step 1
+-> a2 posterior changes from 0.9 false prior to true-favoring posterior
+-> a2-respond in round 1
 ```
 
-- [ ] **Step 8: Verify failure-order, passive-observer, determinism, and trajectory semantics**
+Also require passive a3 evidence in the ledger and unchanged authored story artifacts.
 
-Run the complete simulation module:
+- [ ] **Step 8: Verify all scheduler semantics, regressions, and forbidden-path scope**
 
-```bash
-python3 -m unittest tests.test_narrative_simulation -v
-```
-
-Expected all 16 methods `ok`.
-
-Then run all dedicated behavior modules and regressions:
+Run:
 
 ```bash
 python3 -m unittest \
@@ -1237,32 +1263,27 @@ python3 -m unittest \
   -v
 ```
 
-Expected all pass.
+All must pass. Then require no diff from spec head on:
 
-- [ ] **Step 9: Verify forbidden paths remain unchanged**
-
-```bash
-git diff --exit-code e10ed369d1908b12a2592c07aa8ffb241e526cb2 -- \
-  narrative_dynamics/narrative/intention.py \
-  narrative_dynamics/narrative/runtime_cognition.py \
-  narrative_dynamics/narrative/runtime_perception.py \
-  narrative_dynamics/narrative/world.py \
-  narrative_dynamics/narrative/observation_projection.py \
-  narrative_dynamics/narrative/ir.py \
-  narrative_dynamics/narrative/domain.py \
-  narrative_dynamics/__init__.py
+```text
+narrative_dynamics/narrative/intention.py
+narrative_dynamics/narrative/runtime_cognition.py
+narrative_dynamics/narrative/runtime_perception.py
+narrative_dynamics/narrative/world.py
+narrative_dynamics/narrative/observation_projection.py
+narrative_dynamics/narrative/ir.py
+narrative_dynamics/narrative/domain.py
+narrative_dynamics/__init__.py
 ```
 
-Any diff is architecture expansion and blocks continuation.
-
-- [ ] **Step 10: Commit full scheduler semantics and obtain export-only RED**
+- [ ] **Step 9: Commit semantic GREEN and obtain export-only RED**
 
 ```bash
 git add narrative_dynamics/narrative/simulation.py
 git commit -m "feat: run narrative multi-step simulation"
 ```
 
-On exact-head CI require all 12 runtime-intention + 16 simulation methods GREEN. The only feature-related failure must be `test_exact_public_surface_and_root_isolation` because the 16 exports are still absent. All prior 513 tests and all Lean gates remain green. Expected full discovery: **541 tests, exactly 1 failure**.
+Exact-head CI must have all 12 runtime-intention + 16 simulation methods GREEN and exactly one feature failure: the API/root-isolation gate. Full discovery count remains 541.
 
 ---
 
@@ -1275,9 +1296,7 @@ On exact-head CI require all 12 runtime-intention + 16 simulation methods GREEN.
 - Consumes: complete runtime intention and simulation sidecars.
 - Produces: exactly 16 new narrative-scoped names; root isolation preserved; final 541-test GREEN.
 
-- [ ] **Step 1: Add only runtime-intention scoped imports**
-
-Add:
+- [ ] **Step 1: Add only runtime-intention imports**
 
 ```python
 from narrative_dynamics.narrative.runtime_intention import (
@@ -1288,9 +1307,7 @@ from narrative_dynamics.narrative.runtime_intention import (
 )
 ```
 
-- [ ] **Step 2: Add only simulation scoped imports**
-
-Add:
+- [ ] **Step 2: Add only simulation imports**
 
 ```python
 from narrative_dynamics.narrative.simulation import (
@@ -1309,9 +1326,9 @@ from narrative_dynamics.narrative.simulation import (
 )
 ```
 
-Add exactly these 16 strings to narrative `__all__`. Do not edit `narrative_dynamics/__init__.py`.
+Add exactly these 16 strings to narrative `__all__`; do not edit root `narrative_dynamics/__init__.py`.
 
-- [ ] **Step 3: Run the exact API and dedicated semantic gates**
+- [ ] **Step 3: Run API and dedicated feature gates**
 
 ```bash
 python3 -m unittest \
@@ -1323,7 +1340,7 @@ python3 -m unittest \
   -v
 ```
 
-Expected: API/root-isolation `ok`; all 28 new behavior methods `ok`.
+Expected: API/root isolation `ok`; all 28 new behavior methods `ok`.
 
 - [ ] **Step 4: Run full Python discovery and require exact count**
 
@@ -1331,19 +1348,7 @@ Expected: API/root-isolation `ok`; all 28 new behavior methods `ok`.
 python3 -m unittest discover -s tests -v
 ```
 
-Expected summary begins:
-
-```text
-Ran 541 tests in
-```
-
-and ends:
-
-```text
-OK
-```
-
-Any count other than 541 requires explicit investigation before PR readiness.
+The summary must report exactly 541 tests and final status `OK`. Any other count or nonzero failure/error blocks PR readiness.
 
 - [ ] **Step 5: Commit only the export change**
 
@@ -1352,9 +1357,9 @@ git add narrative_dynamics/narrative/__init__.py
 git commit -m "feat: export narrative simulation api"
 ```
 
-The commit must touch only narrative `__init__.py`.
+This commit must touch only narrative `__init__.py`.
 
-- [ ] **Step 6: Run and inspect final exact-head `proof` CI**
+- [ ] **Step 6: Inspect final exact-head `proof` CI**
 
 Require success for every workflow step:
 
@@ -1368,18 +1373,11 @@ Narrative story theorem tests
 Narrative testimony theorem tests
 ```
 
-Fetch the complete job log and confirm:
+Fetch the complete job log. Confirm the unittest summary count is exactly 541 and status is `OK`. Confirm every new runtime-intention/simulation method and exact API test is individually `ok`.
 
-```text
-Ran 541 tests in ...
-OK
-```
+- [ ] **Step 7: Verify exact final eight-path diff**
 
-Also confirm all 12 `NarrativeRuntimeIntentionTests`, all 16 `NarrativeSimulationTests`, and `test_exact_public_surface_and_root_isolation` are individually `ok`.
-
-- [ ] **Step 7: Verify exact final eight-path diff and forbidden-path preservation**
-
-Compare final head to `ea45389354bf9b8dff4c18917e2bca3e3e83a939`. The changed paths must be exactly:
+Compare final head to `ea45389354bf9b8dff4c18917e2bca3e3e83a939`; changed paths must be exactly:
 
 ```text
 docs/superpowers/specs/2026-08-26-narrative-multi-step-scheduler-v1-design.md
@@ -1392,32 +1390,18 @@ tests/test_narrative_simulation.py
 tests/test_narrative_trust_api.py
 ```
 
-Require `intention.py` byte-for-byte unchanged by compare and no root-package diff.
+`intention.py`, root package, Runtime Cognition/Perception, World Transition, Observation Projection, IR, Domain, and Lean sources must have no diff.
 
-- [ ] **Step 8: Update the Draft PR to review-ready only after all evidence is fresh**
+- [ ] **Step 8: Update Draft PR to review-ready only after fresh evidence**
 
-Update PR description with:
-
-```text
-RED exact head/run and 29-failure distribution
-Task 2 staged 25-failure distribution
-Task 3 staged 17-failure distribution
-Task 4 staged 13-failure distribution
-Task 5 export-only 1-failure distribution
-final exact head/run with 541 tests OK
-exact eight-path diff
-```
-
-Mark Ready only after final CI and read-only diff review. Do not merge without explicit user instruction.
+PR body records exact RED head/run and 29-failure split; Task 2 25-failure split; Task 3 17-failure split; Task 4 13-failure split; Task 5 export-only one-failure split; final exact head/run with 541 tests `OK`; and exact eight-path diff. Mark Ready only after final CI and read-only diff review. Do not merge without explicit user instruction.
 
 ## Invariant Coverage Map
-
-The spec's 76 invariants are covered as follows.
 
 - Invariants 1-6: Task 2 model/result/identity tests plus byte-for-byte `intention.py` scope gate.
 - Invariants 7-10: Task 3 canonical template/cutoff/context tests.
 - Invariants 11-15: Task 3 posterior semantic adapter, hidden-provenance equality, and authored-math equivalence tests.
-- Invariants 16-22: Task 2 result validation + Task 3 action/goal coverage, lexical tie, audit/semantic identity tests.
+- Invariants 16-22: Task 2 result validation plus Task 3 action/goal coverage, lexical tie, audit/semantic identity tests.
 - Invariants 23-33: Task 4 runtime-agent/simulation-model data and execution-binding tests.
 - Invariants 34-38: Task 4 `SimulationState` alignment/initialization and forged-data tests.
 - Invariants 39-48: Task 5 shared-snapshot/static-schedule/action-intent/world/admission tests.
@@ -1428,15 +1412,15 @@ The spec's 76 invariants are covered as follows.
 
 ## Final Scientific Acceptance Gate
 
-Do not treat “all tests pass” alone as proof of loop closure. Before PR readiness, explicitly inspect the two-round acceptance test and verify the causal artifact chain:
+Before PR readiness, inspect the two-round test and verify this concrete audit chain exists in the returned artifacts:
 
 ```text
-A round-0 runtime decision result
-  -> ActionIntent
-  -> WorldStepResult that sets service.alert
-  -> RuntimePerceptAdmissionResult with B's alert percept
-  -> B round-1 RuntimeUncertainBeliefState with updated posterior
-  -> B round-1 RuntimeIntentionalDecisionResult selecting respond
+a1 round-0 RuntimeIntentionalDecisionResult selecting a1-raise-alert
+-> matching ActionIntent
+-> WorldStepResult with service.alert set true
+-> RuntimePerceptAdmissionResult containing a2 alert=true percept
+-> a2 round-1 RuntimeUncertainBeliefState with changed posterior
+-> a2 round-1 RuntimeIntentionalDecisionResult selecting a2-respond
 ```
 
-The same test must show the canonical `GenericNarrative` hash and authored decisions/observations/claims/receptions are unchanged. This is the feature's primary semantic success criterion.
+The same test must prove the canonical `GenericNarrative` content hash and authored decisions/observations/claims/receptions are unchanged. Passing unrelated unit tests is not a substitute for this causal closure proof.
