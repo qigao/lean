@@ -4,7 +4,7 @@
 
 Approved architecture design for issue #27 P1 Generic Reactive Baseline.
 
-This design starts from the integrated Multi-Step Scheduler V1 research head:
+Integrated starting head:
 
 ```text
 045f5b0602e30e8ec12e7c9fa73128e28cabebd8
@@ -24,51 +24,42 @@ work/narrative-generic-reactive-baseline-v1
 
 ## Goal
 
-Add a narrative-native reactive behavioral model family that maps only currently observable cues to a complete action probability policy, without constructing latent belief, goal, intention, or planning state.
+Add a narrative-native reactive behavioral model family that maps only **currently observable cues** to a complete action probability policy, without constructing latent belief, goal, intention, memory, planning, or objective-world state.
 
-The model exists as a scientifically meaningful lower-complexity baseline for later comparison against intentional and POMDP families.
-
-The core runtime mapping is:
+Runtime mapping:
 
 ```text
-Current admitted observation cues
-    -> Reactive cue snapshot
-    -> Reactive score hook
-    -> Action scores
-    -> Softmax action policy
-    -> Deterministic lexical MAP action
+current admitted cues
+  -> sanitized reactive cue snapshot
+  -> reactive score hook
+  -> exact action scores
+  -> shared finite softmax
+  -> complete action policy
+  -> deterministic lexical MAP action
 ```
 
-The defining non-feature is equally important:
-
-```text
-No posterior belief
-No goal state
-No latent memory state
-No future-state planning
-No objective WorldState access
-```
+This is the lower-complexity scientific baseline for later reactive-vs-intentional-vs-POMDP comparison.
 
 ## Architectural classification
 
-This is an architectural change because it adds a new model family and a new runtime decision capability boundary whose public result must later participate in cross-family model comparison.
+This is an architectural change because it introduces a new runtime model family and hook capability boundary.
 
-It does not change GenericNarrative IR, DomainSpec, authored decision semantics, Runtime Cognition, Intentional Decision, World Transition, Observation Projection, Runtime Percept Admission, Scheduler V1, Lean sources, or root package exports.
+V1 is an isolated sidecar. It deliberately does **not** generalize Scheduler V1 to dispatch multiple decision-family types. Shared scheduler dispatch is deferred until both Reactive and Planning/POMDP family contracts are proven.
 
-V1 deliberately does not generalize Scheduler V1 to dispatch multiple decision-family types. Reactive V1 is first established as an isolated runtime sidecar. A shared scheduler dispatch boundary is deferred until both Reactive and Planning/POMDP family contracts exist.
+V1 must not change GenericNarrative IR, DomainSpec, authored decision/intention semantics, Runtime Cognition, Runtime Intention, World Transition, Observation Projection, Runtime Percept Admission, Scheduler V1, Lean sources, old prison adapters, evaluation infrastructure, or root package exports.
 
 ## Existing baseline
 
-The integrated runtime currently provides:
+The runtime already provides:
 
 ```text
 WorldStepResult
-    -> Observation Projection
-    -> Runtime Percept Admission
-    -> RuntimeEvidenceLedger
+  -> Observation Projection
+  -> Runtime Percept Admission
+  -> RuntimeEvidenceLedger
 ```
 
-Each admitted percept contains provenance-bound runtime evidence, and each evidence row exposes a sanitized:
+Admitted evidence exposes sanitized percept semantics equivalent to:
 
 ```python
 RuntimePerceptView(
@@ -81,35 +72,27 @@ RuntimePerceptView(
 )
 ```
 
-The same runtime also provides richer cognition:
+The richer cognition path separately provides:
 
 ```text
-Authored epistemic seed
-    + all admitted runtime evidence history
-    -> RuntimeEpistemicState
-    -> RuntimeUncertainBeliefState
+authored epistemic seed + all runtime evidence history
+  -> RuntimeEpistemicState
+  -> RuntimeUncertainBeliefState
 ```
 
-Reactive V1 must not call that cognition path. Otherwise missing current cues could be silently filled by remembered belief state, collapsing the distinction between a reactive model and an intentional/belief model.
+Reactive V1 must not call that cognition path. Missing current cues must remain missing rather than being filled from remembered belief state.
 
-## Existing prison reactive model is a reference, not the implementation base
+## Existing prison reactive model
 
-`narrative_dynamics/adapters/prison_reactive.py` is scientifically useful evidence that the repository already values a lower-complexity cue-reactive comparator. It is not generic enough to become the narrative model family because it:
+`narrative_dynamics/adapters/prison_reactive.py` is a reference baseline, not the implementation base. It is prison-specific, derives cue utilities from scenario parameters, owns stochastic sampling, and does not consume narrative runtime observation provenance.
 
-- reads prison-specific scenario parameters,
-- derives cue utilities from those parameters,
-- owns stochastic RNG sampling,
-- is not driven by narrative observation provenance,
-- does not use the runtime evidence ledger,
-- cannot be reused across arbitrary GenericNarrative domains.
+Reactive V1 preserves only its scientific principle:
 
-Reactive V1 preserves its important scientific property:
+> policy may respond to declared observable cues; hidden or future variables outside that cue capability cannot directly alter policy.
 
-> policy responds to declared observable cues, while latent/future variables that are not present in the cue capability cannot directly change the policy.
+## Chosen module
 
-## Chosen architecture
-
-Add one new sidecar module:
+Create:
 
 ```text
 narrative_dynamics/narrative/runtime_reactive.py
@@ -117,78 +100,72 @@ narrative_dynamics/narrative/runtime_reactive.py
 
 It owns:
 
-1. reactive cue extraction from the runtime evidence ledger,
-2. the sanitized hook-facing cue context,
-3. reactive model specification and attested identity,
+1. current-cue extraction,
+2. sanitized hook-facing value types,
+3. reactive model specification and identity,
 4. score validation,
-5. framework-owned softmax policy construction,
-6. deterministic lexical MAP action selection,
-7. typed fail-closed runtime resolution.
+5. shared softmax projection,
+6. deterministic lexical MAP selection,
+7. typed fail-closed resolution.
 
-No reactive logic is added to `runtime_cognition.py` or `runtime_intention.py`.
+No reactive logic is added to `runtime_cognition.py`, `runtime_intention.py`, or `simulation.py`.
 
 ## Rejected alternatives
 
-### Rejected: reuse authored `DecisionModelSpec(EvidenceAccess.DIRECT_ONLY)`
+### Reuse `DecisionModelSpec(EvidenceAccess.DIRECT_ONLY)`
 
-The authored decision boundary resolves at authored `logical_time` and returns a deterministic one-hot `DecisionResult`. It is not a runtime-step model and does not produce the complete probability simplex needed for proper-scoring comparison.
+Rejected. That boundary resolves at authored `logical_time` and returns a deterministic one-hot `DecisionResult`; it is not a runtime-step complete probability policy.
 
-### Rejected: call `runtime_epistemic_state()` and ignore belief probabilities
+### Call `runtime_epistemic_state()` and ignore belief probabilities
 
-`runtime_epistemic_state()` intentionally merges authored seed state with the full runtime evidence history. That creates memory semantics. A reactive model must treat a currently unavailable cue as unavailable, not as remembered state.
+Rejected. It merges evidence history and therefore introduces memory semantics.
 
-### Rejected: pass `RuntimeEvidenceLedger` directly to the score hook
+### Pass `RuntimeEvidenceLedger` directly to the hook
 
-The ledger contains provenance identities, historical batches, source world hashes, and observation-model identities. A hook that receives it could condition on undeclared history or provenance metadata. The hook receives only a sanitized cue snapshot.
+Rejected. The ledger exposes history, provenance, source world hashes, and projection identities that a reactive hook must not condition on.
 
-### Rejected: pass `WorldState` or `WorldStepResult` to reactive selection
+### Pass `WorldState` or `WorldStepResult`
 
-This would let the baseline read objective truth and destroy the observation-capability distinction needed for information-intervention identification.
+Rejected. This leaks objective truth across the observation boundary.
 
-### Rejected: sample actions in V1
+### Sample actions in V1
 
-Stochastic action sampling would introduce a new RNG/seed lineage problem that issue #27 assigns to a later stochastic workstream. V1 emits a probability policy and selects its action deterministically using lexical MAP.
+Rejected. Sampling introduces an RNG/seed lineage owned by the later stochastic workstream. V1 emits a probability policy and deterministically selects lexical MAP.
 
-### Rejected: generalize Scheduler V1 now
+### Generalize Scheduler V1 now
 
-`RuntimeAgentSpec` is intentionally intentional-specific. Generalizing it before the POMDP family exists would force a premature common protocol. Reactive and POMDP first establish their own semantics; scheduler dispatch can then be extracted from proven common output requirements.
+Rejected. The POMDP contract does not yet exist, so a common scheduler family protocol would be premature.
 
-## Reactive observational semantics
+## Current-cue semantics
 
-Reactive V1 uses a strict **current-cue** semantics.
+For runtime step `k`:
 
-For an agent at runtime step `k`:
+- `k == 0`: cues come only from authored **direct observation** for the decision actor at `ledger.source_at_time`;
+- `k > 0`: cues come only from `ledger.batches[-1]` at the current step for that actor;
+- earlier runtime batches are never searched to fill a missing cue;
+- authored seed values are never used to fill missing runtime cues after step zero;
+- missing current cues become `unknown`.
 
-- if `k == 0`, cues come only from the authored direct-observation seed available to the decision actor at the simulation source cutoff;
-- if `k > 0`, cues come only from the latest admitted runtime evidence batch whose `step_index == k` and whose `observer_id` equals the decision actor;
-- earlier runtime batches are not searched to fill missing current cues;
-- authored seed values are not used to fill a missing runtime cue after step zero;
-- an expected cue that is unavailable at the current step becomes `unknown` rather than inheriting a prior value.
+This rule is the defining separation from belief-state persistence.
 
-This is the scientific boundary that separates reactive behavior from belief-state persistence.
+### Blackout
 
-### Blackout semantics
+A blackout is valid runtime state, not an execution error.
 
-A projection blackout is valid runtime evidence about observation access, not an execution error.
-
-If a declared reactive cue has no current percept, its cue view is:
+A declared cue with no current percept is:
 
 ```text
 status = "unknown"
 value = None
 ```
 
-The score hook may assign action scores for an unknown cue, but cannot recover prior values through any history API.
+The hook may score unknown cues but receives no history API.
 
-### Same-step conflict semantics
+### Same-step semantic disagreement
 
-If the current batch contains more than one semantic row for the same actor/cell and those rows disagree in `(relation, value)`, reactive resolution fails closed.
+If eligible rows for one actor/cell disagree in `(relation, value)`, resolution fails closed. No channel order, evidence order, last-write order, or provenance hash may choose a winner.
 
-The implementation must not choose a winner by channel order, evidence order, last-write order, or provenance hash.
-
-## Cue declaration and capability
-
-The model declares exactly which narrative cells it may inspect.
+## Reactive model specification
 
 ```python
 RuntimeReactiveDecisionModelSpec(
@@ -204,20 +181,56 @@ RuntimeReactiveDecisionModelSpec(
 
 Requirements:
 
-- `model_id` and `version` are non-empty trimmed strings,
-- supported decision types are non-empty, unique, and canonically ordered,
-- `cue_cells` are non-empty, unique `StateCellRef` values in canonical cell order,
-- every cue cell must be one of the authored decision template's `context_cells` when the model runs,
-- `parameters` are recursively frozen canonical values,
-- `beta` is finite and strictly positive,
-- `score_hook` is callable and its measured implementation identity is part of model identity,
-- model content identity binds supported decision types, cue cells, parameters, beta, and hook implementation identity.
+- `model_id` and `version` are non-empty trimmed strings;
+- supported decision types are non-empty, unique, and lexically sorted;
+- `cue_cells` are non-empty, unique, and sorted by `(entity_type, entity_id, state_variable)`;
+- at execution, every cue cell must belong to the authored decision template's `context_cells`;
+- `beta` is finite and strictly positive;
+- `score_hook` is callable.
 
-The model does not declare belief parameters, goal parameters, transition parameters, horizon, discount, or hidden-state support.
+### Canonical parameter values
+
+`parameters` accept exactly recursively canonical values:
+
+```text
+None
+bool
+int
+str
+finite float
+Mapping[str, canonical-value]
+list[canonical-value]
+tuple[canonical-value]
+```
+
+Rules:
+
+- mapping keys are non-empty strings;
+- mappings are frozen and serialized with lexical key order;
+- list and tuple values are frozen to tuples internally;
+- non-finite floats are rejected;
+- bytes, sets, arbitrary objects, and callables are rejected as parameter values.
+
+### Model identity
+
+Model content identity binds:
+
+```text
+model id/version
+supported decision types
+cue cells
+canonical parameters
+beta
+score hook measured implementation identity
+RuntimeReactiveDecisionModelSpec implementation identity
+finite_softmax implementation identity
+```
+
+The explicit `finite_softmax` identity is required because the shared numerical kernel lives outside `runtime_reactive.py`; changing that kernel must change reactive model identity.
+
+The model does not declare belief parameters, goals, transition parameters, horizon, discount, or hidden-state support.
 
 ## `ReactiveCueView`
-
-The hook-facing atomic cue view is:
 
 ```python
 ReactiveCueView(
@@ -228,7 +241,7 @@ ReactiveCueView(
 )
 ```
 
-Supported status values are exactly:
+Statuses are exactly:
 
 ```text
 resolved
@@ -237,15 +250,38 @@ unknown
 
 Rules:
 
-- `resolved` requires a `TypedValue`,
-- `unknown` requires `value is None`,
-- the view contains no observer id, channel, evidence hash, projection hash, world hash, provenance refs, ledger object, belief state, or goal state.
+- `resolved` requires a `TypedValue`;
+- `unknown` requires `value is None`;
+- `step_index` is a non-negative integer and not bool;
+- no observer/channel/evidence/projection/world/provenance/ledger/belief/goal identity is exposed.
 
-The decision actor and decision identity are represented by the containing context rather than duplicated into each cue.
+## `RuntimeReactiveCueSnapshot`
+
+```python
+RuntimeReactiveCueSnapshot(
+    actor_id: str,
+    decision_id: str,
+    step_index: int,
+    ledger_hash: str,
+    cues: Mapping[StateCellRef, ReactiveCueView],
+)
+```
+
+The snapshot is immutable and content-hashed.
+
+Requirements:
+
+- actor/decision ids are non-empty trimmed strings;
+- ledger hash is a canonical `sha256:` content hash;
+- cue keys are canonical and unique;
+- every cue view binds the snapshot step;
+- cue serialization uses canonical cell order.
+
+The ledger hash binds which admitted-evidence state produced the sanitized cues without exposing the ledger to the hook.
 
 ## `RuntimeReactiveDecisionContext`
 
-The score hook receives exactly one sanitized value object:
+The score hook receives exactly:
 
 ```python
 RuntimeReactiveDecisionContext(
@@ -261,11 +297,12 @@ RuntimeReactiveDecisionContext(
 
 Requirements:
 
-- actions are the canonical authored action ids for the selected decision template,
-- actions are non-empty and unique,
-- cue keys equal the model's declared `cue_cells` exactly,
-- every cue view binds the same `step_index`,
-- context values are immutable/frozen before crossing the hook boundary.
+- `actions` are the exact authored action ids sorted lexically;
+- action ids are non-empty and unique;
+- cue keys equal model `cue_cells` exactly;
+- every cue binds the same step;
+- parameters are the already-frozen model parameters;
+- all values are immutable before crossing the hook boundary.
 
 The context intentionally excludes:
 
@@ -285,7 +322,7 @@ ChoiceModelSpec
 
 ## Score hook contract
 
-The hook signature is conceptually:
+Conceptual signature:
 
 ```python
 def score_hook(
@@ -294,59 +331,57 @@ def score_hook(
     ...
 ```
 
-The returned mapping is interpreted only as action scores.
-
 Framework validation requires:
 
-- mapping keys equal the authored decision action ids exactly,
-- every score is numeric, finite, and not boolean,
-- no missing action,
-- no undeclared action,
-- the hook cannot provide its own selected action or probability policy.
+- return value is a mapping;
+- keys equal the authored action ids exactly;
+- every score is numeric, finite, and not bool;
+- missing and extra actions fail closed.
 
-This keeps probability semantics framework-owned and comparable across reactive models.
+The hook cannot return a selected action or policy.
 
-## Framework-owned softmax
+Any exception derived from `Exception` during score-hook invocation is normalized to `RuntimeReactiveDecisionResolutionError` with the original exception retained as `__cause__`. `BaseException` subclasses are not caught.
 
-For validated action scores `s(a)` and declared inverse temperature `beta`:
+## Shared softmax numerical semantics
 
-\[
-P(a) = \frac{\exp(\beta(s(a)-m))}{\sum_b \exp(\beta(s(b)-m))}
-\]
+Reactive V1 reuses:
 
-where:
+```python
+from grounded_goal_softmax import finite_softmax
+```
 
-\[
-m = \max_b s(b)
-\]
+This is the same numerical softmax kernel already used by authored/runtime intentional action choice. Reactive V1 does **not** reimplement exponentiation/normalization.
 
-The implementation must use numerically stable max-shifted exponentiation.
+Call:
 
-The resulting policy must:
+```python
+raw_policy = finite_softmax(action_scores, beta=model.beta)
+```
 
-- contain exactly the authored action set,
-- contain finite non-negative probabilities,
-- sum to one within the repository probability tolerance,
-- have deterministic canonical key ordering.
+Then validate the returned policy independently.
 
-If numerical construction cannot produce a valid simplex, resolution fails closed.
+Requirements:
+
+- exact authored action set;
+- finite non-negative probabilities;
+- `math.fsum(policy.values())` sums to one within absolute tolerance `1e-12` and zero relative tolerance;
+- canonical lexical action ordering;
+- invalid numerical output fails typed.
+
+If the shared softmax implementation raises `TypeError`, `ValueError`, or `OverflowError`, wrap it as typed reactive resolution failure.
 
 ## Deterministic action projection
 
-V1 does not sample from the action policy.
+V1 consumes no RNG.
 
-The selected action is:
+Selected action is:
 
 ```text
 maximum policy probability
-then lexical action id as the exact tie-break
+then lexical action id as exact tie-break
 ```
 
-This matches the deterministic replay guarantees of the current narrative runtime while preserving the full probability policy for later proper-scoring evaluation.
-
 ## `RuntimeReactiveDecisionResult`
-
-The result is:
 
 ```python
 RuntimeReactiveDecisionResult(
@@ -364,41 +399,21 @@ RuntimeReactiveDecisionResult(
 )
 ```
 
-The result must validate its own internal consistency:
+Self-validation requires:
 
-- model id/hash are valid and immutable,
-- decision/actor ids are valid,
-- step index equals cue snapshot step,
-- ledger hash binds the exact source ledger,
-- cue snapshot hash equals the exact sanitized snapshot content hash,
-- action score and policy keys match exactly,
-- selected action belongs to the policy,
-- selected action equals deterministic lexical MAP,
-- action policy is a complete probability simplex.
+- valid model/content hash shape;
+- decision/actor ids valid;
+- step equals cue snapshot step;
+- ledger hash equals cue snapshot ledger hash;
+- cue snapshot hash equals `cue_snapshot.content_hash`;
+- score/policy keys match exactly;
+- policy is a complete validated simplex;
+- selected action belongs to policy;
+- selected action equals deterministic lexical MAP.
 
-The result contains no belief state, goal state, posterior distribution, value function, transition model, or planning tree.
-
-## `RuntimeReactiveCueSnapshot`
-
-Cue extraction is represented explicitly rather than hidden inside the result.
-
-```python
-RuntimeReactiveCueSnapshot(
-    actor_id: str,
-    decision_id: str,
-    step_index: int,
-    ledger_hash: str,
-    cues: Mapping[StateCellRef, ReactiveCueView],
-)
-```
-
-The snapshot is immutable and content-hashed.
-
-The ledger hash proves which admitted-evidence state produced the sanitized cues without exposing the ledger to the hook.
+The result contains no belief, goal, posterior, value function, transition model, or planning tree.
 
 ## Public execution function
-
-The public execution boundary is:
 
 ```python
 run_runtime_reactive_decision(
@@ -410,99 +425,82 @@ run_runtime_reactive_decision(
 ) -> RuntimeReactiveDecisionResult
 ```
 
-Execution order is fixed:
+Fixed execution order:
 
-1. validate story/domain identity,
-2. validate exact ledger story/domain identity,
-3. resolve canonical authored decision template,
-4. validate supported decision type,
-5. validate model cue cells are a subset of decision `context_cells`,
-6. validate decision action ids are non-empty and unique,
-7. enforce source-cutoff/template logical-time compatibility,
-8. construct current reactive cue snapshot,
-9. construct sanitized hook context,
-10. invoke score hook,
-11. validate exact action score schema,
-12. construct framework softmax policy,
-13. select deterministic lexical MAP action,
-14. construct and return the self-validating result.
+1. validate story/domain;
+2. validate exact ledger domain/story identity;
+3. reconstruct/revalidate ledger invariants before hook execution;
+4. resolve canonical authored decision template;
+5. validate supported decision type;
+6. validate cue cells are a subset of decision `context_cells`;
+7. validate non-empty unique authored actions;
+8. enforce `decision.logical_time <= ledger.source_at_time` when cutoff is numeric;
+9. construct current cue snapshot;
+10. construct sanitized hook context;
+11. invoke score hook;
+12. validate exact action scores;
+13. call shared `finite_softmax`;
+14. validate complete policy simplex;
+15. select lexical MAP;
+16. construct self-validating result.
 
 No step may call Runtime Cognition or read objective world state.
 
-## Typed failure boundary
+## Typed error boundary
 
-Public resolution failures are normalized to:
+Public resolution failures normalize to:
 
 ```python
 RuntimeReactiveDecisionResolutionError
 ```
 
-The public function fails closed on:
+Fail closed on malformed/mismatched story, domain, ledger, model, decision template, cue capability, current evidence, hook result, numerical policy, or result construction.
 
-- invalid story/domain/model/ledger types,
-- forged or mismatched ledger identity,
-- undeclared decision id,
-- unsupported decision type,
-- decision template after source cutoff,
-- duplicate/empty decision actions,
-- cue not declared by decision context,
-- malformed current evidence,
-- same-step semantic cue conflict,
-- score hook exception from accepted validation families,
-- hook returning wrong type,
-- missing/extra/non-finite action scores,
-- invalid softmax simplex,
-- invalid result construction.
+Malformed prerequisites must fail before the score hook runs.
 
-The original exception is retained as `__cause__` for diagnostics.
+The public function retains original underlying exceptions as `__cause__` where normalization occurs.
 
-## Step-zero authored direct-cue seed
+## Step-zero direct seed
 
-At runtime step zero, no admitted runtime batch exists. Reactive V1 therefore needs a direct-observation seed that still respects capability.
+At step zero, use existing authored **direct** replay for the decision actor at `ledger.source_at_time`.
 
-The implementation uses the existing authored direct replay semantics for the decision actor at `ledger.source_at_time`.
+For each cue cell:
 
-For each declared cue cell:
+- resolved direct cell -> `resolved(value)`;
+- unresolved/missing direct cell -> `unknown`.
 
-- if direct replay resolves that cell, the reactive cue is `resolved` with that value,
-- otherwise it is `unknown`.
+Do not use authored epistemic/testimony aggregation.
 
-Reactive V1 must not use authored epistemic/testimony aggregation for this seed. The baseline is immediate cue response, not belief inference.
+## Step-positive extraction
 
-## Step-positive current-batch extraction
-
-At step `k > 0`, the current cue snapshot is built only from:
+At `k > 0`, use only:
 
 ```text
 ledger.batches[-1]
 ```
 
-with required consistency:
+Require:
 
 ```text
 ledger.batches[-1].step_index == ledger.current_step_index == k
 ```
 
-Only rows with:
+Filter evidence to:
 
 ```text
 item.observer_id == decision.actor_id
 ```
 
-are eligible.
-
 For each declared cue cell:
 
-- no eligible row -> `unknown`,
-- all eligible rows agree on `equals(value)` -> `resolved(value)`,
-- all eligible rows agree on `clear` -> `unknown`,
+- no eligible row -> `unknown`;
+- all eligible rows agree on `equals(value)` -> `resolved(value)`;
+- all eligible rows agree on `clear` -> `unknown`;
 - semantic disagreement -> typed failure.
 
-Channel identity is intentionally not exposed to the hook in V1. Multiple channels may corroborate one semantic cue, but channel-specific policies are a separate feature.
+Channel identity is not exposed to the hook in V1. Multiple channels may corroborate one semantic cue.
 
 ## Scientific model-family distinction
-
-Reactive V1 is intentionally nested below the intentional family in representational complexity.
 
 Reactive:
 
@@ -510,90 +508,77 @@ Reactive:
 A_k \sim \pi(C_k)
 \]
 
-where `C_k` is only the current observable cue snapshot.
+where `C_k` contains only current cues.
 
 Intentional:
 
 \[
-L_{0:k}
-\to B_k
-\to G_k
-\to \pi(A_k)
+L_{0:k}\to B_k\to G_k\to \pi(A_k)
 \]
-
-where admitted evidence history may update latent belief and goal state.
 
 Future POMDP:
 
 \[
-B_k
-\to \text{future transition/observation enumeration}
-\to Q(B_k,A)
-\to \pi(A_k)
+B_k\to \text{future transition/observation enumeration}\to Q(B_k,A)\to \pi(A_k)
 \]
 
-Reactive V1 must remain unable to emulate those richer families by receiving hidden history or future-state parameters through its runtime capability.
+Reactive V1 must remain unable to emulate richer families by receiving hidden history or future-state parameters through its runtime capability.
 
 ## Observational-equivalence fixture
 
-V1 tests must include a synthetic case where current cue information fully reveals the information that drives an intentional model and both families are configured to implement the same action score transformation.
+Tests must include a synthetic case where current cue information fully reveals what drives an intentional model.
 
-The test requires exact equality of the final action probability policy, not merely equality of the selected MAP action.
+To make numerical equality rigorous rather than approximate:
+
+- configure the intentional choice layer so its conditional action values equal the reactive hook action scores;
+- use identical `beta_action == reactive.beta`;
+- construct the intentional fixture so the same conditional action policy is used under every supported goal, making marginalization preserve that policy exactly;
+- both families therefore call the same `finite_softmax` implementation over the same ordered score mapping.
+
+Require exact equality of the final action probability mapping and selected action.
 
 Purpose:
 
-> prove that richer latent cognition is not automatically identifiable when observable behavior is fully explained by current cues.
+> prove richer latent cognition is not identifiable when current cues already fully explain behavior.
 
 ## Separating information intervention fixture
 
-V1 tests must include a pair of simulations with identical objective world state and authored action space but different observation access.
+Tests must include paired runtime states with identical objective world state and authored action space but different observation access.
 
-Required separation pattern:
+Required pattern:
 
 ```text
-full current cue:
-    reactive policy = policy_from_current_cue
-    intentional policy = policy_from_belief
-
-current cue blackout after prior evidence:
-    reactive sees unknown current cue
-    intentional may retain/update belief from evidence history
+prior step: informative cue admitted
+current step A: cue visible
+current step B: cue blackout
 ```
 
-The test must demonstrate a policy difference attributable to information access rather than a changed world state.
+Reactive at B must see current cue as `unknown` because it cannot consult prior batches. Intentional cognition may retain/use prior admitted evidence through its history-driven belief state.
+
+Require a full action-policy difference attributable only to observation access; world state and decision template remain unchanged.
 
 Purpose:
 
-> provide an intervention that can distinguish a memoryless reactive model from a belief-based intentional model.
+> distinguish memoryless cue reaction from belief-based behavior.
 
-## Action-policy comparison semantics
+## Evaluation compatibility
 
-Reactive V1 must produce a full action probability simplex because the repository already supports categorical Brier and categorical log loss.
+Reactive V1 emits a complete probability simplex compatible with existing categorical Brier/log losses and preregistered held-out comparison.
 
-This design does not add a new evaluation subsystem. Later identification/model-comparison work may adapt reactive and intentional decision policies into the existing held-out/preregistered evaluation layer.
-
-V1 only guarantees that its result is sufficient for that adapter:
+V1 does not modify evaluation infrastructure. It only guarantees sufficient result coordinates for later adapters:
 
 ```text
 decision id
 action ids
 action scores
-action probability policy
+action policy
 model identity
 runtime step identity
 ```
 
-## Public API scope
+## Public API
 
-New symbols are exported only from:
-
-```text
-narrative_dynamics.narrative
-```
-
-Root `narrative_dynamics` exports remain unchanged.
-
-The intended new narrative-scoped public surface is exactly:
+Exactly seven names are added to `narrative_dynamics.narrative`:
 
 ```text
 ReactiveCueView
@@ -605,9 +590,9 @@ RuntimeReactiveDecisionResolutionError
 run_runtime_reactive_decision
 ```
 
-No helper functions, softmax helpers, extraction helpers, or internal validation types are public.
+Root `narrative_dynamics` exports remain unchanged. No helper/extraction/validation function is public.
 
-## Module isolation constraints
+## Module isolation
 
 `runtime_reactive.py` must not import:
 
@@ -621,168 +606,159 @@ narrative_dynamics.narrative.world
 It may import:
 
 ```text
-attestation/contracts
-domain/IR
-replay direct-state capability
-runtime_perception value/evidence types
+grounded_goal_softmax.finite_softmax
+narrative_dynamics.attestation
+narrative_dynamics.contracts
+narrative_dynamics.narrative.domain
+narrative_dynamics.narrative.ir
+narrative_dynamics.narrative.replay
+narrative_dynamics.narrative.runtime_perception
 ```
 
-Tests must source-inspect the module and lock these import exclusions.
-
-This is not merely aesthetic isolation. It prevents accidental use of belief, goal, intentional, or objective-world semantics inside the baseline.
+Source-inspection tests lock these exclusions.
 
 ## Determinism and identity
 
-For fixed:
+Fixed story/domain/decision/ledger/model inputs must produce exactly equal result and content hash.
 
-```text
-story
-domain
-decision template
-runtime ledger
-reactive model spec
-```
+Canonicalization rules:
 
-`run_runtime_reactive_decision(...)` must produce an exactly equal result and content hash on replay.
+- supported decision types lexical;
+- cue cells by entity type/id/state variable;
+- action ids lexical;
+- parameter mapping serialization lexical;
+- score/policy mappings lexical;
+- lexical MAP tie-break.
 
-Canonicalization rules include:
+No RNG, wall clock, hash iteration order, or mutable external state may affect results.
 
-- supported decision types sorted,
-- cue cells sorted by entity type/entity id/state variable,
-- action ids canonicalized from authored declaration into a deterministic order,
-- parameter mappings recursively key-sorted for identity payloads,
-- score/policy mappings emitted in canonical action order,
-- lexical tie-break for selected action.
+## Forgery resistance
 
-No process RNG, wall clock, hash randomization order, or mutable external state may affect the result.
+The public boundary reconstructs or revalidates public values where constructor-bypassing mutation could violate invariants.
 
-## Trust and forgery resistance
+Tests must forge and reject at minimum:
 
-The public boundary must reconstruct or revalidate supplied public dataclasses where constructor-bypassing mutation could otherwise bypass invariants.
+- ledger story hash;
+- ledger domain identity;
+- ledger current step/batch consistency;
+- cue snapshot ledger hash;
+- cue snapshot step;
+- result cue snapshot hash;
+- result selected-action/policy consistency.
 
-At minimum tests must forge and reject:
-
-- ledger story hash,
-- ledger domain identity,
-- ledger current step/batch consistency,
-- cue snapshot ledger hash,
-- cue snapshot step index,
-- result cue snapshot hash,
-- result policy selected-action consistency.
-
-The implementation must fail before the score hook runs when source/model/ledger prerequisites are invalid.
+Prerequisite forgeries fail before score-hook execution.
 
 ## Test architecture
 
-Add one dedicated semantic suite:
+Create:
 
 ```text
 tests/test_narrative_runtime_reactive.py
 ```
 
-and extend:
+Extend:
 
 ```text
 tests/test_narrative_trust_api.py
 ```
 
-The semantic suite must lock at least these contracts:
+Semantic suite locks at least:
 
-1. model spec validation and stable content identity,
-2. step-zero direct cue extraction,
-3. step-positive current-batch-only extraction,
-4. blackout becomes unknown without history fill,
-5. multiple agreeing channels collapse to one semantic cue,
-6. same-step disagreement fails typed,
-7. score hook receives only sanitized context,
-8. hook cannot access ledger/world/belief/goal objects,
-9. exact action score coverage is required,
-10. non-finite scores fail typed,
-11. stable softmax produces exact complete simplex,
-12. lexical MAP tie-break is deterministic,
-13. same inputs replay to exact result hash,
-14. forged ledger/source identity fails before hook execution,
-15. cue cells outside decision context fail closed,
-16. authored decision template after cutoff fails closed,
-17. observational-equivalence fixture matches intentional action policy exactly,
-18. information-access intervention separates reactive from intentional policy,
-19. production source does not import runtime cognition/intention/world,
-20. exact narrative public surface gains only the seven approved names and root isolation remains unchanged.
+1. model validation and stable identity;
+2. exact canonical parameter acceptance/rejection;
+3. step-zero direct cue extraction;
+4. step-positive current-batch-only extraction;
+5. blackout -> unknown without history fill;
+6. agreeing channels collapse semantically;
+7. same-step disagreement typed failure;
+8. hook receives sanitized context only;
+9. no ledger/world/belief/goal objects cross hook boundary;
+10. exact action-score coverage;
+11. non-finite score rejection;
+12. shared `finite_softmax` complete simplex;
+13. softmax implementation identity affects model identity;
+14. lexical MAP tie-break;
+15. exact replay/result hash;
+16. forged source/ledger identity rejected before hook;
+17. cue outside decision context rejected;
+18. decision template after cutoff rejected;
+19. observational-equivalence exact policy match;
+20. information-access intervention separates reactive/intentional policy;
+21. production module import isolation;
+22. exact seven-name narrative export and unchanged root isolation.
 
 ## Scope constraints
 
-V1 must not modify:
-
-```text
-GenericNarrative IR
-DomainSpec
-authored decision.py
-authored intention.py
-runtime_cognition.py
-runtime_intention.py
-world.py
-observation_projection.py
-runtime_perception.py
-simulation.py scheduler behavior
-root narrative_dynamics exports
-Lean source
-prison reactive/POMDP adapters
-model_comparison.py
-categorical loss implementations
-```
-
-The expected production code diff is limited to:
+Production code is limited to:
 
 ```text
 narrative_dynamics/narrative/runtime_reactive.py
 narrative_dynamics/narrative/__init__.py
 ```
 
-plus design/plan and tests.
+plus design, implementation plan, and tests.
 
-## TDD and commit discipline
-
-Implementation must continue the repository's strict workflow:
+Do not modify:
 
 ```text
-design -> plan -> test-only RED -> minimal GREEN slices -> exact public export GREEN -> exact-head proof
+GenericNarrative IR
+DomainSpec
+decision.py
+intention.py
+runtime_cognition.py
+runtime_intention.py
+runtime_perception.py
+world.py
+observation_projection.py
+simulation.py scheduler behavior
+root narrative_dynamics exports
+Lean source
+prison reactive/POMDP adapters
+model_comparison.py
+loss implementations
 ```
 
-The first executable feature commit after the plan is test-only RED. It must not contain production implementation.
+## TDD discipline
 
-The RED run must demonstrate that prior tests/Lean gates remain green and that failures are attributable only to the absent reactive family contract.
+Required sequence:
 
-Subsequent GREEN slices should separate:
+```text
+design -> plan -> test-only RED -> minimal GREEN slices -> export GREEN -> exact-head proof
+```
 
-1. reactive value types/model spec,
-2. cue extraction and trust boundary,
-3. score/policy/action resolution,
-4. scientific equivalence/intervention fixtures,
+The first executable feature commit after the plan is test-only RED with no production implementation. RED must leave prior Python/Lean gates green except failures attributable to the absent reactive contract.
+
+Recommended GREEN slices:
+
+1. value types/model spec;
+2. cue extraction/trust boundary;
+3. score/policy/action resolution;
+4. scientific equivalence/intervention fixtures;
 5. narrative-scoped exports.
 
 Each slice is atomic and independently CI-verifiable.
 
 ## Acceptance criteria
 
-Reactive Baseline V1 is complete only when all of the following hold:
+V1 completes only when:
 
-- a generic narrative runtime reactive model exists independent of prison adapters,
-- the hook sees only declared current observable cues and immutable parameters,
-- runtime step > 0 never fills missing current cues from prior evidence history,
-- no belief, goal, intentional, planning, or objective-world object crosses the reactive hook boundary,
-- every result contains a complete deterministic probability policy over the exact authored action set,
-- selected action is deterministic lexical MAP,
-- same inputs reproduce the exact result/content hash,
-- typed fail-closed validation rejects malformed/forged capability inputs,
-- an observational-equivalence case shows reactive and intentional policies can coincide,
-- an information-access intervention case separates the two families without changing objective world state,
-- exactly seven approved names are added to `narrative_dynamics.narrative`,
-- no names are added at package root,
-- GenericNarrative IR, DomainSpec, Lean, world, perception, cognition, intention, scheduler, old adapters, and evaluation infrastructure remain unchanged,
-- full Python and Lean proof workflow is green on the exact final head.
+- generic narrative runtime reactive model exists independent of prison adapters;
+- hook sees only declared current cues and immutable canonical parameters;
+- step > 0 never fills missing current cues from history;
+- no belief/goal/intentional/planning/objective-world object crosses the hook boundary;
+- every result exposes a complete policy over the exact authored action set;
+- reactive and intentional choice use the same measured `finite_softmax` numerical kernel;
+- selected action is deterministic lexical MAP;
+- fixed inputs replay to exact result/content hash;
+- typed fail-closed validation rejects malformed/forged capability inputs;
+- observational-equivalence fixture matches intentional policy exactly;
+- information-access intervention separates the families without world-state change;
+- exactly seven narrative-scoped names are added and root exports remain unchanged;
+- all protected existing modules remain unchanged;
+- full Python and Lean proof workflow passes on exact final head.
 
 ## Follow-on boundary
 
-After this V1 is merged, issue #27 proceeds to Generic Planning/POMDP Integration.
+After Reactive V1 is merged, issue #27 proceeds to Generic Planning/POMDP Integration.
 
-Only after both Reactive and POMDP family outputs are proven should a later design generalize Scheduler dispatch around a shared decision-family result protocol. That later protocol should be derived from observed commonality, not guessed in this V1.
+Shared scheduler family dispatch is designed only after both Reactive and POMDP contracts are proven.
