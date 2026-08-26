@@ -492,14 +492,26 @@ class NarrativeRuntimeReactiveTests(unittest.TestCase):
         self.assertEqual(first.content_hash, second.content_hash)
         self.assertEqual(first.content_hash, stable_content_hash(first.to_dict()))
 
-    def test_snapshot_and_result_forgery_is_rejected_by_public_record_validation(self):
+    def test_snapshot_and_result_forgery_is_rejected_by_binding_validation(self):
         self.require_reactive()
         domain, story, ledger = empty_runtime_case()
         result = run_runtime_reactive_decision(
             story, domain, "d-a1-phase", ledger, self.make_model()
         )
+        forged_snapshot = replace(
+            result.cue_snapshot,
+            ledger_hash=_hash("wrong-ledger"),
+        )
+        self.assertNotEqual(
+            forged_snapshot.content_hash,
+            result.cue_snapshot.content_hash,
+        )
         with self.assertRaises((TypeError, ValueError)):
-            replace(result.cue_snapshot, ledger_hash=_hash("wrong-ledger"))
+            replace(
+                result,
+                cue_snapshot=forged_snapshot,
+                cue_snapshot_hash=forged_snapshot.content_hash,
+            )
         with self.assertRaises((TypeError, ValueError)):
             replace(result, cue_snapshot_hash=_hash("wrong-snapshot"))
         other = "a1-active" if result.selected_action == "a1-ready" else "a1-ready"
