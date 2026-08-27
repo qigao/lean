@@ -326,19 +326,27 @@ class NarrativeRuntimePlanningTests(unittest.TestCase):
         cell = phase_cell()
         ready = _value_hash(TypedValue("PhaseState", "ready"))
         active = _value_hash(TypedValue("PhaseState", "active"))
-        goal = GoalSpec(
-            "only",
-            1.0,
-            {cell: 1.0},
-            {cell: {ready: 0.0, active: 0.0}},
+        goals = tuple(
+            GoalSpec(
+                goal_id,
+                1.0,
+                {cell: 1.0},
+                {cell: {ready: 0.0, active: 0.0}},
+            )
+            for goal_id in ("left", "right")
         )
         return RuntimeIntentionalDecisionModelSpec(
             "science-intentional",
             "1",
             ("phase-choice",),
             make_runtime_belief_model(),
-            GoalModelSpec("science-goal", "1", 1.0, (goal,)),
-            ChoiceModelSpec("science-choice", "1", beta, {"only": dict(scores)}),
+            GoalModelSpec("science-goal", "1", 1.0, goals),
+            ChoiceModelSpec(
+                "science-choice",
+                "1",
+                beta,
+                {goal.id: dict(scores) for goal in goals},
+            ),
         )
 
     def _reactive_model(self, scores, *, beta: float):
