@@ -2,7 +2,7 @@
 
 Date: 2026-08-27
 
-Status: written for review
+Status: ready for review
 
 Roadmap: #27 — P1 `Compare against reactive and intentional models on held-out scenarios`
 
@@ -160,26 +160,40 @@ For `horizon == 2`, the authored root action set is exactly `scout`, `escape`, `
 
 Every prison `Scenario` is translated into a fresh canonical generic narrative benchmark instance. Translation is deterministic and contains no RNG.
 
+All three families receive the same translated DomainSpec and GenericNarrative for a given outer scenario.
+
 The benchmark uses:
 
 - one prisoner actor;
-- one guard-state subject;
-- a typed hidden guard-status cell with values `weak`, `strong`, and an internal absorbing `terminal` value;
-- a typed signal cell with `clear`, `alarm`, and `none` values;
+- one guard subject;
+- `guard.status` with typed values `weak` and `strong`;
+- `prisoner.episode_phase` with typed values `active` and `terminal`;
+- `prisoner.signal` with typed values `clear`, `alarm`, and `none`;
 - one initial prison-choice decision;
 - the action ids `scout`, `escape`, `submit` as permitted by horizon;
-- a decision context containing the guard-status and signal cells;
+- a decision context containing all three state cells;
+- authored deterministic seed facts `episode_phase = active` and `signal = none`;
+- no authored resolved fact for `guard.status`;
 - a runtime evidence ledger at step zero bound to the exact translated story and domain.
 
-The runtime belief model represents the root guard uncertainty with exactly two positive hypotheses:
+The common runtime belief model uses cell-specific priors:
 
 ```text
-P(weak)   = prior_weak
-P(strong) = 1 - prior_weak
-P(terminal) = 0
+guard.status:
+    P(weak)   = prior_weak
+    P(strong) = 1 - prior_weak
+
+prisoner.episode_phase:
+    P(active)   = 1
+    P(terminal) = 0
+
+prisoner.signal:
+    P(none)  = 1
+    P(clear) = 0
+    P(alarm) = 0
 ```
 
-`terminal` exists only to model action-dependent episode termination inside the finite-horizon generic planner. It is never a positive root hypothesis.
+Reactive is allowed to read only its declared cue subset. Intentional consumes the full decision-context belief state but assigns zero goal weight to `episode_phase` and `signal`. Planning tracks `guard.status` and `episode_phase` as planning cells and uses `signal` only as its observation cell.
 
 The scenario identity remains the original `Scenario` identity used by `SimulationRunner`; the translated story/domain/runtime hashes are emitted in the model result for auditability but do not replace the outer scenario identity.
 
@@ -206,6 +220,8 @@ Candidate name:
 
 The Reactive candidate uses `RuntimeReactiveDecisionModelSpec` and a prison-specific score hook.
 
+Its declared cue capability is a subset of the common decision context and does not expose objective hidden guard truth. At the initial step the relevant guard state remains unresolved.
+
 Its score hook reproduces the already-established finite prison reactive root action-value semantics:
 
 - direct `escape` value uses `prior_weak`, `escape_reward`, and `capture_cost`;
@@ -230,13 +246,26 @@ Candidate name:
 
 The Intentional candidate uses the full runtime belief → goal → choice path.
 
-The runtime belief state tracks the hidden guard-status cell using the scenario root prior. It does not use `guard_persistence`.
+The runtime belief state covers the exact common decision context. Goal scoring uses all context cells as required by the generic intentional contract, but only `guard.status` has non-zero weight.
 
-Two fixed benchmark goals are defined:
+For both goals:
+
+```text
+cell weights:
+    guard.status            = 1.0
+    prisoner.episode_phase  = 0.0
+    prisoner.signal         = 0.0
+```
+
+The zero-weight cells still receive complete zero-valued instrumentality maps for every domain hypothesis so the goal specification exactly covers the runtime posterior support.
+
+The model does not use `guard_persistence`.
+
+Two fixed benchmark goals are defined.
 
 ### 9.1 Freedom goal
 
-Instrumentality on the guard-status posterior:
+Guard-status instrumentality:
 
 - weak: `+1`;
 - strong: `-1`.
@@ -249,7 +278,7 @@ Goal-conditional action values:
 
 ### 9.2 Safety goal
 
-Instrumentality on the guard-status posterior:
+Guard-status instrumentality:
 
 - weak: `-1`;
 - strong: `+1`.
@@ -260,7 +289,7 @@ Goal-conditional action values:
 - `submit = submit_reward`;
 - for horizon 2, `scout = (2 * signal_accuracy - 1) * capture_cost - scout_cost`.
 
-Both goals use unit pressure, zero additional cost/risk, and one guard-status cell with weight `1.0`.
+Both goals use unit pressure and zero additional cost/risk.
 
 `beta_goal` is fixed at `1.0` for this P1 benchmark and is part of runtime model identity. It is not fitted.
 
@@ -282,15 +311,32 @@ Candidate name:
 
 The Planning candidate uses `RuntimePlanningDecisionModelSpec` and the generic finite-horizon soft Bellman solver.
 
+Planning cells are exactly:
+
+- `guard.status`;
+- `prisoner.episode_phase`.
+
+The observation cell is exactly `prisoner.signal`.
+
 ### 10.1 Hidden states
 
-The hidden state set is exactly:
+The hidden state set is the four-state product:
 
-- `weak`;
-- `strong`;
-- `terminal`.
+- `weak-active`;
+- `strong-active`;
+- `weak-terminal`;
+- `strong-terminal`.
 
-The root joint belief preserves the runtime posterior marginals and assigns zero mass to `terminal`.
+The root joint belief preserves both runtime marginals exactly:
+
+```text
+P(weak-active)   = prior_weak
+P(strong-active) = 1 - prior_weak
+P(weak-terminal) = 0
+P(strong-terminal) = 0
+```
+
+Terminal states therefore exist for action-dependent episode termination without adding a fake third hypothesis to `guard.status`.
 
 ### 10.2 Horizon 1
 
@@ -313,25 +359,25 @@ depth 1: (escape, submit)
 
 At depth 0:
 
-- `scout` keeps weak/strong state unchanged, incurs `-scout_cost`, and exposes the informative `clear`/`alarm` observation model;
-- direct `escape` and direct `submit` transition to `terminal` after their immediate reward, so their continuation value is exactly zero.
+- `scout` leaves both guard status and active episode phase unchanged, incurs `-scout_cost`, and exposes the informative `clear`/`alarm` observation model;
+- direct `escape` and direct `submit` preserve guard status but move `episode_phase` to `terminal` after their immediate reward, so their continuation value is exactly zero.
 
 Observation likelihood after `scout` is:
 
 ```text
-P(clear | weak)   = signal_accuracy
-P(alarm | weak)   = 1 - signal_accuracy
-P(clear | strong) = 1 - signal_accuracy
-P(alarm | strong) = signal_accuracy
+P(clear | weak-active)   = signal_accuracy
+P(alarm | weak-active)   = 1 - signal_accuracy
+P(clear | strong-active) = 1 - signal_accuracy
+P(alarm | strong-active) = signal_accuracy
 ```
 
-Direct root `escape` / `submit` emit only `none` with probability `1` from the absorbing terminal branch.
+`none` has zero mass on active scout branches. Direct root `escape` / `submit` emit only `none` with probability `1` after transition to terminal.
 
 At depth 1:
 
-- `escape` evolves weak/strong according to `guard_persistence`, then rewards `escape_reward` in weak and `-capture_cost` in strong;
-- `submit` rewards `submit_reward` without needing information;
-- every action from `terminal` has reward `0` and remains terminal.
+- from active states, `escape` evolves guard status according to `guard_persistence`, moves the episode to terminal, and rewards `escape_reward` if the resulting guard state is weak or `-capture_cost` if strong;
+- from active states, `submit` moves the episode to terminal and rewards `submit_reward`;
+- from terminal states, both actions remain terminal and reward `0`.
 
 The model uses the scenario `discount` and fitted `beta` directly in `RuntimePlanningDecisionModelSpec`.
 
@@ -452,7 +498,7 @@ Before dispatch it rejects:
 - any parameter mapping other than exactly positive finite `beta`;
 - malformed translated narrative/domain bindings.
 
-Runtime family errors remain typed through `RuntimeDecisionDispatchError` internally and are wrapped by the outer adapter as a benchmark-specific `ValueError` only if the normal `SimulationRunner` model-source contract requires that boundary.
+If unified runtime dispatch raises `RuntimeDecisionDispatchError`, `simulate()` raises `ValueError("narrative prison benchmark dispatch failed")` with the dispatch error as its cause.
 
 No invalid family result may be converted into a partial policy.
 
