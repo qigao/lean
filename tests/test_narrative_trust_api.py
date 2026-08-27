@@ -104,6 +104,12 @@ _EXPECTED_PUBLIC_API = {
     "WorldTransitionConflictError",
     "world_state_from_story",
     "advance_world_step",
+    # Conflict resolution.
+    "ConflictParticipant",
+    "ConflictResolutionContext",
+    "ConflictResolverSpec",
+    "ConflictResolutionRecord",
+    "WorldTransitionConflictResolutionError",
     # Runtime observation projection.
     "ObservationCapabilitySpec",
     "ObserverProjectionSpec",
