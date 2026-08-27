@@ -276,6 +276,9 @@ class NarrativeRuntimeDecisionDispatchTests(unittest.TestCase):
             model_result=nested,
         )
         RuntimeDecisionDispatchResult(**valid)
+        forged_selected = next(
+            action for action in nested.action_policy if action != nested.selected_action
+        )
         for changes in (
             {"model_kind": "planning"},
             {"model_id": "forged-model"},
@@ -284,7 +287,7 @@ class NarrativeRuntimeDecisionDispatchTests(unittest.TestCase):
             {"step_index": nested.step_index + 1},
             {"ledger_hash": "sha256:" + "1" * 64},
             {"action_policy": {"a1-active": 1.0, "a1-ready": 0.0}},
-            {"selected_action": "a1-ready"},
+            {"selected_action": forged_selected},
             {"model_result_hash": "sha256:" + "2" * 64},
         ):
             with self.subTest(changes=changes):
