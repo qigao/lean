@@ -2,7 +2,13 @@ name: proof
 
 on:
   push:
+    paths-ignore:
+      - "docs/superpowers/specs/**"
+      - "docs/superpowers/plans/**"
   pull_request:
+    paths-ignore:
+      - "docs/superpowers/specs/**"
+      - "docs/superpowers/plans/**"
 
 jobs:
   verify:
