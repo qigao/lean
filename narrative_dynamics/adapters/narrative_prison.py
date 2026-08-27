@@ -50,6 +50,11 @@ from narrative_dynamics.narrative.runtime_perception import (
     RuntimeEvidenceLedger,
     runtime_evidence_ledger_from_story,
 )
+from narrative_dynamics.narrative.runtime_planning import (
+    PlanningHiddenState,
+    PlanningObservation,
+    RuntimePlanningDecisionModelSpec,
+)
 from narrative_dynamics.narrative.runtime_reactive import (
     RuntimeReactiveDecisionModelSpec,
 )
@@ -373,14 +378,6 @@ def _build_belief_model(case: _BenchmarkCase) -> RuntimeBeliefModelSpec:
     )
 
 
-def _signal_probability(values: _ScenarioValues, signal: str) -> float:
-    clear = (
-        values.prior_weak * values.signal_accuracy
-        + (1.0 - values.prior_weak) * (1.0 - values.signal_accuracy)
-    )
-    return clear if signal == "clear" else 1.0 - clear
-
-
 class _ReactiveScoreHook:
     def __call__(self, context):
         parameters = context.parameters
@@ -540,8 +537,158 @@ def _build_intentional_model(
     )
 
 
-def _build_planning_model(case: _BenchmarkCase, beta: float):
-    raise NotImplementedError("planning benchmark family is not implemented yet")
+def _state_parts(state_id: str) -> tuple[str, str]:
+    guard, phase = state_id.split("-", 1)
+    return guard, phase
+
+
+class _ProductJointBeliefHook:
+    def __call__(self, context):
+        result: dict[str, float] = {}
+        for state in context.hidden_states:
+            probability = 1.0
+            for cell, distribution in context.posterior.items():
+                probability *= distribution.probability_of(state.cells[cell])
+            result[state.state_id] = probability
+        return result
+
+
+class _PlanningTransitionHook:
+    def __call__(self, context):
+        persistence = float(context.parameters["guard_persistence"])
+        guard, phase = _state_parts(context.state.state_id)
+        result = {
+            state.state_id: 0.0
+            for state in context.candidate_next_states
+        }
+        if phase == "terminal":
+            result[context.state.state_id] = 1.0
+            return result
+
+        if context.depth == 0:
+            if context.action.id == "scout":
+                result[context.state.state_id] = 1.0
+                return result
+            if context.action.id in _TERMINAL_ACTIONS:
+                result[f"{guard}-terminal"] = 1.0
+                return result
+
+        if context.depth == 1:
+            if context.action.id == "submit":
+                result[f"{guard}-terminal"] = 1.0
+                return result
+            if context.action.id == "escape":
+                other = "strong" if guard == "weak" else "weak"
+                result[f"{guard}-terminal"] = persistence
+                result[f"{other}-terminal"] = 1.0 - persistence
+                return result
+
+        raise ValueError("unsupported narrative prison planning transition")
+
+
+class _PlanningObservationHook:
+    def __call__(self, context):
+        accuracy = float(context.parameters["signal_accuracy"])
+        guard, phase = _state_parts(context.next_state.state_id)
+        result = {
+            observation.observation_id: 0.0
+            for observation in context.observations
+        }
+        if context.depth == 0 and context.action.id == "scout" and phase == "active":
+            clear = accuracy if guard == "weak" else 1.0 - accuracy
+            result["clear"] = clear
+            result["alarm"] = 1.0 - clear
+            return result
+        result["none"] = 1.0
+        return result
+
+
+class _PlanningRewardHook:
+    def __call__(self, context):
+        parameters = context.parameters
+        _, phase = _state_parts(context.state.state_id)
+        next_guard, _ = _state_parts(context.next_state.state_id)
+        if phase == "terminal":
+            return 0.0
+        if context.depth == 0:
+            if context.action.id == "scout":
+                return -float(parameters["scout_cost"])
+            if context.action.id == "submit":
+                return float(parameters["submit_reward"])
+            if context.action.id == "escape":
+                guard, _ = _state_parts(context.state.state_id)
+                return (
+                    float(parameters["escape_reward"])
+                    if guard == "weak"
+                    else -float(parameters["capture_cost"])
+                )
+        if context.depth == 1:
+            if context.action.id == "submit":
+                return float(parameters["submit_reward"])
+            if context.action.id == "escape":
+                return (
+                    float(parameters["escape_reward"])
+                    if next_guard == "weak"
+                    else -float(parameters["capture_cost"])
+                )
+        raise ValueError("unsupported narrative prison planning reward")
+
+
+def _build_planning_model(
+    case: _BenchmarkCase,
+    beta: float,
+) -> RuntimePlanningDecisionModelSpec:
+    values = case.values
+    states = tuple(
+        PlanningHiddenState(
+            f"{guard}-{phase}",
+            {
+                case.guard_cell: TypedValue("GuardStatus", guard),
+                case.phase_cell: TypedValue("EpisodePhase", phase),
+            },
+        )
+        for guard in ("weak", "strong")
+        for phase in ("active", "terminal")
+    )
+    observations = tuple(
+        PlanningObservation(
+            signal,
+            {case.signal_cell: TypedValue("Signal", signal)},
+        )
+        for signal in ("clear", "alarm", "none")
+    )
+    schedule = (
+        ((_TERMINAL_ACTIONS),)
+        if values.horizon == 1
+        else (_ACTIONS, _TERMINAL_ACTIONS)
+    )
+    if values.horizon == 1:
+        schedule = (_TERMINAL_ACTIONS,)
+    return RuntimePlanningDecisionModelSpec(
+        "generic-narrative-prison-planning",
+        _BENCHMARK_VERSION,
+        ("prison-choice",),
+        (case.guard_cell, case.phase_cell),
+        (case.signal_cell,),
+        _build_belief_model(case),
+        states,
+        observations,
+        schedule,
+        values.discount,
+        beta,
+        {
+            "guard_persistence": values.guard_persistence,
+            "signal_accuracy": values.signal_accuracy,
+            "escape_reward": values.escape_reward,
+            "capture_cost": values.capture_cost,
+            "submit_reward": values.submit_reward,
+            "scout_cost": values.scout_cost,
+        },
+        _ProductJointBeliefHook(),
+        _PlanningTransitionHook(),
+        _PlanningObservationHook(),
+        _PlanningRewardHook(),
+    )
 
 
 def _build_runtime_decision_model(
