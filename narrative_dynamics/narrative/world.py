@@ -10,6 +10,7 @@ from narrative_dynamics.attestation import (
     measure_implementation,
 )
 from narrative_dynamics.contracts import stable_content_hash
+from narrative_dynamics.narrative.conflict import ConflictResolverSpec
 from narrative_dynamics.narrative.domain import (
     DomainSpec,
     StateDelta,
@@ -37,6 +38,10 @@ class WorldTransitionError(ValueError):
 
 class WorldTransitionConflictError(WorldTransitionError):
     """Two action deltas in one simultaneous step wrote the same cell."""
+
+
+class WorldTransitionConflictResolutionError(WorldTransitionConflictError):
+    """A declared conflict could not be resolved safely."""
 
 
 def _text(value: object, *, label: str) -> str:
@@ -205,6 +210,7 @@ class WorldTransitionModelSpec:
     domain_version: str
     domain_spec_hash: str
     transitions: tuple[ActionTransitionSpec, ...]
+    conflict_resolver: ConflictResolverSpec | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -256,9 +262,27 @@ class WorldTransitionModelSpec:
             "transitions",
             tuple(sorted(transitions, key=lambda item: item.action_type)),
         )
+        resolver = self.conflict_resolver
+        if resolver is not None:
+            if not isinstance(resolver, ConflictResolverSpec):
+                raise TypeError(
+                    "world transition conflict resolver must be ConflictResolverSpec"
+                )
+            if (
+                resolver.domain_id,
+                resolver.domain_version,
+                resolver.domain_spec_hash,
+            ) != (
+                self.domain_id,
+                self.domain_version,
+                self.domain_spec_hash,
+            ):
+                raise ValueError(
+                    "world transition conflict resolver domain identity mismatch"
+                )
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload = {
             "model_id": self.model_id,
             "version": self.version,
             "domain_id": self.domain_id,
@@ -266,6 +290,9 @@ class WorldTransitionModelSpec:
             "domain_spec_hash": self.domain_spec_hash,
             "transitions": [item.to_dict() for item in self.transitions],
         }
+        if self.conflict_resolver is not None:
+            payload["conflict_resolver_hash"] = self.conflict_resolver.content_hash
+        return payload
 
     @property
     def content_hash(self) -> str:
@@ -714,6 +741,15 @@ def _validate_transition_declarations(
         raise WorldTransitionError(
             "world transition model names an undeclared action type"
         ) from error
+    resolver = model.conflict_resolver
+    if resolver is not None:
+        try:
+            for action_type in resolver.supported_action_types:
+                domain._action_type(action_type)
+        except (TypeError, ValueError) as error:
+            raise WorldTransitionError(
+                "conflict resolver names an undeclared action type"
+            ) from error
 
 
 def _resolve_intents(
@@ -969,6 +1005,17 @@ def _attested_transition_hash(
     except ImplementationAttestationUnavailable as error:
         raise WorldTransitionError(
             "action transition implementation attestation is unavailable"
+        ) from error
+
+
+def _attested_resolver_hash(
+    resolver: ConflictResolverSpec,
+) -> str:
+    try:
+        return resolver.content_hash
+    except ImplementationAttestationUnavailable as error:
+        raise WorldTransitionConflictResolutionError(
+            "conflict resolver implementation attestation is unavailable"
         ) from error
 
 
