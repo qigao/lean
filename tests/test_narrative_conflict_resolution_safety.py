@@ -140,6 +140,11 @@ def make_safety_story(domain):
 
     def add(decision):
         nonlocal next_time
+        if not decision.context_cells:
+            decision = replace(
+                decision,
+                context_cells=(base._cell("svc", "Service", "service.health"),),
+            )
         decisions.append(replace(decision, logical_time=next_time))
         next_time += 1
 
