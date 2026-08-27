@@ -9,11 +9,18 @@ from types import MappingProxyType
 from grounded_goal_softmax import finite_softmax
 from narrative_dynamics.attestation import measure_implementation
 from narrative_dynamics.contracts import stable_content_hash
-from narrative_dynamics.narrative.domain import DomainSpec
-from narrative_dynamics.narrative.ir import ActionOption, GenericNarrative, StateCellRef, TypedValue
+from narrative_dynamics.narrative.domain import DomainSpec, validate_narrative
+from narrative_dynamics.narrative.ir import (
+    ActionOption,
+    Decision,
+    GenericNarrative,
+    StateCellRef,
+    TypedValue,
+)
 from narrative_dynamics.narrative.runtime_cognition import (
     RuntimeBeliefModelSpec,
     RuntimeUncertainBeliefState,
+    runtime_uncertain_belief_state,
 )
 from narrative_dynamics.narrative.runtime_perception import RuntimeEvidenceLedger
 from narrative_dynamics.narrative.uncertain import BeliefDistribution
@@ -148,6 +155,12 @@ def _cell_value_payload(
     ]
 
 
+def _semantic_cell_hash(
+    value: Mapping[StateCellRef, TypedValue | None],
+) -> str:
+    return stable_content_hash(_cell_value_payload(value))
+
+
 def _freeze_action_values(value: object, *, label: str) -> Mapping[str, float]:
     if not isinstance(value, Mapping):
         raise TypeError(f"{label} must be a mapping")
@@ -192,12 +205,15 @@ class PlanningHiddenState:
             "state_id",
             _text(self.state_id, label="planning hidden state id"),
         )
-        cells = _freeze_cell_values(
-            self.cells,
-            label="planning hidden state cells",
-            allow_none=False,
+        object.__setattr__(
+            self,
+            "cells",
+            _freeze_cell_values(
+                self.cells,
+                label="planning hidden state cells",
+                allow_none=False,
+            ),
         )
-        object.__setattr__(self, "cells", cells)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -252,11 +268,10 @@ class PlanningBeliefState:
         frozen: dict[str, float] = {}
         for raw_key, raw_value in self.probabilities.items():
             key = _text(raw_key, label="planning belief state id")
-            probability = _probability(
+            frozen[key] = _probability(
                 raw_value,
                 label=f"planning belief probability for {key}",
             )
-            frozen[key] = probability
         if not frozen:
             raise ValueError("planning belief requires at least one hidden state")
         if not math.isclose(
@@ -707,24 +722,23 @@ class RuntimePlanningDecisionModelSpec:
             frozen_schedule.append(tuple(sorted(actions)))
         object.__setattr__(self, "action_schedule", tuple(frozen_schedule))
 
-        discount = _probability(
-            self.discount,
-            label="runtime planning discount",
+        object.__setattr__(
+            self,
+            "discount",
+            _probability(self.discount, label="runtime planning discount"),
         )
-        object.__setattr__(self, "discount", discount)
         beta = _finite(self.beta, label="runtime planning beta")
         if beta <= 0.0:
             raise ValueError("runtime planning beta must be positive")
         object.__setattr__(self, "beta", beta)
         object.__setattr__(self, "parameters", _freeze_parameters(self.parameters))
 
-        hooks = (
+        for label, hook in (
             ("joint belief", self.joint_belief_hook),
             ("transition", self.transition_hook),
             ("observation", self.observation_hook),
             ("reward", self.reward_hook),
-        )
-        for label, hook in hooks:
+        ):
             if not callable(hook):
                 raise TypeError(f"runtime planning {label} hook must be callable")
 
@@ -791,19 +805,17 @@ def _validated_belief_update(record: object) -> PlanningBeliefUpdate:
         raise TypeError(
             "planning result belief updates must contain PlanningBeliefUpdate"
         )
-    posterior = record.posterior
-    if not isinstance(posterior, PlanningBeliefState):
+    if not isinstance(record.posterior, PlanningBeliefState):
         raise TypeError(
             "planning result belief update posterior must be PlanningBeliefState"
         )
-    validated_posterior = PlanningBeliefState(dict(posterior.probabilities))
     return PlanningBeliefUpdate(
         record.depth,
         record.prior_belief_hash,
         record.action_id,
         record.observation_id,
         record.observation_probability,
-        validated_posterior,
+        PlanningBeliefState(dict(record.posterior.probabilities)),
     )
 
 
@@ -844,17 +856,16 @@ class RuntimePlanningDecisionResult:
             "actor_id",
             _text(self.actor_id, label="runtime planning result actor id"),
         )
-        step = _depth(
-            self.step_index,
-            label="runtime planning result step index",
+        object.__setattr__(
+            self,
+            "step_index",
+            _depth(self.step_index, label="runtime planning result step index"),
         )
-        object.__setattr__(self, "step_index", step)
-        ledger_hash = _hash(
-            self.ledger_hash,
-            label="runtime planning result ledger hash",
+        object.__setattr__(
+            self,
+            "ledger_hash",
+            _hash(self.ledger_hash, label="runtime planning result ledger hash"),
         )
-        object.__setattr__(self, "ledger_hash", ledger_hash)
-
         if not isinstance(self.belief_state, RuntimeUncertainBeliefState):
             raise TypeError(
                 "runtime planning result belief state must be RuntimeUncertainBeliefState"
@@ -871,7 +882,6 @@ class RuntimePlanningDecisionResult:
             raise ValueError(
                 "runtime planning result ledger must match runtime belief ledger"
             )
-
         if not isinstance(self.planning_belief, PlanningBeliefState):
             raise TypeError(
                 "runtime planning result planning belief must be PlanningBeliefState"
@@ -931,7 +941,6 @@ class RuntimePlanningDecisionResult:
                 ),
             )
         )
-
         root_records = {
             record.action_id: record
             for record in value_records
@@ -981,7 +990,6 @@ class RuntimePlanningDecisionResult:
                 ),
             )
         )
-
         object.__setattr__(self, "action_values", values)
         object.__setattr__(self, "action_policy", policy)
         object.__setattr__(self, "selected_action", selected)
@@ -1014,6 +1022,251 @@ class RuntimePlanningDecisionResult:
         return stable_content_hash(self.to_dict())
 
 
+def _validated_model(
+    model: object,
+) -> RuntimePlanningDecisionModelSpec:
+    if not isinstance(model, RuntimePlanningDecisionModelSpec):
+        raise TypeError(
+            "runtime planning execution requires RuntimePlanningDecisionModelSpec"
+        )
+    return RuntimePlanningDecisionModelSpec(
+        model.model_id,
+        model.version,
+        tuple(model.supported_decision_types),
+        tuple(model.planning_cells),
+        tuple(model.observation_cells),
+        model.belief_model,
+        tuple(model.hidden_states),
+        tuple(model.observations),
+        tuple(tuple(row) for row in model.action_schedule),
+        model.discount,
+        model.beta,
+        model.parameters,
+        model.joint_belief_hook,
+        model.transition_hook,
+        model.observation_hook,
+        model.reward_hook,
+    )
+
+
+def _validated_ledger(
+    story: GenericNarrative,
+    domain: DomainSpec,
+    ledger: object,
+) -> RuntimeEvidenceLedger:
+    if not isinstance(ledger, RuntimeEvidenceLedger):
+        raise TypeError("runtime planning execution requires RuntimeEvidenceLedger")
+    validated = RuntimeEvidenceLedger(
+        ledger.domain_id,
+        ledger.domain_version,
+        ledger.domain_spec_hash,
+        ledger.source_story_hash,
+        ledger.source_at_time,
+        ledger.initial_world_state_hash,
+        ledger.current_world_state_hash,
+        tuple(ledger.batches),
+    )
+    if validated.domain_id != domain.domain_id:
+        raise ValueError("runtime planning ledger domain id mismatch")
+    if validated.domain_version != domain.version:
+        raise ValueError("runtime planning ledger domain version mismatch")
+    if validated.domain_spec_hash != domain.content_hash:
+        raise ValueError("runtime planning ledger domain spec hash mismatch")
+    if validated.source_story_hash != story.content_hash:
+        raise ValueError("runtime planning ledger source story mismatch")
+    return validated
+
+
+def _validate_cell_value(
+    cell: StateCellRef,
+    value: TypedValue,
+    *,
+    story: GenericNarrative,
+    domain: DomainSpec,
+) -> None:
+    entities = {entity.id: entity for entity in story.entities}
+    subject = entities.get(cell.subject.entity_id)
+    if subject is None:
+        raise ValueError("planning cell subject must reference a declared entity")
+    if subject.type_name != cell.subject.entity_type:
+        raise ValueError("planning cell subject type must match declared entity")
+    state_variable = domain._state_variable(cell.state_variable)
+    if state_variable.subject_type != subject.type_name:
+        raise ValueError("planning cell subject type must match state variable")
+    domain._value_type(state_variable.value_type).validate(value, entities)
+
+
+def _preflight_decision(
+    story: GenericNarrative,
+    domain: DomainSpec,
+    decision_id: str,
+    ledger: RuntimeEvidenceLedger,
+    model: RuntimePlanningDecisionModelSpec,
+) -> tuple[Decision, Mapping[str, ActionOption]]:
+    decision_id = _text(decision_id, label="runtime planning decision id")
+    decision = next(
+        (item for item in story.decisions if item.id == decision_id),
+        None,
+    )
+    if decision is None:
+        raise ValueError("runtime planning decision template is not declared")
+    if decision.type_name not in model.supported_decision_types:
+        raise ValueError("runtime planning decision type is not supported")
+    if (
+        not decision.context_cells
+        or len(set(decision.context_cells)) != len(decision.context_cells)
+    ):
+        raise ValueError(
+            "runtime planning decision context cells must be non-empty and unique"
+        )
+    action_ids = tuple(action.id for action in decision.actions)
+    if not action_ids or len(set(action_ids)) != len(action_ids):
+        raise ValueError(
+            "runtime planning decision actions must be non-empty and unique"
+        )
+    if ledger.source_at_time is not None and decision.logical_time > ledger.source_at_time:
+        raise ValueError("runtime planning decision template occurs after source cutoff")
+
+    context_cells = set(decision.context_cells)
+    if not set(model.planning_cells).issubset(context_cells):
+        raise ValueError("runtime planning cells must stay within decision context")
+    if not set(model.observation_cells).issubset(context_cells):
+        raise ValueError(
+            "runtime planning observation cells must stay within decision context"
+        )
+
+    expected_planning = set(model.planning_cells)
+    state_semantics: set[str] = set()
+    for state in model.hidden_states:
+        if set(state.cells) != expected_planning:
+            raise ValueError(
+                "planning hidden state must assign exactly the declared planning cells"
+            )
+        for cell, value in state.cells.items():
+            assert isinstance(value, TypedValue)
+            _validate_cell_value(cell, value, story=story, domain=domain)
+        semantic_hash = _semantic_cell_hash(state.cells)
+        if semantic_hash in state_semantics:
+            raise ValueError(
+                "planning hidden states must have unique semantic cell assignments"
+            )
+        state_semantics.add(semantic_hash)
+
+    expected_observation = set(model.observation_cells)
+    observation_semantics: set[str] = set()
+    for observation in model.observations:
+        if set(observation.cues) != expected_observation:
+            raise ValueError(
+                "planning observation must assign exactly the declared observation cells"
+            )
+        for cell, value in observation.cues.items():
+            if value is not None:
+                _validate_cell_value(cell, value, story=story, domain=domain)
+        semantic_hash = _semantic_cell_hash(observation.cues)
+        if semantic_hash in observation_semantics:
+            raise ValueError(
+                "planning observations must have unique semantic cue assignments"
+            )
+        observation_semantics.add(semantic_hash)
+
+    if not model.observation_cells:
+        if len(model.observations) != 1 or model.observations[0].cues:
+            raise ValueError(
+                "empty planning observation cells require one empty observation atom"
+            )
+
+    authored_actions = set(action_ids)
+    if set(model.action_schedule[0]) != authored_actions:
+        raise ValueError(
+            "runtime planning root schedule must match authored actions exactly"
+        )
+    for row in model.action_schedule[1:]:
+        if not set(row).issubset(authored_actions):
+            raise ValueError(
+                "runtime planning future schedule must use authored actions only"
+            )
+
+    return decision, MappingProxyType(
+        {action.id: action for action in sorted(decision.actions, key=lambda item: item.id)}
+    )
+
+
+def _planning_belief_from_raw(
+    raw: object,
+    *,
+    expected_ids: tuple[str, ...],
+) -> PlanningBeliefState:
+    if not isinstance(raw, Mapping):
+        raise TypeError("planning joint belief hook must return a mapping")
+    if set(raw) != set(expected_ids):
+        raise ValueError("planning joint belief must cover exactly hidden-state ids")
+    return PlanningBeliefState(
+        {state_id: raw[state_id] for state_id in expected_ids}
+    )
+
+
+def _resolve_root_planning_belief(
+    story: GenericNarrative,
+    domain: DomainSpec,
+    decision: Decision,
+    ledger: RuntimeEvidenceLedger,
+    model: RuntimePlanningDecisionModelSpec,
+) -> tuple[RuntimeUncertainBeliefState, PlanningBeliefState]:
+    belief_state = runtime_uncertain_belief_state(
+        story,
+        domain,
+        decision.actor_id,
+        ledger,
+        model.belief_model,
+        model.planning_cells,
+    )
+    if set(belief_state.cells) != set(model.planning_cells):
+        raise ValueError(
+            "runtime planning belief must cover exactly the planning cells"
+        )
+    posterior = MappingProxyType(
+        {
+            cell: belief_state.cells[cell].posterior
+            for cell in sorted(model.planning_cells, key=_cell_key)
+        }
+    )
+    raw_joint = model.joint_belief_hook(
+        RuntimePlanningBeliefContext(
+            posterior=posterior,
+            hidden_states=model.hidden_states,
+            parameters=model.parameters,
+        )
+    )
+    state_ids = tuple(state.state_id for state in model.hidden_states)
+    root_belief = _planning_belief_from_raw(raw_joint, expected_ids=state_ids)
+
+    for cell, distribution in posterior.items():
+        for mass in distribution.masses:
+            matching = tuple(
+                state
+                for state in model.hidden_states
+                if state.cells[cell] == mass.value
+            )
+            if mass.probability > 0.0 and not matching:
+                raise ValueError(
+                    "planning hidden states must represent positive runtime hypotheses"
+                )
+            joint_mass = math.fsum(
+                root_belief.probabilities[state.state_id]
+                for state in matching
+            )
+            if not math.isclose(
+                joint_mass,
+                mass.probability,
+                rel_tol=0.0,
+                abs_tol=_PROBABILITY_TOLERANCE,
+            ):
+                raise ValueError(
+                    "planning joint belief must preserve runtime marginals"
+                )
+    return belief_state, root_belief
+
+
 def run_runtime_planning_decision(
     story: GenericNarrative,
     domain: DomainSpec,
@@ -1021,9 +1274,33 @@ def run_runtime_planning_decision(
     ledger: RuntimeEvidenceLedger,
     model: RuntimePlanningDecisionModelSpec,
 ) -> RuntimePlanningDecisionResult:
-    raise RuntimePlanningDecisionResolutionError(
-        "runtime planning decision solver is not implemented"
-    )
+    try:
+        validate_narrative(story, domain)
+        validated_model = _validated_model(model)
+        validated_ledger = _validated_ledger(story, domain, ledger)
+        decision, _action_by_id = _preflight_decision(
+            story,
+            domain,
+            decision_id,
+            validated_ledger,
+            validated_model,
+        )
+        _belief_state, _root_belief = _resolve_root_planning_belief(
+            story,
+            domain,
+            decision,
+            validated_ledger,
+            validated_model,
+        )
+        raise RuntimePlanningDecisionResolutionError(
+            "runtime planning decision solver is not implemented"
+        )
+    except RuntimePlanningDecisionResolutionError:
+        raise
+    except Exception as error:
+        raise RuntimePlanningDecisionResolutionError(
+            "runtime planning decision could not be resolved"
+        ) from error
 
 
 __all__ = (
