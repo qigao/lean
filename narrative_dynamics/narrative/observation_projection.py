@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+import math
 import re
 from types import MappingProxyType
 
@@ -28,6 +29,11 @@ from narrative_dynamics.narrative.ir import (
     GenericNarrative,
     StateCellRef,
     TypedValue,
+)
+from narrative_dynamics.narrative.randomness import (
+    RANDOM_DERIVATION_VERSION,
+    RandomSampleRecord,
+    sample_categorical,
 )
 from narrative_dynamics.narrative.world import (
     ActionIntent,
@@ -70,6 +76,21 @@ def _cell_key(cell: StateCellRef) -> tuple[str, str, str]:
         cell.subject.entity_id,
         cell.state_variable,
     )
+
+
+def _freeze_parameters(value: object) -> Mapping[str, float]:
+    if not isinstance(value, Mapping):
+        raise TypeError("stochastic projection parameters must be a mapping")
+    frozen: dict[str, float] = {}
+    for raw_name, raw_value in value.items():
+        name = _text(raw_name, label="stochastic projection parameter name")
+        if isinstance(raw_value, bool) or not isinstance(raw_value, (int, float)):
+            raise TypeError("stochastic projection parameter values must be numeric")
+        number = float(raw_value)
+        if not math.isfinite(number):
+            raise ValueError("stochastic projection parameter values must be finite")
+        frozen[name] = number
+    return MappingProxyType(dict(sorted(frozen.items())))
 
 
 @dataclass(frozen=True)
@@ -126,6 +147,56 @@ def _contains(
     )
 
 
+def _canonical_capabilities(
+    reads: object,
+    emits: object,
+    *,
+    label: str,
+) -> tuple[
+    tuple[ObservationCapabilitySpec, ...],
+    tuple[ObservationCapabilitySpec, ...],
+]:
+    if not isinstance(reads, tuple):
+        raise TypeError(f"{label} read capabilities must be a tuple")
+    if not isinstance(emits, tuple):
+        raise TypeError(f"{label} emit capabilities must be a tuple")
+    read_values = tuple(reads)
+    emit_values = tuple(emits)
+    if not read_values:
+        raise ValueError(f"{label} read capabilities must be non-empty")
+    if not emit_values:
+        raise ValueError(f"{label} emit capabilities must be non-empty")
+    if any(
+        not isinstance(item, ObservationCapabilitySpec)
+        for item in read_values
+    ):
+        raise TypeError(
+            f"{label} read capabilities must contain ObservationCapabilitySpec values"
+        )
+    if any(
+        not isinstance(item, ObservationCapabilitySpec)
+        for item in emit_values
+    ):
+        raise TypeError(
+            f"{label} emit capabilities must contain ObservationCapabilitySpec values"
+        )
+    read_keys = tuple(_capability_key(item) for item in read_values)
+    emit_keys = tuple(_capability_key(item) for item in emit_values)
+    if len(set(read_keys)) != len(read_keys):
+        raise ValueError(f"{label} read capabilities must be unique")
+    if len(set(emit_keys)) != len(emit_keys):
+        raise ValueError(f"{label} emit capabilities must be unique")
+    for emit in emit_values:
+        if not any(_contains(read, emit) for read in read_values):
+            raise ValueError(
+                f"{label} emit capability must be contained by a read capability"
+            )
+    return (
+        tuple(sorted(read_values, key=_capability_key)),
+        tuple(sorted(emit_values, key=_capability_key)),
+    )
+
+
 @dataclass(frozen=True)
 class ObserverProjectionSpec:
     observer_type: str
@@ -145,47 +216,15 @@ class ObserverProjectionSpec:
             "channel",
             _text(self.channel, label="projection channel"),
         )
-        if not isinstance(self.read_capabilities, tuple):
-            raise TypeError("projection read capabilities must be a tuple")
-        if not isinstance(self.emit_capabilities, tuple):
-            raise TypeError("projection emit capabilities must be a tuple")
-        reads = tuple(self.read_capabilities)
-        emits = tuple(self.emit_capabilities)
-        if not reads:
-            raise ValueError("projection read capabilities must be non-empty")
-        if not emits:
-            raise ValueError("projection emit capabilities must be non-empty")
-        if any(not isinstance(item, ObservationCapabilitySpec) for item in reads):
-            raise TypeError(
-                "projection read capabilities must contain ObservationCapabilitySpec values"
-            )
-        if any(not isinstance(item, ObservationCapabilitySpec) for item in emits):
-            raise TypeError(
-                "projection emit capabilities must contain ObservationCapabilitySpec values"
-            )
-        read_keys = tuple(_capability_key(item) for item in reads)
-        emit_keys = tuple(_capability_key(item) for item in emits)
-        if len(set(read_keys)) != len(read_keys):
-            raise ValueError("projection read capabilities must be unique")
-        if len(set(emit_keys)) != len(emit_keys):
-            raise ValueError("projection emit capabilities must be unique")
-        for emit in emits:
-            if not any(_contains(read, emit) for read in reads):
-                raise ValueError(
-                    "projection emit capability must be contained by a read capability"
-                )
+        reads, emits = _canonical_capabilities(
+            self.read_capabilities,
+            self.emit_capabilities,
+            label="projection",
+        )
         if not callable(self.projection_hook):
             raise TypeError("projection hook must be callable")
-        object.__setattr__(
-            self,
-            "read_capabilities",
-            tuple(sorted(reads, key=_capability_key)),
-        )
-        object.__setattr__(
-            self,
-            "emit_capabilities",
-            tuple(sorted(emits, key=_capability_key)),
-        )
+        object.__setattr__(self, "read_capabilities", reads)
+        object.__setattr__(self, "emit_capabilities", emits)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -205,6 +244,72 @@ class ObserverProjectionSpec:
     @property
     def content_hash(self) -> str:
         return stable_content_hash(self.to_dict())
+
+
+@dataclass(frozen=True)
+class StochasticObserverProjectionSpec:
+    observer_type: str
+    channel: str
+    read_capabilities: tuple[ObservationCapabilitySpec, ...]
+    emit_capabilities: tuple[ObservationCapabilitySpec, ...]
+    parameters: Mapping[str, float]
+    distribution_hook: object = field(compare=False, repr=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "observer_type",
+            _text(
+                self.observer_type,
+                label="stochastic projection observer type",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "channel",
+            _text(self.channel, label="stochastic projection channel"),
+        )
+        reads, emits = _canonical_capabilities(
+            self.read_capabilities,
+            self.emit_capabilities,
+            label="stochastic projection",
+        )
+        object.__setattr__(self, "read_capabilities", reads)
+        object.__setattr__(self, "emit_capabilities", emits)
+        object.__setattr__(
+            self,
+            "parameters",
+            _freeze_parameters(self.parameters),
+        )
+        if not callable(self.distribution_hook):
+            raise TypeError("stochastic projection hook must be callable")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "observer_type": self.observer_type,
+            "channel": self.channel,
+            "read_capabilities": [
+                item.to_dict() for item in self.read_capabilities
+            ],
+            "emit_capabilities": [
+                item.to_dict() for item in self.emit_capabilities
+            ],
+            "parameters": [
+                [name, value]
+                for name, value in self.parameters.items()
+            ],
+            "random_derivation_version": RANDOM_DERIVATION_VERSION,
+            "implementation_identity": measure_implementation(
+                self.distribution_hook
+            ).manifest_identity(),
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_dict())
+
+
+ProjectionSpec = ObserverProjectionSpec | StochasticObserverProjectionSpec
 
 
 @dataclass(frozen=True)
@@ -238,6 +343,211 @@ class ObservationFact:
         return stable_content_hash(self.to_dict())
 
 
+def _fact_key(fact: ObservationFact) -> tuple[str, str, str, str, str]:
+    return (
+        fact.cell.subject.entity_type,
+        fact.cell.subject.entity_id,
+        fact.cell.state_variable,
+        fact.relation,
+        "" if fact.value is None else stable_content_hash(fact.value.to_dict()),
+    )
+
+
+@dataclass(frozen=True)
+class ObservationOutcome:
+    outcome_id: str
+    probability: float
+    facts: tuple[ObservationFact, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "outcome_id",
+            _text(self.outcome_id, label="observation outcome id"),
+        )
+        probability = self.probability
+        if isinstance(probability, bool) or not isinstance(
+            probability,
+            (int, float),
+        ):
+            raise TypeError("observation outcome probability must be numeric")
+        probability = float(probability)
+        if (
+            not math.isfinite(probability)
+            or probability <= 0.0
+            or probability > 1.0
+        ):
+            raise ValueError(
+                "observation outcome probability must be finite and in (0, 1]"
+            )
+        if not isinstance(self.facts, tuple):
+            raise TypeError("observation outcome facts must be a tuple")
+        facts = tuple(self.facts)
+        if any(not isinstance(item, ObservationFact) for item in facts):
+            raise TypeError(
+                "observation outcome facts must contain ObservationFact values"
+            )
+        cells = tuple(item.cell for item in facts)
+        if len(set(cells)) != len(cells):
+            raise ValueError("observation outcome cannot contain one cell twice")
+        object.__setattr__(self, "probability", probability)
+        object.__setattr__(self, "facts", tuple(sorted(facts, key=_fact_key)))
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "outcome_id": self.outcome_id,
+            "probability": self.probability,
+            "facts": [item.to_dict() for item in self.facts],
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_dict())
+
+
+@dataclass(frozen=True)
+class ObservationOutcomeDistribution:
+    outcomes: tuple[ObservationOutcome, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.outcomes, tuple):
+            raise TypeError("observation outcome distribution outcomes must be a tuple")
+        outcomes = tuple(self.outcomes)
+        if len(outcomes) < 2:
+            raise ValueError(
+                "observation outcome distribution requires at least two outcomes"
+            )
+        if any(not isinstance(item, ObservationOutcome) for item in outcomes):
+            raise TypeError(
+                "observation outcome distribution must contain ObservationOutcome values"
+            )
+        outcomes = tuple(sorted(outcomes, key=lambda item: item.outcome_id))
+        if len({item.outcome_id for item in outcomes}) != len(outcomes):
+            raise ValueError("observation outcome ids must be unique")
+        if math.fsum(item.probability for item in outcomes) != 1.0:
+            raise ValueError(
+                "observation outcome probabilities must sum exactly to one"
+            )
+        object.__setattr__(self, "outcomes", outcomes)
+
+    def to_dict(self) -> dict[str, object]:
+        return {"outcomes": [item.to_dict() for item in self.outcomes]}
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_dict())
+
+
+@dataclass(frozen=True)
+class StochasticObservationSample:
+    observer_id: str
+    channel: str
+    step_index: int
+    source_world_state_hash: str
+    source_world_step_hash: str
+    projection_spec_hash: str
+    distribution: ObservationOutcomeDistribution
+    sample_record: RandomSampleRecord
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "observer_id",
+            _text(self.observer_id, label="stochastic observation observer id"),
+        )
+        object.__setattr__(
+            self,
+            "channel",
+            _text(self.channel, label="stochastic observation channel"),
+        )
+        object.__setattr__(
+            self,
+            "step_index",
+            _step_index(
+                self.step_index,
+                label="stochastic observation step index",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "source_world_state_hash",
+            _hash(
+                self.source_world_state_hash,
+                label="stochastic observation source world state hash",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "source_world_step_hash",
+            _hash(
+                self.source_world_step_hash,
+                label="stochastic observation source world step hash",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "projection_spec_hash",
+            _hash(
+                self.projection_spec_hash,
+                label="stochastic observation projection spec hash",
+            ),
+        )
+        if not isinstance(self.distribution, ObservationOutcomeDistribution):
+            raise TypeError(
+                "stochastic observation distribution must be ObservationOutcomeDistribution"
+            )
+        if not isinstance(self.sample_record, RandomSampleRecord):
+            raise TypeError(
+                "stochastic observation sample record must be RandomSampleRecord"
+            )
+        record = self.sample_record
+        if record.namespace != "observation.projection":
+            raise ValueError("stochastic observation namespace mismatch")
+        if record.step_index != self.step_index:
+            raise ValueError("stochastic observation step mismatch")
+        if record.source_hash != self.source_world_step_hash:
+            raise ValueError("stochastic observation source world step mismatch")
+        if record.component_hash != self.projection_spec_hash:
+            raise ValueError("stochastic observation projection spec mismatch")
+        if record.component_key != (self.observer_id, self.channel):
+            raise ValueError("stochastic observation component key mismatch")
+        if record.distribution_hash != self.distribution.content_hash:
+            raise ValueError("stochastic observation distribution hash mismatch")
+        matching = tuple(
+            item
+            for item in self.distribution.outcomes
+            if item.outcome_id == record.selected_outcome_id
+        )
+        if len(matching) != 1:
+            raise ValueError("stochastic observation selected outcome is missing")
+        if matching[0].content_hash != record.selected_outcome_hash:
+            raise ValueError("stochastic observation selected outcome hash mismatch")
+
+    @property
+    def selected_outcome(self) -> ObservationOutcome:
+        return next(
+            item
+            for item in self.distribution.outcomes
+            if item.outcome_id == self.sample_record.selected_outcome_id
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "observer_id": self.observer_id,
+            "channel": self.channel,
+            "step_index": self.step_index,
+            "source_world_state_hash": self.source_world_state_hash,
+            "source_world_step_hash": self.source_world_step_hash,
+            "projection_spec_hash": self.projection_spec_hash,
+            "distribution": self.distribution.to_dict(),
+            "sample_record": self.sample_record.to_dict(),
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_dict())
+
+
 @dataclass(frozen=True)
 class ProjectedObservation:
     observer_id: str
@@ -248,6 +558,7 @@ class ProjectedObservation:
     source_world_step_hash: str
     source_transition_hashes: tuple[str, ...]
     projection_spec_hash: str
+    stochastic_sample_hash: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -312,9 +623,18 @@ class ProjectedObservation:
                 label="projected observation projection spec hash",
             ),
         )
+        if self.stochastic_sample_hash is not None:
+            object.__setattr__(
+                self,
+                "stochastic_sample_hash",
+                _hash(
+                    self.stochastic_sample_hash,
+                    label="projected observation stochastic sample hash",
+                ),
+            )
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload = {
             "observer_id": self.observer_id,
             "channel": self.channel,
             "fact": self.fact.to_dict(),
@@ -324,15 +644,16 @@ class ProjectedObservation:
             "source_transition_hashes": list(self.source_transition_hashes),
             "projection_spec_hash": self.projection_spec_hash,
         }
+        if self.stochastic_sample_hash is not None:
+            payload["stochastic_sample_hash"] = self.stochastic_sample_hash
+        return payload
 
     @property
     def content_hash(self) -> str:
         return stable_content_hash(self.to_dict())
 
 
-def _projection_key(
-    spec: ObserverProjectionSpec,
-) -> tuple[str, str]:
+def _projection_key(spec: ProjectionSpec) -> tuple[str, str]:
     return (spec.observer_type, spec.channel)
 
 
@@ -344,6 +665,7 @@ class ObservationProjectionModelSpec:
     domain_version: str
     domain_spec_hash: str
     projections: tuple[ObserverProjectionSpec, ...]
+    stochastic_projections: tuple[StochasticObserverProjectionSpec, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -382,24 +704,43 @@ class ObservationProjectionModelSpec:
                 "observation projection model projections must be a tuple"
             )
         projections = tuple(self.projections)
-        if any(not isinstance(item, ObserverProjectionSpec) for item in projections):
+        if any(
+            not isinstance(item, ObserverProjectionSpec)
+            for item in projections
+        ):
             raise TypeError(
-                "observation projection model projections must contain "
-                "ObserverProjectionSpec values"
+                "observation projection model projections must contain ObserverProjectionSpec values"
             )
-        keys = tuple(_projection_key(item) for item in projections)
+        if not isinstance(self.stochastic_projections, tuple):
+            raise TypeError(
+                "observation projection model stochastic projections must be a tuple"
+            )
+        stochastic = tuple(self.stochastic_projections)
+        if any(
+            not isinstance(item, StochasticObserverProjectionSpec)
+            for item in stochastic
+        ):
+            raise TypeError(
+                "observation projection model stochastic projections must contain StochasticObserverProjectionSpec values"
+            )
+        keys = tuple(_projection_key(item) for item in projections + stochastic)
         if len(set(keys)) != len(keys):
             raise ValueError(
-                "observation projection model observer/channel pairs must be unique"
+                "observation projection model observer/channel pairs must be unique across deterministic and stochastic lanes"
             )
         object.__setattr__(
             self,
             "projections",
             tuple(sorted(projections, key=_projection_key)),
         )
+        object.__setattr__(
+            self,
+            "stochastic_projections",
+            tuple(sorted(stochastic, key=_projection_key)),
+        )
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload = {
             "model_id": self.model_id,
             "version": self.version,
             "domain_id": self.domain_id,
@@ -407,6 +748,11 @@ class ObservationProjectionModelSpec:
             "domain_spec_hash": self.domain_spec_hash,
             "projections": [item.to_dict() for item in self.projections],
         }
+        if self.stochastic_projections:
+            payload["stochastic_projections"] = [
+                item.to_dict() for item in self.stochastic_projections
+            ]
+        return payload
 
     @property
     def content_hash(self) -> str:
@@ -426,6 +772,12 @@ def _observation_key(
     )
 
 
+def _sample_key(
+    sample: StochasticObservationSample,
+) -> tuple[str, str]:
+    return (sample.observer_id, sample.channel)
+
+
 @dataclass(frozen=True)
 class ObservationProjectionResult:
     model_id: str
@@ -434,6 +786,7 @@ class ObservationProjectionResult:
     source_world_state_hash: str
     step_index: int
     observations: tuple[ProjectedObservation, ...]
+    stochastic_samples: tuple[StochasticObservationSample, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -475,10 +828,12 @@ class ObservationProjectionResult:
                 "observation projection result observations must be a tuple"
             )
         observations = tuple(self.observations)
-        if any(not isinstance(item, ProjectedObservation) for item in observations):
+        if any(
+            not isinstance(item, ProjectedObservation)
+            for item in observations
+        ):
             raise TypeError(
-                "observation projection result observations must contain "
-                "ProjectedObservation values"
+                "observation projection result observations must contain ProjectedObservation values"
             )
         observations = tuple(sorted(observations, key=_observation_key))
         keys = tuple(_observation_key(item) for item in observations)
@@ -486,6 +841,38 @@ class ObservationProjectionResult:
             raise ValueError(
                 "observation projection result observation keys must be unique"
             )
+        if not isinstance(self.stochastic_samples, tuple):
+            raise TypeError(
+                "observation projection result stochastic samples must be a tuple"
+            )
+        samples = tuple(self.stochastic_samples)
+        if any(
+            not isinstance(item, StochasticObservationSample)
+            for item in samples
+        ):
+            raise TypeError(
+                "observation projection result stochastic samples must contain StochasticObservationSample values"
+            )
+        samples = tuple(sorted(samples, key=_sample_key))
+        sample_keys = tuple(_sample_key(item) for item in samples)
+        if len(set(sample_keys)) != len(sample_keys):
+            raise ValueError(
+                "observation projection result stochastic sample keys must be unique"
+            )
+        sample_hashes = {item.content_hash for item in samples}
+        for item in samples:
+            if item.source_world_step_hash != self.source_world_step_hash:
+                raise ValueError(
+                    "stochastic observation sample must bind result source world step"
+                )
+            if item.source_world_state_hash != self.source_world_state_hash:
+                raise ValueError(
+                    "stochastic observation sample must bind result source world state"
+                )
+            if item.step_index != self.step_index:
+                raise ValueError(
+                    "stochastic observation sample must bind result step index"
+                )
         for item in observations:
             if item.source_world_step_hash != self.source_world_step_hash:
                 raise ValueError(
@@ -499,10 +886,18 @@ class ObservationProjectionResult:
                 raise ValueError(
                     "projected observation must bind result step index"
                 )
+            if (
+                item.stochastic_sample_hash is not None
+                and item.stochastic_sample_hash not in sample_hashes
+            ):
+                raise ValueError(
+                    "projected observation stochastic sample is not included in result"
+                )
         object.__setattr__(self, "observations", observations)
+        object.__setattr__(self, "stochastic_samples", samples)
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload = {
             "model_id": self.model_id,
             "model_hash": self.model_hash,
             "source_world_step_hash": self.source_world_step_hash,
@@ -510,13 +905,18 @@ class ObservationProjectionResult:
             "step_index": self.step_index,
             "observations": [item.to_dict() for item in self.observations],
         }
+        if self.stochastic_samples:
+            payload["stochastic_samples"] = [
+                item.to_dict() for item in self.stochastic_samples
+            ]
+        return payload
 
     @property
     def content_hash(self) -> str:
         return stable_content_hash(self.to_dict())
 
 
-def _projection_hash(spec: ObserverProjectionSpec) -> str:
+def _projection_hash(spec: ProjectionSpec) -> str:
     try:
         return spec.content_hash
     except ImplementationAttestationUnavailable as error:
@@ -648,7 +1048,10 @@ def _derived_conflict_components(
 ) -> tuple[tuple[ActionTransitionRecord, ...], ...]:
     canonical = tuple(sorted(records, key=_record_key))
     writes = tuple(
-        frozenset(cell for cell, _ in operations_by_hash[record.content_hash])
+        frozenset(
+            cell
+            for cell, _ in operations_by_hash[record.content_hash]
+        )
         for record in canonical
     )
     adjacency = [set() for _ in canonical]
@@ -805,6 +1208,10 @@ def _validate_source_world_step(
         raise ValueError(
             "observation projection world states must preserve source cutoff"
         )
+    if next_state.root_seed != prior.root_seed:
+        raise ValueError(
+            "observation projection world states must preserve root seed"
+        )
     if next_state.step_index != prior.step_index + 1:
         raise ValueError(
             "observation projection next world state must increment step index"
@@ -885,8 +1292,7 @@ def _validate_source_world_step(
         for resolution in resolutions
     ):
         raise TypeError(
-            "observation projection conflict resolutions must be "
-            "ConflictResolutionRecord values"
+            "observation projection conflict resolutions must be ConflictResolutionRecord values"
         )
 
     components = _derived_conflict_components(records, operations_by_hash)
@@ -919,7 +1325,9 @@ def _validate_source_world_step(
         if not isinstance(context.participants, tuple):
             raise TypeError("conflict participants must be a tuple")
         if len(context.participants) < 2:
-            raise ValueError("conflict resolution requires at least two participants")
+            raise ValueError(
+                "conflict resolution requires at least two participants"
+            )
         if any(
             not isinstance(participant, ConflictParticipant)
             for participant in context.participants
@@ -978,9 +1386,9 @@ def _validate_source_world_step(
                 participant.allowed_write_cells
             ):
                 raise ValueError("conflict participant capabilities must be unique")
-            if tuple(sorted(participant.allowed_write_cells, key=_cell_key)) != (
-                participant.allowed_write_cells
-            ):
+            if tuple(
+                sorted(participant.allowed_write_cells, key=_cell_key)
+            ) != participant.allowed_write_cells:
                 raise ValueError("conflict participant capabilities must be canonical")
             for allowed in participant.allowed_write_cells:
                 if not isinstance(allowed, StateCellRef):
@@ -1047,13 +1455,17 @@ def _validate_source_world_step(
             continue
         for cell, operation in operations_by_hash[record.content_hash]:
             if cell in effective_written:
-                raise ValueError("effective world mutations cannot overlap writes")
+                raise ValueError(
+                    "effective world mutations cannot overlap writes"
+                )
             effective_written.add(cell)
             _apply_operation(replayed, cell, operation)
     for resolution in sorted(resolutions, key=_resolution_key):
         for cell, operation in resolution_operations[resolution.content_hash]:
             if cell in effective_written:
-                raise ValueError("effective world mutations cannot overlap writes")
+                raise ValueError(
+                    "effective world mutations cannot overlap writes"
+                )
             effective_written.add(cell)
             _apply_operation(replayed, cell, operation)
 
@@ -1062,31 +1474,36 @@ def _validate_source_world_step(
             "next world state is not the extensional result of effective mutations"
         )
     if next_state.transition_batch_hash != _resolved_batch_hash(
-        records, resolutions
+        records,
+        resolutions,
     ):
         raise ValueError(
             "next world state does not bind exact resolved transition batch identity"
         )
     return entities
 
+
+def _all_projections(
+    model: ObservationProjectionModelSpec,
+) -> tuple[ProjectionSpec, ...]:
+    return tuple(model.projections) + tuple(model.stochastic_projections)
+
+
 def _validate_projection_declarations(
     domain: DomainSpec,
     model: ObservationProjectionModelSpec,
 ) -> dict[tuple[str, str], str]:
     hashes: dict[tuple[str, str], str] = {}
-    for spec in model.projections:
+    for spec in _all_projections(model):
         domain._entity_type(spec.observer_type)
-        for capability in (
-            spec.read_capabilities + spec.emit_capabilities
-        ):
+        for capability in spec.read_capabilities + spec.emit_capabilities:
             variable = domain._state_variable(capability.state_variable)
             if (
                 capability.subject_scope == "observer"
                 and variable.subject_type != spec.observer_type
             ):
                 raise ValueError(
-                    "observer-scoped capability state subject type "
-                    "must match observer type"
+                    "observer-scoped capability state subject type must match observer type"
                 )
         hashes[_projection_key(spec)] = _projection_hash(spec)
     return hashes
@@ -1170,6 +1587,32 @@ def _hook_facts(
     return raw
 
 
+def _hook_distribution(
+    spec: StochasticObserverProjectionSpec,
+    prior_visible: Mapping[StateCellRef, TypedValue],
+    next_visible: Mapping[StateCellRef, TypedValue],
+    observer: Entity,
+    step_index: int,
+) -> ObservationOutcomeDistribution:
+    try:
+        raw = spec.distribution_hook(
+            prior_visible,
+            next_visible,
+            observer,
+            step_index,
+            spec.parameters,
+        )
+    except Exception as error:
+        raise ObservationProjectionError(
+            "stochastic observation projection hook execution failed"
+        ) from error
+    if not isinstance(raw, ObservationOutcomeDistribution):
+        raise ObservationProjectionError(
+            "stochastic observation projection hook must return ObservationOutcomeDistribution"
+        )
+    return raw
+
+
 def _validate_fact_cell_shape(
     fact: ObservationFact,
     domain: DomainSpec,
@@ -1239,6 +1682,7 @@ def _effective_write_for_cell(
     )
     return operation.kind, (record.content_hash,)
 
+
 def _accept_facts(
     facts: tuple[ObservationFact, ...],
     *,
@@ -1246,8 +1690,9 @@ def _accept_facts(
     entities: Mapping[str, Entity],
     world_step: WorldStepResult,
     observer: Entity,
-    spec: ObserverProjectionSpec,
+    spec: ProjectionSpec,
     spec_hash: str,
+    stochastic_sample_hash: str | None = None,
 ) -> tuple[ProjectedObservation, ...]:
     accepted: list[ProjectedObservation] = []
     for fact in facts:
@@ -1290,9 +1735,126 @@ def _accept_facts(
                 source_world_step_hash=world_step.content_hash,
                 source_transition_hashes=source_transition_hashes,
                 projection_spec_hash=spec_hash,
+                stochastic_sample_hash=stochastic_sample_hash,
             )
         )
     return tuple(accepted)
+
+
+def _validate_emit_and_truth(
+    facts: tuple[ObservationFact, ...],
+    *,
+    domain: DomainSpec,
+    entities: Mapping[str, Entity],
+    world_step: WorldStepResult,
+    observer: Entity,
+    spec: ProjectionSpec,
+    spec_hash: str,
+) -> tuple[ProjectedObservation, ...]:
+    for fact in facts:
+        if not any(
+            _emit_covers(capability, fact.cell, observer)
+            for capability in spec.emit_capabilities
+        ):
+            raise ObservationProjectionError(
+                "observation fact is outside emit capability"
+            )
+        _validate_fact_cell_shape(fact, domain, entities)
+    return _accept_facts(
+        facts,
+        domain=domain,
+        entities=entities,
+        world_step=world_step,
+        observer=observer,
+        spec=spec,
+        spec_hash=spec_hash,
+    )
+
+
+def _stochastic_projection(
+    *,
+    domain: DomainSpec,
+    entities: Mapping[str, Entity],
+    world_step: WorldStepResult,
+    observer: Entity,
+    spec: StochasticObserverProjectionSpec,
+    spec_hash: str,
+) -> tuple[
+    tuple[ProjectedObservation, ...],
+    StochasticObservationSample,
+]:
+    root_seed = world_step.next_state.root_seed
+    if root_seed is None:
+        raise ObservationProjectionError(
+            "stochastic observation projection requires a root seed"
+        )
+    prior_visible = _visible_values(
+        world_step.prior_state.values,
+        spec.read_capabilities,
+        observer,
+    )
+    next_visible = _visible_values(
+        world_step.next_state.values,
+        spec.read_capabilities,
+        observer,
+    )
+    distribution = _hook_distribution(
+        spec,
+        prior_visible,
+        next_visible,
+        observer,
+        world_step.next_state.step_index,
+    )
+
+    for outcome in distribution.outcomes:
+        _validate_emit_and_truth(
+            outcome.facts,
+            domain=domain,
+            entities=entities,
+            world_step=world_step,
+            observer=observer,
+            spec=spec,
+            spec_hash=spec_hash,
+        )
+
+    sample_record = sample_categorical(
+        root_seed=root_seed,
+        namespace="observation.projection",
+        step_index=world_step.next_state.step_index,
+        source_hash=world_step.content_hash,
+        component_hash=spec_hash,
+        component_key=(observer.id, spec.channel),
+        distribution_hash=distribution.content_hash,
+        outcomes=tuple(
+            (
+                outcome.outcome_id,
+                outcome.probability,
+                outcome.content_hash,
+            )
+            for outcome in distribution.outcomes
+        ),
+    )
+    sample = StochasticObservationSample(
+        observer_id=observer.id,
+        channel=spec.channel,
+        step_index=world_step.next_state.step_index,
+        source_world_state_hash=world_step.next_state.content_hash,
+        source_world_step_hash=world_step.content_hash,
+        projection_spec_hash=spec_hash,
+        distribution=distribution,
+        sample_record=sample_record,
+    )
+    selected = _accept_facts(
+        sample.selected_outcome.facts,
+        domain=domain,
+        entities=entities,
+        world_step=world_step,
+        observer=observer,
+        spec=spec,
+        spec_hash=spec_hash,
+        stochastic_sample_hash=sample.content_hash,
+    )
+    return selected, sample
 
 
 def project_world_observations(
@@ -1314,6 +1876,7 @@ def project_world_observations(
         spec_hashes = _validate_projection_declarations(domain, model)
 
         observations: list[ProjectedObservation] = []
+        samples: list[StochasticObservationSample] = []
         for spec in sorted(model.projections, key=_projection_key):
             spec_hash = spec_hashes[_projection_key(spec)]
             observers = tuple(
@@ -1344,17 +1907,8 @@ def project_world_observations(
                     observer,
                     world_step.next_state.step_index,
                 )
-                for fact in facts:
-                    if not any(
-                        _emit_covers(capability, fact.cell, observer)
-                        for capability in spec.emit_capabilities
-                    ):
-                        raise ObservationProjectionError(
-                            "observation fact is outside emit capability"
-                        )
-                    _validate_fact_cell_shape(fact, domain, entities)
                 observations.extend(
-                    _accept_facts(
+                    _validate_emit_and_truth(
                         facts,
                         domain=domain,
                         entities=entities,
@@ -1365,6 +1919,30 @@ def project_world_observations(
                     )
                 )
 
+        for spec in sorted(model.stochastic_projections, key=_projection_key):
+            spec_hash = spec_hashes[_projection_key(spec)]
+            observers = tuple(
+                sorted(
+                    (
+                        entity
+                        for entity in story.entities
+                        if entity.type_name == spec.observer_type
+                    ),
+                    key=lambda entity: entity.id,
+                )
+            )
+            for observer in observers:
+                projected, sample = _stochastic_projection(
+                    domain=domain,
+                    entities=entities,
+                    world_step=world_step,
+                    observer=observer,
+                    spec=spec,
+                    spec_hash=spec_hash,
+                )
+                observations.extend(projected)
+                samples.append(sample)
+
         return ObservationProjectionResult(
             model_id=model.model_id,
             model_hash=model_hash,
@@ -1372,6 +1950,7 @@ def project_world_observations(
             source_world_state_hash=world_step.next_state.content_hash,
             step_index=world_step.next_state.step_index,
             observations=tuple(observations),
+            stochastic_samples=tuple(samples),
         )
     except ObservationProjectionError:
         raise

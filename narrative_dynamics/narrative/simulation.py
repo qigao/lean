@@ -702,15 +702,22 @@ def simulation_state_from_story(
     model: SimulationModelSpec,
     *,
     at_time: int | None = None,
+    seed: int | None = None,
 ) -> SimulationState:
     try:
         cutoff = _cutoff(at_time, label="simulation source cutoff")
         _validate_execution_bindings(story, domain, model, cutoff)
-        world = world_state_from_story(story, domain, at_time=cutoff)
+        world = world_state_from_story(
+            story,
+            domain,
+            at_time=cutoff,
+            seed=seed,
+        )
         ledger = runtime_evidence_ledger_from_story(
             story,
             domain,
             at_time=cutoff,
+            seed=seed,
         )
         return SimulationState(
             model_id=model.model_id,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+import math
 import re
 from types import MappingProxyType
 
@@ -29,6 +30,12 @@ from narrative_dynamics.narrative.ir import (
     GenericNarrative,
     StateCellRef,
     TypedValue,
+)
+from narrative_dynamics.narrative.randomness import (
+    RANDOM_DERIVATION_VERSION,
+    RandomSampleRecord,
+    sample_categorical,
+    validate_root_seed,
 )
 from narrative_dynamics.narrative.replay import objective_state
 
@@ -81,6 +88,21 @@ def _freeze_values(value: object) -> Mapping[StateCellRef, TypedValue]:
     return MappingProxyType(frozen)
 
 
+def _freeze_parameters(value: object) -> Mapping[str, float]:
+    if not isinstance(value, Mapping):
+        raise TypeError("stochastic transition parameters must be a mapping")
+    frozen: dict[str, float] = {}
+    for raw_name, raw_value in value.items():
+        name = _text(raw_name, label="stochastic transition parameter name")
+        if isinstance(raw_value, bool) or not isinstance(raw_value, (int, float)):
+            raise TypeError("stochastic transition parameter values must be numeric")
+        number = float(raw_value)
+        if not math.isfinite(number):
+            raise ValueError("stochastic transition parameter values must be finite")
+        frozen[name] = number
+    return MappingProxyType(dict(sorted(frozen.items())))
+
+
 def _delta_payload(delta: StateDelta) -> dict[str, object]:
     operations = tuple(
         sorted(
@@ -92,10 +114,38 @@ def _delta_payload(delta: StateDelta) -> dict[str, object]:
         )
     )
     return {
-        "operations": [
-            operation.to_dict() for operation in operations
-        ]
+        "operations": [operation.to_dict() for operation in operations]
     }
+
+
+def _canonical_effects(
+    effects: object,
+    *,
+    label: str,
+) -> tuple[ActionEffectSpec, ...]:
+    values = tuple(effects)
+    if any(not isinstance(effect, ActionEffectSpec) for effect in values):
+        raise TypeError(f"{label} effects must be ActionEffectSpec values")
+    keys = tuple(
+        (
+            effect.state_variable,
+            effect.subject_source,
+            effect.subject_argument,
+        )
+        for effect in values
+    )
+    if len(set(keys)) != len(keys):
+        raise ValueError(f"{label} effects must be unique")
+    return tuple(
+        sorted(
+            values,
+            key=lambda effect: (
+                effect.state_variable,
+                effect.subject_source,
+                effect.subject_argument or "",
+            ),
+        )
+    )
 
 
 @dataclass(frozen=True)
@@ -108,15 +158,9 @@ class ActionEffectSpec:
         object.__setattr__(
             self,
             "state_variable",
-            _text(
-                self.state_variable,
-                label="action effect state variable",
-            ),
+            _text(self.state_variable, label="action effect state variable"),
         )
-        source = _text(
-            self.subject_source,
-            label="action effect subject source",
-        )
+        source = _text(self.subject_source, label="action effect subject source")
         if source not in _SUBJECT_SOURCES:
             raise ValueError(
                 "action effect subject source must be actor or argument"
@@ -161,37 +205,13 @@ class ActionTransitionSpec:
             "action_type",
             _text(self.action_type, label="action transition type"),
         )
-        effects = tuple(self.effects)
-        if any(not isinstance(effect, ActionEffectSpec) for effect in effects):
-            raise TypeError(
-                "action transition effects must be ActionEffectSpec values"
-            )
-        keys = tuple(
-            (
-                effect.state_variable,
-                effect.subject_source,
-                effect.subject_argument,
-            )
-            for effect in effects
-        )
-        if len(set(keys)) != len(keys):
-            raise ValueError("action transition effects must be unique")
-        if not callable(self.transition_hook):
-            raise TypeError("action transition hook must be callable")
         object.__setattr__(
             self,
             "effects",
-            tuple(
-                sorted(
-                    effects,
-                    key=lambda effect: (
-                        effect.state_variable,
-                        effect.subject_source,
-                        effect.subject_argument or "",
-                    ),
-                )
-            ),
+            _canonical_effects(self.effects, label="action transition"),
         )
+        if not callable(self.transition_hook):
+            raise TypeError("action transition hook must be callable")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -208,6 +228,122 @@ class ActionTransitionSpec:
 
 
 @dataclass(frozen=True)
+class StateDeltaOutcome:
+    outcome_id: str
+    probability: float
+    delta: StateDelta
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "outcome_id",
+            _text(self.outcome_id, label="state delta outcome id"),
+        )
+        probability = self.probability
+        if isinstance(probability, bool) or not isinstance(probability, (int, float)):
+            raise TypeError("state delta outcome probability must be numeric")
+        probability = float(probability)
+        if (
+            not math.isfinite(probability)
+            or probability <= 0.0
+            or probability > 1.0
+        ):
+            raise ValueError(
+                "state delta outcome probability must be finite and in (0, 1]"
+            )
+        if not isinstance(self.delta, StateDelta):
+            raise TypeError("state delta outcome delta must be StateDelta")
+        object.__setattr__(self, "probability", probability)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "outcome_id": self.outcome_id,
+            "probability": self.probability,
+            "delta": _delta_payload(self.delta),
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_dict())
+
+
+@dataclass(frozen=True)
+class StateDeltaDistribution:
+    outcomes: tuple[StateDeltaOutcome, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.outcomes, tuple):
+            raise TypeError("state delta distribution outcomes must be a tuple")
+        outcomes = tuple(self.outcomes)
+        if len(outcomes) < 2:
+            raise ValueError("state delta distribution requires at least two outcomes")
+        if any(not isinstance(item, StateDeltaOutcome) for item in outcomes):
+            raise TypeError(
+                "state delta distribution must contain StateDeltaOutcome values"
+            )
+        outcomes = tuple(sorted(outcomes, key=lambda item: item.outcome_id))
+        if len({item.outcome_id for item in outcomes}) != len(outcomes):
+            raise ValueError("state delta outcome ids must be unique")
+        if math.fsum(item.probability for item in outcomes) != 1.0:
+            raise ValueError("state delta outcome probabilities must sum exactly to one")
+        object.__setattr__(self, "outcomes", outcomes)
+
+    def to_dict(self) -> dict[str, object]:
+        return {"outcomes": [item.to_dict() for item in self.outcomes]}
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_dict())
+
+
+@dataclass(frozen=True)
+class StochasticActionTransitionSpec:
+    action_type: str
+    effects: tuple[ActionEffectSpec, ...]
+    parameters: Mapping[str, float]
+    distribution_hook: object = field(compare=False, repr=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "action_type",
+            _text(self.action_type, label="stochastic action transition type"),
+        )
+        object.__setattr__(
+            self,
+            "effects",
+            _canonical_effects(
+                self.effects,
+                label="stochastic action transition",
+            ),
+        )
+        object.__setattr__(self, "parameters", _freeze_parameters(self.parameters))
+        if not callable(self.distribution_hook):
+            raise TypeError("stochastic action transition hook must be callable")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "action_type": self.action_type,
+            "effects": [effect.to_dict() for effect in self.effects],
+            "parameters": [
+                [name, value]
+                for name, value in self.parameters.items()
+            ],
+            "random_derivation_version": RANDOM_DERIVATION_VERSION,
+            "implementation_identity": measure_implementation(
+                self.distribution_hook
+            ).manifest_identity(),
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_dict())
+
+
+TransitionSpec = ActionTransitionSpec | StochasticActionTransitionSpec
+
+
+@dataclass(frozen=True)
 class WorldTransitionModelSpec:
     model_id: str
     version: str
@@ -216,6 +352,7 @@ class WorldTransitionModelSpec:
     domain_spec_hash: str
     transitions: tuple[ActionTransitionSpec, ...]
     conflict_resolver: ConflictResolverSpec | None = None
+    stochastic_transitions: tuple[StochasticActionTransitionSpec, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -236,10 +373,7 @@ class WorldTransitionModelSpec:
         object.__setattr__(
             self,
             "domain_version",
-            _text(
-                self.domain_version,
-                label="world transition domain version",
-            ),
+            _text(self.domain_version, label="world transition domain version"),
         )
         object.__setattr__(
             self,
@@ -250,22 +384,32 @@ class WorldTransitionModelSpec:
             ),
         )
         transitions = tuple(self.transitions)
+        if any(not isinstance(item, ActionTransitionSpec) for item in transitions):
+            raise TypeError(
+                "world transition model transitions must be ActionTransitionSpec values"
+            )
+        stochastic = tuple(self.stochastic_transitions)
         if any(
-            not isinstance(item, ActionTransitionSpec)
-            for item in transitions
+            not isinstance(item, StochasticActionTransitionSpec)
+            for item in stochastic
         ):
             raise TypeError(
-                "world transition model transitions must be "
-                "ActionTransitionSpec values"
+                "world stochastic transitions must be StochasticActionTransitionSpec values"
             )
-        if len({item.action_type for item in transitions}) != len(transitions):
+        all_types = tuple(item.action_type for item in transitions + stochastic)
+        if len(set(all_types)) != len(all_types):
             raise ValueError(
-                "world transition model action types must be unique"
+                "world transition model action types must be unique across deterministic and stochastic lanes"
             )
         object.__setattr__(
             self,
             "transitions",
             tuple(sorted(transitions, key=lambda item: item.action_type)),
+        )
+        object.__setattr__(
+            self,
+            "stochastic_transitions",
+            tuple(sorted(stochastic, key=lambda item: item.action_type)),
         )
         resolver = self.conflict_resolver
         if resolver is not None:
@@ -297,6 +441,10 @@ class WorldTransitionModelSpec:
         }
         if self.conflict_resolver is not None:
             payload["conflict_resolver_hash"] = self.conflict_resolver.content_hash
+        if self.stochastic_transitions:
+            payload["stochastic_transitions"] = [
+                item.to_dict() for item in self.stochastic_transitions
+            ]
         return payload
 
     @property
@@ -320,18 +468,12 @@ class ActionIntent:
         object.__setattr__(
             self,
             "selected_action",
-            _text(
-                self.selected_action,
-                label="action intent selected action",
-            ),
+            _text(self.selected_action, label="action intent selected action"),
         )
         object.__setattr__(
             self,
             "selection_model_id",
-            _text(
-                self.selection_model_id,
-                label="action intent selection model id",
-            ),
+            _text(self.selection_model_id, label="action intent selection model id"),
         )
         object.__setattr__(
             self,
@@ -366,6 +508,7 @@ class WorldState:
     parent_state_hash: str | None
     transition_batch_hash: str | None
     values: Mapping[StateCellRef, TypedValue]
+    root_seed: int | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -381,18 +524,12 @@ class WorldState:
         object.__setattr__(
             self,
             "domain_spec_hash",
-            _hash(
-                self.domain_spec_hash,
-                label="world state domain spec hash",
-            ),
+            _hash(self.domain_spec_hash, label="world state domain spec hash"),
         )
         object.__setattr__(
             self,
             "source_story_hash",
-            _hash(
-                self.source_story_hash,
-                label="world state source story hash",
-            ),
+            _hash(self.source_story_hash, label="world state source story hash"),
         )
         if self.source_at_time is not None and (
             not isinstance(self.source_at_time, int)
@@ -407,14 +544,9 @@ class WorldState:
             or isinstance(self.step_index, bool)
             or self.step_index < 0
         ):
-            raise ValueError(
-                "world step index must be a non-negative integer"
-            )
+            raise ValueError("world step index must be a non-negative integer")
         if self.step_index == 0:
-            if (
-                self.parent_state_hash is not None
-                or self.transition_batch_hash is not None
-            ):
+            if self.parent_state_hash is not None or self.transition_batch_hash is not None:
                 raise ValueError(
                     "step-zero world state cannot have transition lineage"
                 )
@@ -422,24 +554,24 @@ class WorldState:
             object.__setattr__(
                 self,
                 "parent_state_hash",
-                _hash(
-                    self.parent_state_hash,
-                    label="parent state hash",
-                ),
+                _hash(self.parent_state_hash, label="parent state hash"),
             )
             object.__setattr__(
                 self,
                 "transition_batch_hash",
-                _hash(
-                    self.transition_batch_hash,
-                    label="transition batch hash",
-                ),
+                _hash(self.transition_batch_hash, label="transition batch hash"),
             )
         object.__setattr__(self, "values", _freeze_values(self.values))
+        if self.root_seed is not None:
+            object.__setattr__(
+                self,
+                "root_seed",
+                validate_root_seed(self.root_seed),
+            )
 
     def to_dict(self) -> dict[str, object]:
         cells = tuple(sorted(self.values, key=_cell_key))
-        return {
+        payload = {
             "domain_id": self.domain_id,
             "domain_version": self.domain_version,
             "domain_spec_hash": self.domain_spec_hash,
@@ -456,6 +588,56 @@ class WorldState:
                 for cell in cells
             ],
         }
+        if self.root_seed is not None:
+            payload["root_seed"] = self.root_seed
+        return payload
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_dict())
+
+
+@dataclass(frozen=True)
+class StochasticTransitionSample:
+    distribution: StateDeltaDistribution
+    sample_record: RandomSampleRecord
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.distribution, StateDeltaDistribution):
+            raise TypeError(
+                "stochastic transition sample distribution must be StateDeltaDistribution"
+            )
+        if not isinstance(self.sample_record, RandomSampleRecord):
+            raise TypeError(
+                "stochastic transition sample record must be RandomSampleRecord"
+            )
+        if self.sample_record.namespace != "world.transition":
+            raise ValueError("stochastic transition sample namespace mismatch")
+        if self.sample_record.distribution_hash != self.distribution.content_hash:
+            raise ValueError("stochastic transition distribution hash mismatch")
+        matching = tuple(
+            item
+            for item in self.distribution.outcomes
+            if item.outcome_id == self.sample_record.selected_outcome_id
+        )
+        if len(matching) != 1:
+            raise ValueError("stochastic transition selected outcome is missing")
+        if matching[0].content_hash != self.sample_record.selected_outcome_hash:
+            raise ValueError("stochastic transition selected outcome hash mismatch")
+
+    @property
+    def selected_outcome(self) -> StateDeltaOutcome:
+        return next(
+            item
+            for item in self.distribution.outcomes
+            if item.outcome_id == self.sample_record.selected_outcome_id
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "distribution": self.distribution.to_dict(),
+            "sample_record": self.sample_record.to_dict(),
+        }
 
     @property
     def content_hash(self) -> str:
@@ -470,24 +652,18 @@ class ActionTransitionRecord:
     transition_spec_hash: str
     prior_state_hash: str
     delta: StateDelta
+    stochastic_sample: StochasticTransitionSample | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.intent, ActionIntent):
-            raise TypeError(
-                "action transition record intent must be ActionIntent"
-            )
+            raise TypeError("action transition record intent must be ActionIntent")
         object.__setattr__(
             self,
             "actor_id",
-            _text(
-                self.actor_id,
-                label="action transition actor id",
-            ),
+            _text(self.actor_id, label="action transition actor id"),
         )
         if not isinstance(self.action, ActionOption):
-            raise TypeError(
-                "action transition record action must be ActionOption"
-            )
+            raise TypeError("action transition record action must be ActionOption")
         object.__setattr__(
             self,
             "transition_spec_hash",
@@ -499,18 +675,22 @@ class ActionTransitionRecord:
         object.__setattr__(
             self,
             "prior_state_hash",
-            _hash(
-                self.prior_state_hash,
-                label="action transition prior state hash",
-            ),
+            _hash(self.prior_state_hash, label="action transition prior state hash"),
         )
         if not isinstance(self.delta, StateDelta):
-            raise TypeError(
-                "action transition record delta must be StateDelta"
-            )
+            raise TypeError("action transition record delta must be StateDelta")
+        if self.stochastic_sample is not None:
+            if not isinstance(self.stochastic_sample, StochasticTransitionSample):
+                raise TypeError(
+                    "action transition stochastic sample must be StochasticTransitionSample"
+                )
+            if self.delta != self.stochastic_sample.selected_outcome.delta:
+                raise ValueError(
+                    "action transition delta must equal selected stochastic outcome"
+                )
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload = {
             "intent": self.intent.to_dict(),
             "actor_id": self.actor_id,
             "action": self.action.to_dict(),
@@ -518,6 +698,9 @@ class ActionTransitionRecord:
             "prior_state_hash": self.prior_state_hash,
             "delta": _delta_payload(self.delta),
         }
+        if self.stochastic_sample is not None:
+            payload["stochastic_sample"] = self.stochastic_sample.to_dict()
+        return payload
 
     @property
     def content_hash(self) -> str:
@@ -537,12 +720,8 @@ def _transition_record_key(
 def _transition_batch_hash(
     transitions: tuple[ActionTransitionRecord, ...],
 ) -> str:
-    canonical = tuple(
-        sorted(transitions, key=_transition_record_key)
-    )
-    return stable_content_hash(
-        [item.to_dict() for item in canonical]
-    )
+    canonical = tuple(sorted(transitions, key=_transition_record_key))
+    return stable_content_hash([item.to_dict() for item in canonical])
 
 
 def _resolution_key(
@@ -562,12 +741,8 @@ def _resolved_transition_batch_hash(
     transitions: tuple[ActionTransitionRecord, ...],
     resolutions: tuple[ConflictResolutionRecord, ...],
 ) -> str:
-    canonical_transitions = tuple(
-        sorted(transitions, key=_transition_record_key)
-    )
-    canonical_resolutions = tuple(
-        sorted(resolutions, key=_resolution_key)
-    )
+    canonical_transitions = tuple(sorted(transitions, key=_transition_record_key))
+    canonical_resolutions = tuple(sorted(resolutions, key=_resolution_key))
     return stable_content_hash(
         {
             "transitions": [
@@ -605,10 +780,7 @@ class WorldStepResult:
         transitions = tuple(self.transitions)
         if not transitions:
             raise ValueError("world step requires at least one transition")
-        if any(
-            not isinstance(item, ActionTransitionRecord)
-            for item in transitions
-        ):
+        if any(not isinstance(item, ActionTransitionRecord) for item in transitions):
             raise TypeError(
                 "world step transitions must be ActionTransitionRecord values"
             )
@@ -640,14 +812,36 @@ class WorldStepResult:
             raise ValueError(
                 "world step next state must preserve source/domain identity"
             )
+        if self.next_state.root_seed != self.prior_state.root_seed:
+            raise ValueError("world step next state must preserve root seed")
         if self.next_state.step_index != self.prior_state.step_index + 1:
             raise ValueError(
                 "world step next state index must increment the prior state"
             )
         if self.next_state.parent_state_hash != self.prior_state.content_hash:
-            raise ValueError(
-                "world step next state must bind the exact prior state"
-            )
+            raise ValueError("world step next state must bind the exact prior state")
+
+        for record in transitions:
+            if record.stochastic_sample is None:
+                continue
+            sample = record.stochastic_sample.sample_record
+            if (
+                self.prior_state.root_seed is None
+                or sample.root_seed != self.prior_state.root_seed
+            ):
+                raise ValueError("stochastic transition root seed mismatch")
+            if sample.step_index != self.next_state.step_index:
+                raise ValueError("stochastic transition step mismatch")
+            if sample.source_hash != self.prior_state.content_hash:
+                raise ValueError("stochastic transition source mismatch")
+            if sample.component_hash != record.transition_spec_hash:
+                raise ValueError("stochastic transition spec mismatch")
+            if sample.component_key != (
+                record.actor_id,
+                record.intent.decision_id,
+                record.action.id,
+            ):
+                raise ValueError("stochastic transition component key mismatch")
 
         resolutions = tuple(self.conflict_resolutions)
         if any(
@@ -655,14 +849,10 @@ class WorldStepResult:
             for item in resolutions
         ):
             raise TypeError(
-                "world step conflict resolutions must be "
-                "ConflictResolutionRecord values"
+                "world step conflict resolutions must be ConflictResolutionRecord values"
             )
         resolutions = tuple(sorted(resolutions, key=_resolution_key))
-
-        transition_hashes = {
-            item.content_hash for item in transitions
-        }
+        transition_hashes = {item.content_hash for item in transitions}
         resolved_transition_hashes: set[str] = set()
         for resolution in resolutions:
             if resolution.prior_state_hash != self.prior_state.content_hash:
@@ -673,17 +863,11 @@ class WorldStepResult:
                 participant.transition_record_hash
                 for participant in resolution.context.participants
             )
-            if any(
-                item not in transition_hashes
-                for item in participant_hashes
-            ):
+            if any(item not in transition_hashes for item in participant_hashes):
                 raise ValueError(
                     "world step conflict participant must bind an included transition"
                 )
-            if (
-                resolved_transition_hashes
-                & set(participant_hashes)
-            ):
+            if resolved_transition_hashes & set(participant_hashes):
                 raise ValueError(
                     "world step transition cannot belong to two conflict resolutions"
                 )
@@ -706,9 +890,7 @@ class WorldStepResult:
             "model_id": self.model_id,
             "model_hash": self.model_hash,
             "prior_state": self.prior_state.to_dict(),
-            "transitions": [
-                item.to_dict() for item in self.transitions
-            ],
+            "transitions": [item.to_dict() for item in self.transitions],
             "next_state": self.next_state.to_dict(),
         }
         if self.conflict_resolutions:
@@ -727,6 +909,7 @@ def world_state_from_story(
     domain: DomainSpec,
     *,
     at_time: int | None = None,
+    seed: int | None = None,
 ) -> WorldState:
     values = objective_state(story, domain, at_time=at_time)
     return WorldState(
@@ -739,6 +922,7 @@ def world_state_from_story(
         parent_state_hash=None,
         transition_batch_hash=None,
         values=values,
+        root_seed=None if seed is None else validate_root_seed(seed),
     )
 
 
@@ -761,6 +945,11 @@ def _validate_prior_state(
         raise WorldTransitionError(
             "world execution requires WorldTransitionModelSpec"
         )
+    if prior.root_seed is not None:
+        try:
+            validate_root_seed(prior.root_seed)
+        except (TypeError, ValueError) as error:
+            raise WorldTransitionError("world state root seed is invalid") from error
 
     domain_identity = (
         domain.domain_id,
@@ -796,24 +985,14 @@ def _validate_prior_state(
             if not isinstance(value, TypedValue):
                 raise TypeError("world state value must be TypedValue")
             subject = entities.get(cell.subject.entity_id)
-            if (
-                subject is None
-                or subject.type_name != cell.subject.entity_type
-            ):
-                raise ValueError(
-                    "world state cell subject is not canonical"
-                )
-            state_variable = domain._state_variable(
-                cell.state_variable
-            )
+            if subject is None or subject.type_name != cell.subject.entity_type:
+                raise ValueError("world state cell subject is not canonical")
+            state_variable = domain._state_variable(cell.state_variable)
             if state_variable.subject_type != subject.type_name:
                 raise ValueError(
-                    "world state cell subject type does not match "
-                    "state variable"
+                    "world state cell subject type does not match state variable"
                 )
-            domain._value_type(
-                state_variable.value_type
-            ).validate(value, entities)
+            domain._value_type(state_variable.value_type).validate(value, entities)
     except (TypeError, ValueError) as error:
         raise WorldTransitionError(
             "world state contains an invalid canonical value"
@@ -822,12 +1001,16 @@ def _validate_prior_state(
     return entities
 
 
+def _all_transitions(model: WorldTransitionModelSpec) -> tuple[TransitionSpec, ...]:
+    return tuple(model.transitions) + tuple(model.stochastic_transitions)
+
+
 def _validate_transition_declarations(
     domain: DomainSpec,
     model: WorldTransitionModelSpec,
 ) -> None:
     try:
-        for transition in model.transitions:
+        for transition in _all_transitions(model):
             domain._action_type(transition.action_type)
     except (TypeError, ValueError) as error:
         raise WorldTransitionError(
@@ -849,56 +1032,31 @@ def _resolve_intents(
     prior: WorldState,
     model: WorldTransitionModelSpec,
     intents: tuple[ActionIntent, ...],
-) -> tuple[
-    tuple[
-        ActionIntent,
-        Decision,
-        ActionOption,
-        ActionTransitionSpec,
-    ],
-    ...,
-]:
+) -> tuple[tuple[ActionIntent, Decision, ActionOption, TransitionSpec], ...]:
     try:
         values = tuple(intents)
     except TypeError as error:
         raise WorldTransitionError(
             "world step intents must be an iterable of ActionIntent values"
         ) from error
-
     if not values:
-        raise WorldTransitionError(
-            "world step requires at least one action intent"
-        )
+        raise WorldTransitionError("world step requires at least one action intent")
     if any(not isinstance(item, ActionIntent) for item in values):
-        raise WorldTransitionError(
-            "world step intents must be ActionIntent values"
-        )
+        raise WorldTransitionError("world step intents must be ActionIntent values")
     if len({item.decision_id for item in values}) != len(values):
-        raise WorldTransitionError(
-            "world step decision ids must be unique"
-        )
+        raise WorldTransitionError("world step decision ids must be unique")
 
     decisions = {decision.id: decision for decision in story.decisions}
     transitions = {
         transition.action_type: transition
-        for transition in model.transitions
+        for transition in _all_transitions(model)
     }
-    resolved: list[
-        tuple[
-            ActionIntent,
-            Decision,
-            ActionOption,
-            ActionTransitionSpec,
-        ]
-    ] = []
+    resolved: list[tuple[ActionIntent, Decision, ActionOption, TransitionSpec]] = []
     actors: set[str] = set()
-
     for item in values:
         decision = decisions.get(item.decision_id)
         if decision is None:
-            raise WorldTransitionError(
-                "action intent decision is not declared"
-            )
+            raise WorldTransitionError("action intent decision is not declared")
         if (
             prior.source_at_time is not None
             and decision.logical_time > prior.source_at_time
@@ -908,11 +1066,9 @@ def _resolve_intents(
             )
         if decision.actor_id in actors:
             raise WorldTransitionError(
-                "one actor may contribute at most one action "
-                "per world step"
+                "one actor may contribute at most one action per world step"
             )
         actors.add(decision.actor_id)
-
         action = next(
             (
                 candidate
@@ -928,11 +1084,9 @@ def _resolve_intents(
         transition = transitions.get(action.type_name)
         if transition is None:
             raise WorldTransitionError(
-                "selected action type is not executable "
-                "by this world model"
+                "selected action type is not executable by this world model"
             )
         resolved.append((item, decision, action, transition))
-
     return tuple(resolved)
 
 
@@ -941,60 +1095,43 @@ def _allowed_cells(
     entities: Mapping[str, Entity],
     decision: Decision,
     action: ActionOption,
-    transition: ActionTransitionSpec,
+    transition: TransitionSpec,
 ) -> frozenset[StateCellRef]:
     try:
         action_type = domain._action_type(action.type_name)
-        parameters = {
-            parameter.name: parameter
-            for parameter in action_type.parameters
-        }
+        parameters = {parameter.name: parameter for parameter in action_type.parameters}
         allowed: set[StateCellRef] = set()
-
         for effect in transition.effects:
-            state_variable = domain._state_variable(
-                effect.state_variable
-            )
+            state_variable = domain._state_variable(effect.state_variable)
             if effect.subject_source == "actor":
                 subject = entities.get(decision.actor_id)
                 if subject is None:
-                    raise ValueError(
-                        "canonical action actor is not declared"
-                    )
+                    raise ValueError("canonical action actor is not declared")
             else:
                 argument_name = effect.subject_argument
                 parameter = parameters.get(argument_name)
                 if parameter is None:
                     raise ValueError(
-                        "action effect subject argument "
-                        "is not a declared parameter"
+                        "action effect subject argument is not a declared parameter"
                     )
                 argument = action.arguments.get(argument_name)
                 if argument is None:
                     raise ValueError(
-                        "action effect subject argument "
-                        "is missing from canonical action"
+                        "action effect subject argument is missing from canonical action"
                     )
                 value = argument.value
                 if not isinstance(value, EntityRef):
                     raise TypeError(
-                        "action effect subject argument "
-                        "must contain EntityRef"
+                        "action effect subject argument must contain EntityRef"
                     )
                 subject = entities.get(value.entity_id)
-                if (
-                    subject is None
-                    or subject.type_name != value.entity_type
-                ):
+                if subject is None or subject.type_name != value.entity_type:
                     raise ValueError(
-                        "action effect subject argument "
-                        "is not canonical"
+                        "action effect subject argument is not canonical"
                     )
-
             if subject.type_name != state_variable.subject_type:
                 raise ValueError(
-                    "action effect target type does not match "
-                    "state variable"
+                    "action effect target type does not match state variable"
                 )
             allowed.add(
                 StateCellRef(
@@ -1006,7 +1143,6 @@ def _allowed_cells(
         raise WorldTransitionError(
             "action transition has an invalid effect capability"
         ) from error
-
     return frozenset(allowed)
 
 
@@ -1017,25 +1153,16 @@ def _validated_delta(
     delta: object,
 ) -> StateDelta:
     if not isinstance(delta, StateDelta):
-        raise WorldTransitionError(
-            "action transition hook must return StateDelta"
-        )
-
+        raise WorldTransitionError("action transition hook must return StateDelta")
     seen: set[StateCellRef] = set()
     try:
         for operation in delta.operations:
             subject = entities.get(operation.subject_id)
             if subject is None:
-                raise ValueError(
-                    "state delta subject is not declared"
-                )
-            state_variable = domain._state_variable(
-                operation.state_variable
-            )
+                raise ValueError("state delta subject is not declared")
+            state_variable = domain._state_variable(operation.state_variable)
             if subject.type_name != state_variable.subject_type:
-                raise ValueError(
-                    "state delta subject type mismatch"
-                )
+                raise ValueError("state delta subject type mismatch")
             cell = StateCellRef(
                 EntityRef(subject.id, subject.type_name),
                 state_variable.name,
@@ -1045,33 +1172,24 @@ def _validated_delta(
                     "state delta wrote outside action effect capability"
                 )
             if cell in seen:
-                raise ValueError(
-                    "one action delta cannot write one state cell twice"
-                )
+                raise ValueError("one action delta cannot write one state cell twice")
             seen.add(cell)
-
             if operation.kind == "clear":
                 if operation.value is not None:
-                    raise ValueError(
-                        "clear state delta cannot contain a value"
-                    )
+                    raise ValueError("clear state delta cannot contain a value")
             elif operation.kind == "set":
                 if operation.value is None:
-                    raise ValueError(
-                        "set state delta requires a value"
-                    )
-                domain._value_type(
-                    state_variable.value_type
-                ).validate(operation.value, entities)
-            else:
-                raise ValueError(
-                    "state delta operation kind is unsupported"
+                    raise ValueError("set state delta requires a value")
+                domain._value_type(state_variable.value_type).validate(
+                    operation.value,
+                    entities,
                 )
+            else:
+                raise ValueError("state delta operation kind is unsupported")
     except (TypeError, ValueError) as error:
         raise WorldTransitionError(
             "action transition produced an invalid state delta"
         ) from error
-
     canonical_operations = tuple(
         sorted(
             delta.operations,
@@ -1089,9 +1207,7 @@ def _validated_delta(
     return StateDelta(canonical_operations)
 
 
-def _attested_transition_hash(
-    transition: ActionTransitionSpec,
-) -> str:
+def _attested_transition_hash(transition: TransitionSpec) -> str:
     try:
         return transition.content_hash
     except ImplementationAttestationUnavailable as error:
@@ -1100,9 +1216,7 @@ def _attested_transition_hash(
         ) from error
 
 
-def _attested_resolver_hash(
-    resolver: ConflictResolverSpec,
-) -> str:
+def _attested_resolver_hash(resolver: ConflictResolverSpec) -> str:
     try:
         return resolver.content_hash
     except ImplementationAttestationUnavailable as error:
@@ -1111,19 +1225,40 @@ def _attested_resolver_hash(
         ) from error
 
 
-def _attested_model_hash(
-    model: WorldTransitionModelSpec,
-) -> str:
+def _attested_model_hash(model: WorldTransitionModelSpec) -> str:
     try:
         return model.content_hash
     except ImplementationAttestationUnavailable as error:
         raise WorldTransitionError(
-            "world transition model implementation "
-            "attestation is unavailable"
+            "world transition model implementation attestation is unavailable"
         ) from error
 
 
-def _execute_one(
+def _execute_one_deterministic(
+    snapshot: Mapping[StateCellRef, TypedValue],
+    domain: DomainSpec,
+    entities: Mapping[str, Entity],
+    prior: WorldState,
+    resolved: tuple[ActionIntent, Decision, ActionOption, ActionTransitionSpec],
+) -> ActionTransitionRecord:
+    item, decision, action, transition = resolved
+    allowed = _allowed_cells(domain, entities, decision, action, transition)
+    try:
+        raw_delta = transition.transition_hook(snapshot, decision, action)
+    except Exception as error:
+        raise WorldTransitionError("action transition hook failed") from error
+    delta = _validated_delta(domain, entities, allowed, raw_delta)
+    return ActionTransitionRecord(
+        intent=item,
+        actor_id=decision.actor_id,
+        action=action,
+        transition_spec_hash=_attested_transition_hash(transition),
+        prior_state_hash=prior.content_hash,
+        delta=delta,
+    )
+
+
+def _execute_one_stochastic(
     snapshot: Mapping[StateCellRef, TypedValue],
     domain: DomainSpec,
     entities: Mapping[str, Entity],
@@ -1132,43 +1267,98 @@ def _execute_one(
         ActionIntent,
         Decision,
         ActionOption,
-        ActionTransitionSpec,
+        StochasticActionTransitionSpec,
     ],
 ) -> ActionTransitionRecord:
     item, decision, action, transition = resolved
-    allowed = _allowed_cells(
-        domain,
-        entities,
-        decision,
-        action,
-        transition,
-    )
+    if prior.root_seed is None:
+        raise WorldTransitionError(
+            "stochastic world transition requires a root seed"
+        )
+    allowed = _allowed_cells(domain, entities, decision, action, transition)
+    transition_hash = _attested_transition_hash(transition)
     try:
-        raw_delta = transition.transition_hook(
+        raw = transition.distribution_hook(
             snapshot,
             decision,
             action,
+            transition.parameters,
         )
     except Exception as error:
         raise WorldTransitionError(
-            "action transition hook failed"
+            "stochastic action transition hook failed"
         ) from error
-
-    delta = _validated_delta(
-        domain,
-        entities,
-        allowed,
-        raw_delta,
+    if not isinstance(raw, StateDeltaDistribution):
+        raise WorldTransitionError(
+            "stochastic action transition hook must return StateDeltaDistribution"
+        )
+    validated_outcomes = tuple(
+        StateDeltaOutcome(
+            outcome.outcome_id,
+            outcome.probability,
+            _validated_delta(
+                domain,
+                entities,
+                allowed,
+                outcome.delta,
+            ),
+        )
+        for outcome in raw.outcomes
+    )
+    distribution = StateDeltaDistribution(validated_outcomes)
+    sample_record = sample_categorical(
+        root_seed=prior.root_seed,
+        namespace="world.transition",
+        step_index=prior.step_index + 1,
+        source_hash=prior.content_hash,
+        component_hash=transition_hash,
+        component_key=(decision.actor_id, decision.id, action.id),
+        distribution_hash=distribution.content_hash,
+        outcomes=tuple(
+            (
+                outcome.outcome_id,
+                outcome.probability,
+                outcome.content_hash,
+            )
+            for outcome in distribution.outcomes
+        ),
+    )
+    stochastic_sample = StochasticTransitionSample(
+        distribution,
+        sample_record,
     )
     return ActionTransitionRecord(
         intent=item,
         actor_id=decision.actor_id,
         action=action,
-        transition_spec_hash=_attested_transition_hash(
-            transition
-        ),
+        transition_spec_hash=transition_hash,
         prior_state_hash=prior.content_hash,
-        delta=delta,
+        delta=stochastic_sample.selected_outcome.delta,
+        stochastic_sample=stochastic_sample,
+    )
+
+
+def _execute_one(
+    snapshot: Mapping[StateCellRef, TypedValue],
+    domain: DomainSpec,
+    entities: Mapping[str, Entity],
+    prior: WorldState,
+    resolved: tuple[ActionIntent, Decision, ActionOption, TransitionSpec],
+) -> ActionTransitionRecord:
+    if isinstance(resolved[3], StochasticActionTransitionSpec):
+        return _execute_one_stochastic(
+            snapshot,
+            domain,
+            entities,
+            prior,
+            resolved,
+        )
+    return _execute_one_deterministic(
+        snapshot,
+        domain,
+        entities,
+        prior,
+        resolved,
     )
 
 
@@ -1192,10 +1382,7 @@ def _reject_write_conflicts(
     records: tuple[ActionTransitionRecord, ...],
     entities: Mapping[str, Entity],
 ) -> None:
-    owner_by_cell: dict[
-        StateCellRef,
-        ActionTransitionRecord,
-    ] = {}
+    owner_by_cell: dict[StateCellRef, ActionTransitionRecord] = {}
     for record in records:
         for cell in _record_write_cells(record, entities):
             previous = owner_by_cell.get(cell)
@@ -1223,7 +1410,6 @@ def _conflict_components(
             if left_writes & writes[right_index]:
                 adjacency[left_index].add(right_index)
                 adjacency[right_index].add(left_index)
-
     seen: set[int] = set()
     components: list[tuple[ActionTransitionRecord, ...]] = []
     for start in range(len(canonical)):
@@ -1237,21 +1423,16 @@ def _conflict_components(
                 continue
             seen.add(current)
             indices.append(current)
-            stack.extend(
-                sorted(adjacency[current], reverse=True)
-            )
+            stack.extend(sorted(adjacency[current], reverse=True))
         if len(indices) >= 2:
-            component = tuple(
-                canonical[index] for index in sorted(indices)
+            components.append(
+                tuple(canonical[index] for index in sorted(indices))
             )
-            components.append(component)
-
     return tuple(
         sorted(
             components,
             key=lambda component: tuple(
-                _transition_record_key(record)
-                for record in component
+                _transition_record_key(record) for record in component
             ),
         )
     )
@@ -1296,6 +1477,15 @@ def _canonical_decision_action(
     return decision, action
 
 
+def _transition_by_action_type(
+    model: WorldTransitionModelSpec,
+) -> dict[str, TransitionSpec]:
+    return {
+        transition.action_type: transition
+        for transition in _all_transitions(model)
+    }
+
+
 def _build_conflict_context(
     story: GenericNarrative,
     domain: DomainSpec,
@@ -1304,10 +1494,7 @@ def _build_conflict_context(
     component: tuple[ActionTransitionRecord, ...],
     entities: Mapping[str, Entity],
 ) -> ConflictResolutionContext:
-    transitions = {
-        transition.action_type: transition
-        for transition in model.transitions
-    }
+    transitions = _transition_by_action_type(model)
     participants: list[ConflictParticipant] = []
     for record in component:
         decision, action = _canonical_decision_action(story, record)
@@ -1339,18 +1526,13 @@ def _build_conflict_context(
                 allowed_write_cells=allowed,
             )
         )
-
     write_counts: dict[StateCellRef, int] = {}
     for record in component:
         for cell in _record_write_cells(record, entities):
             write_counts[cell] = write_counts.get(cell, 0) + 1
     conflict_cells = tuple(
         sorted(
-            (
-                cell
-                for cell, count in write_counts.items()
-                if count >= 2
-            ),
+            (cell for cell, count in write_counts.items() if count >= 2),
             key=_cell_key,
         )
     )
@@ -1378,7 +1560,6 @@ def _certify_conflict_context(
         raise WorldTransitionConflictResolutionError(
             "conflict context does not bind exact prior state"
         )
-
     component_by_hash = {
         record.content_hash: record for record in component
     }
@@ -1389,11 +1570,7 @@ def _certify_conflict_context(
         raise WorldTransitionConflictResolutionError(
             "conflict context does not bind exact component transitions"
         )
-
-    transitions = {
-        transition.action_type: transition
-        for transition in model.transitions
-    }
+    transitions = _transition_by_action_type(model)
     for participant in context.participants:
         record = component_by_hash[participant.transition_record_hash]
         decision, action = _canonical_decision_action(story, record)
@@ -1438,18 +1615,13 @@ def _certify_conflict_context(
             raise WorldTransitionConflictResolutionError(
                 "conflict participant capability mismatch"
             )
-
     write_counts: dict[StateCellRef, int] = {}
     for record in component:
         for cell in _record_write_cells(record, entities):
             write_counts[cell] = write_counts.get(cell, 0) + 1
     expected_conflict_cells = tuple(
         sorted(
-            (
-                cell
-                for cell, count in write_counts.items()
-                if count >= 2
-            ),
+            (cell for cell, count in write_counts.items() if count >= 2),
             key=_cell_key,
         )
     )
@@ -1471,12 +1643,7 @@ def _validated_resolution_delta(
         for cell in participant.allowed_write_cells
     )
     try:
-        return _validated_delta(
-            domain,
-            entities,
-            allowed,
-            raw_delta,
-        )
+        return _validated_delta(domain, entities, allowed, raw_delta)
     except WorldTransitionError as error:
         cause = error.__cause__
         if cause is None:
@@ -1502,7 +1669,6 @@ def _resolve_component(
         raise WorldTransitionConflictError(
             "world step contains unresolved overlapping writes"
         )
-
     context = _build_conflict_context(
         story,
         domain,
@@ -1520,18 +1686,15 @@ def _resolve_component(
         context,
         entities,
     )
-
     unsupported = tuple(
         participant.action.type_name
         for participant in context.participants
-        if participant.action.type_name
-        not in resolver.supported_action_types
+        if participant.action.type_name not in resolver.supported_action_types
     )
     if unsupported:
         raise WorldTransitionConflictResolutionError(
             "conflict resolver does not support every participant action type"
         )
-
     resolver_hash = _attested_resolver_hash(resolver)
     try:
         raw_delta = resolver.resolver_hook(snapshot, context)
@@ -1539,7 +1702,6 @@ def _resolve_component(
         raise WorldTransitionConflictResolutionError(
             "conflict resolver hook failed"
         ) from error
-
     resolved_delta = _validated_resolution_delta(
         domain,
         entities,
@@ -1612,14 +1774,8 @@ def _atomic_result(
     records: tuple[ActionTransitionRecord, ...],
     entities: Mapping[str, Entity],
 ) -> WorldStepResult:
-    canonical_records = tuple(
-        sorted(records, key=_transition_record_key)
-    )
-    components = _conflict_components(
-        canonical_records,
-        entities,
-    )
-
+    canonical_records = tuple(sorted(records, key=_transition_record_key))
+    components = _conflict_components(canonical_records, entities)
     if components and model.conflict_resolver is None:
         _reject_write_conflicts(canonical_records, entities)
 
@@ -1642,9 +1798,7 @@ def _atomic_result(
             conflicting_hashes.update(
                 record.content_hash for record in component
             )
-        resolutions = tuple(
-            sorted(resolved_items, key=_resolution_key)
-        )
+        resolutions = tuple(sorted(resolved_items, key=_resolution_key))
 
     nonconflicting_records = tuple(
         record
@@ -1654,14 +1808,10 @@ def _atomic_result(
     effective_deltas = tuple(
         record.delta for record in nonconflicting_records
     ) + tuple(
-        resolution.resolved_delta
-        for resolution in resolutions
+        resolution.resolved_delta for resolution in resolutions
     )
     if resolutions:
-        _reject_final_resolution_collisions(
-            effective_deltas,
-            entities,
-        )
+        _reject_final_resolution_collisions(effective_deltas, entities)
     else:
         _reject_write_conflicts(canonical_records, entities)
 
@@ -1670,10 +1820,7 @@ def _atomic_result(
         _apply_delta(next_values, delta, entities)
 
     batch_hash = (
-        _resolved_transition_batch_hash(
-            canonical_records,
-            resolutions,
-        )
+        _resolved_transition_batch_hash(canonical_records, resolutions)
         if resolutions
         else _transition_batch_hash(canonical_records)
     )
@@ -1687,6 +1834,7 @@ def _atomic_result(
         parent_state_hash=prior.content_hash,
         transition_batch_hash=batch_hash,
         values=next_values,
+        root_seed=prior.root_seed,
     )
     return WorldStepResult(
         model_id=model.model_id,
@@ -1714,13 +1862,7 @@ def advance_world_step(
         model,
     )
     _validate_transition_declarations(domain, model)
-    resolved = _resolve_intents(
-        story,
-        prior_state,
-        model,
-        intents,
-    )
-
+    resolved = _resolve_intents(story, prior_state, model, intents)
     snapshot = MappingProxyType(dict(prior_state.values))
     records: list[ActionTransitionRecord] = []
     for item in resolved:
@@ -1733,7 +1875,6 @@ def advance_world_step(
                 item,
             )
         )
-
     return _atomic_result(
         story,
         domain,
