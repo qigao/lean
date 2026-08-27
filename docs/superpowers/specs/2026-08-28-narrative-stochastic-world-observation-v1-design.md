@@ -272,7 +272,7 @@ Add in `observation_projection.py`:
 
 - `ObservationOutcome(outcome_id, probability, facts)`;
 - `ObservationOutcomeDistribution(outcomes)`;
-- `StochasticObservationSample(observer_id, channel, step_index, source_world_state_hash, projection_spec_hash, distribution, sample_record)`;
+- `StochasticObservationSample(observer_id, channel, step_index, source_world_state_hash, source_world_step_hash, projection_spec_hash, distribution, sample_record)`;
 - `StochasticObserverProjectionSpec(observer_type, channel, read_capabilities, emit_capabilities, parameters, distribution_hook)`.
 
 The stochastic projection hook signature is:
@@ -330,14 +330,15 @@ Each `ProjectedObservation` emitted by a stochastic sample gains an optional sam
 
 The result constructor validates:
 
-- every stochastic sample binds the exact source world-step hash through its generic sampling record;
-- every stochastic sample explicitly binds the exact source world-state hash, step index, projection spec, observer, and channel;
+- every stochastic sample binds the exact source world-step hash, source world-state hash, step index, projection spec, observer, and channel;
 - sampling-record hashes referenced by observations exist in the result;
 - an emitted stochastic observation belongs to the selected outcome fact set;
 - deterministic observations do not claim stochastic sample lineage;
 - a sampled empty outcome is still represented by the result's stochastic sample tuple.
 
 No stochastic sample attempts to bind the enclosing `ObservationProjectionResult.content_hash`, avoiding circular identity.
+
+The component-local independence guarantee is defined only for an unchanged source world step. Adding or reordering an unrelated stochastic projection spec on the same exact `WorldStepResult` must not perturb an existing observer/channel sample. Changing the story/entity set changes the world-step source hash and is not covered by this invariance claim.
 
 ## 7. Runtime percept and evidence lineage
 
@@ -396,7 +397,11 @@ Same initial state + same model + same root seed must replay to the exact same:
 
 Current decision models continue to emit policies and deterministic lexical/MAP selections as before.
 
-The P2 seed must not affect a decision result unless stochastic world/observation history has first changed model-visible evidence/state.
+A root seed may change audit/provenance hashes immediately because seeded world and ledger identity are provenance-bound. That audit-level difference is intentional and is not decision stochasticity.
+
+Before stochastic world/observation history changes the **model-visible evidence semantics**, changing only the root seed must not change decision semantics: the same decision model on semantically identical evidence must produce the same `action_policy` and `selected_action`. Tests compare those semantic fields, not complete dispatch/result payloads that legitimately bind different ledger hashes.
+
+Once stochastic world/observation history changes admitted evidence, later decision semantics may diverge through the normal evidence -> belief -> goal/choice path.
 
 If behavioral action sampling is later introduced, it must use a distinct future namespace such as `decision.choice` and its own explicit contract. It must never consume the world or observation stream.
 
@@ -433,18 +438,16 @@ Required compatibility assertions include:
 
 - existing deterministic `WorldTransitionModelSpec.to_dict()` shape unchanged;
 - existing deterministic model content hash unchanged for the same model;
-- `WorldState.to_dict()` unchanged when `root_seed is None`;
+- `WorldState.to_dict()` unchanged when seed is `None`;
 - deterministic `ActionTransitionRecord.to_dict()` unchanged;
 - deterministic world transition batch hash unchanged;
-- existing deterministic `ObservationProjectionModelSpec.to_dict()` unchanged;
+- deterministic `ObservationProjectionModelSpec.to_dict()` unchanged;
 - deterministic `ProjectedObservation` and `ObservationProjectionResult` payloads unchanged;
 - deterministic runtime evidence batch/ledger payloads unchanged;
 - deterministic simulation state/step/trajectory payloads unchanged;
 - all existing exact replay and conflict-resolution tests remain green without edits that weaken their assertions.
 
 New optional fields must be omitted, not serialized as `null` or empty arrays, wherever omission is required to preserve V1 hashes.
-
-A seeded branch is intentionally a different execution identity even if all configured world transitions are deterministic, because `root_seed` is then part of the world-state lineage. Exact V1 hash compatibility is required specifically for the existing unseeded/no-stochastic path.
 
 ## 11. Testing strategy
 
@@ -455,9 +458,10 @@ The implementation must follow strict test-only RED -> exact-head RED evidence -
 Lock:
 
 - seed type validation;
-- the exact `stream_hash` and `draw_u64` derivation algorithm;
+- canonical stream derivation;
 - same derivation inputs -> exact same stream/draw/sample;
-- one changed semantic derivation input -> changed stream identity;
+- one changed derivation input -> changed stream identity;
+- component input order does not affect canonical result;
 - malformed/forged `RandomSampleRecord` rejects;
 - distribution input order does not affect hash or selection;
 - malformed probabilities/outcomes reject before sampling.
@@ -469,7 +473,7 @@ Lock:
 - same seed exact replay;
 - multiple seeds produce declared outcome variation over a controlled fixture;
 - actor input order does not change per-actor samples or result hash;
-- adding an unrelated stochastic actor does not perturb an existing actor's sample;
+- adding an unrelated stochastic actor does not perturb an existing actor's sample when story/prior/model/spec identity remain unchanged;
 - every candidate delta is capability-validated before sampling;
 - stochastic action without seed fails before hook;
 - sampled transition lineage binds root seed/distribution/spec/prior/actor/decision/action;
@@ -481,8 +485,8 @@ Lock:
 Lock:
 
 - same seed/world-step exact projection replay;
-- observer/spec order does not alter samples;
-- adding another observer does not perturb an existing observer's sample;
+- projection-spec input order does not alter canonical results;
+- on one unchanged `WorldStepResult`, adding an unrelated stochastic projection component does not perturb an existing observer/channel sample;
 - controlled seed set exercises emit vs dropout outcomes;
 - stochastic empty outcome still leaves sampling lineage in projection result and runtime evidence batch;
 - every candidate fact is validated before sampling;
@@ -498,20 +502,21 @@ Lock:
 - a different root seed changes stochastic lineage and can change realized state/observations;
 - a different root seed must change stochastic lineage even if the extensional sampled outcome happens to be identical;
 - step-level API cannot replace the root seed;
-- decisions remain seed-invariant until stochastic world/observation evidence diverges;
+- before model-visible stochastic evidence diverges, changing root seed alone leaves decision `action_policy` and `selected_action` unchanged even though audit hashes differ;
+- after admitted evidence diverges, later decision semantics may diverge through normal cognition;
 - world and observation streams are independent namespaces.
 
 ### 11.5 Existing uncertainty/batch compatibility
 
 Use the existing outer `SimulationRunner` and seed-block diagnostics without changing their core APIs.
 
-A narrow test-only adapter maps the outer runner's seeded `random.Random` to the narrative root seed by calling `rng.getrandbits(64)` exactly once before narrative initialization and making no other use of that outer RNG. This gives a deterministic mapping from each outer simulation seed to one recorded inner narrative root seed for the test adapter; uniqueness across all possible outer seeds is not claimed or required.
+A narrow test adapter maps the outer runner's seeded `random.Random` deterministically to one narrative root seed using exactly one `rng.getrandbits(64)` call before narrative initialization. The outer experiment manifest continues to record the external simulation seed; the narrative result records the derived narrative root seed and full inner sample lineage.
 
-The outer experiment manifest continues to record the external simulation seed. The narrative result records the derived narrative root seed and full inner stochastic lineage.
+This mapping is deterministic but is not claimed to be mathematically injective over all possible outer integer seeds.
 
 Tests must show existing seed-block variation machinery can observe seed-dependent aleatoric outcomes without any changes to calibration/uncertainty core.
 
-No production comparison, calibration, or uncertainty API changes are required by this workstream.
+No production comparison or calibration API changes are required by this workstream.
 
 ## 12. Production scope
 
@@ -554,9 +559,9 @@ The P2 Stochastic World / Observation Models workstream can be marked complete o
 1. **Explicit RNG/seed boundary** — one frozen narrative root seed and runtime-owned component-local derivation.
 2. **Seed lineage** — every stochastic world transition and observation sample is provenance-bound to root seed, source, component/spec, distribution, and selected outcome.
 3. **Replay exactness** — same seeded initial state/model replays to an identical multi-round trajectory hash.
-4. **Aleatoric separation** — world and observation stochasticity use separate namespaces and decision APIs remain RNG-free.
+4. **Aleatoric separation** — world and observation stochasticity use separate namespaces and decision APIs remain RNG-free; root-seed-only changes do not alter decision policy/selection semantics before model-visible stochastic evidence diverges.
 5. **Batch diagnostics compatibility** — existing outer seed/uncertainty machinery can exercise and detect narrative aleatoric variation without core uncertainty changes.
-6. Deterministic V1/V2 payloads and hashes remain exact when stochastic configuration is absent and the branch is unseeded.
+6. Deterministic V1/V2 payloads and hashes remain exact when stochastic configuration is absent.
 7. All existing Lean/Python/story/testimony proof gates remain green.
 
 Issue #27 remains open after this workstream because P2 Identification and Model Comparison remains separate and unfinished.
