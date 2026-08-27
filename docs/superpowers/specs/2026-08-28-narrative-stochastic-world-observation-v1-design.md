@@ -272,7 +272,7 @@ Add in `observation_projection.py`:
 
 - `ObservationOutcome(outcome_id, probability, facts)`;
 - `ObservationOutcomeDistribution(outcomes)`;
-- `StochasticObservationSample(observer_id, channel, projection_spec_hash, distribution, sample_record)`;
+- `StochasticObservationSample(observer_id, channel, step_index, source_world_state_hash, projection_spec_hash, distribution, sample_record)`;
 - `StochasticObserverProjectionSpec(observer_type, channel, read_capabilities, emit_capabilities, parameters, distribution_hook)`.
 
 The stochastic projection hook signature is:
@@ -330,7 +330,8 @@ Each `ProjectedObservation` emitted by a stochastic sample gains an optional sam
 
 The result constructor validates:
 
-- every stochastic sample binds the exact source world-step hash, source world-state hash, step index, projection spec, observer, and channel;
+- every stochastic sample binds the exact source world-step hash through its generic sampling record;
+- every stochastic sample explicitly binds the exact source world-state hash, step index, projection spec, observer, and channel;
 - sampling-record hashes referenced by observations exist in the result;
 - an emitted stochastic observation belongs to the selected outcome fact set;
 - deterministic observations do not claim stochastic sample lineage;
@@ -504,7 +505,7 @@ Lock:
 
 Use the existing outer `SimulationRunner` and seed-block diagnostics without changing their core APIs.
 
-A narrow test-only adapter maps the outer runner's seeded `random.Random` to the narrative root seed by calling `rng.getrandbits(64)` exactly once before narrative initialization and making no other use of that outer RNG. This gives a deterministic one-to-one execution mapping from each outer simulation seed to one recorded inner narrative root seed for the test adapter.
+A narrow test-only adapter maps the outer runner's seeded `random.Random` to the narrative root seed by calling `rng.getrandbits(64)` exactly once before narrative initialization and making no other use of that outer RNG. This gives a deterministic mapping from each outer simulation seed to one recorded inner narrative root seed for the test adapter; uniqueness across all possible outer seeds is not claimed or required.
 
 The outer experiment manifest continues to record the external simulation seed. The narrative result records the derived narrative root seed and full inner stochastic lineage.
 
