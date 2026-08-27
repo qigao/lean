@@ -10,7 +10,12 @@ from narrative_dynamics.attestation import (
     measure_implementation,
 )
 from narrative_dynamics.contracts import stable_content_hash
-from narrative_dynamics.narrative.conflict import ConflictResolverSpec
+from narrative_dynamics.narrative.conflict import (
+    ConflictParticipant,
+    ConflictResolutionContext,
+    ConflictResolutionRecord,
+    ConflictResolverSpec,
+)
 from narrative_dynamics.narrative.domain import (
     DomainSpec,
     StateDelta,
@@ -540,6 +545,41 @@ def _transition_batch_hash(
     )
 
 
+def _resolution_key(
+    resolution: ConflictResolutionRecord,
+) -> tuple[tuple[str, str, str], ...]:
+    return tuple(
+        (
+            participant.actor_id,
+            participant.decision_id,
+            participant.action.id,
+        )
+        for participant in resolution.context.participants
+    )
+
+
+def _resolved_transition_batch_hash(
+    transitions: tuple[ActionTransitionRecord, ...],
+    resolutions: tuple[ConflictResolutionRecord, ...],
+) -> str:
+    canonical_transitions = tuple(
+        sorted(transitions, key=_transition_record_key)
+    )
+    canonical_resolutions = tuple(
+        sorted(resolutions, key=_resolution_key)
+    )
+    return stable_content_hash(
+        {
+            "transitions": [
+                item.to_dict() for item in canonical_transitions
+            ],
+            "conflict_resolutions": [
+                item.to_dict() for item in canonical_resolutions
+            ],
+        }
+    )
+
+
 @dataclass(frozen=True)
 class WorldStepResult:
     model_id: str
@@ -547,6 +587,7 @@ class WorldStepResult:
     prior_state: WorldState
     transitions: tuple[ActionTransitionRecord, ...]
     next_state: WorldState
+    conflict_resolutions: tuple[ConflictResolutionRecord, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -607,15 +648,61 @@ class WorldStepResult:
             raise ValueError(
                 "world step next state must bind the exact prior state"
             )
-        expected_batch_hash = _transition_batch_hash(transitions)
+
+        resolutions = tuple(self.conflict_resolutions)
+        if any(
+            not isinstance(item, ConflictResolutionRecord)
+            for item in resolutions
+        ):
+            raise TypeError(
+                "world step conflict resolutions must be "
+                "ConflictResolutionRecord values"
+            )
+        resolutions = tuple(sorted(resolutions, key=_resolution_key))
+
+        transition_hashes = {
+            item.content_hash for item in transitions
+        }
+        resolved_transition_hashes: set[str] = set()
+        for resolution in resolutions:
+            if resolution.prior_state_hash != self.prior_state.content_hash:
+                raise ValueError(
+                    "world step conflict resolution must bind exact prior state"
+                )
+            participant_hashes = tuple(
+                participant.transition_record_hash
+                for participant in resolution.context.participants
+            )
+            if any(
+                item not in transition_hashes
+                for item in participant_hashes
+            ):
+                raise ValueError(
+                    "world step conflict participant must bind an included transition"
+                )
+            if (
+                resolved_transition_hashes
+                & set(participant_hashes)
+            ):
+                raise ValueError(
+                    "world step transition cannot belong to two conflict resolutions"
+                )
+            resolved_transition_hashes.update(participant_hashes)
+
+        expected_batch_hash = (
+            _resolved_transition_batch_hash(transitions, resolutions)
+            if resolutions
+            else _transition_batch_hash(transitions)
+        )
         if self.next_state.transition_batch_hash != expected_batch_hash:
             raise ValueError(
                 "world step next state must bind the exact transition batch"
             )
         object.__setattr__(self, "transitions", transitions)
+        object.__setattr__(self, "conflict_resolutions", resolutions)
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload = {
             "model_id": self.model_id,
             "model_hash": self.model_hash,
             "prior_state": self.prior_state.to_dict(),
@@ -624,6 +711,11 @@ class WorldStepResult:
             ],
             "next_state": self.next_state.to_dict(),
         }
+        if self.conflict_resolutions:
+            payload["conflict_resolutions"] = [
+                item.to_dict() for item in self.conflict_resolutions
+            ]
+        return payload
 
     @property
     def content_hash(self) -> str:
@@ -1116,7 +1208,405 @@ def _reject_write_conflicts(
             owner_by_cell[cell] = record
 
 
+def _conflict_components(
+    records: tuple[ActionTransitionRecord, ...],
+    entities: Mapping[str, Entity],
+) -> tuple[tuple[ActionTransitionRecord, ...], ...]:
+    canonical = tuple(sorted(records, key=_transition_record_key))
+    writes = tuple(
+        frozenset(_record_write_cells(record, entities))
+        for record in canonical
+    )
+    adjacency = [set() for _ in canonical]
+    for left_index, left_writes in enumerate(writes):
+        for right_index in range(left_index + 1, len(canonical)):
+            if left_writes & writes[right_index]:
+                adjacency[left_index].add(right_index)
+                adjacency[right_index].add(left_index)
+
+    seen: set[int] = set()
+    components: list[tuple[ActionTransitionRecord, ...]] = []
+    for start in range(len(canonical)):
+        if start in seen:
+            continue
+        stack = [start]
+        indices: list[int] = []
+        while stack:
+            current = stack.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            indices.append(current)
+            stack.extend(
+                sorted(adjacency[current], reverse=True)
+            )
+        if len(indices) >= 2:
+            component = tuple(
+                canonical[index] for index in sorted(indices)
+            )
+            components.append(component)
+
+    return tuple(
+        sorted(
+            components,
+            key=lambda component: tuple(
+                _transition_record_key(record)
+                for record in component
+            ),
+        )
+    )
+
+
+def _canonical_decision_action(
+    story: GenericNarrative,
+    record: ActionTransitionRecord,
+) -> tuple[Decision, ActionOption]:
+    decision = next(
+        (
+            item
+            for item in story.decisions
+            if item.id == record.intent.decision_id
+        ),
+        None,
+    )
+    if decision is None:
+        raise WorldTransitionConflictResolutionError(
+            "conflict transition decision is not canonical"
+        )
+    action = next(
+        (
+            item
+            for item in decision.actions
+            if item.id == record.intent.selected_action
+        ),
+        None,
+    )
+    if action is None:
+        raise WorldTransitionConflictResolutionError(
+            "conflict transition action is not canonical"
+        )
+    if record.actor_id != decision.actor_id:
+        raise WorldTransitionConflictResolutionError(
+            "conflict transition actor does not match decision"
+        )
+    if record.action != action:
+        raise WorldTransitionConflictResolutionError(
+            "conflict transition action payload is not canonical"
+        )
+    return decision, action
+
+
+def _build_conflict_context(
+    story: GenericNarrative,
+    domain: DomainSpec,
+    prior: WorldState,
+    model: WorldTransitionModelSpec,
+    component: tuple[ActionTransitionRecord, ...],
+    entities: Mapping[str, Entity],
+) -> ConflictResolutionContext:
+    transitions = {
+        transition.action_type: transition
+        for transition in model.transitions
+    }
+    participants: list[ConflictParticipant] = []
+    for record in component:
+        decision, action = _canonical_decision_action(story, record)
+        transition = transitions.get(action.type_name)
+        if transition is None:
+            raise WorldTransitionConflictResolutionError(
+                "conflict action type is not executable by world model"
+            )
+        allowed = tuple(
+            sorted(
+                _allowed_cells(
+                    domain,
+                    entities,
+                    decision,
+                    action,
+                    transition,
+                ),
+                key=_cell_key,
+            )
+        )
+        participants.append(
+            ConflictParticipant(
+                actor_id=record.actor_id,
+                decision_id=record.intent.decision_id,
+                action=action,
+                transition_record_hash=record.content_hash,
+                transition_spec_hash=record.transition_spec_hash,
+                original_delta=record.delta,
+                allowed_write_cells=allowed,
+            )
+        )
+
+    write_counts: dict[StateCellRef, int] = {}
+    for record in component:
+        for cell in _record_write_cells(record, entities):
+            write_counts[cell] = write_counts.get(cell, 0) + 1
+    conflict_cells = tuple(
+        sorted(
+            (
+                cell
+                for cell, count in write_counts.items()
+                if count >= 2
+            ),
+            key=_cell_key,
+        )
+    )
+    return ConflictResolutionContext(
+        prior.content_hash,
+        tuple(participants),
+        conflict_cells,
+    )
+
+
+def _certify_conflict_context(
+    story: GenericNarrative,
+    domain: DomainSpec,
+    prior: WorldState,
+    model: WorldTransitionModelSpec,
+    component: tuple[ActionTransitionRecord, ...],
+    context: ConflictResolutionContext,
+    entities: Mapping[str, Entity],
+) -> None:
+    if not isinstance(context, ConflictResolutionContext):
+        raise WorldTransitionConflictResolutionError(
+            "conflict context must be ConflictResolutionContext"
+        )
+    if context.prior_state_hash != prior.content_hash:
+        raise WorldTransitionConflictResolutionError(
+            "conflict context does not bind exact prior state"
+        )
+
+    component_by_hash = {
+        record.content_hash: record for record in component
+    }
+    if {
+        participant.transition_record_hash
+        for participant in context.participants
+    } != set(component_by_hash):
+        raise WorldTransitionConflictResolutionError(
+            "conflict context does not bind exact component transitions"
+        )
+
+    transitions = {
+        transition.action_type: transition
+        for transition in model.transitions
+    }
+    for participant in context.participants:
+        record = component_by_hash[participant.transition_record_hash]
+        decision, action = _canonical_decision_action(story, record)
+        transition = transitions.get(action.type_name)
+        if transition is None:
+            raise WorldTransitionConflictResolutionError(
+                "conflict participant action type is not executable"
+            )
+        expected_allowed = tuple(
+            sorted(
+                _allowed_cells(
+                    domain,
+                    entities,
+                    decision,
+                    action,
+                    transition,
+                ),
+                key=_cell_key,
+            )
+        )
+        if participant.actor_id != record.actor_id:
+            raise WorldTransitionConflictResolutionError(
+                "conflict participant actor identity mismatch"
+            )
+        if participant.decision_id != record.intent.decision_id:
+            raise WorldTransitionConflictResolutionError(
+                "conflict participant decision identity mismatch"
+            )
+        if participant.action != record.action:
+            raise WorldTransitionConflictResolutionError(
+                "conflict participant action payload mismatch"
+            )
+        if participant.transition_spec_hash != record.transition_spec_hash:
+            raise WorldTransitionConflictResolutionError(
+                "conflict participant transition spec mismatch"
+            )
+        if participant.original_delta != record.delta:
+            raise WorldTransitionConflictResolutionError(
+                "conflict participant original delta mismatch"
+            )
+        if participant.allowed_write_cells != expected_allowed:
+            raise WorldTransitionConflictResolutionError(
+                "conflict participant capability mismatch"
+            )
+
+    write_counts: dict[StateCellRef, int] = {}
+    for record in component:
+        for cell in _record_write_cells(record, entities):
+            write_counts[cell] = write_counts.get(cell, 0) + 1
+    expected_conflict_cells = tuple(
+        sorted(
+            (
+                cell
+                for cell, count in write_counts.items()
+                if count >= 2
+            ),
+            key=_cell_key,
+        )
+    )
+    if context.conflict_cells != expected_conflict_cells:
+        raise WorldTransitionConflictResolutionError(
+            "conflict context cells do not match exact overlapping writes"
+        )
+
+
+def _validated_resolution_delta(
+    domain: DomainSpec,
+    entities: Mapping[str, Entity],
+    context: ConflictResolutionContext,
+    raw_delta: object,
+) -> StateDelta:
+    allowed = frozenset(
+        cell
+        for participant in context.participants
+        for cell in participant.allowed_write_cells
+    )
+    try:
+        return _validated_delta(
+            domain,
+            entities,
+            allowed,
+            raw_delta,
+        )
+    except WorldTransitionError as error:
+        cause = error.__cause__
+        if cause is None:
+            raise WorldTransitionConflictResolutionError(
+                "conflict resolver produced an invalid state delta"
+            ) from error
+        raise WorldTransitionConflictResolutionError(
+            "conflict resolver produced an invalid state delta"
+        ) from cause
+
+
+def _resolve_component(
+    snapshot: Mapping[StateCellRef, TypedValue],
+    story: GenericNarrative,
+    domain: DomainSpec,
+    prior: WorldState,
+    model: WorldTransitionModelSpec,
+    component: tuple[ActionTransitionRecord, ...],
+    entities: Mapping[str, Entity],
+) -> ConflictResolutionRecord:
+    resolver = model.conflict_resolver
+    if resolver is None:
+        raise WorldTransitionConflictError(
+            "world step contains unresolved overlapping writes"
+        )
+
+    context = _build_conflict_context(
+        story,
+        domain,
+        prior,
+        model,
+        component,
+        entities,
+    )
+    _certify_conflict_context(
+        story,
+        domain,
+        prior,
+        model,
+        component,
+        context,
+        entities,
+    )
+
+    unsupported = tuple(
+        participant.action.type_name
+        for participant in context.participants
+        if participant.action.type_name
+        not in resolver.supported_action_types
+    )
+    if unsupported:
+        raise WorldTransitionConflictResolutionError(
+            "conflict resolver does not support every participant action type"
+        )
+
+    resolver_hash = _attested_resolver_hash(resolver)
+    try:
+        raw_delta = resolver.resolver_hook(snapshot, context)
+    except Exception as error:
+        raise WorldTransitionConflictResolutionError(
+            "conflict resolver hook failed"
+        ) from error
+
+    resolved_delta = _validated_resolution_delta(
+        domain,
+        entities,
+        context,
+        raw_delta,
+    )
+    return ConflictResolutionRecord(
+        resolver_id=resolver.resolver_id,
+        resolver_hash=resolver_hash,
+        prior_state_hash=prior.content_hash,
+        context=context,
+        resolved_delta=resolved_delta,
+    )
+
+
+def _mutation_write_cells(
+    delta: StateDelta,
+    entities: Mapping[str, Entity],
+) -> tuple[StateCellRef, ...]:
+    return tuple(
+        StateCellRef(
+            EntityRef(
+                entities[operation.subject_id].id,
+                entities[operation.subject_id].type_name,
+            ),
+            operation.state_variable,
+        )
+        for operation in delta.operations
+    )
+
+
+def _reject_final_resolution_collisions(
+    deltas: tuple[StateDelta, ...],
+    entities: Mapping[str, Entity],
+) -> None:
+    written: set[StateCellRef] = set()
+    for delta in deltas:
+        for cell in _mutation_write_cells(delta, entities):
+            if cell in written:
+                raise WorldTransitionConflictResolutionError(
+                    "conflict resolution introduced a final write collision"
+                )
+            written.add(cell)
+
+
+def _apply_delta(
+    values: dict[StateCellRef, TypedValue],
+    delta: StateDelta,
+    entities: Mapping[str, Entity],
+) -> None:
+    for operation in delta.operations:
+        subject = entities[operation.subject_id]
+        cell = StateCellRef(
+            EntityRef(subject.id, subject.type_name),
+            operation.state_variable,
+        )
+        if operation.kind == "clear":
+            values.pop(cell, None)
+        else:
+            assert operation.value is not None
+            values[cell] = operation.value
+
+
 def _atomic_result(
+    story: GenericNarrative,
+    domain: DomainSpec,
+    snapshot: Mapping[StateCellRef, TypedValue],
     prior: WorldState,
     model: WorldTransitionModelSpec,
     records: tuple[ActionTransitionRecord, ...],
@@ -1125,23 +1615,68 @@ def _atomic_result(
     canonical_records = tuple(
         sorted(records, key=_transition_record_key)
     )
-    _reject_write_conflicts(canonical_records, entities)
+    components = _conflict_components(
+        canonical_records,
+        entities,
+    )
+
+    if components and model.conflict_resolver is None:
+        _reject_write_conflicts(canonical_records, entities)
+
+    resolutions: tuple[ConflictResolutionRecord, ...] = ()
+    conflicting_hashes: set[str] = set()
+    if components:
+        resolved_items: list[ConflictResolutionRecord] = []
+        for component in components:
+            resolved_items.append(
+                _resolve_component(
+                    snapshot,
+                    story,
+                    domain,
+                    prior,
+                    model,
+                    component,
+                    entities,
+                )
+            )
+            conflicting_hashes.update(
+                record.content_hash for record in component
+            )
+        resolutions = tuple(
+            sorted(resolved_items, key=_resolution_key)
+        )
+
+    nonconflicting_records = tuple(
+        record
+        for record in canonical_records
+        if record.content_hash not in conflicting_hashes
+    )
+    effective_deltas = tuple(
+        record.delta for record in nonconflicting_records
+    ) + tuple(
+        resolution.resolved_delta
+        for resolution in resolutions
+    )
+    if resolutions:
+        _reject_final_resolution_collisions(
+            effective_deltas,
+            entities,
+        )
+    else:
+        _reject_write_conflicts(canonical_records, entities)
 
     next_values = dict(prior.values)
-    for record in canonical_records:
-        for operation in record.delta.operations:
-            subject = entities[operation.subject_id]
-            cell = StateCellRef(
-                EntityRef(subject.id, subject.type_name),
-                operation.state_variable,
-            )
-            if operation.kind == "clear":
-                next_values.pop(cell, None)
-            else:
-                assert operation.value is not None
-                next_values[cell] = operation.value
+    for delta in effective_deltas:
+        _apply_delta(next_values, delta, entities)
 
-    batch_hash = _transition_batch_hash(canonical_records)
+    batch_hash = (
+        _resolved_transition_batch_hash(
+            canonical_records,
+            resolutions,
+        )
+        if resolutions
+        else _transition_batch_hash(canonical_records)
+    )
     next_state = WorldState(
         domain_id=prior.domain_id,
         domain_version=prior.domain_version,
@@ -1159,6 +1694,7 @@ def _atomic_result(
         prior_state=prior,
         transitions=canonical_records,
         next_state=next_state,
+        conflict_resolutions=resolutions,
     )
 
 
@@ -1199,6 +1735,9 @@ def advance_world_step(
         )
 
     return _atomic_result(
+        story,
+        domain,
+        snapshot,
         prior_state,
         model,
         tuple(records),
