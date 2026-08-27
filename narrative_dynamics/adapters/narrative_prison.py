@@ -1,0 +1,833 @@
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+import math
+
+from grounded_goal_softmax import finite_softmax
+from narrative_dynamics.attestation import measure_implementation
+from narrative_dynamics.contracts import ModelRun, Scenario, stable_content_hash
+from narrative_dynamics.narrative.domain import (
+    ActionTypeSpec,
+    DecisionTypeSpec,
+    DomainSpec,
+    EntityTypeSpec,
+    EventTypeSpec,
+    ParameterSpec,
+    SemanticHookBinding,
+    StateDelta,
+    StateDeltaOp,
+    StateEffectSpec,
+    StateVariableSpec,
+    ValueTypeSpec,
+    validate_narrative,
+)
+from narrative_dynamics.narrative.intention import (
+    ChoiceModelSpec,
+    GoalModelSpec,
+    GoalSpec,
+)
+from narrative_dynamics.narrative.ir import (
+    ActionOption,
+    Decision,
+    Entity,
+    EntityRef,
+    GenericNarrative,
+    NarrativeEvent,
+    Observation,
+    StateCellRef,
+    TypedValue,
+)
+from narrative_dynamics.narrative.runtime_cognition import RuntimeBeliefModelSpec
+from narrative_dynamics.narrative.runtime_decision_dispatch import (
+    RuntimeDecisionModelSpec,
+    run_runtime_decision,
+)
+from narrative_dynamics.narrative.runtime_intention import (
+    RuntimeIntentionalDecisionModelSpec,
+)
+from narrative_dynamics.narrative.runtime_perception import (
+    RuntimeEvidenceLedger,
+    runtime_evidence_ledger_from_story,
+)
+from narrative_dynamics.narrative.runtime_planning import (
+    PlanningHiddenState,
+    PlanningObservation,
+    RuntimePlanningDecisionModelSpec,
+)
+from narrative_dynamics.narrative.runtime_reactive import (
+    RuntimeReactiveDecisionModelSpec,
+)
+from narrative_dynamics.narrative.uncertain import UncertainBeliefModelSpec
+
+
+_BENCHMARK_VERSION = "1.0.0"
+_IMPLEMENTATION_REVISION = "narrative-prison-held-out-v1"
+_FAMILIES = ("reactive", "intentional", "planning")
+_NAMES = {
+    "reactive": "generic-narrative-prison-reactive",
+    "intentional": "generic-narrative-prison-intentional",
+    "planning": "generic-narrative-prison-planning",
+}
+_ACTIONS = ("scout", "escape", "submit")
+_TERMINAL_ACTIONS = ("escape", "submit")
+_REQUIRED_SCENARIO_FIELDS = frozenset(
+    {
+        "prior_weak",
+        "signal_accuracy",
+        "guard_persistence",
+        "escape_reward",
+        "capture_cost",
+        "submit_reward",
+        "scout_cost",
+        "discount",
+        "horizon",
+    }
+)
+
+
+@dataclass(frozen=True)
+class _ScenarioValues:
+    prior_weak: float
+    signal_accuracy: float
+    guard_persistence: float
+    escape_reward: float
+    capture_cost: float
+    submit_reward: float
+    scout_cost: float
+    discount: float
+    horizon: int
+
+
+@dataclass(frozen=True)
+class _BenchmarkCase:
+    values: _ScenarioValues
+    domain: DomainSpec
+    story: GenericNarrative
+    decision_id: str
+    ledger: RuntimeEvidenceLedger
+    guard_cell: StateCellRef
+    phase_cell: StateCellRef
+    signal_cell: StateCellRef
+
+
+def _finite_number(value: object, *, label: str) -> float:
+    if isinstance(value, bool):
+        raise TypeError(f"{label} must be numeric")
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as error:
+        raise TypeError(f"{label} must be numeric") from error
+    if not math.isfinite(number):
+        raise ValueError(f"{label} must be finite")
+    return number
+
+
+def _probability(value: object, *, label: str) -> float:
+    number = _finite_number(value, label=label)
+    if number < 0.0 or number > 1.0:
+        raise ValueError(f"{label} must be in [0, 1]")
+    return number
+
+
+def _scenario_values(scenario: object) -> _ScenarioValues:
+    if not isinstance(scenario, Scenario):
+        raise TypeError("narrative prison benchmark requires Scenario")
+    payload = scenario.payload
+    if set(payload) != _REQUIRED_SCENARIO_FIELDS:
+        raise ValueError(
+            "narrative prison scenario must contain exactly its declared fields"
+        )
+    prior_weak = _probability(payload["prior_weak"], label="prior weak probability")
+    signal_accuracy = _probability(
+        payload["signal_accuracy"], label="signal accuracy"
+    )
+    if signal_accuracy < 0.5:
+        raise ValueError("signal accuracy must be at least 0.5")
+    guard_persistence = _probability(
+        payload["guard_persistence"], label="guard persistence"
+    )
+    escape_reward = _finite_number(payload["escape_reward"], label="escape reward")
+    capture_cost = _finite_number(payload["capture_cost"], label="capture cost")
+    submit_reward = _finite_number(payload["submit_reward"], label="submit reward")
+    scout_cost = _finite_number(payload["scout_cost"], label="scout cost")
+    if escape_reward < 0.0 or capture_cost < 0.0 or scout_cost < 0.0:
+        raise ValueError("escape reward and prison costs must be non-negative")
+    discount = _probability(payload["discount"], label="discount")
+    horizon = payload["horizon"]
+    if not isinstance(horizon, int) or isinstance(horizon, bool):
+        raise TypeError("narrative prison horizon must be an integer")
+    if horizon not in (1, 2):
+        raise ValueError("narrative prison horizon must be 1 or 2")
+    return _ScenarioValues(
+        prior_weak=prior_weak,
+        signal_accuracy=signal_accuracy,
+        guard_persistence=guard_persistence,
+        escape_reward=escape_reward,
+        capture_cost=capture_cost,
+        submit_reward=submit_reward,
+        scout_cost=scout_cost,
+        discount=discount,
+        horizon=horizon,
+    )
+
+
+def _beta(parameters: Mapping[str, float]) -> float:
+    if not isinstance(parameters, Mapping) or set(parameters) != {"beta"}:
+        raise ValueError("narrative prison benchmark requires exactly one beta parameter")
+    beta = _finite_number(parameters["beta"], label="inverse temperature beta")
+    if beta <= 0.0:
+        raise ValueError("inverse temperature beta must be positive")
+    return beta
+
+
+class _SeedPrisonStateHook:
+    def __call__(self, prior_state, event):
+        prisoner = event.arguments["prisoner"].value
+        if not isinstance(prisoner, EntityRef):
+            raise TypeError("seed prisoner argument must contain EntityRef")
+        return StateDelta(
+            (
+                StateDeltaOp(
+                    "set",
+                    prisoner.entity_id,
+                    "prisoner.episode_phase",
+                    event.arguments["phase"],
+                ),
+                StateDeltaOp(
+                    "set",
+                    prisoner.entity_id,
+                    "prisoner.signal",
+                    event.arguments["signal"],
+                ),
+            )
+        )
+
+
+def _build_benchmark_case(
+    scenario: Scenario,
+    values: _ScenarioValues,
+) -> _BenchmarkCase:
+    domain = DomainSpec(
+        domain_id="narrative-prison-benchmark",
+        version=_BENCHMARK_VERSION,
+        entity_types=(EntityTypeSpec("Guard"), EntityTypeSpec("Prisoner")),
+        value_types=(
+            ValueTypeSpec("PrisonerRef", "entity_ref", entity_type="Prisoner"),
+            ValueTypeSpec("GuardStatus", "enum", ("weak", "strong")),
+            ValueTypeSpec("EpisodePhase", "enum", ("active", "terminal")),
+            ValueTypeSpec("Signal", "enum", ("none", "clear", "alarm")),
+        ),
+        state_variables=(
+            StateVariableSpec("guard.status", "Guard", "GuardStatus"),
+            StateVariableSpec(
+                "prisoner.episode_phase",
+                "Prisoner",
+                "EpisodePhase",
+            ),
+            StateVariableSpec("prisoner.signal", "Prisoner", "Signal"),
+        ),
+        event_types=(
+            EventTypeSpec(
+                "seed-prison-state",
+                None,
+                (
+                    ParameterSpec("prisoner", "PrisonerRef"),
+                    ParameterSpec("phase", "EpisodePhase"),
+                    ParameterSpec("signal", "Signal"),
+                ),
+                (
+                    StateEffectSpec("prisoner.episode_phase", "prisoner"),
+                    StateEffectSpec("prisoner.signal", "prisoner"),
+                ),
+                "seed-prison-state",
+            ),
+        ),
+        action_types=(ActionTypeSpec("prison-action", ()),),
+        decision_types=(
+            DecisionTypeSpec("prison-choice", "Prisoner", "prison-action"),
+        ),
+        semantic_hooks=(
+            SemanticHookBinding(
+                "seed-prison-state",
+                "author deterministic prison benchmark seed state",
+                _SeedPrisonStateHook(),
+            ),
+        ),
+    )
+    prisoner = Entity("prisoner", "Prisoner")
+    guard = Entity("guard", "Guard")
+    guard_cell = StateCellRef(EntityRef(guard.id, guard.type_name), "guard.status")
+    phase_cell = StateCellRef(
+        EntityRef(prisoner.id, prisoner.type_name),
+        "prisoner.episode_phase",
+    )
+    signal_cell = StateCellRef(
+        EntityRef(prisoner.id, prisoner.type_name),
+        "prisoner.signal",
+    )
+    seed = NarrativeEvent(
+        "seed-prison-state",
+        0,
+        "seed-prison-state",
+        None,
+        {
+            "prisoner": TypedValue(
+                "PrisonerRef",
+                EntityRef(prisoner.id, prisoner.type_name),
+            ),
+            "phase": TypedValue("EpisodePhase", "active"),
+            "signal": TypedValue("Signal", "none"),
+        },
+    )
+    action_ids = _TERMINAL_ACTIONS if values.horizon == 1 else _ACTIONS
+    decision = Decision(
+        "prison-choice",
+        1,
+        prisoner.id,
+        "prison-choice",
+        (guard_cell, phase_cell, signal_cell),
+        tuple(ActionOption(action, "prison-action", {}) for action in action_ids),
+    )
+    story = GenericNarrative(
+        domain_id=domain.domain_id,
+        domain_version=domain.version,
+        domain_spec_hash=domain.content_hash,
+        entities=(prisoner, guard),
+        events=(seed,),
+        observations=(Observation("observe-prison-seed", prisoner.id, seed.id),),
+        claims=(),
+        receptions=(),
+        decisions=(decision,),
+    )
+    validate_narrative(story, domain)
+    ledger = runtime_evidence_ledger_from_story(
+        story,
+        domain,
+        at_time=decision.logical_time,
+    )
+    return _BenchmarkCase(
+        values=values,
+        domain=domain,
+        story=story,
+        decision_id=decision.id,
+        ledger=ledger,
+        guard_cell=guard_cell,
+        phase_cell=phase_cell,
+        signal_cell=signal_cell,
+    )
+
+
+class _SeedPriorHook:
+    def __call__(self, agent_id, cell, hypotheses, parameters):
+        prior_weak = float(parameters["prior_weak"])
+        result: dict[str, float] = {}
+        for hypothesis in hypotheses:
+            probability = 0.0
+            if cell.state_variable == "guard.status":
+                probability = prior_weak if hypothesis.value == "weak" else 1.0 - prior_weak
+            elif cell.state_variable == "prisoner.episode_phase":
+                probability = 1.0 if hypothesis.value == "active" else 0.0
+            elif cell.state_variable == "prisoner.signal":
+                probability = 1.0 if hypothesis.value == "none" else 0.0
+            else:
+                raise ValueError("unsupported narrative prison belief cell")
+            result[stable_content_hash(hypothesis.to_dict())] = probability
+        return result
+
+
+class _SeedLikelihoodHook:
+    def __call__(self, agent_id, evidence, hypotheses, parameters):
+        return {
+            stable_content_hash(hypothesis.to_dict()): 1.0
+            for hypothesis in hypotheses
+        }
+
+
+class _RuntimeLikelihoodHook:
+    def __call__(self, agent_id, percept_view, hypotheses, parameters):
+        if percept_view.relation == "clear":
+            return {
+                stable_content_hash(hypothesis.to_dict()): 1.0
+                for hypothesis in hypotheses
+            }
+        if percept_view.relation != "equals" or percept_view.value is None:
+            raise ValueError("unsupported narrative prison runtime percept")
+        return {
+            stable_content_hash(hypothesis.to_dict()): (
+                1.0 if hypothesis == percept_view.value else 0.0
+            )
+            for hypothesis in hypotheses
+        }
+
+
+def _build_belief_model(case: _BenchmarkCase) -> RuntimeBeliefModelSpec:
+    seed_model = UncertainBeliefModelSpec(
+        "generic-narrative-prison-seed-belief",
+        _BENCHMARK_VERSION,
+        {"prior_weak": case.values.prior_weak},
+        _SeedPriorHook(),
+        _SeedLikelihoodHook(),
+    )
+    return RuntimeBeliefModelSpec(
+        "generic-narrative-prison-runtime-belief",
+        _BENCHMARK_VERSION,
+        seed_model,
+        {},
+        _RuntimeLikelihoodHook(),
+    )
+
+
+class _ReactiveScoreHook:
+    def __call__(self, context):
+        parameters = context.parameters
+        prior_weak = float(parameters["prior_weak"])
+        signal_accuracy = float(parameters["signal_accuracy"])
+        escape_reward = float(parameters["escape_reward"])
+        capture_cost = float(parameters["capture_cost"])
+        submit_reward = float(parameters["submit_reward"])
+        scout_cost = float(parameters["scout_cost"])
+        discount = float(parameters["discount"])
+        beta = float(parameters["beta"])
+        horizon = int(parameters["horizon"])
+
+        direct_escape = (
+            prior_weak * escape_reward
+            - (1.0 - prior_weak) * capture_cost
+        )
+        scores = {"escape": direct_escape, "submit": submit_reward}
+        if horizon == 2:
+            cue_strength = 2.0 * signal_accuracy - 1.0
+            cue_scale = (escape_reward + capture_cost) / 2.0
+            cue_delta = cue_strength * cue_scale
+            terminal_value = 0.0
+            for signal, escape_value in (
+                ("clear", direct_escape + cue_delta),
+                ("alarm", direct_escape - cue_delta),
+            ):
+                route_values = {
+                    "escape": escape_value,
+                    "submit": submit_reward,
+                }
+                route_policy = finite_softmax(route_values, beta=beta)
+                signal_mass = (
+                    prior_weak * signal_accuracy
+                    + (1.0 - prior_weak) * (1.0 - signal_accuracy)
+                    if signal == "clear"
+                    else prior_weak * (1.0 - signal_accuracy)
+                    + (1.0 - prior_weak) * signal_accuracy
+                )
+                terminal_value += signal_mass * math.fsum(
+                    route_policy[action] * route_values[action]
+                    for action in _TERMINAL_ACTIONS
+                )
+            scores["scout"] = -scout_cost + discount * terminal_value
+        return scores
+
+
+def _build_reactive_model(
+    case: _BenchmarkCase,
+    beta: float,
+) -> RuntimeReactiveDecisionModelSpec:
+    values = case.values
+    return RuntimeReactiveDecisionModelSpec(
+        "generic-narrative-prison-reactive",
+        _BENCHMARK_VERSION,
+        ("prison-choice",),
+        (case.guard_cell,),
+        {
+            "prior_weak": values.prior_weak,
+            "signal_accuracy": values.signal_accuracy,
+            "escape_reward": values.escape_reward,
+            "capture_cost": values.capture_cost,
+            "submit_reward": values.submit_reward,
+            "scout_cost": values.scout_cost,
+            "discount": values.discount,
+            "horizon": values.horizon,
+            "beta": beta,
+        },
+        beta,
+        _ReactiveScoreHook(),
+    )
+
+
+def _typed_value_hash(type_name: str, value: object) -> str:
+    return stable_content_hash(TypedValue(type_name, value).to_dict())
+
+
+def _build_intentional_model(
+    case: _BenchmarkCase,
+    beta: float,
+) -> RuntimeIntentionalDecisionModelSpec:
+    values = case.values
+    cell_weights = {
+        case.guard_cell: 1.0,
+        case.phase_cell: 0.0,
+        case.signal_cell: 0.0,
+    }
+    zero_phase = {
+        _typed_value_hash("EpisodePhase", "active"): 0.0,
+        _typed_value_hash("EpisodePhase", "terminal"): 0.0,
+    }
+    zero_signal = {
+        _typed_value_hash("Signal", "none"): 0.0,
+        _typed_value_hash("Signal", "clear"): 0.0,
+        _typed_value_hash("Signal", "alarm"): 0.0,
+    }
+    weak_hash = _typed_value_hash("GuardStatus", "weak")
+    strong_hash = _typed_value_hash("GuardStatus", "strong")
+    freedom = GoalSpec(
+        "freedom",
+        1.0,
+        cell_weights,
+        {
+            case.guard_cell: {weak_hash: 1.0, strong_hash: -1.0},
+            case.phase_cell: zero_phase,
+            case.signal_cell: zero_signal,
+        },
+    )
+    safety = GoalSpec(
+        "safety",
+        1.0,
+        cell_weights,
+        {
+            case.guard_cell: {weak_hash: -1.0, strong_hash: 1.0},
+            case.phase_cell: zero_phase,
+            case.signal_cell: zero_signal,
+        },
+    )
+    goal_model = GoalModelSpec(
+        "generic-narrative-prison-goals",
+        _BENCHMARK_VERSION,
+        1.0,
+        (freedom, safety),
+    )
+    freedom_values = {
+        "escape": values.escape_reward,
+        "submit": 0.0,
+    }
+    safety_values = {
+        "escape": -values.capture_cost,
+        "submit": values.submit_reward,
+    }
+    if values.horizon == 2:
+        cue_strength = 2.0 * values.signal_accuracy - 1.0
+        freedom_values["scout"] = (
+            cue_strength * values.escape_reward - values.scout_cost
+        )
+        safety_values["scout"] = (
+            cue_strength * values.capture_cost - values.scout_cost
+        )
+    choice_model = ChoiceModelSpec(
+        "generic-narrative-prison-choice",
+        _BENCHMARK_VERSION,
+        beta,
+        {
+            "freedom": freedom_values,
+            "safety": safety_values,
+        },
+    )
+    return RuntimeIntentionalDecisionModelSpec(
+        "generic-narrative-prison-intentional",
+        _BENCHMARK_VERSION,
+        ("prison-choice",),
+        _build_belief_model(case),
+        goal_model,
+        choice_model,
+    )
+
+
+def _state_parts(state_id: str) -> tuple[str, str]:
+    guard, phase = state_id.split("-", 1)
+    return guard, phase
+
+
+class _ProductJointBeliefHook:
+    def __call__(self, context):
+        result: dict[str, float] = {}
+        for state in context.hidden_states:
+            probability = 1.0
+            for cell, distribution in context.posterior.items():
+                probability *= distribution.probability_of(state.cells[cell])
+            result[state.state_id] = probability
+        return result
+
+
+class _PlanningTransitionHook:
+    def __call__(self, context):
+        persistence = float(context.parameters["guard_persistence"])
+        guard, phase = _state_parts(context.state.state_id)
+        result = {
+            state.state_id: 0.0
+            for state in context.candidate_next_states
+        }
+        if phase == "terminal":
+            result[context.state.state_id] = 1.0
+            return result
+
+        if context.depth == 0:
+            if context.action.id == "scout":
+                result[context.state.state_id] = 1.0
+                return result
+            if context.action.id in _TERMINAL_ACTIONS:
+                result[f"{guard}-terminal"] = 1.0
+                return result
+
+        if context.depth == 1:
+            if context.action.id == "submit":
+                result[f"{guard}-terminal"] = 1.0
+                return result
+            if context.action.id == "escape":
+                other = "strong" if guard == "weak" else "weak"
+                result[f"{guard}-terminal"] = persistence
+                result[f"{other}-terminal"] = 1.0 - persistence
+                return result
+
+        raise ValueError("unsupported narrative prison planning transition")
+
+
+class _PlanningObservationHook:
+    def __call__(self, context):
+        accuracy = float(context.parameters["signal_accuracy"])
+        guard, phase = _state_parts(context.next_state.state_id)
+        result = {
+            observation.observation_id: 0.0
+            for observation in context.observations
+        }
+        if context.depth == 0 and context.action.id == "scout" and phase == "active":
+            clear = accuracy if guard == "weak" else 1.0 - accuracy
+            result["clear"] = clear
+            result["alarm"] = 1.0 - clear
+            return result
+        result["none"] = 1.0
+        return result
+
+
+class _PlanningRewardHook:
+    def __call__(self, context):
+        parameters = context.parameters
+        _, phase = _state_parts(context.state.state_id)
+        next_guard, _ = _state_parts(context.next_state.state_id)
+        if phase == "terminal":
+            return 0.0
+        if context.depth == 0:
+            if context.action.id == "scout":
+                return -float(parameters["scout_cost"])
+            if context.action.id == "submit":
+                return float(parameters["submit_reward"])
+            if context.action.id == "escape":
+                guard, _ = _state_parts(context.state.state_id)
+                return (
+                    float(parameters["escape_reward"])
+                    if guard == "weak"
+                    else -float(parameters["capture_cost"])
+                )
+        if context.depth == 1:
+            if context.action.id == "submit":
+                return float(parameters["submit_reward"])
+            if context.action.id == "escape":
+                return (
+                    float(parameters["escape_reward"])
+                    if next_guard == "weak"
+                    else -float(parameters["capture_cost"])
+                )
+        raise ValueError("unsupported narrative prison planning reward")
+
+
+def _build_planning_model(
+    case: _BenchmarkCase,
+    beta: float,
+) -> RuntimePlanningDecisionModelSpec:
+    values = case.values
+    states = tuple(
+        PlanningHiddenState(
+            f"{guard}-{phase}",
+            {
+                case.guard_cell: TypedValue("GuardStatus", guard),
+                case.phase_cell: TypedValue("EpisodePhase", phase),
+            },
+        )
+        for guard in ("weak", "strong")
+        for phase in ("active", "terminal")
+    )
+    observations = tuple(
+        PlanningObservation(
+            signal,
+            {case.signal_cell: TypedValue("Signal", signal)},
+        )
+        for signal in ("clear", "alarm", "none")
+    )
+    schedule = (
+        ((_TERMINAL_ACTIONS),)
+        if values.horizon == 1
+        else (_ACTIONS, _TERMINAL_ACTIONS)
+    )
+    if values.horizon == 1:
+        schedule = (_TERMINAL_ACTIONS,)
+    return RuntimePlanningDecisionModelSpec(
+        "generic-narrative-prison-planning",
+        _BENCHMARK_VERSION,
+        ("prison-choice",),
+        (case.guard_cell, case.phase_cell),
+        (case.signal_cell,),
+        _build_belief_model(case),
+        states,
+        observations,
+        schedule,
+        values.discount,
+        beta,
+        {
+            "guard_persistence": values.guard_persistence,
+            "signal_accuracy": values.signal_accuracy,
+            "escape_reward": values.escape_reward,
+            "capture_cost": values.capture_cost,
+            "submit_reward": values.submit_reward,
+            "scout_cost": values.scout_cost,
+        },
+        _ProductJointBeliefHook(),
+        _PlanningTransitionHook(),
+        _PlanningObservationHook(),
+        _PlanningRewardHook(),
+    )
+
+
+def _build_runtime_decision_model(
+    family: str,
+    case: _BenchmarkCase,
+    beta: float,
+):
+    builder = {
+        "reactive": _build_reactive_model,
+        "intentional": _build_intentional_model,
+        "planning": _build_planning_model,
+    }[family]
+    return builder(case, beta)
+
+
+@dataclass(frozen=True)
+class _NarrativePrisonBenchmarkModel:
+    family: str
+
+    def __post_init__(self) -> None:
+        if self.family not in _FAMILIES:
+            raise ValueError("narrative prison benchmark family is unsupported")
+
+    @property
+    def name(self) -> str:
+        return _NAMES[self.family]
+
+    @property
+    def version(self) -> str:
+        return _BENCHMARK_VERSION
+
+    @property
+    def implementation_revision(self) -> str:
+        return _IMPLEMENTATION_REVISION
+
+    def simulate(self, scenario, parameters, rng) -> ModelRun:
+        values = _scenario_values(scenario)
+        beta = _beta(parameters)
+        case = _build_benchmark_case(scenario, values)
+        nested = _build_runtime_decision_model(self.family, case, beta)
+        dispatch = run_runtime_decision(
+            case.story,
+            case.domain,
+            case.decision_id,
+            case.ledger,
+            RuntimeDecisionModelSpec(self.family, nested),
+        )
+        initial_policy = {action: 0.0 for action in _ACTIONS}
+        for action, probability in dispatch.action_policy.items():
+            initial_policy[action] = probability
+        return ModelRun(
+            events=(),
+            outcome={
+                "model_kind": self.family,
+                "initial_policy": initial_policy,
+                "selected_action": dispatch.selected_action,
+                "runtime_dispatch_hash": dispatch.content_hash,
+                "runtime_dispatch": dispatch.to_dict(),
+                "translated_story_hash": case.story.content_hash,
+                "translated_domain_hash": case.domain.content_hash,
+                "runtime_ledger_hash": case.ledger.content_hash,
+            },
+        )
+
+
+@dataclass(frozen=True)
+class NarrativePrisonModelSource:
+    family: str
+
+    def __post_init__(self) -> None:
+        if self.family not in _FAMILIES:
+            raise ValueError(
+                "narrative prison family must be reactive, intentional, or planning"
+            )
+
+    @property
+    def name(self) -> str:
+        return _NAMES[self.family]
+
+    @property
+    def version(self) -> str:
+        return _BENCHMARK_VERSION
+
+    @property
+    def implementation_revision(self) -> str:
+        return _IMPLEMENTATION_REVISION
+
+    @property
+    def lifecycle(self) -> str:
+        return "fresh_per_batch"
+
+    def instantiate(self) -> _NarrativePrisonBenchmarkModel:
+        return _NarrativePrisonBenchmarkModel(self.family)
+
+    def manifest_identity(self) -> dict[str, object]:
+        family_builder = {
+            "reactive": _build_reactive_model,
+            "intentional": _build_intentional_model,
+            "planning": _build_planning_model,
+        }[self.family]
+        return {
+            "name": self.name,
+            "version": self.version,
+            "family": self.family,
+            "implementation_revision": self.implementation_revision,
+            "lifecycle": self.lifecycle,
+            "source_implementation_identity": measure_implementation(
+                NarrativePrisonModelSource
+            ).manifest_identity(),
+            "model_implementation_identity": measure_implementation(
+                _NarrativePrisonBenchmarkModel
+            ).manifest_identity(),
+            "benchmark_builder_implementation_identity": measure_implementation(
+                _build_benchmark_case
+            ).manifest_identity(),
+            "family_builder_implementation_identity": measure_implementation(
+                family_builder
+            ).manifest_identity(),
+            "dispatch_implementation_identity": measure_implementation(
+                run_runtime_decision
+            ).manifest_identity(),
+        }
+
+
+def create_narrative_prison_reactive_source() -> NarrativePrisonModelSource:
+    return NarrativePrisonModelSource("reactive")
+
+
+def create_narrative_prison_intentional_source() -> NarrativePrisonModelSource:
+    return NarrativePrisonModelSource("intentional")
+
+
+def create_narrative_prison_planning_source() -> NarrativePrisonModelSource:
+    return NarrativePrisonModelSource("planning")
+
+
+__all__ = [
+    "NarrativePrisonModelSource",
+    "create_narrative_prison_intentional_source",
+    "create_narrative_prison_planning_source",
+    "create_narrative_prison_reactive_source",
+]
