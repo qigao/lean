@@ -160,6 +160,11 @@ _EXPECTED_PUBLIC_API = {
     "RuntimePlanningDecisionResult",
     "RuntimePlanningDecisionResolutionError",
     "run_runtime_planning_decision",
+    # Runtime generic decision dispatch.
+    "RuntimeDecisionModelSpec",
+    "RuntimeDecisionDispatchResult",
+    "RuntimeDecisionDispatchError",
+    "run_runtime_decision",
     # Multi-step simulation.
     "RuntimeAgentSpec",
     "SimulationModelSpec",
