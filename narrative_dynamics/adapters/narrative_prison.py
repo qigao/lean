@@ -22,6 +22,11 @@ from narrative_dynamics.narrative.domain import (
     ValueTypeSpec,
     validate_narrative,
 )
+from narrative_dynamics.narrative.intention import (
+    ChoiceModelSpec,
+    GoalModelSpec,
+    GoalSpec,
+)
 from narrative_dynamics.narrative.ir import (
     ActionOption,
     Decision,
@@ -33,9 +38,13 @@ from narrative_dynamics.narrative.ir import (
     StateCellRef,
     TypedValue,
 )
+from narrative_dynamics.narrative.runtime_cognition import RuntimeBeliefModelSpec
 from narrative_dynamics.narrative.runtime_decision_dispatch import (
     RuntimeDecisionModelSpec,
     run_runtime_decision,
+)
+from narrative_dynamics.narrative.runtime_intention import (
+    RuntimeIntentionalDecisionModelSpec,
 )
 from narrative_dynamics.narrative.runtime_perception import (
     RuntimeEvidenceLedger,
@@ -44,6 +53,7 @@ from narrative_dynamics.narrative.runtime_perception import (
 from narrative_dynamics.narrative.runtime_reactive import (
     RuntimeReactiveDecisionModelSpec,
 )
+from narrative_dynamics.narrative.uncertain import UncertainBeliefModelSpec
 
 
 _BENCHMARK_VERSION = "1.0.0"
@@ -286,7 +296,11 @@ def _build_benchmark_case(
         decisions=(decision,),
     )
     validate_narrative(story, domain)
-    ledger = runtime_evidence_ledger_from_story(story, domain, at_time=decision.logical_time)
+    ledger = runtime_evidence_ledger_from_story(
+        story,
+        domain,
+        at_time=decision.logical_time,
+    )
     return _BenchmarkCase(
         values=values,
         domain=domain,
@@ -296,6 +310,66 @@ def _build_benchmark_case(
         guard_cell=guard_cell,
         phase_cell=phase_cell,
         signal_cell=signal_cell,
+    )
+
+
+class _SeedPriorHook:
+    def __call__(self, agent_id, cell, hypotheses, parameters):
+        prior_weak = float(parameters["prior_weak"])
+        result: dict[str, float] = {}
+        for hypothesis in hypotheses:
+            probability = 0.0
+            if cell.state_variable == "guard.status":
+                probability = prior_weak if hypothesis.value == "weak" else 1.0 - prior_weak
+            elif cell.state_variable == "prisoner.episode_phase":
+                probability = 1.0 if hypothesis.value == "active" else 0.0
+            elif cell.state_variable == "prisoner.signal":
+                probability = 1.0 if hypothesis.value == "none" else 0.0
+            else:
+                raise ValueError("unsupported narrative prison belief cell")
+            result[stable_content_hash(hypothesis.to_dict())] = probability
+        return result
+
+
+class _SeedLikelihoodHook:
+    def __call__(self, agent_id, evidence, hypotheses, parameters):
+        return {
+            stable_content_hash(hypothesis.to_dict()): 1.0
+            for hypothesis in hypotheses
+        }
+
+
+class _RuntimeLikelihoodHook:
+    def __call__(self, agent_id, percept_view, hypotheses, parameters):
+        if percept_view.relation == "clear":
+            return {
+                stable_content_hash(hypothesis.to_dict()): 1.0
+                for hypothesis in hypotheses
+            }
+        if percept_view.relation != "equals" or percept_view.value is None:
+            raise ValueError("unsupported narrative prison runtime percept")
+        return {
+            stable_content_hash(hypothesis.to_dict()): (
+                1.0 if hypothesis == percept_view.value else 0.0
+            )
+            for hypothesis in hypotheses
+        }
+
+
+def _build_belief_model(case: _BenchmarkCase) -> RuntimeBeliefModelSpec:
+    seed_model = UncertainBeliefModelSpec(
+        "generic-narrative-prison-seed-belief",
+        _BENCHMARK_VERSION,
+        {"prior_weak": case.values.prior_weak},
+        _SeedPriorHook(),
+        _SeedLikelihoodHook(),
+    )
+    return RuntimeBeliefModelSpec(
+        "generic-narrative-prison-runtime-belief",
+        _BENCHMARK_VERSION,
+        seed_model,
+        {},
+        _RuntimeLikelihoodHook(),
     )
 
 
@@ -380,8 +454,90 @@ def _build_reactive_model(
     )
 
 
-def _build_intentional_model(case: _BenchmarkCase, beta: float):
-    raise NotImplementedError("intentional benchmark family is not implemented yet")
+def _typed_value_hash(type_name: str, value: object) -> str:
+    return stable_content_hash(TypedValue(type_name, value).to_dict())
+
+
+def _build_intentional_model(
+    case: _BenchmarkCase,
+    beta: float,
+) -> RuntimeIntentionalDecisionModelSpec:
+    values = case.values
+    cell_weights = {
+        case.guard_cell: 1.0,
+        case.phase_cell: 0.0,
+        case.signal_cell: 0.0,
+    }
+    zero_phase = {
+        _typed_value_hash("EpisodePhase", "active"): 0.0,
+        _typed_value_hash("EpisodePhase", "terminal"): 0.0,
+    }
+    zero_signal = {
+        _typed_value_hash("Signal", "none"): 0.0,
+        _typed_value_hash("Signal", "clear"): 0.0,
+        _typed_value_hash("Signal", "alarm"): 0.0,
+    }
+    weak_hash = _typed_value_hash("GuardStatus", "weak")
+    strong_hash = _typed_value_hash("GuardStatus", "strong")
+    freedom = GoalSpec(
+        "freedom",
+        1.0,
+        cell_weights,
+        {
+            case.guard_cell: {weak_hash: 1.0, strong_hash: -1.0},
+            case.phase_cell: zero_phase,
+            case.signal_cell: zero_signal,
+        },
+    )
+    safety = GoalSpec(
+        "safety",
+        1.0,
+        cell_weights,
+        {
+            case.guard_cell: {weak_hash: -1.0, strong_hash: 1.0},
+            case.phase_cell: zero_phase,
+            case.signal_cell: zero_signal,
+        },
+    )
+    goal_model = GoalModelSpec(
+        "generic-narrative-prison-goals",
+        _BENCHMARK_VERSION,
+        1.0,
+        (freedom, safety),
+    )
+    freedom_values = {
+        "escape": values.escape_reward,
+        "submit": 0.0,
+    }
+    safety_values = {
+        "escape": -values.capture_cost,
+        "submit": values.submit_reward,
+    }
+    if values.horizon == 2:
+        cue_strength = 2.0 * values.signal_accuracy - 1.0
+        freedom_values["scout"] = (
+            cue_strength * values.escape_reward - values.scout_cost
+        )
+        safety_values["scout"] = (
+            cue_strength * values.capture_cost - values.scout_cost
+        )
+    choice_model = ChoiceModelSpec(
+        "generic-narrative-prison-choice",
+        _BENCHMARK_VERSION,
+        beta,
+        {
+            "freedom": freedom_values,
+            "safety": safety_values,
+        },
+    )
+    return RuntimeIntentionalDecisionModelSpec(
+        "generic-narrative-prison-intentional",
+        _BENCHMARK_VERSION,
+        ("prison-choice",),
+        _build_belief_model(case),
+        goal_model,
+        choice_model,
+    )
 
 
 def _build_planning_model(case: _BenchmarkCase, beta: float):
