@@ -35,6 +35,12 @@ from narrative_dynamics.narrative.compiler import (
     SourceSpan,
     compile_candidates,
 )
+from narrative_dynamics.narrative.conflict import (
+    ConflictParticipant,
+    ConflictResolutionContext,
+    ConflictResolutionRecord,
+    ConflictResolverSpec,
+)
 from narrative_dynamics.narrative.decision import (
     DecisionCellView,
     DecisionChoice,
@@ -212,6 +218,7 @@ from narrative_dynamics.narrative.world import (
     WorldState,
     WorldStepResult,
     WorldTransitionConflictError,
+    WorldTransitionConflictResolutionError,
     WorldTransitionError,
     WorldTransitionModelSpec,
     advance_world_step,
@@ -282,6 +289,11 @@ __all__ = (
     "WorldTransitionConflictError",
     "world_state_from_story",
     "advance_world_step",
+    "ConflictParticipant",
+    "ConflictResolutionContext",
+    "ConflictResolverSpec",
+    "ConflictResolutionRecord",
+    "WorldTransitionConflictResolutionError",
     "ObservationCapabilitySpec",
     "ObserverProjectionSpec",
     "ObservationProjectionModelSpec",
