@@ -345,7 +345,7 @@ class NarrativeRuntimePlanningTests(unittest.TestCase):
                 "science-choice",
                 "1",
                 beta,
-                {goal.id: dict(scores) for goal in goals},
+                {goal.goal_id: dict(scores) for goal in goals},
             ),
         )
 
