@@ -4,9 +4,9 @@
 
 **Goal:** Add explicit, seeded, replayable aleatoric stochastic world transitions and truth-preserving stochastic observation projection while preserving deterministic V1/V2 payloads, hashes, decision APIs, conflict semantics, and uncertainty/comparison infrastructure.
 
-**Architecture:** Add one runtime-owned stateless hash-categorical randomness core. World and observation models gain separate additive stochastic lanes whose hooks return finite distributions without receiving RNG; the trusted runtime validates every candidate, derives component-local substreams from a frozen narrative root seed, samples one outcome, and binds the complete sample lineage into existing world/projection/evidence/simulation hashes. `simulate_step()` remains seedless after initialization, decision dispatch remains RNG-free, and deterministic records omit all new optional fields.
+**Architecture:** Add one runtime-owned stateless hash-categorical randomness core. World and observation models gain separate additive stochastic lanes whose hooks return finite distributions without receiving RNG; the trusted runtime validates every candidate, derives component-local substreams from a frozen narrative root seed, samples one outcome, and binds complete sample lineage into world/projection/evidence/simulation hashes. `simulate_step` remains seedless after initialization, decision dispatch remains RNG-free, and deterministic records omit every new optional field.
 
-**Tech Stack:** Python 3 stdlib (`dataclasses`, `math`, `MappingProxyType`, `unittest`), existing `stable_content_hash`, implementation attestation, GenericNarrative/DomainSpec world transition, Conflict Resolution V2, observation projection, runtime percept ledger, multi-step simulation scheduler, outer `SimulationRunner`, existing uncertainty seed-block diagnostics, GitHub Actions `proof.yml`.
+**Tech Stack:** Python 3 stdlib (`dataclasses`, `math`, `re`, `MappingProxyType`, `unittest`), existing `stable_content_hash`, implementation attestation, GenericNarrative/DomainSpec world transition, Conflict Resolution V2, observation projection, runtime percept ledger, multi-step simulation scheduler, outer `SimulationRunner`, existing uncertainty seed-block diagnostics, GitHub Actions `proof.yml`.
 
 **Spec:** `docs/superpowers/specs/2026-08-28-narrative-stochastic-world-observation-v1-design.md`
 
@@ -15,74 +15,64 @@
 - Integrated base: `proof/narrative-dynamics-v0@e2b505230211a38390e8eda9e92ba25c347703aa`.
 - Feature branch: `work/narrative-stochastic-world-observation-v1`.
 - Approved written-spec head before planning: `93904c6d5eee05a6bd69011c701f83c1a376cbc8`.
-- Docs-only spec/plan commits do not count as feature proof. The first authoritative feature proof must be the complete test-only RED commit.
+- Docs-only spec/plan commits do not count as feature proof. The first authoritative feature proof is the complete test-only RED commit.
 - Strict sequence: test-only RED -> exact-head RED evidence -> minimal GREEN tasks -> exact-head feature GREEN -> PR synthetic-merge GREEN -> merge -> post-merge exact-head GREEN.
-- No production code may be committed in the authoritative RED commit.
-- Create only one new production module: `narrative_dynamics/narrative/randomness.py`.
-- Modify production only in `narrative_dynamics/narrative/world.py`, `narrative_dynamics/narrative/observation_projection.py`, `narrative_dynamics/narrative/runtime_perception.py`, and `narrative_dynamics/narrative/simulation.py` in addition to the new randomness module.
-- Do not modify `runtime_decision_dispatch.py`, `runtime_reactive.py`, `runtime_intention.py`, `runtime_planning.py`, conflict resolver semantics, comparison/preregistration/release code, uncertainty/calibration core, committed fixtures, package-root exports, or Lean sources.
-- Do not add RNG arguments to existing deterministic world or projection hooks.
-- `run_runtime_decision(...)` and all Reactive/Intentional/Planning APIs remain RNG-free.
-- Conflict Resolution V2 remains deterministic and runs only after stochastic world transitions have been sampled into concrete transition records.
-- Observation stochasticity is truth-preserving: it may vary visibility/dropout/selection among true facts but may not emit a false `equals` value.
-- `RANDOM_DERIVATION_VERSION` is exactly `"narrative-hash-categorical-v1"`.
-- Random namespaces are exactly `"world.transition"` and `"observation.projection"` in V1.
-- World sample step index is `prior_state.step_index + 1`; observation sample step index is `world_step.next_state.step_index`.
-- World sample source hash is the exact prior `WorldState.content_hash`; observation sample source hash is the exact `WorldStepResult.content_hash`.
-- World component key is exactly `(actor_id, decision_id, action_id)`.
-- Observation component key is exactly `(observer_id, channel)`.
-- Sampling is stateless and component-local. No shared mutable RNG or process-global RNG is permitted.
-- Every finite distribution contains at least two positive-probability outcomes, unique trimmed outcome ids, `math.fsum(probabilities) == 1.0`, and lexical outcome-id canonicalization. No implicit renormalization.
-- Every candidate stochastic world delta is capability-validated before sampling.
-- Every candidate stochastic observation fact tuple is shape/capability/truth-validated before sampling.
-- Empty stochastic observation outcomes are valid but must still leave projection and evidence-batch sampling lineage.
-- `WorldState.root_seed` is optional, appended after existing fields, omitted from `to_dict()` when `None`, and immutable across a state chain.
-- A stochastic lane requires a non-`None` root seed before its hook is called.
-- `simulation_state_from_story(..., seed=None)` is the only scheduler entry point that accepts the narrative root seed. `simulate_step()` and `simulate_trajectory()` do not gain per-step/per-round seeds.
-- Deterministic V1/V2 `to_dict()` payloads and content hashes remain exact because every new optional field is omitted when absent/empty.
-- Existing deterministic tests must remain unchanged unless a pre-existing test helper cannot construct the additive optional field; assertions must never be weakened.
-- The spec phrase about one observer not perturbing another is interpreted consistently with the declared source-hash contract: on the **same exact world step**, adding/reordering an unrelated stochastic projection component must not perturb an existing observer/channel sample. Changing the story/entity set changes the world-step source hash and is not an invariance claim.
-- Outer `SimulationRunner` seed compatibility is test-adapter-only: one fixed `rng.getrandbits(64)` call maps the already-recorded outer simulation seed deterministically to a narrative root seed. No production uncertainty/calibration API changes.
-- Do not mark any #27 P2 Stochastic World / Observation checkbox complete until merge plus post-merge exact-head proof. P2 Identification and Model Comparison remains untouched and open.
+- No production code is committed in the authoritative RED commit.
+- Production scope is one new module, `narrative_dynamics/narrative/randomness.py`, plus modifications only to `world.py`, `observation_projection.py`, `runtime_perception.py`, and narrative `simulation.py`.
+- Do not modify decision-family implementations, runtime decision dispatch, conflict resolver semantics, comparison/preregistration/release code, uncertainty/calibration core, committed fixtures, package-root exports, or Lean sources.
+- Existing deterministic hook signatures stay exact: `transition_hook(snapshot, decision, action)` and `projection_hook(prior_visible, next_visible, observer, step_index)`.
+- Reactive/Intentional/Planning and `run_runtime_decision` remain RNG-free.
+- Conflict Resolution V2 remains deterministic and receives concrete sampled transition records.
+- Observation stochasticity is truth-preserving: visibility/dropout/selection among true facts only; no false `equals` values.
+- `RANDOM_DERIVATION_VERSION` is exactly `narrative-hash-categorical-v1`.
+- V1 random namespaces are exactly `world.transition` and `observation.projection`.
+- World sample step is `prior_state.step_index + 1`; observation sample step is `world_step.next_state.step_index`.
+- World sample source is exact prior `WorldState.content_hash`; observation sample source is exact `WorldStepResult.content_hash`.
+- World component key is `(actor_id, decision_id, action_id)`; observation component key is `(observer_id, channel)`.
+- No process-global RNG, trajectory-global mutable RNG, or sibling-consumed RNG state.
+- Every finite distribution has at least two outcomes, unique trimmed ids, positive finite non-bool probabilities, lexical id canonicalization, and exact `math.fsum(probabilities) == 1.0`. No renormalization.
+- Every candidate world delta is capability-validated before sampling. Every candidate observation tuple is shape/capability/truth-validated before sampling.
+- Empty stochastic observation outcomes are valid and still produce projection/evidence-batch sample lineage.
+- `WorldState.root_seed` is optional and appended after existing fields; its serialized key is absent when `None`; next states preserve it exactly.
+- A selected stochastic world transition or executing stochastic observation projection requires a non-`None` root seed before calling its hook.
+- `simulation_state_from_story(..., seed=None)` is the only narrative scheduler entry that accepts the root seed. `simulate_step` and `simulate_trajectory` gain no seed parameter.
+- Deterministic V1/V2 payloads and hashes remain exact by omitting all new empty/`None` fields.
+- The observation independence invariant is evaluated on the same exact `WorldStepResult`: adding/reordering an unrelated stochastic projection component must not perturb an existing observer/channel sample. Changing the story/entity set changes the source hash and is not an invariance claim.
+- Outer `SimulationRunner` compatibility is test-adapter-only: exactly one `rng.getrandbits(64)` call deterministically maps its already-recorded seed to the narrative root seed.
+- Do not mark #27 P2 Stochastic World / Observation complete before merge plus post-merge exact-head proof. P2 Identification and Model Comparison remains open.
 
 ## File Structure
 
 ### Production
 
-- `narrative_dynamics/narrative/randomness.py` — seed validation, closed namespaces, versioned stream derivation, deterministic `draw_u64`, categorical selection, and self-validating `RandomSampleRecord`.
-- `narrative_dynamics/narrative/world.py` — additive stochastic transition distribution/spec/sample records, optional world root seed, stochastic execution lane, concrete-sample conflict integration, deterministic compatibility.
-- `narrative_dynamics/narrative/observation_projection.py` — additive stochastic projection distribution/spec/sample records, truth-preserving prevalidation, selected-fact projection lineage, empty-outcome lineage, deterministic compatibility.
-- `narrative_dynamics/narrative/runtime_perception.py` — copy optional projection-sample lineage into evidence and preserve complete sample hashes in every evidence batch.
-- `narrative_dynamics/narrative/simulation.py` — initialize/freeze root seed and preserve seedless step/trajectory APIs.
+- `narrative_dynamics/narrative/randomness.py` — seed validation, namespace validation, stream derivation, deterministic 64-bit draw, categorical selection, `RandomSampleRecord`.
+- `narrative_dynamics/narrative/world.py` — stochastic transition distributions/specs/samples, optional root seed, sampled transition lane, realized-write conflict integration.
+- `narrative_dynamics/narrative/observation_projection.py` — stochastic observation distributions/specs/samples, truth-preserving prevalidation, dropout lineage.
+- `narrative_dynamics/narrative/runtime_perception.py` — projection sample hashes copied into evidence and complete sample hashes retained in each batch.
+- `narrative_dynamics/narrative/simulation.py` — root-seed initialization only; step/trajectory APIs stay seedless.
 
 ### Tests
 
-- `tests/test_narrative_randomness.py` — randomness derivation, finite categorical validation, exact replay, forgery rejection.
-- `tests/test_narrative_stochastic_world.py` — deterministic world compatibility, stochastic transitions, order-independent substreams, pre-sample validation, realized-write conflicts.
-- `tests/test_narrative_stochastic_observation.py` — deterministic projection compatibility, truth-preserving stochastic projection, dropout lineage, independent projection components.
-- `tests/test_narrative_stochastic_simulation.py` — seeded initialization, multi-round replay, seed immutability, decision/aleatoric separation, world/observation namespace separation.
-- `tests/test_narrative_stochastic_seed_diagnostics.py` — outer `SimulationRunner` seed mapping and existing seed-block diagnostic compatibility without production core changes.
-
-Approved spec and this plan remain docs-only evidence.
+- `tests/test_narrative_randomness.py`
+- `tests/test_narrative_stochastic_world.py`
+- `tests/test_narrative_stochastic_observation.py`
+- `tests/test_narrative_stochastic_simulation.py`
+- `tests/test_narrative_stochastic_seed_diagnostics.py`
 
 ---
 
 ### Task 1: Complete the Authoritative Test-Only RED Boundary
 
 **Files:**
-- Create: `tests/test_narrative_randomness.py`
-- Create: `tests/test_narrative_stochastic_world.py`
-- Create: `tests/test_narrative_stochastic_observation.py`
-- Create: `tests/test_narrative_stochastic_simulation.py`
-- Create: `tests/test_narrative_stochastic_seed_diagnostics.py`
+- Create the five test modules listed above.
 
 **Interfaces:**
-- Consumes existing deterministic world/projection/perception/simulation helpers and outer `SimulationRunner`/uncertainty APIs.
-- Produces the complete P2 acceptance boundary before `randomness.py` or any stochastic production symbols exist.
+- Consumes existing deterministic world/projection/perception/scheduler fixtures and outer `SimulationRunner`/uncertainty APIs.
+- Produces the complete P2 acceptance boundary before any stochastic production symbol exists.
 
-- [ ] **Step 1: Add guarded randomness imports and exact randomness tests**
+- [ ] **Step 1: Create randomness RED tests**
 
-Create `tests/test_narrative_randomness.py` with this import boundary and test names:
+Use guarded imports so discovery runs and failures are attributable to the missing module:
 
 ```python
 from __future__ import annotations
@@ -94,7 +84,6 @@ _RANDOMNESS_IMPORT_ERROR: ImportError | None = None
 try:
     from narrative_dynamics.narrative.randomness import (
         RANDOM_DERIVATION_VERSION,
-        RandomSampleRecord,
         derive_stream_hash,
         draw_u64_for_stream,
         sample_categorical,
@@ -108,127 +97,35 @@ class NarrativeRandomnessTests(unittest.TestCase):
     def require_randomness(self) -> None:
         if _RANDOMNESS_IMPORT_ERROR is not None:
             self.fail(f"narrative randomness API is missing: {_RANDOMNESS_IMPORT_ERROR}")
-
-    def test_seed_validation_and_namespaces_are_closed(self):
-        self.require_randomness()
-        self.assertEqual(validate_root_seed(0), 0)
-        self.assertEqual(validate_root_seed(-7), -7)
-        for bad in (True, False, 1.0, "1", None):
-            with self.subTest(bad=bad):
-                with self.assertRaises((TypeError, ValueError)):
-                    validate_root_seed(bad)
-
-    def test_stream_and_draw_are_exact_and_replay(self):
-        self.require_randomness()
-        args = dict(
-            root_seed=42,
-            namespace="world.transition",
-            step_index=1,
-            source_hash="sha256:" + "1" * 64,
-            component_hash="sha256:" + "2" * 64,
-            component_key=("a1", "d1", "act"),
-        )
-        first = derive_stream_hash(**args)
-        second = derive_stream_hash(**args)
-        self.assertEqual(first, second)
-        self.assertEqual(draw_u64_for_stream(first), draw_u64_for_stream(second))
-        self.assertEqual(RANDOM_DERIVATION_VERSION, "narrative-hash-categorical-v1")
-
-    def test_component_key_change_changes_stream_identity(self):
-        self.require_randomness()
-        common = dict(
-            root_seed=42,
-            namespace="world.transition",
-            step_index=1,
-            source_hash="sha256:" + "1" * 64,
-            component_hash="sha256:" + "2" * 64,
-        )
-        self.assertNotEqual(
-            derive_stream_hash(component_key=("a1", "d1", "act"), **common),
-            derive_stream_hash(component_key=("a2", "d2", "act"), **common),
-        )
-
-    def test_outcome_input_order_does_not_change_selection(self):
-        self.require_randomness()
-        common = dict(
-            root_seed=9,
-            namespace="observation.projection",
-            step_index=2,
-            source_hash="sha256:" + "3" * 64,
-            component_hash="sha256:" + "4" * 64,
-            component_key=("a1", "vision"),
-            distribution_hash="sha256:" + "5" * 64,
-        )
-        outcomes = (
-            ("emit", 0.5, "sha256:" + "6" * 64),
-            ("drop", 0.5, "sha256:" + "7" * 64),
-        )
-        first = sample_categorical(outcomes=outcomes, **common)
-        second = sample_categorical(outcomes=tuple(reversed(outcomes)), **common)
-        self.assertEqual(first.to_dict(), second.to_dict())
-
-    def test_distribution_validation_rejects_invalid_probabilities(self):
-        self.require_randomness()
-        common = dict(
-            root_seed=1,
-            namespace="world.transition",
-            step_index=1,
-            source_hash="sha256:" + "1" * 64,
-            component_hash="sha256:" + "2" * 64,
-            component_key=("a1", "d1", "act"),
-            distribution_hash="sha256:" + "3" * 64,
-        )
-        bad_sets = (
-            (("only", 1.0, "sha256:" + "4" * 64),),
-            (("a", 0.0, "sha256:" + "4" * 64), ("b", 1.0, "sha256:" + "5" * 64)),
-            (("a", 0.4, "sha256:" + "4" * 64), ("b", 0.4, "sha256:" + "5" * 64)),
-            (("a", 0.5, "sha256:" + "4" * 64), ("a", 0.5, "sha256:" + "5" * 64)),
-        )
-        for outcomes in bad_sets:
-            with self.subTest(outcomes=outcomes):
-                with self.assertRaises((TypeError, ValueError)):
-                    sample_categorical(outcomes=outcomes, **common)
-
-    def test_random_sample_record_forgery_rejects(self):
-        self.require_randomness()
-        record = sample_categorical(
-            root_seed=4,
-            namespace="world.transition",
-            step_index=1,
-            source_hash="sha256:" + "1" * 64,
-            component_hash="sha256:" + "2" * 64,
-            component_key=("a1", "d1", "act"),
-            distribution_hash="sha256:" + "3" * 64,
-            outcomes=(("a", 0.5, "sha256:" + "4" * 64), ("b", 0.5, "sha256:" + "5" * 64)),
-        )
-        for field, value in (
-            ("stream_hash", "sha256:" + "f" * 64),
-            ("draw_u64", record.draw_u64 ^ 1),
-            ("namespace", "decision.choice"),
-        ):
-            with self.subTest(field=field):
-                with self.assertRaises((TypeError, ValueError)):
-                    replace(record, **{field: value})
 ```
 
-- [ ] **Step 2: Add stochastic world acceptance tests**
+Add six methods with these exact assertions:
 
-Create `tests/test_narrative_stochastic_world.py`. Reuse `make_world_domain`, `make_world_story`, `_agent_cell`, and `intent` from `tests.test_narrative_world_transition`; reuse conflict helpers from `tests.test_narrative_conflict_resolution` only when an exact helper already exists. Guard-import these new production symbols:
+1. `test_seed_validation_and_namespaces_are_closed`: `0` and `-7` are accepted; `True`, `False`, `1.0`, `"1"`, and `None` are rejected; unsupported namespace `decision.choice` is rejected by `derive_stream_hash`.
+2. `test_stream_and_draw_are_exact_and_replay`: identical derivation inputs return the same stream and draw, and the version constant equals `narrative-hash-categorical-v1`.
+3. `test_component_key_change_changes_stream_identity`: change only `component_key` and require a different stream hash.
+4. `test_outcome_input_order_does_not_change_selection`: call `sample_categorical` with `(("drop", 0.5, hash_a), ("emit", 0.5, hash_b))` and its reverse; require equal `to_dict()`.
+5. `test_distribution_validation_rejects_invalid_probabilities`: reject a one-outcome distribution, zero probability, non-unit total mass, duplicate ids, bool probability, NaN, and infinity.
+6. `test_random_sample_record_forgery_rejects`: create one valid record via `sample_categorical`, then `dataclasses.replace` its `stream_hash`, `draw_u64`, and `namespace`; each replacement must raise.
+
+Use these canonical test inputs for derivation assertions:
 
 ```python
-_WORLD_STOCHASTIC_IMPORT_ERROR: ImportError | None = None
-try:
-    from narrative_dynamics.narrative.world import (
-        StateDeltaDistribution,
-        StateDeltaOutcome,
-        StochasticActionTransitionSpec,
-        StochasticTransitionSample,
-    )
-except ImportError as error:
-    _WORLD_STOCHASTIC_IMPORT_ERROR = error
+COMMON = {
+    "root_seed": 42,
+    "namespace": "world.transition",
+    "step_index": 1,
+    "source_hash": "sha256:" + "1" * 64,
+    "component_hash": "sha256:" + "2" * 64,
+    "component_key": ("a1", "d1", "act"),
+}
 ```
 
-Define one controlled hook whose candidate deltas have distinct outcomes and which records calls:
+- [ ] **Step 2: Create stochastic world RED tests**
+
+Reuse `make_world_domain`, `make_world_story`, `_agent_cell`, and `intent` from `tests.test_narrative_world_transition`. Guard-import `StateDeltaOutcome`, `StateDeltaDistribution`, `StochasticActionTransitionSpec`, and `StochasticTransitionSample`.
+
+Define this controlled hook:
 
 ```python
 class StochasticPhaseHook:
@@ -237,71 +134,48 @@ class StochasticPhaseHook:
 
     def __call__(self, snapshot, decision, action, parameters):
         self.calls.append((dict(snapshot), decision.id, action.id, dict(parameters)))
+        p = parameters["ready_probability"]
         return StateDeltaDistribution((
             StateDeltaOutcome(
-                "ready",
-                parameters["ready_probability"],
+                "done",
+                1.0 - p,
                 StateDelta((StateDeltaOp(
-                    "set", decision.actor_id, "agent.phase",
-                    TypedValue("PhaseState", "ready"),
+                    "set",
+                    decision.actor_id,
+                    "agent.phase",
+                    TypedValue("PhaseState", "done"),
                 ),)),
             ),
             StateDeltaOutcome(
-                "done",
-                1.0 - parameters["ready_probability"],
+                "ready",
+                p,
                 StateDelta((StateDeltaOp(
-                    "set", decision.actor_id, "agent.phase",
-                    TypedValue("PhaseState", "done"),
+                    "set",
+                    decision.actor_id,
+                    "agent.phase",
+                    TypedValue("PhaseState", "ready"),
                 ),)),
             ),
         ))
 ```
 
-Add these exact tests:
+Create seven methods:
 
-```python
-class NarrativeStochasticWorldTests(unittest.TestCase):
-    def require_stochastic_world(self):
-        if _WORLD_STOCHASTIC_IMPORT_ERROR is not None:
-            self.fail(f"stochastic world API is missing: {_WORLD_STOCHASTIC_IMPORT_ERROR}")
+- `test_deterministic_world_payloads_and_hashes_remain_v1_shaped`: construct the existing deterministic model/state/step, require `root_seed`, `stochastic_transitions`, and `stochastic_sample` keys are absent, rebuild the pre-P2 payload dict from existing fields, and require `stable_content_hash(expected_payload) == object.content_hash`.
+- `test_same_seed_replays_stochastic_transition_exactly`: initialize two independent worlds with seed `17`, execute the same stochastic action, require equal transition/sample/next-state/result dictionaries and hashes.
+- `test_actor_order_and_unrelated_actor_do_not_perturb_component_sample`: use one unchanged story/prior/model and two already-declared actors; compare bob's sample for `(bob, alice)`, `(alice, bob)`, and `(bob,)`; bob's `StochasticTransitionSample.to_dict()` must match in all three.
+- `test_multiple_seeds_exercise_declared_world_outcomes`: scan `range(256)` and require both `done` and `ready` are realized.
+- `test_every_candidate_delta_is_validated_before_sampling`: return one valid candidate and one outside-capability candidate with probability `1e-12`; require `WorldTransitionError` and no successful next state.
+- `test_stochastic_action_requires_seed_before_hook`: use `seed=None`, require `WorldTransitionError`, and require hook `calls == []`.
+- `test_realized_stochastic_writes_feed_existing_conflict_resolution`: create a controlled stochastic service-health action whose realized delta overlaps another concrete action; require the existing resolver sees concrete transition records and produces the same deterministic resolution semantics for that realized conflict.
 
-    def test_deterministic_world_payloads_and_hashes_remain_v1_shaped(self): ...
-    def test_same_seed_replays_stochastic_transition_exactly(self): ...
-    def test_actor_order_and_unrelated_actor_do_not_perturb_component_sample(self): ...
-    def test_multiple_seeds_exercise_declared_world_outcomes(self): ...
-    def test_every_candidate_delta_is_validated_before_sampling(self): ...
-    def test_stochastic_action_requires_seed_before_hook(self): ...
-    def test_realized_stochastic_writes_feed_existing_conflict_resolution(self): ...
-```
+- [ ] **Step 3: Create stochastic observation RED tests**
 
-For the deterministic compatibility test, explicitly assert `root_seed`/`stochastic_transitions`/`stochastic_sample` are absent from `to_dict()` when unused, and assert `stable_content_hash(expected_old_payload) == current.content_hash` for each reconstructed old payload.
+Reuse `make_projection_domain`, `make_projection_story`, `_cell`, and deterministic projection helpers from `tests.test_narrative_observation_projection`. Build seeded world steps by calling `world_state_from_story(..., seed=seed)` followed by `advance_world_step`; do not use the existing unseeded `make_world_step` for stochastic projection cases.
 
-For the order test, use the same story/prior/model/spec and two already-declared actors. Compare the `StochasticTransitionSample.to_dict()` for actor `bob` between `(bob, alice)` and `(alice, bob)`, then compare bob's sample again against a run that omits alice's intent. Do not change story/entity/model/spec identity between those comparisons.
+Guard-import `ObservationOutcome`, `ObservationOutcomeDistribution`, `StochasticObservationSample`, and `StochasticObserverProjectionSpec`.
 
-For variation, scan root seeds `range(256)` and stop after both `ready` and `done` have appeared; assert the observed set is exactly `{"ready", "done"}`.
-
-For pre-sample validation, return one valid delta and one outside-capability delta with probability `1e-12`; assert the entire world step fails before any successful state is returned.
-
-For missing seed, call `world_state_from_story(..., seed=None)` and assert failure occurs before `StochasticPhaseHook.calls` is appended.
-
-- [ ] **Step 3: Add stochastic observation acceptance tests**
-
-Create `tests/test_narrative_stochastic_observation.py`. Reuse `make_projection_domain`, `make_projection_story`, `make_world_step`, `_cell`, and deterministic projection helpers from `tests.test_narrative_observation_projection`. Guard-import:
-
-```python
-_OBSERVATION_STOCHASTIC_IMPORT_ERROR: ImportError | None = None
-try:
-    from narrative_dynamics.narrative.observation_projection import (
-        ObservationOutcome,
-        ObservationOutcomeDistribution,
-        StochasticObservationSample,
-        StochasticObserverProjectionSpec,
-    )
-except ImportError as error:
-    _OBSERVATION_STOCHASTIC_IMPORT_ERROR = error
-```
-
-Define a controlled truth-preserving emit/drop hook:
+Define:
 
 ```python
 class StochasticOwnLocationHook:
@@ -312,60 +186,39 @@ class StochasticOwnLocationHook:
         self.calls.append((observer.id, step_index, dict(parameters)))
         cell = _cell(observer.id, "Agent", "agent.location")
         fact = ObservationFact(cell, "equals", next_visible[cell])
+        p = parameters["emit_probability"]
         return ObservationOutcomeDistribution((
-            ObservationOutcome("drop", 1.0 - parameters["emit_probability"], ()),
-            ObservationOutcome("emit", parameters["emit_probability"], (fact,)),
+            ObservationOutcome("drop", 1.0 - p, ()),
+            ObservationOutcome("emit", p, (fact,)),
         ))
 ```
 
-Add these exact tests:
+Create seven methods:
 
-```python
-class NarrativeStochasticObservationTests(unittest.TestCase):
-    def require_stochastic_observation(self): ...
-    def test_deterministic_projection_payloads_and_hashes_remain_v1_shaped(self): ...
-    def test_same_seed_and_world_step_replay_projection_exactly(self): ...
-    def test_spec_order_and_unrelated_projection_do_not_perturb_existing_sample(self): ...
-    def test_seed_scan_exercises_emit_and_dropout(self): ...
-    def test_empty_outcome_keeps_projection_and_evidence_batch_lineage(self): ...
-    def test_every_candidate_fact_is_validated_before_sampling(self): ...
-    def test_stochastic_projection_requires_seed_before_hook(self): ...
-```
+- `test_deterministic_projection_payloads_and_hashes_remain_v1_shaped`: existing deterministic model/result/observation emit no stochastic keys and hash their exact pre-P2-shaped payloads.
+- `test_same_seed_and_world_step_replay_projection_exactly`: project the same seeded world step twice and require equal samples/observations/result hashes.
+- `test_spec_order_and_unrelated_projection_do_not_perturb_existing_sample`: keep one exact `WorldStepResult`; compare `(a1, vision)` under a model containing that spec alone and a model also containing an unrelated different-channel stochastic spec; existing sample stays equal. Reverse spec input order and require the same result semantics.
+- `test_seed_scan_exercises_emit_and_dropout`: scan `range(256)` until both selected outcome ids appear.
+- `test_empty_outcome_keeps_projection_and_evidence_batch_lineage`: find a dropout seed, require zero projected observations, one stochastic projection sample, then after admission require the sample hash in `RuntimeEvidenceBatch.projection_sample_hashes` even though `evidence == ()` for that spec.
+- `test_every_candidate_fact_is_validated_before_sampling`: include one valid outcome and one false `equals` fact with probability `1e-12`; require `ObservationProjectionError` before successful projection.
+- `test_stochastic_projection_requires_seed_before_hook`: unseeded world step plus stochastic projection must fail with hook `calls == []`.
 
-The unrelated-component invariance test must keep the **same `WorldStepResult`**. Compare the `(a1, "vision")` sample under a model with only that stochastic projection against a model that also contains a different channel/spec; do not add/remove story entities.
+- [ ] **Step 4: Create stochastic scheduler RED tests**
 
-The invalid-fact test must include a false `equals` outcome with probability `1e-12` and assert failure even when the selected draw would have chosen the valid outcome.
+Reuse `make_scheduler_domain`, `make_scheduler_story`, `make_intentional_models`, `RuntimeAgentSpec`, and existing scheduler decision fixtures from `tests.test_narrative_simulation`. Build one simulation model with a stochastic alert-control world transition, a deterministic response transition, and a stochastic alert projection for agent `a2`.
 
-The empty-outcome test must assert `result.observations == ()` for a selected dropout while `result.stochastic_samples` contains one sample and the later `RuntimeEvidenceBatch.projection_sample_hashes` contains that sample hash.
+Create six methods:
 
-- [ ] **Step 4: Add scheduler/trajectory stochastic tests**
+- `test_seeded_initialization_binds_world_and_ledger_to_same_initial_hash`: `simulation_state_from_story(..., seed=101)` yields `world_state.root_seed == 101` and `evidence_ledger.initial_world_state_hash == world_state.content_hash`.
+- `test_same_seed_replays_exact_multi_round_trajectory`: independently initialize twice with seed `101`, run two rounds, require equal `to_dict()` and content hash.
+- `test_different_root_seed_changes_lineage_even_when_extensional_outcome_matches`: scan seeds until two choose the same world outcome, then require different sample/state hashes because root-seed lineage differs.
+- `test_step_and_trajectory_signatures_do_not_accept_replacement_seed`: `inspect.signature(simulate_step)` and `inspect.signature(simulate_trajectory)` have no `seed`; `simulation_state_from_story` has keyword-only `seed` defaulting to `None`.
+- `test_decisions_are_seed_invariant_until_stochastic_history_diverges`: compare step-1 decision-result dictionaries across two root seeds and require equality; find two seeds whose admitted alert evidence differs after step 1 and require the step-2 evidence-derived intentional result/posterior differs.
+- `test_world_and_observation_namespaces_are_distinct`: inspect a world sample and an observation sample from the same round, require namespaces exactly `world.transition` and `observation.projection`, and require different stream hashes.
 
-Create `tests/test_narrative_stochastic_simulation.py`. Reuse `make_scheduler_domain`, `make_scheduler_story`, `make_intentional_models`, `alert_cell`, and deterministic scheduler helpers from `tests.test_narrative_simulation`. Guard-import the stochastic world/projection symbols plus existing scheduler public functions.
+- [ ] **Step 5: Create outer seed-diagnostics RED tests**
 
-Add these exact tests:
-
-```python
-class NarrativeStochasticSimulationTests(unittest.TestCase):
-    def require_stochastic_simulation(self): ...
-    def test_seeded_initialization_binds_world_and_ledger_to_same_initial_hash(self): ...
-    def test_same_seed_replays_exact_multi_round_trajectory(self): ...
-    def test_different_root_seed_changes_lineage_even_when_extensional_outcome_matches(self): ...
-    def test_step_and_trajectory_signatures_do_not_accept_replacement_seed(self): ...
-    def test_decisions_are_seed_invariant_until_stochastic_history_diverges(self): ...
-    def test_world_and_observation_namespaces_are_distinct(self): ...
-```
-
-Use `inspect.signature(simulate_step)` and `inspect.signature(simulate_trajectory)` to assert neither contains `seed`. Assert `inspect.signature(simulation_state_from_story)` contains `seed` with default `None`.
-
-For same-seed replay, construct two initial states independently with the same seed and run two rounds; require byte-for-byte equal `to_dict()` and equal trajectory hashes.
-
-For different-seed/same-extensional outcome, scan seeds until two seeds select the same world outcome; assert their stochastic sample records and state hashes still differ because root-seed lineage differs.
-
-For decision separation, compare step-1 `RuntimeDecisionDispatchResult.to_dict()` across two initial root seeds before world/projection stochasticity can affect evidence; require equality. Then use a controlled projection distribution and a finite seed scan to find two branches whose admitted evidence differs by step 1; require the step-2 model-visible posterior/decision result to differ where the existing intentional model responds to that evidence.
-
-- [ ] **Step 5: Add outer seed-diagnostics compatibility tests**
-
-Create `tests/test_narrative_stochastic_seed_diagnostics.py`. Define a test-only `SimulatorModel` adapter that maps the outer runner RNG to one narrative root seed with exactly one call:
+Define a test-only adapter in `tests/test_narrative_stochastic_seed_diagnostics.py`:
 
 ```python
 class NarrativeAleatoricAdapter:
@@ -373,7 +226,7 @@ class NarrativeAleatoricAdapter:
 
     def simulate(self, scenario, parameters, rng):
         root_seed = rng.getrandbits(64)
-        value, lineage = run_test_narrative_once(
+        value, lineage_hash = run_test_narrative_once(
             root_seed=root_seed,
             level=float(parameters["level"]),
         )
@@ -382,35 +235,19 @@ class NarrativeAleatoricAdapter:
             outcome={
                 "value": value,
                 "narrative_root_seed": root_seed,
-                "narrative_lineage_hash": lineage,
+                "narrative_lineage_hash": lineage_hash,
             },
         )
 ```
 
-`run_test_narrative_once` is a test helper built from the stochastic world fixture in `tests.test_narrative_stochastic_world`; it returns `level + 1.0` for one sampled world outcome and `level - 1.0` for the other, plus the stochastic transition sample hash.
+`run_test_narrative_once` uses the stochastic world fixture, maps one sampled outcome to `level + 1.0` and the other to `level - 1.0`, and returns the transition sample content hash.
 
-Add:
+Create two methods:
 
-```python
-class NarrativeStochasticSeedDiagnosticsTests(unittest.TestCase):
-    def test_outer_seed_deterministically_maps_to_narrative_root_seed_and_manifest(self): ...
-    def test_existing_seed_block_variants_detect_aleatoric_acceptance_drift(self): ...
-```
+- `test_outer_seed_deterministically_maps_to_narrative_root_seed_and_manifest`: same outer seed gives same trace seed, root seed, inner lineage hash, outcome, and manifest hash; a different outer seed changes the recorded trace seed. Do not assert injectivity of the 64-bit derived root seed.
+- `test_existing_seed_block_variants_detect_aleatoric_acceptance_drift`: scan outer seeds `1..256` to find opposite aleatoric signs, then call `calibrate_seed_block_variants` with `seed_blocks=((seed_a,),)`, `seed_offsets=(0, seed_b-seed_a)`, `parameter_grid={"level": (-1.0, 1.0)}`, and `target={"value": 0.0}`; require different accepted levels and empty accepted intersection.
 
-For the second test, scan outer seeds `1..256` to find `seed_a` and `seed_b` that produce opposite aleatoric signs. Then call existing `calibrate_seed_block_variants` with:
-
-```python
-seed_blocks=((seed_a,),)
-seed_offsets=(0, seed_b - seed_a)
-parameter_grid={"level": (-1.0, 1.0)}
-target={"value": 0.0}
-```
-
-Assert the two variants select different accepted `level` values and the accepted intersection is empty. Do not modify uncertainty production code.
-
-- [ ] **Step 6: Run the complete new stochastic suite and record local RED**
-
-Run:
+- [ ] **Step 6: Run and commit the complete RED**
 
 ```bash
 python3 -m unittest \
@@ -419,23 +256,7 @@ python3 -m unittest \
   tests.test_narrative_stochastic_observation \
   tests.test_narrative_stochastic_simulation \
   tests.test_narrative_stochastic_seed_diagnostics -v
-```
-
-Expected: FAIL only because the new randomness/stochastic production symbols are missing. No existing deterministic test is allowed to fail.
-
-- [ ] **Step 7: Run the full Python suite before committing RED**
-
-Run:
-
-```bash
 python3 -m unittest discover -s tests -v
-```
-
-Expected: every pre-existing test remains `ok`; all failures/errors are confined to the new P2 test modules and are caused by missing new stochastic APIs.
-
-- [ ] **Step 8: Commit the authoritative test-only RED**
-
-```bash
 git add \
   tests/test_narrative_randomness.py \
   tests/test_narrative_stochastic_world.py \
@@ -445,18 +266,11 @@ git add \
 git commit -m "test: define stochastic world observation red boundary"
 ```
 
-- [ ] **Step 9: Capture exact-head RED proof before any production commit**
+Expected before commit: every pre-existing test remains green; failures are confined to the new P2 modules and are caused by missing stochastic APIs.
 
-Verify the branch SHA, locate the `proof` workflow for that exact SHA, and require:
+- [ ] **Step 7: Capture authoritative exact-head RED proof**
 
-```text
-checkout == exact RED commit
-Lean dependency/conformance/build/theorem gates == success
-existing Python tests == success
-new stochastic tests == intended missing-API failures only
-```
-
-Do not begin Task 2 until the RED failure signature is clean.
+Set `RED_HEAD=$(git rev-parse HEAD)`. Require the `proof` workflow for exactly `RED_HEAD` to show exact checkout, all Lean gates green, and only intended new stochastic Python failures. Do not begin Task 2 until that failure signature is clean.
 
 ---
 
@@ -465,17 +279,14 @@ Do not begin Task 2 until the RED failure signature is clean.
 **Files:**
 - Create: `narrative_dynamics/narrative/randomness.py`
 - Modify: `narrative_dynamics/narrative/world.py`
-- Test: `tests/test_narrative_randomness.py`
-- Test: `tests/test_narrative_stochastic_world.py`
 
 **Interfaces:**
-- Produces `RANDOM_DERIVATION_VERSION`, `validate_root_seed`, `derive_stream_hash`, `draw_u64_for_stream`, `sample_categorical`, and `RandomSampleRecord`.
-- Extends `WorldState` with `root_seed: int | None = None` and `world_state_from_story(..., seed=None)` while keeping unseeded payloads exact.
-- Later tasks consume the frozen root seed and generic sample record.
+- Produces `RANDOM_DERIVATION_VERSION`, `validate_root_seed`, `derive_stream_hash`, `draw_u64_for_stream`, `sample_categorical`, `RandomSampleRecord`.
+- Extends `WorldState` with `root_seed: int | None = None` and `world_state_from_story(..., seed=None)`.
 
-- [ ] **Step 1: Implement closed randomness validation and exact derivation**
+- [ ] **Step 1: Implement exact stream derivation**
 
-Create `narrative_dynamics/narrative/randomness.py` with these public interfaces:
+Create `randomness.py` with:
 
 ```python
 from __future__ import annotations
@@ -497,23 +308,15 @@ def validate_root_seed(seed: object) -> int:
     return seed
 
 
-def derive_stream_hash(
-    *,
-    root_seed: int,
-    namespace: str,
-    step_index: int,
-    source_hash: str,
-    component_hash: str,
-    component_key: tuple[str, ...],
-) -> str:
+def derive_stream_hash(*, root_seed, namespace, step_index, source_hash, component_hash, component_key) -> str:
     root_seed = validate_root_seed(root_seed)
     if namespace not in _NAMESPACES:
         raise ValueError("narrative random namespace is unsupported")
     if not isinstance(step_index, int) or isinstance(step_index, bool) or step_index < 0:
         raise ValueError("narrative random step index must be non-negative")
-    for value, label in ((source_hash, "source hash"), (component_hash, "component hash")):
+    for value in (source_hash, component_hash):
         if not isinstance(value, str) or _HASH.fullmatch(value) is None:
-            raise ValueError(f"narrative random {label} must be a sha256 hash")
+            raise ValueError("narrative random source/component hash must be sha256")
     if not isinstance(component_key, tuple) or not component_key:
         raise TypeError("narrative random component key must be a non-empty tuple")
     if any(not isinstance(item, str) or not item or item != item.strip() for item in component_key):
@@ -530,6 +333,8 @@ def derive_stream_hash(
 
 
 def draw_u64_for_stream(stream_hash: str, *, draw_index: int = 0) -> int:
+    if not isinstance(stream_hash, str) or _HASH.fullmatch(stream_hash) is None:
+        raise ValueError("narrative random stream hash must be sha256")
     if not isinstance(draw_index, int) or isinstance(draw_index, bool) or draw_index != 0:
         raise ValueError("narrative random V1 draw index must be zero")
     draw_hash = stable_content_hash({
@@ -540,9 +345,9 @@ def draw_u64_for_stream(stream_hash: str, *, draw_index: int = 0) -> int:
     return int(draw_hash.removeprefix("sha256:")[:16], 16)
 ```
 
-- [ ] **Step 2: Implement self-validating sample records and categorical selection**
+- [ ] **Step 2: Implement `RandomSampleRecord` and categorical selection**
 
-Add:
+Use this record shape:
 
 ```python
 @dataclass(frozen=True)
@@ -560,53 +365,11 @@ class RandomSampleRecord:
     distribution_hash: str
     selected_outcome_id: str
     selected_outcome_hash: str
-
-    def __post_init__(self) -> None:
-        if self.derivation_version != RANDOM_DERIVATION_VERSION:
-            raise ValueError("narrative random derivation version mismatch")
-        expected_stream = derive_stream_hash(
-            root_seed=self.root_seed,
-            namespace=self.namespace,
-            step_index=self.step_index,
-            source_hash=self.source_hash,
-            component_hash=self.component_hash,
-            component_key=self.component_key,
-        )
-        if self.stream_hash != expected_stream:
-            raise ValueError("narrative random stream hash mismatch")
-        expected_draw = draw_u64_for_stream(expected_stream, draw_index=self.draw_index)
-        if self.draw_u64 != expected_draw:
-            raise ValueError("narrative random draw mismatch")
-        if not isinstance(self.distribution_hash, str) or _HASH.fullmatch(self.distribution_hash) is None:
-            raise ValueError("narrative random distribution hash must be sha256")
-        if not isinstance(self.selected_outcome_id, str) or not self.selected_outcome_id.strip():
-            raise ValueError("narrative random selected outcome id is invalid")
-        if not isinstance(self.selected_outcome_hash, str) or _HASH.fullmatch(self.selected_outcome_hash) is None:
-            raise ValueError("narrative random selected outcome hash must be sha256")
-
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "derivation_version": self.derivation_version,
-            "root_seed": self.root_seed,
-            "namespace": self.namespace,
-            "step_index": self.step_index,
-            "source_hash": self.source_hash,
-            "component_hash": self.component_hash,
-            "component_key": list(self.component_key),
-            "stream_hash": self.stream_hash,
-            "draw_index": self.draw_index,
-            "draw_u64": self.draw_u64,
-            "distribution_hash": self.distribution_hash,
-            "selected_outcome_id": self.selected_outcome_id,
-            "selected_outcome_hash": self.selected_outcome_hash,
-        }
-
-    @property
-    def content_hash(self) -> str:
-        return stable_content_hash(self.to_dict())
 ```
 
-Implement `sample_categorical(...)` with exact signature:
+`__post_init__` must re-run `derive_stream_hash`, re-run `draw_u64_for_stream`, require `0 <= draw_u64 < 2**64`, validate distribution/outcome hashes, and require a trimmed selected id. `to_dict()` emits every field and `content_hash` is `stable_content_hash(to_dict())`.
+
+Implement:
 
 ```python
 def sample_categorical(
@@ -622,39 +385,17 @@ def sample_categorical(
 ) -> RandomSampleRecord:
 ```
 
-Inside it, materialize exactly once, sort lexically by outcome id, reject fewer than two outcomes/duplicate ids/non-finite-or-bool/non-positive probabilities/invalid outcome hashes, require `math.fsum(probabilities) == 1.0`, compute `u = draw_u64 / 2**64`, choose the first non-final cumulative interval strictly greater than `u`, otherwise choose the final outcome, then return `RandomSampleRecord`.
+Materialize once, require at least two outcomes, validate ids/probabilities/hashes, sort by id, require exact `math.fsum`, derive stream/draw, compute `u = draw_u64 / 2**64`, choose the first non-final cumulative interval where `u < cumulative`, otherwise the final outcome, then build `RandomSampleRecord`.
 
-- [ ] **Step 3: Extend `WorldState` and initialization without changing unseeded payloads**
+- [ ] **Step 3: Add optional root seed to `WorldState` without changing unseeded serialization**
 
-In `world.py`, append:
-
-```python
-@dataclass(frozen=True)
-class WorldState:
-    # existing fields unchanged and in existing order
-    values: Mapping[StateCellRef, TypedValue]
-    root_seed: int | None = None
-```
-
-Validation:
+Append after `values`:
 
 ```python
-if self.root_seed is not None:
-    object.__setattr__(self, "root_seed", validate_root_seed(self.root_seed))
+root_seed: int | None = None
 ```
 
-Serialization must remain conditional:
-
-```python
-payload = {  # exact existing V1 payload
-    ...
-}
-if self.root_seed is not None:
-    payload["root_seed"] = self.root_seed
-return payload
-```
-
-Extend initialization only:
+Validate only when non-`None`. Change `to_dict()` from immediate return to `payload = {existing exact keys}` and append `payload["root_seed"]` only when seeded. Extend:
 
 ```python
 def world_state_from_story(
@@ -666,46 +407,31 @@ def world_state_from_story(
 ) -> WorldState:
 ```
 
-Set `root_seed=None if seed is None else validate_root_seed(seed)`.
+Pass `root_seed=None if seed is None else validate_root_seed(seed)`.
 
-- [ ] **Step 4: Preserve the root seed across every next world state**
+- [ ] **Step 4: Preserve seed across next-state construction**
 
-In `WorldStepResult.__post_init__`, add:
+Add to `WorldStepResult.__post_init__`:
 
 ```python
 if self.next_state.root_seed != self.prior_state.root_seed:
     raise ValueError("world step next state must preserve root seed")
 ```
 
-In `_atomic_result`, set:
+Pass `root_seed=prior.root_seed` from `_atomic_result`. `advance_world_step` signature stays unchanged.
 
-```python
-root_seed=prior.root_seed,
-```
-
-Do not change `advance_world_step(...)` signature.
-
-- [ ] **Step 5: Run randomness and deterministic world compatibility tests**
-
-Run:
+- [ ] **Step 5: Verify and commit Task 2**
 
 ```bash
 python3 -m unittest \
   tests.test_narrative_randomness \
   tests.test_narrative_world_transition \
   tests.test_narrative_stochastic_world.NarrativeStochasticWorldTests.test_deterministic_world_payloads_and_hashes_remain_v1_shaped -v
-```
-
-Expected: randomness tests PASS; all existing world-transition tests PASS; deterministic compatibility test PASS. Stochastic execution tests remain RED because stochastic world records/specs are not implemented yet.
-
-- [ ] **Step 6: Commit the randomness/seed boundary**
-
-```bash
-git add \
-  narrative_dynamics/narrative/randomness.py \
-  narrative_dynamics/narrative/world.py
+git add narrative_dynamics/narrative/randomness.py narrative_dynamics/narrative/world.py
 git commit -m "feat: add narrative random seed boundary"
 ```
+
+Expected: randomness and deterministic compatibility green; stochastic world execution tests still RED.
 
 ---
 
@@ -713,16 +439,12 @@ git commit -m "feat: add narrative random seed boundary"
 
 **Files:**
 - Modify: `narrative_dynamics/narrative/world.py`
-- Test: `tests/test_narrative_stochastic_world.py`
 
 **Interfaces:**
-- Consumes `RandomSampleRecord` and `sample_categorical` from Task 2.
-- Produces `StateDeltaOutcome`, `StateDeltaDistribution`, `StochasticTransitionSample`, `StochasticActionTransitionSpec`, additive `WorldTransitionModelSpec.stochastic_transitions`, and additive `ActionTransitionRecord.stochastic_sample`.
-- Leaves deterministic `ActionTransitionSpec` and `advance_world_step(...)` signatures unchanged.
+- Consumes Task 2 randomness APIs.
+- Produces `StateDeltaOutcome`, `StateDeltaDistribution`, `StochasticTransitionSample`, `StochasticActionTransitionSpec`, `WorldTransitionModelSpec.stochastic_transitions`, `ActionTransitionRecord.stochastic_sample`.
 
-- [ ] **Step 1: Add finite state-delta distribution records**
-
-Add these exact public records:
+- [ ] **Step 1: Add finite world distribution records**
 
 ```python
 @dataclass(frozen=True)
@@ -731,7 +453,7 @@ class StateDeltaOutcome:
     probability: float
     delta: StateDelta
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self):
         return {
             "outcome_id": self.outcome_id,
             "probability": self.probability,
@@ -739,27 +461,18 @@ class StateDeltaOutcome:
         }
 
     @property
-    def content_hash(self) -> str:
+    def content_hash(self):
         return stable_content_hash(self.to_dict())
 
 
 @dataclass(frozen=True)
 class StateDeltaDistribution:
     outcomes: tuple[StateDeltaOutcome, ...]
-
-    def to_dict(self) -> dict[str, object]:
-        return {"outcomes": [item.to_dict() for item in self.outcomes]}
-
-    @property
-    def content_hash(self) -> str:
-        return stable_content_hash(self.to_dict())
 ```
 
-Constructors must enforce the global finite-distribution rules and lexical outcome-id canonicalization. `StateDeltaOutcome` must require an actual `StateDelta` but does not perform domain/capability validation; runtime execution performs that for every candidate before sampling.
+Both constructors enforce the global distribution shape except domain capability; distribution canonicalizes outcomes lexically. `StateDeltaDistribution.to_dict()` emits `{"outcomes": [item.to_dict() for item in self.outcomes]}`.
 
-- [ ] **Step 2: Add stochastic transition spec identity**
-
-Add:
+- [ ] **Step 2: Add stochastic transition spec**
 
 ```python
 @dataclass(frozen=True)
@@ -770,40 +483,21 @@ class StochasticActionTransitionSpec:
     distribution_hook: object = field(compare=False, repr=False)
 ```
 
-Freeze/canonicalize parameters with lexical keys and finite float values; reject bools. Reuse `ActionTransitionSpec` effect validation rules. Require a callable hook. `to_dict()` must include:
+Reuse deterministic effect validation. Freeze `parameters` in a lexical `MappingProxyType` with finite float values and non-empty trimmed keys. `to_dict()` includes action type, effects, `[[name, value], ...]`, `random_derivation_version`, and `measure_implementation(distribution_hook).manifest_identity()`.
 
-```python
-{
-    "action_type": self.action_type,
-    "effects": [effect.to_dict() for effect in self.effects],
-    "parameters": [[name, value] for name, value in sorted(self.parameters.items())],
-    "random_derivation_version": RANDOM_DERIVATION_VERSION,
-    "implementation_identity": measure_implementation(self.distribution_hook).manifest_identity(),
-}
-```
+- [ ] **Step 3: Integrate stochastic specs into model declaration and intent resolution**
 
-- [ ] **Step 3: Add stochastic transitions to `WorldTransitionModelSpec` without changing deterministic identity**
-
-Append after `conflict_resolver`:
+Append to `WorldTransitionModelSpec` after `conflict_resolver`:
 
 ```python
 stochastic_transitions: tuple[StochasticActionTransitionSpec, ...] = ()
 ```
 
-Validate deterministic and stochastic action types in one uniqueness set. Canonicalize both tuples lexically by action type. In `to_dict()`:
+Validate one cross-lane action-type namespace. `_validate_transition_declarations` checks both lanes. `_resolve_intents` builds one action-type map from both lanes. Update `_allowed_cells` and `_attested_transition_hash` annotations to accept `ActionTransitionSpec | StochasticActionTransitionSpec`.
 
-```python
-if self.stochastic_transitions:
-    payload["stochastic_transitions"] = [
-        item.to_dict() for item in self.stochastic_transitions
-    ]
-```
+`WorldTransitionModelSpec.to_dict()` emits `stochastic_transitions` only when non-empty; deterministic payload stays exact.
 
-When empty, emit no new key.
-
-- [ ] **Step 4: Add stochastic transition sampling records**
-
-Add:
+- [ ] **Step 4: Add stochastic sample wrapper and record link**
 
 ```python
 @dataclass(frozen=True)
@@ -812,63 +506,25 @@ class StochasticTransitionSample:
     sample_record: RandomSampleRecord
 
     @property
-    def selected_outcome(self) -> StateDeltaOutcome:
-        return next(
+    def selected_outcome(self):
+        matches = tuple(
             item for item in self.distribution.outcomes
             if item.outcome_id == self.sample_record.selected_outcome_id
         )
+        if len(matches) != 1:
+            raise ValueError("stochastic transition selected outcome is missing")
+        return matches[0]
 ```
 
-`__post_init__` must require `sample_record.namespace == "world.transition"`, exact distribution hash equality, selected outcome existence, and selected outcome content hash equality. `to_dict()` contains both complete distribution and sample record.
+`__post_init__` requires world namespace, distribution hash equality, and selected outcome content hash equality. Append `stochastic_sample: StochasticTransitionSample | None = None` after `ActionTransitionRecord.delta`. Require sampled delta equality and conditionally serialize the sample.
 
-Append to `ActionTransitionRecord`:
+- [ ] **Step 5: Execute stochastic actions with pre-sample validation**
 
-```python
-stochastic_sample: StochasticTransitionSample | None = None
-```
-
-If present, require `self.delta == stochastic_sample.selected_outcome.delta`. Serialize only when non-`None`:
+Add `_execute_one_stochastic`. Before the hook, require `prior.root_seed is not None`. Call the hook with immutable snapshot and frozen parameters. Require `StateDeltaDistribution`. For every outcome, run `_validated_delta(domain, entities, allowed, outcome.delta)` and rebuild a canonical validated distribution. Then:
 
 ```python
-if self.stochastic_sample is not None:
-    payload["stochastic_sample"] = self.stochastic_sample.to_dict()
-```
-
-- [ ] **Step 5: Resolve deterministic vs stochastic selected action types through one closed execution boundary**
-
-Change the internal resolution tuple to carry either transition spec kind. Do not change the public `ActionIntent` or `advance_world_step` signature.
-
-For stochastic transitions, call this new internal path:
-
-```python
-def _execute_one_stochastic(
-    snapshot,
-    domain,
-    entities,
-    prior,
-    resolved,
-) -> ActionTransitionRecord:
-    item, decision, action, transition = resolved
-    if prior.root_seed is None:
-        raise WorldTransitionError("stochastic world transition requires a root seed")
-    allowed = _allowed_cells(domain, entities, decision, action, transition)
-    try:
-        raw = transition.distribution_hook(
-            snapshot,
-            decision,
-            action,
-            transition.parameters,
-        )
-    except Exception as error:
-        raise WorldTransitionError("stochastic action transition hook failed") from error
-    if not isinstance(raw, StateDeltaDistribution):
-        raise WorldTransitionError("stochastic action transition hook must return StateDeltaDistribution")
-```
-
-Canonicalize/validate **every** candidate delta with `_validated_delta(...)`, reconstruct a validated `StateDeltaDistribution`, attest the stochastic spec hash, then call:
-
-```python
-sample = sample_categorical(
+transition_hash = _attested_transition_hash(transition)
+sample_record = sample_categorical(
     root_seed=prior.root_seed,
     namespace="world.transition",
     step_index=prior.step_index + 1,
@@ -877,45 +533,24 @@ sample = sample_categorical(
     component_key=(decision.actor_id, decision.id, action.id),
     distribution_hash=validated_distribution.content_hash,
     outcomes=tuple(
-        (item.outcome_id, item.probability, item.content_hash)
-        for item in validated_distribution.outcomes
+        (outcome.outcome_id, outcome.probability, outcome.content_hash)
+        for outcome in validated_distribution.outcomes
     ),
 )
+sample = StochasticTransitionSample(validated_distribution, sample_record)
 ```
 
-Construct the concrete `ActionTransitionRecord` from the selected delta and `StochasticTransitionSample`.
+Return `ActionTransitionRecord` using `sample.selected_outcome.delta`, the stochastic spec hash, and the sample wrapper.
 
-- [ ] **Step 6: Add world-step stochastic lineage certification**
+- [ ] **Step 6: Certify stochastic lineage in `WorldStepResult`**
 
-In `WorldStepResult.__post_init__`, for every record with `stochastic_sample`, require:
+For each sampled record require root seed, next-step index, prior-state source hash, transition spec hash, and exact actor/decision/action component key equality. Also require `next_state.root_seed == prior_state.root_seed`.
 
-```python
-sample = record.stochastic_sample.sample_record
-if self.prior_state.root_seed is None or sample.root_seed != self.prior_state.root_seed:
-    raise ValueError("stochastic transition root seed mismatch")
-if sample.step_index != self.next_state.step_index:
-    raise ValueError("stochastic transition step mismatch")
-if sample.source_hash != self.prior_state.content_hash:
-    raise ValueError("stochastic transition source mismatch")
-if sample.component_hash != record.transition_spec_hash:
-    raise ValueError("stochastic transition spec mismatch")
-if sample.component_key != (
-    record.actor_id,
-    record.intent.decision_id,
-    record.action.id,
-):
-    raise ValueError("stochastic transition component key mismatch")
-```
+- [ ] **Step 7: Preserve realized-write conflict behavior**
 
-This makes constructor-bypassing/forged lineage fail before projection or scheduler success.
+Do not alter resolver hooks. `_conflict_components` continues using concrete `record.delta`; transition batch hashes continue using `record.to_dict()`, so the stochastic sample is naturally lineage-bound.
 
-- [ ] **Step 7: Keep conflict resolution on realized writes only**
-
-Do not modify conflict resolver hooks or records. `_conflict_components` continues to inspect each concrete `record.delta`. Verify resolved batch hashing naturally binds stochastic sample payload through `record.to_dict()`.
-
-- [ ] **Step 8: Run world GREEN tests**
-
-Run:
+- [ ] **Step 8: Verify and commit Task 3**
 
 ```bash
 python3 -m unittest \
@@ -924,16 +559,11 @@ python3 -m unittest \
   tests.test_narrative_conflict_resolution \
   tests.test_narrative_conflict_resolution_safety \
   tests.test_narrative_stochastic_world -v
-```
-
-Expected: all PASS. Do not loosen distribution, capability, replay, order, or conflict assertions.
-
-- [ ] **Step 9: Commit stochastic world GREEN**
-
-```bash
 git add narrative_dynamics/narrative/world.py
 git commit -m "feat: add stochastic narrative world transitions"
 ```
+
+Expected: all listed tests PASS without loosening conflict or capability assertions.
 
 ---
 
@@ -941,16 +571,12 @@ git commit -m "feat: add stochastic narrative world transitions"
 
 **Files:**
 - Modify: `narrative_dynamics/narrative/observation_projection.py`
-- Test: `tests/test_narrative_stochastic_observation.py`
 
 **Interfaces:**
-- Consumes seeded `WorldStepResult` and `sample_categorical`.
-- Produces `ObservationOutcome`, `ObservationOutcomeDistribution`, `StochasticObservationSample`, `StochasticObserverProjectionSpec`, additive `ObservationProjectionModelSpec.stochastic_projections`, additive `ProjectedObservation.stochastic_sample_hash`, and additive `ObservationProjectionResult.stochastic_samples`.
-- Leaves deterministic `ObserverProjectionSpec` and `project_world_observations(...)` signature unchanged.
+- Consumes seeded `WorldStepResult` and Task 2 categorical sampling.
+- Produces `ObservationOutcome`, `ObservationOutcomeDistribution`, `StochasticObservationSample`, `StochasticObserverProjectionSpec`, additive model/result/observation stochastic fields.
 
 - [ ] **Step 1: Add observation distribution records**
-
-Add:
 
 ```python
 @dataclass(frozen=True)
@@ -959,28 +585,15 @@ class ObservationOutcome:
     probability: float
     facts: tuple[ObservationFact, ...]
 
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "outcome_id": self.outcome_id,
-            "probability": self.probability,
-            "facts": [fact.to_dict() for fact in self.facts],
-        }
-
-    @property
-    def content_hash(self) -> str:
-        return stable_content_hash(self.to_dict())
-
 
 @dataclass(frozen=True)
 class ObservationOutcomeDistribution:
     outcomes: tuple[ObservationOutcome, ...]
 ```
 
-Apply the same finite-distribution rules as Task 3. Within one `ObservationOutcome`, require an exact tuple of `ObservationFact`, unique cells, and canonical fact ordering by `_cell_key`; the empty tuple is legal.
+`ObservationOutcome` requires an exact tuple, only `ObservationFact` values, unique cells, and canonical cell order. Empty facts are valid. Distribution applies the global finite-distribution contract and lexical outcome-id order. Both expose `to_dict()` and `content_hash`.
 
-- [ ] **Step 2: Add stochastic projection spec identity**
-
-Add:
+- [ ] **Step 2: Add stochastic projection spec**
 
 ```python
 @dataclass(frozen=True)
@@ -993,21 +606,13 @@ class StochasticObserverProjectionSpec:
     distribution_hook: object = field(compare=False, repr=False)
 ```
 
-Reuse deterministic observer/capability containment validation. Freeze parameters identically to stochastic world parameters. `to_dict()` includes capabilities, parameters, `random_derivation_version`, and implementation identity.
+Reuse deterministic capability/containment validation, freeze parameters, and bind randomness version plus hook implementation identity in `to_dict()`.
 
-- [ ] **Step 3: Add stochastic projections to model identity without changing deterministic identity**
+- [ ] **Step 3: Integrate stochastic projection declarations**
 
-Append:
+Append `stochastic_projections: tuple[StochasticObserverProjectionSpec, ...] = ()` after deterministic projections. Enforce `(observer_type, channel)` uniqueness across both lanes. `_validate_projection_declarations` attests both lanes. Emit stochastic projection payload only when non-empty.
 
-```python
-stochastic_projections: tuple[StochasticObserverProjectionSpec, ...] = ()
-```
-
-Validate `(observer_type, channel)` uniqueness across both deterministic and stochastic lanes. Emit `stochastic_projections` only when non-empty.
-
-- [ ] **Step 4: Add projection sample records and selected-observation links**
-
-Add:
+- [ ] **Step 4: Add stochastic projection sample and output links**
 
 ```python
 @dataclass(frozen=True)
@@ -1022,65 +627,18 @@ class StochasticObservationSample:
     sample_record: RandomSampleRecord
 ```
 
-Require exact consistency between these source fields and the generic sample record (`namespace == "observation.projection"`, step/source/component/component key, distribution hash, selected outcome hash).
+Require observation namespace, step/source/spec/component-key/distribution/selected-outcome equality. Append `stochastic_sample_hash: str | None = None` to `ProjectedObservation`, and `stochastic_samples: tuple[StochasticObservationSample, ...] = ()` to `ObservationProjectionResult`; both serialize only when populated.
 
-Append to `ProjectedObservation`:
+- [ ] **Step 5: Prevalidate every candidate fact tuple**
 
-```python
-stochastic_sample_hash: str | None = None
-```
+Extract candidate validation so it can run before sampling. For each candidate fact enforce canonical subject/type/state variable, emit capability, `equals == exact post-step value`, `clear == post-step absence plus explicit effective current-step clear`, and unique cell. Rebuild canonical `ObservationOutcomeDistribution` from validated facts before sampling.
 
-Serialize only when non-`None`.
+- [ ] **Step 6: Execute stochastic projection**
 
-Append to `ObservationProjectionResult`:
+Before each stochastic hook, require `world_step.next_state.root_seed` non-`None`. Build deterministic-style immutable visible views and call the hook with frozen parameters. Then:
 
 ```python
-stochastic_samples: tuple[StochasticObservationSample, ...] = ()
-```
-
-Canonicalize samples by `(observer_id, channel)`. Serialize only when non-empty.
-
-- [ ] **Step 5: Prevalidate every candidate observation outcome before sampling**
-
-Refactor the deterministic fact checks into a helper that can validate a candidate tuple without constructing output records:
-
-```python
-def _validate_candidate_facts(
-    facts,
-    *,
-    domain,
-    entities,
-    world_step,
-    observer,
-    spec,
-) -> tuple[ObservationFact, ...]:
-```
-
-For every fact in every candidate outcome, enforce existing rules exactly:
-
-```text
-canonical subject/type/state variable
-inside emit capability
-`equals` value == exact post-step truth
-`clear` == post-step absence + explicit effective current-step clear
-unique cell within outcome
-```
-
-A malformed unsampled outcome fails the whole projection.
-
-- [ ] **Step 6: Execute stochastic projection with one observer/channel-local sample**
-
-For each stochastic spec/observer:
-
-```python
-if world_step.next_state.root_seed is None:
-    raise ObservationProjectionError("stochastic observation projection requires a root seed")
-```
-
-Require this before calling the hook. Build the same immutable `prior_visible`/`next_visible` views as deterministic projection. Call the hook with frozen parameters, validate/canonicalize the complete distribution, attest the stochastic spec hash, then sample:
-
-```python
-sample = sample_categorical(
+sample_record = sample_categorical(
     root_seed=world_step.next_state.root_seed,
     namespace="observation.projection",
     step_index=world_step.next_state.step_index,
@@ -1089,35 +647,19 @@ sample = sample_categorical(
     component_key=(observer.id, spec.channel),
     distribution_hash=distribution.content_hash,
     outcomes=tuple(
-        (item.outcome_id, item.probability, item.content_hash)
-        for item in distribution.outcomes
+        (outcome.outcome_id, outcome.probability, outcome.content_hash)
+        for outcome in distribution.outcomes
     ),
 )
 ```
 
-Create one `StochasticObservationSample`, then emit only selected facts as normal `ProjectedObservation` with `stochastic_sample_hash=sample_wrapper.content_hash`. For an empty selected fact tuple, emit zero observations but keep the sample wrapper in the result.
+Create `StochasticObservationSample`. Emit only the selected facts; each emitted `ProjectedObservation` points to that sample wrapper hash. A selected empty tuple emits no observations but retains the sample in the result.
 
-- [ ] **Step 7: Certify result/sample/observation lineage**
+- [ ] **Step 7: Certify projection result lineage and forged world samples**
 
-In `ObservationProjectionResult.__post_init__`, require:
+`ObservationProjectionResult.__post_init__` requires sample source-world-step/source-world-state/step equality, unique observer/channel samples, valid observation sample references, and selected-fact membership. `_validate_source_world_step` independently checks stochastic transition root/step/source/spec/component-key bindings so constructor-bypassing forged world steps fail projection preflight.
 
-```text
-sample source_world_step_hash == result.source_world_step_hash
-sample source_world_state_hash == result.source_world_state_hash
-sample step_index == result.step_index
-sample ids unique by observer/channel
-all non-null ProjectedObservation.stochastic_sample_hash values exist in result samples
-referenced observation fact belongs to that sample's selected outcome
-observations without stochastic_sample_hash are deterministic
-```
-
-Do not make a sample bind the enclosing projection-result hash.
-
-Also extend `_validate_source_world_step` to reject forged stochastic transition lineage using the same root/step/source/spec/component-key checks enforced by `WorldStepResult`, because projection must fail closed even if public record constructors were bypassed.
-
-- [ ] **Step 8: Run projection GREEN tests**
-
-Run:
+- [ ] **Step 8: Verify and commit Task 4**
 
 ```bash
 python3 -m unittest \
@@ -1127,9 +669,7 @@ python3 -m unittest \
   tests.test_narrative_stochastic_observation -v
 ```
 
-Expected: all projection/world tests PASS except the stochastic observation test that explicitly inspects runtime evidence-batch sample hashes; that one remains RED until Task 5.
-
-- [ ] **Step 9: Commit stochastic observation GREEN**
+At this checkpoint the observation test that inspects `RuntimeEvidenceBatch.projection_sample_hashes` remains the only intended RED because Task 5 has not added that field. Commit only if every other listed test is green:
 
 ```bash
 git add narrative_dynamics/narrative/observation_projection.py
@@ -1142,103 +682,60 @@ git commit -m "feat: add stochastic narrative observation projection"
 
 **Files:**
 - Modify: `narrative_dynamics/narrative/runtime_perception.py`
-- Test: `tests/test_narrative_stochastic_observation.py`
 
 **Interfaces:**
 - Consumes `ProjectedObservation.stochastic_sample_hash` and `ObservationProjectionResult.stochastic_samples`.
-- Produces optional evidence-level sample reference and complete projection-sample hashes in `RuntimeEvidenceBatch`.
-- Does not change `RuntimePerceptView` or cognition likelihood APIs.
+- Produces `RuntimeEpistemicEvidence.projection_sample_hash` and `RuntimeEvidenceBatch.projection_sample_hashes`.
+- Leaves `RuntimePerceptView` unchanged.
 
-- [ ] **Step 1: Append optional stochastic lineage to runtime evidence**
+- [ ] **Step 1: Append optional evidence sample link**
 
-Append after existing `projection_spec_hash`:
+Append `projection_sample_hash: str | None = None` after `RuntimeEpistemicEvidence.projection_spec_hash`. Validate with `_hash` only when non-`None`, serialize only when present, and leave `percept_view` unchanged.
 
-```python
-projection_sample_hash: str | None = None
-```
+- [ ] **Step 2: Append complete projection sample hashes to batch**
 
-In `RuntimeEpistemicEvidence.__post_init__`, validate it with `_hash(...)` only when non-`None`. In `to_dict()`, conditionally emit:
+Append `projection_sample_hashes: tuple[str, ...] = ()` after `RuntimeEvidenceBatch.evidence`. Validate unique sha256 hashes, canonicalize lexically, serialize only when non-empty, and require every non-null evidence sample hash to belong to this tuple.
 
-```python
-if self.projection_sample_hash is not None:
-    payload["projection_sample_hash"] = self.projection_sample_hash
-```
+- [ ] **Step 3: Copy and certify lineage during admission**
 
-`percept_view` stays unchanged and therefore remains provenance-free.
-
-- [ ] **Step 2: Append complete projection sample hashes to every evidence batch**
-
-Append after existing `evidence`:
-
-```python
-projection_sample_hashes: tuple[str, ...] = ()
-```
-
-Validate/canonicalize unique hashes. Serialize only when non-empty.
-
-For each evidence item with a non-null `projection_sample_hash`, require it belongs to `projection_sample_hashes`.
-
-- [ ] **Step 3: Copy projection sampling lineage during admission**
-
-In `admit_world_percepts`, compute:
+In `admit_world_percepts`:
 
 ```python
 projection_sample_hashes = tuple(
-    sorted(item.content_hash for item in projection_result.stochastic_samples)
+    sorted(sample.content_hash for sample in projection_result.stochastic_samples)
 )
 ```
 
-When constructing `RuntimeEpistemicEvidence`, pass:
+Pass each projected observation's sample hash into `RuntimeEpistemicEvidence` and the complete tuple into `RuntimeEvidenceBatch`, including the zero-evidence dropout case. In `RuntimePerceptAdmissionResult.__post_init__`, require exact equality between result stochastic sample hashes and batch hashes.
 
-```python
-projection_sample_hash=projected.stochastic_sample_hash,
-```
-
-When constructing `RuntimeEvidenceBatch`, pass all sample hashes even if `runtime_evidence == ()`.
-
-- [ ] **Step 4: Certify exact projection/batch sample equality**
-
-In `RuntimePerceptAdmissionResult.__post_init__`, compute expected sample hashes from `projection_result.stochastic_samples` and require exact equality with `evidence_batch.projection_sample_hashes`.
-
-This is the lock that preserves stochastic blackout lineage when no percept exists.
-
-- [ ] **Step 5: Run perception + stochastic observation GREEN tests**
-
-Run:
+- [ ] **Step 4: Verify and commit Task 5**
 
 ```bash
 python3 -m unittest \
   tests.test_narrative_runtime_perception \
   tests.test_narrative_runtime_cognition \
   tests.test_narrative_stochastic_observation -v
-```
-
-Expected: all PASS. Existing cognition tests must see unchanged `RuntimePerceptView` payloads.
-
-- [ ] **Step 6: Commit perception lineage GREEN**
-
-```bash
 git add narrative_dynamics/narrative/runtime_perception.py
 git commit -m "feat: bind stochastic projection lineage to runtime evidence"
 ```
+
+Expected: all PASS; cognition continues to receive the same provenance-free `RuntimePerceptView`.
 
 ---
 
 ### Task 6: Freeze the Root Seed Through Multi-Step Simulation
 
 **Files:**
-- Modify: `narrative_dynamics/narrative/simulation.py`
 - Modify: `narrative_dynamics/narrative/runtime_perception.py`
-- Test: `tests/test_narrative_stochastic_simulation.py`
+- Modify: `narrative_dynamics/narrative/simulation.py`
 
 **Interfaces:**
-- Extends only initialization APIs with optional seed plumbing.
-- `simulate_step(...)` and `simulate_trajectory(...)` remain unchanged and derive stochastic execution solely from `prior_state.world_state.root_seed`.
-- Decision dispatch remains seedless.
+- Extends initialization APIs only.
+- `simulate_step` and `simulate_trajectory` stay seedless and consume the root seed only transitively through `prior_state.world_state`.
 
-- [ ] **Step 1: Extend runtime ledger initialization to reconstruct the same seeded initial world**
+- [ ] **Step 1: Extend ledger initialization**
 
-Change:
+Change the signature to:
 
 ```python
 def runtime_evidence_ledger_from_story(
@@ -1250,15 +747,9 @@ def runtime_evidence_ledger_from_story(
 ) -> RuntimeEvidenceLedger:
 ```
 
-Construct:
+Construct the initial world with `world_state_from_story(story, domain, at_time=cutoff, seed=seed)`. Do not add an independent seed field to the ledger.
 
-```python
-initial = world_state_from_story(story, domain, at_time=cutoff, seed=seed)
-```
-
-No independent seed field is added to `RuntimeEvidenceLedger`; seed identity remains transitive through `initial_world_state_hash/current_world_state_hash`.
-
-- [ ] **Step 2: Extend simulation initialization and nothing else**
+- [ ] **Step 2: Extend simulation initialization only**
 
 Change:
 
@@ -1273,36 +764,13 @@ def simulation_state_from_story(
 ) -> SimulationState:
 ```
 
-Call:
+Use the same `seed` for both `world_state_from_story` and `runtime_evidence_ledger_from_story`. Existing `SimulationState` hash binding then proves they refer to the same seeded initial state.
 
-```python
-world = world_state_from_story(story, domain, at_time=cutoff, seed=seed)
-ledger = runtime_evidence_ledger_from_story(story, domain, at_time=cutoff, seed=seed)
-```
+- [ ] **Step 3: Preserve decision isolation**
 
-Require the resulting ledger/world hashes to match through existing `SimulationState` validation.
+Do not alter the scheduler's `run_runtime_decision(story, domain, decision_id, ledger, decision_model)` call. No decision API receives root seed or a random stream.
 
-Do not add `seed` parameters to `simulate_step` or `simulate_trajectory`.
-
-- [ ] **Step 3: Keep decision dispatch independent from the root seed**
-
-Do not alter this existing call shape:
-
-```python
-result = run_runtime_decision(
-    story,
-    domain,
-    agent.decision_template_id,
-    prior_state.evidence_ledger,
-    agent.decision_model,
-)
-```
-
-The seed may affect a later decision only through changed world/projection/evidence lineage, never as a direct decision input.
-
-- [ ] **Step 4: Run exact replay and separation tests**
-
-Run:
+- [ ] **Step 4: Verify and commit Task 6**
 
 ```bash
 python3 -m unittest \
@@ -1312,62 +780,41 @@ python3 -m unittest \
   tests.test_narrative_runtime_intention \
   tests.test_narrative_runtime_planning \
   tests.test_narrative_stochastic_simulation -v
-```
-
-Expected: all PASS, including same-seed exact multi-round trajectory replay and unchanged decision public signatures.
-
-- [ ] **Step 5: Commit scheduler seed plumbing GREEN**
-
-```bash
 git add \
   narrative_dynamics/narrative/runtime_perception.py \
   narrative_dynamics/narrative/simulation.py
 git commit -m "feat: freeze narrative stochastic seed across trajectories"
 ```
 
+Expected: all PASS, including exact two-round same-seed replay, seedless step/trajectory signatures, and seed-invariant step-1 decisions.
+
 ---
 
-### Task 7: Prove Existing Seed Diagnostics Compatibility and Close Feature Verification
+### Task 7: Prove Seed-Diagnostics Compatibility and Finish Integration
 
 **Files:**
 - Test: `tests/test_narrative_stochastic_seed_diagnostics.py`
 - No production uncertainty/comparison changes.
 
 **Interfaces:**
-- Consumes the completed stochastic runtime and existing outer `SimulationRunner`/`calibrate_seed_block_variants` APIs.
-- Produces final proof that external experiment seeds can deterministically drive inner narrative aleatoric branches and existing seed diagnostics observe the variation.
+- Consumes completed stochastic runtime plus existing `SimulationRunner` and `calibrate_seed_block_variants`.
+- Produces the final evidence needed for the five P2 stochastic-world/observation roadmap checks.
 
-- [ ] **Step 1: Make the test-only outer adapter fully GREEN**
+- [ ] **Step 1: Green the test-only outer adapter**
 
-Keep the adapter entirely inside `tests/test_narrative_stochastic_seed_diagnostics.py`. It must consume exactly one `rng.getrandbits(64)` call before narrative initialization and must expose `narrative_root_seed` plus a stochastic lineage hash in `ModelRun.outcome`.
+Keep `NarrativeAleatoricAdapter` entirely in the test module and consume exactly one `rng.getrandbits(64)` before narrative initialization. Outcome includes `value`, `narrative_root_seed`, and `narrative_lineage_hash`. No registry or production adapter is added.
 
-No production adapter or registry entry is added.
-
-- [ ] **Step 2: Verify outer seed manifests and narrative lineage**
-
-Run:
+- [ ] **Step 2: Verify outer seed and seed-block diagnostics**
 
 ```bash
 python3 -m unittest \
-  tests.test_narrative_stochastic_seed_diagnostics.NarrativeStochasticSeedDiagnosticsTests.test_outer_seed_deterministically_maps_to_narrative_root_seed_and_manifest -v
-```
-
-Assert two runs with the same outer seed have the same outer trace seed, same derived narrative root seed, same inner lineage hash, and same manifest hash. A different outer seed must change the outer trace seed and normally changes the derived narrative root seed; the test must not claim the 64-bit mapping is mathematically injective.
-
-- [ ] **Step 3: Verify existing seed-block diagnostics detect aleatoric drift**
-
-Run:
-
-```bash
-python3 -m unittest \
+  tests.test_narrative_stochastic_seed_diagnostics.NarrativeStochasticSeedDiagnosticsTests.test_outer_seed_deterministically_maps_to_narrative_root_seed_and_manifest \
   tests.test_narrative_stochastic_seed_diagnostics.NarrativeStochasticSeedDiagnosticsTests.test_existing_seed_block_variants_detect_aleatoric_acceptance_drift -v
 ```
 
-Expected: PASS with two seed variants retaining different accepted parameter values and an empty accepted intersection.
+Expected: both PASS; same outer seed replays exact root/lineage/manifest; seed-block variants retain different accepted levels with empty intersection.
 
-- [ ] **Step 4: Run all new stochastic tests**
-
-Run:
+- [ ] **Step 3: Run all new stochastic tests and full Python suite**
 
 ```bash
 python3 -m unittest \
@@ -1376,23 +823,28 @@ python3 -m unittest \
   tests.test_narrative_stochastic_observation \
   tests.test_narrative_stochastic_simulation \
   tests.test_narrative_stochastic_seed_diagnostics -v
-```
-
-Expected: all PASS.
-
-- [ ] **Step 5: Run the full Python suite**
-
-Run:
-
-```bash
 python3 -m unittest discover -s tests -v
 ```
 
-Expected: `OK`. No existing deterministic test may be skipped, weakened, or converted to a stochastic expectation.
+Expected: all new tests PASS and full discovery ends `OK`.
 
-- [ ] **Step 6: Verify approved production/test scope against the integrated base**
+- [ ] **Step 4: Commit final test-only diagnostics closure if Task 1 content required implementation-safe edits**
 
-Run:
+Only if imports/helper wiring changed after the authoritative RED, commit those test-only changes now:
+
+```bash
+git add \
+  tests/test_narrative_randomness.py \
+  tests/test_narrative_stochastic_world.py \
+  tests/test_narrative_stochastic_observation.py \
+  tests/test_narrative_stochastic_simulation.py \
+  tests/test_narrative_stochastic_seed_diagnostics.py
+git diff --cached --quiet || git commit -m "test: close stochastic runtime acceptance"
+```
+
+Assertions and acceptance thresholds must remain at least as strict as the RED versions.
+
+- [ ] **Step 5: Verify exact diff scope**
 
 ```bash
 git diff --name-status e2b505230211a38390e8eda9e92ba25c347703aa...HEAD
@@ -1413,27 +865,20 @@ A  tests/test_narrative_stochastic_simulation.py
 A  tests/test_narrative_stochastic_seed_diagnostics.py
 ```
 
-The approved spec and plan are the only allowed doc additions for this workstream.
+The spec and plan are the only allowed doc additions.
 
-- [ ] **Step 7: Capture exact-head feature GREEN proof**
+- [ ] **Step 6: Capture exact-head feature GREEN proof**
 
-Record the exact branch SHA and require the `proof` workflow for that exact SHA to reach `completed / success` with:
-
-```text
-Lean dependency resolution == success
-Lean/Python conformance == success
-full Lean build == success
-Lean theorem tests == success
-Python numerical/tests == success
-Narrative story theorem tests == success
-Narrative testimony theorem tests == success
+```bash
+FEATURE_HEAD=$(git rev-parse HEAD)
+echo "$FEATURE_HEAD"
 ```
 
-Read the Python job log and record the exact `Ran N tests ... OK` line. Do not infer GREEN from a prior head.
+Require the `proof` workflow whose `head_sha` is exactly `$FEATURE_HEAD` to reach `completed / success`. Read its Python job log and record the exact `Ran N tests ... OK` line. Require Lean dependency/conformance/full build/theorem, story theorem, and testimony theorem steps all green.
 
-- [ ] **Step 8: Review the complete diff before PR**
+- [ ] **Step 7: Review the complete diff before PR**
 
-Confirm:
+Confirm all of these directly from the diff/tests:
 
 ```text
 no RNG in deterministic hooks
@@ -1441,40 +886,28 @@ no RNG in decision APIs
 no stochastic conflict resolver
 no false observation values
 all unsampled candidates validated
-root seed frozen in world chain
-empty observation samples retained in ledger lineage
+root seed frozen through world chain
+empty observation samples retained in evidence lineage
 world/observation namespaces distinct
 deterministic optional fields omitted
-no uncertainty/comparison/Lean changes
+no uncertainty/comparison/Lean production changes
 ```
 
-- [ ] **Step 9: Open the PR with RED/GREEN evidence and explicit P2 exclusions**
+- [ ] **Step 8: Open PR with RED/GREEN evidence**
 
-PR body must include:
+The PR body records integrated base SHA, spec/plan paths, authoritative test-only RED SHA/run/failure signature, final feature SHA/run, deterministic compatibility evidence, same-seed trajectory replay, seed-diagnostics evidence, exact scope, and explicit statement that P2 Identification and Model Comparison remains open.
 
-```text
-integrated base SHA
-spec + plan paths
-authoritative test-only RED SHA + proof run + failure signature
-final feature SHA + exact-head proof run
-same-seed replay evidence
-deterministic V1/V2 compatibility evidence
-seed diagnostics evidence
-production/test scope
-explicit statement that P2 Identification and Model Comparison remains open
-```
+- [ ] **Step 9: Require PR synthetic-merge GREEN, then guarded merge**
 
-- [ ] **Step 10: Require PR synthetic-merge GREEN before merge**
+Require the PR-triggered `proof` synthetic merge for the current head/base to complete successfully. Then merge with `expected_head_sha` set to the current feature head; do not merge if head moved.
 
-Verify the PR-triggered proof run is for the current head/base synthetic merge and is `completed / success`. Do not use the feature-head run as a substitute.
+- [ ] **Step 10: Require post-merge exact-head GREEN**
 
-- [ ] **Step 11: Guarded merge and post-merge exact-head proof**
+Read the new `proof/narrative-dynamics-v0` merge commit SHA. Require its push-triggered `proof` run to complete successfully and read exact Python `Ran N tests ... OK` evidence before updating roadmap status.
 
-Merge only with `expected_head_sha=<current feature head>`. Then require a push-triggered proof on the resulting exact `proof/narrative-dynamics-v0` merge commit to reach `completed / success`, and read its Python `Ran N tests ... OK` evidence.
+- [ ] **Step 11: Update only the five #27 stochastic-world/observation checkboxes**
 
-- [ ] **Step 12: Update roadmap #27 only after post-merge GREEN**
-
-Change only these five P2 Stochastic World / Observation items to `[x]`:
+Mark exactly these `[x]` after post-merge GREEN:
 
 ```text
 Explicit RNG/seed boundary
@@ -1484,4 +917,4 @@ Separate aleatoric transition noise from decision stochasticity
 Batch/seed diagnostics compatible with existing uncertainty infrastructure
 ```
 
-Update the integrated baseline/evidence paragraph with PR, merge commit, and post-merge proof. Keep issue #27 open and keep every P2 Identification and Model Comparison checkbox unchanged.
+Update the integrated baseline/evidence paragraph with PR number, merge commit, and post-merge proof. Keep issue #27 open and leave every P2 Identification and Model Comparison checkbox unchanged.
