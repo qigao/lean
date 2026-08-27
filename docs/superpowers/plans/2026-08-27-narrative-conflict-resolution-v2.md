@@ -4,9 +4,9 @@
 
 **Goal:** Add deterministic, attested, capability-limited resolution for simultaneous multi-agent world conflicts while preserving resolver-free World Transition V1 behavior and lineage exactly.
 
-**Architecture:** Every action hook still runs against one immutable prior world snapshot and yields one validated `ActionTransitionRecord`. The world layer then builds connected components from actual overlapping delta write sets, invokes one optional attested `ConflictResolverSpec` once per component, validates one whole-component replacement `StateDelta`, checks the final effective mutation set globally for collisions, and constructs one atomic next `WorldState`. Original transition records remain in lineage; explicit resolution records explain why effective world mutation differs from attempted deltas.
+**Architecture:** Every action hook still runs against one immutable prior world snapshot and yields one validated `ActionTransitionRecord`. The world layer builds connected components from actual overlapping delta write sets, invokes one optional attested `ConflictResolverSpec` once per component, validates one whole-component replacement `StateDelta`, checks the final effective mutation set globally for collisions, and constructs one atomic next `WorldState`. Original transition records remain in lineage; explicit resolution records explain why effective world mutation differs from attempted deltas.
 
-**Tech Stack:** Python 3 dataclasses, `unittest`, existing `stable_content_hash`, existing `measure_implementation` attestation, immutable `MappingProxyType` snapshots, GitHub Actions `proof` workflow.
+**Tech Stack:** Python 3 dataclasses, `unittest`, `unittest.mock`, existing `stable_content_hash`, existing `measure_implementation` attestation, immutable `MappingProxyType` snapshots, GitHub Actions `proof` workflow.
 
 **Spec:** `docs/superpowers/specs/2026-08-27-narrative-conflict-resolution-v2-design.md`
 
@@ -37,9 +37,9 @@
 - Create `narrative_dynamics/narrative/conflict.py`: pure conflict records and resolver specification; it must not import `world.py`.
 - Modify `narrative_dynamics/narrative/world.py`: resolver error type, optional resolver field, component construction, resolver execution, effective mutation validation, lineage, atomic commit.
 - Modify `narrative_dynamics/narrative/__init__.py`: final five-name export only after a dedicated public-surface RED.
-- Create `tests/test_narrative_conflict_resolution.py`: generic records, component, safety, and reference-scenario tests.
-- Modify `tests/test_narrative_world_transition.py`: V1 compatibility, configured-but-unused resolver behavior, no-resolver conflict locks, and result-forgery locks.
-- Modify `tests/test_narrative_simulation.py`: heterogeneous conflict-resolution acceptance tests only; scheduler production remains unchanged.
+- Create `tests/test_narrative_conflict_resolution.py`: records, component, safety, forgery, lineage, and reference-scenario tests.
+- Modify `tests/test_narrative_world_transition.py`: resolver-free V1 compatibility and configured-but-unused resolver locks only.
+- Modify `tests/test_narrative_simulation.py`: heterogeneous conflict-resolution and resolver-identity acceptance tests only; scheduler production remains unchanged.
 - Modify `tests/test_narrative_trust_api.py`: exact five-name narrative surface RED/GREEN.
 
 ---
@@ -92,9 +92,9 @@ ConflictResolutionRecord(
 
 `WorldTransitionModelSpec` gains final optional field `conflict_resolver=None`; `WorldStepResult` gains final optional field `conflict_resolutions=()`; `WorldTransitionConflictResolutionError` subclasses `WorldTransitionConflictError`.
 
-- [ ] **Step 1: Add guarded Conflict V2 imports so test discovery stays precise**
+- [ ] **Step 1: Add guarded imports and test-forgery helpers**
 
-At the top of `tests/test_narrative_conflict_resolution.py`:
+At the top of `tests/test_narrative_conflict_resolution.py` import `fields`, `replace`, `unittest`, and `patch` from `unittest.mock`, plus the existing world/domain/IR helpers. Add:
 
 ```python
 _CONFLICT_IMPORT_ERROR: ImportError | None = None
@@ -106,10 +106,26 @@ try:
         ConflictResolverSpec,
     )
     from narrative_dynamics.narrative.world import (
+        WorldStepResult,
         WorldTransitionConflictResolutionError,
     )
 except ImportError as error:
     _CONFLICT_IMPORT_ERROR = error
+
+
+def _hash(label: str) -> str:
+    return stable_content_hash({"conflict-test": label})
+
+
+def _forge(instance, **changes):
+    forged = object.__new__(type(instance))
+    for item in fields(instance):
+        object.__setattr__(
+            forged,
+            item.name,
+            changes.get(item.name, getattr(instance, item.name)),
+        )
+    return forged
 
 
 class NarrativeConflictResolutionTests(unittest.TestCase):
@@ -121,19 +137,97 @@ class NarrativeConflictResolutionTests(unittest.TestCase):
             )
 ```
 
-Use normal imports for `StateDelta`, `StateDeltaOp`, `ActionOption`, `EntityRef`, `StateCellRef`, `TypedValue`, `WorldTransitionModelSpec`, `advance_world_step`, and existing world-test helpers `make_world_domain`, `make_world_story`, and `intent`.
-
-- [ ] **Step 2: Add canonical record/identity tests**
+- [ ] **Step 2: Add a complete direct participant/context fixture and canonical identity tests**
 
 ```python
-def _hash(label: str) -> str:
-    return stable_content_hash({"conflict-test": label})
+def make_direct_participant_context_fixture():
+    cell = StateCellRef(EntityRef("svc", "Service"), "service.health")
+    action = ActionOption(
+        "alice-recover",
+        "service-health-action",
+        {
+            "service": TypedValue("ServiceRef", EntityRef("svc", "Service")),
+            "health": TypedValue("HealthState", "recovered"),
+        },
+    )
+    delta = StateDelta((StateDeltaOp(
+        "set",
+        "svc",
+        "service.health",
+        TypedValue("HealthState", "recovered"),
+    ),))
+    alice = ConflictParticipant(
+        "alice",
+        "d-alice-service",
+        action,
+        _hash("alice-transition"),
+        _hash("service-transition-spec"),
+        delta,
+        (cell,),
+    )
+    bob = ConflictParticipant(
+        "bob",
+        "d-bob-service",
+        replace(action, id="bob-recover"),
+        _hash("bob-transition"),
+        _hash("service-transition-spec"),
+        delta,
+        (cell,),
+    )
+    context = ConflictResolutionContext(_hash("prior"), (bob, alice), (cell,))
+    return alice, bob, context
+```
 
+Add exact tests:
 
-def service_health_cell() -> StateCellRef:
-    return StateCellRef(EntityRef("svc", "Service"), "service.health")
+```python
+    def test_records_bind_full_action_payload_and_exact_conflict_cells(self):
+        self.require_conflict()
+        alice, bob, context = make_direct_participant_context_fixture()
+        self.assertEqual(tuple(item.actor_id for item in context.participants), ("alice", "bob"))
+        self.assertEqual(
+            context.participants[0].action.arguments["service"],
+            TypedValue("ServiceRef", EntityRef("svc", "Service")),
+        )
+        self.assertEqual(context.conflict_cells, (StateCellRef(EntityRef("svc", "Service"), "service.health"),))
+        with self.assertRaises(ValueError):
+            ConflictResolutionContext(context.prior_state_hash, (alice, bob), ())
 
+    def test_action_argument_change_changes_participant_and_context_identity(self):
+        self.require_conflict()
+        alice, bob, context = make_direct_participant_context_fixture()
+        changed_action = replace(
+            alice.action,
+            arguments={
+                "service": TypedValue("ServiceRef", EntityRef("svc", "Service")),
+                "health": TypedValue("HealthState", "failed"),
+            },
+        )
+        changed = replace(alice, action=changed_action)
+        changed_context = ConflictResolutionContext(
+            context.prior_state_hash,
+            (changed, bob),
+            context.conflict_cells,
+        )
+        self.assertNotEqual(alice.content_hash, changed.content_hash)
+        self.assertNotEqual(context.content_hash, changed_context.content_hash)
 
+    def test_resolution_record_rejects_prior_context_mismatch(self):
+        self.require_conflict()
+        alice, _, context = make_direct_participant_context_fixture()
+        with self.assertRaises(ValueError):
+            ConflictResolutionRecord(
+                "resolver",
+                _hash("resolver"),
+                _hash("different-prior"),
+                context,
+                alice.original_delta,
+            )
+```
+
+Add two implementation-distinct resolver hooks and assert resolver hash changes with hook bytes and supported action types:
+
+```python
 class PreferLexicalActorResolver:
     def __call__(self, snapshot, context):
         return min(context.participants, key=lambda item: item.actor_id).original_delta
@@ -145,115 +239,9 @@ class PreferLexicalActorResolverV2:
         return ordered[0].original_delta
 ```
 
-Add these tests:
+- [ ] **Step 3: Add resolver-free V1 and configured-but-unused world locks**
 
-```python
-    def test_records_bind_full_action_payload_and_exact_conflict_cells(self):
-        self.require_conflict()
-        cell = service_health_cell()
-        action = ActionOption(
-            "alice-recover",
-            "service-health-action",
-            {
-                "service": TypedValue("ServiceRef", EntityRef("svc", "Service")),
-                "health": TypedValue("HealthState", "recovered"),
-            },
-        )
-        delta = StateDelta((StateDeltaOp(
-            "set",
-            "svc",
-            "service.health",
-            TypedValue("HealthState", "recovered"),
-        ),))
-        alice = ConflictParticipant(
-            "alice",
-            "d-alice-service",
-            action,
-            _hash("alice-transition"),
-            _hash("service-transition-spec"),
-            delta,
-            (cell,),
-        )
-        bob = ConflictParticipant(
-            "bob",
-            "d-bob-service",
-            replace(action, id="bob-recover"),
-            _hash("bob-transition"),
-            _hash("service-transition-spec"),
-            delta,
-            (cell,),
-        )
-        context = ConflictResolutionContext(_hash("prior"), (bob, alice), (cell,))
-        self.assertEqual(tuple(item.actor_id for item in context.participants), ("alice", "bob"))
-        self.assertEqual(context.conflict_cells, (cell,))
-        self.assertEqual(
-            context.participants[0].action.arguments["service"],
-            TypedValue("ServiceRef", EntityRef("svc", "Service")),
-        )
-        with self.assertRaises(ValueError):
-            ConflictResolutionContext(_hash("prior"), (alice, bob), ())
-
-    def test_action_argument_change_changes_participant_and_context_identity(self):
-        self.require_conflict()
-        cell = service_health_cell()
-        base_action = ActionOption(
-            "alice-recover",
-            "service-health-action",
-            {
-                "service": TypedValue("ServiceRef", EntityRef("svc", "Service")),
-                "health": TypedValue("HealthState", "recovered"),
-            },
-        )
-        changed_action = replace(
-            base_action,
-            arguments={
-                "service": TypedValue("ServiceRef", EntityRef("svc", "Service")),
-                "health": TypedValue("HealthState", "failed"),
-            },
-        )
-        delta = StateDelta((StateDeltaOp("set", "svc", "service.health", TypedValue("HealthState", "recovered")),))
-        first = ConflictParticipant("alice", "d1", base_action, _hash("t1"), _hash("s1"), delta, (cell,))
-        second = ConflictParticipant("alice", "d1", changed_action, _hash("t1"), _hash("s1"), delta, (cell,))
-        other = ConflictParticipant("bob", "d2", replace(base_action, id="bob-recover"), _hash("t2"), _hash("s1"), delta, (cell,))
-        self.assertNotEqual(first.content_hash, second.content_hash)
-        self.assertNotEqual(
-            ConflictResolutionContext(_hash("p"), (first, other), (cell,)).content_hash,
-            ConflictResolutionContext(_hash("p"), (second, other), (cell,)).content_hash,
-        )
-
-    def test_resolver_identity_binds_hook_and_supported_action_types(self):
-        self.require_conflict()
-        domain = make_world_domain()
-        first = ConflictResolverSpec(
-            "resolver", "1", domain.domain_id, domain.version, domain.content_hash,
-            ("service-health-action",), PreferLexicalActorResolver(),
-        )
-        same = ConflictResolverSpec(
-            "resolver", "1", domain.domain_id, domain.version, domain.content_hash,
-            ("service-health-action",), PreferLexicalActorResolver(),
-        )
-        changed_hook = replace(first, resolver_hook=PreferLexicalActorResolverV2())
-        changed_types = replace(first, supported_action_types=("actor-phase-action", "service-health-action"))
-        self.assertEqual(first.content_hash, same.content_hash)
-        self.assertNotEqual(first.content_hash, changed_hook.content_hash)
-        self.assertNotEqual(first.content_hash, changed_types.content_hash)
-
-    def test_resolution_record_rejects_prior_context_mismatch(self):
-        self.require_conflict()
-        participant, context = make_direct_participant_context_fixture()
-        with self.assertRaises(ValueError):
-            ConflictResolutionRecord(
-                "resolver",
-                _hash("resolver"),
-                _hash("different-prior"),
-                context,
-                participant.original_delta,
-            )
-```
-
-`make_direct_participant_context_fixture()` is a test helper that returns the same canonical participant/context shape used in the first test; its body must contain the explicit `ActionOption`, `StateDelta`, `StateCellRef`, two participants, and context construction shown above.
-
-- [ ] **Step 3: Add exact V1 compatibility and configured-but-unused locks to `tests/test_narrative_world_transition.py`**
+In `tests/test_narrative_world_transition.py`, guarded-import `ConflictResolverSpec` so old tests still discover before production exists. Add:
 
 ```python
     def test_resolver_free_world_model_keeps_exact_v1_payload(self):
@@ -270,7 +258,7 @@ Add these tests:
         self.assertEqual(model.content_hash, stable_content_hash(expected))
         self.assertNotIn("conflict_resolver_hash", model.to_dict())
 
-    def test_resolver_free_world_step_keeps_exact_v1_batch_payload(self):
+    def test_resolver_free_world_step_keeps_exact_v1_payload_and_batch_hash(self):
         story, domain = make_world_story(), make_world_domain()
         prior = world_state_from_story(story, domain)
         result = advance_world_step(
@@ -280,44 +268,38 @@ Add these tests:
             make_transition_model(),
             (intent("d-bob-phase", "bob-ready"),),
         )
-        self.assertEqual(
-            result.next_state.transition_batch_hash,
-            stable_content_hash([item.to_dict() for item in result.transitions]),
-        )
-        self.assertNotIn("conflict_resolutions", result.to_dict())
+        expected_batch = stable_content_hash([item.to_dict() for item in result.transitions])
+        expected_result = {
+            "model_id": result.model_id,
+            "model_hash": result.model_hash,
+            "prior_state": result.prior_state.to_dict(),
+            "transitions": [item.to_dict() for item in result.transitions],
+            "next_state": result.next_state.to_dict(),
+        }
+        self.assertEqual(result.next_state.transition_batch_hash, expected_batch)
+        self.assertEqual(result.to_dict(), expected_result)
+        self.assertEqual(result.content_hash, stable_content_hash(expected_result))
 ```
 
-Add a `RecordingNoopConflictResolver` with `calls=[]` and an unused configured-resolver test:
+Define:
 
 ```python
-    def test_configured_resolver_is_not_called_on_conflict_free_step(self):
-        domain, story = make_world_domain(), make_world_story()
-        hook = RecordingNoopConflictResolver()
-        resolver = ConflictResolverSpec(
-            "resolver", "1", domain.domain_id, domain.version, domain.content_hash,
-            ("actor-phase-action",), hook,
-        )
-        base_model = make_transition_model()
-        model = replace(base_model, conflict_resolver=resolver)
-        self.assertNotEqual(model.content_hash, base_model.content_hash)
-        prior = world_state_from_story(story, domain)
-        result = advance_world_step(
-            story,
-            domain,
-            prior,
-            model,
-            (intent("d-bob-phase", "bob-ready"),),
-        )
-        self.assertEqual(hook.calls, [])
-        self.assertEqual(result.conflict_resolutions, ())
-        self.assertNotIn("conflict_resolutions", result.to_dict())
+class RecordingNoopConflictResolver:
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, snapshot, context):
+        self.calls.append((dict(snapshot), context))
+        return StateDelta(())
 ```
 
-Keep existing same-value and different-value no-resolver conflict rejection tests unchanged.
+Add `test_configured_resolver_is_not_called_on_conflict_free_step`: configured world-model hash differs from resolver-free model; hook calls remain empty; result has empty `conflict_resolutions`; result payload omits the field; transition batch still equals the old list-of-transitions hash.
 
-- [ ] **Step 4: Build a self-contained conflict fixture for connected components and the three roadmap scenarios**
+Keep existing `test_different_value_overlap_is_typed_conflict` and `test_same_value_overlap_is_also_typed_conflict` unchanged.
 
-Extend `make_world_domain()` in test code with:
+- [ ] **Step 4: Build one complete conflict reference domain/story**
+
+Extend `make_world_domain()` in the new test module with:
 
 ```python
 value_types += (
@@ -353,7 +335,7 @@ decision_types += (
 )
 ```
 
-`make_conflict_story(domain)` takes `base = make_world_story()`, replaces its domain hash with `domain.content_hash`, adds `carol`, `dave`, and `svc2`, and appends these exact decisions after the base story's final logical time:
+`make_conflict_story(domain)` takes `base = make_world_story()`, replaces its domain hash with `domain.content_hash`, adds `carol`, `dave`, and `svc2`, and appends these decisions at consecutive logical times:
 
 | decision | actor | type | action | arguments |
 | --- | --- | --- | --- | --- |
@@ -368,7 +350,7 @@ decision_types += (
 | `d-bob-defend` | bob | defend-choice | `bob-defend` | no arguments |
 | `d-carol-taunt-bob` | carol | taunt-choice | `carol-taunt-bob` | target=bob |
 
-Define test transition hooks with exact writes:
+Define transition hooks:
 
 ```python
 class ClaimTransition:
@@ -409,20 +391,17 @@ class TauntTransition:
         ),))
 ```
 
-`make_conflict_world_model(domain, resolver)` declares these matching capabilities:
+`make_conflict_world_model(domain, resolver)` uses matching capabilities: claim/bid write `service.owner` via argument `service`; attack writes target `agent.health` plus actor `agent.combat`; defend writes actor `agent.health` plus actor `agent.combat`; taunt writes target `agent.combat`.
 
-```text
-claim/bid: service.owner via argument service
-attack: target agent.health + actor agent.combat
-defend: actor agent.health + actor agent.combat
-taunt: target agent.combat
-```
-
-- [ ] **Step 5: Add deterministic test resolvers**
+- [ ] **Step 5: Add deterministic resolver hooks for claims, auction, attack/defense, recording, and failure cases**
 
 ```python
 class ClaimResolver:
+    def __init__(self):
+        self.calls = []
+
     def __call__(self, snapshot, context):
+        self.calls.append((dict(snapshot), context))
         winner = min(context.participants, key=lambda item: item.actor_id)
         service = winner.action.arguments["service"].value.entity_id
         return StateDelta((StateDeltaOp(
@@ -456,20 +435,31 @@ class AttackDefenseResolver:
             StateDeltaOp("set", attack.actor_id, "agent.combat", TypedValue("CombatStatus", "attack-failed")),
             StateDeltaOp("set", defense.actor_id, "agent.combat", TypedValue("CombatStatus", "defense-success")),
         ))
+
+
+class RaisingResolver:
+    def __init__(self):
+        self.calls = 0
+
+    def __call__(self, snapshot, context):
+        self.calls += 1
+        raise RuntimeError("resolver boom")
 ```
 
-The lexical tie-break exists only inside `AuctionResolver`.
+The auction lexical tie-break exists only inside `AuctionResolver`.
 
-- [ ] **Step 6: Add all generic component/safety/reference tests**
+- [ ] **Step 6: Add every generic component/safety/reference test**
 
-Add these exact test names in `NarrativeConflictResolutionTests`:
+Add these exact test names:
 
 ```text
 test_two_way_claim_conflict_resolves_once_against_prior_snapshot
 test_three_way_transitive_attack_defend_taunt_is_one_component
 test_two_independent_claim_components_are_canonical_and_order_invariant
 test_noop_delta_does_not_create_component
-test_unsupported_action_type_rejects_before_action_and_resolver_hooks
+test_undeclared_resolver_supported_type_rejects_before_action_hooks
+test_conflict_participant_unsupported_type_rejects_before_resolver_hook
+test_resolver_attestation_unavailable_rejects_before_resolver_hook
 test_forged_action_payload_rejects_before_resolver_hook
 test_resolver_exception_is_typed_and_preserves_runtime_error_cause
 test_resolver_output_cannot_exceed_union_capability
@@ -483,59 +473,92 @@ test_attack_defense_replaces_entire_conflicting_component_delta
 test_resolved_batch_hash_binds_original_transitions_and_resolution_records
 ```
 
-Required concrete assertions:
+Required assertions and fixture mechanics:
 
-- Two-way claim: resolver called once; recorded snapshot equals `dict(prior.values)`; context participants are `(alice,bob)`; final owner is Alice under `ClaimResolver`.
-- Transitive component: Alice attack Bob and Bob defend overlap on `bob.agent.health`; Bob defend and Carol taunt Bob overlap on `bob.agent.combat`; Alice/Carol do not directly overlap; resolver sees one `(alice,bob,carol)` context.
-- Independent components: Alice/Bob claim `svc`, Carol/Dave claim `svc2`; exactly two resolution records, canonical order, exact input-order invariance.
-- No-op: an empty-delta action never appears in a component.
-- Unsupported type: action hooks and resolver hook call lists remain empty.
-- Forged action payload: use `_forge()` to replace one transition record's `action` while retaining original hashes; resolver call list remains empty and `WorldTransitionConflictResolutionError` is raised during runtime participant certification.
-- Resolver exception: `caught.exception.__cause__` is the exact `RuntimeError("resolver boom")`.
-- Capability/schema cases: outside-union cell, wrong TypedValue type, clear with value, set without value, duplicate output cell all raise `WorldTransitionConflictResolutionError`.
-- Bad component: prior `WorldState.to_dict()` is byte-for-byte unchanged and no successful result exists.
-- Final collisions: resolver-vs-nonconflicting and resolution-vs-resolution collisions both reject; there is no fallback order.
-- Claim lineage: losing attempt remains in `result.transitions`; resolution context references both transition hashes.
-- Auction: Alice/Bob bid 11, Carol bids 8; explicit resolver tie-break chooses Alice; reversed intent order preserves full result/hash.
-- Attack/defense: Bob health healthy, Alice combat attack-failed, Bob combat defense-success; raw Alice attack-success write is not applied.
-- Resolved batch hash: assert exactly
+- Two-way claim: `ClaimResolver.calls == [(dict(prior.values), context)]`; participants `(alice,bob)`; final `service.owner` is Alice; one resolution.
+- Transitive component: Alice attack Bob overlaps Bob defend on `bob.agent.health`; Bob defend overlaps Carol taunt Bob on `bob.agent.combat`; Alice and Carol do not directly overlap; one `(alice,bob,carol)` context.
+- Independent components: Alice/Bob claim `svc`, Carol/Dave claim `svc2`; exactly two canonical resolution records; reversed intent order preserves `to_dict()` and content hash.
+- No-op: append existing authored no-op intent to a conflict batch and assert it remains a normal non-conflicting transition, never a participant.
+- Undeclared resolver supported type: configure resolver with `supported_action_types=("missing-action-type",)`; action hook call lists and resolver call list remain empty because declaration preflight fails before actions.
+- Unsupported participant type: resolver declares only `claim-service-action`, but use an attack/defend conflict; action hooks run to produce deltas, resolver hook call list remains empty, and `WorldTransitionConflictResolutionError` is raised before hook invocation.
+- Attestation unavailable: patch `narrative_dynamics.narrative.conflict.measure_implementation` to raise `ImplementationAttestationUnavailable("resolver unavailable")`; action hooks may complete, resolver hook call list stays empty, and exact attestation error is the cause chain.
+- Forged action payload: after Task 4 helper exists, patch `narrative_dynamics.narrative.world._build_conflict_context` with `create=True` so it returns a forged context whose first participant has a changed `ActionOption.arguments` but original transition hashes; `advance_world_step()` must reject during runtime context/transition certification before resolver hook. Do not inject a forged `WorldState` or bypass `advance_world_step()`.
+- Resolver exception: `caught.exception.__cause__` is `RuntimeError` with text `resolver boom`.
+- Schema/capability cases: outside-union cell, wrong TypedValue type, clear carrying value, set missing value, duplicate output cell all raise `WorldTransitionConflictResolutionError`.
+- Bad component: prior state payload remains exactly unchanged and no successful `WorldStepResult` is returned.
+- Claim lineage: losing raw attempt remains in `result.transitions`; resolution context references both transition hashes.
+- Auction: Alice/Bob bid 11, Carol 8; explicit resolver tie-break picks Alice; reversed input order yields identical result/hash.
+- Attack/defense: Bob health healthy, Alice combat attack-failed, Bob combat defense-success; raw attack-success write is not applied.
+- Resolved batch hash equals:
 
 ```python
-expected = stable_content_hash({
+stable_content_hash({
     "transitions": [item.to_dict() for item in result.transitions],
     "conflict_resolutions": [item.to_dict() for item in result.conflict_resolutions],
 })
-self.assertEqual(result.next_state.transition_batch_hash, expected)
 ```
 
-- [ ] **Step 7: Add `WorldStepResult` forged-resolution constructor locks to `tests/test_narrative_world_transition.py`**
+For the two final-collision tests, add one test-only `claim-with-audit-action` variant with parameters `service: ServiceRef` and `audit: ServiceRef`. Its declared effects are `service.owner` on `service` plus `service.health` on `audit`, but its action hook writes only `service.owner`. This makes `audit` health a legal resolver capability that was not an original conflict write.
 
-After a valid resolved result is available from the conflict fixture, add tests that use `replace()`/`_forge()` to assert constructor rejection when:
+- Resolver-vs-nonconflicting case: Alice/Bob form a claim component on `svc`, both use `audit=svc2`; a separate Dave `service-health-action` writes `svc2.service.health`; resolver returns winner owner plus `svc2.service.health=recovered`; final global collision must reject.
+- Resolution-vs-resolution case: Alice/Bob claim `svc`, Carol/Dave claim `svc2`, all four use `audit=svc3`; resolver for each component writes its owner plus `svc3.service.health=recovered`; the two resolution deltas collide and must reject.
+
+- [ ] **Step 7: Add `WorldStepResult` internal-forgery tests in the new conflict test module**
+
+Create `run_valid_claim_result()` from the public claim fixture. Reconstruct `WorldStepResult` with `replace()`/`_forge()` and assert `ValueError` for each payload-internal forgery:
 
 ```text
-resolution.prior_state_hash != result.prior_state.content_hash
-participant.transition_record_hash is absent from result.transitions
-the same transition hash appears in two resolution records
-participant.action != referenced ActionTransitionRecord.action
-participant.original_delta != referenced ActionTransitionRecord.delta
+resolution.prior_state_hash differs from prior_state.content_hash
+participant.transition_record_hash absent from transitions
+one transition hash appears in two resolution records
+participant.action differs from referenced transition.action
+participant.original_delta differs from referenced transition.delta
 next_state.transition_batch_hash does not bind transitions + resolutions
 ```
 
-Each case must raise `ValueError` when reconstructing `WorldStepResult`; these are payload-internal consistency checks, not external resolver-model certification.
+Keep these tests in `test_narrative_conflict_resolution.py` to avoid circular imports with the world-transition fixture module.
 
-- [ ] **Step 8: Add heterogeneous scheduler acceptance tests with zero scheduler production changes**
+- [ ] **Step 8: Add heterogeneous scheduler Conflict V2 acceptance with all three model families**
 
-In `tests/test_narrative_simulation.py`, add guarded imports for `ConflictResolverSpec` and `WorldTransitionConflictResolutionError`.
+In `tests/test_narrative_simulation.py`, guarded-import `ConflictResolverSpec` and `WorldTransitionConflictResolutionError`.
 
-Build `make_heterogeneous_conflict_case()` with these exact model assignments:
+Add:
 
-```text
-a1: intentional, scheduler-alert-choice, selects raise alert
-a2: reactive, scheduler-alert-choice, score hook selects raise alert
-a3: planning, scheduler-alert-choice, reward hook selects raise alert
+```python
+class ConflictAlertReactiveScoreHook:
+    def __call__(self, context):
+        return {"a2-raise-alert": 3.0, "a2-wait-alert": 0.0}
+
+
+class ConflictAlertPlanningRewardHook:
+    def __call__(self, context):
+        if context.action.id == "a3-raise-alert":
+            return 3.0
+        if context.action.id == "a3-wait-alert":
+            return 0.0
+        raise AssertionError("unexpected conflict planning action")
+
+
+class ConflictAlertResolver:
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, snapshot, context):
+        self.calls.append((dict(snapshot), context))
+        return StateDelta((StateDeltaOp(
+            "set", "svc", "service.alert", TypedValue("AlertState", True),
+        ),))
 ```
 
-All three authored actions write the same `service.alert` cell through `alert-control-action`. Configure a resolver that returns `service.alert=True` and records only `(dict(snapshot), context)`.
+`make_heterogeneous_conflict_case()` uses the existing scheduler domain/story helpers but replaces/extends decisions so all three scheduled actors have `scheduler-alert-choice` with actor-specific action ids:
+
+```text
+a1-raise-alert / a1-wait
+a2-raise-alert / a2-wait-alert
+a3-raise-alert / a3-wait-alert
+```
+
+Use `a1` Intentional with existing alert intentional goal/choice setup, `a2` Reactive with `ConflictAlertReactiveScoreHook`, and `a3` Planning with the existing alert hidden states/coupling/transition/observation hooks plus `ConflictAlertPlanningRewardHook`. All three selected raise actions target `service.alert` through the existing `AlertControlTransition`. Configure the world model with `ConflictAlertResolver` supporting only `alert-control-action`.
 
 Add:
 
@@ -556,6 +579,10 @@ Add:
             result.admission_result.projection_result.source_world_step_hash,
             result.world_step.content_hash,
         )
+        context = result.world_step.conflict_resolutions[0].context
+        self.assertFalse(hasattr(context, "belief_state"))
+        self.assertFalse(hasattr(context, "evidence_ledger"))
+        self.assertFalse(hasattr(context, "planning_trace"))
 
     def test_two_round_heterogeneous_conflict_resolution_replays_exactly(self):
         domain1, story1, model1 = make_heterogeneous_conflict_case()
@@ -569,9 +596,11 @@ Add:
         self.assertTrue(all(step.world_step.conflict_resolutions for step in first.steps))
 ```
 
-Also assert the conflict resolver receives no `RuntimeEvidenceLedger`, dispatch result, belief, goal, or planning record through its public context fields.
+Add `test_simulation_model_identity_binds_conflict_resolver_implementation`: build two otherwise identical heterogeneous conflict models whose resolver hooks are implementation-distinct but semantically equivalent and assert different resolver, world-model, and `SimulationModelSpec.content_hash` values. This test belongs in the initial test-only RED, not a later production commit.
 
-- [ ] **Step 9: Run focused tests and verify the expected RED shape**
+Keep existing no-resolver `test_world_failure_blocks_projection_and_preserves_prior_state` unchanged.
+
+- [ ] **Step 9: Run focused tests and verify expected RED shape**
 
 ```bash
 python3 -m unittest \
@@ -580,7 +609,7 @@ python3 -m unittest \
   tests.test_narrative_simulation -v
 ```
 
-Expected: existing tests and V1 resolver-free compatibility locks stay GREEN. New Conflict V2 tests fail only because `conflict.py`, optional resolver/result fields, and the typed error are absent. No unrelated regression is acceptable.
+Expected: existing tests and resolver-free V1 locks stay GREEN. New Conflict V2 tests fail only because `conflict.py`, optional resolver/result fields, and typed resolution error are absent. No unrelated regression is acceptable.
 
 - [ ] **Step 10: Commit only tests**
 
@@ -594,7 +623,7 @@ git commit -m "test: define narrative conflict resolution v2 contract"
 
 - [ ] **Step 11: Open Draft PR and obtain authoritative exact-head RED**
 
-Open Draft PR `feat: add narrative conflict resolution v2` against `proof/narrative-dynamics-v0`, tracking #27. Accept RED only from the PR-triggered `proof` run on the exact test-only head. Record run id/number and verify all failures belong to Conflict V2 tests.
+Open Draft PR `feat: add narrative conflict resolution v2` against `proof/narrative-dynamics-v0`, tracking #27. Accept RED only from the PR-triggered `proof` run on the exact test-only head. Record run id/number and verify all failures belong to new Conflict V2 tests.
 
 ---
 
@@ -605,7 +634,7 @@ Open Draft PR `feat: add narrative conflict resolution v2` against `proof/narrat
 
 **Produces:** `ConflictParticipant`, `ConflictResolutionContext`, `ConflictResolverSpec`, `ConflictResolutionRecord`.
 
-- [ ] **Step 1: Add validation and canonical payload helpers**
+- [ ] **Step 1: Add validation/canonical helpers**
 
 ```python
 _HASH = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -627,52 +656,54 @@ def _cell_key(cell: StateCellRef) -> tuple[str, str, str]:
     return (cell.subject.entity_type, cell.subject.entity_id, cell.state_variable)
 
 
-def _delta_payload(delta: StateDelta) -> dict[str, object]:
+def _canonical_delta(delta: StateDelta, *, label: str) -> StateDelta:
+    if not isinstance(delta, StateDelta):
+        raise TypeError(f"{label} must be StateDelta")
     operations = tuple(sorted(delta.operations, key=lambda item: (item.subject_id, item.state_variable)))
-    return {"operations": [item.to_dict() for item in operations]}
+    keys = tuple((item.subject_id, item.state_variable) for item in operations)
+    if len(set(keys)) != len(keys):
+        raise ValueError(f"{label} cannot write one cell twice")
+    return StateDelta(operations)
+
+
+def _delta_payload(delta: StateDelta) -> dict[str, object]:
+    return {"operations": [item.to_dict() for item in delta.operations]}
 ```
 
-- [ ] **Step 2: Implement `ConflictParticipant`**
+- [ ] **Step 2: Implement `ConflictParticipant` as canonical public data**
 
-Validate ids/hashes, require `ActionOption` and `StateDelta`, canonicalize unique allowed cells, and require every original delta operation key `(subject_id,state_variable)` exists in the allowed-cell key set. `to_dict()` includes the full `action.to_dict()`, both hashes, canonical delta payload, and allowed cells; `content_hash` hashes `to_dict()`.
+Validate ids/hashes and `ActionOption`; canonicalize `original_delta` with `_canonical_delta`; canonicalize unique allowed cells by `_cell_key`; require every original operation key exists in allowed cells; set canonical values back onto the frozen dataclass. `to_dict()` includes full `action.to_dict()`, both hashes, canonical delta payload, and allowed cells; `content_hash` hashes the payload.
 
-- [ ] **Step 3: Implement exact conflict-cell derivation and `ConflictResolutionContext`**
+- [ ] **Step 3: Implement exact conflict-cell derivation plus connected `ConflictResolutionContext`**
 
-```python
-def _participant_write_cells(participant: ConflictParticipant) -> tuple[StateCellRef, ...]:
-    by_key = {
-        (cell.subject.entity_id, cell.state_variable): cell
-        for cell in participant.allowed_write_cells
-    }
-    return tuple(sorted({
-        by_key[(operation.subject_id, operation.state_variable)]
-        for operation in participant.original_delta.operations
-    }, key=_cell_key))
+Derive each participant's actual write cells by mapping canonical operation keys into typed allowed cells. Context constructor must:
+
+```text
+require at least two participants
+sort by actor_id, decision_id, action.id
+require unique participant keys
+compute exact conflict_cells as cells written by >=2 participants
+require supplied conflict_cells equals exact derived set
+build participant overlap graph from actual write cells
+require the participant graph is connected
 ```
 
-Context constructor must require at least two unique participants, sort by `(actor_id, decision_id, action.id)`, count actual participant writes, derive exact cells with count >= 2, and reject any supplied conflict-cell set that differs. `to_dict()` and `content_hash` are canonical.
+This rejects an extra disconnected participant even if the supplied conflict-cell set itself is correct. `to_dict()` and `content_hash` are canonical.
 
 - [ ] **Step 4: Implement `ConflictResolverSpec`**
 
-Validate resolver id/version/domain identity, require non-empty unique sorted supported action types and callable hook, and bind:
-
-```python
-"implementation_identity": measure_implementation(self.resolver_hook).manifest_identity()
-```
-
-into `to_dict()` and `content_hash`.
+Validate resolver id/version/domain identity; require non-empty unique sorted supported action types and callable hook; bind `measure_implementation(self.resolver_hook).manifest_identity()` into `to_dict()` and `content_hash`.
 
 - [ ] **Step 5: Implement `ConflictResolutionRecord`**
 
-Validate resolver id/hash and prior hash, require `ConflictResolutionContext`, require `context.prior_state_hash == prior_state_hash`, require `StateDelta`, canonicalize `to_dict()`, and expose `content_hash`. Do not claim external model certification.
+Validate resolver id/hash and prior hash; require context; require `context.prior_state_hash == prior_state_hash`; canonicalize `resolved_delta` with `_canonical_delta`; serialize resolver identity, prior hash, context, and canonical resolved delta. Do not claim external model certification.
 
-- [ ] **Step 6: Run record/identity tests**
+- [ ] **Step 6: Run direct record tests**
 
 ```bash
 python3 -m unittest \
   tests.test_narrative_conflict_resolution.NarrativeConflictResolutionTests.test_records_bind_full_action_payload_and_exact_conflict_cells \
   tests.test_narrative_conflict_resolution.NarrativeConflictResolutionTests.test_action_argument_change_changes_participant_and_context_identity \
-  tests.test_narrative_conflict_resolution.NarrativeConflictResolutionTests.test_resolver_identity_binds_hook_and_supported_action_types \
   tests.test_narrative_conflict_resolution.NarrativeConflictResolutionTests.test_resolution_record_rejects_prior_context_mismatch -v
 ```
 
@@ -692,9 +723,9 @@ git commit -m "feat: add narrative conflict resolver records"
 **Files:**
 - Modify: `narrative_dynamics/narrative/world.py`
 
-**Produces:** `WorldTransitionConflictResolutionError`, optional `WorldTransitionModelSpec.conflict_resolver`, resolver declaration validation, exact resolver-free payload compatibility.
+**Produces:** `WorldTransitionConflictResolutionError`, optional `WorldTransitionModelSpec.conflict_resolver`, declaration preflight, resolver-free payload compatibility.
 
-- [ ] **Step 1: Add one-way imports and typed error**
+- [ ] **Step 1: Add one-way imports and typed error in `world.py`**
 
 ```python
 from narrative_dynamics.narrative.conflict import (
@@ -709,23 +740,23 @@ class WorldTransitionConflictResolutionError(WorldTransitionConflictError):
     """A declared conflict could not be resolved safely."""
 ```
 
-- [ ] **Step 2: Append `conflict_resolver` to `WorldTransitionModelSpec`**
+- [ ] **Step 2: Append optional resolver field**
 
 ```python
 conflict_resolver: ConflictResolverSpec | None = None
 ```
 
-When configured, require exact type and exact `(domain_id, domain_version, domain_spec_hash)` match with the world model.
+When configured, require exact type and exact resolver/world `(domain_id, domain_version, domain_spec_hash)` equality.
 
-- [ ] **Step 3: Preserve resolver-free `to_dict()` exactly**
+- [ ] **Step 3: Preserve exact resolver-free `to_dict()`**
 
-Build the current V1 payload first. Add `payload["conflict_resolver_hash"] = self.conflict_resolver.content_hash` only when resolver is configured. Never emit a null resolver key.
+Build the existing V1 payload first. Only when resolver exists add `conflict_resolver_hash = resolver.content_hash`. Never emit a null key.
 
-- [ ] **Step 4: Validate resolver declarations before action hooks**
+- [ ] **Step 4: Split declaration failure timing correctly**
 
-Extend `_validate_transition_declarations(domain, model)` so every configured `supported_action_types` entry resolves through `domain._action_type()`. Wrap failure as `WorldTransitionError("conflict resolver names an undeclared action type")` with exact cause.
+In `_validate_transition_declarations(domain, model)`, validate that every resolver `supported_action_types` name exists in `DomainSpec`; undeclared configured names fail before any action hook. Do not reject a declared-but-not-supported actual participant action here because conflict participation is not known until action deltas exist; Task 4 rejects that after action hooks but before resolver hook.
 
-- [ ] **Step 5: Add `_attested_resolver_hash()`**
+- [ ] **Step 5: Add resolver attestation helper**
 
 ```python
 def _attested_resolver_hash(resolver: ConflictResolverSpec) -> str:
@@ -737,18 +768,18 @@ def _attested_resolver_hash(resolver: ConflictResolverSpec) -> str:
         ) from error
 ```
 
-- [ ] **Step 6: Run compatibility/configuration tests**
+- [ ] **Step 6: Run Task 3 gates**
 
 ```bash
 python3 -m unittest \
   tests.test_narrative_world_transition.NarrativeWorldTransitionTests.test_resolver_free_world_model_keeps_exact_v1_payload \
-  tests.test_narrative_world_transition.NarrativeWorldTransitionTests.test_resolver_free_world_step_keeps_exact_v1_batch_payload \
+  tests.test_narrative_world_transition.NarrativeWorldTransitionTests.test_resolver_free_world_step_keeps_exact_v1_payload_and_batch_hash \
   tests.test_narrative_world_transition.NarrativeWorldTransitionTests.test_different_value_overlap_is_typed_conflict \
   tests.test_narrative_world_transition.NarrativeWorldTransitionTests.test_same_value_overlap_is_also_typed_conflict \
-  tests.test_narrative_conflict_resolution.NarrativeConflictResolutionTests.test_unsupported_action_type_rejects_before_action_and_resolver_hooks -v
+  tests.test_narrative_conflict_resolution.NarrativeConflictResolutionTests.test_undeclared_resolver_supported_type_rejects_before_action_hooks -v
 ```
 
-Expected: PASS. Configured conflict-free-step test may still depend on `WorldStepResult.conflict_resolutions` from Task 5, so do not use it as the Task 3 gate.
+Expected: PASS. Valid configured conflicts remain RED.
 
 - [ ] **Step 7: Commit resolver configuration**
 
@@ -759,53 +790,63 @@ git commit -m "feat: bind conflict resolver to world model"
 
 ---
 
-### Task 4: Connected Components, Canonical Context, Resolver Execution GREEN
+### Task 4: Connected Components, Canonical Runtime Certification, Resolver Execution GREEN
 
 **Files:**
 - Modify: `narrative_dynamics/narrative/world.py`
 
-**Produces private helpers:** `_conflict_components`, `_build_conflict_context`, `_validated_resolver_delta`, `_run_conflict_resolver`.
+**Produces:** private `_conflict_components`, `_build_conflict_context`, `_validated_resolver_delta`, `_run_conflict_resolver`.
 
-- [ ] **Step 1: Build connected components from actual record writes**
+- [ ] **Step 1: Build deterministic components from actual record writes**
 
-Canonicalize records by `_transition_record_key`; create an undirected edge only when `_record_write_cells(left) & _record_write_cells(right)` is non-empty; walk each graph component once; discard singleton records; sort members and components lexically by transition key. No-op deltas have empty write sets and create no edge.
+Canonicalize records by `_transition_record_key`; make an undirected edge only when actual `_record_write_cells()` intersect; walk each connected component once; discard singletons; sort members and components by transition key. No-op deltas create no edges.
 
-- [ ] **Step 2: Recompute exact participant data from story/model records**
+- [ ] **Step 2: Recompute exact participant data from canonical story/model state**
 
-For every component record, find canonical `Decision`, require actor equality, find canonical `ActionOption` and require full equality, find `ActionTransitionSpec` by action type, require `_attested_transition_hash(transition) == record.transition_spec_hash`, recompute `_allowed_cells()`, then construct `ConflictParticipant` from exact runtime data.
+For each component record, locate canonical `Decision`, require actor equality, locate canonical `ActionOption` and require full equality, locate `ActionTransitionSpec` by action type, require `_attested_transition_hash(transition) == record.transition_spec_hash`, recompute `_allowed_cells()`, and construct exact `ConflictParticipant`.
 
-Any mismatch raises `WorldTransitionConflictResolutionError("conflict participant does not bind canonical transition data")` before resolver execution. This is the production path exercised by the forged-action test.
+Any mismatch raises `WorldTransitionConflictResolutionError("conflict participant does not bind canonical transition data")` before resolver hook.
 
-- [ ] **Step 3: Build exact context**
+- [ ] **Step 3: Build/reconstruct exact context and certify against the component**
 
-Count actual write cells across component records, select cells written by at least two records, sort by `_cell_key`, construct `ConflictResolutionContext(prior.content_hash, participants, conflict_cells)`, reconstruct it once from public fields, and require identical payload.
+Derive conflict cells by actual write counts. Construct `ConflictResolutionContext(prior.content_hash, participants, conflict_cells)`, reconstruct it from public fields, require identical payload, and require ordered participant transition hashes equal ordered component record hashes. This is the check the forged-context test targets.
 
-- [ ] **Step 4: Extract pure canonical delta validation and add resolver-specific wrapper**
+- [ ] **Step 4: Extract pure world delta validation and add resolver wrapper**
 
-Move current action-delta structural/type/capability checks into `_canonical_validated_delta()` raising only `TypeError`/`ValueError`. Keep current `_validated_delta()` behavior/message for action hooks. Add `_validated_resolver_delta()` that wraps those raw errors as `WorldTransitionConflictResolutionError("conflict resolver produced an invalid state delta")`.
+Move existing action-delta structural/type/capability checks into `_canonical_validated_delta()` raising `TypeError`/`ValueError`. Keep existing `_validated_delta()` error class/message unchanged. Add `_validated_resolver_delta()` that wraps raw validation failures as `WorldTransitionConflictResolutionError("conflict resolver produced an invalid state delta")` with exact cause.
 
 - [ ] **Step 5: Execute one resolver per component**
 
-Before hook call, require every participant `action.type_name` is supported and call `_attested_resolver_hash()`. Pass the same immutable prior snapshot used by action hooks plus only `ConflictResolutionContext`. Catch `Exception`, not `BaseException`, and wrap hook errors as `WorldTransitionConflictResolutionError("conflict resolver hook failed")` with exact cause. Validate output against the union of participant allowed cells and return one `ConflictResolutionRecord`.
+Before hook invocation:
 
-- [ ] **Step 6: Wire resolver invocation into `advance_world_step()` without partial world state**
+```text
+all participant action types must belong to resolver.supported_action_types
+resolver attestation must succeed
+context/component certification must already have passed
+```
 
-After all action records exist, derive components. No components use exact V1 `_atomic_result()`. Components without resolver use existing `_reject_write_conflicts()`. Components with resolver produce one resolution record each, but no intermediate `WorldState` is constructed; Task 5 owns final application.
+Then call `resolver_hook(snapshot, context)` with the same immutable prior snapshot used by action hooks. Catch `Exception`, not `BaseException`. Validate output against union participant capabilities and return one `ConflictResolutionRecord`.
 
-- [ ] **Step 7: Run component/preflight/safety tests**
+- [ ] **Step 6: Wire resolver invocation without partial world application**
+
+After all action records exist: no components use exact V1 `_atomic_result()`; components with no resolver use existing `_reject_write_conflicts()`; components with resolver produce one resolution record each but no intermediate `WorldState`. Task 5 owns final application.
+
+- [ ] **Step 7: Run Task 4 gates**
 
 ```bash
 python3 -m unittest \
   tests.test_narrative_conflict_resolution.NarrativeConflictResolutionTests.test_three_way_transitive_attack_defend_taunt_is_one_component \
   tests.test_narrative_conflict_resolution.NarrativeConflictResolutionTests.test_two_independent_claim_components_are_canonical_and_order_invariant \
   tests.test_narrative_conflict_resolution.NarrativeConflictResolutionTests.test_noop_delta_does_not_create_component \
+  tests.test_narrative_conflict_resolution.NarrativeConflictResolutionTests.test_conflict_participant_unsupported_type_rejects_before_resolver_hook \
+  tests.test_narrative_conflict_resolution.NarrativeConflictResolutionTests.test_resolver_attestation_unavailable_rejects_before_resolver_hook \
   tests.test_narrative_conflict_resolution.NarrativeConflictResolutionTests.test_forged_action_payload_rejects_before_resolver_hook \
   tests.test_narrative_conflict_resolution.NarrativeConflictResolutionTests.test_resolver_exception_is_typed_and_preserves_runtime_error_cause \
   tests.test_narrative_conflict_resolution.NarrativeConflictResolutionTests.test_resolver_output_cannot_exceed_union_capability \
   tests.test_narrative_conflict_resolution.NarrativeConflictResolutionTests.test_invalid_resolver_value_clear_set_and_duplicate_output_are_typed -v
 ```
 
-Expected: component/context and typed failure tests PASS. Successful next-state/lineage tests remain RED.
+Expected: component/context/preflight/typed failure tests PASS. Successful resolved next-state/lineage tests remain RED.
 
 - [ ] **Step 8: Commit component/resolver execution**
 
@@ -816,25 +857,25 @@ git commit -m "feat: execute canonical conflict components"
 
 ---
 
-### Task 5: Atomic Resolved World, Explicit Lineage, Reference Scenarios, Scheduler GREEN
+### Task 5: Atomic Resolved World, Explicit Lineage, Reference and Scheduler GREEN
 
 **Files:**
 - Modify: `narrative_dynamics/narrative/world.py`
 - Production scheduler: no changes
 
-**Produces:** successful resolved `WorldStepResult`, V2 batch lineage, final global collision validation, exact configured-but-unused behavior, atomic world commit.
+**Produces:** successful resolved `WorldStepResult`, V2 batch lineage, configured-but-unused behavior, final global collision safety, one atomic world commit.
 
-- [ ] **Step 1: Append optional `conflict_resolutions` to `WorldStepResult`**
+- [ ] **Step 1: Append optional `WorldStepResult.conflict_resolutions`**
 
 ```python
 conflict_resolutions: tuple[ConflictResolutionRecord, ...] = ()
 ```
 
-Constructor must canonicalize resolutions, bind each prior hash to `prior_state.content_hash`, require every participant transition hash exists in `transitions`, compare participant actor/decision/action/spec/delta with its referenced transition, forbid one transition appearing in two resolutions, require one internal resolver id/hash across non-empty resolutions, and verify the next-state batch hash.
+Constructor canonicalizes resolution records and verifies only payload-internal facts: prior hash equals `prior_state.content_hash`; every participant transition hash exists in `transitions`; participant actor/decision/action/spec/delta equals referenced transition; one transition appears in at most one resolution; non-empty resolutions share one resolver id/hash; next-state batch hash matches transitions + resolutions. It does not independently certify an external world model.
 
-`to_dict()` adds `conflict_resolutions` only when non-empty.
+`to_dict()` omits the field when empty.
 
-- [ ] **Step 2: Extend `_transition_batch_hash()` with exact V1 empty-resolution path**
+- [ ] **Step 2: Extend transition-batch hash with exact V1 empty-resolution branch**
 
 ```python
 def _transition_batch_hash(transitions, conflict_resolutions=()):
@@ -848,21 +889,19 @@ def _transition_batch_hash(transitions, conflict_resolutions=()):
     })
 ```
 
-- [ ] **Step 3: Build effective mutations and global collision check**
+- [ ] **Step 3: Build effective mutations and final global collision validation**
 
-Collect all participant transition hashes from resolutions. Keep raw deltas only from transitions not in that set; add one resolved delta per component. Sort sources canonically. Convert every effective operation to `StateCellRef`; if any cell has two effective writers, raise `WorldTransitionConflictResolutionError("resolved world step still contains overlapping effective writes")` before any next state exists.
+Collect all transition hashes appearing in resolutions. Keep raw deltas only for transitions outside that set; add one resolved delta per component; sort effective sources canonically. Convert every operation to canonical `StateCellRef`; if any cell has two effective sources, raise `WorldTransitionConflictResolutionError("resolved world step still contains overlapping effective writes")` before next-state construction.
 
-- [ ] **Step 4: Runtime-certify resolution lineage against configured resolver**
+- [ ] **Step 4: Runtime-certify each resolution against the configured model**
 
-Before successful next-state construction, require exact resolver id/hash, exact prior hash, exact component transition hashes, exact participant `ActionOption` payloads, and exact original deltas. `ConflictResolutionRecord` constructor alone is not sufficient for these external bindings.
+Before successful next-state construction require exact configured resolver id/hash, exact prior hash, exact component transition hashes, exact ActionOption payloads, and exact original deltas. This is stronger than `ConflictResolutionRecord.__post_init__` and belongs only in `advance_world_step()`.
 
 - [ ] **Step 5: Extend `_atomic_result()` while preserving V1 branch exactly**
 
-Empty resolution tuple keeps current raw conflict rejection, V1 mutation loop, V1 batch hash, and omitted-resolution payload. Non-empty resolution tuple skips raw overlap rejection, validates effective collisions, applies only effective mutations to a fresh prior-values copy, computes V2 batch hash, constructs one next `WorldState`, then one `WorldStepResult`.
+Empty resolutions keep current raw conflict rejection, V1 mutation loop, V1 batch hash, and omitted-resolution payload. Non-empty resolutions skip raw overlap rejection, validate effective collisions, apply only effective mutations to a fresh prior-values copy, compute V2 batch hash, build one next `WorldState`, then one `WorldStepResult`.
 
 - [ ] **Step 6: Complete `advance_world_step()`**
-
-Final control flow:
 
 ```text
 all action hooks -> records -> components
@@ -871,7 +910,7 @@ components + no resolver -> existing WorldTransitionConflictError
 components + resolver -> one resolution per component -> runtime certification -> one atomic resolved result
 ```
 
-Resolver hooks never see another component's output or a temporary world state.
+Resolvers never observe another resolver output or temporary state.
 
 - [ ] **Step 7: Run full world/reference/forgery suite**
 
@@ -881,7 +920,7 @@ python3 -m unittest \
   tests.test_narrative_world_transition -v
 ```
 
-Expected: PASS, including reference scenarios, configured-but-unused resolver behavior, V1 hash locks, resolved batch hash, payload-forgery locks, final collision rejection, and atomic prior preservation.
+Expected: PASS, including claims, auction, attack/defense, transitive/independent components, V1 locks, configured-but-unused resolver, resolved batch hash, internal result forgery rejection, final collision tests, and prior-state atomicity.
 
 - [ ] **Step 8: Run scheduler acceptance and prove scheduler production unchanged**
 
@@ -890,13 +929,9 @@ python3 -m unittest tests.test_narrative_simulation -v
 git diff 1ad91cd3782e1da0154e3354737bbebf3f369197 -- narrative_dynamics/narrative/simulation.py
 ```
 
-Expected: all simulation tests PASS and scheduler production diff is empty. Verify resolver context contains only world/action conflict data, not cognitive internals.
+Expected: all simulation tests PASS; scheduler production diff is empty; resolver implementation change alters world and simulation model hashes; heterogeneous two-round replay is exact.
 
-- [ ] **Step 9: Add one identity assertion for configured resolver transitivity**
-
-In the existing simulation model identity test, construct two otherwise identical models whose world models differ only by resolver implementation (`PreferLexicalActorResolver` vs `PreferLexicalActorResolverV2`) and assert `SimulationModelSpec.content_hash` differs. This proves resolver attestation propagates through world-model identity into simulation identity without changing scheduler code.
-
-- [ ] **Step 10: Run full Python suite**
+- [ ] **Step 9: Run full Python suite**
 
 ```bash
 python3 -m unittest discover -s tests -v
@@ -904,16 +939,16 @@ python3 -m unittest discover -s tests -v
 
 Expected: `OK`.
 
-- [ ] **Step 11: Commit atomic world integration**
+- [ ] **Step 10: Commit atomic world integration only**
 
 ```bash
-git add narrative_dynamics/narrative/world.py tests/test_narrative_simulation.py
+git add narrative_dynamics/narrative/world.py
 git commit -m "feat: resolve simultaneous world conflicts atomically"
 ```
 
-The simulation test change in this commit is only the resolver-identity assertion from Step 9; all behavior-driving simulation tests were already in the authoritative test-only RED.
+All behavior-driving tests were already committed in Task 1.
 
-- [ ] **Step 12: Require exact-head core GREEN**
+- [ ] **Step 11: Require exact-head core GREEN**
 
 Wait for PR-triggered `proof` on this exact commit. Require dependency, conformance, Lean build, theorem tests, Python, Story, and Testimony all success. Record run id/number and Python test count.
 
@@ -975,7 +1010,7 @@ from narrative_dynamics.narrative.conflict import (
 )
 ```
 
-Add `WorldTransitionConflictResolutionError` to existing `world` import block.
+Add `WorldTransitionConflictResolutionError` to the existing import block from `world.py`.
 
 - [ ] **Step 2: Add exactly five `__all__` entries**
 
