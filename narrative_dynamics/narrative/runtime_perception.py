@@ -145,6 +145,7 @@ class RuntimeEpistemicEvidence:
     source_world_step_hash: str
     source_transition_hashes: tuple[str, ...]
     projection_spec_hash: str
+    projection_sample_hash: str | None = None
 
     def __post_init__(self) -> None:
         view = RuntimePerceptView(
@@ -222,6 +223,15 @@ class RuntimeEpistemicEvidence:
                 label="runtime evidence projection spec hash",
             ),
         )
+        if self.projection_sample_hash is not None:
+            object.__setattr__(
+                self,
+                "projection_sample_hash",
+                _hash(
+                    self.projection_sample_hash,
+                    label="runtime evidence projection sample hash",
+                ),
+            )
 
     @property
     def percept_view(self) -> RuntimePerceptView:
@@ -235,7 +245,7 @@ class RuntimeEpistemicEvidence:
         )
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload = {
             "observer_id": self.observer_id,
             "channel": self.channel,
             "cell": self.cell.to_dict(),
@@ -250,6 +260,9 @@ class RuntimeEpistemicEvidence:
             "source_transition_hashes": list(self.source_transition_hashes),
             "projection_spec_hash": self.projection_spec_hash,
         }
+        if self.projection_sample_hash is not None:
+            payload["projection_sample_hash"] = self.projection_sample_hash
+        return payload
 
     @property
     def content_hash(self) -> str:
@@ -272,6 +285,7 @@ class RuntimeEvidenceBatch:
     projection_model_hash: str
     projection_result_hash: str
     evidence: tuple[RuntimeEpistemicEvidence, ...]
+    projection_sample_hashes: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -337,6 +351,16 @@ class RuntimeEvidenceBatch:
             raise ValueError(
                 "runtime batch cannot contain duplicate observer/channel/cell evidence"
             )
+        if not isinstance(self.projection_sample_hashes, tuple):
+            raise TypeError("runtime batch projection sample hashes must be a tuple")
+        sample_hashes = tuple(
+            _hash(item, label="runtime batch projection sample hash")
+            for item in self.projection_sample_hashes
+        )
+        if len(set(sample_hashes)) != len(sample_hashes):
+            raise ValueError("runtime batch projection sample hashes must be unique")
+        sample_hashes = tuple(sorted(sample_hashes))
+        sample_hash_set = set(sample_hashes)
         for item in evidence:
             if item.step_index != self.step_index:
                 raise ValueError("runtime evidence must bind batch step index")
@@ -348,10 +372,18 @@ class RuntimeEvidenceBatch:
                 raise ValueError("runtime evidence must bind batch projection model")
             if item.projection_result_hash != self.projection_result_hash:
                 raise ValueError("runtime evidence must bind batch projection result")
+            if (
+                item.projection_sample_hash is not None
+                and item.projection_sample_hash not in sample_hash_set
+            ):
+                raise ValueError(
+                    "runtime evidence projection sample must be included in batch"
+                )
         object.__setattr__(self, "evidence", evidence)
+        object.__setattr__(self, "projection_sample_hashes", sample_hashes)
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload = {
             "prior_ledger_hash": self.prior_ledger_hash,
             "step_index": self.step_index,
             "source_prior_world_state_hash": self.source_prior_world_state_hash,
@@ -361,6 +393,11 @@ class RuntimeEvidenceBatch:
             "projection_result_hash": self.projection_result_hash,
             "evidence": [item.to_dict() for item in self.evidence],
         }
+        if self.projection_sample_hashes:
+            payload["projection_sample_hashes"] = list(
+                self.projection_sample_hashes
+            )
+        return payload
 
     @property
     def content_hash(self) -> str:
@@ -557,6 +594,13 @@ class RuntimePerceptAdmissionResult:
             raise ValueError("runtime admission batch must bind projection world state")
         if batch.step_index != projection.step_index:
             raise ValueError("runtime admission batch must bind projection step index")
+        expected_sample_hashes = tuple(
+            sorted(sample.content_hash for sample in projection.stochastic_samples)
+        )
+        if batch.projection_sample_hashes != expected_sample_hashes:
+            raise ValueError(
+                "runtime admission batch must bind every projection sample"
+            )
         if not ledger.batches or ledger.batches[-1] != batch:
             raise ValueError("runtime admission next ledger must end with evidence batch")
 
@@ -601,10 +645,16 @@ def runtime_evidence_ledger_from_story(
     domain: DomainSpec,
     *,
     at_time: int | None = None,
+    seed: int | None = None,
 ) -> RuntimeEvidenceLedger:
     validate_narrative(story, domain)
     cutoff = _cutoff(at_time, label="runtime ledger source cutoff")
-    initial = world_state_from_story(story, domain, at_time=cutoff)
+    initial = world_state_from_story(
+        story,
+        domain,
+        at_time=cutoff,
+        seed=seed,
+    )
     return RuntimeEvidenceLedger(
         domain_id=domain.domain_id,
         domain_version=domain.version,
@@ -713,6 +763,7 @@ def admit_world_percepts(
                 source_world_step_hash=projected.source_world_step_hash,
                 source_transition_hashes=projected.source_transition_hashes,
                 projection_spec_hash=projected.projection_spec_hash,
+                projection_sample_hash=projected.stochastic_sample_hash,
             )
             for projected in projection_result.observations
         )
@@ -725,6 +776,10 @@ def admit_world_percepts(
             projection_model_hash=projection_result.model_hash,
             projection_result_hash=projection_result_hash,
             evidence=runtime_evidence,
+            projection_sample_hashes=tuple(
+                sample.content_hash
+                for sample in projection_result.stochastic_samples
+            ),
         )
         next_ledger = RuntimeEvidenceLedger(
             domain_id=prior_ledger.domain_id,
