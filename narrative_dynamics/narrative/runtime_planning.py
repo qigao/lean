@@ -508,6 +508,12 @@ class PlanningValueRecord:
             "total_value",
             _finite(self.total_value, label="planning total value"),
         )
+        if self.total_value != (
+            self.expected_immediate_reward + self.expected_future_value
+        ):
+            raise ValueError(
+                "planning value record total must equal immediate plus future"
+            )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -851,8 +857,6 @@ class RuntimePlanningDecisionResult:
         for action_id, record in root_records.items():
             if record.total_value != values[action_id]:
                 raise ValueError("runtime planning root value record must bind action value")
-            if record.total_value != record.expected_immediate_reward + record.expected_future_value:
-                raise ValueError("runtime planning value record total must equal immediate plus future")
         if not isinstance(self.belief_updates, tuple):
             raise TypeError("runtime planning belief updates must be a tuple")
         updates = tuple(_validated_belief_update(item) for item in self.belief_updates)
@@ -1360,6 +1364,62 @@ def _solve_planning(
     )
 
 
+def _validate_result_against_solution(
+    result: RuntimePlanningDecisionResult,
+    model: RuntimePlanningDecisionModelSpec,
+    root_values: Mapping[str, float],
+    root_policy: Mapping[str, float],
+    value_records: tuple[PlanningValueRecord, ...],
+    belief_updates: tuple[PlanningBeliefUpdate, ...],
+) -> None:
+    if not isinstance(result, RuntimePlanningDecisionResult):
+        raise TypeError("runtime planning solution must produce RuntimePlanningDecisionResult")
+    if result.model_id != model.model_id:
+        raise ValueError("runtime planning result model id must match validated model")
+    if result.model_hash != model.content_hash:
+        raise ValueError("runtime planning result model hash must match validated model")
+
+    expected_state_ids = {state.state_id for state in model.hidden_states}
+    if set(result.planning_belief.probabilities) != expected_state_ids:
+        raise ValueError("runtime planning result belief must cover model hidden states")
+
+    expected_root_actions = set(model.action_schedule[0])
+    if set(result.action_values) != expected_root_actions:
+        raise ValueError("runtime planning result values must cover root schedule actions")
+    if set(result.action_policy) != expected_root_actions:
+        raise ValueError("runtime planning result policy must cover root schedule actions")
+
+    for record in result.value_records:
+        if record.depth >= model.horizon:
+            raise ValueError("runtime planning value record depth exceeds model horizon")
+        if record.action_id not in model.action_schedule[record.depth]:
+            raise ValueError("runtime planning value record action is not scheduled at depth")
+
+    expected_observation_ids = {
+        observation.observation_id for observation in model.observations
+    }
+    for update in result.belief_updates:
+        if update.depth >= model.horizon - 1:
+            raise ValueError("runtime planning belief update must precede terminal depth")
+        if update.action_id not in model.action_schedule[update.depth]:
+            raise ValueError("runtime planning belief update action is not scheduled at depth")
+        if update.observation_id not in expected_observation_ids:
+            raise ValueError("runtime planning belief update observation is not declared")
+        if set(update.posterior.probabilities) != expected_state_ids:
+            raise ValueError("runtime planning belief update must cover model hidden states")
+
+    if dict(result.action_values) != dict(root_values):
+        raise ValueError("runtime planning result values do not match solver root values")
+    if dict(result.action_policy) != dict(root_policy):
+        raise ValueError("runtime planning result policy does not match solver root policy")
+    if result.selected_action != _map_choice(root_policy):
+        raise ValueError("runtime planning result selected action does not match solver policy")
+    if result.value_records != tuple(value_records):
+        raise ValueError("runtime planning result value trace does not match solver trace")
+    if result.belief_updates != tuple(belief_updates):
+        raise ValueError("runtime planning result belief trace does not match solver trace")
+
+
 def run_runtime_planning_decision(
     story: GenericNarrative,
     domain: DomainSpec,
@@ -1390,7 +1450,7 @@ def run_runtime_planning_decision(
             action_by_id,
             root_belief,
         )
-        return RuntimePlanningDecisionResult(
+        result = RuntimePlanningDecisionResult(
             model_id=validated_model.model_id,
             model_hash=validated_model.content_hash,
             decision_id=decision.id,
@@ -1405,6 +1465,15 @@ def run_runtime_planning_decision(
             value_records=value_records,
             belief_updates=belief_updates,
         )
+        _validate_result_against_solution(
+            result,
+            validated_model,
+            root_values,
+            root_policy,
+            value_records,
+            belief_updates,
+        )
+        return result
     except RuntimePlanningDecisionResolutionError:
         raise
     except Exception as error:
