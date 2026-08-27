@@ -167,6 +167,8 @@ def _freeze_action_values(value: object, *, label: str) -> Mapping[str, float]:
     frozen: dict[str, float] = {}
     for raw_key, raw_value in value.items():
         key = _text(raw_key, label=f"{label} action id")
+        if key in frozen:
+            raise ValueError(f"{label} action ids must be unique")
         frozen[key] = _finite(raw_value, label=f"{label} value")
     if not frozen:
         raise ValueError(f"{label} must contain at least one action")
@@ -571,6 +573,11 @@ class PlanningBeliefUpdate:
             raise TypeError(
                 "planning belief update posterior must be PlanningBeliefState"
             )
+        object.__setattr__(
+            self,
+            "posterior",
+            PlanningBeliefState(dict(self.posterior.probabilities)),
+        )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -618,36 +625,27 @@ class RuntimePlanningDecisionModelSpec:
             _text(self.version, label="runtime planning model version"),
         )
         if not isinstance(self.supported_decision_types, tuple):
-            raise TypeError(
-                "runtime planning supported decision types must be a tuple"
-            )
+            raise TypeError("runtime planning supported decision types must be a tuple")
         decision_types = tuple(
             _text(item, label="runtime planning decision type")
             for item in self.supported_decision_types
         )
         if not decision_types:
-            raise ValueError(
-                "runtime planning model requires at least one supported decision type"
-            )
+            raise ValueError("runtime planning model requires a supported decision type")
         if len(set(decision_types)) != len(decision_types):
-            raise ValueError(
-                "runtime planning supported decision types must be unique"
-            )
+            raise ValueError("runtime planning supported decision types must be unique")
         object.__setattr__(
             self,
             "supported_decision_types",
             tuple(sorted(decision_types)),
         )
-
         if not isinstance(self.planning_cells, tuple):
             raise TypeError("runtime planning cells must be a tuple")
         planning_cells = tuple(self.planning_cells)
         if not planning_cells:
             raise ValueError("runtime planning model requires planning cells")
         if any(not isinstance(cell, StateCellRef) for cell in planning_cells):
-            raise TypeError(
-                "runtime planning cells must contain StateCellRef values"
-            )
+            raise TypeError("runtime planning cells must contain StateCellRef values")
         if len(set(planning_cells)) != len(planning_cells):
             raise ValueError("runtime planning cells must be unique")
         object.__setattr__(
@@ -655,7 +653,6 @@ class RuntimePlanningDecisionModelSpec:
             "planning_cells",
             tuple(sorted(planning_cells, key=_cell_key)),
         )
-
         if not isinstance(self.observation_cells, tuple):
             raise TypeError("runtime planning observation cells must be a tuple")
         observation_cells = tuple(self.observation_cells)
@@ -670,58 +667,37 @@ class RuntimePlanningDecisionModelSpec:
             "observation_cells",
             tuple(sorted(observation_cells, key=_cell_key)),
         )
-
         if not isinstance(self.belief_model, RuntimeBeliefModelSpec):
-            raise TypeError(
-                "runtime planning belief model must be RuntimeBeliefModelSpec"
-            )
-
+            raise TypeError("runtime planning belief model must be RuntimeBeliefModelSpec")
         object.__setattr__(
             self,
             "hidden_states",
-            _freeze_hidden_states(
-                self.hidden_states,
-                label="runtime planning hidden states",
-            ),
+            _freeze_hidden_states(self.hidden_states, label="runtime planning hidden states"),
         )
         object.__setattr__(
             self,
             "observations",
-            _freeze_observations(
-                self.observations,
-                label="runtime planning observations",
-            ),
+            _freeze_observations(self.observations, label="runtime planning observations"),
         )
-
         if not isinstance(self.action_schedule, tuple):
             raise TypeError("runtime planning action schedule must be a tuple")
-        schedule_rows = tuple(self.action_schedule)
-        if not schedule_rows:
+        rows = tuple(self.action_schedule)
+        if not rows:
             raise ValueError("runtime planning action schedule must not be empty")
-        frozen_schedule: list[tuple[str, ...]] = []
-        for depth_index, row in enumerate(schedule_rows):
+        frozen_rows: list[tuple[str, ...]] = []
+        for index, row in enumerate(rows):
             if not isinstance(row, tuple):
-                raise TypeError(
-                    "runtime planning action schedule rows must be tuples"
-                )
+                raise TypeError("runtime planning action schedule rows must be tuples")
             actions = tuple(
-                _text(
-                    action,
-                    label=f"runtime planning action id at depth {depth_index}",
-                )
+                _text(action, label=f"runtime planning action id at depth {index}")
                 for action in row
             )
             if not actions:
-                raise ValueError(
-                    "runtime planning action schedule rows must not be empty"
-                )
+                raise ValueError("runtime planning action schedule rows must not be empty")
             if len(set(actions)) != len(actions):
-                raise ValueError(
-                    "runtime planning action schedule rows must have unique actions"
-                )
-            frozen_schedule.append(tuple(sorted(actions)))
-        object.__setattr__(self, "action_schedule", tuple(frozen_schedule))
-
+                raise ValueError("runtime planning action schedule rows must have unique actions")
+            frozen_rows.append(tuple(sorted(actions)))
+        object.__setattr__(self, "action_schedule", tuple(frozen_rows))
         object.__setattr__(
             self,
             "discount",
@@ -732,7 +708,6 @@ class RuntimePlanningDecisionModelSpec:
             raise ValueError("runtime planning beta must be positive")
         object.__setattr__(self, "beta", beta)
         object.__setattr__(self, "parameters", _freeze_parameters(self.parameters))
-
         for label, hook in (
             ("joint belief", self.joint_belief_hook),
             ("transition", self.transition_hook),
@@ -752,9 +727,7 @@ class RuntimePlanningDecisionModelSpec:
             "version": self.version,
             "supported_decision_types": list(self.supported_decision_types),
             "planning_cells": [cell.to_dict() for cell in self.planning_cells],
-            "observation_cells": [
-                cell.to_dict() for cell in self.observation_cells
-            ],
+            "observation_cells": [cell.to_dict() for cell in self.observation_cells],
             "belief_model_hash": self.belief_model.content_hash,
             "hidden_states": [state.to_dict() for state in self.hidden_states],
             "observations": [item.to_dict() for item in self.observations],
@@ -802,20 +775,14 @@ def _validated_value_record(record: object) -> PlanningValueRecord:
 
 def _validated_belief_update(record: object) -> PlanningBeliefUpdate:
     if not isinstance(record, PlanningBeliefUpdate):
-        raise TypeError(
-            "planning result belief updates must contain PlanningBeliefUpdate"
-        )
-    if not isinstance(record.posterior, PlanningBeliefState):
-        raise TypeError(
-            "planning result belief update posterior must be PlanningBeliefState"
-        )
+        raise TypeError("planning result belief updates must contain PlanningBeliefUpdate")
     return PlanningBeliefUpdate(
         record.depth,
         record.prior_belief_hash,
         record.action_id,
         record.observation_id,
         record.observation_probability,
-        PlanningBeliefState(dict(record.posterior.probabilities)),
+        record.posterior,
     )
 
 
@@ -836,165 +803,71 @@ class RuntimePlanningDecisionResult:
     belief_updates: tuple[PlanningBeliefUpdate, ...]
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "model_id",
-            _text(self.model_id, label="runtime planning result model id"),
-        )
-        object.__setattr__(
-            self,
-            "model_hash",
-            _hash(self.model_hash, label="runtime planning result model hash"),
-        )
-        object.__setattr__(
-            self,
-            "decision_id",
-            _text(self.decision_id, label="runtime planning result decision id"),
-        )
-        object.__setattr__(
-            self,
-            "actor_id",
-            _text(self.actor_id, label="runtime planning result actor id"),
-        )
-        object.__setattr__(
-            self,
-            "step_index",
-            _depth(self.step_index, label="runtime planning result step index"),
-        )
-        object.__setattr__(
-            self,
-            "ledger_hash",
-            _hash(self.ledger_hash, label="runtime planning result ledger hash"),
-        )
+        object.__setattr__(self, "model_id", _text(self.model_id, label="runtime planning result model id"))
+        object.__setattr__(self, "model_hash", _hash(self.model_hash, label="runtime planning result model hash"))
+        object.__setattr__(self, "decision_id", _text(self.decision_id, label="runtime planning result decision id"))
+        object.__setattr__(self, "actor_id", _text(self.actor_id, label="runtime planning result actor id"))
+        step = _depth(self.step_index, label="runtime planning result step index")
+        object.__setattr__(self, "step_index", step)
+        ledger_hash = _hash(self.ledger_hash, label="runtime planning result ledger hash")
+        object.__setattr__(self, "ledger_hash", ledger_hash)
         if not isinstance(self.belief_state, RuntimeUncertainBeliefState):
-            raise TypeError(
-                "runtime planning result belief state must be RuntimeUncertainBeliefState"
-            )
+            raise TypeError("runtime planning result belief state must be RuntimeUncertainBeliefState")
         if self.actor_id != self.belief_state.agent_id:
-            raise ValueError(
-                "runtime planning result actor must match runtime belief actor"
-            )
-        if self.step_index != self.belief_state.step_index:
-            raise ValueError(
-                "runtime planning result step must match runtime belief step"
-            )
-        if self.ledger_hash != self.belief_state.ledger_hash:
-            raise ValueError(
-                "runtime planning result ledger must match runtime belief ledger"
-            )
+            raise ValueError("runtime planning result actor must match runtime belief actor")
+        if step != self.belief_state.step_index:
+            raise ValueError("runtime planning result step must match runtime belief step")
+        if ledger_hash != self.belief_state.ledger_hash:
+            raise ValueError("runtime planning result ledger must match runtime belief ledger")
         if not isinstance(self.planning_belief, PlanningBeliefState):
-            raise TypeError(
-                "runtime planning result planning belief must be PlanningBeliefState"
-            )
-        planning_belief = PlanningBeliefState(
-            dict(self.planning_belief.probabilities)
-        )
+            raise TypeError("runtime planning result planning belief must be PlanningBeliefState")
+        planning_belief = PlanningBeliefState(dict(self.planning_belief.probabilities))
         object.__setattr__(self, "planning_belief", planning_belief)
-
-        values = _freeze_action_values(
-            self.action_values,
-            label="runtime planning action values",
-        )
-        policy = _freeze_policy(
-            self.action_policy,
-            label="runtime planning action policy",
-        )
+        values = _freeze_action_values(self.action_values, label="runtime planning action values")
+        policy = _freeze_policy(self.action_policy, label="runtime planning action policy")
         if set(values) != set(policy):
-            raise ValueError(
-                "runtime planning action values and policy must cover the same actions"
-            )
-        selected = _text(
-            self.selected_action,
-            label="runtime planning selected action",
-        )
+            raise ValueError("runtime planning action values and policy must cover the same actions")
+        selected = _text(self.selected_action, label="runtime planning selected action")
         if selected not in policy:
-            raise ValueError(
-                "runtime planning selected action must belong to the root policy"
-            )
+            raise ValueError("runtime planning selected action must belong to the root policy")
         if selected != _map_choice(policy):
-            raise ValueError(
-                "runtime planning selected action must be deterministic lexical MAP"
-            )
-
+            raise ValueError("runtime planning selected action must be deterministic lexical MAP")
         if not isinstance(self.value_records, tuple):
             raise TypeError("runtime planning value records must be a tuple")
-        value_records = tuple(
-            _validated_value_record(record) for record in self.value_records
-        )
+        value_records = tuple(_validated_value_record(item) for item in self.value_records)
         if not value_records:
-            raise ValueError(
-                "runtime planning result requires planning value records"
-            )
-        value_keys = tuple(
-            (record.depth, record.belief_hash, record.action_id)
-            for record in value_records
-        )
+            raise ValueError("runtime planning result requires planning value records")
+        value_keys = tuple((item.depth, item.belief_hash, item.action_id) for item in value_records)
         if len(set(value_keys)) != len(value_keys):
             raise ValueError("runtime planning value record keys must be unique")
-        value_records = tuple(
-            sorted(
-                value_records,
-                key=lambda record: (
-                    record.depth,
-                    record.belief_hash,
-                    record.action_id,
-                ),
-            )
-        )
+        value_records = tuple(sorted(value_records, key=lambda item: (item.depth, item.belief_hash, item.action_id)))
         root_records = {
-            record.action_id: record
-            for record in value_records
-            if record.depth == 0
-            and record.belief_hash == planning_belief.content_hash
+            item.action_id: item
+            for item in value_records
+            if item.depth == 0 and item.belief_hash == planning_belief.content_hash
         }
         if set(root_records) != set(values):
-            raise ValueError(
-                "runtime planning result must bind one root value record per action"
-            )
-        for action, record in root_records.items():
-            if record.total_value != values[action]:
-                raise ValueError(
-                    "runtime planning root value record must bind action value"
-                )
-            if record.total_value != (
-                record.expected_immediate_reward + record.expected_future_value
-            ):
-                raise ValueError(
-                    "runtime planning value record total must equal immediate plus future"
-                )
-
+            raise ValueError("runtime planning result must bind one root value record per action")
+        for action_id, record in root_records.items():
+            if record.total_value != values[action_id]:
+                raise ValueError("runtime planning root value record must bind action value")
+            if record.total_value != record.expected_immediate_reward + record.expected_future_value:
+                raise ValueError("runtime planning value record total must equal immediate plus future")
         if not isinstance(self.belief_updates, tuple):
             raise TypeError("runtime planning belief updates must be a tuple")
-        belief_updates = tuple(
-            _validated_belief_update(record) for record in self.belief_updates
-        )
+        updates = tuple(_validated_belief_update(item) for item in self.belief_updates)
         update_keys = tuple(
-            (
-                record.depth,
-                record.prior_belief_hash,
-                record.action_id,
-                record.observation_id,
-            )
-            for record in belief_updates
+            (item.depth, item.prior_belief_hash, item.action_id, item.observation_id)
+            for item in updates
         )
         if len(set(update_keys)) != len(update_keys):
             raise ValueError("runtime planning belief update keys must be unique")
-        belief_updates = tuple(
-            sorted(
-                belief_updates,
-                key=lambda record: (
-                    record.depth,
-                    record.prior_belief_hash,
-                    record.action_id,
-                    record.observation_id,
-                ),
-            )
-        )
+        updates = tuple(sorted(updates, key=lambda item: (item.depth, item.prior_belief_hash, item.action_id, item.observation_id)))
         object.__setattr__(self, "action_values", values)
         object.__setattr__(self, "action_policy", policy)
         object.__setattr__(self, "selected_action", selected)
         object.__setattr__(self, "value_records", value_records)
-        object.__setattr__(self, "belief_updates", belief_updates)
+        object.__setattr__(self, "belief_updates", updates)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -1006,12 +879,8 @@ class RuntimePlanningDecisionResult:
             "ledger_hash": self.ledger_hash,
             "belief_state": self.belief_state.to_dict(),
             "planning_belief": self.planning_belief.to_dict(),
-            "action_values": {
-                key: self.action_values[key] for key in sorted(self.action_values)
-            },
-            "action_policy": {
-                key: self.action_policy[key] for key in sorted(self.action_policy)
-            },
+            "action_values": {key: self.action_values[key] for key in sorted(self.action_values)},
+            "action_policy": {key: self.action_policy[key] for key in sorted(self.action_policy)},
             "selected_action": self.selected_action,
             "value_records": [record.to_dict() for record in self.value_records],
             "belief_updates": [record.to_dict() for record in self.belief_updates],
@@ -1022,14 +891,10 @@ class RuntimePlanningDecisionResult:
         return stable_content_hash(self.to_dict())
 
 
-def _validated_model(
-    model: object,
-) -> RuntimePlanningDecisionModelSpec:
+def _validated_model(model: object) -> RuntimePlanningDecisionModelSpec:
     if not isinstance(model, RuntimePlanningDecisionModelSpec):
-        raise TypeError(
-            "runtime planning execution requires RuntimePlanningDecisionModelSpec"
-        )
-    return RuntimePlanningDecisionModelSpec(
+        raise TypeError("runtime planning execution requires RuntimePlanningDecisionModelSpec")
+    validated = RuntimePlanningDecisionModelSpec(
         model.model_id,
         model.version,
         tuple(model.supported_decision_types),
@@ -1047,6 +912,9 @@ def _validated_model(
         model.observation_hook,
         model.reward_hook,
     )
+    if validated.to_dict() != model.to_dict():
+        raise ValueError("runtime planning model must be canonical")
+    return validated
 
 
 def _validated_ledger(
@@ -1104,88 +972,56 @@ def _preflight_decision(
     model: RuntimePlanningDecisionModelSpec,
 ) -> tuple[Decision, Mapping[str, ActionOption]]:
     decision_id = _text(decision_id, label="runtime planning decision id")
-    decision = next(
-        (item for item in story.decisions if item.id == decision_id),
-        None,
-    )
+    decision = next((item for item in story.decisions if item.id == decision_id), None)
     if decision is None:
         raise ValueError("runtime planning decision template is not declared")
     if decision.type_name not in model.supported_decision_types:
         raise ValueError("runtime planning decision type is not supported")
-    if (
-        not decision.context_cells
-        or len(set(decision.context_cells)) != len(decision.context_cells)
-    ):
-        raise ValueError(
-            "runtime planning decision context cells must be non-empty and unique"
-        )
+    if not decision.context_cells or len(set(decision.context_cells)) != len(decision.context_cells):
+        raise ValueError("runtime planning decision context cells must be non-empty and unique")
     action_ids = tuple(action.id for action in decision.actions)
     if not action_ids or len(set(action_ids)) != len(action_ids):
-        raise ValueError(
-            "runtime planning decision actions must be non-empty and unique"
-        )
+        raise ValueError("runtime planning decision actions must be non-empty and unique")
     if ledger.source_at_time is not None and decision.logical_time > ledger.source_at_time:
         raise ValueError("runtime planning decision template occurs after source cutoff")
-
     context_cells = set(decision.context_cells)
     if not set(model.planning_cells).issubset(context_cells):
         raise ValueError("runtime planning cells must stay within decision context")
     if not set(model.observation_cells).issubset(context_cells):
-        raise ValueError(
-            "runtime planning observation cells must stay within decision context"
-        )
-
+        raise ValueError("runtime planning observation cells must stay within decision context")
     expected_planning = set(model.planning_cells)
     state_semantics: set[str] = set()
     for state in model.hidden_states:
         if set(state.cells) != expected_planning:
-            raise ValueError(
-                "planning hidden state must assign exactly the declared planning cells"
-            )
+            raise ValueError("planning hidden state must assign exactly the declared planning cells")
         for cell, value in state.cells.items():
             assert isinstance(value, TypedValue)
             _validate_cell_value(cell, value, story=story, domain=domain)
         semantic_hash = _semantic_cell_hash(state.cells)
         if semantic_hash in state_semantics:
-            raise ValueError(
-                "planning hidden states must have unique semantic cell assignments"
-            )
+            raise ValueError("planning hidden states must have unique semantic cell assignments")
         state_semantics.add(semantic_hash)
-
     expected_observation = set(model.observation_cells)
     observation_semantics: set[str] = set()
     for observation in model.observations:
         if set(observation.cues) != expected_observation:
-            raise ValueError(
-                "planning observation must assign exactly the declared observation cells"
-            )
+            raise ValueError("planning observation must assign exactly the declared observation cells")
         for cell, value in observation.cues.items():
             if value is not None:
                 _validate_cell_value(cell, value, story=story, domain=domain)
         semantic_hash = _semantic_cell_hash(observation.cues)
         if semantic_hash in observation_semantics:
-            raise ValueError(
-                "planning observations must have unique semantic cue assignments"
-            )
+            raise ValueError("planning observations must have unique semantic cue assignments")
         observation_semantics.add(semantic_hash)
-
     if not model.observation_cells:
         if len(model.observations) != 1 or model.observations[0].cues:
-            raise ValueError(
-                "empty planning observation cells require one empty observation atom"
-            )
-
+            raise ValueError("empty planning observation cells require one empty observation atom")
     authored_actions = set(action_ids)
     if set(model.action_schedule[0]) != authored_actions:
-        raise ValueError(
-            "runtime planning root schedule must match authored actions exactly"
-        )
+        raise ValueError("runtime planning root schedule must match authored actions exactly")
     for row in model.action_schedule[1:]:
         if not set(row).issubset(authored_actions):
-            raise ValueError(
-                "runtime planning future schedule must use authored actions only"
-            )
-
+            raise ValueError("runtime planning future schedule must use authored actions only")
     return decision, MappingProxyType(
         {action.id: action for action in sorted(decision.actions, key=lambda item: item.id)}
     )
@@ -1200,9 +1036,7 @@ def _planning_belief_from_raw(
         raise TypeError("planning joint belief hook must return a mapping")
     if set(raw) != set(expected_ids):
         raise ValueError("planning joint belief must cover exactly hidden-state ids")
-    return PlanningBeliefState(
-        {state_id: raw[state_id] for state_id in expected_ids}
-    )
+    return PlanningBeliefState({state_id: raw[state_id] for state_id in expected_ids})
 
 
 def _resolve_root_planning_belief(
@@ -1221,9 +1055,7 @@ def _resolve_root_planning_belief(
         model.planning_cells,
     )
     if set(belief_state.cells) != set(model.planning_cells):
-        raise ValueError(
-            "runtime planning belief must cover exactly the planning cells"
-        )
+        raise ValueError("runtime planning belief must cover exactly the planning cells")
     posterior = MappingProxyType(
         {
             cell: belief_state.cells[cell].posterior
@@ -1239,21 +1071,15 @@ def _resolve_root_planning_belief(
     )
     state_ids = tuple(state.state_id for state in model.hidden_states)
     root_belief = _planning_belief_from_raw(raw_joint, expected_ids=state_ids)
-
     for cell, distribution in posterior.items():
         for mass in distribution.masses:
             matching = tuple(
-                state
-                for state in model.hidden_states
-                if state.cells[cell] == mass.value
+                state for state in model.hidden_states if state.cells[cell] == mass.value
             )
             if mass.probability > 0.0 and not matching:
-                raise ValueError(
-                    "planning hidden states must represent positive runtime hypotheses"
-                )
+                raise ValueError("planning hidden states must represent positive runtime hypotheses")
             joint_mass = math.fsum(
-                root_belief.probabilities[state.state_id]
-                for state in matching
+                root_belief.probabilities[state.state_id] for state in matching
             )
             if not math.isclose(
                 joint_mass,
@@ -1261,10 +1087,277 @@ def _resolve_root_planning_belief(
                 rel_tol=0.0,
                 abs_tol=_PROBABILITY_TOLERANCE,
             ):
-                raise ValueError(
-                    "planning joint belief must preserve runtime marginals"
-                )
+                raise ValueError("planning joint belief must preserve runtime marginals")
     return belief_state, root_belief
+
+
+def _distribution(
+    raw: object,
+    *,
+    expected_ids: tuple[str, ...],
+    label: str,
+) -> Mapping[str, float]:
+    if not isinstance(raw, Mapping):
+        raise TypeError(f"{label} must be a mapping")
+    if set(raw) != set(expected_ids):
+        raise ValueError(f"{label} must cover exactly the declared ids")
+    values = {
+        item_id: _probability(raw[item_id], label=f"{label} {item_id}")
+        for item_id in expected_ids
+    }
+    if not math.isclose(
+        math.fsum(values.values()),
+        1.0,
+        rel_tol=0.0,
+        abs_tol=_PROBABILITY_TOLERANCE,
+    ):
+        raise ValueError(f"{label} must sum to 1")
+    return MappingProxyType(values)
+
+
+def _validated_policy(
+    raw: object,
+    *,
+    expected_actions: tuple[str, ...],
+) -> Mapping[str, float]:
+    return _distribution(
+        raw,
+        expected_ids=expected_actions,
+        label="planning soft action policy",
+    )
+
+
+def _transition_distribution(
+    model: RuntimePlanningDecisionModelSpec,
+    depth: int,
+    state: PlanningHiddenState,
+    action: ActionOption,
+) -> Mapping[str, float]:
+    raw = model.transition_hook(
+        PlanningTransitionContext(
+            depth,
+            state,
+            action,
+            model.hidden_states,
+            model.parameters,
+        )
+    )
+    return _distribution(
+        raw,
+        expected_ids=tuple(state.state_id for state in model.hidden_states),
+        label="planning transition distribution",
+    )
+
+
+def _observation_distribution(
+    model: RuntimePlanningDecisionModelSpec,
+    depth: int,
+    next_state: PlanningHiddenState,
+    action: ActionOption,
+) -> Mapping[str, float]:
+    raw = model.observation_hook(
+        PlanningObservationContext(
+            depth,
+            next_state,
+            action,
+            model.observations,
+            model.parameters,
+        )
+    )
+    return _distribution(
+        raw,
+        expected_ids=tuple(item.observation_id for item in model.observations),
+        label="planning observation distribution",
+    )
+
+
+def _reward(
+    model: RuntimePlanningDecisionModelSpec,
+    depth: int,
+    state: PlanningHiddenState,
+    action: ActionOption,
+    next_state: PlanningHiddenState,
+) -> float:
+    return _finite(
+        model.reward_hook(
+            PlanningRewardContext(
+                depth,
+                state,
+                action,
+                next_state,
+                model.parameters,
+            )
+        ),
+        label="planning reward",
+    )
+
+
+def _store_value_record(
+    records: dict[tuple[int, str, str], PlanningValueRecord],
+    record: PlanningValueRecord,
+) -> None:
+    key = (record.depth, record.belief_hash, record.action_id)
+    existing = records.get(key)
+    if existing is not None and existing != record:
+        raise ValueError("planning value trace is not deterministic")
+    records[key] = record
+
+
+def _store_belief_update(
+    records: dict[tuple[int, str, str, str], PlanningBeliefUpdate],
+    record: PlanningBeliefUpdate,
+) -> None:
+    key = (
+        record.depth,
+        record.prior_belief_hash,
+        record.action_id,
+        record.observation_id,
+    )
+    existing = records.get(key)
+    if existing is not None and existing != record:
+        raise ValueError("planning belief update trace is not deterministic")
+    records[key] = record
+
+
+def _solve_planning(
+    model: RuntimePlanningDecisionModelSpec,
+    action_by_id: Mapping[str, ActionOption],
+    root_belief: PlanningBeliefState,
+) -> tuple[
+    Mapping[str, float],
+    Mapping[str, float],
+    tuple[PlanningValueRecord, ...],
+    tuple[PlanningBeliefUpdate, ...],
+]:
+    state_ids = tuple(state.state_id for state in model.hidden_states)
+    observation_ids = tuple(item.observation_id for item in model.observations)
+    states_by_id = {state.state_id: state for state in model.hidden_states}
+    memo: dict[tuple[int, str], tuple[Mapping[str, float], Mapping[str, float], float]] = {}
+    value_records: dict[tuple[int, str, str], PlanningValueRecord] = {}
+    belief_updates: dict[tuple[int, str, str, str], PlanningBeliefUpdate] = {}
+
+    def solve(depth: int, belief: PlanningBeliefState) -> tuple[Mapping[str, float], Mapping[str, float], float]:
+        key = (depth, belief.content_hash)
+        cached = memo.get(key)
+        if cached is not None:
+            return cached
+        current_action_ids = model.action_schedule[depth]
+        action_values: dict[str, float] = {}
+        for action_id in current_action_ids:
+            action = action_by_id[action_id]
+            transition: dict[tuple[str, str], float] = {}
+            reward_values: dict[tuple[str, str], float] = {}
+            for state in model.hidden_states:
+                row = _transition_distribution(model, depth, state, action)
+                for next_state_id in state_ids:
+                    transition[(state.state_id, next_state_id)] = row[next_state_id]
+                    reward_values[(state.state_id, next_state_id)] = _reward(
+                        model,
+                        depth,
+                        state,
+                        action,
+                        states_by_id[next_state_id],
+                    )
+            predicted = PlanningBeliefState(
+                {
+                    next_state_id: math.fsum(
+                        belief.probabilities[state.state_id]
+                        * transition[(state.state_id, next_state_id)]
+                        for state in model.hidden_states
+                    )
+                    for next_state_id in state_ids
+                }
+            )
+            immediate = _finite(
+                math.fsum(
+                    belief.probabilities[state.state_id]
+                    * transition[(state.state_id, next_state_id)]
+                    * reward_values[(state.state_id, next_state_id)]
+                    for state in model.hidden_states
+                    for next_state_id in state_ids
+                ),
+                label="planning expected immediate reward",
+            )
+            expected_future_value = 0.0
+            if depth + 1 < model.horizon:
+                observation_likelihood: dict[tuple[str, str], float] = {}
+                for next_state in model.hidden_states:
+                    row = _observation_distribution(model, depth, next_state, action)
+                    for observation_id in observation_ids:
+                        observation_likelihood[(next_state.state_id, observation_id)] = row[observation_id]
+                branches: list[tuple[float, float]] = []
+                for observation_id in observation_ids:
+                    evidence = _finite(
+                        math.fsum(
+                            predicted.probabilities[state.state_id]
+                            * observation_likelihood[(state.state_id, observation_id)]
+                            for state in model.hidden_states
+                        ),
+                        label="planning observation evidence",
+                    )
+                    if evidence == 0.0:
+                        continue
+                    posterior = PlanningBeliefState(
+                        {
+                            state.state_id: (
+                                observation_likelihood[(state.state_id, observation_id)]
+                                * predicted.probabilities[state.state_id]
+                                / evidence
+                            )
+                            for state in model.hidden_states
+                        }
+                    )
+                    update = PlanningBeliefUpdate(
+                        depth,
+                        belief.content_hash,
+                        action_id,
+                        observation_id,
+                        evidence,
+                        posterior,
+                    )
+                    _store_belief_update(belief_updates, update)
+                    _child_values, _child_policy, child_value = solve(depth + 1, posterior)
+                    branches.append((evidence, child_value))
+                undiscounted = _finite(
+                    math.fsum(probability * child_value for probability, child_value in branches),
+                    label="planning undiscounted continuation",
+                )
+                expected_future_value = _finite(
+                    model.discount * undiscounted,
+                    label="planning expected future value",
+                )
+            total = _finite(
+                immediate + expected_future_value,
+                label="planning total action value",
+            )
+            record = PlanningValueRecord(
+                depth,
+                belief.content_hash,
+                action_id,
+                immediate,
+                expected_future_value,
+                total,
+            )
+            _store_value_record(value_records, record)
+            action_values[action_id] = total
+        frozen_values = _freeze_action_values(action_values, label="planning action values")
+        raw_policy = finite_softmax(frozen_values, beta=model.beta)
+        policy = _validated_policy(raw_policy, expected_actions=current_action_ids)
+        soft_value = _finite(
+            math.fsum(policy[action_id] * frozen_values[action_id] for action_id in current_action_ids),
+            label="planning soft belief value",
+        )
+        result = (frozen_values, policy, soft_value)
+        memo[key] = result
+        return result
+
+    root_values, root_policy, _root_value = solve(0, root_belief)
+    return (
+        root_values,
+        root_policy,
+        tuple(value_records[key] for key in sorted(value_records)),
+        tuple(belief_updates[key] for key in sorted(belief_updates)),
+    )
 
 
 def run_runtime_planning_decision(
@@ -1278,22 +1371,39 @@ def run_runtime_planning_decision(
         validate_narrative(story, domain)
         validated_model = _validated_model(model)
         validated_ledger = _validated_ledger(story, domain, ledger)
-        decision, _action_by_id = _preflight_decision(
+        decision, action_by_id = _preflight_decision(
             story,
             domain,
             decision_id,
             validated_ledger,
             validated_model,
         )
-        _belief_state, _root_belief = _resolve_root_planning_belief(
+        belief_state, root_belief = _resolve_root_planning_belief(
             story,
             domain,
             decision,
             validated_ledger,
             validated_model,
         )
-        raise RuntimePlanningDecisionResolutionError(
-            "runtime planning decision solver is not implemented"
+        root_values, root_policy, value_records, belief_updates = _solve_planning(
+            validated_model,
+            action_by_id,
+            root_belief,
+        )
+        return RuntimePlanningDecisionResult(
+            model_id=validated_model.model_id,
+            model_hash=validated_model.content_hash,
+            decision_id=decision.id,
+            actor_id=decision.actor_id,
+            step_index=belief_state.step_index,
+            ledger_hash=belief_state.ledger_hash,
+            belief_state=belief_state,
+            planning_belief=root_belief,
+            action_values=root_values,
+            action_policy=root_policy,
+            selected_action=_map_choice(root_policy),
+            value_records=value_records,
+            belief_updates=belief_updates,
         )
     except RuntimePlanningDecisionResolutionError:
         raise
