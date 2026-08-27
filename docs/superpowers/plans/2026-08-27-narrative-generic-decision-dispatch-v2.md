@@ -6,28 +6,28 @@
 
 **Architecture:** Add an isolated `runtime_decision_dispatch.py` sidecar that owns the only three-family branch and returns a canonical common envelope containing the exact family-specific result. Migrate `simulation.py` from intentional-specific model/result fields to the generic wrapper/envelope while leaving world transition, observation projection, percept admission, and family-specific algorithms unchanged.
 
-**Tech Stack:** Python 3 standard library dataclasses/typing, existing narrative runtime contracts, existing implementation attestation, existing stable content hashing, `unittest`, GitHub Actions `proof.yml`.
+**Tech Stack:** Python 3, standard-library dataclasses/typing, existing narrative runtime contracts, existing implementation attestation and stable content hashing, `unittest`, GitHub Actions `proof.yml`.
 
 **Spec:** `docs/superpowers/specs/2026-08-27-narrative-generic-decision-dispatch-v2-design.md`
 
 ## Global Constraints
 
-- Base branch is `proof/narrative-dynamics-v0` at integrated commit `8317339cde03d46e0500798ebb30dfa27ca43e38` unless the base moves before execution; if it moves, record the new exact base before the first test commit.
+- Integrated base is `proof/narrative-dynamics-v0` at `8317339cde03d46e0500798ebb30dfa27ca43e38` unless that branch moves before execution; if it moves, record the new exact base before the first test commit.
 - Feature branch is `work/narrative-generic-decision-dispatch-v2`.
 - Preserve strict RED -> GREEN -> atomic commit discipline.
-- Pure files under `docs/superpowers/specs/**` and `docs/superpowers/plans/**` must not trigger `proof`; test or production changes must trigger normal CI.
-- The generic dispatcher supports exactly three model kinds: `reactive`, `intentional`, `planning`.
+- Pure changes under `docs/superpowers/specs/**` and `docs/superpowers/plans/**` must not trigger `proof`; test and production changes must trigger normal CI.
+- Supported generic model kinds are exactly `reactive`, `intentional`, and `planning`.
 - Do not accept arbitrary protocol, callback, duck-typed, or plugin decision models.
-- Do not change family-specific decision algorithms in `runtime_reactive.py`, `runtime_intention.py`, or `runtime_planning.py`.
-- Do not import or expose objective world state, scheduler state, observation projection, RNG, or explicit step inputs through `runtime_decision_dispatch.py`.
-- Keep all agents in a simulation round bound to the same immutable prior evidence ledger before any world transition executes.
-- Keep `advance_world_step()` atomic and preserve current overlapping-write conflict rejection; do not add actor priority or last-writer-wins behavior.
-- Do not add stochastic world/observation semantics.
-- Do not change `GenericNarrative`, `DomainSpec`, `world.py`, `observation_projection.py`, `runtime_cognition.py`, model-comparison infrastructure, prison adapters, or Lean sources.
+- Do not modify family algorithms in `runtime_reactive.py`, `runtime_intention.py`, or `runtime_planning.py`.
+- `runtime_decision_dispatch.py` must not import or receive objective world state, scheduler state, observation projection, RNG, or an explicit step parameter.
+- All scheduled agents must decide against the exact same immutable prior evidence ledger before `advance_world_step()` runs.
+- Preserve atomic world-step behavior and current typed overlapping-write rejection; do not add actor priority or last-writer-wins behavior.
+- Do not add stochastic world or observation semantics.
+- Do not change `GenericNarrative`, `DomainSpec`, `runtime_cognition.py`, `world.py`, `observation_projection.py`, model-comparison infrastructure, prison adapters, or Lean sources.
 - V2 preserves all-intentional behavioral semantics, not pre-V2 simulation/model/step/trajectory content hashes.
-- `ActionIntent.selection_result_hash` must bind the generic dispatch result, and the generic result must bind the exact nested family result.
-- Package-root `narrative_dynamics` remains isolated from the new narrative runtime surface.
-- Do not mark the roadmap/integration complete until the final exact-head PR-triggered `proof` run is completed with `conclusion=success`.
+- `ActionIntent.selection_result_hash` must bind `RuntimeDecisionDispatchResult.content_hash`, which in turn must bind the exact nested family result hash and payload.
+- Package-root `narrative_dynamics` must remain isolated from the new narrative runtime surface.
+- Do not mark the feature complete until a PR-triggered exact-head `proof` run is `completed/success` and its Python log shows zero failures/errors.
 
 ---
 
@@ -36,36 +36,37 @@
 ### Create
 
 - `narrative_dynamics/narrative/runtime_decision_dispatch.py`
-  - Closed three-family model wrapper.
-  - Canonical common dispatch result envelope.
+  - Closed typed wrapper for the three family model specs.
+  - Canonical common result envelope retaining the exact nested family result.
   - Typed dispatch error.
   - Generic `run_runtime_decision(...)` runner.
   - No world/simulation/projection capability.
 
 - `tests/test_narrative_runtime_decision_dispatch.py`
-  - Wrapper identity and tag/type closure.
-  - Common result binding and forgery rejection.
-  - Direct dispatch equivalence to each family runner.
-  - Failure-cause preservation, replay, public signature, and import isolation.
+  - Closed tag/type contract.
+  - Identity and attestation binding.
+  - Common-result binding and forgery rejection.
+  - Exact direct dispatch equivalence to each existing family runner.
+  - Error-cause preservation, replay, public signature, and import isolation.
 
 ### Modify
 
 - `narrative_dynamics/narrative/simulation.py`
   - `RuntimeAgentSpec.intentional_model` -> `decision_model`.
-  - `SimulationAgentStep.decision_result` -> generic dispatch result.
-  - `simulate_step()` -> generic runner.
-  - Preserve world/projection/admission sequencing.
+  - `SimulationAgentStep.decision_result` -> `RuntimeDecisionDispatchResult`.
+  - `simulate_step()` -> `run_runtime_decision()`.
+  - World/projection/admission sequencing remains unchanged.
 
 - `narrative_dynamics/narrative/__init__.py`
-  - Export exactly the four new dispatch public names from the narrative package only.
+  - Export exactly four new dispatch public names from the narrative package.
 
 - `tests/test_narrative_simulation.py`
-  - Migrate intentional-only fixtures to explicit `RuntimeDecisionModelSpec("intentional", ...)` wrappers.
-  - Add three-family heterogeneous single-round and multi-round fixtures.
-  - Preserve existing atomicity, replay, and failure regression coverage.
+  - Migrate existing intentional fixtures to explicit generic wrappers.
+  - Preserve all-intentional behavioral regressions.
+  - Add three-family heterogeneous single-round and two-round replay tests.
 
 - `tests/test_narrative_trust_api.py`
-  - Extend exact narrative public surface by exactly four names.
+  - Extend the exact narrative public surface by exactly four names.
   - Preserve root-package isolation.
 
 ### Explicitly unchanged
@@ -78,7 +79,7 @@
 - `narrative_dynamics/narrative/observation_projection.py`
 - `narrative_dynamics/model_comparison.py`
 - `narrative_dynamics/adapters/prison_pomdp.py`
-- Lean sources
+- all Lean sources
 
 ---
 
@@ -92,7 +93,7 @@
   - `run_runtime_reactive_decision(story, domain, decision_id, ledger, model)`
   - `run_runtime_intentional_decision(story, domain, decision_id, ledger, model)`
   - `run_runtime_planning_decision(story, domain, decision_id, ledger, model)`
-- Produces the RED contract for future public names:
+- Defines the RED contract for:
   - `RuntimeDecisionModelSpec`
   - `RuntimeDecisionDispatchResult`
   - `RuntimeDecisionDispatchError`
@@ -100,7 +101,7 @@
 
 - [ ] **Step 1: Create guarded imports and reusable three-family fixtures**
 
-Create `tests/test_narrative_runtime_decision_dispatch.py` with these imports and helpers. Keep the new dispatch import guarded so the RED is a controlled missing-boundary failure rather than test discovery failure.
+Create `tests/test_narrative_runtime_decision_dispatch.py` with the exact existing fixture locations and a guarded import for the not-yet-created dispatch module:
 
 ```python
 from __future__ import annotations
@@ -111,14 +112,10 @@ import unittest
 
 from narrative_dynamics.attestation import measure_implementation
 from narrative_dynamics.narrative.ir import TypedValue
-from narrative_dynamics.narrative.runtime_cognition import make_runtime_belief_model as _missing_runtime_helper
-```
-
-Do **not** keep the last import above; it intentionally shows the wrong module ownership. Replace it immediately in the same edit with the existing test helper imports below, which are the canonical fixture locations:
-
-```python
 from narrative_dynamics.narrative.runtime_intention import (
+    RuntimeIntentionalDecisionModelSpec,
     RuntimeIntentionalDecisionResolutionError,
+    RuntimeIntentionalDecisionResult,
     run_runtime_intentional_decision,
 )
 from narrative_dynamics.narrative.runtime_planning import (
@@ -214,11 +211,8 @@ def make_planning_model():
         NoInformationObservationHook(),
         ParameterRewardHook(),
     )
-```
 
-The file must define:
 
-```python
 class NarrativeRuntimeDecisionDispatchTests(unittest.TestCase):
     def require_dispatch(self) -> None:
         if _DISPATCH_IMPORT_ERROR is not None:
@@ -228,9 +222,7 @@ class NarrativeRuntimeDecisionDispatchTests(unittest.TestCase):
             )
 ```
 
-- [ ] **Step 2: Add the closed wrapper/identity/public-signature tests**
-
-Add exactly these tests to the class:
+- [ ] **Step 2: Add wrapper identity, closure, signature, and isolation tests**
 
 ```python
 def test_model_wrapper_is_closed_typed_and_binds_nested_and_dispatch_identity(self):
@@ -238,20 +230,29 @@ def test_model_wrapper_is_closed_typed_and_binds_nested_and_dispatch_identity(se
     reactive = make_reactive_model()
     intentional = make_runtime_intentional_model()
     planning = make_planning_model()
-    wrapped = (
+    wrappers = (
         RuntimeDecisionModelSpec("reactive", reactive),
         RuntimeDecisionModelSpec("intentional", intentional),
         RuntimeDecisionModelSpec("planning", planning),
     )
-    self.assertEqual(tuple(item.model_kind for item in wrapped), ("reactive", "intentional", "planning"))
-    self.assertEqual(wrapped[0].model_id, reactive.model_id)
-    self.assertEqual(wrapped[1].model_version, intentional.version)
-    self.assertEqual(wrapped[2].nested_model_hash, planning.content_hash)
-    self.assertEqual(wrapped[1].supported_decision_types, intentional.supported_decision_types)
-    self.assertEqual(RuntimeDecisionModelSpec("reactive", make_reactive_model()).content_hash, wrapped[0].content_hash)
-    self.assertNotEqual(wrapped[0].content_hash, wrapped[1].content_hash)
-    self.assertNotEqual(wrapped[1].content_hash, wrapped[2].content_hash)
-    payload = wrapped[0].to_dict()
+    self.assertEqual(
+        tuple(item.model_kind for item in wrappers),
+        ("reactive", "intentional", "planning"),
+    )
+    self.assertEqual(wrappers[0].model_id, reactive.model_id)
+    self.assertEqual(wrappers[1].model_version, intentional.version)
+    self.assertEqual(wrappers[2].nested_model_hash, planning.content_hash)
+    self.assertEqual(
+        wrappers[1].supported_decision_types,
+        intentional.supported_decision_types,
+    )
+    self.assertEqual(
+        RuntimeDecisionModelSpec("reactive", make_reactive_model()).content_hash,
+        wrappers[0].content_hash,
+    )
+    self.assertNotEqual(wrappers[0].content_hash, wrappers[1].content_hash)
+    self.assertNotEqual(wrappers[1].content_hash, wrappers[2].content_hash)
+    payload = wrappers[0].to_dict()
     self.assertEqual(
         payload["wrapper_implementation_identity"],
         measure_implementation(RuntimeDecisionModelSpec).manifest_identity(),
@@ -260,7 +261,7 @@ def test_model_wrapper_is_closed_typed_and_binds_nested_and_dispatch_identity(se
         payload["runner_implementation_identity"],
         measure_implementation(run_runtime_decision).manifest_identity(),
     )
-    for kind, bad in (
+    for kind, nested in (
         ("planning", reactive),
         ("reactive", intentional),
         ("intentional", planning),
@@ -268,7 +269,7 @@ def test_model_wrapper_is_closed_typed_and_binds_nested_and_dispatch_identity(se
     ):
         with self.subTest(kind=kind):
             with self.assertRaises((TypeError, ValueError)):
-                RuntimeDecisionModelSpec(kind, bad)
+                RuntimeDecisionModelSpec(kind, nested)
     with self.assertRaises((TypeError, ValueError)):
         RuntimeDecisionModelSpec("reactive", object())
 
@@ -299,9 +300,7 @@ def test_public_signature_and_module_isolation_exclude_world_scheduler_projectio
     )
 ```
 
-- [ ] **Step 3: Add direct family dispatch and common-envelope binding tests**
-
-Use one `empty_runtime_case()` for all three family runs so every generic result is bound to the same authored story/domain/ledger boundary.
+- [ ] **Step 3: Add exact direct-family projection and constructor-forgery tests**
 
 ```python
 def test_direct_family_dispatch_preserves_exact_common_fields_and_nested_result(self):
@@ -318,7 +317,7 @@ def test_direct_family_dispatch_preserves_exact_common_fields_and_nested_result(
             "intentional",
             make_runtime_intentional_model(),
             run_runtime_intentional_decision,
-            object,
+            RuntimeIntentionalDecisionResult,
         ),
         (
             "planning",
@@ -329,14 +328,25 @@ def test_direct_family_dispatch_preserves_exact_common_fields_and_nested_result(
     )
     for kind, nested_model, family_runner, result_type in cases:
         with self.subTest(kind=kind):
-            family = family_runner(story, domain, "d-a1-phase", ledger, nested_model)
-            wrapped = RuntimeDecisionModelSpec(kind, nested_model)
-            result = run_runtime_decision(story, domain, "d-a1-phase", ledger, wrapped)
-            if result_type is not object:
-                self.assertIsInstance(result.model_result, result_type)
+            family = family_runner(
+                story,
+                domain,
+                "d-a1-phase",
+                ledger,
+                nested_model,
+            )
+            wrapper = RuntimeDecisionModelSpec(kind, nested_model)
+            result = run_runtime_decision(
+                story,
+                domain,
+                "d-a1-phase",
+                ledger,
+                wrapper,
+            )
+            self.assertIsInstance(result.model_result, result_type)
             self.assertEqual(result.model_result, family)
             self.assertEqual(result.model_kind, kind)
-            self.assertEqual(result.decision_model_hash, wrapped.content_hash)
+            self.assertEqual(result.decision_model_hash, wrapper.content_hash)
             self.assertEqual(result.model_id, family.model_id)
             self.assertEqual(result.model_hash, family.model_hash)
             self.assertEqual(result.decision_id, family.decision_id)
@@ -344,29 +354,29 @@ def test_direct_family_dispatch_preserves_exact_common_fields_and_nested_result(
             self.assertEqual(result.action_policy, family.action_policy)
             self.assertEqual(result.selected_action, family.selected_action)
             self.assertEqual(result.model_result_hash, family.content_hash)
-            expected_actor = (
-                family.belief_state.agent_id
-                if kind == "intentional"
-                else family.actor_id
-            )
-            expected_ledger = (
-                family.belief_state.ledger_hash
-                if kind == "intentional"
-                else family.ledger_hash
-            )
-            self.assertEqual(result.actor_id, expected_actor)
-            self.assertEqual(result.ledger_hash, expected_ledger)
+            if kind == "intentional":
+                self.assertEqual(result.actor_id, family.belief_state.agent_id)
+                self.assertEqual(result.ledger_hash, family.belief_state.ledger_hash)
+            else:
+                self.assertEqual(result.actor_id, family.actor_id)
+                self.assertEqual(result.ledger_hash, family.ledger_hash)
 
 
 def test_dispatch_result_forgery_rejects_common_and_nested_binding_mismatch(self):
     self.require_dispatch()
     domain, story, ledger = empty_runtime_case()
     model = make_reactive_model()
-    nested = run_runtime_reactive_decision(story, domain, "d-a1-phase", ledger, model)
-    wrapped = RuntimeDecisionModelSpec("reactive", model)
+    nested = run_runtime_reactive_decision(
+        story,
+        domain,
+        "d-a1-phase",
+        ledger,
+        model,
+    )
+    wrapper = RuntimeDecisionModelSpec("reactive", model)
     valid = dict(
         model_kind="reactive",
-        decision_model_hash=wrapped.content_hash,
+        decision_model_hash=wrapper.content_hash,
         model_id=nested.model_id,
         model_hash=nested.model_hash,
         decision_id=nested.decision_id,
@@ -395,7 +405,7 @@ def test_dispatch_result_forgery_rejects_common_and_nested_binding_mismatch(self
                 RuntimeDecisionDispatchResult(**{**valid, **changes})
 ```
 
-- [ ] **Step 4: Add runner preflight, error-cause, and deterministic replay tests**
+- [ ] **Step 4: Add preflight, failure-cause, and replay tests**
 
 ```python
 def test_wrapper_forgery_and_unsupported_decision_type_reject_before_family_hook(self):
@@ -403,16 +413,25 @@ def test_wrapper_forgery_and_unsupported_decision_type_reject_before_family_hook
     domain, story, ledger = empty_runtime_case()
     hook = CueScoreHook()
     model = make_reactive_model(hook=hook)
-    wrapped = RuntimeDecisionModelSpec("reactive", model)
-    forged = _forge(wrapped, model_kind="planning")
+    wrapper = RuntimeDecisionModelSpec("reactive", model)
+    forged = _forge(wrapper, model_kind="planning")
     with self.assertRaises(RuntimeDecisionDispatchError):
         run_runtime_decision(story, domain, "d-a1-phase", ledger, forged)
     self.assertEqual(hook.calls, [])
 
-    unsupported_model = replace(model, supported_decision_types=("other-choice",))
+    unsupported_model = replace(
+        model,
+        supported_decision_types=("other-choice",),
+    )
     unsupported = RuntimeDecisionModelSpec("reactive", unsupported_model)
     with self.assertRaises(RuntimeDecisionDispatchError):
-        run_runtime_decision(story, domain, "d-a1-phase", ledger, unsupported)
+        run_runtime_decision(
+            story,
+            domain,
+            "d-a1-phase",
+            ledger,
+            unsupported,
+        )
     self.assertEqual(hook.calls, [])
 
 
@@ -441,8 +460,20 @@ def test_fixed_inputs_replay_to_exact_dispatch_result_and_hash(self):
     first_model = RuntimeDecisionModelSpec("planning", make_planning_model())
     second_model = RuntimeDecisionModelSpec("planning", make_planning_model())
     self.assertEqual(first_model.content_hash, second_model.content_hash)
-    first = run_runtime_decision(story, domain, "d-a1-phase", ledger, first_model)
-    second = run_runtime_decision(story, domain, "d-a1-phase", ledger, second_model)
+    first = run_runtime_decision(
+        story,
+        domain,
+        "d-a1-phase",
+        ledger,
+        first_model,
+    )
+    second = run_runtime_decision(
+        story,
+        domain,
+        "d-a1-phase",
+        ledger,
+        second_model,
+    )
     self.assertEqual(first, second)
     self.assertEqual(first.to_dict(), second.to_dict())
     self.assertEqual(first.content_hash, second.content_hash)
@@ -450,13 +481,11 @@ def test_fixed_inputs_replay_to_exact_dispatch_result_and_hash(self):
 
 - [ ] **Step 5: Run the new file and verify the missing-module RED**
 
-Run:
-
 ```bash
 python3 -m unittest tests.test_narrative_runtime_decision_dispatch -v
 ```
 
-Expected: the seven new tests fail only through `require_dispatch()` because `narrative_dynamics.narrative.runtime_decision_dispatch` does not exist. There must be no syntax error, test discovery error, missing existing fixture import, or failure inside any existing family runner at this stage.
+Expected: exactly seven test methods fail through `require_dispatch()` because `narrative_dynamics.narrative.runtime_decision_dispatch` does not yet exist. There must be no syntax error, test discovery error, missing existing fixture import, or family-runner failure.
 
 - [ ] **Step 6: Commit the test-only RED**
 
@@ -467,20 +496,21 @@ git commit -m "test: define runtime decision dispatch contract"
 
 - [ ] **Step 7: Obtain authoritative exact-head RED CI**
 
-Push the branch and open/update a Draft PR targeting `proof/narrative-dynamics-v0` so the PR-triggered `proof` workflow runs on the exact test-only head.
+Push the branch and open/update a Draft PR targeting `proof/narrative-dynamics-v0`.
 
-Accept the RED only if:
+Accept the RED only when GitHub Actions shows:
 
 ```text
+workflow = proof
 event = pull_request
-head_sha = exact test-only commit
+head_sha = exact Task 1 test-only commit
 status = completed
 conclusion = failure
 Lean dependency/conformance/build/theorem gates = success
-Python failure set = new dispatch tests only
+Python failures = the seven new dispatch tests only
 ```
 
-Record the run number and exact SHA in the PR body before production code is added.
+Record the exact SHA and proof run number in the PR body before production code is added.
 
 ---
 
@@ -495,12 +525,10 @@ Record the run number and exact SHA in the PR body before production code is add
   - `RuntimeDecisionModelSpec(model_kind, model)`
   - `RuntimeDecisionDispatchResult(...)`
   - `RuntimeDecisionDispatchError`
-  - final-signature `run_runtime_decision(...)` stub that remains intentionally unresolved until Task 3
-- Consumes the three existing family model/result types without changing them.
+  - final-signature `run_runtime_decision(...)` stub, intentionally unresolved until Task 3
+- Consumes the three existing family model/result types without modifying them.
 
-- [ ] **Step 1: Add imports, constants, validators, and exact family tables**
-
-Start the module with only model-family/runtime contract imports, standard-library helpers, hashing, and attestation. Do not import world, simulation, observation projection, or RNG.
+- [ ] **Step 1: Add imports, exact family tables, and generic validators**
 
 ```python
 from __future__ import annotations
@@ -549,9 +577,55 @@ _RESULT_TYPES = {
 }
 ```
 
-Add `_text`, `_hash`, `_step`, `_freeze_policy`, and `_map_choice` validators following existing narrative runtime conventions. `_freeze_policy` must reject bools, non-finite values, negative mass, empty mappings, and totals outside absolute tolerance `1e-12`, and must canonicalize keys lexically into `MappingProxyType`.
+Add these validators with existing narrative conventions:
 
-- [ ] **Step 2: Implement the typed dispatch error and wrapper**
+```python
+def _text(value: object, *, label: str) -> str:
+    if not isinstance(value, str) or not value.strip() or value != value.strip():
+        raise ValueError(f"{label} must be a non-empty trimmed string")
+    return value
+
+
+def _hash(value: object, *, label: str) -> str:
+    if not isinstance(value, str) or _HASH.fullmatch(value) is None:
+        raise ValueError(f"{label} must be a sha256 content hash")
+    return value
+
+
+def _step(value: object, *, label: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise ValueError(f"{label} must be a non-negative integer")
+    return value
+
+
+def _freeze_policy(value: object, *, label: str) -> Mapping[str, float]:
+    if not isinstance(value, Mapping) or not value:
+        raise ValueError(f"{label} must be a non-empty mapping")
+    frozen: dict[str, float] = {}
+    for raw_key, raw_value in value.items():
+        key = _text(raw_key, label=f"{label} action id")
+        if not isinstance(raw_value, (int, float)) or isinstance(raw_value, bool):
+            raise TypeError(f"{label} probabilities must be numeric")
+        probability = float(raw_value)
+        if not math.isfinite(probability) or probability < 0.0:
+            raise ValueError(f"{label} probabilities must be finite and non-negative")
+        frozen[key] = probability
+    if not math.isclose(
+        math.fsum(frozen.values()),
+        1.0,
+        rel_tol=0.0,
+        abs_tol=_PROBABILITY_TOLERANCE,
+    ):
+        raise ValueError(f"{label} must sum to 1")
+    return MappingProxyType({key: frozen[key] for key in sorted(frozen)})
+
+
+def _map_choice(policy: Mapping[str, float]) -> str:
+    maximum = max(policy.values())
+    return min(key for key, value in policy.items() if value == maximum)
+```
+
+- [ ] **Step 2: Implement the typed error and closed model wrapper**
 
 ```python
 class RuntimeDecisionDispatchError(ValueError):
@@ -571,9 +645,13 @@ class RuntimeDecisionModelSpec:
         kind = _text(self.model_kind, label="runtime decision model kind")
         expected = _MODEL_TYPES.get(kind)
         if expected is None:
-            raise ValueError("runtime decision model kind must be reactive, intentional, or planning")
+            raise ValueError(
+                "runtime decision model kind must be reactive, intentional, or planning"
+            )
         if not isinstance(self.model, expected):
-            raise TypeError("runtime decision model kind does not match nested model type")
+            raise TypeError(
+                "runtime decision model kind does not match nested model type"
+            )
         object.__setattr__(self, "model_kind", kind)
 
     @property
@@ -611,9 +689,9 @@ class RuntimeDecisionModelSpec:
         return stable_content_hash(self.to_dict())
 ```
 
-Do not add `intentional_model`, callback, protocol, or arbitrary runner fields.
+There is no `intentional_model` compatibility alias and no model-supplied runner.
 
-- [ ] **Step 3: Implement family-neutral common-field extraction**
+- [ ] **Step 3: Implement family-neutral actor and ledger extraction**
 
 ```python
 def _actor_id(kind: str, result: object) -> str:
@@ -640,11 +718,9 @@ def _ledger_hash(kind: str, result: object) -> str:
     return result.ledger_hash
 ```
 
-These helpers must contain no objective-world lookup and no synthetic latent common state.
+These helpers may only read already-certified family results.
 
-- [ ] **Step 4: Implement `RuntimeDecisionDispatchResult` constructor validation**
-
-Use the exact public fields from the design:
+- [ ] **Step 4: Implement `RuntimeDecisionDispatchResult` self-validation**
 
 ```python
 @dataclass(frozen=True)
@@ -667,36 +743,59 @@ class RuntimeDecisionDispatchResult:
     )
 ```
 
-Its `__post_init__` must reconstruct/validate every common binding that can be proved without an external wrapper:
+`__post_init__` must perform these exact checks:
 
 ```python
 kind = _text(self.model_kind, label="runtime dispatch result model kind")
-expected_type = _RESULT_TYPES.get(kind)
-if expected_type is None:
+expected = _RESULT_TYPES.get(kind)
+if expected is None:
     raise ValueError("runtime dispatch result model kind is unsupported")
-if not isinstance(self.model_result, expected_type):
+if not isinstance(self.model_result, expected):
     raise TypeError("runtime dispatch result kind does not match nested result type")
+object.__setattr__(self, "model_kind", kind)
+object.__setattr__(
+    self,
+    "decision_model_hash",
+    _hash(self.decision_model_hash, label="runtime dispatch decision model hash"),
+)
+object.__setattr__(self, "model_id", _text(self.model_id, label="runtime dispatch model id"))
+object.__setattr__(self, "model_hash", _hash(self.model_hash, label="runtime dispatch model hash"))
+object.__setattr__(self, "decision_id", _text(self.decision_id, label="runtime dispatch decision id"))
+object.__setattr__(self, "actor_id", _text(self.actor_id, label="runtime dispatch actor id"))
+object.__setattr__(self, "step_index", _step(self.step_index, label="runtime dispatch step"))
+object.__setattr__(self, "ledger_hash", _hash(self.ledger_hash, label="runtime dispatch ledger hash"))
+object.__setattr__(
+    self,
+    "model_result_hash",
+    _hash(self.model_result_hash, label="runtime dispatch nested result hash"),
+)
 if self.model_id != self.model_result.model_id:
-    raise ValueError("runtime dispatch result model id must match nested result")
+    raise ValueError("runtime dispatch model id must match nested result")
 if self.model_hash != self.model_result.model_hash:
-    raise ValueError("runtime dispatch result model hash must match nested result")
+    raise ValueError("runtime dispatch model hash must match nested result")
 if self.decision_id != self.model_result.decision_id:
-    raise ValueError("runtime dispatch result decision must match nested result")
+    raise ValueError("runtime dispatch decision must match nested result")
 if self.actor_id != _actor_id(kind, self.model_result):
-    raise ValueError("runtime dispatch result actor must match nested result")
+    raise ValueError("runtime dispatch actor must match nested result")
 if self.step_index != self.model_result.step_index:
-    raise ValueError("runtime dispatch result step must match nested result")
+    raise ValueError("runtime dispatch step must match nested result")
 if self.ledger_hash != _ledger_hash(kind, self.model_result):
-    raise ValueError("runtime dispatch result ledger must match nested result")
+    raise ValueError("runtime dispatch ledger must match nested result")
 if self.model_result_hash != self.model_result.content_hash:
-    raise ValueError("runtime dispatch result hash must match nested result")
+    raise ValueError("runtime dispatch nested result hash must match nested result")
+policy = _freeze_policy(self.action_policy, label="runtime dispatch action policy")
+if dict(policy) != dict(self.model_result.action_policy):
+    raise ValueError("runtime dispatch policy must match nested result")
+selected = _text(self.selected_action, label="runtime dispatch selected action")
+if selected != self.model_result.selected_action:
+    raise ValueError("runtime dispatch selected action must match nested result")
+if selected != _map_choice(policy):
+    raise ValueError("runtime dispatch selected action must be lexical MAP")
+object.__setattr__(self, "action_policy", policy)
+object.__setattr__(self, "selected_action", selected)
 ```
 
-Then independently freeze/validate `action_policy`, require exact equality with `model_result.action_policy`, normalize `selected_action`, require exact equality with the nested selected action, and require lexical MAP.
-
-`decision_model_hash` is syntax-validated as a SHA-256 content hash here; Task 3 binds it to an external wrapper.
-
-`to_dict()` must include the complete nested payload:
+Use this exact serializable identity payload:
 
 ```python
 def to_dict(self) -> dict[str, object]:
@@ -709,14 +808,17 @@ def to_dict(self) -> dict[str, object]:
         "actor_id": self.actor_id,
         "step_index": self.step_index,
         "ledger_hash": self.ledger_hash,
-        "action_policy": {key: self.action_policy[key] for key in sorted(self.action_policy)},
+        "action_policy": {
+            key: self.action_policy[key]
+            for key in sorted(self.action_policy)
+        },
         "selected_action": self.selected_action,
         "model_result_hash": self.model_result_hash,
         "model_result": self.model_result.to_dict(),
     }
 ```
 
-- [ ] **Step 5: Add the final-signature typed runner stub and module-local surface**
+- [ ] **Step 5: Add the final-signature runner stub and exact module surface**
 
 ```python
 def run_runtime_decision(
@@ -739,11 +841,7 @@ __all__ = (
 )
 ```
 
-The stub is temporary only inside this Task; it gives the wrapper identity a stable runner function to attest while keeping family execution RED for Task 3.
-
-- [ ] **Step 6: Run the records/model subset**
-
-Run:
+- [ ] **Step 6: Verify Task 2 GREEN is limited to records/model behavior**
 
 ```bash
 python3 -m unittest \
@@ -755,22 +853,22 @@ python3 -m unittest \
 
 Expected: PASS.
 
-Run the entire new file:
+Then run:
 
 ```bash
 python3 -m unittest tests.test_narrative_runtime_decision_dispatch -v
 ```
 
-Expected: only tests that actually call `run_runtime_decision()` remain RED because of the intentional typed stub. Wrapper, result constructor, signature, and isolation tests must be GREEN.
+Expected: wrapper/result/signature/isolation tests PASS; tests that invoke `run_runtime_decision()` remain RED only because the typed stub is still present.
 
-- [ ] **Step 7: Commit the records/model slice**
+- [ ] **Step 7: Commit Task 2**
 
 ```bash
 git add narrative_dynamics/narrative/runtime_decision_dispatch.py
 git commit -m "feat: add runtime decision dispatch records"
 ```
 
-Review gate: confirm this commit creates only the dispatch sidecar and does not modify scheduler or family algorithms.
+Reviewer gate: this commit creates only the dispatch sidecar; no scheduler or family algorithm changes are allowed.
 
 ---
 
@@ -781,10 +879,10 @@ Review gate: confirm this commit creates only the dispatch sidecar and does not 
 - Test: `tests/test_narrative_runtime_decision_dispatch.py`
 
 **Interfaces:**
-- Consumes `RuntimeDecisionModelSpec` and all three existing family runners.
-- Produces a fully validated `RuntimeDecisionDispatchResult` from `run_runtime_decision(...)`.
+- Consumes `RuntimeDecisionModelSpec` and the three existing family runners.
+- Produces a fully model-bound `RuntimeDecisionDispatchResult` through `run_runtime_decision(...)`.
 
-- [ ] **Step 1: Add wrapper reconstruction and generic authored-decision preflight helpers**
+- [ ] **Step 1: Add canonical wrapper reconstruction and authored-decision preflight**
 
 ```python
 def _validated_model(model: object) -> RuntimeDecisionModelSpec:
@@ -803,8 +901,8 @@ def _preflight_decision(
     model: RuntimeDecisionModelSpec,
 ):
     validate_narrative(story, domain)
-    decision_id = _text(decision_id, label="runtime dispatch decision id")
-    decision = next((item for item in story.decisions if item.id == decision_id), None)
+    requested = _text(decision_id, label="runtime dispatch decision id")
+    decision = next((item for item in story.decisions if item.id == requested), None)
     if decision is None:
         raise ValueError("runtime dispatch decision is not declared by story")
     if decision.type_name not in model.supported_decision_types:
@@ -812,9 +910,9 @@ def _preflight_decision(
     return decision
 ```
 
-This generic preflight must run before any family hook.
+This preflight must execute before any family hook.
 
-- [ ] **Step 2: Add the exact closed family runner branch**
+- [ ] **Step 2: Add the only permitted family branch**
 
 ```python
 def _run_family(
@@ -827,23 +925,33 @@ def _run_family(
     if model.model_kind == "reactive":
         assert isinstance(model.model, RuntimeReactiveDecisionModelSpec)
         return run_runtime_reactive_decision(
-            story, domain, decision_id, ledger, model.model
+            story,
+            domain,
+            decision_id,
+            ledger,
+            model.model,
         )
     if model.model_kind == "intentional":
         assert isinstance(model.model, RuntimeIntentionalDecisionModelSpec)
         return run_runtime_intentional_decision(
-            story, domain, decision_id, ledger, model.model
+            story,
+            domain,
+            decision_id,
+            ledger,
+            model.model,
         )
     assert model.model_kind == "planning"
     assert isinstance(model.model, RuntimePlanningDecisionModelSpec)
     return run_runtime_planning_decision(
-        story, domain, decision_id, ledger, model.model
+        story,
+        domain,
+        decision_id,
+        ledger,
+        model.model,
     )
 ```
 
-No model-provided runner/callback is permitted.
-
-- [ ] **Step 3: Construct and revalidate the common envelope**
+- [ ] **Step 3: Construct the generic envelope and bind it back to the wrapper**
 
 ```python
 def _dispatch_result(
@@ -864,11 +972,8 @@ def _dispatch_result(
         model_result_hash=nested.content_hash,
         model_result=nested,
     )
-```
 
-Add a model-dependent validator used immediately before return:
 
-```python
 def _validate_result_against_model(
     result: RuntimeDecisionDispatchResult,
     model: RuntimeDecisionModelSpec,
@@ -897,7 +1002,7 @@ def _validate_result_against_model(
     )
 ```
 
-- [ ] **Step 4: Replace the stub with the final runner and typed error normalization**
+- [ ] **Step 4: Replace the stub with the final runner and exact typed error normalization**
 
 ```python
 def run_runtime_decision(
@@ -909,7 +1014,12 @@ def run_runtime_decision(
 ) -> RuntimeDecisionDispatchResult:
     try:
         validated_model = _validated_model(model)
-        decision = _preflight_decision(story, domain, decision_id, validated_model)
+        decision = _preflight_decision(
+            story,
+            domain,
+            decision_id,
+            validated_model,
+        )
         nested = _run_family(
             story,
             domain,
@@ -935,17 +1045,15 @@ def run_runtime_decision(
         ) from error
 ```
 
-Do not catch `BaseException` or arbitrary broad exceptions.
+Do not catch `BaseException` or a blanket `Exception`.
 
-- [ ] **Step 5: Run the full dispatch test file**
+- [ ] **Step 5: Verify dispatch GREEN and unchanged family suites**
 
 ```bash
 python3 -m unittest tests.test_narrative_runtime_decision_dispatch -v
 ```
 
 Expected: all seven dispatch tests PASS.
-
-Also run the family suites to prove the sidecar did not change them:
 
 ```bash
 python3 -m unittest \
@@ -957,39 +1065,45 @@ python3 -m unittest \
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit the closed dispatch runner**
+- [ ] **Step 6: Commit Task 3**
 
 ```bash
 git add narrative_dynamics/narrative/runtime_decision_dispatch.py
 git commit -m "feat: dispatch runtime decision families"
 ```
 
-Reviewer gate: verify `runtime_decision_dispatch.py` still has no world/simulation/projection/RNG imports and that only the three declared family runners are callable from the dispatch branch.
+Reviewer gate: `runtime_decision_dispatch.py` still has no world/simulation/projection/RNG import and contains no fourth extensibility path.
 
 ---
 
-### Task 4: Establish Scheduler V2 test-only RED, including heterogeneous agents
+### Task 4: Establish Scheduler V2 test-only RED, including three-family agents
 
 **Files:**
 - Modify: `tests/test_narrative_simulation.py`
 
 **Interfaces:**
-- Consumes Task 3 public dispatch types.
-- Defines the required scheduler migration before `simulation.py` changes:
+- Consumes Task 3 dispatch API.
+- Defines the scheduler V2 contract before production migration:
   - `RuntimeAgentSpec.decision_model`
   - `SimulationAgentStep.decision_result: RuntimeDecisionDispatchResult`
-  - same-prior-ledger generic dispatch
+  - same-prior-ledger dispatch
   - heterogeneous reactive/intentional/planning execution
+  - two-round deterministic causal closure
 
-- [ ] **Step 1: Change scheduler-test imports to the generic boundary**
+- [ ] **Step 1: Add generic dispatch and nested-family test imports**
 
-Inside the guarded simulation import block, add:
+In the guarded runtime import section add:
 
 ```python
 from narrative_dynamics.narrative.runtime_decision_dispatch import (
     RuntimeDecisionDispatchError,
     RuntimeDecisionDispatchResult,
     RuntimeDecisionModelSpec,
+)
+from narrative_dynamics.narrative.runtime_intention import (
+    RuntimeIntentionalDecisionModelSpec,
+    RuntimeIntentionalDecisionResolutionError,
+    RuntimeIntentionalDecisionResult,
 )
 from narrative_dynamics.narrative.runtime_planning import (
     PlanningHiddenState,
@@ -1003,9 +1117,7 @@ from narrative_dynamics.narrative.runtime_reactive import (
 )
 ```
 
-Keep `RuntimeIntentionalDecisionModelSpec` and `RuntimeIntentionalDecisionResolutionError` imported because tests still construct nested intentional models and inspect the preserved cause chain.
-
-Import existing planning helper hooks:
+At module scope also import the existing planning helper hooks:
 
 ```python
 from tests.test_narrative_runtime_planning import (
@@ -1015,7 +1127,7 @@ from tests.test_narrative_runtime_planning import (
 )
 ```
 
-- [ ] **Step 2: Migrate existing simulation fixtures to explicit intentional wrappers**
+- [ ] **Step 2: Migrate existing scheduler fixtures to explicit intentional wrappers**
 
 Change `make_simulation_model()` agent construction to:
 
@@ -1034,23 +1146,16 @@ agents = (
 )
 ```
 
-Change `make_conflict_case()` in the same way.
+Change `make_conflict_case()` agent construction in the same way.
 
-Replace every fixture/test access to:
+Where tests need the nested intentional model, access:
 
-```text
-agent.intentional_model
+```python
+nested = model.agents[1].decision_model.model
+self.assertIsInstance(nested, RuntimeIntentionalDecisionModelSpec)
 ```
 
-with:
-
-```text
-agent.decision_model.model
-```
-
-where the test needs the nested intentional model.
-
-For unsupported decision-type construction use:
+For the unsupported decision-type test construct:
 
 ```python
 nested = model.agents[1].decision_model.model
@@ -1074,9 +1179,9 @@ unsupported_model = replace(
 )
 ```
 
-- [ ] **Step 3: Migrate assertions from intentional internals to common dispatch fields**
+- [ ] **Step 3: Migrate common scheduler assertions away from intentional internals**
 
-In the shared-prior-ledger test, replace intentional-specific access with:
+In `test_static_round_runs_every_agent_once_against_same_prior_ledger_and_builds_exact_intents`, use:
 
 ```python
 for agent_step in result.agent_steps:
@@ -1093,12 +1198,20 @@ for agent_step in result.agent_steps:
         prior.step_index,
     )
     self.assertEqual(
+        agent_step.action_intent.decision_id,
+        agent_step.decision_result.decision_id,
+    )
+    self.assertEqual(
+        agent_step.action_intent.selected_action,
+        agent_step.decision_result.selected_action,
+    )
+    self.assertEqual(
         agent_step.action_intent.selection_result_hash,
         agent_step.decision_result.content_hash,
     )
 ```
 
-Where an intentional belief is specifically under test, unwrap explicitly:
+In `test_two_round_action_world_percept_belief_action_causal_closure_without_story_mutation`, unwrap the intentional result explicitly before reading belief state:
 
 ```python
 nested = step1["a2"].decision_result.model_result
@@ -1106,7 +1219,7 @@ self.assertIsInstance(nested, RuntimeIntentionalDecisionResult)
 round1_belief = nested.belief_state
 ```
 
-Update the cognition-failure cause chain to:
+In `test_cognition_failure_blocks_all_world_projection_and_next_state`, require the two-level cause chain:
 
 ```python
 with self.assertRaises(SimulationStepError) as caught:
@@ -1118,9 +1231,9 @@ self.assertIsInstance(
 )
 ```
 
-- [ ] **Step 4: Add heterogeneous runtime hooks and a third authored decision**
+Keep the existing assertions that world hooks and projection hooks have zero calls after decision failure.
 
-Add these test-only helpers:
+- [ ] **Step 4: Add test-only heterogeneous hooks and a third authored decision**
 
 ```python
 class SchedulerReactiveScoreHook:
@@ -1150,11 +1263,8 @@ class SchedulerPlanningRewardHook:
         if context.action.id == "a3-wait":
             return 2.0 if alert is False else 0.0
         raise AssertionError("unexpected scheduler planning action")
-```
 
-Create the a3 authored decision:
 
-```python
 def make_a3_decision():
     return Decision(
         "d-a3-scheduler",
@@ -1177,7 +1287,7 @@ def make_a3_decision():
     )
 ```
 
-- [ ] **Step 5: Add a heterogeneous model fixture using all three families**
+- [ ] **Step 5: Add the three-family scheduler fixture**
 
 ```python
 def make_heterogeneous_case():
@@ -1197,14 +1307,13 @@ def make_heterogeneous_case():
         4.0,
         SchedulerReactiveScoreHook(),
     )
-    a3_belief = make_runtime_belief_model()
     c_planning = RuntimePlanningDecisionModelSpec(
         "c-runtime-planning",
         "1",
         ("scheduler-response-choice",),
         (alert_cell(),),
         (),
-        a3_belief,
+        make_runtime_belief_model(),
         (
             PlanningHiddenState(
                 "alert-off",
@@ -1254,7 +1363,7 @@ def make_heterogeneous_case():
     return domain, story, model
 ```
 
-- [ ] **Step 6: Add the single-round heterogeneous scheduler test**
+- [ ] **Step 6: Add the single-round three-family test**
 
 ```python
 def test_heterogeneous_round_dispatches_three_families_against_one_prior_ledger(self):
@@ -1265,8 +1374,15 @@ def test_heterogeneous_round_dispatches_three_families_against_one_prior_ledger(
     by_agent = {item.agent_id: item for item in result.agent_steps}
     self.assertEqual(tuple(sorted(by_agent)), ("a1", "a2", "a3"))
     self.assertEqual(
-        {agent: step.decision_result.model_kind for agent, step in by_agent.items()},
+        {
+            agent: step.decision_result.model_kind
+            for agent, step in by_agent.items()
+        },
         {"a1": "intentional", "a2": "reactive", "a3": "planning"},
+    )
+    self.assertIsInstance(
+        by_agent["a1"].decision_result.model_result,
+        RuntimeIntentionalDecisionResult,
     )
     self.assertIsInstance(
         by_agent["a2"].decision_result.model_result,
@@ -1276,7 +1392,8 @@ def test_heterogeneous_round_dispatches_three_families_against_one_prior_ledger(
         by_agent["a3"].decision_result.model_result,
         RuntimePlanningDecisionResult,
     )
-    for step in by_agent.values():
+    model_by_agent = {item.agent_id: item for item in model.agents}
+    for agent_id, step in by_agent.items():
         self.assertEqual(
             step.decision_result.ledger_hash,
             prior.evidence_ledger.content_hash,
@@ -1284,11 +1401,7 @@ def test_heterogeneous_round_dispatches_three_families_against_one_prior_ledger(
         self.assertEqual(step.decision_result.step_index, prior.step_index)
         self.assertEqual(
             step.decision_result.decision_model_hash,
-            next(
-                agent.decision_model.content_hash
-                for agent in model.agents
-                if agent.agent_id == step.agent_id
-            ),
+            model_by_agent[agent_id].decision_model.content_hash,
         )
         self.assertEqual(
             step.action_intent.selection_result_hash,
@@ -1297,7 +1410,7 @@ def test_heterogeneous_round_dispatches_three_families_against_one_prior_ledger(
     self.assertEqual(len(result.world_step.transitions), 3)
 ```
 
-- [ ] **Step 7: Add two-round heterogeneous causal-closure and replay test**
+- [ ] **Step 7: Add the two-round heterogeneous causal-closure/replay test**
 
 ```python
 def test_two_round_heterogeneous_replay_is_exact_and_uses_newly_admitted_information(self):
@@ -1307,8 +1420,20 @@ def test_two_round_heterogeneous_replay_is_exact_and_uses_newly_admitted_informa
     self.assertEqual(model1.content_hash, model2.content_hash)
     initial1 = simulation_state_from_story(story1, domain1, model1, at_time=10)
     initial2 = simulation_state_from_story(story2, domain2, model2, at_time=10)
-    first = simulate_trajectory(story1, domain1, initial1, model1, rounds=2)
-    second = simulate_trajectory(story2, domain2, initial2, model2, rounds=2)
+    first = simulate_trajectory(
+        story1,
+        domain1,
+        initial1,
+        model1,
+        rounds=2,
+    )
+    second = simulate_trajectory(
+        story2,
+        domain2,
+        initial2,
+        model2,
+        rounds=2,
+    )
     self.assertEqual(first.to_dict(), second.to_dict())
     self.assertEqual(first.content_hash, second.content_hash)
 
@@ -1330,26 +1455,22 @@ def test_two_round_heterogeneous_replay_is_exact_and_uses_newly_admitted_informa
     self.assertEqual(round1["a3"].decision_result.selected_action, "a3-respond")
 ```
 
-This test proves the runtime loop, not a new planning algorithm: a1 changes the world, projection/admission creates runtime evidence, and the reactive/planning agents consume that evidence in the next round.
-
-- [ ] **Step 8: Run scheduler tests and verify the intentional API migration RED**
+- [ ] **Step 8: Verify Scheduler V2 RED before production migration**
 
 ```bash
 python3 -m unittest tests.test_narrative_simulation -v
 ```
 
-Expected: failures are caused by the existing production scheduler still exposing `RuntimeAgentSpec.intentional_model`, requiring `RuntimeIntentionalDecisionResult`, and directly calling the intentional runner. The new dispatch module itself is already GREEN from Task 3.
+Expected: failures are restricted to the scheduler production contract still exposing `intentional_model`, requiring `RuntimeIntentionalDecisionResult`, and directly invoking the intentional runner. The new dispatch module from Task 3 must remain GREEN, and heterogeneous fixtures must construct successfully.
 
-There must be no fixture-validation failure while constructing the new a3 decision, reactive model, or planning model.
-
-- [ ] **Step 9: Commit the scheduler test-only RED**
+- [ ] **Step 9: Commit Scheduler V2 test-only RED and obtain exact-head RED CI**
 
 ```bash
 git add tests/test_narrative_simulation.py
 git commit -m "test: define multi-model scheduler v2 contract"
 ```
 
-Obtain a PR-triggered exact-head RED CI. Accept it only if existing non-scheduler tests remain green and failures are restricted to the intended scheduler V1/V2 contract mismatch.
+Accept the PR-triggered RED only when non-scheduler tests remain green and the failure set matches the V1/V2 scheduler mismatch.
 
 ---
 
@@ -1361,12 +1482,12 @@ Obtain a PR-triggered exact-head RED CI. Accept it only if existing non-schedule
 - Test: `tests/test_narrative_runtime_decision_dispatch.py`
 
 **Interfaces:**
-- Consumes `RuntimeDecisionModelSpec`, `RuntimeDecisionDispatchResult`, `RuntimeDecisionDispatchError`, `run_runtime_decision`.
-- Produces family-neutral scheduler records while preserving `SimulationModelSpec`, `SimulationState`, `SimulationStepResult`, and `SimulationTrajectory` public names.
+- Consumes `RuntimeDecisionModelSpec`, `RuntimeDecisionDispatchResult`, `RuntimeDecisionDispatchError`, and `run_runtime_decision`.
+- Preserves existing public simulation record names while replacing their intentional-specific internal boundary.
 
-- [ ] **Step 1: Replace intentional-specific simulation imports with generic dispatch imports**
+- [ ] **Step 1: Replace intentional-specific imports with the generic dispatch import**
 
-Remove the direct `runtime_intention` import block from `simulation.py` and add:
+Remove direct runtime-intention model/result/runner/error imports from `simulation.py` and add:
 
 ```python
 from narrative_dynamics.narrative.runtime_decision_dispatch import (
@@ -1377,11 +1498,9 @@ from narrative_dynamics.narrative.runtime_decision_dispatch import (
 )
 ```
 
-Do not import reactive, intentional, or planning model/result types directly into `simulation.py`.
+`simulation.py` must not directly import reactive, intentional, or planning family modules after this change.
 
-- [ ] **Step 2: Change `RuntimeAgentSpec` to one generic decision model field**
-
-Replace the record with:
+- [ ] **Step 2: Replace `RuntimeAgentSpec.intentional_model` with `decision_model`**
 
 ```python
 @dataclass(frozen=True)
@@ -1424,11 +1543,11 @@ class RuntimeAgentSpec:
         }
 ```
 
-Do not add an `intentional_model` property or constructor alias.
+Do not add a compatibility alias.
 
-- [ ] **Step 3: Make execution-binding validation family-neutral**
+- [ ] **Step 3: Make `_validate_execution_bindings()` family-neutral**
 
-Change the decision-type check inside `_validate_execution_bindings()` to:
+Replace the intentional field access with:
 
 ```python
 if decision.type_name not in agent.decision_model.supported_decision_types:
@@ -1437,7 +1556,7 @@ if decision.type_name not in agent.decision_model.supported_decision_types:
     )
 ```
 
-Do not inspect cue cells, goals, hidden states, planning horizon, or other family-specific configuration.
+The scheduler must not inspect cue cells, goals, hidden states, or planning horizon.
 
 - [ ] **Step 4: Change `SimulationAgentStep` to the common dispatch result**
 
@@ -1452,7 +1571,7 @@ class SimulationAgentStep:
     action_intent: ActionIntent
 ```
 
-Replace the intentional-specific constructor checks with:
+Its constructor must require:
 
 ```python
 if not isinstance(self.decision_result, RuntimeDecisionDispatchResult):
@@ -1463,17 +1582,19 @@ if self.agent_id != self.decision_result.actor_id:
     raise ValueError("simulation agent step agent must match decision result actor")
 if self.decision_template_id != self.decision_result.decision_id:
     raise ValueError("simulation agent step template must match decision result")
+if self.action_intent.decision_id != self.decision_result.decision_id:
+    raise ValueError("simulation action intent decision must match decision result")
+if self.action_intent.selected_action != self.decision_result.selected_action:
+    raise ValueError("simulation action intent action must match decision result")
+if self.action_intent.selection_model_id != self.decision_result.model_id:
+    raise ValueError("simulation action intent model must match decision result")
+if self.action_intent.selection_result_hash != self.decision_result.content_hash:
+    raise ValueError("simulation action intent result hash must bind decision result")
 ```
 
-Keep all existing `ActionIntent` binding checks, but require:
+- [ ] **Step 5: Replace the direct intentional call in `simulate_step()`**
 
-```python
-self.action_intent.selection_result_hash == self.decision_result.content_hash
-```
-
-- [ ] **Step 5: Replace direct intentional execution inside `simulate_step()`**
-
-For each canonical `agent` call:
+For each canonical agent:
 
 ```python
 try:
@@ -1490,7 +1611,7 @@ except RuntimeDecisionDispatchError as error:
     ) from error
 ```
 
-Then validate the shared-snapshot bindings before constructing the intent:
+Before constructing `ActionIntent`, require:
 
 ```python
 if result.actor_id != agent.agent_id:
@@ -1511,7 +1632,7 @@ if result.decision_model_hash != agent.decision_model.content_hash:
     )
 ```
 
-Construct `ActionIntent` with the generic result hash:
+Then construct:
 
 ```python
 intent = ActionIntent(
@@ -1522,11 +1643,9 @@ intent = ActionIntent(
 )
 ```
 
-Do not move `advance_world_step()` earlier. All generic decisions must finish before any world hook executes.
+- [ ] **Step 6: Preserve the world/projection/admission call order exactly**
 
-- [ ] **Step 6: Leave world/projection/admission code unchanged**
-
-The production diff after the decision loop must retain the existing call order:
+The code after all `agent_steps` are built must still call:
 
 ```python
 world_step = advance_world_step(
@@ -1546,9 +1665,9 @@ admission = admit_world_percepts(
 )
 ```
 
-No decision family receives same-round selected actions through the ledger.
+Do not expose same-round selected actions to another agent through the evidence ledger.
 
-- [ ] **Step 7: Run dispatch + complete scheduler suites**
+- [ ] **Step 7: Run dispatch, scheduler, and unchanged family suites**
 
 ```bash
 python3 -m unittest \
@@ -1557,19 +1676,7 @@ python3 -m unittest \
   -v
 ```
 
-Expected: PASS, including:
-
-```text
-all-intentional expected actions and causal closure
-three-family single-round dispatch
-three-family two-round replay
-shared prior ledger for every agent
-existing world conflict failure before projection
-existing projection/admission atomic failure behavior
-existing deterministic input-order/replay properties
-```
-
-Also run the unchanged family suites:
+Expected: PASS, including all-intentional behavioral expectations, three-family single-round execution, two-round heterogeneous replay, shared-prior-ledger assertions, and existing atomic failure tests.
 
 ```bash
 python3 -m unittest \
@@ -1581,7 +1688,7 @@ python3 -m unittest \
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit Scheduler V2 GREEN**
+- [ ] **Step 8: Commit Scheduler V2 GREEN and obtain exact-head CI**
 
 ```bash
 git add narrative_dynamics/narrative/simulation.py
@@ -1592,14 +1699,14 @@ Reviewer gate:
 
 ```text
 simulation.py imports generic dispatch, not family decision modules
-RuntimeAgentSpec has exactly decision_model, no compatibility alias
-SimulationAgentStep contains generic dispatch result
-all agents still decide before world transition
-ActionIntent points to dispatch result hash
-world/projection/admission code is semantically unchanged
+RuntimeAgentSpec has decision_model and no intentional_model alias
+SimulationAgentStep binds RuntimeDecisionDispatchResult
+all agent decisions finish before world transition
+ActionIntent points to generic dispatch result hash
+world/projection/admission semantics are unchanged
 ```
 
-Obtain exact-head CI and verify scheduler tests are GREEN before the public-surface task.
+Do not proceed to public exports until the exact-head scheduler CI shows the scheduler/dispatch suites GREEN.
 
 ---
 
@@ -1610,11 +1717,11 @@ Obtain exact-head CI and verify scheduler tests are GREEN before the public-surf
 
 **Interfaces:**
 - Adds exactly four narrative-package public names.
-- Keeps the root `narrative_dynamics` package unchanged.
+- Root package remains unchanged.
 
-- [ ] **Step 1: Extend `_EXPECTED_PUBLIC_API` by exactly four dispatch names**
+- [ ] **Step 1: Extend `_EXPECTED_PUBLIC_API` by exactly four names**
 
-Add a section between planning selection and multi-step simulation:
+Add between the planning and simulation sections:
 
 ```python
 # Runtime generic decision dispatch.
@@ -1624,9 +1731,7 @@ Add a section between planning selection and multi-step simulation:
 "run_runtime_decision",
 ```
 
-Do not add family-private helpers, unions, kind constants, or scheduler aliases.
-
-- [ ] **Step 2: Run the trust surface test and verify RED**
+- [ ] **Step 2: Verify the exact four-name public-surface RED**
 
 ```bash
 python3 -m unittest \
@@ -1634,16 +1739,16 @@ python3 -m unittest \
   -v
 ```
 
-Expected: FAIL with exactly these four names present in `_EXPECTED_PUBLIC_API` but absent from `narrative_dynamics.narrative.__all__`. Root isolation assertions must not be the cause yet.
+Expected: FAIL because exactly these four names are missing from `narrative_dynamics.narrative.__all__`. No root-isolation failure should occur because the root package has not changed.
 
-- [ ] **Step 3: Commit the public-surface test-only RED**
+- [ ] **Step 3: Commit the public-surface test-only RED and obtain exact-head CI**
 
 ```bash
 git add tests/test_narrative_trust_api.py
 git commit -m "test: lock narrative decision dispatch surface"
 ```
 
-Obtain exact-head CI and confirm the only new failure is the expected four-name surface RED.
+Accept the RED only if the fresh Python log shows the trust-surface test as the only newly failing contract.
 
 ---
 
@@ -1662,9 +1767,7 @@ Obtain exact-head CI and confirm the only new failure is the expected four-name 
   - `RuntimeDecisionDispatchError`
   - `run_runtime_decision`
 
-- [ ] **Step 1: Import the exact four names into the narrative package**
-
-Add:
+- [ ] **Step 1: Import exactly the four dispatch names into the narrative package**
 
 ```python
 from narrative_dynamics.narrative.runtime_decision_dispatch import (
@@ -1679,8 +1782,6 @@ Do not modify `narrative_dynamics/__init__.py`.
 
 - [ ] **Step 2: Extend narrative `__all__` by exactly four names**
 
-Place the four names adjacent to the runtime decision-family sections:
-
 ```python
 "RuntimeDecisionModelSpec",
 "RuntimeDecisionDispatchResult",
@@ -1690,7 +1791,7 @@ Place the four names adjacent to the runtime decision-family sections:
 
 Do not export `_MODEL_TYPES`, `_RESULT_TYPES`, validators, or extraction helpers.
 
-- [ ] **Step 3: Run targeted trust, dispatch, and scheduler suites**
+- [ ] **Step 3: Run targeted trust/dispatch/scheduler suites**
 
 ```bash
 python3 -m unittest \
@@ -1708,11 +1809,11 @@ Expected: PASS.
 python3 -m unittest discover -s tests -v
 ```
 
-Expected: all tests PASS with zero failures/errors. Record the exact test count from the output; do not copy the previous 579 count unless the fresh run still reports 579 after adding the new tests.
+Expected: zero failures and zero errors. Record the fresh `Ran N tests` count; do not reuse the previous 579-test count unless the fresh output still says 579 after the new tests are included.
 
 - [ ] **Step 5: Verify final diff scope against the integrated base**
 
-The final feature diff may contain only:
+Only these eight paths may differ from the integrated base:
 
 ```text
 docs/superpowers/specs/2026-08-27-narrative-generic-decision-dispatch-v2-design.md
@@ -1725,7 +1826,7 @@ tests/test_narrative_simulation.py
 tests/test_narrative_trust_api.py
 ```
 
-If any family algorithm, world/projection/cognition, root package, prison/model-comparison, or Lean path appears, stop and review the scope before final CI.
+If any family algorithm, cognition/world/projection, root package, model-comparison/prison, or Lean path appears, stop before final CI and review the scope.
 
 - [ ] **Step 6: Commit the public export GREEN**
 
@@ -1736,7 +1837,7 @@ git commit -m "feat: export runtime decision dispatch surface"
 
 - [ ] **Step 7: Obtain authoritative final exact-head PR CI**
 
-The final accepted proof must satisfy:
+The accepted proof must satisfy:
 
 ```text
 workflow = proof
@@ -1755,57 +1856,56 @@ Narrative testimony theorem tests = success
 
 Read the Python job log and record the fresh `Ran N tests` / `OK` line.
 
-- [ ] **Step 8: Perform final review gates before integration**
+- [ ] **Step 8: Perform final review gates and update the PR body**
 
 Verify:
 
 ```text
-PR review submissions: no unresolved request-changes blocker
-inline review threads: none unresolved
-conversation comments: no unresolved blocker
-PR head SHA: exact final GREEN head
-PR base: proof/narrative-dynamics-v0
-changed paths: exactly the approved scope
+PR head SHA = exact final GREEN head
+PR base = proof/narrative-dynamics-v0
+review submissions = no unresolved request-changes blocker
+inline threads = none unresolved
+conversation comments = no unresolved blocker
+changed paths = exactly approved scope
 ```
 
 Update the PR body with:
 
 ```text
-authoritative RED run number + exact test-only SHA
-dispatch GREEN slices
-scheduler V2 RED/GREEN slices
-heterogeneous three-family single-round evidence
-heterogeneous two-round deterministic replay evidence
-final exact-head proof run number and test count
-explicit note that old V1 simulation hashes are not compatibility targets
+authoritative Task 1 RED run + exact SHA
+dispatch records/runner GREEN commits
+scheduler V2 RED/GREEN commits
+three-family single-round evidence
+two-round heterogeneous replay evidence
+final exact-head proof run + fresh test count
+explicit statement that pre-V2 simulation hashes are not compatibility targets
 ```
 
-Mark the PR ready only after all gates above are satisfied. Do not merge automatically; integration remains the user's finishing decision.
+Mark the PR ready only after every gate is satisfied. Do not merge automatically; integration remains the user's finishing decision.
 
 ---
 
 ## Completion Checklist
 
-Before calling the feature complete, verify every item from the design against a concrete test or diff:
+Before any completion claim, verify each item with a test, source check, diff check, or exact-head CI artifact:
 
-- [ ] Closed model kinds are exactly reactive / intentional / planning.
-- [ ] Wrapper tag/type mismatch fails before family hooks.
-- [ ] Wrapper identity binds nested model, wrapper implementation, and generic runner implementation.
-- [ ] Common result exposes only genuine shared fields.
-- [ ] Common result retains exact nested family result payload and hash.
-- [ ] Intentional actor/ledger extraction comes from its runtime belief state; no fake new latent field is added to the intentional result.
-- [ ] Generic runner has exactly `(story, domain, decision_id, ledger, model)` parameters.
+- [ ] Model kinds are exactly reactive / intentional / planning.
+- [ ] Tag/type mismatch fails before family hooks.
+- [ ] Wrapper identity binds nested model hash, wrapper implementation identity, and generic runner implementation identity.
+- [ ] Common result contains only genuine shared fields and the exact typed nested family result.
+- [ ] Intentional actor and ledger are derived from `RuntimeIntentionalDecisionResult.belief_state`; the intentional result type itself is unchanged.
+- [ ] Generic runner signature is exactly `(story, domain, decision_id, ledger, model)`.
 - [ ] Dispatcher has no world/simulation/projection/RNG capability.
-- [ ] Family failures normalize to `RuntimeDecisionDispatchError` with exact cause preserved.
+- [ ] Family failures become `RuntimeDecisionDispatchError` with exact cause preserved.
 - [ ] `RuntimeAgentSpec` has one `decision_model` field and no `intentional_model` alias.
 - [ ] `SimulationAgentStep` binds `RuntimeDecisionDispatchResult`.
-- [ ] Action intent hash points to generic dispatch result.
-- [ ] All agents use the exact same prior ledger in one round.
+- [ ] `ActionIntent.selection_result_hash` points to the generic dispatch result.
+- [ ] Every scheduled agent reads the exact same prior ledger in one round.
 - [ ] Reactive + intentional + planning agents execute in one atomic round.
-- [ ] A two-round heterogeneous trajectory consumes newly admitted evidence and replays exactly.
-- [ ] Existing conflicting-write rejection remains atomic and projection does not run after world conflict.
-- [ ] All-intentional behavioral expectations remain unchanged even though V2 content hashes are allowed to change.
+- [ ] Two-round heterogeneous execution consumes newly admitted evidence and replays exactly.
+- [ ] Existing overlapping-write conflict remains typed/atomic and still blocks projection.
+- [ ] All-intentional selected actions/world/ledger behavior remains unchanged even though V2 content hashes may change.
 - [ ] Narrative package exports exactly four new dispatch names.
-- [ ] Root package exports none of the new narrative names.
-- [ ] Final diff stays within the eight approved paths.
+- [ ] Root package exports none of the new dispatch names.
+- [ ] Final diff contains only the eight approved paths.
 - [ ] Final exact-head PR `proof` is completed/success with fresh full-suite evidence.
