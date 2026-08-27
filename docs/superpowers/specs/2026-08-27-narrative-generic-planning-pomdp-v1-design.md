@@ -194,6 +194,10 @@ The hook must return a probability for exactly every declared hidden-state ID.
 
 This hook is mandatory because the existing runtime belief is cell-marginal. V1 must not silently multiply marginal distributions and thereby assume conditional independence.
 
+The hook is allowed to choose a coupling/correlation structure, but it is not allowed to change the runtime posterior marginals. After validating the returned joint distribution, the runner marginalizes it over every declared `planning_cell`. For every typed value in that cell's `BeliefDistribution`, the sum of joint mass assigned to hidden states carrying that value must equal the runtime posterior mass within `abs_tol=1e-12`, `rel_tol=0`. Values with positive runtime posterior mass must therefore be represented by the declared hidden-state space. Any joint distribution that cannot reproduce every runtime cell posterior fails typed before planning recursion begins.
+
+This is the scientific boundary between an explicit correlation assumption and an illicit belief rewrite.
+
 ### 7.2 Transition context
 
 ```python
@@ -270,10 +274,12 @@ class PlanningBeliefState:
 
 Validation requires:
 
-- exact hidden-state coverage at the model/result boundary;
 - finite non-negative non-boolean probabilities;
+- at least one probability entry;
 - `math.fsum(...)` equal to 1 with `abs_tol=1e-12`, `rel_tol=0`;
 - lexical key ordering.
+
+Exact hidden-state coverage is additionally required whenever a `PlanningBeliefState` is used by a model, solver, trace, or result.
 
 Its content hash is the canonical memoization and trace identity for a belief vector.
 
@@ -380,7 +386,7 @@ Execution order is fail-closed:
 10. validate the root/future action schedule against the selected authored actions;
 11. compute `RuntimeUncertainBeliefState` for exactly `planning_cells` through `runtime_uncertain_belief_state(...)`;
 12. project that belief to a provenance-free semantic posterior mapping;
-13. call `joint_belief_hook` and validate the exact root `PlanningBeliefState`;
+13. call `joint_belief_hook`, validate the exact root `PlanningBeliefState`, and require its per-cell marginals to reproduce every runtime posterior distribution;
 14. solve the finite planning recursion;
 15. convert root action values to a policy using the shared `finite_softmax(..., beta=model.beta)`;
 16. validate exact action coverage, finite non-negative probability mass, and simplex sum;
@@ -499,7 +505,21 @@ class PlanningValueRecord:
     total_value: float
 ```
 
-For terminal depth, `expected_future_value` is exactly `0.0`.
+`expected_future_value` is the undiscounted observation-weighted continuation term:
+
+```text
+sum_o p(o|b,a,d) V_{d+1}(b'_o)
+```
+
+and therefore:
+
+```text
+total_value = expected_immediate_reward + discount * expected_future_value
+```
+
+At terminal depth, `expected_future_value` is exactly `0.0` and `total_value == expected_immediate_reward`.
+
+There is exactly one value record for each solved `(depth, belief_hash, action_id)` tuple.
 
 ### 14.2 Belief-update records
 
@@ -514,9 +534,9 @@ class PlanningBeliefUpdate:
     posterior: PlanningBeliefState
 ```
 
-Only positive-probability observation branches receive update records.
+Only positive-probability observation branches receive update records. For one solved prior belief and action there is at most one record per observation ID.
 
-The complete trace is sorted canonically by depth, belief hash, action ID, and observation ID as applicable. It is data, not certification; result validation rechecks its binding to the root solution.
+The complete trace is sorted canonically by depth, belief hash, action ID, and observation ID as applicable. Trace records are audit data, not independent certification of hook semantics. Their constructors validate local shape and cross-record identities; the public runner is responsible for constructing them from validated hook outputs.
 
 ## 15. Result contract
 
@@ -541,14 +561,16 @@ class RuntimePlanningDecisionResult:
 Validation requires:
 
 - exact model identity and valid hashes;
-- actor/decision/step agreement with the embedded runtime belief state;
-- ledger hash equals the embedded runtime belief state's upstream ledger binding where exposed by that type;
-- root planning belief exactly covers model hidden states;
+- `actor_id == belief_state.agent_id`;
+- `step_index == belief_state.step_index`;
+- `ledger_hash == belief_state.ledger_hash` exactly;
+- root planning belief exactly covers model hidden states when validated by the runner/model boundary;
 - `action_values` and `action_policy` exactly cover authored root actions;
 - action values are finite numeric non-booleans;
 - policy probabilities are finite, non-negative, and sum to 1 within `1e-12` absolute tolerance;
 - `selected_action` is the lexical MAP action;
-- trace records are canonical, finite, depth-valid, and bind the root belief/action values.
+- value/update records are canonical, unique, finite, and depth-valid;
+- for every root action there is exactly one depth-zero value record whose `belief_hash == planning_belief.content_hash` and whose `total_value` equals the corresponding `action_values` entry.
 
 The comparison-relevant common boundary across reactive, intentional, and planning results is:
 
@@ -571,7 +593,7 @@ class RuntimePlanningDecisionResolutionError(ValueError):
 The public runner normalizes ordinary `Exception` failures from:
 
 - runtime belief resolution;
-- joint-belief hook;
+- joint-belief hook and marginal-coupling validation;
 - transition hook;
 - observation hook;
 - reward hook;
@@ -617,8 +639,10 @@ Require:
 
 - reactive and myopic intentional models to use only current admitted information;
 - planning to value the observation branch through future posterior-dependent action value;
-- planning policy to differ from both lower-complexity families;
-- the difference to disappear when the observation kernel is replaced with the state-independent/no-information kernel while other declared reward/transition assumptions are held fixed as required by the fixture.
+- informative-observation planning policy to differ from both lower-complexity families;
+- replacing only the informative observation kernel with a state-independent/no-information kernel to leave every resulting posterior equal to the predicted belief and to change the planning policy in the expected direction, specifically reducing the information-gathering action's probability in the fixture.
+
+V1 does not require a general multi-step no-information planner to equal a myopic model. Exact cross-family equivalence is locked only by the horizon-one fixture where no future value term exists.
 
 ### 17.4 Objective-state non-leakage
 
@@ -629,7 +653,18 @@ Lock both of these:
 
 Hook-context tests must prove no story/domain/ledger/provenance/world objects are reachable through the four hook context records.
 
-### 17.5 Exact replay and forgery rejection
+### 17.5 Joint-belief coupling validity
+
+Provide at least two `planning_cells` with a runtime posterior for which multiple joint couplings are possible.
+
+Require:
+
+- a correlated coupling that reproduces all cell marginals is accepted;
+- an independent-product coupling is accepted only when it reproduces the declared marginals, without being privileged by the runtime;
+- any returned joint distribution that changes even one runtime marginal is rejected before transition/observation/reward hooks execute;
+- a hidden-state space incapable of representing a positive posterior value fails typed rather than silently renormalizing the representable states.
+
+### 17.6 Exact replay and forgery rejection
 
 Fixed inputs must produce exactly identical result payload/content hash across runs.
 
@@ -702,7 +737,7 @@ P1 Generic Planning / POMDP V1 is complete when the repository can express and e
 ```text
 runtime admitted evidence
   -> finite posterior semantics
-  -> explicit joint hidden-state belief
+  -> explicit joint hidden-state belief that preserves every posterior marginal
   -> hypothetical transition
   -> hypothetical observation
   -> Bayesian future belief
