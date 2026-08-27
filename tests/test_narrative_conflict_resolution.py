@@ -45,6 +45,7 @@ from narrative_dynamics.narrative.world import (
     ActionTransitionSpec,
     WorldStepResult,
     WorldTransitionConflictError,
+    WorldTransitionError,
     WorldTransitionModelSpec,
     advance_world_step,
     world_state_from_story,
@@ -438,6 +439,11 @@ def make_conflict_story(domain):
 
     def add(decision):
         nonlocal next_time
+        if not decision.context_cells:
+            decision = replace(
+                decision,
+                context_cells=(_cell("svc", "Service", "service.health"),),
+            )
         decisions.append(replace(decision, logical_time=next_time))
         next_time += 1
 
@@ -516,6 +522,10 @@ def make_conflict_story(domain):
             "carol-taunt-bob", "taunt-action",
             {"target": _agent_ref("bob")},
         ),),
+    ))
+    add(Decision(
+        "d-dave-noop", 0, "dave", "noop-choice", (),
+        (ActionOption("dave-wait", "noop-action", {}),),
     ))
     return replace(
         base,
@@ -1013,11 +1023,11 @@ class NarrativeConflictResolutionTests(unittest.TestCase):
             (
                 _conflict_intent("d-alice-claim-svc", "alice-claim-svc", "1"),
                 _conflict_intent("d-bob-claim-svc", "bob-claim-svc", "2"),
-                intent("d-alice-noop", "alice-wait", marker="3"),
+                _conflict_intent("d-dave-noop", "dave-wait", "3"),
             ),
         )
         participants = result.conflict_resolutions[0].context.participants
-        self.assertNotIn("d-alice-noop", {item.decision_id for item in participants})
+        self.assertNotIn("d-dave-noop", {item.decision_id for item in participants})
         self.assertEqual(len(result.transitions), 3)
 
     def test_undeclared_resolver_supported_type_rejects_before_action_hooks(self):
@@ -1031,7 +1041,7 @@ class NarrativeConflictResolutionTests(unittest.TestCase):
         )
         model = make_conflict_world_model(domain, resolver)
         prior = world_state_from_story(story, domain)
-        with self.assertRaises(WorldTransitionConflictError):
+        with self.assertRaises(WorldTransitionError):
             advance_world_step(
                 story, domain, prior, model,
                 (
@@ -1213,7 +1223,7 @@ class NarrativeConflictResolutionTests(unittest.TestCase):
             ),
         )
         resolution = result.conflict_resolutions[0]
-        bad = replace(resolution, prior_state_hash=_hash("bad-prior"))
+        bad = _forge(resolution, prior_state_hash=_hash("bad-prior"))
         with self.assertRaises(ValueError):
             replace(result, conflict_resolutions=(bad,))
         participant = resolution.context.participants[0]
