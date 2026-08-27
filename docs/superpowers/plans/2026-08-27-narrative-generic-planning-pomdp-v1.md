@@ -4,7 +4,7 @@
 
 **Goal:** Add a narrative-native deterministic finite-horizon POMDP decision sidecar that starts from admitted runtime belief, preserves those posterior marginals through an explicit joint coupling, values hypothetical transitions and future observations without objective-world access, and returns a complete root action policy plus lexical MAP action.
 
-**Architecture:** Implement one isolated `runtime_planning.py` sidecar. The sidecar reuses `runtime_uncertain_belief_state(...)` for the only runtime information input, projects its cell-marginal posterior into a validated joint hidden-state coupling, solves a finite soft Bellman recursion over declared hidden states/observations/actions, and uses shared `finite_softmax` for every decision depth. Scheduler polymorphism, real world rollout, and released model-comparison integration stay out of scope.
+**Architecture:** Implement one isolated `runtime_planning.py` sidecar. It reuses `runtime_uncertain_belief_state(...)` for the only runtime information input, projects cell-marginal posterior semantics into a validated joint hidden-state coupling, solves a finite soft Bellman recursion over declared hidden states/observations/actions, and uses shared `finite_softmax` at every decision depth. Scheduler polymorphism, real world rollout, and released model-comparison integration stay out of scope.
 
 **Tech Stack:** Python 3 stdlib (`dataclasses`, `math`, `MappingProxyType`, `unittest`), existing `narrative_dynamics` typed IR/runtime cognition/attestation/content hashing, shared `grounded_goal_softmax.finite_softmax`, GitHub Actions `proof.yml`.
 
@@ -14,34 +14,34 @@
 
 - Integrated base is `proof/narrative-dynamics-v0` at `8aae284fe02f27a76b6d00a651be152f49a9e6ed`.
 - Current feature branch is `work/narrative-generic-planning-pomdp-v1`.
-- Branch already contains the isolated CI trigger refactor commit `b328091c81217c12467bcf4610a04304a5bf3eae`; do not modify CI again in this feature unless a concrete workflow defect appears.
-- Pure changes under `docs/superpowers/specs/**` and `docs/superpowers/plans/**` do not trigger proof CI. The first authoritative planning CI must therefore be the test-only RED commit, not this plan commit.
+- Branch already contains isolated CI trigger refactor commit `b328091c81217c12467bcf4610a04304a5bf3eae`; do not modify CI again unless a concrete workflow defect appears.
+- Pure changes under `docs/superpowers/specs/**` and `docs/superpowers/plans/**` do not trigger proof CI. The first authoritative planning CI is therefore the test-only RED commit, not design/plan commits.
 - Production planning scope is limited to `narrative_dynamics/narrative/runtime_planning.py` plus exact exports in `narrative_dynamics/narrative/__init__.py`.
 - Test scope is `tests/test_narrative_runtime_planning.py` plus the exact public-surface extension in `tests/test_narrative_trust_api.py`.
 - Do not modify `GenericNarrative`, `DomainSpec`, authored decisions, `runtime_cognition.py`, `runtime_intention.py`, `runtime_reactive.py`, `world.py`, `observation_projection.py`, `simulation.py`, released model-comparison infrastructure, prison adapters, or Lean sources.
 - `runtime_planning.py` must not import `narrative_dynamics.narrative.world`, `observation_projection`, `simulation`, `runtime_intention`, or `runtime_reactive`.
-- The public runner signature is exactly `run_runtime_planning_decision(story, domain, decision_id, ledger, model)`; no `WorldState`, RNG, explicit step, real transition model, or observation projection model argument is allowed.
-- Planning hidden states and observation atoms are finite, narrative-grounded, typed declarations. No dynamic state/observation token creation is allowed during recursion.
-- The joint-belief hook is mandatory and its output must be a legal coupling: marginalizing the joint over every `planning_cell` must reproduce the corresponding runtime posterior exactly within absolute tolerance `1e-12`, relative tolerance `0`.
-- Never silently multiply marginals in production code. A product coupling is acceptable only as an explicit test/model hook.
-- Transition/observation distributions must exactly cover their declared spaces, be finite/non-negative/non-boolean, and sum to one within absolute tolerance `1e-12`, relative tolerance `0`.
-- Reward values and all derived Q/value terms must be finite numeric non-booleans.
-- Bayesian zero-evidence observations are impossible branches: skip recursion and emit no `PlanningBeliefUpdate` for them.
-- No probability clipping. Invalid normalization is a typed planning resolution failure.
-- The Bellman recursion is soft at every depth: `pi = finite_softmax(Q, beta)` and `V = sum(pi[a] * Q[a])`; never replace future choice with hard `max`.
-- V1 uses no RNG. Same inputs must produce byte-for-byte equivalent canonical result payloads/content hashes.
+- Public runner signature is exactly `run_runtime_planning_decision(story, domain, decision_id, ledger, model)`; no `WorldState`, RNG, explicit step, real transition model, or observation projection model argument is allowed.
+- Planning hidden states and observation atoms are finite, narrative-grounded typed declarations. Recursion cannot dynamically create state or observation IDs.
+- Joint-belief hook is mandatory. Marginalizing its joint distribution over every `planning_cell` must reproduce that cell's runtime posterior within absolute tolerance `1e-12`, relative tolerance `0`.
+- Never silently multiply marginals in production. Product coupling exists only as an explicit test/model hook.
+- Transition/observation distributions exactly cover their declared spaces, contain finite non-negative non-boolean values, and sum to one within absolute tolerance `1e-12`, relative tolerance `0`.
+- Reward values and all derived Q/value terms are finite numeric non-booleans.
+- Zero-evidence observations are impossible branches: do not recurse and do not emit `PlanningBeliefUpdate`.
+- Do not clip probabilities. Invalid normalization is a typed planning resolution failure.
+- Bellman recursion is soft at every depth: `pi = finite_softmax(Q, beta)` and `V = sum(pi[a] * Q[a])`; never replace future choice with hard `max`.
+- V1 uses no RNG. Same inputs produce identical canonical result payloads/content hashes.
 - Selected runtime action is deterministic lexical MAP of the root policy.
-- Model identity binds runtime belief model, hidden/observation spaces, schedule, parameters, discount/beta, all four hook implementation attestations, planning model implementation identity, and shared softmax implementation identity.
+- Model identity binds runtime belief model, hidden/observation spaces, schedule, parameters, discount/beta, all four hook attestations, planning implementation identity, and shared softmax implementation identity.
 - `narrative_dynamics.narrative` gains exactly 13 planning names; package root `narrative_dynamics` gains none.
-- Use strict RED -> GREEN -> atomic commit discipline. Do not claim final GREEN without completed/success proof CI on the exact final feature head.
+- Use strict RED -> GREEN -> atomic commit discipline. No final GREEN claim without completed/success proof CI on the exact final feature head.
 
 ## File Structure
 
-- `narrative_dynamics/narrative/runtime_planning.py` — all V1 planning value records, sanitized hook contexts, model/result contracts, preflight validation, joint-coupling validation, finite Bayesian solver, audit trace, public runner.
+- `narrative_dynamics/narrative/runtime_planning.py` — V1 planning records, sanitized contexts, model/result contracts, preflight, joint coupling, finite Bayesian solver, audit trace, public runner.
 - `narrative_dynamics/narrative/__init__.py` — exact 13 planning imports/exports only.
-- `tests/test_narrative_runtime_planning.py` — complete RED contract suite, scientific fixtures, leakage/import isolation, replay/forgery tests.
-- `tests/test_narrative_trust_api.py` — exact public API set gains exactly the 13 planning names; package-root isolation remains locked.
-- `docs/superpowers/specs/2026-08-27-narrative-generic-planning-pomdp-v1-design.md` — approved contract source of truth.
+- `tests/test_narrative_runtime_planning.py` — complete RED contract suite, scientific fixtures, import/leakage isolation, replay/forgery tests.
+- `tests/test_narrative_trust_api.py` — exact public API gains exactly 13 planning names; package-root isolation remains locked.
+- `docs/superpowers/specs/2026-08-27-narrative-generic-planning-pomdp-v1-design.md` — approved source contract.
 - `docs/superpowers/plans/2026-08-27-narrative-generic-planning-pomdp-v1.md` — this implementation plan.
 
 ---
@@ -54,11 +54,11 @@
 
 **Interfaces:**
 - Consumes: existing `RuntimeEvidenceLedger`, `RuntimeBeliefModelSpec`, `RuntimeUncertainBeliefState`, `BeliefDistribution`, `StateCellRef`, `TypedValue`, `ActionOption`, `finite_softmax`; existing test helpers in `tests/test_narrative_runtime_cognition.py`, `tests/test_narrative_runtime_intention.py`, and `tests/test_narrative_runtime_reactive.py`.
-- Produces: the authoritative RED contract for all 13 public planning symbols and all V1 behavior before any planning production module exists.
+- Produces: authoritative RED contract for all 13 public planning symbols and all V1 behavior before planning production exists.
 
-- [ ] **Step 1: Create the guarded planning import and reusable planning test fixtures**
+- [ ] **Step 1: Create guarded imports and reusable planning fixtures**
 
-At the top of `tests/test_narrative_runtime_planning.py`, use the same missing-module RED pattern as the reactive suite:
+Start `tests/test_narrative_runtime_planning.py` with:
 
 ```python
 from __future__ import annotations
@@ -71,17 +71,13 @@ import unittest
 from grounded_goal_softmax import finite_softmax
 from narrative_dynamics.attestation import measure_implementation
 from narrative_dynamics.contracts import stable_content_hash
-from narrative_dynamics.narrative.ir import ActionOption, TypedValue
-from narrative_dynamics.narrative.runtime_perception import runtime_evidence_ledger_from_story
-from tests.test_narrative_runtime_cognition import (
-    alert_cell,
-    empty_runtime_case,
-    phase_cell,
-)
+from narrative_dynamics.narrative.ir import TypedValue
+from tests.test_narrative_runtime_cognition import alert_cell, empty_runtime_case, phase_cell
 from tests.test_narrative_runtime_intention import make_runtime_intentional_model
 
 _PLANNING_IMPORT_ERROR: ImportError | None = None
 try:
+    import narrative_dynamics.narrative.runtime_planning as runtime_planning_module
     from narrative_dynamics.narrative.runtime_planning import (
         PlanningBeliefState,
         PlanningBeliefUpdate,
@@ -110,10 +106,6 @@ def _forge(instance, **changes):
             changes.get(item.name, getattr(instance, item.name)),
         )
     return forged
-
-
-def _probability_map(distribution):
-    return {mass.value: mass.probability for mass in distribution.masses}
 
 
 class ProductCouplingHook:
@@ -166,13 +158,34 @@ class ParameterRewardHook:
         return float(context.parameters["action_rewards"][context.action.id])
 ```
 
-Add `require_planning(self)` that fails with the captured import error, and a `make_model(...)` helper that creates a one-cell two-state baseline by default:
+Inside `NarrativeRuntimePlanningTests`, add:
 
 ```python
-def make_model(self, *, joint=None, transition=None, observation=None, reward=None,
-               planning_cells=None, observation_cells=(), hidden_states=None,
-               observations=None, schedule=None, discount=1.0, beta=2.0,
-               parameters=None, belief_model=None):
+def require_planning(self):
+    if _PLANNING_IMPORT_ERROR is not None:
+        self.fail(
+            "narrative runtime planning boundary is missing: "
+            f"{_PLANNING_IMPORT_ERROR}"
+        )
+
+
+def make_model(
+    self,
+    *,
+    joint=None,
+    transition=None,
+    observation=None,
+    reward=None,
+    planning_cells=None,
+    observation_cells=(),
+    hidden_states=None,
+    observations=None,
+    schedule=None,
+    discount=1.0,
+    beta=2.0,
+    parameters=None,
+    belief_model=None,
+):
     self.require_planning()
     if planning_cells is None:
         planning_cells = (phase_cell(),)
@@ -218,9 +231,9 @@ def make_model(self, *, joint=None, transition=None, observation=None, reward=No
     )
 ```
 
-- [ ] **Step 2: Add record/model/public-signature tests**
+- [ ] **Step 2: Add record/model/public-signature RED tests**
 
-Add these exact tests and assertions:
+Add these concrete tests:
 
 ```python
 def test_hidden_state_observation_and_belief_records_are_canonical(self):
@@ -230,6 +243,8 @@ def test_hidden_state_observation_and_belief_records_are_canonical(self):
     )
     none = PlanningObservation("none", {})
     belief = PlanningBeliefState({"ready": 0.25, "active": 0.75})
+    self.assertEqual(active.state_id, "active")
+    self.assertEqual(none.observation_id, "none")
     self.assertEqual(tuple(belief.probabilities), ("active", "ready"))
     self.assertEqual(math.fsum(belief.probabilities.values()), 1.0)
     with self.assertRaises((TypeError, ValueError)):
@@ -316,57 +331,57 @@ def test_public_signature_excludes_world_rng_and_explicit_step(self):
     )
 ```
 
-Also construct `RuntimePlanningBeliefContext`, `PlanningTransitionContext`, `PlanningObservationContext`, `PlanningRewardContext`, `PlanningValueRecord`, and `PlanningBeliefUpdate` directly in this group and assert frozen/canonical behavior plus invalid negative depth, invalid IDs, invalid probability, and non-finite reward/value rejection.
+Also directly construct every context/audit record with valid values, then assert invalid negative depth, empty IDs, non-finite values, and zero/negative `PlanningBeliefUpdate.observation_probability` are rejected.
 
-- [ ] **Step 3: Add preflight, coupling, kernel, solver, trace, and error tests**
+- [ ] **Step 3: Add preflight/coupling/kernel/solver/trace/error RED tests**
 
-Add these exact test methods:
+Add test methods with these exact names:
 
-```python
-def test_preflight_rejects_story_ledger_context_cutoff_and_schedule_before_hooks(self): ...
-def test_joint_belief_must_be_a_coupling_of_runtime_cell_marginals(self): ...
-def test_hook_contexts_are_sanitized_and_module_has_no_world_capability(self): ...
-def test_transition_observation_and_reward_hook_schemas_fail_typed(self): ...
-def test_zero_evidence_observation_is_skipped_and_no_information_preserves_prediction(self): ...
-def test_finite_horizon_soft_bellman_matches_hand_computed_values(self): ...
-def test_shared_softmax_produces_complete_root_policy_and_lexical_map(self): ...
-def test_hook_exceptions_are_wrapped_with_typed_causes(self): ...
-def test_result_and_trace_forgery_is_rejected(self): ...
-def test_fixed_inputs_replay_to_exact_result_and_content_hash(self): ...
+```text
+test_preflight_rejects_story_ledger_context_cutoff_and_schedule_before_hooks
+test_joint_belief_must_be_a_coupling_of_runtime_cell_marginals
+test_hook_contexts_are_sanitized_and_module_has_no_world_capability
+test_transition_observation_and_reward_hook_schemas_fail_typed
+test_zero_evidence_observation_is_skipped_and_no_information_preserves_prediction
+test_finite_horizon_soft_bellman_matches_hand_computed_values
+test_shared_softmax_produces_complete_root_policy_and_lexical_map
+test_hook_exceptions_are_wrapped_with_typed_causes
+test_result_and_trace_forgery_is_rejected
+test_fixed_inputs_replay_to_exact_result_and_content_hash
 ```
 
-Implement the test data with these locked semantics:
+Lock each method to these concrete assertions:
 
-1. **Preflight:** use hook objects with `calls=[]`; forge ledger domain/story/chain data, choose a planning cell outside authored context, use a decision after source cutoff, give root schedule missing one authored action, and give a later schedule containing an undeclared action. Each case must raise `RuntimePlanningDecisionResolutionError` and leave every hook call list empty.
-2. **Coupling:** use two planning cells `(phase_cell(), alert_cell())` and four hidden states covering the Cartesian value combinations. A valid `ProductCouplingHook` must pass. A bad hook returning all mass on one state must fail whenever either runtime marginal is non-degenerate. Verify failure occurs before transition/observation/reward hooks.
-3. **Sanitization/import isolation:** inspect every hook context from a successful run and assert it has no attributes named `story`, `domain`, `ledger`, `world`, `world_state`, `evidence`, `provenance`, or `runtime_evidence_history`. Read `inspect.getsource(runtime_planning_module)` and assert it contains none of `narrative.world`, `narrative.observation_projection`, `narrative.simulation`, `narrative.runtime_intention`, `narrative.runtime_reactive`.
-4. **Kernel schemas:** parameterize transition/observation hooks returning non-mapping, missing key, extra key, bool, NaN, infinity, negative mass, or non-unit total. Parameterize reward returning bool/NaN/infinity. Every case must become typed planning resolution failure with a cause.
-5. **No-information update:** for state-independent observation likelihoods, every positive-probability branch posterior equals the predicted next-state belief exactly by canonical payload; zero-evidence observations create no `PlanningBeliefUpdate`.
-6. **Soft Bellman:** use a two-depth, two-state deterministic-transition fixture where hand-computed Q values differ from a hard-max recursion. Assert each root `PlanningValueRecord.total_value`, `expected_immediate_reward`, and `expected_future_value` to `places=12`; assert future value is `sum(pi * Q)` from `finite_softmax`, not `max(Q)`.
-7. **Root policy/MAP:** root values with an exact tie must return equal policy coordinates and lexical smallest action as `selected_action` independent of input action ordering.
-8. **Hook exceptions:** each of the four hooks raises `RuntimeError("planning <hook> boom")` in a separate subtest; public error must be `RuntimePlanningDecisionResolutionError` and `__cause__` must be that runtime error.
-9. **Forgery:** replace nested planning belief, ledger hash, value record total, belief update posterior, model hash, and selected action using `_forge`; result constructor/revalidation must reject each mismatch.
-10. **Replay:** two calls with the same story/domain/ledger/model must have equal result objects, equal `to_dict()`, and equal `content_hash`.
+1. **Preflight:** hook objects have `calls=[]`; forge ledger domain/story/chain data, choose a planning cell outside authored context, use a decision after source cutoff, give root schedule missing one authored action, and give a later schedule containing an undeclared action. Every case raises `RuntimePlanningDecisionResolutionError`; every hook call list stays empty.
+2. **Coupling:** use planning cells `(phase_cell(), alert_cell())` and four hidden states covering all value combinations. `ProductCouplingHook` passes. A hook returning all mass on one state fails whenever either runtime marginal is non-degenerate; transition/observation/reward hooks remain uncalled.
+3. **Sanitization/import isolation:** after a successful run, every captured context lacks attributes `story`, `domain`, `ledger`, `world`, `world_state`, `evidence`, `provenance`, and `runtime_evidence_history`. `inspect.getsource(runtime_planning_module)` contains none of `narrative.world`, `narrative.observation_projection`, `narrative.simulation`, `narrative.runtime_intention`, `narrative.runtime_reactive`.
+4. **Kernel schemas:** transition/observation variants return non-mapping, missing key, extra key, bool, NaN, infinity, negative mass, and non-unit total. Reward variants return bool, NaN, infinity. Every case raises typed planning resolution error with a cause.
+5. **No-information update:** for state-independent observation likelihoods, every positive branch posterior equals the predicted next-state belief by canonical payload; zero-evidence observations create no `PlanningBeliefUpdate`.
+6. **Soft Bellman:** use two depths/two hidden states and deterministic transition. Choose values where hard-max continuation differs from `sum(pi * Q)`. Assert root `PlanningValueRecord.total_value`, `expected_immediate_reward`, `expected_future_value` to 12 decimal places and verify `expected_future_value` equals discounted soft continuation.
+7. **Root policy/MAP:** exact tie gives equal root policy coordinates and lexical smallest action independent of input action ordering.
+8. **Hook exceptions:** each of four hooks raises a distinct `RuntimeError`; public error is `RuntimePlanningDecisionResolutionError` and `__cause__` is the original runtime error.
+9. **Forgery:** standalone result validation rejects a forged `ledger_hash` that disagrees with embedded belief state, forged root value record total, forged belief update/posterior internal inconsistency, and forged selected action. A successful runner result separately asserts `result.model_hash == model.content_hash`; do not require standalone result construction to infer the correct model from an arbitrary valid-format hash.
+10. **Replay:** two identical calls produce equal result objects, equal `to_dict()`, and equal `content_hash`.
 
-- [ ] **Step 4: Add the three scientific fixtures**
+- [ ] **Step 4: Add the three scientific RED fixtures**
 
-Add these exact tests:
+Add test methods with these exact names:
 
-```python
-def test_horizon_one_policy_is_exactly_equivalent_across_planning_reactive_and_intentional(self): ...
-def test_state_independent_observation_has_zero_bayesian_information_gain(self): ...
-def test_value_of_information_separates_planning_from_reactive_and_intentional(self): ...
+```text
+test_horizon_one_policy_is_exactly_equivalent_across_planning_reactive_and_intentional
+test_state_independent_observation_has_zero_bayesian_information_gain
+test_value_of_information_separates_planning_from_reactive_and_intentional
 ```
 
-Lock the fixtures as follows:
+Fixture contracts:
 
-- Horizon one: identity transition, one no-information observation, same immediate action-score table and same beta. Planning, reactive, and a single-goal intentional fixture must have exactly equal `action_policy` mappings and the same lexical MAP action.
-- State-independent observation: use at least two observation atoms but identical likelihood vectors for every hidden state. For every emitted `PlanningBeliefUpdate`, compare posterior payload to the predicted prior-to-observation belief; they must be equal. Do not assert equality to a myopic utility because an extra delayed action can still change value without information gain.
-- Value of information: use root actions `inspect`, `act-a`, `act-b`; future schedule contains only `act-a`, `act-b`. Informative observation identifies the two hidden states sufficiently that `inspect` has positive continuation advantage net of inspection cost. Reactive and intentional fixtures only evaluate current information and do not gain that future branch. Assert planning policy differs from both. Replace only the observation kernel with state-independent likelihoods and assert the inspection advantage disappears while reward/transition declarations remain fixed.
+- Horizon one: identity transition, one no-information observation, same immediate action-score table and same beta. Planning, reactive, and a single-goal intentional fixture have exactly equal `action_policy` mappings and same lexical MAP action.
+- State-independent observation: at least two observation atoms with identical likelihood vectors under every hidden state. Every positive `PlanningBeliefUpdate.posterior` equals the predicted next-state belief. Do not assert equality to a myopic utility because delayed actions can change value without information gain.
+- Value of information: root actions `inspect`, `act-a`, `act-b`; future schedule only `act-a`, `act-b`. Informative observation makes inspection valuable net of cost. Reactive/intentional fixtures use only current admitted information. Planning policy differs from both. Replacing only observation likelihood with state-independent likelihood removes inspection's information advantage while reward, transition, discount, beta, belief, and schedule remain fixed.
 
 - [ ] **Step 5: Extend the exact narrative public-surface RED**
 
-In `_EXPECTED_PUBLIC_API` in `tests/test_narrative_trust_api.py`, add exactly:
+Add exactly these names to `_EXPECTED_PUBLIC_API` in `tests/test_narrative_trust_api.py`:
 
 ```python
     # Runtime planning selection.
@@ -385,11 +400,9 @@ In `_EXPECTED_PUBLIC_API` in `tests/test_narrative_trust_api.py`, add exactly:
     "run_runtime_planning_decision",
 ```
 
-Do not change the root-isolation assertion: these names must remain absent from `dir(narrative_dynamics)`.
+Keep the existing root-isolation assertion unchanged; these names remain absent from `dir(narrative_dynamics)`.
 
-- [ ] **Step 6: Run the RED suite locally or via available execution environment**
-
-Run:
+- [ ] **Step 6: Run the RED suite**
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_narrative_runtime_planning.py' -v
@@ -403,20 +416,20 @@ planning tests fail because narrative_dynamics.narrative.runtime_planning is mis
 trust public-surface test fails with exactly the 13 planned names missing
 ```
 
-If the local environment cannot run the repository, do not weaken the gate; commit the test-only RED and use GitHub Actions as the authoritative execution proof.
+If local execution is unavailable, keep the test-only commit and use GitHub Actions as authoritative RED; do not weaken tests.
 
-- [ ] **Step 7: Commit the complete test-only RED**
+- [ ] **Step 7: Commit test-only RED**
 
 ```bash
 git add tests/test_narrative_runtime_planning.py tests/test_narrative_trust_api.py
 git commit -m "test: define narrative planning pomdp contract"
 ```
 
-This commit changes non-ignored `tests/**`, so it must trigger proof CI.
+This changes non-ignored `tests/**`, so proof CI must trigger.
 
 - [ ] **Step 8: Create/update a draft PR and capture authoritative exact-head RED**
 
-Create a draft PR against `proof/narrative-dynamics-v0` if one does not yet exist. Fetch the proof run for the exact test-only head and require:
+Create a draft PR against `proof/narrative-dynamics-v0` if none exists. Require the proof run for the exact test-only head to reach:
 
 ```text
 status = completed
@@ -424,7 +437,7 @@ conclusion = failure
 head_sha = exact test-only RED commit
 ```
 
-Inspect the failing job log. Accept RED only if all pre-existing gates remain green up to the new planning failures and the failures are caused by the missing planning module/public names, not unrelated regressions.
+Inspect job logs. Accept RED only when prior gates remain green up to the new planning failures and failures are caused by missing planning module/public names rather than unrelated regressions.
 
 ---
 
@@ -436,33 +449,103 @@ Inspect the failing job log. Accept RED only if all pre-existing gates remain gr
 
 **Interfaces:**
 - Consumes: `StateCellRef`, `TypedValue`, `ActionOption`, `BeliefDistribution`, `RuntimeBeliefModelSpec`, `measure_implementation`, `stable_content_hash`, `finite_softmax`.
-- Produces: all 13 module-local public symbols so imports work; canonical data/model contracts; runner exists but may still fail semantic solver tests.
+- Produces: all 13 module-local public symbols; canonical data/model contracts; runner symbol with final signature.
 
-- [ ] **Step 1: Implement scalar/canonical helper functions and module constants**
+- [ ] **Step 1: Implement scalar/canonical helpers with only allowed imports**
 
-Start `runtime_planning.py` with only allowed imports and define:
+Use:
 
 ```python
 _HASH = re.compile(r"^sha256:[0-9a-f]{64}$")
 _PROBABILITY_TOLERANCE = 1e-12
 
 
-def _text(value: object, *, label: str) -> str: ...
-def _hash(value: object, *, label: str) -> str: ...
-def _depth(value: object, *, label: str) -> int: ...
-def _finite(value: object, *, label: str) -> float: ...
-def _probability(value: object, *, label: str) -> float: ...
-def _cell_key(cell: StateCellRef) -> tuple[str, str, str]: ...
-def _freeze_parameter(value: object, *, label: str) -> object: ...
-def _freeze_parameters(value: object) -> Mapping[str, object]: ...
-def _parameter_payload(value: object) -> object: ...
-```
+def _text(value: object, *, label: str) -> str:
+    if not isinstance(value, str) or not value.strip() or value != value.strip():
+        raise ValueError(f"{label} must be a non-empty trimmed string")
+    return value
 
-Match Reactive V1 canonical parameter rules exactly. Reject bool where numeric is required, non-finite floats, bytes, sets, arbitrary objects, callable parameter values, and empty mapping keys.
+
+def _hash(value: object, *, label: str) -> str:
+    if not isinstance(value, str) or _HASH.fullmatch(value) is None:
+        raise ValueError(f"{label} must be a sha256 content hash")
+    return value
+
+
+def _depth(value: object, *, label: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise ValueError(f"{label} must be a non-negative integer")
+    return value
+
+
+def _finite(value: object, *, label: str) -> float:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise TypeError(f"{label} must be numeric")
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError(f"{label} must be finite")
+    return number
+
+
+def _probability(value: object, *, label: str) -> float:
+    number = _finite(value, label=label)
+    if number < 0.0 or number > 1.0:
+        raise ValueError(f"{label} must be in [0, 1]")
+    return number
+
+
+def _cell_key(cell: StateCellRef) -> tuple[str, str, str]:
+    return (
+        cell.subject.entity_type,
+        cell.subject.entity_id,
+        cell.state_variable,
+    )
+
+
+def _freeze_parameter(value: object, *, label: str) -> object:
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError(f"{label} floats must be finite")
+        return value
+    if isinstance(value, Mapping):
+        frozen = {}
+        for key, item in value.items():
+            if not isinstance(key, str) or not key:
+                raise ValueError(f"{label} mapping keys must be non-empty strings")
+            frozen[key] = _freeze_parameter(item, label=f"{label}.{key}")
+        return MappingProxyType({key: frozen[key] for key in sorted(frozen)})
+    if isinstance(value, (list, tuple)):
+        return tuple(
+            _freeze_parameter(item, label=f"{label}[{index}]")
+            for index, item in enumerate(value)
+        )
+    raise TypeError(
+        f"{label} values must be canonical scalars, mappings, lists, or tuples"
+    )
+
+
+def _freeze_parameters(value: object) -> Mapping[str, object]:
+    if not isinstance(value, Mapping):
+        raise TypeError("runtime planning model parameters must be a mapping")
+    frozen = _freeze_parameter(value, label="runtime planning model parameters")
+    if not isinstance(frozen, Mapping):
+        raise TypeError("runtime planning model parameters must be a mapping")
+    return frozen
+
+
+def _parameter_payload(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {key: _parameter_payload(value[key]) for key in sorted(value)}
+    if isinstance(value, tuple):
+        return [_parameter_payload(item) for item in value]
+    return value
+```
 
 - [ ] **Step 2: Implement finite-space data records**
 
-Implement:
+Implement exactly these records:
 
 ```python
 @dataclass(frozen=True)
@@ -470,10 +553,12 @@ class PlanningHiddenState:
     state_id: str
     cells: Mapping[StateCellRef, TypedValue]
 
+
 @dataclass(frozen=True)
 class PlanningObservation:
     observation_id: str
     cues: Mapping[StateCellRef, TypedValue | None]
+
 
 @dataclass(frozen=True)
 class PlanningBeliefState:
@@ -484,14 +569,14 @@ Structural constructor rules:
 
 - freeze mappings with `MappingProxyType`;
 - canonicalize cells by `_cell_key` and belief IDs lexically;
-- record constructors validate only type/shape facts they can know without `DomainSpec`;
-- `PlanningBeliefState` requires non-empty probabilities, finite/non-negative/non-bool entries, and normalized sum within `1e-12`.
+- constructors validate type/shape facts knowable without `DomainSpec`;
+- `PlanningBeliefState` requires non-empty probabilities, finite non-negative non-bool entries, and normalized sum within `1e-12`.
 
-Domain typing, exact declared cell coverage, duplicate semantic hidden states, and exact hidden-state ID coverage belong in runner/model preflight where `DomainSpec` and the selected decision are available.
+Domain typing, exact declared cell coverage, duplicate semantic state/observation payloads, and exact model hidden-state coverage are runner/model preflight responsibilities because they require `DomainSpec` or model declarations.
 
 - [ ] **Step 3: Implement sanitized hook contexts and audit records**
 
-Implement exactly:
+Implement:
 
 ```python
 @dataclass(frozen=True)
@@ -499,6 +584,7 @@ class RuntimePlanningBeliefContext:
     posterior: Mapping[StateCellRef, BeliefDistribution]
     hidden_states: tuple[PlanningHiddenState, ...]
     parameters: Mapping[str, object]
+
 
 @dataclass(frozen=True)
 class PlanningTransitionContext:
@@ -508,6 +594,7 @@ class PlanningTransitionContext:
     candidate_next_states: tuple[PlanningHiddenState, ...]
     parameters: Mapping[str, object]
 
+
 @dataclass(frozen=True)
 class PlanningObservationContext:
     depth: int
@@ -515,6 +602,7 @@ class PlanningObservationContext:
     action: ActionOption
     observations: tuple[PlanningObservation, ...]
     parameters: Mapping[str, object]
+
 
 @dataclass(frozen=True)
 class PlanningRewardContext:
@@ -524,6 +612,7 @@ class PlanningRewardContext:
     next_state: PlanningHiddenState
     parameters: Mapping[str, object]
 
+
 @dataclass(frozen=True)
 class PlanningValueRecord:
     depth: int
@@ -532,6 +621,7 @@ class PlanningValueRecord:
     expected_immediate_reward: float
     expected_future_value: float
     total_value: float
+
 
 @dataclass(frozen=True)
 class PlanningBeliefUpdate:
@@ -543,7 +633,7 @@ class PlanningBeliefUpdate:
     posterior: PlanningBeliefState
 ```
 
-Every nested mapping/tuple is detached and canonicalized. Audit numeric fields are finite; observation probability is in `(0, 1]`; depths are non-negative.
+Detach/canonicalize nested mappings/tuples. Audit numbers are finite. `PlanningBeliefUpdate.observation_probability` must be strictly positive and at most one. Depths are non-negative.
 
 - [ ] **Step 4: Implement `RuntimePlanningDecisionModelSpec`**
 
@@ -584,7 +674,7 @@ Constructor validation:
 - canonical parameters;
 - all four hooks callable.
 
-`to_dict()` must bind:
+`to_dict()` binds:
 
 ```python
 {
@@ -609,11 +699,35 @@ Constructor validation:
 }
 ```
 
-- [ ] **Step 5: Define the result/error/public runner symbols so the module imports cleanly**
+- [ ] **Step 5: Define result/error/public runner symbols with final types**
 
-Define `RuntimePlanningDecisionResolutionError(ValueError)` and the complete `RuntimePlanningDecisionResult` field shape from the spec. Implement basic type/hash/simplex/lexical-MAP validation now; deeper solver/trace binding is added in Task 5.
+Define:
 
-Define the public runner with its final signature, but make it fail typed until preflight/solver tasks land:
+```python
+class RuntimePlanningDecisionResolutionError(ValueError):
+    """Runtime posterior semantics could not produce a valid planning decision."""
+
+
+@dataclass(frozen=True)
+class RuntimePlanningDecisionResult:
+    model_id: str
+    model_hash: str
+    decision_id: str
+    actor_id: str
+    step_index: int
+    ledger_hash: str
+    belief_state: RuntimeUncertainBeliefState
+    planning_belief: PlanningBeliefState
+    action_values: Mapping[str, float]
+    action_policy: Mapping[str, float]
+    selected_action: str
+    value_records: tuple[PlanningValueRecord, ...]
+    belief_updates: tuple[PlanningBeliefUpdate, ...]
+```
+
+At this task, implement constructor validations that are model-independent: valid IDs/hashes, actor/step/ledger match embedded `belief_state`, finite `action_values`, normalized `action_policy`, exact shared action keys, lexical MAP selection, typed/canonical audit tuples, root value-record consistency where determinable from result fields. Model-dependent exact hidden-state/schedule validation is added at the runner boundary in Task 5.
+
+Define the public runner with final signature and temporary typed RED behavior:
 
 ```python
 def run_runtime_planning_decision(
@@ -628,17 +742,15 @@ def run_runtime_planning_decision(
     )
 ```
 
-Add module-local `__all__` containing exactly the 13 names from the spec.
+Add module-local `__all__` containing exactly the 13 spec names.
 
-- [ ] **Step 6: Run the records/model subset**
-
-Run the planning test file and verify the constructor/model/public-signature tests pass while runner/solver tests remain RED:
+- [ ] **Step 6: Run records/model subset**
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_narrative_runtime_planning.py' -v
 ```
 
-Expected: planning import succeeds; record/model tests pass; semantic runner tests fail with the typed solver-not-implemented error.
+Expected: import succeeds; record/model/public-signature tests pass; semantic runner tests remain RED with typed solver-not-implemented error.
 
 - [ ] **Step 7: Commit**
 
@@ -657,16 +769,16 @@ git commit -m "feat: add narrative planning model records"
 
 **Interfaces:**
 - Consumes: `RuntimePlanningDecisionModelSpec`, `RuntimeEvidenceLedger`, `runtime_uncertain_belief_state(...)`, `RuntimeUncertainBeliefState`, selected authored `Decision`.
-- Produces: validated decision/model/ledger boundary and exact root `PlanningBeliefState` whose marginals equal the runtime posterior semantics.
+- Produces: validated decision/model/ledger boundary and exact root `PlanningBeliefState` whose marginals equal runtime posterior semantics.
 
 - [ ] **Step 1: Reconstruct model and ledger to reject constructor-bypass forgeries**
 
-Implement `_validated_model(model)` by constructing a fresh `RuntimePlanningDecisionModelSpec` from every public field and returning it only if the reconstructed value has the same canonical payload/content hash.
+Implement `_validated_model(model)` by constructing a fresh `RuntimePlanningDecisionModelSpec` from every public field and requiring equal canonical payload/content hash.
 
-Implement `_validated_ledger(story, domain, ledger)` by constructing a fresh `RuntimeEvidenceLedger` from:
+Implement `_validated_ledger(story, domain, ledger)` by reconstructing:
 
 ```python
-RuntimeEvidenceLedger(
+validated = RuntimeEvidenceLedger(
     ledger.domain_id,
     ledger.domain_version,
     ledger.domain_spec_hash,
@@ -678,13 +790,17 @@ RuntimeEvidenceLedger(
 )
 ```
 
-Then require exact:
+Then require:
 
-```text
-ledger.domain_id == domain.domain_id
-ledger.domain_version == domain.version
-ledger.domain_spec_hash == domain.content_hash
-ledger.source_story_hash == story.content_hash
+```python
+if validated.domain_id != domain.domain_id:
+    raise ValueError("runtime planning ledger domain id mismatch")
+if validated.domain_version != domain.version:
+    raise ValueError("runtime planning ledger domain version mismatch")
+if validated.domain_spec_hash != domain.content_hash:
+    raise ValueError("runtime planning ledger domain spec hash mismatch")
+if validated.source_story_hash != story.content_hash:
+    raise ValueError("runtime planning ledger source story mismatch")
 ```
 
 - [ ] **Step 2: Add decision/domain finite-space preflight**
@@ -699,18 +815,16 @@ Before any planning hook call:
 6. require planning/observation cells subsets of authored context;
 7. require every hidden state assign exactly `planning_cells`;
 8. require every observation assign exactly `observation_cells`;
-9. validate every non-`None` typed value using the same domain state-variable typing helper/path used by existing narrative validation rather than inventing a second type system;
+9. validate every non-`None` typed value through the existing domain state-variable typing path used by narrative validation;
 10. reject duplicate hidden-state semantic cell payloads under different IDs;
 11. reject duplicate observation semantic cue payloads under different IDs;
 12. if observation cells are empty, require exactly one observation with empty cues;
-13. root action schedule must equal the complete authored action ID set;
-14. every later schedule row must be a non-empty subset of the same authored action IDs.
+13. root schedule equals complete authored action ID set;
+14. every later schedule is non-empty subset of authored action IDs.
 
-Build a lexical `action_by_id` mapping from the authored `ActionOption` records for later hook contexts.
+Build lexical `action_by_id` from authored `ActionOption` values.
 
-- [ ] **Step 3: Resolve the runtime belief for exactly the planning cells**
-
-Call:
+- [ ] **Step 3: Resolve runtime belief for exactly planning cells**
 
 ```python
 belief_state = runtime_uncertain_belief_state(
@@ -721,22 +835,15 @@ belief_state = runtime_uncertain_belief_state(
     model.belief_model,
     model.planning_cells,
 )
-```
-
-Build a provenance-free semantic mapping:
-
-```python
 posterior = MappingProxyType({
     cell: belief_state.cells[cell].posterior
     for cell in sorted(model.planning_cells, key=_cell_key)
 })
 ```
 
-Do not pass `belief_state`, ledger evidence, support hashes, story, or domain into the joint hook.
+Do not pass `belief_state`, ledger evidence, support hashes, story, or domain into `joint_belief_hook`.
 
-- [ ] **Step 4: Validate the joint hook as an exact coupling**
-
-Call:
+- [ ] **Step 4: Validate joint hook as exact coupling**
 
 ```python
 raw_joint = model.joint_belief_hook(
@@ -746,11 +853,15 @@ raw_joint = model.joint_belief_hook(
         parameters=model.parameters,
     )
 )
+root_belief = _planning_belief_from_raw(
+    raw_joint,
+    expected_ids=tuple(state.state_id for state in model.hidden_states),
+)
 ```
 
-Validate the returned mapping has exactly every hidden-state ID and is a valid `PlanningBeliefState`.
+`_planning_belief_from_raw` requires mapping shape, exact IDs, and `PlanningBeliefState` normalization.
 
-Then marginalize the joint for every planning cell/value present in the runtime posterior:
+Then preserve every runtime marginal:
 
 ```python
 for cell, distribution in posterior.items():
@@ -769,23 +880,19 @@ for cell, distribution in posterior.items():
             raise ValueError("planning joint belief must preserve runtime marginals")
 ```
 
-Also reject a hidden-state space that cannot represent a runtime posterior hypothesis with positive mass: for every positive `BeliefMass`, at least one hidden state must carry that value for that cell.
+For each positive runtime `BeliefMass`, require at least one hidden state carrying that value for the cell.
 
-- [ ] **Step 5: Normalize public failures at the planning typed boundary**
+- [ ] **Step 5: Normalize preflight/belief/joint failures at typed boundary**
 
-Wrap ordinary `Exception` from runtime belief resolution and the joint hook as `RuntimePlanningDecisionResolutionError` with `raise ... from error`. Do not catch `BaseException`.
+Public runner will eventually own one outer exception normalization. During this task, implement an internal `_resolve_root_planning_belief(...)` that raises ordinary `TypeError`/`ValueError`/runtime belief errors; the temporary public runner catches ordinary `Exception` and wraps it as `RuntimePlanningDecisionResolutionError` with the original exception as `__cause__`. Do not catch `BaseException`.
 
-Structural preflight and coupling violations also surface as `RuntimePlanningDecisionResolutionError`, and transition/observation/reward hooks must remain uncalled on these failures.
-
-- [ ] **Step 6: Run the preflight/coupling subset**
-
-Run:
+- [ ] **Step 6: Run preflight/coupling subset**
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_narrative_runtime_planning.py' -v
 ```
 
-Expected now: preflight, coupling, sanitized joint-context, and runtime-belief binding tests pass; solver/value/trace/science tests remain RED.
+Expected: preflight, coupling, sanitized joint-context, runtime-belief binding tests pass; solver/value/trace/science tests remain RED.
 
 - [ ] **Step 7: Commit**
 
@@ -796,7 +903,7 @@ git commit -m "feat: bind narrative planning belief"
 
 ---
 
-### Task 4: Implement Kernel Validation and the Deterministic Soft Bellman Solver
+### Task 4: Implement Kernel Validation and Deterministic Soft Bellman Solver
 
 **Files:**
 - Modify: `narrative_dynamics/narrative/runtime_planning.py`
@@ -804,11 +911,9 @@ git commit -m "feat: bind narrative planning belief"
 
 **Interfaces:**
 - Consumes: validated model, authored action map, root `PlanningBeliefState`.
-- Produces: deterministic root action values, future soft values, canonical `PlanningValueRecord` and `PlanningBeliefUpdate` collections.
+- Produces: deterministic root values, future soft values, canonical `PlanningValueRecord` and `PlanningBeliefUpdate` collections.
 
-- [ ] **Step 1: Add one shared exact-distribution validator**
-
-Implement:
+- [ ] **Step 1: Add one exact distribution validator**
 
 ```python
 def _distribution(
@@ -835,135 +940,135 @@ def _distribution(
     return MappingProxyType(values)
 ```
 
-Use it for transition and observation outputs. Bool, NaN, infinity, negative values, missing/extra IDs, and non-unit totals must fail.
+Use for transition and observation output. Bool, NaN, infinity, negative values, missing/extra IDs, non-unit total fail.
 
-- [ ] **Step 2: Implement kernel-call helpers with sanitized contexts**
+- [ ] **Step 2: Implement sanitized kernel helpers**
 
-Implement `_transition_distribution(...)`, `_observation_distribution(...)`, and `_reward(...)` that construct only the approved context records and call the corresponding model hook.
+Implement three helpers:
 
-Transition receives one current hidden state, one authored action, depth, candidate next states, parameters.
+```text
+_transition_distribution(model, depth, state, action) -> Mapping[state_id, probability]
+_observation_distribution(model, depth, next_state, action) -> Mapping[observation_id, probability]
+_reward(model, depth, state, action, next_state) -> finite float
+```
 
-Observation receives one hypothetical next state, one authored action, depth, declared observation atoms, parameters.
+Each helper constructs only its approved context record and passes `model.parameters`. It cannot receive story/domain/ledger/world/provenance values.
 
-Reward receives one current state/action/next-state/depth/parameters and must return `_finite(...)`.
+- [ ] **Step 3: Implement predicted belief and Bayesian observation update**
 
-Catch only ordinary `Exception` at the public runner boundary, preserving each hook exception as cause.
-
-- [ ] **Step 3: Implement predicted belief and observation-conditioned Bayes update**
-
-For one belief/action/depth:
+Cache all transition rows needed for one action/depth. Compute and immediately validate predicted belief:
 
 ```python
-predicted = {
+predicted = PlanningBeliefState({
     next_state.state_id: math.fsum(
         belief.probabilities[state.state_id]
         * transition[(state.state_id, next_state.state_id)]
         for state in model.hidden_states
     )
     for next_state in model.hidden_states
-}
+})
 ```
 
-For each observation:
+For one observation:
 
 ```python
 evidence = math.fsum(
-    predicted[state.state_id]
+    predicted.probabilities[state.state_id]
     * observation_likelihood[(state.state_id, observation.observation_id)]
     for state in model.hidden_states
 )
 ```
 
-If `evidence == 0.0`, skip it completely.
-
-Otherwise:
+If `evidence == 0.0`, skip branch. Otherwise:
 
 ```python
 posterior = PlanningBeliefState({
     state.state_id: (
         observation_likelihood[(state.state_id, observation.observation_id)]
-        * predicted[state.state_id]
+        * predicted.probabilities[state.state_id]
         / evidence
     )
     for state in model.hidden_states
 })
 ```
 
-Do not clip. Emit a `PlanningBeliefUpdate` for each positive-evidence observation branch.
+Emit one `PlanningBeliefUpdate` per positive-evidence observation.
 
 - [ ] **Step 4: Implement immediate expected reward**
 
-Use the exact formula:
-
 ```python
-immediate = math.fsum(
-    belief.probabilities[state.state_id]
-    * transition[(state.state_id, next_state.state_id)]
-    * reward[(state.state_id, next_state.state_id)]
-    for state in model.hidden_states
-    for next_state in model.hidden_states
+immediate = _finite(
+    math.fsum(
+        belief.probabilities[state.state_id]
+        * transition[(state.state_id, next_state.state_id)]
+        * reward[(state.state_id, next_state.state_id)]
+        for state in model.hidden_states
+        for next_state in model.hidden_states
+    ),
+    label="planning expected immediate reward",
 )
 ```
 
-Validate the resulting value is finite.
+- [ ] **Step 5: Implement recursive Q/V solving with memoization**
 
-- [ ] **Step 5: Implement recursive Q/V solving with memoized semantic results**
+Memo key is `(depth, belief.content_hash)`.
 
-Implement an internal solver whose memo key is:
+For every action in `model.action_schedule[depth]`, compute immediate reward. Terminal depth has future contribution `0.0`.
 
-```python
-(depth, belief.content_hash)
-```
-
-For every action in `model.action_schedule[depth]`, compute immediate reward. If terminal depth, future contribution is `0.0`.
-
-At non-terminal depth, for each positive-evidence observation branch recursively obtain `V_{depth+1}(posterior)` and compute:
+At earlier depth:
 
 ```python
 undiscounted_continuation = math.fsum(
     observation_probability * child_value
     for observation_probability, child_value in branches
 )
-expected_future_value = model.discount * undiscounted_continuation
-total_value = immediate + expected_future_value
+expected_future_value = _finite(
+    model.discount * undiscounted_continuation,
+    label="planning expected future value",
+)
+total_value = _finite(
+    immediate + expected_future_value,
+    label="planning total action value",
+)
 ```
 
-Store `expected_future_value` in `PlanningValueRecord` as the **already discounted** continuation contribution, so the record invariant is exactly:
+Store **discounted** continuation in `PlanningValueRecord.expected_future_value`, so invariant is:
 
 ```python
 record.total_value == record.expected_immediate_reward + record.expected_future_value
 ```
 
-At each depth:
+At every depth:
 
 ```python
-policy = finite_softmax(action_values, beta=model.beta)
-policy = _validated_policy(policy, expected_actions=current_action_ids)
-value = math.fsum(policy[action] * action_values[action] for action in current_action_ids)
+raw_policy = finite_softmax(action_values, beta=model.beta)
+policy = _validated_policy(raw_policy, expected_actions=current_action_ids)
+value = _finite(
+    math.fsum(policy[action] * action_values[action] for action in current_action_ids),
+    label="planning soft belief value",
+)
 ```
 
-Never use `max(action_values.values())` for the future value.
+Never use hard-max continuation.
 
-- [ ] **Step 6: Canonicalize trace accumulation independently of memo execution order**
+- [ ] **Step 6: Make audit trace independent of traversal/memo hit order**
 
-Do not append records directly into a traversal-order list that changes when memoization hits. Accumulate by semantic keys:
+Accumulate in dictionaries keyed by:
 
 ```text
 value key = (depth, belief_hash, action_id)
 update key = (depth, prior_belief_hash, action_id, observation_id)
 ```
 
-If a key is recomputed, require the new record equals the existing record. At the end, return tuples sorted by those exact keys.
-
-This guarantees memoization changes performance only, not result payload/hash.
+If recomputed key differs from existing record, fail. Final tuples are sorted by those exact keys.
 
 - [ ] **Step 7: Run solver/kernel tests**
-
-Run the planning test file. Require kernel-schema, zero-evidence, no-information update, hand-computed soft-Bellman, and root-policy/MAP tests to pass.
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_narrative_runtime_planning.py' -v
 ```
+
+Require kernel-schema, zero-evidence, no-information update, hand-computed soft-Bellman, root-policy/MAP tests to pass.
 
 - [ ] **Step 8: Commit**
 
@@ -982,33 +1087,33 @@ git commit -m "feat: solve finite narrative planning"
 
 **Interfaces:**
 - Consumes: runtime belief state, root planning belief, solver root values/policy, canonical value/update records.
-- Produces: self-validating `RuntimePlanningDecisionResult` and full public `run_runtime_planning_decision(...)` implementation.
+- Produces: self-validating `RuntimePlanningDecisionResult` and full public runner.
 
-- [ ] **Step 1: Finish `RuntimePlanningDecisionResult.__post_init__`**
+- [ ] **Step 1: Finish model-independent result invariants**
 
-Lock these invariants:
+Require:
 
 ```text
-model_id/model_hash/decision_id/actor_id are valid trimmed/hash values
+model_id/model_hash/decision_id/actor_id are valid IDs/hashes
 step_index >= 0
-ledger_hash is a valid hash
+ledger_hash valid
 belief_state is RuntimeUncertainBeliefState
 actor_id == belief_state.agent_id
 step_index == belief_state.step_index
 ledger_hash == belief_state.ledger_hash
 planning_belief is PlanningBeliefState
-action_values/action_policy share one exact non-empty root action set
-action_values are finite non-bools
-action_policy is finite/non-negative and sums to 1 within 1e-12
-selected_action is lexical MAP of action_policy
-value_records and belief_updates are tuples of the exact audit record types
+action_values/action_policy share one exact non-empty action set
+action_values finite non-bools
+action_policy finite/non-negative and sums to 1 within 1e-12
+selected_action is lexical MAP
+value_records and belief_updates are exact audit record tuples
 ```
 
-Freeze all mappings/tuples canonically.
+Freeze mappings/tuples canonically.
 
-- [ ] **Step 2: Bind trace records back to the root solution**
+- [ ] **Step 2: Bind root trace to root values**
 
-The result must contain exactly one root `PlanningValueRecord` for each root action with:
+Result contains exactly one root `PlanningValueRecord` per root action with:
 
 ```text
 depth == 0
@@ -1018,62 +1123,88 @@ record.total_value == action_values[action_id]
 record.total_value == record.expected_immediate_reward + record.expected_future_value
 ```
 
-Reject duplicate audit keys.
+Reject duplicate audit keys. Every belief update has positive observation probability and typed posterior.
 
-Every value record depth must be `< len(model.action_schedule)` when validated by the public runner before construction.
+Standalone result cannot know correct model content hash from hash syntax alone. The successful runner test must assert `result.model_hash == model.content_hash`; do not add a constructor test expecting arbitrary valid-format forged model hash rejection.
 
-Every belief update must reference a positive observation probability and a posterior `PlanningBeliefState`.
+- [ ] **Step 3: Add private model-dependent result validation**
 
-Because the standalone result record does not carry the full model state/observation declarations, model-dependent audit validation remains in a private `_validated_result_against_solution(...)` call inside the runner; constructor-only validation must still reject internal inconsistencies it can determine from its own fields.
+Inside runner, before returning, validate:
 
-- [ ] **Step 3: Construct the final result only after all solver checks pass**
-
-The public runner returns:
-
-```python
-RuntimePlanningDecisionResult(
-    model_id=model.model_id,
-    model_hash=model.content_hash,
-    decision_id=decision.id,
-    actor_id=decision.actor_id,
-    step_index=belief_state.step_index,
-    ledger_hash=belief_state.ledger_hash,
-    belief_state=belief_state,
-    planning_belief=root_belief,
-    action_values=root_values,
-    action_policy=root_policy,
-    selected_action=_map_choice(root_policy),
-    value_records=value_records,
-    belief_updates=belief_updates,
-)
+```text
+result.model_id == model.model_id
+result.model_hash == model.content_hash
+result.planning_belief keys == exact hidden-state IDs
+root action keys == model.action_schedule[0]
+every value record depth < len(model.action_schedule)
+every value record action belongs to schedule at that depth
+every belief update observation ID belongs to model observations
 ```
 
-Then immediately run private model-dependent result revalidation before returning, so constructor-bypass nested forgeries cannot masquerade as solver output.
+Also compare result payload fields against solver-produced root values/policy/trace so constructor-bypass nested values cannot masquerade as solver output.
 
-- [ ] **Step 4: Normalize public error behavior exactly once**
+- [ ] **Step 4: Construct final result and normalize errors exactly once**
 
-Structure the public runner as:
+Public runner structure becomes:
 
 ```python
-try:
-    ... full preflight / belief / hooks / solver / result ...
-except RuntimePlanningDecisionResolutionError:
-    raise
-except Exception as error:
-    raise RuntimePlanningDecisionResolutionError(
-        "runtime planning decision could not be resolved"
-    ) from error
+def run_runtime_planning_decision(story, domain, decision_id, ledger, model):
+    try:
+        validated_model = _validated_model(model)
+        validated_ledger = _validated_ledger(story, domain, ledger)
+        decision, action_by_id = _preflight_decision(
+            story,
+            domain,
+            decision_id,
+            validated_ledger,
+            validated_model,
+        )
+        belief_state, root_belief = _resolve_root_planning_belief(
+            story,
+            domain,
+            decision,
+            validated_ledger,
+            validated_model,
+        )
+        root_values, root_policy, value_records, belief_updates = _solve_planning(
+            validated_model,
+            action_by_id,
+            root_belief,
+        )
+        result = RuntimePlanningDecisionResult(
+            model_id=validated_model.model_id,
+            model_hash=validated_model.content_hash,
+            decision_id=decision.id,
+            actor_id=decision.actor_id,
+            step_index=belief_state.step_index,
+            ledger_hash=belief_state.ledger_hash,
+            belief_state=belief_state,
+            planning_belief=root_belief,
+            action_values=root_values,
+            action_policy=root_policy,
+            selected_action=_map_choice(root_policy),
+            value_records=value_records,
+            belief_updates=belief_updates,
+        )
+        _validate_result_against_solution(result, validated_model, root_values, root_policy)
+        return result
+    except RuntimePlanningDecisionResolutionError:
+        raise
+    except Exception as error:
+        raise RuntimePlanningDecisionResolutionError(
+            "runtime planning decision could not be resolved"
+        ) from error
 ```
 
 Do not catch `BaseException`.
 
-- [ ] **Step 5: Run replay, forgery, hook-error, and complete planning tests**
+- [ ] **Step 5: Run replay/forgery/error tests**
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_narrative_runtime_planning.py' -v
 ```
 
-Expected: all non-scientific planning tests now pass, including exact replay/content hash and nested forgery rejection.
+Expected: all non-scientific planning tests pass, including exact replay/content hash and nested forgery rejection.
 
 - [ ] **Step 6: Commit**
 
@@ -1084,19 +1215,17 @@ git commit -m "feat: bind narrative planning audit results"
 
 ---
 
-### Task 6: Close the Scientific Model-Comparison Fixtures
+### Task 6: Close Scientific Fixtures
 
 **Files:**
-- Modify only if implementation correction is required: `narrative_dynamics/narrative/runtime_planning.py`
+- Modify only when a demonstrated solver defect requires it: `narrative_dynamics/narrative/runtime_planning.py`
 - Test: `tests/test_narrative_runtime_planning.py`
 
 **Interfaces:**
-- Consumes: complete planning runner plus existing reactive/intentional public runners used only by tests.
-- Produces: behavior-level evidence for horizon-one equivalence, no-information Bayesian invariance, and value-of-information separation.
+- Consumes: complete planning runner plus existing reactive/intentional runners used only by tests.
+- Produces: behavior evidence for horizon-one equivalence, no-information Bayesian invariance, value-of-information separation.
 
-- [ ] **Step 1: Run only the scientific tests and inspect exact failures**
-
-Run:
+- [ ] **Step 1: Run only scientific tests**
 
 ```bash
 python3 -m unittest \
@@ -1106,19 +1235,19 @@ python3 -m unittest \
   -v
 ```
 
-- [ ] **Step 2: If horizon-one equivalence fails, fix planning math rather than loosening equality**
+- [ ] **Step 2: Preserve exact horizon-one equivalence**
 
-The equality is intentionally exact. Ensure planning root values feed the same shared `finite_softmax` with the same beta and same lexical action IDs. Do not change the test to tolerance-based policy comparison.
+If it fails, fix planning root math so the same score table, beta, and action IDs reach shared `finite_softmax`. Do not loosen equality to tolerance-based policy comparison.
 
-- [ ] **Step 3: If no-information posterior invariance fails, fix Bayesian prediction/update**
+- [ ] **Step 3: Preserve no-information Bayes invariance**
 
-State-independent observation likelihood must algebraically cancel in Bayes update. Do not special-case the fixture; correct distribution aggregation/normalization so every positive branch posterior equals predicted belief under canonical representation.
+If it fails, correct distribution aggregation/normalization so state-independent likelihood cancels algebraically and every positive branch posterior equals predicted belief. Do not special-case fixture IDs.
 
-- [ ] **Step 4: If value-of-information separation fails, distinguish fixture mistakes from solver mistakes**
+- [ ] **Step 4: Preserve value-of-information contrast**
 
-The informative and no-information variants must share the same root belief, transition kernel, rewards, discount, beta, and action schedule; only observation likelihood changes. If the fixture satisfies that condition and inspection still has no information value, inspect the continuation recursion. Do not add ad hoc inspection bonuses.
+Informative/no-information variants share root belief, transition, reward, discount, beta, schedule; only observation likelihood changes. If inspection still lacks information value with a valid fixture, inspect continuation recursion. Do not add an inspection bonus.
 
-- [ ] **Step 5: Run the complete planning test file again**
+- [ ] **Step 5: Run complete planning file**
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_narrative_runtime_planning.py' -v
@@ -1126,20 +1255,18 @@ python3 -m unittest discover -s tests -p 'test_narrative_runtime_planning.py' -v
 
 Expected: all planning tests pass.
 
-- [ ] **Step 6: Commit only if production/test fixture changes were needed**
-
-If a real correction was required:
+- [ ] **Step 6: Commit only if a real correction was needed**
 
 ```bash
 git add narrative_dynamics/narrative/runtime_planning.py tests/test_narrative_runtime_planning.py
 git commit -m "fix: close narrative planning science fixtures"
 ```
 
-If no changes were needed, do not create an empty commit.
+If no file changed, do not create an empty commit.
 
 ---
 
-### Task 7: Export Exactly 13 Planning Names and Run Final Exact-Head Proof
+### Task 7: Export Exactly 13 Names and Run Final Exact-Head Proof
 
 **Files:**
 - Modify: `narrative_dynamics/narrative/__init__.py`
@@ -1147,12 +1274,10 @@ If no changes were needed, do not create an empty commit.
 - Verify: all final scoped paths relative to integrated base.
 
 **Interfaces:**
-- Consumes: complete `runtime_planning.py` public API.
-- Produces: exact narrative-scoped public surface, root isolation, final proof evidence, merge-ready PR.
+- Consumes: complete `runtime_planning.py` API.
+- Produces: exact narrative-scoped surface, root isolation, final proof evidence, merge-ready PR.
 
-- [ ] **Step 1: Add one planning import block to `narrative_dynamics/narrative/__init__.py`**
-
-Add exactly:
+- [ ] **Step 1: Add one planning import block**
 
 ```python
 from narrative_dynamics.narrative.runtime_planning import (
@@ -1176,21 +1301,21 @@ from narrative_dynamics.narrative.runtime_planning import (
 
 Keep package root `narrative_dynamics/__init__.py` unchanged.
 
-- [ ] **Step 3: Run the exact public-surface test**
+- [ ] **Step 3: Run exact public-surface test**
 
 ```bash
 python3 -m unittest tests.test_narrative_trust_api.NarrativeTrustTests.test_exact_public_surface_and_root_isolation -v
 ```
 
-Expected: PASS; all 13 names are in `narrative_dynamics.narrative`, none are exported from package root.
+Expected: PASS; all 13 names are narrative-scoped and absent from package root.
 
-- [ ] **Step 4: Run the full Python suite before final commit when local execution is available**
+- [ ] **Step 4: Run full Python suite when local execution is available**
 
 ```bash
 python3 -m unittest discover -s tests -v
 ```
 
-Expected: `OK`, with test count equal to the prior integrated count plus the new planning tests.
+Expected: `OK`, with count equal to integrated baseline plus new planning tests.
 
 - [ ] **Step 5: Commit exact exports**
 
@@ -1199,12 +1324,12 @@ git add narrative_dynamics/narrative/__init__.py
 git commit -m "feat: export narrative planning surface"
 ```
 
-- [ ] **Step 6: Verify final diff scope before trusting CI**
+- [ ] **Step 6: Verify final diff scope**
 
-Compare integrated base `8aae284fe02f27a76b6d00a651be152f49a9e6ed` to current head. Expected feature/runtime paths are:
+Compare integrated base `8aae284fe02f27a76b6d00a651be152f49a9e6ed` to final head. Expected paths:
 
 ```text
-.github/workflows/proof.yml                                      modified (pre-existing isolated CI trigger refactor)
+.github/workflows/proof.yml                                      modified (isolated CI trigger refactor)
 docs/superpowers/specs/2026-08-27-narrative-generic-planning-pomdp-v1-design.md  added
 docs/superpowers/plans/2026-08-27-narrative-generic-planning-pomdp-v1.md         added
 narrative_dynamics/narrative/runtime_planning.py                  added
@@ -1213,11 +1338,11 @@ tests/test_narrative_runtime_planning.py                          added
 tests/test_narrative_trust_api.py                                 modified
 ```
 
-No scheduler, world, observation projection, cognition, intention, reactive, prison, model-comparison, root package, or Lean path may appear. Any discovered prerequisite requires its own explicit RED -> GREEN slice and PR documentation.
+No scheduler, world, observation projection, cognition, intention, reactive, prison, model-comparison, root package, or Lean path may appear. Any prerequisite gets an explicit isolated RED -> GREEN slice and PR documentation.
 
 - [ ] **Step 7: Obtain authoritative exact-head GitHub Actions GREEN**
 
-Fetch the proof workflow for the exact final head. Require:
+Require proof run:
 
 ```text
 status = completed
@@ -1225,7 +1350,7 @@ conclusion = success
 head_sha = exact final feature head
 ```
 
-Inspect the verify job and require every step success:
+Require verify job success for:
 
 ```text
 Resolve Lean dependencies
@@ -1237,25 +1362,25 @@ Narrative story theorem tests
 Narrative testimony theorem tests
 ```
 
-Do not infer GREEN from a previous head or from local tests.
+Do not infer GREEN from previous head or local tests.
 
 - [ ] **Step 8: Final code review and PR readiness**
 
-Review the final diff against the design spec section-by-section. Check PR review threads/comments. Fix Critical/Important findings before proceeding and rerun exact-head CI after any code change.
+Review diff against spec section-by-section and inspect review threads/comments. Fix Critical/Important findings and rerun exact-head CI after code changes.
 
-Update the draft PR body with:
+Update draft PR body with:
 
 ```text
 verified RED run/head
 final GREEN run/head
 full Python test count
 exact final changed-path list
-explicit note that scheduler dispatch remains intentionally unchanged
-explicit note that the CI path-ignore refactor is an isolated prerequisite commit
+scheduler dispatch intentionally unchanged
+CI path-ignore refactor is isolated prerequisite commit
 ```
 
-Mark the PR ready for review only after the exact final proof is green and review has no blocker.
+Mark ready only after exact final proof is green and review has no blocker.
 
-- [ ] **Step 9: Integration remains an explicit finishing decision**
+- [ ] **Step 9: Integration remains explicit finishing decision**
 
-Do not merge solely because this plan finished. At the finishing gate, present/execute the chosen integration action with `expected_head_sha` pinned to the verified final feature head. After merge, verify `proof/narrative-dynamics-v0` points to the returned merge commit and that its parents are the prior base and verified feature head. Then update issue #27 P1 Generic Planning / POMDP checklist while keeping the roadmap open for remaining workstreams.
+At finishing gate, execute the chosen integration action with `expected_head_sha` pinned to verified final head. After merge, verify `proof/narrative-dynamics-v0` points to returned merge commit and its parents are prior base plus verified feature head. Update issue #27 P1 Generic Planning / POMDP checklist and keep roadmap open for remaining workstreams.
