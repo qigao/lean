@@ -349,7 +349,7 @@ def _fact_key(fact: ObservationFact) -> tuple[str, str, str, str, str]:
         fact.cell.subject.entity_id,
         fact.cell.state_variable,
         fact.relation,
-        "" if fact.value is None else fact.value.content_hash,
+        "" if fact.value is None else stable_content_hash(fact.value.to_dict()),
     )
 
 
