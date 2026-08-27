@@ -172,6 +172,12 @@ from narrative_dynamics.narrative.runtime_planning import (
     RuntimePlanningDecisionResult,
     run_runtime_planning_decision,
 )
+from narrative_dynamics.narrative.runtime_decision_dispatch import (
+    RuntimeDecisionDispatchError,
+    RuntimeDecisionDispatchResult,
+    RuntimeDecisionModelSpec,
+    run_runtime_decision,
+)
 from narrative_dynamics.narrative.simulation import (
     RuntimeAgentSpec,
     SimulationAgentStep,
@@ -326,6 +332,10 @@ __all__ = (
     "RuntimePlanningDecisionResult",
     "RuntimePlanningDecisionResolutionError",
     "run_runtime_planning_decision",
+    "RuntimeDecisionModelSpec",
+    "RuntimeDecisionDispatchResult",
+    "RuntimeDecisionDispatchError",
+    "run_runtime_decision",
     "RuntimeAgentSpec",
     "SimulationModelSpec",
     "SimulationState",

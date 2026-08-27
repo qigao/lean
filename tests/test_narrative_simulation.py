@@ -42,12 +42,33 @@ from tests.test_narrative_observation_projection import (
     make_projection_domain,
     make_projection_story,
 )
+from tests.test_narrative_runtime_planning import (
+    IdentityTransitionHook,
+    NoInformationObservationHook,
+    ProductCouplingHook,
+)
 
 _SIMULATION_IMPORT_ERROR: ImportError | None = None
 try:
+    from narrative_dynamics.narrative.runtime_decision_dispatch import (
+        RuntimeDecisionDispatchError,
+        RuntimeDecisionDispatchResult,
+        RuntimeDecisionModelSpec,
+    )
     from narrative_dynamics.narrative.runtime_intention import (
         RuntimeIntentionalDecisionModelSpec,
         RuntimeIntentionalDecisionResolutionError,
+        RuntimeIntentionalDecisionResult,
+    )
+    from narrative_dynamics.narrative.runtime_planning import (
+        PlanningHiddenState,
+        PlanningObservation,
+        RuntimePlanningDecisionModelSpec,
+        RuntimePlanningDecisionResult,
+    )
+    from narrative_dynamics.narrative.runtime_reactive import (
+        RuntimeReactiveDecisionModelSpec,
+        RuntimeReactiveDecisionResult,
     )
     from narrative_dynamics.narrative.simulation import (
         RuntimeAgentSpec,
@@ -508,8 +529,16 @@ def make_simulation_model(
         b_belief=b_belief,
     )
     agents = (
-        RuntimeAgentSpec("a1", "d-a1-scheduler", a_model),
-        RuntimeAgentSpec("a2", "d-a2-scheduler", b_model),
+        RuntimeAgentSpec(
+            "a1",
+            "d-a1-scheduler",
+            RuntimeDecisionModelSpec("intentional", a_model),
+        ),
+        RuntimeAgentSpec(
+            "a2",
+            "d-a2-scheduler",
+            RuntimeDecisionModelSpec("intentional", b_model),
+        ),
     )
     if reverse_agents:
         agents = tuple(reversed(agents))
@@ -609,13 +638,145 @@ def make_conflict_case():
         domain.version,
         domain.content_hash,
         (
-            RuntimeAgentSpec("a1", "d-a1-scheduler", a_model),
-            RuntimeAgentSpec("a2", "d-a2-scheduler", b_model),
+            RuntimeAgentSpec(
+                "a1",
+                "d-a1-scheduler",
+                RuntimeDecisionModelSpec("intentional", a_model),
+            ),
+            RuntimeAgentSpec(
+                "a2",
+                "d-a2-scheduler",
+                RuntimeDecisionModelSpec("intentional", b_model),
+            ),
         ),
         world_model,
         make_projection_model(domain, hook=projection_hook),
     )
     return domain, story, model, alert_hook, projection_hook
+
+
+class SchedulerReactiveScoreHook:
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, context):
+        self.calls.append(context)
+        cue = context.cues[alert_cell()]
+        if (
+            cue.status == "resolved"
+            and cue.value == TypedValue("AlertState", True)
+        ):
+            return {"a2-respond": 3.0, "a2-wait": 0.0}
+        return {"a2-respond": 0.0, "a2-wait": 3.0}
+
+
+class SchedulerPlanningRewardHook:
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, context):
+        self.calls.append(context)
+        alert = context.state.cells[alert_cell()].value
+        if context.action.id == "a3-respond":
+            return 2.0 if alert is True else 0.0
+        if context.action.id == "a3-wait":
+            return 2.0 if alert is False else 0.0
+        raise AssertionError("unexpected scheduler planning action")
+
+
+def make_a3_decision():
+    return Decision(
+        "d-a3-scheduler",
+        10,
+        "a3",
+        "scheduler-response-choice",
+        (alert_cell(),),
+        (
+            ActionOption(
+                "a3-respond",
+                "response-action",
+                {"respond": TypedValue("AlertState", True)},
+            ),
+            ActionOption(
+                "a3-wait",
+                "response-action",
+                {"respond": TypedValue("AlertState", False)},
+            ),
+        ),
+    )
+
+
+def make_heterogeneous_case():
+    domain = make_scheduler_domain()
+    story = make_scheduler_story(domain)
+    story = replace(
+        story,
+        decisions=story.decisions + (make_a3_decision(),),
+    )
+    a_intentional, _ = make_intentional_models()
+    b_reactive = RuntimeReactiveDecisionModelSpec(
+        "b-runtime-reactive",
+        "1",
+        ("scheduler-response-choice",),
+        (alert_cell(),),
+        {},
+        4.0,
+        SchedulerReactiveScoreHook(),
+    )
+    c_planning = RuntimePlanningDecisionModelSpec(
+        "c-runtime-planning",
+        "1",
+        ("scheduler-response-choice",),
+        (alert_cell(),),
+        (),
+        make_runtime_belief_model(),
+        (
+            PlanningHiddenState(
+                "alert-off",
+                {alert_cell(): TypedValue("AlertState", False)},
+            ),
+            PlanningHiddenState(
+                "alert-on",
+                {alert_cell(): TypedValue("AlertState", True)},
+            ),
+        ),
+        (PlanningObservation("none", {}),),
+        (("a3-respond", "a3-wait"),),
+        1.0,
+        4.0,
+        {},
+        ProductCouplingHook(),
+        IdentityTransitionHook(),
+        NoInformationObservationHook(),
+        SchedulerPlanningRewardHook(),
+    )
+    model = SimulationModelSpec(
+        "heterogeneous-scheduler-model",
+        "2",
+        domain.domain_id,
+        domain.version,
+        domain.content_hash,
+        (
+            RuntimeAgentSpec(
+                "a1",
+                "d-a1-scheduler",
+                RuntimeDecisionModelSpec("intentional", a_intentional),
+            ),
+            RuntimeAgentSpec(
+                "a2",
+                "d-a2-scheduler",
+                RuntimeDecisionModelSpec("reactive", b_reactive),
+            ),
+            RuntimeAgentSpec(
+                "a3",
+                "d-a3-scheduler",
+                RuntimeDecisionModelSpec("planning", c_planning),
+            ),
+        ),
+        make_world_model(domain),
+        make_projection_model(domain),
+    )
+    return domain, story, model
 
 
 class NarrativeSimulationTests(unittest.TestCase):
@@ -693,7 +854,9 @@ class NarrativeSimulationTests(unittest.TestCase):
     def test_initialization_rejects_story_agent_template_type_and_cutoff_mismatch_before_hooks(self):
         self.require_simulation()
         domain, story, model = make_case()
-        b_hook = model.agents[1].intentional_model.belief_model.runtime_likelihood_hook
+        nested_b = model.agents[1].decision_model.model
+        self.assertIsInstance(nested_b, RuntimeIntentionalDecisionModelSpec)
+        b_hook = nested_b.belief_model.runtime_likelihood_hook
 
         missing_template_model = replace(
             model,
@@ -729,15 +892,23 @@ class NarrativeSimulationTests(unittest.TestCase):
             )
         self.assertEqual(b_hook.calls, [])
 
+        nested_b = model.agents[1].decision_model.model
+        self.assertIsInstance(nested_b, RuntimeIntentionalDecisionModelSpec)
         unsupported_b = replace(
-            model.agents[1].intentional_model,
+            nested_b,
             supported_decision_types=("scheduler-alert-choice",),
         )
         unsupported_model = replace(
             model,
             agents=(
                 model.agents[0],
-                replace(model.agents[1], intentional_model=unsupported_b),
+                replace(
+                    model.agents[1],
+                    decision_model=RuntimeDecisionModelSpec(
+                        "intentional",
+                        unsupported_b,
+                    ),
+                ),
             ),
         )
         with self.assertRaises(SimulationError):
@@ -787,8 +958,12 @@ class NarrativeSimulationTests(unittest.TestCase):
         self.assertEqual(response_hook.calls, 1)
         self.assertEqual(len(projection_hook.calls), 3)
         for agent_step in result.agent_steps:
+            self.assertIsInstance(
+                agent_step.decision_result,
+                RuntimeDecisionDispatchResult,
+            )
             self.assertEqual(
-                agent_step.decision_result.belief_state.ledger_hash,
+                agent_step.decision_result.ledger_hash,
                 prior.evidence_ledger.content_hash,
             )
             self.assertEqual(agent_step.decision_result.step_index, prior.step_index)
@@ -806,6 +981,109 @@ class NarrativeSimulationTests(unittest.TestCase):
             )
         selected = {item.agent_id: item.decision_result.selected_action for item in result.agent_steps}
         self.assertEqual(selected, {"a1": "a1-raise-alert", "a2": "a2-wait"})
+
+    def test_heterogeneous_round_dispatches_three_families_against_one_prior_ledger(self):
+        self.require_simulation()
+        domain, story, model = make_heterogeneous_case()
+        prior = simulation_state_from_story(story, domain, model, at_time=10)
+        result = simulate_step(story, domain, prior, model)
+        by_agent = {item.agent_id: item for item in result.agent_steps}
+        self.assertEqual(tuple(sorted(by_agent)), ("a1", "a2", "a3"))
+        self.assertEqual(
+            {
+                agent: step.decision_result.model_kind
+                for agent, step in by_agent.items()
+            },
+            {"a1": "intentional", "a2": "reactive", "a3": "planning"},
+        )
+        self.assertIsInstance(
+            by_agent["a1"].decision_result.model_result,
+            RuntimeIntentionalDecisionResult,
+        )
+        self.assertIsInstance(
+            by_agent["a2"].decision_result.model_result,
+            RuntimeReactiveDecisionResult,
+        )
+        self.assertIsInstance(
+            by_agent["a3"].decision_result.model_result,
+            RuntimePlanningDecisionResult,
+        )
+        model_by_agent = {item.agent_id: item for item in model.agents}
+        for agent_id, step in by_agent.items():
+            self.assertEqual(
+                step.decision_result.ledger_hash,
+                prior.evidence_ledger.content_hash,
+            )
+            self.assertEqual(step.decision_result.step_index, prior.step_index)
+            self.assertEqual(
+                step.decision_result.decision_model_hash,
+                model_by_agent[agent_id].decision_model.content_hash,
+            )
+            self.assertEqual(
+                step.action_intent.selection_result_hash,
+                step.decision_result.content_hash,
+            )
+        self.assertEqual(len(result.world_step.transitions), 3)
+
+    def test_two_round_heterogeneous_replay_is_exact_and_uses_newly_admitted_information(self):
+        self.require_simulation()
+        domain1, story1, model1 = make_heterogeneous_case()
+        domain2, story2, model2 = make_heterogeneous_case()
+        self.assertEqual(model1.content_hash, model2.content_hash)
+        initial1 = simulation_state_from_story(
+            story1,
+            domain1,
+            model1,
+            at_time=10,
+        )
+        initial2 = simulation_state_from_story(
+            story2,
+            domain2,
+            model2,
+            at_time=10,
+        )
+        first = simulate_trajectory(
+            story1,
+            domain1,
+            initial1,
+            model1,
+            rounds=2,
+        )
+        second = simulate_trajectory(
+            story2,
+            domain2,
+            initial2,
+            model2,
+            rounds=2,
+        )
+        self.assertEqual(first.to_dict(), second.to_dict())
+        self.assertEqual(first.content_hash, second.content_hash)
+
+        round0 = {item.agent_id: item for item in first.steps[0].agent_steps}
+        round1 = {item.agent_id: item for item in first.steps[1].agent_steps}
+        self.assertEqual(
+            round0["a2"].decision_result.selected_action,
+            "a2-wait",
+        )
+        self.assertEqual(
+            round1["a2"].decision_result.selected_action,
+            "a2-respond",
+        )
+        self.assertEqual(
+            first.steps[0].next_state.world_state.values[alert_cell()],
+            TypedValue("AlertState", True),
+        )
+        planning = round1["a3"].decision_result.model_result
+        self.assertIsInstance(planning, RuntimePlanningDecisionResult)
+        alert_view = planning.belief_state.cells[alert_cell()]
+        self.assertGreater(
+            alert_view.posterior.probability_of(TypedValue("AlertState", True)),
+            alert_view.posterior.probability_of(TypedValue("AlertState", False)),
+        )
+        self.assertEqual(
+            round1["a3"].decision_result.selected_action,
+            "a3-respond",
+        )
 
     def test_cognition_failure_blocks_all_world_projection_and_next_state(self):
         self.require_simulation()
@@ -827,6 +1105,10 @@ class NarrativeSimulationTests(unittest.TestCase):
             simulate_step(story, domain, prior, model)
         self.assertIsInstance(
             caught.exception.__cause__,
+            RuntimeDecisionDispatchError,
+        )
+        self.assertIsInstance(
+            caught.exception.__cause__.__cause__,
             RuntimeIntentionalDecisionResolutionError,
         )
         self.assertEqual(alert_hook.calls, 0)
@@ -960,7 +1242,9 @@ class NarrativeSimulationTests(unittest.TestCase):
         self.assertEqual(a2_evidence[0].relation, "equals")
         self.assertEqual(a2_evidence[0].value, TypedValue("AlertState", True))
         self.assertEqual(len(passive), 1)
-        round1_belief = step1["a2"].decision_result.belief_state
+        nested = step1["a2"].decision_result.model_result
+        self.assertIsInstance(nested, RuntimeIntentionalDecisionResult)
+        round1_belief = nested.belief_state
         view = round1_belief.cells[alert_cell()]
         self.assertNotEqual(view.posterior, view.seed_posterior)
         self.assertGreater(

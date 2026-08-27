@@ -10,11 +10,11 @@ from narrative_dynamics.narrative.ir import GenericNarrative
 from narrative_dynamics.narrative.observation_projection import (
     ObservationProjectionModelSpec,
 )
-from narrative_dynamics.narrative.runtime_intention import (
-    RuntimeIntentionalDecisionModelSpec,
-    RuntimeIntentionalDecisionResolutionError,
-    RuntimeIntentionalDecisionResult,
-    run_runtime_intentional_decision,
+from narrative_dynamics.narrative.runtime_decision_dispatch import (
+    RuntimeDecisionDispatchError,
+    RuntimeDecisionDispatchResult,
+    RuntimeDecisionModelSpec,
+    run_runtime_decision,
 )
 from narrative_dynamics.narrative.runtime_perception import (
     RuntimeEvidenceLedger,
@@ -93,7 +93,7 @@ def _domain_identity(
 class RuntimeAgentSpec:
     agent_id: str
     decision_template_id: str
-    intentional_model: RuntimeIntentionalDecisionModelSpec
+    decision_model: RuntimeDecisionModelSpec
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -109,20 +109,23 @@ class RuntimeAgentSpec:
                 label="runtime agent decision template id",
             ),
         )
-        if not isinstance(
-            self.intentional_model,
-            RuntimeIntentionalDecisionModelSpec,
-        ):
+        if not isinstance(self.decision_model, RuntimeDecisionModelSpec):
             raise TypeError(
-                "runtime agent intentional model must be "
-                "RuntimeIntentionalDecisionModelSpec"
+                "runtime agent decision model must be RuntimeDecisionModelSpec"
             )
+        validated = RuntimeDecisionModelSpec(
+            self.decision_model.model_kind,
+            self.decision_model.model,
+        )
+        if validated.to_dict() != self.decision_model.to_dict():
+            raise ValueError("runtime agent decision model must be canonical")
+        object.__setattr__(self, "decision_model", validated)
 
     def to_dict(self) -> dict[str, object]:
         return {
             "agent_id": self.agent_id,
             "decision_template_id": self.decision_template_id,
-            "intentional_model_hash": self.intentional_model.content_hash,
+            "decision_model_hash": self.decision_model.content_hash,
         }
 
     @property
@@ -311,7 +314,7 @@ class SimulationState:
 class SimulationAgentStep:
     agent_id: str
     decision_template_id: str
-    decision_result: RuntimeIntentionalDecisionResult
+    decision_result: RuntimeDecisionDispatchResult
     action_intent: ActionIntent
 
     def __post_init__(self) -> None:
@@ -330,17 +333,17 @@ class SimulationAgentStep:
         )
         if not isinstance(
             self.decision_result,
-            RuntimeIntentionalDecisionResult,
+            RuntimeDecisionDispatchResult,
         ):
             raise TypeError(
                 "simulation agent step decision_result must be "
-                "RuntimeIntentionalDecisionResult"
+                "RuntimeDecisionDispatchResult"
             )
         if not isinstance(self.action_intent, ActionIntent):
             raise TypeError("simulation agent step action_intent must be ActionIntent")
-        if self.agent_id != self.decision_result.belief_state.agent_id:
+        if self.agent_id != self.decision_result.actor_id:
             raise ValueError(
-                "simulation agent step agent must match decision belief agent"
+                "simulation agent step agent must match decision result actor"
             )
         if self.decision_template_id != self.decision_result.decision_id:
             raise ValueError(
@@ -633,7 +636,7 @@ def _validate_execution_bindings(
             raise ValueError(
                 "simulation decision template actor does not match configured agent"
             )
-        if decision.type_name not in agent.intentional_model.supported_decision_types:
+        if decision.type_name not in agent.decision_model.supported_decision_types:
             raise ValueError(
                 "simulation runtime model does not support decision template type"
             )
@@ -742,28 +745,33 @@ def simulate_step(
     agent_steps: list[SimulationAgentStep] = []
     for agent in model.agents:
         try:
-            result = run_runtime_intentional_decision(
+            result = run_runtime_decision(
                 story,
                 domain,
                 agent.decision_template_id,
                 prior_state.evidence_ledger,
-                agent.intentional_model,
+                agent.decision_model,
             )
-        except RuntimeIntentionalDecisionResolutionError as error:
+        except RuntimeDecisionDispatchError as error:
             raise SimulationStepError(
-                f"simulation cognition failed for agent {agent.agent_id}"
+                f"simulation decision failed for agent {agent.agent_id}"
             ) from error
 
+        if result.actor_id != agent.agent_id:
+            raise SimulationStepError(
+                "runtime decision actor does not match scheduled agent"
+            )
         if result.step_index != prior_state.step_index:
             raise SimulationStepError(
                 "runtime decision step does not match simulation prior"
             )
-        if (
-            result.belief_state.ledger_hash
-            != prior_state.evidence_ledger.content_hash
-        ):
+        if result.ledger_hash != prior_state.evidence_ledger.content_hash:
             raise SimulationStepError(
                 "runtime decision does not bind shared prior ledger"
+            )
+        if result.decision_model_hash != agent.decision_model.content_hash:
+            raise SimulationStepError(
+                "runtime decision does not bind scheduled decision model"
             )
         try:
             intent = ActionIntent(
