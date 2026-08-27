@@ -313,6 +313,119 @@ class RuntimeDecisionDispatchResult:
         return stable_content_hash(self.to_dict())
 
 
+def _validated_model(model: object) -> RuntimeDecisionModelSpec:
+    if not isinstance(model, RuntimeDecisionModelSpec):
+        raise TypeError(
+            "runtime decision dispatch requires RuntimeDecisionModelSpec"
+        )
+    validated = RuntimeDecisionModelSpec(model.model_kind, model.model)
+    if validated.to_dict() != model.to_dict():
+        raise ValueError("runtime decision model wrapper must be canonical")
+    return validated
+
+
+def _preflight_decision(
+    story: GenericNarrative,
+    domain: DomainSpec,
+    decision_id: str,
+    model: RuntimeDecisionModelSpec,
+):
+    validate_narrative(story, domain)
+    requested = _text(decision_id, label="runtime dispatch decision id")
+    decision = next((item for item in story.decisions if item.id == requested), None)
+    if decision is None:
+        raise ValueError("runtime dispatch decision is not declared by story")
+    if decision.type_name not in model.supported_decision_types:
+        raise ValueError("runtime dispatch model does not support decision type")
+    return decision
+
+
+def _run_family(
+    story: GenericNarrative,
+    domain: DomainSpec,
+    decision_id: str,
+    ledger: RuntimeEvidenceLedger,
+    model: RuntimeDecisionModelSpec,
+):
+    if model.model_kind == "reactive":
+        assert isinstance(model.model, RuntimeReactiveDecisionModelSpec)
+        return run_runtime_reactive_decision(
+            story,
+            domain,
+            decision_id,
+            ledger,
+            model.model,
+        )
+    if model.model_kind == "intentional":
+        assert isinstance(model.model, RuntimeIntentionalDecisionModelSpec)
+        return run_runtime_intentional_decision(
+            story,
+            domain,
+            decision_id,
+            ledger,
+            model.model,
+        )
+    assert model.model_kind == "planning"
+    assert isinstance(model.model, RuntimePlanningDecisionModelSpec)
+    return run_runtime_planning_decision(
+        story,
+        domain,
+        decision_id,
+        ledger,
+        model.model,
+    )
+
+
+def _dispatch_result(
+    model: RuntimeDecisionModelSpec,
+    nested: object,
+) -> RuntimeDecisionDispatchResult:
+    return RuntimeDecisionDispatchResult(
+        model_kind=model.model_kind,
+        decision_model_hash=model.content_hash,
+        model_id=nested.model_id,
+        model_hash=nested.model_hash,
+        decision_id=nested.decision_id,
+        actor_id=_actor_id(model.model_kind, nested),
+        step_index=nested.step_index,
+        ledger_hash=_ledger_hash(model.model_kind, nested),
+        action_policy=nested.action_policy,
+        selected_action=nested.selected_action,
+        model_result_hash=nested.content_hash,
+        model_result=nested,
+    )
+
+
+def _validate_result_against_model(
+    result: RuntimeDecisionDispatchResult,
+    model: RuntimeDecisionModelSpec,
+) -> None:
+    if result.model_kind != model.model_kind:
+        raise ValueError("runtime dispatch result kind must match wrapper")
+    if result.decision_model_hash != model.content_hash:
+        raise ValueError("runtime dispatch result must bind exact wrapper hash")
+    if result.model_id != model.model_id:
+        raise ValueError("runtime dispatch result model id must match wrapper")
+    if result.model_hash != model.nested_model_hash:
+        raise ValueError(
+            "runtime dispatch result nested hash must match wrapper"
+        )
+    RuntimeDecisionDispatchResult(
+        model_kind=result.model_kind,
+        decision_model_hash=result.decision_model_hash,
+        model_id=result.model_id,
+        model_hash=result.model_hash,
+        decision_id=result.decision_id,
+        actor_id=result.actor_id,
+        step_index=result.step_index,
+        ledger_hash=result.ledger_hash,
+        action_policy=result.action_policy,
+        selected_action=result.selected_action,
+        model_result_hash=result.model_result_hash,
+        model_result=result.model_result,
+    )
+
+
 def run_runtime_decision(
     story: GenericNarrative,
     domain: DomainSpec,
@@ -320,9 +433,37 @@ def run_runtime_decision(
     ledger: RuntimeEvidenceLedger,
     model: RuntimeDecisionModelSpec,
 ) -> RuntimeDecisionDispatchResult:
-    raise RuntimeDecisionDispatchError(
-        "runtime decision dispatch execution is not implemented"
-    )
+    try:
+        validated_model = _validated_model(model)
+        decision = _preflight_decision(
+            story,
+            domain,
+            decision_id,
+            validated_model,
+        )
+        nested = _run_family(
+            story,
+            domain,
+            decision.id,
+            ledger,
+            validated_model,
+        )
+        result = _dispatch_result(validated_model, nested)
+        _validate_result_against_model(result, validated_model)
+        return result
+    except RuntimeDecisionDispatchError:
+        raise
+    except (
+        RuntimeReactiveDecisionResolutionError,
+        RuntimeIntentionalDecisionResolutionError,
+        RuntimePlanningDecisionResolutionError,
+        TypeError,
+        ValueError,
+        KeyError,
+    ) as error:
+        raise RuntimeDecisionDispatchError(
+            "runtime decision could not be dispatched"
+        ) from error
 
 
 __all__ = (
