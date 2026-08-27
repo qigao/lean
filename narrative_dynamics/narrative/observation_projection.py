@@ -10,6 +10,11 @@ from narrative_dynamics.attestation import (
     measure_implementation,
 )
 from narrative_dynamics.contracts import stable_content_hash
+from narrative_dynamics.narrative.conflict import (
+    ConflictParticipant,
+    ConflictResolutionContext,
+    ConflictResolutionRecord,
+)
 from narrative_dynamics.narrative.domain import (
     DomainSpec,
     StateDelta,
@@ -547,6 +552,152 @@ def _batch_hash(
     )
 
 
+def _resolution_key(
+    resolution: ConflictResolutionRecord,
+) -> tuple[tuple[str, str, str], ...]:
+    return tuple(
+        (
+            participant.actor_id,
+            participant.decision_id,
+            participant.action.id,
+        )
+        for participant in resolution.context.participants
+    )
+
+
+def _resolved_batch_hash(
+    records: tuple[ActionTransitionRecord, ...],
+    resolutions: tuple[ConflictResolutionRecord, ...],
+) -> str:
+    return stable_content_hash(
+        {
+            "transitions": [
+                record.to_dict()
+                for record in sorted(records, key=_record_key)
+            ],
+            "conflict_resolutions": [
+                resolution.to_dict()
+                for resolution in sorted(resolutions, key=_resolution_key)
+            ],
+        }
+    )
+
+
+def _operation_cell(
+    operation: StateDeltaOp,
+    domain: DomainSpec,
+    entities: Mapping[str, Entity],
+) -> tuple[StateCellRef, object]:
+    subject = entities.get(operation.subject_id)
+    if subject is None:
+        raise ValueError("state delta subject is not canonical")
+    variable = domain._state_variable(operation.state_variable)
+    if variable.subject_type != subject.type_name:
+        raise ValueError("state delta subject type mismatch")
+    return (
+        StateCellRef(
+            EntityRef(subject.id, subject.type_name),
+            variable.name,
+        ),
+        variable,
+    )
+
+
+def _validated_delta_operations(
+    delta: object,
+    domain: DomainSpec,
+    entities: Mapping[str, Entity],
+    *,
+    label: str,
+) -> tuple[tuple[StateCellRef, StateDeltaOp], ...]:
+    if not isinstance(delta, StateDelta):
+        raise TypeError(f"{label} delta must be StateDelta")
+    if not isinstance(delta.operations, tuple):
+        raise TypeError(f"{label} delta operations must be a tuple")
+
+    seen: set[StateCellRef] = set()
+    validated: list[tuple[StateCellRef, StateDeltaOp]] = []
+    for operation in delta.operations:
+        if not isinstance(operation, StateDeltaOp):
+            raise TypeError(f"{label} delta operation must be StateDeltaOp")
+        cell, variable = _operation_cell(operation, domain, entities)
+        if cell in seen:
+            raise ValueError(f"{label} cannot write one cell twice")
+        seen.add(cell)
+        if operation.kind == "clear":
+            if operation.value is not None:
+                raise ValueError(f"clear {label} delta cannot contain a value")
+        elif operation.kind == "set":
+            if operation.value is None:
+                raise ValueError(f"set {label} delta requires a value")
+            domain._value_type(variable.value_type).validate(
+                operation.value,
+                entities,
+            )
+        else:
+            raise ValueError(f"{label} delta operation kind is unsupported")
+        validated.append((cell, operation))
+    return tuple(validated)
+
+
+def _derived_conflict_components(
+    records: tuple[ActionTransitionRecord, ...],
+    operations_by_hash: Mapping[
+        str, tuple[tuple[StateCellRef, StateDeltaOp], ...]
+    ],
+) -> tuple[tuple[ActionTransitionRecord, ...], ...]:
+    canonical = tuple(sorted(records, key=_record_key))
+    writes = tuple(
+        frozenset(cell for cell, _ in operations_by_hash[record.content_hash])
+        for record in canonical
+    )
+    adjacency = [set() for _ in canonical]
+    for left, left_writes in enumerate(writes):
+        for right in range(left + 1, len(canonical)):
+            if left_writes & writes[right]:
+                adjacency[left].add(right)
+                adjacency[right].add(left)
+
+    seen: set[int] = set()
+    components: list[tuple[ActionTransitionRecord, ...]] = []
+    for start in range(len(canonical)):
+        if start in seen:
+            continue
+        stack = [start]
+        indices: list[int] = []
+        while stack:
+            current = stack.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            indices.append(current)
+            stack.extend(sorted(adjacency[current], reverse=True))
+        if len(indices) >= 2:
+            components.append(
+                tuple(canonical[index] for index in sorted(indices))
+            )
+    return tuple(
+        sorted(
+            components,
+            key=lambda component: tuple(
+                _record_key(record) for record in component
+            ),
+        )
+    )
+
+
+def _apply_operation(
+    values: dict[StateCellRef, TypedValue],
+    cell: StateCellRef,
+    operation: StateDeltaOp,
+) -> None:
+    if operation.kind == "clear":
+        values.pop(cell, None)
+    else:
+        assert operation.value is not None
+        values[cell] = operation.value
+
+
 def _validate_state_values(
     state: WorldState,
     domain: DomainSpec,
@@ -676,10 +827,11 @@ def _validate_source_world_step(
         )
 
     actors: set[str] = set()
-    written: set[StateCellRef] = set()
-    replayed = dict(prior.values)
     prior_hash = prior.content_hash
-
+    operations_by_hash: dict[
+        str, tuple[tuple[StateCellRef, StateDeltaOp], ...]
+    ] = {}
+    record_by_hash: dict[str, ActionTransitionRecord] = {}
     for record in records:
         if not isinstance(record.intent, ActionIntent):
             raise TypeError("transition record intent must be ActionIntent")
@@ -695,57 +847,227 @@ def _validate_source_world_step(
         if record.actor_id in actors:
             raise ValueError("one actor may appear at most once per world step")
         actors.add(record.actor_id)
+        record_hash = record.content_hash
+        if record_hash in record_by_hash:
+            raise ValueError("world transition records must have unique identities")
+        record_by_hash[record_hash] = record
+        operations_by_hash[record_hash] = _validated_delta_operations(
+            record.delta,
+            domain,
+            entities,
+            label="transition",
+        )
 
-        if not isinstance(record.delta, StateDelta):
-            raise TypeError("transition delta must be StateDelta")
-        if not isinstance(record.delta.operations, tuple):
-            raise TypeError("transition delta operations must be a tuple")
-        local_written: set[StateCellRef] = set()
-        for operation in record.delta.operations:
-            if not isinstance(operation, StateDeltaOp):
-                raise TypeError("transition delta operation must be StateDeltaOp")
-            subject = entities.get(operation.subject_id)
-            if subject is None:
-                raise ValueError("transition delta subject is not canonical")
-            variable = domain._state_variable(operation.state_variable)
-            if variable.subject_type != subject.type_name:
-                raise ValueError("transition delta subject type mismatch")
-            cell = StateCellRef(
-                EntityRef(subject.id, subject.type_name),
-                variable.name,
+    resolutions = tuple(world_step.conflict_resolutions)
+    if not resolutions:
+        written: set[StateCellRef] = set()
+        replayed = dict(prior.values)
+        for record in records:
+            for cell, operation in operations_by_hash[record.content_hash]:
+                if cell in written:
+                    raise ValueError(
+                        "world transition records cannot overlap writes"
+                    )
+                written.add(cell)
+                _apply_operation(replayed, cell, operation)
+        if replayed != dict(next_state.values):
+            raise ValueError(
+                "next world state is not the extensional result of transition deltas"
             )
-            if cell in local_written:
-                raise ValueError("one transition cannot write one cell twice")
-            if cell in written:
-                raise ValueError("world transition records cannot overlap writes")
-            local_written.add(cell)
-            written.add(cell)
+        if next_state.transition_batch_hash != _batch_hash(records):
+            raise ValueError(
+                "next world state does not bind exact transition batch identity"
+            )
+        return entities
 
-            if operation.kind == "clear":
-                if operation.value is not None:
-                    raise ValueError("clear transition delta cannot contain a value")
-                replayed.pop(cell, None)
-            elif operation.kind == "set":
-                if operation.value is None:
-                    raise ValueError("set transition delta requires a value")
-                domain._value_type(variable.value_type).validate(
-                    operation.value,
-                    entities,
+    if any(
+        not isinstance(resolution, ConflictResolutionRecord)
+        for resolution in resolutions
+    ):
+        raise TypeError(
+            "observation projection conflict resolutions must be "
+            "ConflictResolutionRecord values"
+        )
+
+    components = _derived_conflict_components(records, operations_by_hash)
+    component_sets = {
+        frozenset(record.content_hash for record in component)
+        for component in components
+    }
+    resolved_component_sets: set[frozenset[str]] = set()
+    resolved_record_hashes: set[str] = set()
+    resolution_operations: dict[
+        str, tuple[tuple[StateCellRef, StateDeltaOp], ...]
+    ] = {}
+
+    for resolution in resolutions:
+        _text(resolution.resolver_id, label="conflict resolution resolver id")
+        _hash(resolution.resolver_hash, label="conflict resolution resolver hash")
+        if resolution.prior_state_hash != prior_hash:
+            raise ValueError(
+                "conflict resolution does not bind exact prior state"
+            )
+        context = resolution.context
+        if not isinstance(context, ConflictResolutionContext):
+            raise TypeError(
+                "conflict resolution context must be ConflictResolutionContext"
+            )
+        if context.prior_state_hash != prior_hash:
+            raise ValueError(
+                "conflict resolution context does not bind exact prior state"
+            )
+        if not isinstance(context.participants, tuple):
+            raise TypeError("conflict participants must be a tuple")
+        if len(context.participants) < 2:
+            raise ValueError("conflict resolution requires at least two participants")
+        if any(
+            not isinstance(participant, ConflictParticipant)
+            for participant in context.participants
+        ):
+            raise TypeError(
+                "conflict participants must be ConflictParticipant values"
+            )
+
+        participant_keys = tuple(
+            (
+                participant.actor_id,
+                participant.decision_id,
+                participant.action.id,
+            )
+            for participant in context.participants
+        )
+        if participant_keys != tuple(sorted(participant_keys)):
+            raise ValueError("conflict participants must be canonical")
+        participant_hashes = tuple(
+            participant.transition_record_hash
+            for participant in context.participants
+        )
+        if len(set(participant_hashes)) != len(participant_hashes):
+            raise ValueError("conflict participant transitions must be unique")
+        component_set = frozenset(participant_hashes)
+        if component_set not in component_sets:
+            raise ValueError(
+                "conflict resolution does not bind an exact overlap component"
+            )
+        if component_set in resolved_component_sets:
+            raise ValueError("conflict component cannot be resolved twice")
+        resolved_component_sets.add(component_set)
+        resolved_record_hashes.update(component_set)
+
+        write_counts: dict[StateCellRef, int] = {}
+        allowed_union: set[StateCellRef] = set()
+        for participant in context.participants:
+            record = record_by_hash.get(participant.transition_record_hash)
+            if record is None:
+                raise ValueError(
+                    "conflict participant transition is not in world step"
                 )
-                replayed[cell] = operation.value
-            else:
-                raise ValueError("transition delta operation kind is unsupported")
+            if participant.actor_id != record.actor_id:
+                raise ValueError("conflict participant actor mismatch")
+            if participant.decision_id != record.intent.decision_id:
+                raise ValueError("conflict participant decision mismatch")
+            if participant.action != record.action:
+                raise ValueError("conflict participant action payload mismatch")
+            if participant.transition_spec_hash != record.transition_spec_hash:
+                raise ValueError("conflict participant transition spec mismatch")
+            if participant.original_delta != record.delta:
+                raise ValueError("conflict participant original delta mismatch")
+            if not isinstance(participant.allowed_write_cells, tuple):
+                raise TypeError("conflict participant capabilities must be a tuple")
+            if len(set(participant.allowed_write_cells)) != len(
+                participant.allowed_write_cells
+            ):
+                raise ValueError("conflict participant capabilities must be unique")
+            if tuple(sorted(participant.allowed_write_cells, key=_cell_key)) != (
+                participant.allowed_write_cells
+            ):
+                raise ValueError("conflict participant capabilities must be canonical")
+            for allowed in participant.allowed_write_cells:
+                if not isinstance(allowed, StateCellRef):
+                    raise TypeError(
+                        "conflict participant capability must be StateCellRef"
+                    )
+                subject = entities.get(allowed.subject.entity_id)
+                if (
+                    subject is None
+                    or subject.type_name != allowed.subject.entity_type
+                ):
+                    raise ValueError(
+                        "conflict participant capability subject is not canonical"
+                    )
+                variable = domain._state_variable(allowed.state_variable)
+                if variable.subject_type != subject.type_name:
+                    raise ValueError(
+                        "conflict participant capability subject type mismatch"
+                    )
+                allowed_union.add(allowed)
+            for cell, _ in operations_by_hash[record.content_hash]:
+                if cell not in participant.allowed_write_cells:
+                    raise ValueError(
+                        "conflict participant original write exceeds capability"
+                    )
+                write_counts[cell] = write_counts.get(cell, 0) + 1
+
+        expected_conflict_cells = tuple(
+            sorted(
+                (
+                    cell
+                    for cell, count in write_counts.items()
+                    if count >= 2
+                ),
+                key=_cell_key,
+            )
+        )
+        if context.conflict_cells != expected_conflict_cells:
+            raise ValueError(
+                "conflict context cells do not match exact overlapping writes"
+            )
+
+        resolved_ops = _validated_delta_operations(
+            resolution.resolved_delta,
+            domain,
+            entities,
+            label="conflict resolution",
+        )
+        if any(cell not in allowed_union for cell, _ in resolved_ops):
+            raise ValueError(
+                "conflict resolution wrote outside participant capability union"
+            )
+        resolution_operations[resolution.content_hash] = resolved_ops
+
+    if resolved_component_sets != component_sets:
+        raise ValueError(
+            "conflict resolutions must cover every exact overlap component"
+        )
+
+    replayed = dict(prior.values)
+    effective_written: set[StateCellRef] = set()
+    for record in sorted(records, key=_record_key):
+        if record.content_hash in resolved_record_hashes:
+            continue
+        for cell, operation in operations_by_hash[record.content_hash]:
+            if cell in effective_written:
+                raise ValueError("effective world mutations cannot overlap writes")
+            effective_written.add(cell)
+            _apply_operation(replayed, cell, operation)
+    for resolution in sorted(resolutions, key=_resolution_key):
+        for cell, operation in resolution_operations[resolution.content_hash]:
+            if cell in effective_written:
+                raise ValueError("effective world mutations cannot overlap writes")
+            effective_written.add(cell)
+            _apply_operation(replayed, cell, operation)
 
     if replayed != dict(next_state.values):
         raise ValueError(
-            "next world state is not the extensional result of transition deltas"
+            "next world state is not the extensional result of effective mutations"
         )
-    if next_state.transition_batch_hash != _batch_hash(records):
+    if next_state.transition_batch_hash != _resolved_batch_hash(
+        records, resolutions
+    ):
         raise ValueError(
-            "next world state does not bind exact transition batch identity"
+            "next world state does not bind exact resolved transition batch identity"
         )
     return entities
-
 
 def _validate_projection_declarations(
     domain: DomainSpec,
@@ -864,20 +1186,58 @@ def _validate_fact_cell_shape(
         raise ValueError("observation fact subject type mismatch")
 
 
-def _records_writing_cell(
+def _effective_write_for_cell(
     world_step: WorldStepResult,
     cell: StateCellRef,
-) -> tuple[ActionTransitionRecord, ...]:
-    matches = []
-    for record in world_step.transitions:
-        if any(
+) -> tuple[str | None, tuple[str, ...]]:
+    resolved_hashes: set[str] = set()
+    for resolution in world_step.conflict_resolutions:
+        participant_hashes = tuple(
+            sorted(
+                participant.transition_record_hash
+                for participant in resolution.context.participants
+            )
+        )
+        resolved_hashes.update(participant_hashes)
+        matching = tuple(
+            operation
+            for operation in resolution.resolved_delta.operations
+            if (
+                operation.subject_id == cell.subject.entity_id
+                and operation.state_variable == cell.state_variable
+            )
+        )
+        if matching:
+            if len(matching) != 1:
+                raise ValueError(
+                    "conflict resolution cannot effectively write one cell twice"
+                )
+            return matching[0].kind, participant_hashes
+
+    matching_records = tuple(
+        record
+        for record in world_step.transitions
+        if record.content_hash not in resolved_hashes
+        and any(
             operation.subject_id == cell.subject.entity_id
             and operation.state_variable == cell.state_variable
             for operation in record.delta.operations
-        ):
-            matches.append(record)
-    return tuple(sorted(matches, key=_record_key))
-
+        )
+    )
+    if not matching_records:
+        return None, ()
+    if len(matching_records) != 1:
+        raise ValueError("effective world writes cannot overlap")
+    record = matching_records[0]
+    operation = next(
+        operation
+        for operation in record.delta.operations
+        if (
+            operation.subject_id == cell.subject.entity_id
+            and operation.state_variable == cell.state_variable
+        )
+    )
+    return operation.kind, (record.content_hash,)
 
 def _accept_facts(
     facts: tuple[ObservationFact, ...],
@@ -894,7 +1254,10 @@ def _accept_facts(
         cell = fact.cell
         _validate_fact_cell_shape(fact, domain, entities)
         variable = domain._state_variable(cell.state_variable)
-        writing_records = _records_writing_cell(world_step, cell)
+        effective_kind, source_transition_hashes = _effective_write_for_cell(
+            world_step,
+            cell,
+        )
 
         if fact.relation == "equals":
             assert fact.value is not None
@@ -912,19 +1275,9 @@ def _accept_facts(
                 raise ValueError(
                     "clear observation requires post-step absence"
                 )
-            clear_records = tuple(
-                record
-                for record in writing_records
-                if any(
-                    operation.kind == "clear"
-                    and operation.subject_id == cell.subject.entity_id
-                    and operation.state_variable == cell.state_variable
-                    for operation in record.delta.operations
-                )
-            )
-            if len(clear_records) != 1:
+            if effective_kind != "clear":
                 raise ValueError(
-                    "clear observation requires one explicit current-step clear"
+                    "clear observation requires one explicit effective current-step clear"
                 )
 
         accepted.append(
@@ -935,9 +1288,7 @@ def _accept_facts(
                 step_index=world_step.next_state.step_index,
                 source_world_state_hash=world_step.next_state.content_hash,
                 source_world_step_hash=world_step.content_hash,
-                source_transition_hashes=tuple(
-                    record.content_hash for record in writing_records
-                ),
+                source_transition_hashes=source_transition_hashes,
                 projection_spec_hash=spec_hash,
             )
         )
