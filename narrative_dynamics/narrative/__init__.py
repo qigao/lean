@@ -148,6 +148,15 @@ from narrative_dynamics.narrative.runtime_intention import (
     RuntimeIntentionalDecisionResult,
     run_runtime_intentional_decision,
 )
+from narrative_dynamics.narrative.runtime_reactive import (
+    ReactiveCueView,
+    RuntimeReactiveCueSnapshot,
+    RuntimeReactiveDecisionContext,
+    RuntimeReactiveDecisionModelSpec,
+    RuntimeReactiveDecisionResolutionError,
+    RuntimeReactiveDecisionResult,
+    run_runtime_reactive_decision,
+)
 from narrative_dynamics.narrative.simulation import (
     RuntimeAgentSpec,
     SimulationAgentStep,
@@ -282,6 +291,13 @@ __all__ = (
     "RuntimeIntentionalDecisionResult",
     "RuntimeIntentionalDecisionResolutionError",
     "run_runtime_intentional_decision",
+    "ReactiveCueView",
+    "RuntimeReactiveCueSnapshot",
+    "RuntimeReactiveDecisionContext",
+    "RuntimeReactiveDecisionModelSpec",
+    "RuntimeReactiveDecisionResult",
+    "RuntimeReactiveDecisionResolutionError",
+    "run_runtime_reactive_decision",
     "RuntimeAgentSpec",
     "SimulationModelSpec",
     "SimulationState",

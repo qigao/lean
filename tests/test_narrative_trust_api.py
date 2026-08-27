@@ -138,6 +138,14 @@ _EXPECTED_PUBLIC_API = {
     "RuntimeIntentionalDecisionResult",
     "RuntimeIntentionalDecisionResolutionError",
     "run_runtime_intentional_decision",
+    # Runtime reactive selection.
+    "ReactiveCueView",
+    "RuntimeReactiveCueSnapshot",
+    "RuntimeReactiveDecisionContext",
+    "RuntimeReactiveDecisionModelSpec",
+    "RuntimeReactiveDecisionResult",
+    "RuntimeReactiveDecisionResolutionError",
+    "run_runtime_reactive_decision",
     # Multi-step simulation.
     "RuntimeAgentSpec",
     "SimulationModelSpec",
