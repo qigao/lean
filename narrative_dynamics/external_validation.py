@@ -1857,10 +1857,24 @@ class ExternalValidationReport:
                 raise ExternalValidationReportError(
                     f"external validation report manifest input changed: {key}"
                 )
-        _hash(
+        manifest_preflight_hash = _hash(
             self.manifest.inputs["preflight_hash"],
             label="external validation report preflight hash",
         )
+        expected_preflight_hash = ExternalReleasePreflight(
+            preregistration_hash=self.preregistration_hash,
+            evidence_declaration_hash=self.evidence_declaration_hash,
+            brier_protocol_hash=self.brier_protocol_hash,
+            brier_release_hash=self.brier_release_hash,
+            brier_verification_hash=self.brier_verification_hash,
+            log_protocol_hash=self.log_protocol_hash,
+            log_release_hash=self.log_release_hash,
+            log_verification_hash=self.log_verification_hash,
+        ).content_hash
+        if manifest_preflight_hash != expected_preflight_hash:
+            raise ExternalValidationReportError(
+                "external validation report preflight binding is inconsistent"
+            )
 
         expected_parents = {
             self.brier_comparison_manifest_hash,
