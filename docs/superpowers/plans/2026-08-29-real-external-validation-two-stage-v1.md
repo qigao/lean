@@ -41,6 +41,7 @@
 - [ ] One immutable OSF registration may witness both sibling releases, but create two existing `WitnessReceipt` values, one per release. Do not modify `WitnessReceipt` schema.
 - [ ] Canonical claim scope remains exactly `external_observational_predictive_only`. Do not import or expose P2 `IdentificationStatus` in the study path.
 - [ ] A disappointing FINAL result is a valid study result, never a test failure or retry reason.
+- [ ] No code or source-manifest commit may occur after the repository revision is frozen into the real preregistration bundle. If code changes after that point, create a new study revision and new OSF registration.
 
 ## Planned Files
 
@@ -54,13 +55,13 @@
 - `narrative_dynamics/adapters/narrative_two_stage.py`
 - `narrative_dynamics/adapters/two_stage_metrics.py`
 - `narrative_dynamics/external_prediction.py`
-- generated metadata-only `narrative_dynamics/studies/feher_hare_two_stage_v1_source_manifest.json` after real-source conformance
+- generated metadata-only `narrative_dynamics/studies/feher_hare_two_stage_v1_source_manifest.json`
 
 **Production — modify**
 
 - `narrative_dynamics/contracts.py:100-130` — add `ExperimentStage.EXTERNAL_PREDICTION`
 - `narrative_dynamics/external_validation.py:1170-1310` — additive assembly from already-scored released reports; keep `evaluate_external_final()` backwards compatible
-- `narrative_dynamics/adapters/__init__.py` — additive task-adapter exports if package convention requires them
+- `narrative_dynamics/adapters/__init__.py` — additive task-adapter exports if the existing package convention uses this file
 - `narrative_dynamics/__init__.py` — additive generic external-prediction exports only; keep study-specific APIs under `narrative_dynamics.studies`
 
 **Tests — create**
@@ -87,6 +88,8 @@
 - `tests/test_preregistered_model_comparison.py`
 - `tests/test_protocol_release.py`
 
+Normative signatures below define public boundaries; implementation bodies follow the behavior specified in each step and its RED tests.
+
 ---
 
 ## Task 1 — Commit the complete test-only Study V1 RED boundary
@@ -107,18 +110,13 @@ SPACESHIP_HEADER = (
     "trial,rwrd_prob0,rwrd_prob1,rwrd_prob2,rwrd_prob3,symbol0,symbol1,"
     "common,choice1,rt1,final_state,choice2,rt2,reward,slow"
 )
-
-# Use temporary git repositories with deterministic participant files.
-def build_synthetic_two_stage_checkout(root: Path, *, magic_n=10, spaceship_n=10): ...
-def build_synthetic_source_manifest(root: Path): ...
-def build_two_stage_final_fixture(): ...
 ```
 
-Synthetic source metadata must be unmistakably test-only; never use real participant rows.
+Provide deterministic helpers that create a temporary git checkout, synthetic participant files, synthetic config/info metadata, a matching test-only source manifest, and simple counting model sources. Synthetic source metadata must be unmistakably test-only; never use real participant rows.
 
 - [ ] **1.2 Add source-boundary RED tests in `tests/test_two_stage_source.py`.**
 
-Lock these names and contracts:
+Lock:
 
 ```text
 test_source_manifest_is_content_hashed_and_order_canonical
@@ -130,17 +128,7 @@ test_metadata_only_source_identity_is_not_an_eligible_participant
 test_verification_uses_local_checkout_and_never_network
 ```
 
-Imports must be guarded so the first RED stays readable:
-
-```python
-try:
-    from narrative_dynamics.studies.two_stage_source import (
-        TwoStageSourceManifest,
-        verify_two_stage_snapshot,
-    )
-except ImportError as error:
-    IMPORT_ERROR = error
-```
+Guard imports so the first RED is readable while modules are missing.
 
 - [ ] **1.3 Add transform/split/leakage RED tests in `tests/test_two_stage_transform.py`.**
 
@@ -160,43 +148,15 @@ test_participant_assignment_hash_changes_on_any_role_change
 test_observation_dataset_has_positive_external_origin_and_record_level_partitions
 ```
 
-Use the archived encoding contracts in test vectors: Magic Carpet `choice1` is 1/2 and its config expresses common first-stage transition mappings; Spaceship raw first-stage choice is decoded to relative option semantics with the source rule:
-
-```python
-def expected_spaceship_relative_choice(common: int, final_state: int) -> int:
-    return final_state + 1 if common else 2 - final_state
-```
+Use archived encoding contracts in synthetic vectors: Magic Carpet `choice1` is 1/2; Spaceship canonical first-stage option uses the source loader rule `final_state + 1 if common else 2 - final_state` strictly outside model input.
 
 - [ ] **1.4 Add metric/scoring RED tests in `tests/test_two_stage_metrics.py`.**
 
-Lock:
-
-```text
-test_extractor_returns_exact_binary_metric_schema
-test_probability_floor_is_exactly_1e_minus_12_and_renormalizes
-test_extractor_does_not_mutate_raw_runtime_policy
-test_uniform_binary_brier_is_exactly_point_5
-test_uniform_binary_log_is_log_2
-test_strict_adequacy_thresholds_are_downward_adjacent_representable_values
-test_separation_margins_are_one_percent_of_uniform_references
-```
+Lock extractor schema, exact floor, raw-policy immutability, uniform Brier/Log references, downward-adjacent mean thresholds, and 1% separation margins.
 
 - [ ] **1.5 Add family-boundary RED tests in `tests/test_narrative_two_stage_adapter.py`.**
 
-Lock:
-
-```text
-test_three_sources_are_fresh_and_bind_family_identity
-test_adapter_uses_unified_dispatch_and_not_observation_or_external_protocol_modules
-test_reactive_is_neutral_with_empty_history
-test_reactive_uses_latest_rewarded_stay_and_unrewarded_switch_only
-test_reactive_ignores_earlier_history_and_previous_transition_identity
-test_intentional_uses_full_reward_history_and_beta1_smoothing_without_planning_hooks
-test_intentional_binds_beta_goal_and_beta_action_to_same_beta
-test_planning_uses_fixed_point_7_transition_and_second_stage_reward_beliefs
-test_planning_discount_is_fixed_one
-test_seed_changes_lineage_but_not_policy_for_deterministic_adapter
-```
+Lock fresh source lifecycle, unified dispatch/no protocol imports, exact Reactive latest-cue rule, Intentional full reward-history + Beta(1,1) smoothing without planning hooks, shared Intentional beta, Planning fixed 0.7/0.3 transition and second-stage reward beliefs, fixed discount 1.0, and seed-invariant predicted policy with seed-bound lineage.
 
 - [ ] **1.6 Add generic single-pass prediction RED tests in `tests/test_external_prediction.py`.**
 
@@ -206,39 +166,31 @@ Lock:
 test_external_prediction_stage_exists
 test_dual_protocol_preflight_happens_before_any_model_execution
 test_final_prediction_artifact_executes_each_model_case_seed_once
-test_prediction_artifact_binds_preflight_protocol_target_candidate_metric_seed_and_run_lineage
+test_prediction_artifact_binds_preflight_both_protocols_target_candidate_metric_seed_and_run_lineage
 test_brier_and_log_scoring_consume_same_artifact_without_runner
 test_precomputed_scoring_matches_direct_comparator_losses_on_synthetic_fixture
 test_artifact_or_protocol_identity_drift_is_rejected_before_scoring
+test_external_final_can_be_assembled_from_precomputed_released_reports
+test_precomputed_child_release_or_verification_drift_is_rejected
 ```
 
-Use counting model sources. Assert call count after artifact sealing and prove both score calls leave it unchanged.
+Use counting sources and assert call count is unchanged by both score calls and P3 assembly.
 
-- [ ] **1.7 Add study protocol RED tests in `tests/test_feher_hare_two_stage_protocol.py`.**
+- [ ] **1.7 Add Study protocol RED tests in `tests/test_feher_hare_two_stage_protocol.py`.**
 
-Lock Brier-only fitting/selection, global parameter grids, fixed seeds, Planning bookkeeping baseline, dual sibling identity, task strata, strict thresholds, positive external evidence, and `constraint_plans=()`.
-
-```text
-test_parameter_grids_are_exact_and_global_across_tasks
-test_training_and_selection_use_brier_only
-test_log_protocol_freezes_the_same_selected_candidates_without_reselection
-test_seed_plans_are_exact
-test_planning_is_bookkeeping_baseline_but_all_pairs_are_scored
-test_magic_and_spaceship_final_cases_form_exact_task_strata
-test_external_preregistration_has_no_constraint_plans
-```
+Lock exact global parameter grids, Brier-only TRAIN/SELECTION, Log sibling without reselection, exact seed plans, Planning bookkeeping baseline with all pairwise comparisons, exact task strata, strict thresholds, positive external evidence, and `constraint_plans=()`.
 
 - [ ] **1.8 Add OSF witness RED tests in `tests/test_two_stage_osf_witness.py`.**
 
-Lock immutable bundle identity, two receipts against one registration, bundle digest equality, per-release subject hashes, and no `WitnessReceipt` schema changes.
+Lock immutable bundle identity, two receipts against one registration, same bundle digest, distinct per-release subject hashes, and no `WitnessReceipt` schema change.
 
 - [ ] **1.9 Add secondary-diagnostic RED tests in `tests/test_two_stage_secondary_diagnostic.py`.**
 
-Lock adjacent retained trial-pair construction, previous reward × transition cells, observed stay rate, predicted stay probability derived from sealed current-trial policy, task strata, and zero runner calls.
+Lock adjacent retained trial pairs, previous reward × previous transition cells, observed stay rate, predicted stay probability derived from sealed current-trial policy, task strata, and zero runner calls.
 
 - [ ] **1.10 Add FINAL-attempt RED tests in `tests/test_two_stage_final_attempts.py`.**
 
-Lock append-only statuses and retry rules:
+Lock:
 
 ```text
 test_preflight_failure_creates_no_started_attempt
@@ -251,7 +203,7 @@ test_disappointing_result_is_completed_not_revision_required
 
 - [ ] **1.11 Add complete synthetic study RED in `tests/test_feher_hare_two_stage_pipeline.py`.**
 
-Exercise synthetic source -> transform -> split -> dataset -> TRAIN -> SELECTION -> dual protocols/releases/fake OSF witness -> dual preflight -> one FINAL artifact -> Brier + Log -> P3 aggregate report -> secondary diagnostic -> completed attempt. The test may choose a mathematically convenient synthetic winner, but the assertion of pipeline correctness must not require a particular real-study winner.
+Exercise synthetic source -> transform -> split -> dataset -> TRAIN -> SELECTION -> dual protocols/releases/fake OSF witness -> dual preflight -> one FINAL artifact -> Brier + Log -> P3 aggregate report -> secondary diagnostic -> completed attempt. Pipeline correctness must not depend on a preferred real-study winner.
 
 - [ ] **1.12 Run the complete focused RED.**
 
@@ -269,7 +221,7 @@ python3 -m unittest \
   tests.test_feher_hare_two_stage_pipeline -v
 ```
 
-Expected: failures are only missing Study V1 modules/symbols and missing `ExperimentStage.EXTERNAL_PREDICTION`. Existing P3 imports remain healthy.
+Expected: failures are only missing Study V1 modules/symbols and missing `ExperimentStage.EXTERNAL_PREDICTION`; existing P3 imports stay healthy.
 
 - [ ] **1.13 Commit the test-only RED atomically.**
 
@@ -280,7 +232,7 @@ git add tests/two_stage_test_support.py tests/test_two_stage_*.py \
 git commit -m "test: require real external two-stage validation v1"
 ```
 
-Do not add production files to this commit.
+Do not add production files.
 
 ---
 
@@ -288,17 +240,13 @@ Do not add production files to this commit.
 
 **Files:** create `narrative_dynamics/studies/__init__.py`, `narrative_dynamics/studies/two_stage_source.py`; green `tests/test_two_stage_source.py`.
 
-- [ ] **2.1 Confirm Task 1 source tests are RED on exact head.**
+- [ ] **2.1 Confirm focused RED.**
 
 ```bash
 python3 -m unittest tests.test_two_stage_source -v
 ```
 
-Expected: missing `narrative_dynamics.studies.two_stage_source` / required source symbols.
-
-- [ ] **2.2 Implement canonical source types.**
-
-Use these public contracts:
+- [ ] **2.2 Implement canonical source contracts.**
 
 ```python
 @dataclass(frozen=True)
@@ -307,7 +255,7 @@ class TwoStageSourceFile:
     git_blob_sha: str
     task_variant: str
     source_participant_id: str | None
-    purpose: str  # "scientific_evidence" | "transform_metadata"
+    purpose: str
 
 @dataclass(frozen=True)
 class TwoStageSourceManifest:
@@ -318,10 +266,6 @@ class TwoStageSourceManifest:
     license_reference: str
     files: tuple[TwoStageSourceFile, ...]
 
-    def identity_payload(self) -> dict[str, object]: ...
-    @property
-    def content_hash(self) -> str: ...
-
 @dataclass(frozen=True)
 class VerifiedTwoStageSnapshot:
     root: str
@@ -331,71 +275,45 @@ class VerifiedTwoStageSnapshot:
     verified_file_identities: tuple[tuple[str, str], ...]
 ```
 
-Validate task variants exactly `magic_carpet` / `spaceship`, purposes exactly the two values above, Git blob IDs as 40 lowercase hex chars, canonical path ordering, unique paths, and source participant identities.
+Validate task variants exactly `magic_carpet`/`spaceship`, purposes exactly `scientific_evidence`/`transform_metadata`, blob IDs as 40 lowercase hex chars, canonical unique paths, and participant identities. Generic synthetic manifests may use test repository identities; the Feher-Hare freezer in Task 12 pins the real repository/revision.
 
-- [ ] **2.3 Implement local checkout verification with no network.**
+- [ ] **2.3 Implement local verification without network.**
 
-```python
-def _git_head(root: Path) -> str:
-    result = subprocess.run(
-        ["git", "-C", str(root), "rev-parse", "HEAD"],
-        check=True, capture_output=True, text=True,
-    )
-    return result.stdout.strip()
+Use `git -C <root> rev-parse HEAD` and Git blob hashing `sha1(b"blob <len>\0" + bytes)`. Reject wrong HEAD, missing/changed files, duplicate paths, invalid evidence filename patterns, and any unmanifested main-task file matching an approved scientific pattern. No HTTP/GitHub calls.
 
-def _git_blob_sha(path: Path) -> str:
-    data = path.read_bytes()
-    header = f"blob {len(data)}\0".encode("ascii")
-    return hashlib.sha1(header + data).hexdigest()
+- [ ] **2.4 Add JSON load/write with declared stable hash.**
 
-def verify_two_stage_snapshot(
-    root: Path,
-    manifest: TwoStageSourceManifest,
-) -> VerifiedTwoStageSnapshot: ...
-```
-
-Reject wrong HEAD, missing file, changed blob, duplicate/unknown scientific path pattern, and an unmanifested main-task file that would otherwise enter evidence. Do not call HTTP/GitHub APIs.
-
-- [ ] **2.4 Add JSON manifest load/write helpers used later by the real conformance lane.**
+Public functions:
 
 ```python
 def load_two_stage_source_manifest(path: Path) -> TwoStageSourceManifest: ...
 def write_two_stage_source_manifest(path: Path, manifest: TwoStageSourceManifest) -> None: ...
+def verify_two_stage_snapshot(root: Path, manifest: TwoStageSourceManifest) -> VerifiedTwoStageSnapshot: ...
 ```
 
-Serialized payload includes a declared `content_hash` and rejects inconsistent hash on load.
+`source_snapshot_hash` is the stable hash of the verified manifest identity, which includes exact upstream revision and every included blob identity.
 
-- [ ] **2.5 Run GREEN and regression.**
-
-```bash
-python3 -m unittest tests.test_two_stage_source -v
-python3 -m unittest tests.test_external_evidence -v
-```
-
-Expected: both pass.
-
-- [ ] **2.6 Commit.**
+- [ ] **2.5 Run GREEN/regression and commit.**
 
 ```bash
+python3 -m unittest tests.test_two_stage_source tests.test_external_evidence -v
 git add narrative_dynamics/studies/__init__.py narrative_dynamics/studies/two_stage_source.py
 git commit -m "feat: add pinned two-stage source verification"
 ```
 
 ---
 
-## Task 3 — Implement causal transform, structural eligibility, deterministic participant split, and ObservationDataset construction
+## Task 3 — Implement causal transform, structural eligibility, deterministic split, and ObservationDataset construction
 
 **Files:** create `narrative_dynamics/studies/two_stage_transform.py`; green `tests/test_two_stage_transform.py`.
 
-- [ ] **3.1 Confirm focused RED.**
+- [ ] **3.1 Confirm RED.**
 
 ```bash
 python3 -m unittest tests.test_two_stage_transform -v
 ```
 
-Expected: missing transform/split symbols.
-
-- [ ] **3.2 Implement separated pre-choice and post-choice raw semantics so future leakage is structurally difficult.**
+- [ ] **3.2 Separate pre-choice input from post-choice outcome in the type boundary.**
 
 ```python
 @dataclass(frozen=True)
@@ -421,40 +339,36 @@ class CanonicalTwoStageTrial:
     audit_latent_reward_probabilities: tuple[float, ...]
 ```
 
-The Scenario builder receives `pre_choice` and prior retained `outcome` objects only; it never receives the current outcome object.
+The current Scenario builder accepts only current `pre_choice` plus prior retained outcomes; it never accepts the current outcome object.
 
-- [ ] **3.3 Implement exact raw schema parsers.**
+- [ ] **3.3 Implement exact raw parsers and target decoding.**
 
-Magic required columns:
-
-```text
-trial, common, reward.1.1, reward.1.2, reward.2.1, reward.2.2,
-isymbol_lft, isymbol_rgt, rt1, choice1, final_state,
-fsymbol_lft, fsymbol_rgt, rt2, choice2, reward, slow
-```
-
-Magic `choice1` is 1/2 and maps deterministically to `action_0` / `action_1`. Parse the matching config line `Common transitions: <first action> -> <label> -> (...); ...` as transform metadata and validate it before using participant rows.
-
-Spaceship required columns:
+Magic required columns are exactly the archived header:
 
 ```text
-trial, rwrd_prob0, rwrd_prob1, rwrd_prob2, rwrd_prob3,
-symbol0, symbol1, common, choice1, rt1, final_state,
-choice2, rt2, reward, slow
+trial,common,reward.1.1,reward.1.2,reward.2.1,reward.2.2,isymbol_lft,isymbol_rgt,rt1,choice1,final_state,fsymbol_lft,fsymbol_rgt,rt2,choice2,reward,slow
 ```
 
-Canonical first-stage observed option is decoded outside predictor input:
+Magic `choice1` is 1/2 -> `action_0`/`action_1`. Parse/validate matching config text such as `Common transitions: 1 -> blue -> (5, 6); 2 -> pink -> (3, 4);` as transform metadata.
+
+Spaceship required columns are exactly:
+
+```text
+trial,rwrd_prob0,rwrd_prob1,rwrd_prob2,rwrd_prob3,symbol0,symbol1,common,choice1,rt1,final_state,choice2,rt2,reward,slow
+```
+
+Observed first-stage canonical option is decoded outside predictor input:
 
 ```python
 relative = final_state + 1 if common else 2 - final_state
 canonical = "action_0" if relative == 1 else "action_1"
 ```
 
-Validate binary `common/reward/slow`, legal state/action ranges, finite numeric fields, strictly ordered unique trial IDs, and fail the entire transform on any invalid retained source row.
+Validate binary `common/reward/slow`, legal state/action ranges, finite required numbers, and strictly ordered unique trial IDs. Any malformed included main-task row fails the whole transform.
 
-- [ ] **3.4 Apply `slow` exclusion before history construction.**
+- [ ] **3.4 Apply slow exclusion before retained history and structural eligibility.**
 
-Create `TwoStageTransformReport` retaining source participant counts, structural exclusions, slow counts, retained counts, canonical trials, source manifest/snapshot hashes, and a transform implementation identity. Metadata-only IDs never become participants.
+`TwoStageTransformReport` binds source manifest/snapshot hashes, transform implementation identity, structural exclusions, slow counts, retained counts, and canonical retained trials. A source participant is eligible only with an included main-task file and at least one retained scorable trial.
 
 - [ ] **3.5 Implement deterministic participant assignment.**
 
@@ -471,57 +385,26 @@ class TwoStageParticipantSplitPlan:
 
 @dataclass(frozen=True)
 class TwoStageParticipantAssignment:
-    assignments: tuple[tuple[str, str, str], ...]  # task, participant, role
-    @property
-    def content_hash(self) -> str: ...
-
-def assign_two_stage_participants(
-    report: TwoStageTransformReport,
-    plan: TwoStageParticipantSplitPlan,
-) -> TwoStageParticipantAssignment: ...
+    assignments: tuple[tuple[str, str, str], ...]
 ```
 
-Within each task, order by `stable_content_hash((namespace, version, task, participant))`. Implement deterministic largest-remainder apportionment with role tie-break order TRAIN, SELECTION_VALIDATION, FINAL_TEST. Assert the pinned 24/21 counts yield 14/5/5 and 13/4/4.
+Order within each task by `stable_content_hash((namespace, version, task, participant))`. Use deterministic largest-remainder apportionment with tie-break order TRAIN, SELECTION_VALIDATION, FINAL_TEST. `content_hash` covers the complete task/participant/role mapping. Pinned 24/21 counts must yield 14/5/5 and 13/4/4.
 
 - [ ] **3.6 Build record-oriented `ObservationDataset`.**
 
-```python
-def build_two_stage_observation_dataset(
-    report: TwoStageTransformReport,
-    assignment: TwoStageParticipantAssignment,
-) -> ObservationDataset: ...
-```
+Each retained trial gets one unique record id `task/participant/trial`, causal pre-choice Scenario, one-hot `action_0/action_1` counts, task/participant/trial metadata, causal-history hash, and transform lineage. Dataset source/provenance use the existing positive external markers. Transform identity binds `participant_assignment_hash`, source identities, slow-rule version, choice-normalization version, information-firewall version, and implementation identity. Do not alter generic P3 record-level assignment hashing.
 
-For retained trial `t`, Scenario payload includes task, current pre-choice configuration, and a canonical tuple of prior retained observable outcomes `< t`. Counts are exactly one-hot `{"action_0": 1, "action_1": 0}` or reverse. Metadata includes task, participant, source trial ID, causal-history hash, and transform lineage.
-
-Dataset origin is exactly:
-
-```python
-source={"kind": "external_observational", ...}
-provenance={"external_observational": True, ...}
-```
-
-Transform identity binds `participant_assignment_hash`, source manifest/snapshot identity, slow-rule version, target-normalization version, information-firewall version, and measured implementation identity.
-
-- [ ] **3.7 Run GREEN and mutation tests.**
+- [ ] **3.7 Run GREEN/regression and commit.**
 
 ```bash
-python3 -m unittest tests.test_two_stage_transform -v
-python3 -m unittest tests.test_observation_dataset tests.test_observation_targets -v
-```
-
-Expected: pass.
-
-- [ ] **3.8 Commit.**
-
-```bash
+python3 -m unittest tests.test_two_stage_transform tests.test_observation_dataset tests.test_observation_targets -v
 git add narrative_dynamics/studies/two_stage_transform.py
 git commit -m "feat: add causal two-stage observational transform"
 ```
 
 ---
 
-## Task 4 — Implement shared first-stage metric extractor, probability floor, losses, and frozen thresholds
+## Task 4 — Implement shared first-stage metric extractor, probability floor, losses, and thresholds
 
 **Files:** create `narrative_dynamics/adapters/two_stage_metrics.py`; green `tests/test_two_stage_metrics.py`.
 
@@ -533,61 +416,34 @@ python3 -m unittest tests.test_two_stage_metrics -v
 
 - [ ] **4.2 Implement exact metric boundary.**
 
-```python
-FIRST_STAGE_PROBABILITY_FLOOR = 1e-12
-FIRST_STAGE_METRIC_KEYS = (
-    "first_stage.action_0",
-    "first_stage.action_1",
-)
-
-def two_stage_first_stage_policy_metrics(trace) -> dict[str, float]:
-    raw = trace.outcome["first_stage_policy"]
-    values = {key: float(raw[action]) for key, action in (
-        ("first_stage.action_0", "action_0"),
-        ("first_stage.action_1", "action_1"),
-    )}
-    floored = {key: max(value, FIRST_STAGE_PROBABILITY_FLOOR) for key, value in values.items()}
-    total = math.fsum(floored.values())
-    return {key: value / total for key, value in floored.items()}
-
-two_stage_first_stage_policy_metrics.version = "1.0.0"
-```
-
-Validate raw policy schema, finite `[0,1]` probabilities, and raw simplex before flooring. Never mutate trace outcome.
+Freeze `FIRST_STAGE_PROBABILITY_FLOOR = 1e-12`; require raw policy keys exactly `action_0/action_1`, finite probabilities in `[0,1]`, and raw sum 1. Apply floor then renormalize without mutating trace. Return exactly `first_stage.action_0` / `first_stage.action_1`. Set extractor version `1.0.0` so callable identity binds the implementation/version.
 
 - [ ] **4.3 Add target/loss/threshold factories.**
 
 ```python
-def two_stage_target_spec() -> CategoricalTargetSpec: ...
-def two_stage_brier_loss() -> CategoricalBrierLoss: ...
-def two_stage_log_loss() -> CategoricalLogLoss: ...
 def two_stage_brier_thresholds() -> AdequacyThresholds:
     return AdequacyThresholds(math.nextafter(0.5, -math.inf), 2.0)
+
 def two_stage_log_thresholds() -> AdequacyThresholds:
     return AdequacyThresholds(
         math.nextafter(math.log(2.0), -math.inf),
-        -math.log(FIRST_STAGE_PROBABILITY_FLOOR / (1.0 + FIRST_STAGE_PROBABILITY_FLOOR)),
+        -math.log(1e-12 / (1.0 + 1e-12)),
     )
 ```
 
-Freeze separation constants `0.005` and `0.006931471805599453` in the study protocol builder, not generic losses.
+Factories also return the binary `CategoricalTargetSpec`, one-group categorical Brier, and one-group categorical Log loss. Separation constants stay study-specific.
 
-- [ ] **4.4 Run GREEN.**
-
-```bash
-python3 -m unittest tests.test_two_stage_metrics tests.test_model_adequacy_losses -v
-```
-
-- [ ] **4.5 Commit.**
+- [ ] **4.4 Run GREEN/regression and commit.**
 
 ```bash
+python3 -m unittest tests.test_two_stage_metrics tests.test_preregistered_model_comparison -v
 git add narrative_dynamics/adapters/two_stage_metrics.py
 git commit -m "feat: add two-stage first-choice metrics"
 ```
 
 ---
 
-## Task 5 — Implement the two-stage Reactive / Intentional / Planning task adapter over unified dispatch
+## Task 5 — Implement the two-stage Reactive / Intentional / Planning adapter over unified dispatch
 
 **Files:** create `narrative_dynamics/adapters/narrative_two_stage.py`; optionally modify `narrative_dynamics/adapters/__init__.py`; green `tests/test_narrative_two_stage_adapter.py`.
 
@@ -597,86 +453,51 @@ git commit -m "feat: add two-stage first-choice metrics"
 python3 -m unittest tests.test_narrative_two_stage_adapter -v
 ```
 
-- [ ] **5.2 Implement one source wrapper pattern matching `narrative_prison.py`.**
+- [ ] **5.2 Implement a fresh-per-batch source wrapper matching the existing narrative-prison pattern.**
+
+Public builders:
 
 ```python
-@dataclass(frozen=True)
-class NarrativeTwoStageModelSource:
-    family: str
-    name: str
-    version: str = "1.0.0"
-    lifecycle: str = "fresh_per_batch"
-
-    def instantiate(self): ...
-    def simulate(self, scenario, parameters, rng): ...
-
 def create_narrative_two_stage_reactive_source() -> NarrativeTwoStageModelSource: ...
 def create_narrative_two_stage_intentional_source() -> NarrativeTwoStageModelSource: ...
 def create_narrative_two_stage_planning_source() -> NarrativeTwoStageModelSource: ...
 ```
 
-All execution goes through `run_runtime_decision()`. The module must not import `narrative_dynamics.observations`, `narrative_dynamics.external_validation`, `run_runtime_reactive_decision`, `run_runtime_intentional_decision`, or `run_runtime_planning_decision`.
+Every run goes through `run_runtime_decision()`. Ban imports of observations/P3 orchestration and family-specific runtime entry points.
 
-- [ ] **5.3 Implement common domain/story/history replay.**
+- [ ] **5.3 Build common canonical domain/story/history replay.**
 
-Build one canonical participant decision story with first-stage actions `action_0/action_1`, second-stage states `state_0/state_1`, and retained past outcomes represented as narrative evidence before the current decision logical time. Current target/outcome remains absent.
+Use first-stage actions `action_0/action_1`, second-stage states `state_0/state_1`, and prior retained outcomes as evidence before the current decision time. Current observed target/outcome must be absent.
 
 - [ ] **5.4 Implement Reactive exactly.**
 
-- empty history: equal action scores;
-- latest retained rewarded trial: score latest first-stage action `+1`, other `0`;
-- latest retained unrewarded trial: score latest first-stage action `0`, other `+1`;
-- ignore all earlier history and previous common/rare identity;
-- fitted parameter set exactly `{beta}`.
+Empty history -> equal scores. Latest retained rewarded trial -> favor repeating prior first-stage action. Latest retained unrewarded -> favor switching. Ignore earlier history and previous transition identity. Fitted parameters exactly `{beta}`.
 
 - [ ] **5.5 Implement Intentional exactly.**
 
-For action `a`, with decay `d`, compute weighted direct reward belief from prior retained first-stage action outcomes:
-
-```python
-estimated_p[a] = (1.0 + weighted_rewards[a]) / (2.0 + weighted_observations[a])
-```
-
-Use these beliefs through actual existing runtime belief -> goal -> choice objects. Bind `beta_goal == beta_action == parameters["beta"]`; fitted parameters exactly `{beta, memory_decay}`. Do not use transition identity in lookahead.
+With memory decay `d`, immediately previous retained trial weight is `d^0`, then `d^1`, etc. For each first-stage action, direct reward belief is `(1 + weighted_rewards)/(2 + weighted_observations)`. Feed those beliefs through genuine existing belief -> goal -> choice runtime objects. Bind `beta_goal = beta_action = beta`; fitted parameters exactly `{beta, memory_decay}`; no transition lookahead.
 
 - [ ] **5.6 Implement Planning exactly.**
 
-Estimate second-stage `(state, action)` reward probabilities with the same decay and Beta(1,1) smoothing. Fix common transition `0.7`, rare `0.3`, discount `1.0`. Use existing planning hidden-state/transition/reward/value hooks and unified dispatch. Fitted parameters exactly `{beta, memory_decay}`.
+Estimate second-stage `(state, action)` rewards with the same decay/Beta smoothing. Fix common/rare probabilities 0.7/0.3 and discount 1.0. Use existing planning hidden-state/transition/reward/value hooks through unified dispatch. Fitted parameters exactly `{beta, memory_decay}`.
 
-- [ ] **5.7 Expose `first_stage_policy` and lineage in every run outcome.**
+- [ ] **5.7 Expose `first_stage_policy`, `selected_action`, `runtime_dispatch`, and `family` in every run outcome; preserve implementation identities.**
 
-The trace outcome contains at least:
-
-```python
-{
-    "first_stage_policy": {"action_0": ..., "action_1": ...},
-    "selected_action": ...,
-    "runtime_dispatch": ...,
-    "family": ...,
-}
-```
-
-- [ ] **5.8 Run GREEN plus generic-family regressions.**
+- [ ] **5.8 Run GREEN/regressions and commit.**
 
 ```bash
-python3 -m unittest \
-  tests.test_narrative_two_stage_adapter \
-  tests.test_narrative_held_out_model_comparison \
-  tests.test_narrative_runtime_decision_dispatch -v
-```
-
-- [ ] **5.9 Commit.**
-
-```bash
+python3 -m unittest tests.test_narrative_two_stage_adapter tests.test_narrative_held_out_model_comparison -v
 git add narrative_dynamics/adapters/narrative_two_stage.py narrative_dynamics/adapters/__init__.py
 git commit -m "feat: add narrative two-stage model adapter"
 ```
 
+If `adapters/__init__.py` is not used by existing package convention, do not modify it and omit it from `git add`.
+
 ---
 
-## Task 6 — Implement Study V1 TRAIN/SELECTION freezing and dual P3 protocol construction
+## Task 6 — Implement Brier-only TRAIN/SELECTION freezing and dual P3 protocol construction
 
-**Files:** create `narrative_dynamics/studies/feher_hare_two_stage_v1.py`; green protocol subset of `tests/test_feher_hare_two_stage_protocol.py`.
+**Files:** create `narrative_dynamics/studies/feher_hare_two_stage_v1.py`; green `tests/test_feher_hare_two_stage_protocol.py`.
 
 - [ ] **6.1 Confirm RED.**
 
@@ -684,7 +505,7 @@ git commit -m "feat: add narrative two-stage model adapter"
 python3 -m unittest tests.test_feher_hare_two_stage_protocol -v
 ```
 
-- [ ] **6.2 Freeze study constants and parameter grids.**
+- [ ] **6.2 Freeze study constants.**
 
 ```python
 UPSTREAM_REPOSITORY = "carolfs/muddled_models"
@@ -699,70 +520,29 @@ HISTORY_GRID = {
 }
 ```
 
-- [ ] **6.3 Implement prepared-data and selection bundles.**
+- [ ] **6.3 Implement prepared-study/frozen-model/protocol bundle dataclasses.**
 
-```python
-@dataclass(frozen=True)
-class FeherHarePreparedStudy:
-    transform_report: TwoStageTransformReport
-    assignment: TwoStageParticipantAssignment
-    dataset: ObservationDataset
-    evidence: ExternalEvidenceDeclaration
-    train_targets: TargetConstructionReport
-    selection_targets: TargetConstructionReport
-    final_targets: TargetConstructionReport
+Prepared study holds transform report, participant assignment, dataset, external evidence declaration, and train/selection/final target reports. Frozen-model bundle retains training and selection manifest hashes. Protocol bundle contains Brier protocol, Log protocol, and `ExternalValidationPreregistration`.
 
-@dataclass(frozen=True)
-class FeherHareFrozenModels:
-    frozen_candidates: tuple[FrozenModelSpec, ...]
-    training_manifest_hashes: tuple[str, ...]
-    selection_manifest_hashes: tuple[str, ...]
-```
+- [ ] **6.4 Fit and select each family with Brier only.**
 
-`prepare_feher_hare_two_stage_v1()` verifies snapshot, transforms, assigns participants, builds dataset/targets, and creates `ExternalEvidenceDeclaration.from_dataset()`. Its transform identity includes the study participant-assignment hash while generic P3 computes record-level assignment itself.
+Use `fit_training_target_grid` on TRAIN with exact grids/seeds, create `ParameterAcceptanceSet` with training lineage, then `select_on_validation_suite` on SELECTION with exact seeds and Brier. Freeze one global candidate per family with `FrozenModelSpec.from_selection()`. Tests use a raising Log test double to prove Log is absent from TRAIN/SELECTION.
 
-- [ ] **6.4 Fit and select with Brier only.**
+- [ ] **6.5 Build both sibling protocols from the same frozen candidate objects.**
 
-For each family:
+Planning is comparator bookkeeping baseline only. Both protocols share dataset, target spec, final target, extractor, FINAL seeds, candidate identities/params/selection lineage, and version. Score-specific differences are only loss identity/threshold/name hash. Build exact Magic/Spaceship FINAL strata, separation rule deltas, `constraint_plans=()`, and method lineage.
 
-1. `fit_training_target_grid(... loss=two_stage_brier_loss(), simulation_seeds=TRAIN_SEEDS)`;
-2. wrap candidate tuples in `ParameterAcceptanceSet` with training manifest lineage;
-3. build SELECTION `HeldOutSuite` using `SELECTION_SEEDS`;
-4. `select_on_validation_suite(... loss=two_stage_brier_loss())`;
-5. `FrozenModelSpec.from_selection()`.
-
-No Log call is allowed in training/selection; enforce via tests with a raising Log test double.
-
-- [ ] **6.5 Build sibling protocols from the same frozen candidate set.**
-
-```python
-@dataclass(frozen=True)
-class FeherHareProtocolBundle:
-    brier_protocol: PreregisteredEvaluationProtocol
-    log_protocol: PreregisteredEvaluationProtocol
-    preregistration: ExternalValidationPreregistration
-```
-
-Planning is `baseline_name` only for comparator bookkeeping. Both protocols use the same final targets, extractor, `FINAL_SEEDS`, and exact frozen candidates. Use score-specific strict thresholds. Build task strata from FINAL record IDs by metadata. Freeze separation rule with exact deltas and `constraint_plans=()`.
-
-- [ ] **6.6 Run GREEN and P3 sibling regression.**
+- [ ] **6.6 Run GREEN/P3 sibling regression and commit.**
 
 ```bash
-python3 -m unittest \
-  tests.test_feher_hare_two_stage_protocol \
-  tests.test_external_validation_preregistration -v
-```
-
-- [ ] **6.7 Commit.**
-
-```bash
+python3 -m unittest tests.test_feher_hare_two_stage_protocol tests.test_external_validation_preregistration -v
 git add narrative_dynamics/studies/feher_hare_two_stage_v1.py
 git commit -m "feat: freeze two-stage external study protocol"
 ```
 
 ---
 
-## Task 7 — Implement immutable OSF preregistration bundle and existing-receipt verifier adapter
+## Task 7 — Implement immutable OSF preregistration bundle and existing-receipt verifier
 
 **Files:** create `narrative_dynamics/studies/two_stage_osf.py`; green `tests/test_two_stage_osf_witness.py`.
 
@@ -772,62 +552,18 @@ git commit -m "feat: freeze two-stage external study protocol"
 python3 -m unittest tests.test_two_stage_osf_witness -v
 ```
 
-- [ ] **7.2 Implement canonical preregistration bundle.**
+- [ ] **7.2 Implement canonical bundle.**
 
-```python
-@dataclass(frozen=True)
-class TwoStageOSFBundle:
-    source_manifest_hash: str
-    source_snapshot_hash: str
-    transform_hash: str
-    participant_assignment_hash: str
-    dataset_hash: str
-    final_target_hash: str
-    frozen_candidate_hashes: tuple[str, ...]
-    brier_protocol_hash: str
-    log_protocol_hash: str
-    external_preregistration_hash: str
-    brier_release_hash: str
-    log_release_hash: str
-    repository_revision: str
-    claim_scope: str
-    scientific_contract: Mapping[str, object]
+`TwoStageOSFBundle` binds source manifest/snapshot, transform, participant assignment, dataset/final target, frozen candidate hashes, both protocol hashes, external preregistration hash, both release hashes, exact repository revision, claim scope, and canonical scientific contract covering exclusions/split/target/firewall/grids/seeds/floor/thresholds/strata/separation/claim language. Its `content_hash` is derived, never caller-supplied.
 
-    def identity_payload(self) -> dict[str, object]: ...
-    @property
-    def content_hash(self) -> str: ...
-```
+- [ ] **7.3 Implement immutable proof adapter without network or release-schema change.**
 
-`scientific_contract` must bind source/exclusion/split/target/firewall/parameter-grid/seeds/floor/thresholds/strata/separation and allowed/forbidden claim language in canonical JSON-like values.
+`OSFRegistrationProof` contains registration reference, registration time, and bundle hash. `OSFRegistrationVerifier` implements existing `verify(release, receipt) -> bool`. Receipt proof must carry the same registration reference/bundle hash and the receipt subject must equal the supplied release hash. Create two receipts against one proof, one per sibling release. Ordinary CI uses a fake immutable reference; actual registration happens only after exact-head freeze in Task 12.
 
-- [ ] **7.3 Implement proof and verifier without changing `WitnessReceipt`.**
-
-```python
-@dataclass(frozen=True)
-class OSFRegistrationProof:
-    registration_reference: str
-    registered_at: str
-    bundle_hash: str
-
-class OSFRegistrationVerifier:
-    name = "osf-registration-verifier"
-    version = "1"
-
-    def __init__(self, proof: OSFRegistrationProof): ...
-    def verify(self, release: ProtocolRelease, receipt: WitnessReceipt) -> bool: ...
-```
-
-Create two receipts with same registration reference/bundle hash and distinct `subject_hash` values equal to Brier vs Log release hashes. The verifier validates frozen proof fields only; it does not perform network access during ordinary CI.
-
-- [ ] **7.4 Run GREEN and release regressions.**
+- [ ] **7.4 Run GREEN/release regressions and commit.**
 
 ```bash
 python3 -m unittest tests.test_two_stage_osf_witness tests.test_protocol_release -v
-```
-
-- [ ] **7.5 Commit.**
-
-```bash
 git add narrative_dynamics/studies/two_stage_osf.py
 git commit -m "feat: add osf witness bundle for two-stage study"
 ```
@@ -844,18 +580,9 @@ git commit -m "feat: add osf witness bundle for two-stage study"
 python3 -m unittest tests.test_external_prediction -v
 ```
 
-Expected: missing stage/module/symbols.
+- [ ] **8.2 Add exactly `ExperimentStage.EXTERNAL_PREDICTION = "external_prediction"`.**
 
-- [ ] **8.2 Add exactly one generic manifest stage.**
-
-```python
-class ExperimentStage(str, Enum):
-    ...
-    EXTERNAL_VALIDATION = "external_validation"
-    EXTERNAL_PREDICTION = "external_prediction"
-```
-
-No Lean mirror is required because this is Python research-manifest plumbing, not formal cognitive semantics.
+No other manifest stage and no Lean change.
 
 - [ ] **8.3 Implement immutable prediction records.**
 
@@ -879,6 +606,8 @@ class ExternalModelPrediction:
 class ExternalFinalPredictionArtifact:
     preregistration_hash: str
     preflight_hash: str
+    brier_protocol_hash: str
+    log_protocol_hash: str
     repository_revision: str
     dataset_hash: str
     final_partition_hash: str
@@ -887,141 +616,66 @@ class ExternalFinalPredictionArtifact:
     simulation_seeds: tuple[int, ...]
     model_predictions: tuple[ExternalModelPrediction, ...]
     manifest: ExperimentManifest
-
-    @property
-    def content_hash(self) -> str: ...
 ```
+
+`content_hash` is a property derived from all identity fields plus manifest hash. Validate exact model/case/seed coverage and metric schema.
 
 - [ ] **8.4 Implement `predict_external_final_once()`.**
 
-```python
-def predict_external_final_once(
-    *,
-    runner: SimulationRunner,
-    preregistration: ExternalValidationPreregistration,
-    preflight: ExternalReleasePreflight,
-    brier_protocol: PreregisteredEvaluationProtocol,
-    log_protocol: PreregisteredEvaluationProtocol,
-    models: tuple[ComparisonModel, ...],
-    final_targets: TargetConstructionReport,
-    extractor: object,
-    repository_revision: str,
-) -> ExternalFinalPredictionArtifact: ...
-```
+Inputs are runner, P3 preregistration/preflight, both sibling protocols, exact `ComparisonModel` tuple, final targets, extractor, and repository revision. Before execution verify sibling protocol hashes, final target, extractor, seeds, candidate identities/params and runtime component identities. Then call `runner.run_once()` exactly once per model/case/seed, apply extractor, store metric vector + run manifest hash. Artifact manifest parents every run manifest and records all scientific identities. Do not compute Brier or Log.
 
-Preflight all sibling identities, target/metric/seeds/candidates, and model component identities before executing. For each frozen model, final case, and seed, call `runner.run_once()` exactly once, apply extractor, and store the metric vector plus run manifest hash. The artifact manifest uses `ExperimentStage.EXTERNAL_PREDICTION`, stores all scientific identities, and parents every run manifest hash.
+- [ ] **8.5 Implement `score_external_prediction_artifact()` with no runner argument.**
 
-Do not compute Brier or Log in this function.
+Validate artifact against one sibling protocol, verified release, and final target. For each model/case, average each metric coordinate across exact protocol seeds with `statistics.fmean`, compute case loss with existing `evaluate_metric_loss`, and construct existing `HeldOutCaseEvaluation`, `HeldOutValidationReport`, `FinalTestReport`, `ModelComparisonEntry`, `ModelComparisonReport`, and `ReleasedModelComparisonReport`. Preserve existing ranking and `<=` threshold semantics. Child comparison lineage must include the sealed prediction artifact manifest, so downstream report ancestry proves both scores share one prediction source.
 
-- [ ] **8.5 Implement precomputed scoring with existing report types and no runner argument.**
+- [ ] **8.6 Prove parity against current direct comparator on a deterministic synthetic fixture.**
 
-```python
-def score_external_prediction_artifact(
-    *,
-    artifact: ExternalFinalPredictionArtifact,
-    verified_release: VerifiedProtocolRelease,
-    protocol: PreregisteredEvaluationProtocol,
-    target_set: TargetConstructionReport,
-    loss: MetricLoss,
-) -> ReleasedModelComparisonReport: ...
-```
+Compare per-case metrics, mean/worst losses, adequacy, ranking, release/verification identities. Manifest hashes need not match because lineage intentionally differs.
 
-For each model/case, select artifact predictions for exactly `protocol.simulation_seeds`, average each metric coordinate with `statistics.fmean`, compute case loss using existing `evaluate_metric_loss`, and construct existing:
-
-- `HeldOutCaseEvaluation` with preserved `run_manifest_hashes`;
-- `HeldOutValidationReport`;
-- `FinalTestReport`;
-- `ModelComparisonEntry` / `ModelComparisonReport` using the same ranking and `<=` threshold semantics as current comparator;
-- `ReleasedModelComparisonReport` with existing `RELEASED_MODEL_COMPARISON` stage.
-
-The child model-comparison manifest must parent the sealed prediction artifact manifest so downstream P3 report lineage proves both score views originate from one prediction evidence artifact.
-
-- [ ] **8.6 Prove semantic parity against the direct comparator.**
-
-On a deterministic synthetic fixture, run direct Brier comparison once outside the sealed-study path and compare per-case metrics, mean/worst loss, adequacy, ranking, and release identities with `score_external_prediction_artifact()`. Do not require comparison manifest hashes to be equal because their execution lineage intentionally differs.
-
-- [ ] **8.7 Run GREEN plus generic final-comparison regressions.**
+- [ ] **8.7 Run GREEN/regression and commit.**
 
 ```bash
-python3 -m unittest \
-  tests.test_external_prediction \
-  tests.test_preregistered_model_comparison \
-  tests.test_protocol_release -v
-```
-
-- [ ] **8.8 Commit.**
-
-```bash
+python3 -m unittest tests.test_external_prediction tests.test_preregistered_model_comparison tests.test_protocol_release -v
 git add narrative_dynamics/external_prediction.py narrative_dynamics/contracts.py narrative_dynamics/__init__.py
 git commit -m "feat: add sealed external final predictions"
 ```
 
 ---
 
-## Task 9 — Add P3 assembly from precomputed sibling reports without changing existing P3 semantics
+## Task 9 — Add P3 assembly from precomputed sibling reports without changing existing semantics
 
-**Files:** modify `narrative_dynamics/external_validation.py:1170-1310`; extend `tests/test_external_prediction.py` and `tests/test_external_validation_final.py` only where needed.
+**Files:** modify `narrative_dynamics/external_validation.py:1170-1310`; use already-created RED tests in `tests/test_external_prediction.py`; add only backwards-compat regression to `tests/test_external_validation_final.py` if absent.
 
-- [ ] **9.1 Add RED for additive assembly.**
-
-Add:
-
-```text
-test_external_final_can_be_assembled_from_precomputed_released_reports
-test_precomputed_child_release_or_verification_drift_is_rejected
-test_existing_runner_based_evaluate_external_final_remains_backwards_compatible
-```
-
-Run:
+- [ ] **9.1 Re-run the assembly RED from Task 1.**
 
 ```bash
 python3 -m unittest tests.test_external_prediction tests.test_external_validation_final -v
 ```
 
-Expected: only new assembly symbol missing; existing P3 tests pass.
+Expected: sealed prediction/scoring is green after Task 8; additive P3 assembly tests remain RED until this task.
 
-- [ ] **9.2 Implement one additive public function.**
+- [ ] **9.2 Implement `assemble_external_final_from_reports()`.**
 
-```python
-def assemble_external_final_from_reports(
-    *,
-    preregistration: ExternalValidationPreregistration,
-    evidence: ExternalEvidenceDeclaration,
-    brier_protocol: PreregisteredEvaluationProtocol,
-    brier_release: ProtocolRelease,
-    brier_verified: VerifiedProtocolRelease,
-    brier_report: ReleasedModelComparisonReport,
-    log_protocol: PreregisteredEvaluationProtocol,
-    log_release: ProtocolRelease,
-    log_verified: VerifiedProtocolRelease,
-    log_report: ReleasedModelComparisonReport,
-    final_targets: TargetConstructionReport,
-) -> ExternalFinalEvaluation: ...
-```
+Inputs are preregistration/evidence, both protocols/releases/verifications, both precomputed `ReleasedModelComparisonReport`s, and final targets. Call `preflight_external_releases()` first. Require each child report's release hash, verification hash, protocol/comparison manifest identity, candidate names, final target, and loss role to match its sibling. Reuse existing `_external_adequacy_findings`, `_external_separation_findings`, and `_external_stratum_scores` unchanged to construct `ExternalFinalEvaluation`.
 
-Call existing `preflight_external_releases()` first. Require child `release_hash`, `verification_hash`, candidate names, final target identity, and loss role to match exact sibling protocols. Then reuse existing private `_external_adequacy_findings`, `_external_separation_findings`, and `_external_stratum_scores` unchanged.
+Keep existing `evaluate_external_final()` runner-based behavior unchanged and public.
 
-Do not change `evaluate_external_final()` behavior or existing typed findings/statuses.
-
-- [ ] **9.3 Run all P3 external regression tests.**
+- [ ] **9.3 Run complete P3 external regressions and commit.**
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_external_validation_*.py' -v
-python3 -m unittest tests.test_external_evidence tests.test_uncertainty_external_validation -v
-```
-
-- [ ] **9.4 Commit.**
-
-```bash
-git add narrative_dynamics/external_validation.py tests/test_external_prediction.py tests/test_external_validation_final.py
+python3 -m unittest tests.test_external_evidence tests.test_external_prediction -v
+git add narrative_dynamics/external_validation.py tests/test_external_validation_final.py
 git commit -m "feat: assemble external validation from sealed predictions"
 ```
 
+If no existing test file change is necessary, commit only the production file.
+
 ---
 
-## Task 10 — Implement secondary stay/switch diagnostic and append-only FINAL attempt lineage
+## Task 10 — Implement secondary stay/switch diagnostic and append-only FINAL attempts
 
-**Files:** extend `narrative_dynamics/studies/feher_hare_two_stage_v1.py`; green `tests/test_two_stage_secondary_diagnostic.py` and `tests/test_two_stage_final_attempts.py`.
+**Files:** extend `narrative_dynamics/studies/feher_hare_two_stage_v1.py`; green `tests/test_two_stage_secondary_diagnostic.py`, `tests/test_two_stage_final_attempts.py`.
 
 - [ ] **10.1 Confirm RED.**
 
@@ -1031,276 +685,104 @@ python3 -m unittest tests.test_two_stage_secondary_diagnostic tests.test_two_sta
 
 - [ ] **10.2 Implement diagnostic from sealed predictions only.**
 
-```python
-@dataclass(frozen=True)
-class TwoStageStaySwitchCell:
-    task_variant: str
-    previous_reward: int
-    previous_transition_common: bool
-    observation_count: int
-    observed_stay_rate: float
-    predicted_stay_probability_by_model: tuple[tuple[str, float], ...]
+`TwoStageStaySwitchCell` binds task, previous reward, previous common/rare transition, count, observed stay rate, and per-model mean predicted stay probability. `TwoStageStaySwitchDiagnostic` binds prediction artifact hash and canonical cells; `content_hash` is derived. Pair consecutive retained FINAL trials only. Predicted stay probability is the sealed current-trial probability assigned to the previous retained first-stage action. Never call runner/model.
 
-@dataclass(frozen=True)
-class TwoStageStaySwitchDiagnostic:
-    prediction_artifact_hash: str
-    cells: tuple[TwoStageStaySwitchCell, ...]
-    content_hash: str
+- [ ] **10.3 Implement immutable append-only attempt ledger.**
 
-def build_two_stage_stay_switch_diagnostic(
-    *,
-    dataset: ObservationDataset,
-    artifact: ExternalFinalPredictionArtifact,
-) -> TwoStageStaySwitchDiagnostic: ...
-```
+Statuses are exactly `started`, `completed`, `infrastructure_failed`, `revision_required`. Attempt identity binds preregistration/preflight/repository/dataset/final-target/candidate/release hashes, start time, status, failure class, run manifest hashes, result hash. Pure transition functions return new ledger values and reject overwriting/reopening. `require_exact_retry()` compares every scientific identity in the spec.
 
-Pair consecutive retained trials within FINAL participants only. Predicted stay probability on current trial is the sealed probability assigned to previous trial's canonical first-stage action. Never call a model/runner.
-
-- [ ] **10.3 Implement append-only attempt records.**
-
-```python
-class TwoStageFinalAttemptStatus(str, Enum):
-    STARTED = "started"
-    COMPLETED = "completed"
-    INFRASTRUCTURE_FAILED = "infrastructure_failed"
-    REVISION_REQUIRED = "revision_required"
-
-@dataclass(frozen=True)
-class TwoStageFinalExecutionAttempt:
-    attempt_id: str
-    preregistration_hash: str
-    preflight_hash: str
-    repository_revision: str
-    dataset_hash: str
-    final_target_hash: str
-    frozen_candidate_hashes: tuple[str, ...]
-    brier_release_hash: str
-    log_release_hash: str
-    started_at: str
-    status: TwoStageFinalAttemptStatus
-    failure_class: str | None = None
-    completed_run_manifest_hashes: tuple[str, ...] = ()
-    result_hash: str | None = None
-
-@dataclass(frozen=True)
-class TwoStageFinalAttemptLedger:
-    attempts: tuple[TwoStageFinalExecutionAttempt, ...]
-    @property
-    def content_hash(self) -> str: ...
-```
-
-Provide pure functions `start_final_attempt`, `mark_infrastructure_failed`, `mark_revision_required`, `complete_final_attempt`, `require_exact_retry`. They return new ledger values; no in-place mutation. Exact retry compares every frozen scientific identity listed in the spec.
-
-- [ ] **10.4 Run GREEN.**
+- [ ] **10.4 Run GREEN and commit.**
 
 ```bash
 python3 -m unittest tests.test_two_stage_secondary_diagnostic tests.test_two_stage_final_attempts -v
-```
-
-- [ ] **10.5 Commit.**
-
-```bash
 git add narrative_dynamics/studies/feher_hare_two_stage_v1.py
 git commit -m "feat: add two-stage final diagnostics and attempt lineage"
 ```
 
 ---
 
-## Task 11 — Implement locked Study V1 final orchestration and full synthetic end-to-end GREEN
+## Task 11 — Implement locked final orchestration and full synthetic end-to-end GREEN
 
 **Files:** extend `narrative_dynamics/studies/feher_hare_two_stage_v1.py`; green `tests/test_feher_hare_two_stage_pipeline.py`.
 
-- [ ] **11.1 Confirm end-to-end RED.**
+- [ ] **11.1 Confirm RED.**
 
 ```bash
 python3 -m unittest tests.test_feher_hare_two_stage_pipeline -v
 ```
 
-- [ ] **11.2 Implement result bundle and locked final entry point.**
+- [ ] **11.2 Implement `run_locked_feher_hare_final()`.**
 
-```python
-@dataclass(frozen=True)
-class FeherHareFinalStudyResult:
-    attempt_ledger: TwoStageFinalAttemptLedger
-    prediction_artifact: ExternalFinalPredictionArtifact
-    brier_report: ReleasedModelComparisonReport
-    log_report: ReleasedModelComparisonReport
-    external_evaluation: ExternalFinalEvaluation
-    secondary_diagnostic: TwoStageStaySwitchDiagnostic
-    report: ExternalValidationReport
-
-class FinalInfrastructureError(RuntimeError):
-    pass
-
-def run_locked_feher_hare_final(
-    *,
-    runner: SimulationRunner,
-    prepared: FeherHarePreparedStudy,
-    protocols: FeherHareProtocolBundle,
-    brier_release: ProtocolRelease,
-    brier_verified: VerifiedProtocolRelease,
-    log_release: ProtocolRelease,
-    log_verified: VerifiedProtocolRelease,
-    runtime_models: tuple[ComparisonModel, ...],
-    repository_revision: str,
-    attempt_ledger: TwoStageFinalAttemptLedger,
-    attempt_id: str,
-    started_at: str,
-) -> FeherHareFinalStudyResult: ...
-```
+Return a frozen result bundle containing updated attempt ledger, sealed prediction artifact, Brier/Log released reports, `ExternalFinalEvaluation`, secondary diagnostic, and `ExternalValidationReport`.
 
 Execution order is normative:
 
-1. dual `preflight_external_releases()` and final-target/model identity checks — no attempt started yet and zero runner calls on failure;
-2. append STARTED attempt immediately before first FINAL model execution;
+1. dual release preflight + final target/runtime-model identity checks; zero runner calls and no started attempt on failure;
+2. append STARTED immediately before first FINAL model execution;
 3. `predict_external_final_once()`;
-4. `score_external_prediction_artifact()` Brier;
-5. `score_external_prediction_artifact()` Log;
+4. precomputed Brier score;
+5. precomputed Log score;
 6. `assemble_external_final_from_reports()`;
-7. `build_two_stage_stay_switch_diagnostic()`;
+7. secondary diagnostic;
 8. `build_external_validation_report(... constraint_findings=())`;
 9. `attest_report(report).require_integrity()`;
-10. append COMPLETED attempt with run/result hashes.
+10. append COMPLETED with run/result hashes.
 
-Catch only explicitly wrapped environmental execution failures as `FinalInfrastructureError` and append `INFRASTRUCTURE_FAILED`. Validation, transform, model-semantic, identity, protocol, or scoring defects after STARTED append `REVISION_REQUIRED` and re-raise. Never treat predictive status/outcome as an error.
+Use an explicit `FinalInfrastructureError` wrapper for environment-only execution failures. Catch only that type as `infrastructure_failed`. Any scientific/identity/model/transform/scoring defect after STARTED marks `revision_required` and re-raises. Never map predictive adequacy/separation outcome to failure.
 
-- [ ] **11.3 Make the full synthetic mini-study pass.**
+- [ ] **11.3 Make full synthetic study pass and prove one-pass execution.**
 
-The test must assert:
+Assert both score reports descend from the same prediction artifact, no runner calls occur during scoring/strata/diagnostic, report is predictive-only and attested, constraints are empty, and valid execution ends COMPLETED regardless of winner.
 
-- preflight before first runner call;
-- exactly one prediction pass;
-- Brier and Log reports both bind the same artifact lineage;
-- no runner calls in scores/strata/diagnostic;
-- external report claim scope remains predictive-only;
-- `constraint_findings == ()`;
-- report attestation passes;
-- attempt is COMPLETED regardless of which synthetic family is best, provided execution is valid.
-
-- [ ] **11.4 Run complete focused study suite.**
+- [ ] **11.4 Run focused study suite and commit.**
 
 ```bash
 python3 -m unittest \
-  tests.test_two_stage_source \
-  tests.test_two_stage_transform \
-  tests.test_two_stage_metrics \
-  tests.test_narrative_two_stage_adapter \
-  tests.test_external_prediction \
-  tests.test_feher_hare_two_stage_protocol \
-  tests.test_two_stage_osf_witness \
-  tests.test_two_stage_secondary_diagnostic \
-  tests.test_two_stage_final_attempts \
-  tests.test_feher_hare_two_stage_pipeline -v
-```
-
-- [ ] **11.5 Commit.**
-
-```bash
+  tests.test_two_stage_source tests.test_two_stage_transform \
+  tests.test_two_stage_metrics tests.test_narrative_two_stage_adapter \
+  tests.test_external_prediction tests.test_feher_hare_two_stage_protocol \
+  tests.test_two_stage_osf_witness tests.test_two_stage_secondary_diagnostic \
+  tests.test_two_stage_final_attempts tests.test_feher_hare_two_stage_pipeline -v
 git add narrative_dynamics/studies/feher_hare_two_stage_v1.py tests/test_feher_hare_two_stage_pipeline.py
 git commit -m "feat: add locked feher hare external final workflow"
 ```
 
 ---
 
-## Task 12 — Freeze real source manifest, run real-source conformance through SELECTION only, and finish repository verification
+## Task 12 — Freeze real source manifest, establish exact implementation head, then prepare real preregistration through SELECTION only
 
-**Files:** create generated metadata-only `narrative_dynamics/studies/feher_hare_two_stage_v1_source_manifest.json`; extend source/study module only if a minimal manifest-generation/conformance interface is missing. Do **not** run real FINAL in this task.
+**Files:** generate metadata-only `narrative_dynamics/studies/feher_hare_two_stage_v1_source_manifest.json`; extend source/study module only if the manifest freezer/conformance API is missing. Do **not** run real FINAL in this task.
 
-This task requires an explicitly supplied local checkout at the frozen upstream revision. Set:
+This task requires an explicitly supplied local checkout:
 
 ```bash
 export FEHER_HARE_SOURCE_ROOT=/absolute/path/to/muddled_models
 ```
 
-The checkout must itself be at `4567763780a2c596fd6510af720ec468a8214a8f`.
+It must be at exact upstream revision `4567763780a2c596fd6510af720ec468a8214a8f`.
 
-- [ ] **12.1 Add a deterministic manifest freezer that emits metadata only.**
+- [ ] **12.1 Implement deterministic real-source manifest freezer and generate the metadata-only manifest.**
 
-In `two_stage_source.py` expose:
+Expose `freeze_feher_hare_v1_source_manifest(root: Path) -> TwoStageSourceManifest`. It first verifies exact upstream HEAD, then includes only approved main-task evidence files plus matching config/info metadata for participants with main-task files. Store path + Git blob identity only, never raw row content.
 
-```python
-def freeze_feher_hare_v1_source_manifest(root: Path) -> TwoStageSourceManifest: ...
-```
+Generate `narrative_dynamics/studies/feher_hare_two_stage_v1_source_manifest.json`, inspect it manually for metadata-only content, and run `verify_two_stage_snapshot()` against the local checkout.
 
-It enumerates only the approved evidence patterns plus matching metadata for participants with main-task files. It records path + Git blob SHA, not raw rows. It rejects wrong upstream HEAD before producing a manifest.
+- [ ] **12.2 Run real source/transform/split conformance without TRAIN/SELECTION yet.**
 
-Generate and save:
-
-```bash
-python3 - <<'PY'
-import os
-from pathlib import Path
-from narrative_dynamics.studies.two_stage_source import (
-    freeze_feher_hare_v1_source_manifest,
-    write_two_stage_source_manifest,
-)
-root = Path(os.environ["FEHER_HARE_SOURCE_ROOT"])
-manifest = freeze_feher_hare_v1_source_manifest(root)
-out = Path("narrative_dynamics/studies/feher_hare_two_stage_v1_source_manifest.json")
-write_two_stage_source_manifest(out, manifest)
-print(manifest.content_hash)
-PY
-```
-
-Review the generated JSON to ensure it contains paths/identities only and no CSV content.
-
-- [ ] **12.2 Verify the real frozen inventory and transform accounting.**
-
-Run a conformance-only Python entry point or direct API call that stops before FINAL prediction and print a JSON-safe summary containing hashes/counts only. Required assertions:
+Required assertions from the pinned checkout:
 
 ```text
-Magic Carpet structurally eligible participants = 24
-Spaceship structurally eligible participants = 21
+Magic Carpet eligible = 24
+Spaceship eligible = 21
 Total eligible = 45
-Magic split = 14 TRAIN / 5 SELECTION / 5 FINAL
-Spaceship split = 13 TRAIN / 4 SELECTION / 4 FINAL
+Magic split = 14 / 5 / 5
+Spaceship split = 13 / 4 / 4
 Total split = 27 / 9 / 9
 ```
 
-Also record structural metadata-only exclusions, slow-trial counts, retained-trial counts, source snapshot hash, transform hash, participant assignment hash, dataset hash, and final-target hash. Do not print or persist raw human rows.
+Record hashes/counts only: metadata-only structural exclusions, slow counts, retained counts, source snapshot hash, transform hash, participant assignment hash, dataset hash, final-target hash. Do not persist raw rows.
 
-- [ ] **12.3 Run real TRAIN and SELECTION only.**
-
-Use Brier-only fitting/selection and record the three frozen parameter tuples plus training/selection manifest hashes. Build `ExternalEvidenceDeclaration`, Brier protocol, Log protocol, `ExternalValidationPreregistration`, and both `ProtocolRelease` values. Do **not** execute `predict_external_final_once()` and do not compute any FINAL behavioral summaries.
-
-This output is the preregistration material to submit to OSF. The exact repository revision used for this preregistration must be frozen in the bundle.
-
-- [ ] **12.4 Human external-witness gate.**
-
-Before any real FINAL execution, submit the canonical bundle to a public immutable OSF Registration. Record the immutable registration reference, registration time, and bundle digest. Create the two existing `WitnessReceipt` values and verify both. If the bundle changes after registration, stop and create a new study revision/registration; never patch the old registration lineage.
-
-Real FINAL is intentionally **not** an implementation/CI acceptance test. It is a later explicit locked research execution using `run_locked_feher_hare_final()` after this witness gate.
-
-- [ ] **12.5 Run all Python regression tests.**
-
-```bash
-python3 -m unittest discover -s tests -v
-```
-
-Expected: all tests pass. Real human checkout is not required by this ordinary test command.
-
-- [ ] **12.6 Run Lean regression gates without modifying Lean sources.**
-
-```bash
-lake build
-```
-
-Expected: success.
-
-- [ ] **12.7 Run focused P3 and study proof again.**
-
-```bash
-python3 -m unittest discover -s tests -p 'test_external_validation_*.py' -v
-python3 -m unittest \
-  tests.test_external_prediction \
-  tests.test_feher_hare_two_stage_pipeline \
-  tests.test_two_stage_transform \
-  tests.test_narrative_two_stage_adapter -v
-```
-
-Expected: success.
-
-- [ ] **12.8 Commit the generated source manifest and any final additive exports.**
+- [ ] **12.3 Commit source manifest before freezing the study repository revision.**
 
 ```bash
 git add narrative_dynamics/studies/feher_hare_two_stage_v1_source_manifest.json \
@@ -1308,27 +790,55 @@ git add narrative_dynamics/studies/feher_hare_two_stage_v1_source_manifest.json 
 git commit -m "research: freeze feher hare two-stage source manifest"
 ```
 
-If the code was already complete and only the generated manifest changed, keep the commit manifest-only.
+If only the generated manifest changed, keep this commit manifest-only.
 
-- [ ] **12.9 Push the exact implementation head and verify repository CI.**
+- [ ] **12.4 Run complete repository verification on the would-be preregistration head.**
+
+```bash
+python3 -m unittest discover -s tests -v
+lake build
+python3 -m unittest discover -s tests -p 'test_external_validation_*.py' -v
+python3 -m unittest tests.test_external_prediction tests.test_feher_hare_two_stage_pipeline \
+  tests.test_two_stage_transform tests.test_narrative_two_stage_adapter -v
+```
+
+Expected: all green. Ordinary test commands require no real checkout.
+
+- [ ] **12.5 Final scope review, then push and establish exact-head CI evidence.**
+
+Confirm no raw CSV/questionnaires, no Lean changes, no P2 identification change, no participant/task-specific fitted parameters, no second FINAL pass, and no latent-cognition claim. Then:
 
 ```bash
 git rev-parse HEAD
 git push -u origin work/real-external-validation-two-stage-v1
 ```
 
-Record the exact SHA. The authoritative GitHub Actions proof must report the same `head_sha`; do not accept a run for an earlier commit. Required green evidence is the existing proof workflow, full Python suite, Lean build/conformance gates, and the focused two-stage/P3 suite. Do not add or run Docker acceptance.
+Record the exact SHA. The authoritative `.github/workflows/proof.yml` run must report that same `head_sha`; reject stale runs. Do not run Docker acceptance.
 
-- [ ] **12.10 Final scope review before integration.**
+After this point, **do not change code or the source manifest** if this repository revision is going to be used in the real preregistration bundle. Any later scientific/code change requires a new exact head and repeats this verification step.
 
-Confirm the diff contains only the planned study/source/adapter/external-prediction files, additive P3 assembly/exports, tests, the approved design/plan, and metadata-only source manifest. Confirm no raw human CSV, no questionnaire data, no Lean changes, no P2 identification changes, no participant/task-specific fitted params, no second FINAL runner pass, and no canonical latent-cognition claim.
+- [ ] **12.6 At that exact verified repository head, run real TRAIN and SELECTION only.**
 
-Commit any review-only corrections as their own atomic RED->GREEN changes and rerun exact-head verification.
+Using the pinned local checkout and committed source manifest, run Brier-only TRAIN/SELECTION, record the three frozen parameter tuples and manifest hashes, then build `ExternalEvidenceDeclaration`, Brier protocol, Log protocol, `ExternalValidationPreregistration`, and both `ProtocolRelease` values. Do not call `predict_external_final_once()` and do not compute any FINAL behavioral summary.
+
+The release `source_revision.repository_revision` must equal the exact verified implementation SHA from 12.5.
+
+- [ ] **12.7 Build the canonical OSF bundle from that exact head and frozen TRAIN/SELECTION outputs.**
+
+The bundle must bind the exact repository SHA, committed source manifest, source/transform/split/dataset/target hashes, frozen model/selection identities, both protocol/release hashes, thresholds, floor, task strata, separation rule, and claim language. Serialize the bundle for external registration without raw human rows.
+
+- [ ] **12.8 Human external-witness gate — last step before any real FINAL.**
+
+Submit that exact bundle to a public immutable OSF Registration. Record immutable registration reference/time/bundle digest, create two existing `WitnessReceipt`s, verify both, and run `preflight_external_releases()` with zero FINAL model executions.
+
+If anything in code, source manifest, transform, candidates, protocols, releases, or bundle changes after registration, the old registration is no longer valid for the changed study: create a new study revision/registration.
+
+Real FINAL is intentionally not an implementation/CI acceptance test. It is a later explicit locked research execution using `run_locked_feher_hare_final()` after this witness gate.
 
 ---
 
 ## Implementation Completion Criteria
 
-Implementation is code-complete only when the complete synthetic Study V1 suite and all repository regressions are GREEN on one exact head, source/transform/split identities are fail-closed and content-hashed, three family adapters preserve generic runtime boundaries, Brier-only TRAIN/SELECTION freezes one global tuple per family, OSF bundle/receipt plumbing uses existing release schemas, FINAL prediction is single-pass and sealed, both score reports plus secondary diagnostic consume that artifact without runner calls, P3 report attestation remains valid and predictive-only, and attempt/retry lineage is append-only.
+Implementation is code-complete when the complete synthetic Study V1 suite and repository regressions are GREEN on one exact head, source/transform/split identities are fail-closed and content-hashed, three family adapters preserve generic runtime boundaries, Brier-only TRAIN/SELECTION freezes one global tuple per family, OSF bundle/receipt plumbing uses existing release schemas, FINAL prediction is single-pass and sealed, both score reports plus secondary diagnostic consume that artifact without runner calls, P3 report attestation remains valid and predictive-only, and attempt/retry lineage is append-only.
 
-The empirical study is preregistration-ready only after the separate real-source conformance lane has verified the pinned 24+21 inventory, generated the metadata-only source manifest, frozen TRAIN/SELECTION candidates and dual releases, and produced an immutable OSF bundle. A real FINAL outcome is not required to merge the implementation and must never be made an ordinary CI expectation.
+The empirical study is preregistration-ready only after Task 12 has generated/committed the metadata-only source manifest, established exact-head CI evidence, run real-source conformance plus TRAIN/SELECTION at that unchanged head, built both releases and the canonical bundle, and completed the immutable OSF witness gate. A real FINAL outcome is not required to merge the implementation and must never be an ordinary CI expectation.
