@@ -155,6 +155,11 @@ class ExternalValidationReportingTests(unittest.TestCase):
             evaluation.log_report.manifest.content_hash,
         )
 
+    def test_report_rejects_release_hash_drift_from_manifest_preflight_binding(self):
+        report = self._evidence()["report"]
+        with self.assertRaises(ExternalValidationError):
+            replace(report, brier_release_hash=HASH0)
+
     def test_report_preserves_method_validation_hashes_as_opaque_lineage_only(self):
         report = self._evidence()["report"]
         self.assertEqual(report.method_validation_hashes, (METHOD_HASH,))
