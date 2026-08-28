@@ -24,6 +24,7 @@ from narrative_dynamics.external_validation import (
     EXTERNAL_CLAIM_SCOPE,
     ExternalConstraintPlan,
     ExternalConstraintStatus,
+    ExternalReleasePreflight,
     ExternalScoreRole,
     ExternalStratum,
     ExternalValidationConstraintError,
@@ -32,6 +33,7 @@ from narrative_dynamics.external_validation import (
     PairwiseSeparationRule,
     PredictiveAdequacyStatus,
     PredictiveSeparationStatus,
+    preflight_external_releases,
 )
 from narrative_dynamics.losses import (
     DEFAULT_METRIC_LOSS,
@@ -143,6 +145,7 @@ __all__ = [
     "ExternalConstraintPlan",
     "ExternalConstraintStatus",
     "ExternalEvidenceDeclaration",
+    "ExternalReleasePreflight",
     "ExternalScoreRole",
     "ExternalStratum",
     "ExternalValidationConstraintError",
@@ -212,6 +215,7 @@ __all__ = [
     "load_observation_dataset",
     "load_reference_suite",
     "metric_loss_identity",
+    "preflight_external_releases",
     "stable_content_hash",
     "validate_schema_value",
     "verify_protocol_release",

@@ -21,6 +21,10 @@ from narrative_dynamics.observations.preregistration import (
     AdequacyThresholds,
     PreregisteredEvaluationProtocol,
 )
+from narrative_dynamics.observations.release import (
+    ProtocolRelease,
+    VerifiedProtocolRelease,
+)
 from narrative_dynamics.observations.targets import TargetConstructionReport
 
 
@@ -750,11 +754,208 @@ class ExternalValidationPreregistration:
         return stable_content_hash(self.identity_payload())
 
 
+@dataclass(frozen=True)
+class ExternalReleasePreflight:
+    preregistration_hash: str
+    evidence_declaration_hash: str
+    brier_protocol_hash: str
+    brier_release_hash: str
+    brier_verification_hash: str
+    log_protocol_hash: str
+    log_release_hash: str
+    log_verification_hash: str
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "preregistration_hash",
+            "evidence_declaration_hash",
+            "brier_protocol_hash",
+            "brier_release_hash",
+            "brier_verification_hash",
+            "log_protocol_hash",
+            "log_release_hash",
+            "log_verification_hash",
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                _hash(getattr(self, field_name), label=field_name.replace("_", " ")),
+            )
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "preregistration_hash": self.preregistration_hash,
+            "evidence_declaration_hash": self.evidence_declaration_hash,
+            "brier_protocol_hash": self.brier_protocol_hash,
+            "brier_release_hash": self.brier_release_hash,
+            "brier_verification_hash": self.brier_verification_hash,
+            "log_protocol_hash": self.log_protocol_hash,
+            "log_release_hash": self.log_release_hash,
+            "log_verification_hash": self.log_verification_hash,
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.identity_payload())
+
+
+def _require_release_protocol_identity(
+    release: ProtocolRelease,
+    protocol: PreregisteredEvaluationProtocol,
+    *,
+    label: str,
+) -> None:
+    if release.protocol_hash != protocol.content_hash:
+        raise ExternalValidationProtocolError(f"{label} release protocol identity changed")
+    if release.dataset_hash != protocol.dataset_hash:
+        raise ExternalValidationProtocolError(f"{label} release dataset identity changed")
+    if release.target_spec_hash != protocol.target_spec_hash:
+        raise ExternalValidationProtocolError(f"{label} release target identity changed")
+    if release.candidate_hashes != _candidate_hashes(protocol):
+        raise ExternalValidationProtocolError(f"{label} release candidate identities changed")
+
+
+def _release_binding(
+    release: ProtocolRelease,
+    *,
+    evidence_hash: str,
+    preregistration_hash: str,
+    score_role: ExternalScoreRole,
+) -> tuple[str, str, str]:
+    revision = release.source_revision
+    required = (
+        "repository_revision",
+        "external_evidence_declaration_hash",
+        "external_validation_preregistration_hash",
+        "score_role",
+    )
+    if any(key not in revision for key in required):
+        raise ExternalValidationProtocolError(
+            f"{score_role.value} release is missing P3 source-revision bindings"
+        )
+    repository_revision = _text(
+        revision["repository_revision"],
+        label=f"{score_role.value} release repository revision",
+    )
+    declared_evidence = _hash(
+        revision["external_evidence_declaration_hash"],
+        label=f"{score_role.value} release evidence hash",
+    )
+    declared_preregistration = _hash(
+        revision["external_validation_preregistration_hash"],
+        label=f"{score_role.value} release preregistration hash",
+    )
+    if declared_evidence != evidence_hash:
+        raise ExternalValidationProtocolError(
+            f"{score_role.value} release external evidence identity changed"
+        )
+    if declared_preregistration != preregistration_hash:
+        raise ExternalValidationProtocolError(
+            f"{score_role.value} release P3 preregistration identity changed"
+        )
+    if revision["score_role"] != score_role.value:
+        raise ExternalValidationProtocolError(
+            f"{score_role.value} release score role changed"
+        )
+    return repository_revision, declared_evidence, declared_preregistration
+
+
+def preflight_external_releases(
+    *,
+    preregistration: ExternalValidationPreregistration,
+    evidence: ExternalEvidenceDeclaration,
+    brier_protocol: PreregisteredEvaluationProtocol,
+    brier_release: ProtocolRelease,
+    brier_verified: VerifiedProtocolRelease,
+    log_protocol: PreregisteredEvaluationProtocol,
+    log_release: ProtocolRelease,
+    log_verified: VerifiedProtocolRelease,
+) -> ExternalReleasePreflight:
+    if not isinstance(preregistration, ExternalValidationPreregistration):
+        raise TypeError("external release preflight requires P3 preregistration")
+    if not isinstance(evidence, ExternalEvidenceDeclaration):
+        raise TypeError("external release preflight requires external evidence")
+    for value, expected, label in (
+        (brier_protocol, PreregisteredEvaluationProtocol, "Brier protocol"),
+        (log_protocol, PreregisteredEvaluationProtocol, "Log protocol"),
+        (brier_release, ProtocolRelease, "Brier release"),
+        (log_release, ProtocolRelease, "Log release"),
+        (brier_verified, VerifiedProtocolRelease, "Brier verification"),
+        (log_verified, VerifiedProtocolRelease, "Log verification"),
+    ):
+        if not isinstance(value, expected):
+            raise TypeError(f"external release preflight {label} has invalid type")
+
+    if evidence.content_hash != preregistration.evidence_declaration_hash:
+        raise ExternalValidationProtocolError(
+            "external release preflight evidence does not match preregistration"
+        )
+    if brier_protocol.content_hash != preregistration.brier_protocol_hash:
+        raise ExternalValidationProtocolError(
+            "external release preflight Brier protocol changed"
+        )
+    if log_protocol.content_hash != preregistration.log_protocol_hash:
+        raise ExternalValidationProtocolError(
+            "external release preflight Log protocol changed"
+        )
+
+    brier_verified.require_matches(brier_protocol)
+    log_verified.require_matches(log_protocol)
+    if brier_verified.release_hash != brier_release.content_hash:
+        raise ExternalValidationProtocolError(
+            "Brier verification does not bind the supplied release"
+        )
+    if log_verified.release_hash != log_release.content_hash:
+        raise ExternalValidationProtocolError(
+            "Log verification does not bind the supplied release"
+        )
+
+    _require_release_protocol_identity(
+        brier_release,
+        brier_protocol,
+        label="Brier",
+    )
+    _require_release_protocol_identity(
+        log_release,
+        log_protocol,
+        label="Log",
+    )
+
+    brier_binding = _release_binding(
+        brier_release,
+        evidence_hash=evidence.content_hash,
+        preregistration_hash=preregistration.content_hash,
+        score_role=ExternalScoreRole.BRIER,
+    )
+    log_binding = _release_binding(
+        log_release,
+        evidence_hash=evidence.content_hash,
+        preregistration_hash=preregistration.content_hash,
+        score_role=ExternalScoreRole.LOG,
+    )
+    if brier_binding != log_binding:
+        raise ExternalValidationProtocolError(
+            "external sibling releases disagree on repository/evidence/preregistration identity"
+        )
+
+    return ExternalReleasePreflight(
+        preregistration_hash=preregistration.content_hash,
+        evidence_declaration_hash=evidence.content_hash,
+        brier_protocol_hash=brier_protocol.content_hash,
+        brier_release_hash=brier_release.content_hash,
+        brier_verification_hash=brier_verified.content_hash,
+        log_protocol_hash=log_protocol.content_hash,
+        log_release_hash=log_release.content_hash,
+        log_verification_hash=log_verified.content_hash,
+    )
+
+
 __all__ = [
     "EXTERNAL_CLAIM_SCOPE",
     "EXTERNAL_EVIDENCE_ORIGIN",
     "ExternalConstraintPlan",
     "ExternalConstraintStatus",
+    "ExternalReleasePreflight",
     "ExternalScoreRole",
     "ExternalStratum",
     "ExternalValidationConstraintError",
@@ -764,4 +965,5 @@ __all__ = [
     "PairwiseSeparationRule",
     "PredictiveAdequacyStatus",
     "PredictiveSeparationStatus",
+    "preflight_external_releases",
 ]
