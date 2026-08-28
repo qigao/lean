@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 from dataclasses import replace
 from pathlib import Path
 import tempfile
@@ -8,7 +9,7 @@ import unittest
 from narrative_dynamics.contracts import stable_content_hash
 from narrative_dynamics.observations import ObservationPartitionRole
 from tests.test_two_stage_source import _files
-from tests.two_stage_test_support import build_synthetic_two_stage_checkout
+from tests.two_stage_test_support import build_synthetic_two_stage_checkout, run_git
 
 _TRANSFORM_IMPORT_ERROR: Exception | None = None
 try:
@@ -79,10 +80,19 @@ class TwoStageTransformTests(unittest.TestCase):
     def test_malformed_included_row_fails_entire_transform(self):
         self.require_transform()
         with tempfile.TemporaryDirectory() as tmp:
-            root, revision = build_synthetic_two_stage_checkout(Path(tmp))
+            root, _ = build_synthetic_two_stage_checkout(Path(tmp))
             path = root / "results/magic_carpet/choices/m000_game.csv"
-            text = path.read_text(encoding="utf-8").replace(",1,1,1,2,.5,2,1,0", ",1,1,1,2,.5,2,9,0", 1)
-            path.write_text(text, encoding="utf-8")
+            with path.open(newline="", encoding="utf-8") as handle:
+                rows = list(csv.reader(handle))
+            reward_index = rows[0].index("reward")
+            slow_index = rows[0].index("slow")
+            self.assertEqual(rows[1][slow_index], "0")
+            rows[1][reward_index] = "9"
+            with path.open("w", newline="", encoding="utf-8") as handle:
+                csv.writer(handle).writerows(rows)
+            run_git(root, "add", path.relative_to(root).as_posix())
+            run_git(root, "commit", "-m", "malformed retained row")
+            revision = run_git(root, "rev-parse", "HEAD")
             manifest = TwoStageSourceManifest(
                 name="malformed",
                 version="1",
@@ -91,10 +101,7 @@ class TwoStageTransformTests(unittest.TestCase):
                 license_reference="test-only",
                 files=_files(root),
             )
-            snapshot = replace(
-                verify_two_stage_snapshot(root, manifest),
-                repository_revision=revision,
-            )
+            snapshot = verify_two_stage_snapshot(root, manifest)
             with self.assertRaises(ValueError):
                 transform_two_stage_snapshot(snapshot, manifest)
 
