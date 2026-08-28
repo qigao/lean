@@ -16,7 +16,12 @@ from narrative_dynamics.observations import (
 )
 from narrative_dynamics.simulation import SimulationRunner
 from narrative_dynamics.uncertainty import ParameterAcceptanceSet
-from narrative_dynamics.validation import EvaluationRole, HeldOutCase, HeldOutSuite, select_on_validation_suite
+from narrative_dynamics.validation import (
+    EvaluationRole,
+    HeldOutCase,
+    HeldOutSuite,
+    select_on_validation_suite,
+)
 
 from tests.test_narrative_identification_protocol import (
     FINAL_SEEDS,
@@ -283,7 +288,7 @@ class NarrativeIdentificationModelComparisonTests(unittest.TestCase):
 
     def test_source_parameter_schemas_match_real_family_semantics(self):
         dataset = load_observation_dataset(FIXTURE)
-        scenario = dataset.partition(ObservationPartitionRole.TRAIN).cases[0].scenario
+        scenario = dataset.partition(ObservationPartitionRole.TRAIN).records[0].scenario
         runner = SimulationRunner()
         for family, source in source_map().items():
             with self.subTest(family=family):
@@ -307,12 +312,12 @@ class NarrativeIdentificationModelComparisonTests(unittest.TestCase):
         dataset = load_observation_dataset(FIXTURE)
         runner = SimulationRunner()
         for partition in dataset.partitions:
-            for case in partition.cases:
+            for record in partition.records:
                 for family, source in source_map().items():
-                    with self.subTest(case=case.name, family=family):
+                    with self.subTest(record=record.id, family=family):
                         trace = runner.run_once(
                             source,
-                            case.scenario,
+                            record.scenario,
                             parameters_for(family),
                             seed=1,
                         )
@@ -323,7 +328,7 @@ class NarrativeIdentificationModelComparisonTests(unittest.TestCase):
 
     def test_binary_modes_zero_fill_scout_without_changing_dispatch_policy(self):
         runner = SimulationRunner()
-        binary_cases = (
+        binary_records = (
             "train-temp-anchor",
             "train-goal-low",
             "train-memory-hidden",
@@ -331,17 +336,17 @@ class NarrativeIdentificationModelComparisonTests(unittest.TestCase):
             "final-equivalence",
         )
         dataset = load_observation_dataset(FIXTURE)
-        cases = {
-            case.name: case
+        records = {
+            record.id: record
             for partition in dataset.partitions
-            for case in partition.cases
+            for record in partition.records
         }
-        for name in binary_cases:
+        for name in binary_records:
             for family, source in source_map().items():
-                with self.subTest(case=name, family=family):
+                with self.subTest(record=name, family=family):
                     trace = runner.run_once(
                         source,
-                        cases[name].scenario,
+                        records[name].scenario,
                         parameters_for(family),
                         seed=1,
                     )
@@ -404,7 +409,10 @@ class NarrativeIdentificationModelComparisonTests(unittest.TestCase):
         self.assertIsNone(validate_sibling_final_protocols(brier_protocol, log_protocol))
         self.assertEqual(brier_protocol.candidates, log_protocol.candidates)
         self.assertEqual(brier_protocol.final_target_hash, log_protocol.final_target_hash)
-        self.assertEqual(brier_protocol.simulation_seeds, log_protocol.simulation_seeds)
+        self.assertEqual(
+            brier_protocol.simulation_seeds,
+            log_protocol.simulation_seeds,
+        )
         self.assertEqual(brier_finding.candidate_hashes, log_finding.candidate_hashes)
 
     def test_log_candidate_or_seed_drift_is_rejected_before_final_scoring(self):
@@ -454,7 +462,11 @@ class NarrativeIdentificationModelComparisonTests(unittest.TestCase):
         winners = {
             min(
                 items,
-                key=lambda score: (score.mean_loss, score.worst_loss, score.model_name),
+                key=lambda score: (
+                    score.mean_loss,
+                    score.worst_loss,
+                    score.model_name,
+                ),
             ).model_name
             for items in scores.values()
         }

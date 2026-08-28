@@ -6,7 +6,7 @@ from pathlib import Path
 import unittest
 
 from narrative_dynamics.adapters.prison_metrics import prison_initial_action_metrics
-from narrative_dynamics.contracts import ExperimentStage, Scenario
+from narrative_dynamics.contracts import ExperimentStage
 from narrative_dynamics.losses import (
     CategoricalBrierLoss,
     CategoricalLogLoss,
@@ -73,7 +73,11 @@ class DummySource:
         return "fresh_per_batch"
 
     def manifest_identity(self):
-        return {"name": self.name, "version": self.version, "lifecycle": self.lifecycle}
+        return {
+            "name": self.name,
+            "version": self.version,
+            "lifecycle": self.lifecycle,
+        }
 
 
 def require_identification(test: unittest.TestCase) -> None:
@@ -112,9 +116,9 @@ def log_loss() -> CategoricalLogLoss:
 def case_by_name(name: str):
     dataset = load_fixture()
     for partition in dataset.partitions:
-        for case in partition.cases:
-            if case.name == name:
-                return case
+        for record in partition.records:
+            if record.id == name:
+                return record
     raise KeyError(name)
 
 
@@ -127,10 +131,10 @@ def make_pair(
 ):
     if InformationInterventionPair is None:
         raise RuntimeError("identification API unavailable")
-    baseline_case = case_by_name(baseline_name)
-    intervention_case = case_by_name(intervention_name)
-    baseline = baseline_case.scenario
-    intervention = intervention_case.scenario
+    baseline_record = case_by_name(baseline_name)
+    intervention_record = case_by_name(intervention_name)
+    baseline = baseline_record.scenario
+    intervention = intervention_record.scenario
     frozen = tuple((key,) for key in sorted(baseline.payload) if key != allowed_key)
     return InformationInterventionPair(
         name=f"{baseline_name}--{intervention_name}",
@@ -138,7 +142,7 @@ def make_pair(
         intervention=intervention,
         allowed_information_path=(allowed_key,),
         frozen_paths=frozen,
-        stratum=baseline_case.provenance["stratum"],
+        stratum=baseline_record.metadata["stratum"],
         expected_relationship=expected_relationship,
     )
 
@@ -218,7 +222,15 @@ def dummy_candidates():
     )
 
 
-def make_final_protocol(*, loss, name: str, seeds=FINAL_SEEDS, candidates=None, baseline="intentional", thresholds=None):
+def make_final_protocol(
+    *,
+    loss,
+    name: str,
+    seeds=FINAL_SEEDS,
+    candidates=None,
+    baseline="intentional",
+    thresholds=None,
+):
     dataset = load_fixture()
     if candidates is None:
         candidates = dummy_candidates()
@@ -296,10 +308,10 @@ class NarrativeIdentificationProtocolTests(unittest.TestCase):
             {partition.role for partition in dataset.partitions},
             set(ObservationPartitionRole),
         )
-        cases = {
-            case.name: case
+        records = {
+            record.id: record
             for partition in dataset.partitions
-            for case in partition.cases
+            for record in partition.records
         }
         for name in (
             "final-memory-hidden",
@@ -307,14 +319,14 @@ class NarrativeIdentificationProtocolTests(unittest.TestCase):
             "final-future-off",
             "final-future-on",
         ):
-            self.assertIn("paired_case_id", cases[name].provenance)
-            self.assertIs(cases[name].provenance["synthetic_non_empirical"], True)
+            self.assertIn("paired_case_id", records[name].metadata)
+            self.assertIs(records[name].metadata["synthetic_non_empirical"], True)
         self.assertEqual(
-            cases["final-memory-hidden"].provenance["paired_case_id"],
+            records["final-memory-hidden"].metadata["paired_case_id"],
             "final-memory-revealed",
         )
         self.assertEqual(
-            cases["final-future-on"].provenance["paired_case_id"],
+            records["final-future-on"].metadata["paired_case_id"],
             "final-future-off",
         )
 
@@ -327,11 +339,15 @@ class NarrativeIdentificationProtocolTests(unittest.TestCase):
         )
         self.assertEqual(first.content_hash, second.content_hash)
         dataset = load_fixture()
-        expected = {}
-        for role in ObservationPartitionRole:
-            expected[role] = tuple(
-                sorted(case.scenario.content_hash for case in dataset.partition(role).cases)
+        expected = {
+            role: tuple(
+                sorted(
+                    record.scenario.content_hash
+                    for record in dataset.partition(role).records
+                )
             )
+            for role in ObservationPartitionRole
+        }
         self.assertEqual(first.train_case_hashes, expected[ObservationPartitionRole.TRAIN])
         self.assertEqual(
             first.selection_case_hashes,
@@ -377,11 +393,19 @@ class NarrativeIdentificationProtocolTests(unittest.TestCase):
         require_identification(self)
         brier = make_final_protocol(loss=brier_loss(), name="brier")
         with self.subTest("seed"):
-            drift = make_final_protocol(loss=log_loss(), name="log-seed", seeds=(499, 500))
+            drift = make_final_protocol(
+                loss=log_loss(),
+                name="log-seed",
+                seeds=(499, 500),
+            )
             with self.assertRaises(IdentificationComparisonError):
                 validate_sibling_final_protocols(brier, drift)
         with self.subTest("baseline"):
-            drift = make_final_protocol(loss=log_loss(), name="log-baseline", baseline="planning")
+            drift = make_final_protocol(
+                loss=log_loss(),
+                name="log-baseline",
+                baseline="planning",
+            )
             with self.assertRaises(IdentificationComparisonError):
                 validate_sibling_final_protocols(brier, drift)
         with self.subTest("candidate"):
