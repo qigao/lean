@@ -1,176 +1,125 @@
 # Narrative Empirical / External Validation V1 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to execute this plan task-by-task. Do not skip RED evidence or exact-head verification.
 
-**Goal:** Implement #38 P3 Empirical / External Validation V1 as a thin, fail-closed bridge from positively declared external observational evidence into the existing train/selection/final, preregistration, witnessed-release, proper-scoring, and report-attestation machinery while making it impossible for predictive fit to become a canonical claim that real latent cognition was identified.
+**Goal:** Implement issue #38, P3 Empirical / External Validation V1, as a thin fail-closed bridge from positively declared external observational evidence into the existing observation, calibration, preregistration, witnessed-release, proper-scoring, and attestation machinery while making it impossible for predictive fit to become a canonical claim that real latent cognition was identified.
 
-**Architecture:** Add `narrative_dynamics.observations.external` for positive external-evidence declarations and source/partition lineage, and `narrative_dynamics.external_validation` for claim-safe statuses, Brier/Log sibling preregistration, dual verified-release preflight, final predictive findings, strata, optional selection-only parameter constraints, and the aggregate attested report. Reuse `ObservationDataset`, target construction, `calibrate_grid`, `PreregisteredEvaluationProtocol`, `ProtocolRelease` / `VerifiedProtocolRelease`, `compare_released_models()`, and `attest_report()` exactly as existing lower layers. Do not add an empirical mode to P2 identification.
+**Architecture:** Add `narrative_dynamics.observations.external` for positive external-evidence declarations and source/partition lineage. Add `narrative_dynamics.external_validation` for claim-safe status vocabularies, Brier/Log sibling preregistration, dual verified-release preflight, predictive adequacy/separation/stratum findings, selection-only finite parameter constraints, and the final attested aggregate report. Reuse `ObservationDataset`, target construction, `calibrate_grid`, `PreregisteredEvaluationProtocol`, `ProtocolRelease`, `VerifiedProtocolRelease`, `compare_released_models()`, and `attest_report()` as lower layers. Do not add an empirical mode to P2 identification.
 
-**Tech Stack:** Python 3 stdlib (`dataclasses`, `enum`, `math`, `statistics`, `MappingProxyType`, `unittest`, `pathlib`), existing `narrative_dynamics` observation/calibration/validation/loss/model-comparison/release/manifest/report-artifact APIs, GitHub Actions `proof.yml`, Lean/lake only for regression verification.
+**Tech stack:** Python stdlib, existing `narrative_dynamics` research APIs, `unittest`, GitHub Actions `proof.yml`, and existing Lean/lake gates for regression verification only.
 
-**Spec:** `docs/superpowers/specs/2026-08-28-narrative-empirical-external-validation-v1-design.md`
+**Approved spec:** `docs/superpowers/specs/2026-08-28-narrative-empirical-external-validation-v1-design.md`
 
-## Global Constraints
+**Approved spec head:** `9758b8f7d6088093418826610768c8a73e13943f`
 
-- Issue: #38 — `research: P3 empirical / external validation v1`.
-- Integrated research base: `proof/narrative-dynamics-v0@f6dbe9e67d6dda064fa332989187e7e8a604039a`.
-- Approved written-spec head: `9758b8f7d6088093418826610768c8a73e13943f`.
-- Implementation branch after this plan is approved: `work/narrative-empirical-external-validation-v1`, cut from the plan commit so the approved spec/plan travel with the feature branch.
-- Docs-only spec/plan commits are ignored by `proof.yml`; the first authoritative feature evidence is the complete test-only RED commit.
-- Strict sequence: test-only RED -> focused exact RED -> monotonic task-local GREEN commits -> focused P3 GREEN -> complete Python GREEN -> Lean/conformance/story/testimony regression GREEN -> exact-head GitHub proof GREEN -> review -> finishing-development-branch integration choice.
-- Do not run Docker acceptance. P3 V1 is Python research-protocol work and the approved spec explicitly does not require Docker.
+**Integrated research base:** `proof/narrative-dynamics-v0@f6dbe9e67d6dda064fa332989187e7e8a604039a`
+
+## Non-negotiable boundaries
+
+- Implementation branch after this plan is approved: `work/narrative-empirical-external-validation-v1`, cut from the committed plan head.
+- First implementation commit is a complete **test-only RED**. No P3 production symbol is added before that RED is committed and observed failing for the intended missing boundary.
 - Production changes are limited to:
   - create `narrative_dynamics/observations/external.py`;
   - create `narrative_dynamics/external_validation.py`;
-  - add only `ExperimentStage.EXTERNAL_VALIDATION` to `narrative_dynamics/contracts.py`;
-  - additive public exports in `narrative_dynamics/observations/__init__.py` and `narrative_dynamics/__init__.py`.
-- Do not modify `narrative_dynamics/identification.py`, `narrative_dynamics/diagnostics.py`, `calibration.py`, `validation.py`, `model_comparison.py`, `observations/dataset.py`, `observations/targets.py`, `observations/preregistration.py`, `observations/release.py`, any Reactive/Intentional/Planning runtime implementation, stochastic world/observation semantics, existing observational fixtures, or Lean sources.
-- The canonical external claim scope is exactly `external_observational_predictive_only`.
-- P3 public results expose no `IdentificationStatus` and no `identification_status` field.
-- Allowed P3 statuses are exactly:
+  - add only `ExperimentStage.EXTERNAL_VALIDATION = "external_validation"` in `narrative_dynamics/contracts.py`;
+  - additive exports in `narrative_dynamics/observations/__init__.py` and `narrative_dynamics/__init__.py`.
+- Do not modify `narrative_dynamics/identification.py`, `narrative_dynamics/diagnostics.py`, `narrative_dynamics/calibration.py`, `narrative_dynamics/validation.py`, `narrative_dynamics/model_comparison.py`, `narrative_dynamics/observations/dataset.py`, `targets.py`, `preregistration.py`, `release.py`, narrative cognition/runtime semantics, stochastic world/observation semantics, existing observation fixtures, or Lean sources.
+- No Docker acceptance. The authoritative workflow is `.github/workflows/proof.yml`.
+- Canonical claim scope is exactly `external_observational_predictive_only`.
+- P3 exposes no `IdentificationStatus`, no `identification_status` field, and no free-text canonical conclusion field.
+- Allowed P3 result vocabularies are exactly:
   - `predictive_adequacy_met` / `predictive_adequacy_not_met`;
   - `predictively_separated_under_protocol` / `not_predictively_separated_under_protocol`;
   - `constrained_under_external_protocol` / `not_constrained_under_external_protocol`.
-- Canonical P3 result/status/claim fields reject values equivalent to `EMPIRICALLY_IDENTIFIED`, `STRUCTURALLY_IDENTIFIED`, `COGNITIVE_MECHANISM_CONFIRMED`, `LATENT_COGNITION_IDENTIFIED`, or `REAL_PERSON_GOAL_RECOVERED`.
-- `source.kind == "external_observational"` and `provenance.external_observational is True` are both required for the external path. Absence of a synthetic marker is not sufficient.
-- Known synthetic markers `source.kind == "synthetic_fixture"` or `provenance.synthetic_non_empirical is True` fail closed.
-- `provenance.empirical_human_data is False` alone is not a synthetic marker and must not reject a positively declared external non-human dataset.
-- The existing `fixtures/observations/prison_initial_choice_v1.json` and `fixtures/observations/narrative_identification_v1.json` are rejection fixtures only. Do not relabel either as external or empirical.
-- Do not commit a fabricated repository fixture presented as real empirical evidence. Positive external data used by unit tests is constructed in test code with an explicit `test_only` provenance marker.
-- Brier and Log are sibling final protocols. All non-score-specific identities are exact; score-specific thresholds may differ only because both threshold sets were frozen in the P3 preregistration before final evaluation.
-- Both sibling `ProtocolRelease` values and both `VerifiedProtocolRelease` values must pass P3 preflight before either call to `compare_released_models()` occurs.
-- A P3 release `source_revision` contains at least `repository_revision`, `external_evidence_declaration_hash`, `external_validation_preregistration_hash`, and `score_role`.
-- Global and stratum results reuse the per-case losses already produced by existing released final comparisons. Stratum reporting does not re-run a model and introduces no post-hoc weights.
-- External parameter constraints consume only `SELECTION_VALIDATION` target cases. They never consume `FINAL_TEST`, generator truth, P2 `IdentificationStatus`, `diagnose_identifiability()`, or `ParameterIdentificationFinding`.
-- Constraint compatibility is the intersection of Brier and Log compatible sets, where each score accepts `candidate_loss <= best_loss + preregistered_delta`. Empty intersection is a typed failure, not a non-constrained result.
-- A singleton compatible parameter set is `CONSTRAINED_UNDER_EXTERNAL_PROTOCOL`; it is never called identified.
-- `method_validation_hashes` are opaque lineage hashes only. P2 findings may be parents but no P2 status/conclusion is copied into a P3 finding.
-- The final `ExternalValidationReport` has no free-text canonical conclusion field and must pass `attest_report(report).require_integrity()`.
+- Canonical P3 fields must reject values equivalent to `EMPIRICALLY_IDENTIFIED`, `STRUCTURALLY_IDENTIFIED`, `COGNITIVE_MECHANISM_CONFIRMED`, `LATENT_COGNITION_IDENTIFIED`, or `REAL_PERSON_GOAL_RECOVERED`.
+- External eligibility requires both positive markers:
+  - `source.kind == "external_observational"`;
+  - `provenance.external_observational is True`.
+- Known synthetic markers fail closed:
+  - `source.kind == "synthetic_fixture"`;
+  - `provenance.synthetic_non_empirical is True`.
+- `provenance.empirical_human_data is False` alone is not a synthetic marker and cannot reject a positively declared non-human external dataset.
+- Existing `fixtures/observations/prison_initial_choice_v1.json` and `fixtures/observations/narrative_identification_v1.json` are rejection fixtures only. Do not relabel them.
+- Do not add a repository fixture presented as genuine empirical evidence. Positive external records used by unit tests are constructed in test code with an explicit `test_only` provenance marker.
+- Brier and Log are one frozen sibling pair. All non-score-specific identities are exact. Score-specific adequacy thresholds may differ only because both threshold sets are frozen in the P3 preregistration before final evaluation.
+- Both sibling `ProtocolRelease` values and both `VerifiedProtocolRelease` values pass P3 preflight before either child `compare_released_models()` call.
+- P3 release `source_revision` binds at least `repository_revision`, `external_evidence_declaration_hash`, `external_validation_preregistration_hash`, and `score_role`.
+- Stratum reporting uses existing final per-case losses and triggers no resimulation.
+- External parameter constraints use only `SELECTION_VALIDATION`. They do not consume `FINAL_TEST`, generator truth, P2 `IdentificationStatus`, `diagnose_identifiability()`, or `ParameterIdentificationFinding`.
+- For each score, compatible candidates satisfy `candidate_loss <= best_loss + preregistered_delta`. The external compatible set is Brier-compatible ∩ Log-compatible. Empty intersection is a typed protocol/execution failure.
+- A singleton compatible set is `constrained_under_external_protocol`, never identified.
+- `method_validation_hashes` are opaque lineage only. P2 statuses never propagate into P3 findings.
+- Final `ExternalValidationReport` must pass `attest_report(report).require_integrity()` without changing `report_artifact.py`.
 
-## File Structure
+## Planned files
 
-- `narrative_dynamics/observations/external.py` — P3 root error, positive external evidence declaration, source/transform/namespace/partition-assignment identity, dataset match checks.
-- `narrative_dynamics/external_validation.py` — claim/status enums; score role; sibling preregistration; strata/separation/constraint declarations; release preflight; dual final orchestration; adequacy/separation/stratum findings; selection-only constraint evaluation; aggregate report.
-- `narrative_dynamics/contracts.py` — add only `ExperimentStage.EXTERNAL_VALIDATION = "external_validation"`.
-- `narrative_dynamics/observations/__init__.py` — additive external evidence exports.
-- `narrative_dynamics/__init__.py` — additive intended P3 public exports.
-- `tests/external_validation_fixtures.py` — test-only external dataset/protocol/models/releases helper; not collected as a test module.
-- `tests/test_external_validation_claims.py` — claim vocabulary/firewall REDs.
-- `tests/test_external_evidence.py` — positive origin, synthetic rejection, deterministic lineage REDs.
-- `tests/test_external_validation_preregistration.py` — sibling protocol, thresholds, strata, separation, constraint-plan REDs.
-- `tests/test_external_validation_release_gate.py` — sibling release binding and no-execution-before-both-verified REDs.
-- `tests/test_external_validation_final.py` — dual final evaluation, adequacy, separation, strata/no-resimulation REDs.
-- `tests/test_external_validation_constraints.py` — selection-only compatible-set intersection REDs.
-- `tests/test_external_validation_reporting.py` — aggregate lineage, manifest, attestation, method-evidence isolation, claim-firewall REDs.
+**Production**
+
+- Create `narrative_dynamics/observations/external.py`
+- Create `narrative_dynamics/external_validation.py`
+- Modify `narrative_dynamics/contracts.py`
+- Modify `narrative_dynamics/observations/__init__.py`
+- Modify `narrative_dynamics/__init__.py`
+
+**Tests**
+
+- Create `tests/external_validation_fixtures.py`
+- Create `tests/test_external_validation_claims.py`
+- Create `tests/test_external_evidence.py`
+- Create `tests/test_external_validation_preregistration.py`
+- Create `tests/test_external_validation_release_gate.py`
+- Create `tests/test_external_validation_final.py`
+- Create `tests/test_external_validation_constraints.py`
+- Create `tests/test_external_validation_reporting.py`
 
 ---
 
-### Task 1: Commit the Complete Test-Only P3 RED Boundary
+## Task 1 — Commit the complete test-only P3 RED boundary
 
-**Files:**
-- Create: `tests/external_validation_fixtures.py`
-- Create: `tests/test_external_validation_claims.py`
-- Create: `tests/test_external_evidence.py`
-- Create: `tests/test_external_validation_preregistration.py`
-- Create: `tests/test_external_validation_release_gate.py`
-- Create: `tests/test_external_validation_final.py`
-- Create: `tests/test_external_validation_constraints.py`
-- Create: `tests/test_external_validation_reporting.py`
+**Files:** create all eight test files listed above. Do not modify production files.
 
-**Intent:** Freeze the entire P3 acceptance surface before any P3 production symbol exists. Guard new imports so unittest discovery reports the intended missing boundary rather than aborting after the first import error.
+- [ ] **1.1 Create `tests/external_validation_fixtures.py`**
 
-- [ ] **Step 1: Add shared test-only external fixtures**
+Reuse the exact existing observation/loss/protocol constructors from `tests/observational_data_fixtures.py`, `tests/test_observational_data_protocol.py`, `tests/test_preregistered_model_comparison.py`, and `tests/test_protocol_release.py`. The helper module owns only test data/builders and is not collected by the `test_*.py` pattern.
 
-Create `tests/external_validation_fixtures.py` with a positively declared, explicitly test-only `ObservationDataset`, two simple policy models, canonical target/loss builders, and witness helpers. Use code equivalent to:
+Create a positively declared test-only dataset with all three partitions. Its canonical source/provenance must include:
 
 ```python
-from __future__ import annotations
+source={
+    "kind": "external_observational",
+    "release": "test-snapshot-v1",
+}
+provenance={
+    "external_observational": True,
+    "test_only": True,
+}
+```
 
-from narrative_dynamics.contracts import ModelRun, Scenario, stable_content_hash
-from narrative_dynamics.losses import CategoricalBrierLoss, CategoricalLogLoss, CategoricalMetricGroup
-from narrative_dynamics.observations import (
-    AdequacyThresholds,
-    CategoricalTargetSpec,
-    FrozenModelCandidate,
-    ObservationDataset,
-    ObservationPartition,
-    ObservationPartitionRole,
-    ObservationRecord,
-    PreregisteredEvaluationProtocol,
-)
+Use stable source-record ids with one TRAIN record, one SELECTION_VALIDATION record, and two FINAL_TEST records. Add a trivial model with a call counter:
 
-FINAL_SEEDS = (41, 42)
-SELECTION_SEEDS = (31, 32)
-GROUP = CategoricalMetricGroup("choice", ("choice.a", "choice.b"))
-
-
-def policy_metrics(trace):
-    policy = trace.outcome["policy"]
-    return {"choice.a": float(policy["a"]), "choice.b": float(policy["b"])}
-policy_metrics.version = "external-validation-v1"
-
-
+```python
 class ProbabilityModel:
     name = "external-probability-model"
     version = "1"
     implementation_revision = "external-probability-v1"
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.calls = 0
 
     def simulate(self, scenario, parameters, rng):
         self.calls += 1
         p = float(parameters["p"])
-        return ModelRun(events=(), outcome={"policy": {"a": p, "b": 1.0 - p}})
-
-
-class AlternativeProbabilityModel(ProbabilityModel):
-    name = "external-alternative-model"
-    implementation_revision = "external-alternative-v1"
-
-
-def external_dataset() -> ObservationDataset:
-    def record(record_id, scenario_id, a, b):
-        return ObservationRecord(
-            id=record_id,
-            scenario=Scenario(id=scenario_id, payload={"condition": scenario_id}),
-            counts={"a": a, "b": b},
-            metadata={"test_only": True},
+        return ModelRun(
+            events=(),
+            outcome={"policy": {"a": p, "b": 1.0 - p}},
         )
-
-    return ObservationDataset(
-        name="external-observations-test-only",
-        version="1",
-        source={"kind": "external_observational", "release": "test-snapshot-v1"},
-        provenance={"external_observational": True, "test_only": True},
-        partitions=(
-            ObservationPartition("train", ObservationPartitionRole.TRAIN, records=(record("ext:train:1", "train-1", 7, 3),)),
-            ObservationPartition("selection", ObservationPartitionRole.SELECTION_VALIDATION, records=(record("ext:selection:1", "selection-1", 8, 2),)),
-            ObservationPartition("final", ObservationPartitionRole.FINAL_TEST, records=(
-                record("ext:final:1", "final-1", 9, 1),
-                record("ext:final:2", "final-2", 6, 4),
-            )),
-        ),
-    )
-
-
-def target_spec():
-    return CategoricalTargetSpec(name="external-choice", version="1", categories=("a", "b"), metric_prefix="choice")
-
-
-def brier_loss():
-    return CategoricalBrierLoss((GROUP,))
-
-
-def log_loss():
-    return CategoricalLogLoss((GROUP,))
 ```
 
-Add helpers that create frozen candidates and sibling `PreregisteredEvaluationProtocol` values with the same dataset/partitions/target/extractor/seeds/baseline/candidate identities, Brier thresholds `AdequacyThresholds(1.0, 1.0)`, and Log thresholds `AdequacyThresholds(3.0, 3.0)`. Use separate runtime model instances when executing the two score siblings so score order cannot leak mutable test-model state.
+Add a second model with a distinct component identity. Build Brier and Log sibling protocols using the same dataset, target spec, extractor, seeds, baseline, frozen candidate names/model identities/parameter tuples/selection-manifest hashes, and protocol version. Freeze Brier adequacy thresholds separately from Log thresholds. Use fresh runtime model instances per score during execution so mutable test counters cannot leak across siblings.
 
-- [ ] **Step 2: Add claim-firewall RED tests**
+- [ ] **1.2 Create claim-firewall RED tests**
 
-`tests/test_external_validation_claims.py` must lock:
+`tests/test_external_validation_claims.py` locks these exact tests:
 
 ```text
 test_claim_scope_is_exact_and_immutable
@@ -179,21 +128,21 @@ test_external_validation_exposes_no_identification_status
 test_forbidden_empirical_identification_values_are_not_valid_statuses
 ```
 
-Guard the new module import:
+Guard the new-module import so discovery continues and the RED is readable:
 
 ```python
 try:
     import narrative_dynamics.external_validation as external_validation
 except ImportError as error:
     external_validation = None
-    _IMPORT_ERROR = error
+    IMPORT_ERROR = error
 ```
 
-Each test first fails with a clear message if the module is absent. Later tests must assert `not hasattr(external_validation, "IdentificationStatus")`.
+Every test first asserts the module exists; after GREEN it must also assert `not hasattr(external_validation, "IdentificationStatus")`.
 
-- [ ] **Step 3: Add evidence-origin RED tests**
+- [ ] **1.3 Create external-evidence RED tests**
 
-`tests/test_external_evidence.py` must lock:
+`tests/test_external_evidence.py` locks:
 
 ```text
 test_positive_external_origin_builds_stable_declaration
@@ -205,11 +154,11 @@ test_partition_assignment_hash_is_order_stable_and_role_sensitive
 test_dataset_source_transform_namespace_or_partition_drift_is_rejected
 ```
 
-Load the two existing synthetic fixtures using `load_observation_dataset()` and require `ExternalValidationError` on `ExternalEvidenceDeclaration.from_dataset(...)`.
+Load the two existing JSON fixtures through the existing observation dataset loader. The positive non-human test must keep `source.kind="external_observational"` and `provenance.external_observational=True` while setting `empirical_human_data=False`.
 
-- [ ] **Step 4: Add preregistration RED tests**
+- [ ] **1.4 Create sibling-preregistration RED tests**
 
-`tests/test_external_validation_preregistration.py` must lock:
+`tests/test_external_validation_preregistration.py` locks:
 
 ```text
 test_score_roles_are_exactly_brier_then_log
@@ -224,9 +173,9 @@ test_pairwise_separation_rule_requires_positive_finite_deltas_and_direction_agre
 test_constraint_plan_is_finite_selection_scoped_and_content_hashed
 ```
 
-- [ ] **Step 5: Add dual-release gate RED tests**
+- [ ] **1.5 Create dual-release-gate RED tests**
 
-`tests/test_external_validation_release_gate.py` must reuse the existing `ProtocolRelease`, `WitnessReceipt`, and `verify_protocol_release()` seam and lock:
+`tests/test_external_validation_release_gate.py` locks:
 
 ```text
 test_release_source_revision_must_bind_evidence_preregistration_repository_and_score_role
@@ -236,11 +185,11 @@ test_one_unverified_or_drifted_sibling_prevents_both_final_executions
 test_both_verified_siblings_produce_stable_preflight_identity
 ```
 
-The no-execution test uses `.calls` counters and requires the total to remain zero when the Log sibling is invalid, even if the Brier sibling is valid.
+The invalid-second-sibling test must assert zero calls on both score-side runtime models.
 
-- [ ] **Step 6: Add final predictive-evaluation RED tests**
+- [ ] **1.6 Create final-predictive RED tests**
 
-`tests/test_external_validation_final.py` must lock:
+`tests/test_external_validation_final.py` locks:
 
 ```text
 test_dual_final_uses_existing_released_comparisons_for_both_scores
@@ -251,11 +200,11 @@ test_stratum_scores_use_existing_case_losses_without_resimulation
 test_global_scores_are_unchanged_by_stratum_declarations
 ```
 
-The no-resimulation assertion records model `.calls` immediately after both released comparisons and asserts constructing all stratum findings leaves the call count unchanged.
+The stratum test records all model call counts immediately after child released comparisons and proves stratum construction leaves those counts unchanged.
 
-- [ ] **Step 7: Add selection-only constraint RED tests**
+- [ ] **1.7 Create selection-only constraint RED tests**
 
-`tests/test_external_validation_constraints.py` must lock:
+`tests/test_external_validation_constraints.py` locks:
 
 ```text
 test_constraint_evaluation_requires_selection_validation_targets
@@ -268,11 +217,11 @@ test_final_test_targets_fail_before_any_model_execution
 test_constraint_path_has_no_generator_truth_or_p2_identifiability_dependency
 ```
 
-For the last test, patch `narrative_dynamics.diagnostics.diagnose_identifiability` to raise if called; P3 constraint evaluation must still complete because it never invokes that function.
+For the final test, patch `narrative_dynamics.diagnostics.diagnose_identifiability` to raise immediately. P3 constraint evaluation must still complete because it never calls that function.
 
-- [ ] **Step 8: Add aggregate-report RED tests**
+- [ ] **1.8 Create aggregate-report RED tests**
 
-`tests/test_external_validation_reporting.py` must lock:
+`tests/test_external_validation_reporting.py` locks:
 
 ```text
 test_manifest_stage_is_external_validation
@@ -285,18 +234,19 @@ test_report_attests_and_tampering_changes_artifact_identity
 test_forged_or_incomplete_parent_lineage_is_rejected
 ```
 
-- [ ] **Step 9: Run the complete P3 RED suite**
+- [ ] **1.9 Run the authoritative focused RED**
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_external_*.py' -v
 ```
 
-Expected: failures are only the newly required P3 boundary (missing `narrative_dynamics.observations.external`, missing `narrative_dynamics.external_validation`, missing `ExperimentStage.EXTERNAL_VALIDATION`, and downstream missing P3 symbols). Existing imported P0-P2 infrastructure must not fail.
+Expected: failures are only the newly required P3 boundary: missing `narrative_dynamics.observations.external`, missing `narrative_dynamics.external_validation`, missing P3 symbols, and missing `ExperimentStage.EXTERNAL_VALIDATION`. Existing imported P0-P2 infrastructure remains healthy.
 
-- [ ] **Step 10: Commit the authoritative RED**
+- [ ] **1.10 Commit and push the test-only RED**
 
 ```bash
-git add tests/external_validation_fixtures.py \
+git add \
+  tests/external_validation_fixtures.py \
   tests/test_external_validation_claims.py \
   tests/test_external_evidence.py \
   tests/test_external_validation_preregistration.py \
@@ -305,31 +255,36 @@ git add tests/external_validation_fixtures.py \
   tests/test_external_validation_constraints.py \
   tests/test_external_validation_reporting.py
 git commit -m "test: require empirical external validation v1"
+git push -u origin work/narrative-empirical-external-validation-v1
 ```
 
-Push this exact test-only head and record the failing `proof` run before any production code is committed.
+Record the exact failing feature-head `proof` run before any production commit.
 
 ---
 
-### Task 2: GREEN the Claim and External-Evidence Firewall
+## Task 2 — GREEN the claim and external-evidence firewall
 
 **Files:**
-- Create: `narrative_dynamics/observations/external.py`
-- Create: `narrative_dynamics/external_validation.py`
-- Modify: `narrative_dynamics/observations/__init__.py`
-- Modify: `narrative_dynamics/__init__.py`
+- Create `narrative_dynamics/observations/external.py`
+- Create `narrative_dynamics/external_validation.py`
+- Modify `narrative_dynamics/observations/__init__.py`
+- Modify `narrative_dynamics/__init__.py`
 
-- [ ] **Step 1: Implement the single P3 root error and external declaration**
-
-Keep dependency direction acyclic by defining the shared root error in `observations.external`; `external_validation` imports and re-exports it.
+- [ ] **2.1 Implement the shared constants and root error in `observations/external.py`**
 
 ```python
 EXTERNAL_EVIDENCE_ORIGIN = "external_observational"
 EXTERNAL_CLAIM_SCOPE = "external_observational_predictive_only"
 
 class ExternalValidationError(ValueError):
-    pass
+    """External predictive-validation protocol or evidence is invalid."""
+```
 
+Placing the shared root here keeps dependency direction acyclic; `external_validation.py` imports and re-exports this root.
+
+- [ ] **2.2 Implement `ExternalEvidenceDeclaration`**
+
+```python
 @dataclass(frozen=True)
 class ExternalEvidenceDeclaration:
     name: str
@@ -345,7 +300,7 @@ class ExternalEvidenceDeclaration:
     claim_scope: str = EXTERNAL_CLAIM_SCOPE
 ```
 
-Provide:
+Public operations:
 
 ```python
 @classmethod
@@ -368,19 +323,22 @@ def identity_payload(self) -> dict[str, object]: ...
 def content_hash(self) -> str: ...
 ```
 
-`from_dataset()` must require both positive markers, reject the two known synthetic markers, validate a SHA-256 snapshot hash, freeze mappings with the existing canonical helper from `observations.dataset`, and compute `partition_assignment_hash` from the complete sorted tuple:
+Implementation requirements:
 
-```text
-(role.value, source_observation_id)
-```
+1. require `dataset` is `ObservationDataset`;
+2. require both positive origin markers;
+3. reject either known synthetic marker;
+4. do not treat `empirical_human_data=False` as synthetic by itself;
+5. validate `source_snapshot_hash` as `sha256:<64 lowercase hex>`;
+6. recursively freeze `source_revision` and `transform_identity` using the existing observation canonical-freeze seam;
+7. build `partition_assignment_hash` from the complete sorted tuple `(role.value, source_observation_id)`;
+8. for record-oriented partitions use every `ObservationRecord.id`;
+9. for case-oriented partitions expand every `ObservationCase.observation_ids` entry;
+10. `require_matches()` rechecks dataset hash and partition assignment and fails closed on drift.
 
-For record-oriented partitions, source IDs are `ObservationRecord.id`. For case-oriented partitions, expand every `ObservationCase.observation_ids` value. `require_matches()` recomputes dataset and partition-assignment identities and rejects drift.
-
-- [ ] **Step 2: Implement only the claim vocabulary in `external_validation.py`**
+- [ ] **2.3 Implement only the P3 claim/status vocabulary in `external_validation.py`**
 
 ```python
-from .observations.external import EXTERNAL_CLAIM_SCOPE, ExternalValidationError
-
 class ExternalScoreRole(str, Enum):
     BRIER = "brier"
     LOG = "log"
@@ -398,13 +356,13 @@ class ExternalConstraintStatus(str, Enum):
     NOT_CONSTRAINED = "not_constrained_under_external_protocol"
 ```
 
-Do not import `narrative_dynamics.identification` or define `IdentificationStatus`.
+Do not import `narrative_dynamics.identification`. Do not define or re-export `IdentificationStatus`.
 
-- [ ] **Step 3: Add intended exports only**
+- [ ] **2.4 Add intended additive exports**
 
-Expose `ExternalEvidenceDeclaration`, `ExternalValidationError`, and the evidence constants through `narrative_dynamics.observations`. Expose the claim/status enums and intended evidence type through package root without renaming any existing symbol.
+Expose evidence types/constants through `narrative_dynamics.observations` and the intended P3 public constants/status types through `narrative_dynamics` root. Preserve every existing export.
 
-- [ ] **Step 4: Run claim/evidence tests**
+- [ ] **2.5 Run focused GREEN**
 
 ```bash
 python3 -m unittest \
@@ -412,9 +370,9 @@ python3 -m unittest \
   tests.test_external_evidence -v
 ```
 
-Expected: GREEN. The remaining P3 modules/tests stay RED because preregistration/orchestration/report symbols are intentionally absent.
+Expected: GREEN. The later P3 suites remain RED because preregistration/release/report symbols do not exist yet.
 
-- [ ] **Step 5: Run existing observation/release regression**
+- [ ] **2.6 Run observation/release regressions**
 
 ```bash
 python3 -m unittest \
@@ -425,10 +383,11 @@ python3 -m unittest \
 
 Expected: GREEN.
 
-- [ ] **Step 6: Commit**
+- [ ] **2.7 Commit**
 
 ```bash
-git add narrative_dynamics/observations/external.py \
+git add \
+  narrative_dynamics/observations/external.py \
   narrative_dynamics/external_validation.py \
   narrative_dynamics/observations/__init__.py \
   narrative_dynamics/__init__.py
@@ -437,13 +396,13 @@ git commit -m "feat: add external evidence claim firewall"
 
 ---
 
-### Task 3: GREEN the Frozen Brier/Log External Preregistration
+## Task 3 — GREEN frozen Brier/Log external preregistration
 
 **Files:**
-- Modify: `narrative_dynamics/external_validation.py`
-- Modify: `narrative_dynamics/__init__.py`
+- Modify `narrative_dynamics/external_validation.py`
+- Modify `narrative_dynamics/__init__.py`
 
-- [ ] **Step 1: Add typed protocol errors and declaration types**
+- [ ] **3.1 Add protocol/constraint error types**
 
 ```python
 class ExternalValidationProtocolError(ExternalValidationError):
@@ -451,7 +410,11 @@ class ExternalValidationProtocolError(ExternalValidationError):
 
 class ExternalValidationConstraintError(ExternalValidationError):
     pass
+```
 
+- [ ] **3.2 Add immutable declaration types**
+
+```python
 @dataclass(frozen=True)
 class PairwiseSeparationRule:
     min_mean_loss_delta_brier: float
@@ -478,9 +441,9 @@ class ExternalConstraintPlan:
     log_loss_identity: Mapping[str, object]
 ```
 
-Validation rules: finite/non-negative acceptance deltas, finite non-empty grid dimensions, unique parameter/coordinate/case names, non-empty seeds, canonical sorted parameter dimensions and coordinates, and no final-test case notion in the type.
+Validate finite/non-negative acceptance deltas, strictly positive finite separation deltas, non-empty finite candidate dimensions, unique names/coordinates/case names, non-empty integer seeds, canonical ordering, and exact `require_direction_agreement=True` for V1.
 
-- [ ] **Step 2: Implement `ExternalValidationPreregistration`**
+- [ ] **3.3 Implement `ExternalValidationPreregistration`**
 
 ```python
 @dataclass(frozen=True)
@@ -490,7 +453,9 @@ class ExternalValidationPreregistration:
     evidence_declaration_hash: str
     brier_protocol_hash: str
     log_protocol_hash: str
-    adequacy_thresholds_by_score: tuple[tuple[ExternalScoreRole, AdequacyThresholds], ...]
+    adequacy_thresholds_by_score: tuple[
+        tuple[ExternalScoreRole, AdequacyThresholds], ...
+    ]
     strata: tuple[ExternalStratum, ...]
     separation_rule: PairwiseSeparationRule
     constraint_plans: tuple[ExternalConstraintPlan, ...]
@@ -498,29 +463,28 @@ class ExternalValidationPreregistration:
     claim_scope: str = EXTERNAL_CLAIM_SCOPE
 ```
 
-Use a `create(...)` constructor that receives the actual `ExternalEvidenceDeclaration`, Brier/Log `PreregisteredEvaluationProtocol`, the actual final `TargetConstructionReport`, the two threshold sets, strata, separation rule, optional constraint plans, and method hashes.
+Provide a `create(...)` constructor receiving the actual `ExternalEvidenceDeclaration`, Brier protocol, Log protocol, final `TargetConstructionReport`, both score-specific `AdequacyThresholds`, strata, separation rule, constraint plans, and method hashes.
 
-The constructor must:
+Constructor validation order:
 
-1. require evidence hash == both protocol dataset lineage via `evidence.dataset_hash`;
-2. require `final_targets.content_hash` == both sibling `final_target_hash`;
-3. identify Brier by `loss_identity["name"] == "categorical_brier"` and Log by `"categorical_log"`;
-4. compare sibling protocol identity payloads after removing only `name`, `loss_identity`, `thresholds`, and derived precommitment/hash fields;
-5. separately require metric identity, dataset/partition/target hashes, seeds, baseline, candidate names/model identities/parameters/selection manifest hashes, and protocol version exact;
-6. require each protocol threshold object equals its preregistered score-specific threshold set;
-7. require exactly one Brier and one Log score role in canonical Brier-then-Log order;
-8. require strata cover `tuple(case.name for case in final_targets.cases)` exactly once with no missing, extra, or overlap;
-9. require unique constraint-plan names;
-10. validate every method-validation hash as `sha256:<64 lowercase hex>`;
-11. compute deterministic `content_hash` from semantic declaration only.
+1. evidence `dataset_hash` equals both sibling protocol dataset hashes;
+2. final target report hash/manifest/partition identity equals both sibling frozen final target identity;
+3. identify Brier only by canonical `categorical_brier` loss identity and Log only by canonical `categorical_log` loss identity;
+4. require exact equality of train/selection/final partition hashes, target spec/final target/final target manifest, metric identity, simulation seeds, baseline name, protocol version, complete candidate names/model identities/selected parameters/selection manifest hashes;
+5. require each sibling protocol's thresholds equal its own threshold set passed to the P3 preregistration;
+6. allow Brier threshold values and Log threshold values to differ from each other;
+7. reject duplicate or unknown score families;
+8. require score ordering Brier then Log;
+9. require strata cover every final target case exactly once with no missing/extra/overlap;
+10. require unique constraint-plan names;
+11. validate every `method_validation_hash` as a content hash;
+12. compute deterministic `content_hash` from the semantic declaration.
 
-Do not compare Brier and Log threshold numbers to each other; compare each one only with its own P3 frozen threshold set.
+- [ ] **3.4 Export preregistration types**
 
-- [ ] **Step 3: Export intended protocol types**
+Add intended symbols to package root without removing or renaming any existing symbol.
 
-Add the new P3 declarations to package root `__all__` without changing existing exports.
-
-- [ ] **Step 4: Run preregistration tests**
+- [ ] **3.5 Run preregistration GREEN**
 
 ```bash
 python3 -m unittest tests.test_external_validation_preregistration -v
@@ -528,7 +492,7 @@ python3 -m unittest tests.test_external_validation_preregistration -v
 
 Expected: GREEN.
 
-- [ ] **Step 5: Run observation preregistration/model-comparison regressions**
+- [ ] **3.6 Run existing preregistration regressions**
 
 ```bash
 python3 -m unittest \
@@ -539,7 +503,7 @@ python3 -m unittest \
 
 Expected: GREEN.
 
-- [ ] **Step 6: Commit**
+- [ ] **3.7 Commit**
 
 ```bash
 git add narrative_dynamics/external_validation.py narrative_dynamics/__init__.py
@@ -548,13 +512,13 @@ git commit -m "feat: freeze external validation sibling protocols"
 
 ---
 
-### Task 4: GREEN the Dual Verified-Release Preflight
+## Task 4 — GREEN dual verified-release preflight
 
 **Files:**
-- Modify: `narrative_dynamics/external_validation.py`
-- Modify: `narrative_dynamics/__init__.py`
+- Modify `narrative_dynamics/external_validation.py`
+- Modify `narrative_dynamics/__init__.py`
 
-- [ ] **Step 1: Add a frozen preflight result**
+- [ ] **4.1 Add the preflight identity**
 
 ```python
 @dataclass(frozen=True)
@@ -568,12 +532,13 @@ class ExternalReleasePreflight:
     log_release_hash: str
     log_verification_hash: str
 
+    def identity_payload(self) -> dict[str, object]: ...
+
     @property
-    def content_hash(self) -> str:
-        return stable_content_hash(self.identity_payload())
+    def content_hash(self) -> str: ...
 ```
 
-- [ ] **Step 2: Implement `preflight_external_releases()` before any orchestration**
+- [ ] **4.2 Implement `preflight_external_releases()`**
 
 ```python
 def preflight_external_releases(
@@ -589,38 +554,38 @@ def preflight_external_releases(
 ) -> ExternalReleasePreflight: ...
 ```
 
-Required order:
+Exact validation sequence before any simulation:
 
-1. validate P3 object types;
-2. require `evidence.content_hash == preregistration.evidence_declaration_hash`;
-3. require sibling protocol hashes equal the preregistered hashes;
-4. call `brier_verified.require_matches(brier_protocol)` and `log_verified.require_matches(log_protocol)`;
-5. additionally require `brier_verified.release_hash == brier_release.content_hash` and same for Log because `VerifiedProtocolRelease.require_matches()` itself only checks protocol identity;
-6. require each existing release's dataset/target/candidate identities match its protocol;
-7. read `source_revision` and require the four P3 binding keys;
-8. require both sibling bindings share exact `repository_revision`, `external_evidence_declaration_hash`, and `external_validation_preregistration_hash`;
-9. require Brier role == `brier`, Log role == `log`;
+1. validate argument types;
+2. `evidence.content_hash == preregistration.evidence_declaration_hash`;
+3. protocol hashes equal the preregistered sibling hashes;
+4. call each `VerifiedProtocolRelease.require_matches(protocol)`;
+5. additionally require `verified.release_hash == release.content_hash` for each sibling because the lower `require_matches()` checks protocol identity only;
+6. require each release dataset/target/candidate identity matches its protocol;
+7. require `source_revision` has exactly valid P3 binding values for `repository_revision`, evidence hash, P3 preregistration hash, and score role;
+8. require sibling releases share exact repository/evidence/P3 preregistration identities;
+9. require Brier role is `brier` and Log role is `log`;
 10. return the frozen preflight identity.
 
-Existing `ProtocolReleaseVerificationError` from the lower release-verification API must propagate unchanged. P3 binding/drift errors raise `ExternalValidationProtocolError`.
+Let lower-layer `ProtocolReleaseVerificationError` propagate unchanged. P3-only binding drift raises `ExternalValidationProtocolError`.
 
-- [ ] **Step 3: Run release gate tests**
+- [ ] **4.3 Run release-gate GREEN**
 
 ```bash
 python3 -m unittest tests.test_external_validation_release_gate -v
 ```
 
-Expected: GREEN for pure preflight cases; the orchestration no-execution test may still be RED until Task 5 if it targets the final entry point.
+The pure-preflight tests must be GREEN. The final-entry-point no-execution assertion becomes fully GREEN in Task 5 when the public dual-final orchestrator exists.
 
-- [ ] **Step 4: Run existing release regression**
+- [ ] **4.4 Run existing release regression**
 
 ```bash
 python3 -m unittest tests.test_protocol_release -v
 ```
 
-Expected: GREEN with no modifications to `observations/release.py`.
+Expected: GREEN with no changes to `narrative_dynamics/observations/release.py`.
 
-- [ ] **Step 5: Commit**
+- [ ] **4.5 Commit**
 
 ```bash
 git add narrative_dynamics/external_validation.py narrative_dynamics/__init__.py
@@ -629,13 +594,13 @@ git commit -m "feat: gate external validation on dual verified releases"
 
 ---
 
-### Task 5: GREEN Dual Final Predictive Evaluation, Separation, and Strata
+## Task 5 — GREEN dual final predictive evaluation, separation, and strata
 
 **Files:**
-- Modify: `narrative_dynamics/external_validation.py`
-- Modify: `narrative_dynamics/__init__.py`
+- Modify `narrative_dynamics/external_validation.py`
+- Modify `narrative_dynamics/__init__.py`
 
-- [ ] **Step 1: Add claim-safe final finding dataclasses**
+- [ ] **5.1 Add claim-safe final finding types**
 
 ```python
 @dataclass(frozen=True)
@@ -679,13 +644,22 @@ class ExternalFinalEvaluation:
     stratum_scores: tuple[ExternalStratumScore, ...]
 ```
 
-All collections use deterministic score/model/stratum ordering. These types contain no free-text conclusion and no identification field.
+Canonical ordering is score-role, model name, stratum name, and lexical model pair.
 
-- [ ] **Step 2: Implement pure finding builders from existing child reports**
+- [ ] **5.2 Build adequacy from existing child report entries**
 
-Adequacy uses each `ModelComparisonEntry.adequate`, because Task 3 guarantees the child's threshold set exactly equals the P3 score-specific threshold set. Aggregate adequacy is MET only if both sibling findings for a model are MET.
+Use the existing released comparison entries. Per-score status is MET iff the child entry is adequate under the already frozen score-specific thresholds. Aggregate model adequacy is MET only when both Brier and Log are MET.
 
-Pairwise separation uses `entry.mean_loss` from the two existing child reports. For lexical pair `(A, B)`, define signed delta as `loss(A) - loss(B)`. The scores separate only when:
+- [ ] **5.3 Build pairwise separation from existing mean losses**
+
+For lexical pair `(A, B)` define:
+
+```text
+brier_delta = brier_loss(A) - brier_loss(B)
+log_delta   = log_loss(A)   - log_loss(B)
+```
+
+Status is `SEPARATED` only when:
 
 ```text
 sign(brier_delta) == sign(log_delta) != 0
@@ -693,17 +667,13 @@ abs(brier_delta) >= min_mean_loss_delta_brier
 abs(log_delta) >= min_mean_loss_delta_log
 ```
 
-Lower loss is preferred. Otherwise status is NOT_SEPARATED and `preferred_model` is `None` unless both scores agree on direction but only magnitude fails; in that case preserving an observational preference field is allowed only if tests and spec treat it as non-status metadata. Do not call it a winner.
+The lower-loss model is the `preferred_model`. On non-separation retain both raw deltas; do not serialize a canonical winner claim.
 
-Stratum aggregation selects `HeldOutCaseEvaluation.loss` values already present at:
+- [ ] **5.4 Build strata without model execution**
 
-```python
-released.comparison.entry_map[model].final_test.validation.cases
-```
+Read per-case losses already present below each released comparison entry's final-test validation report. For every declared stratum and every model/score, calculate `fmean` and `max` over those existing case losses. Do not call `SimulationRunner` or any model from a stratum helper.
 
-and calculates `fmean` / `max`. Do not call `SimulationRunner` from a stratum helper.
-
-- [ ] **Step 3: Implement `evaluate_external_final()` with full preflight before first child execution**
+- [ ] **5.5 Implement `evaluate_external_final()`**
 
 ```python
 def evaluate_external_final(
@@ -726,11 +696,9 @@ def evaluate_external_final(
 ) -> ExternalFinalEvaluation: ...
 ```
 
-The first executable line after type/materialization checks is one call to `preflight_external_releases(...)`. Only after it returns may either child `compare_released_models()` run. Then execute Brier and Log with the same `final_targets` and extractor, each using its own protocol/loss and a separate tuple of runtime model instances bound to the same frozen candidates.
+After argument materialization/type checks, the first semantic operation is a single `preflight_external_releases(...)`. Only after it succeeds may either `compare_released_models()` call run. Both children use the same final target report and extractor, with their own frozen score protocol/loss and fresh runtime model tuples.
 
-- [ ] **Step 4: Prove an invalid second sibling prevents the first sibling from running**
-
-Run:
+- [ ] **5.6 Run release-gate + final GREEN**
 
 ```bash
 python3 -m unittest \
@@ -738,9 +706,9 @@ python3 -m unittest \
   tests.test_external_validation_final -v
 ```
 
-Expected: GREEN. The invalid-Log test must observe zero calls on both Brier and Log model instances.
+Expected: GREEN, including zero Brier calls when the Log sibling fails preflight and zero additional calls during stratum aggregation.
 
-- [ ] **Step 5: Run existing final-comparison regressions**
+- [ ] **5.7 Run exact existing final-comparison regressions**
 
 ```bash
 python3 -m unittest \
@@ -749,11 +717,9 @@ python3 -m unittest \
   tests.test_narrative_held_out_model_comparison -v
 ```
 
-If the last module name differs in the repository, use the existing test module that owns Narrative Held-Out Three-Model Comparison V1; do not change production behavior to satisfy a guessed test path.
-
 Expected: GREEN.
 
-- [ ] **Step 6: Commit**
+- [ ] **5.8 Commit**
 
 ```bash
 git add narrative_dynamics/external_validation.py narrative_dynamics/__init__.py
@@ -762,13 +728,13 @@ git commit -m "feat: evaluate external predictive evidence"
 
 ---
 
-### Task 6: GREEN Selection-Only External Parameter Constraints
+## Task 6 — GREEN selection-only external parameter constraints
 
 **Files:**
-- Modify: `narrative_dynamics/external_validation.py`
-- Modify: `narrative_dynamics/__init__.py`
+- Modify `narrative_dynamics/external_validation.py`
+- Modify `narrative_dynamics/__init__.py`
 
-- [ ] **Step 1: Add auditable constraint evidence types**
+- [ ] **6.1 Add auditable constraint result types**
 
 ```python
 @dataclass(frozen=True)
@@ -798,48 +764,45 @@ class ExternalConstraintFinding:
     parent_manifest_hashes: tuple[str, ...]
 ```
 
-There is deliberately no `true_parameters`, `generator_family`, `identification_status`, or P2 finding field.
+No constraint type contains `true_parameters`, `generator_family`, `identification_status`, or a P2 finding.
 
-- [ ] **Step 2: Implement a score-grid helper using existing `calibrate_grid()`**
+- [ ] **6.2 Implement one score-grid evaluator using existing `calibrate_grid()`**
 
-For one score role:
+Before any model call:
 
-1. require `target_set.role is ObservationPartitionRole.SELECTION_VALIDATION` before any model execution;
-2. require target-set dataset/spec lineage matches the P3 sibling protocol/plan;
-3. select exactly the case names declared in the plan, with no missing/extra case execution;
-4. for each selected case call existing `calibrate_grid()` with the plan's finite grid and seeds;
-5. require every case returns the same canonical candidate set;
-6. aggregate a candidate's case losses with `fmean` across the declared selection cases;
-7. retain every child calibration manifest hash and every candidate loss.
+1. require `selection_targets.role is ObservationPartitionRole.SELECTION_VALIDATION`;
+2. require the target report lineage and metric/loss identities match the plan;
+3. require the plan's declared selection case names exist exactly in the selection target report;
+4. require runtime model component identity equals the plan model identity.
 
-Do this once with canonical Brier loss and once with canonical Log loss. The model source may be a fresh instance per score to avoid mutable state crossing scores.
+For each declared selection case, call existing `calibrate_grid()` using the same finite grid and plan seeds. Require every case returns the same canonical candidate set. Aggregate each candidate's case losses with `fmean`. Retain every candidate loss and child calibration manifest hash.
 
-- [ ] **Step 3: Implement compatible-set intersection and constraint interpretation**
+- [ ] **6.3 Implement dual-score compatible-set intersection**
 
 For each score:
 
 ```python
-best = min(candidate.mean_loss for candidate in score_table)
+best_loss = min(candidate.mean_loss for candidate in score_table)
 compatible = {
     candidate.parameters
     for candidate in score_table
-    if candidate.mean_loss <= best + preregistered_delta
+    if candidate.mean_loss <= best_loss + preregistered_delta
 }
 ```
 
 Then:
 
 ```python
-intersection = brier_compatible & log_compatible
+compatible_parameters = brier_compatible & log_compatible
 ```
 
 If empty, raise `ExternalValidationConstraintError`.
 
-For each target coordinate, collect the sorted distinct values in `intersection`; one retained value means that coordinate is constrained. Aggregate status is `CONSTRAINED` only when every declared coordinate is constrained, otherwise `NOT_CONSTRAINED`.
+For each target coordinate, collect sorted distinct retained values. Exactly one value means the coordinate is constrained. Aggregate status is CONSTRAINED only when every declared target coordinate is constrained; otherwise NOT_CONSTRAINED.
 
-Do not call `diagnose_identifiability()` and do not create a `ParameterAcceptanceSet` merely to borrow P2 terminology.
+Do not call `diagnose_identifiability()` and do not translate the result into P2 vocabulary.
 
-- [ ] **Step 4: Implement the public constraint evaluator**
+- [ ] **6.4 Implement the public evaluator**
 
 ```python
 def evaluate_external_constraint(
@@ -854,28 +817,29 @@ def evaluate_external_constraint(
 ) -> ExternalConstraintFinding: ...
 ```
 
-Require `component_identity(model)` equals the plan's frozen model identity and both score/metric identities are exact before execution.
+All role/identity checks happen before the first model call.
 
-- [ ] **Step 5: Run constraint tests**
+- [ ] **6.5 Run constraint GREEN**
 
 ```bash
 python3 -m unittest tests.test_external_validation_constraints -v
 ```
 
-Expected: GREEN, including singleton->CONSTRAINED, multi-value->NOT_CONSTRAINED, empty intersection typed failure, final-test role rejected before calls, and patched P2 diagnostics never invoked.
+Expected: GREEN, including singleton constrained, multi-value not constrained, empty-intersection typed failure, final-test rejected before calls, and patched P2 diagnostics never invoked.
 
-- [ ] **Step 6: Run calibration/validation regressions**
+- [ ] **6.6 Run exact existing calibration/validation regressions**
 
 ```bash
 python3 -m unittest \
   tests.test_calibration \
   tests.test_observational_training_fit \
-  tests.test_validation -v
+  tests.test_heldout_validation \
+  tests.test_narrative_validation -v
 ```
 
-Use the repository's actual validation test module names if discovery shows a split suite; do not alter production APIs solely to match a guessed module path.
+Expected: GREEN.
 
-- [ ] **Step 7: Commit**
+- [ ] **6.7 Commit**
 
 ```bash
 git add narrative_dynamics/external_validation.py narrative_dynamics/__init__.py
@@ -884,24 +848,22 @@ git commit -m "feat: constrain external parameters without identification"
 
 ---
 
-### Task 7: GREEN the Attested Aggregate External Validation Report
+## Task 7 — GREEN the attested aggregate external validation report
 
 **Files:**
-- Modify: `narrative_dynamics/contracts.py`
-- Modify: `narrative_dynamics/external_validation.py`
-- Modify: `narrative_dynamics/__init__.py`
+- Modify `narrative_dynamics/contracts.py`
+- Modify `narrative_dynamics/external_validation.py`
+- Modify `narrative_dynamics/__init__.py`
 
-- [ ] **Step 1: Add exactly one manifest stage**
-
-In `ExperimentStage` add only:
+- [ ] **7.1 Add exactly one manifest stage**
 
 ```python
 EXTERNAL_VALIDATION = "external_validation"
 ```
 
-No manifest schema version change.
+No manifest schema-version change.
 
-- [ ] **Step 2: Add report-specific error and report dataclass**
+- [ ] **7.2 Add report error and immutable report type**
 
 ```python
 class ExternalValidationReportError(ExternalValidationError):
@@ -929,9 +891,9 @@ class ExternalValidationReport:
     manifest: ExperimentManifest
 ```
 
-The type has no `conclusions`, `identification_status`, or arbitrary status string field.
+There is no `conclusions` field and no identification field.
 
-- [ ] **Step 3: Implement `build_external_validation_report()`**
+- [ ] **7.3 Implement `build_external_validation_report()`**
 
 ```python
 def build_external_validation_report(
@@ -943,18 +905,18 @@ def build_external_validation_report(
 ) -> ExternalValidationReport: ...
 ```
 
-Validation must require:
+Builder requirements:
 
-1. exact evidence/preregistration hashes;
-2. final preflight matches both preregistered protocols/evidence;
-3. exactly the declared constraint-plan hashes have findings — no missing or extra finding;
-4. method-validation hashes copied exactly from preregistration and treated only as hashes;
-5. claim scope exact and immutable;
-6. no P2 status object accepted as any P3 status field;
-7. child released-comparison manifest hashes present;
-8. parent lineage is the canonical union of both child comparison manifest hashes, all constraint parent manifest hashes, and method-validation hashes.
+1. exact evidence/preregistration hash match;
+2. final preflight matches both preregistered sibling protocols/evidence;
+3. constraint finding plan hashes equal exactly the declared constraint-plan hashes, with no missing/extra finding;
+4. method-validation hashes copy exactly from preregistration and remain opaque;
+5. claim scope is exact;
+6. all P3 statuses are instances of the P3 enums;
+7. both child released-comparison manifest hashes are present;
+8. canonical parent lineage is the union of both child comparison manifest hashes, all constraint parent manifest hashes, and all method-validation hashes.
 
-Create:
+Create the manifest as:
 
 ```python
 ExperimentManifest(
@@ -967,30 +929,32 @@ ExperimentManifest(
         "log_protocol_hash": final_evaluation.preflight.log_protocol_hash,
         "preflight_hash": final_evaluation.preflight.content_hash,
         "method_validation_hashes": preregistration.method_validation_hashes,
-        "constraint_plan_hashes": tuple(plan.content_hash for plan in preregistration.constraint_plans),
+        "constraint_plan_hashes": tuple(
+            plan.content_hash for plan in preregistration.constraint_plans
+        ),
     },
     parent_hashes=canonical_parent_hashes,
 )
 ```
 
-The dataclass's `__post_init__` must reject forged claim scope, prereg/evidence/preflight mismatch, incomplete child identity, or incomplete parent set. Do not generate narrative prose conclusions.
+`ExternalValidationReport.__post_init__` validates fixed claim scope, content-hash syntax, P3 status types, deterministic collections, and manifest stage/input consistency that can be checked from fields. Cross-object semantic matching remains in the builder, where all source objects are available.
 
-- [ ] **Step 4: Verify generic report attestation without special-casing**
+- [ ] **7.4 Reuse generic report attestation unchanged**
 
-`attest_report()` already canonicalizes arbitrary dataclass reports and excludes `manifest`; do not modify `report_artifact.py`. Test:
+Do not modify `narrative_dynamics/report_artifact.py`. Require:
 
 ```python
 attested = attest_report(report)
 assert attested.require_integrity() is report
 ```
 
-Use `dataclasses.replace(report, evidence_declaration_hash=HASH0)` and confirm an artifact created from the original no longer matches the forged report. Construction-level invariants should also reject semantically inconsistent replacements when `__post_init__` can detect them.
+Construct a forged/tampered dataclass replacement and prove the original artifact identity no longer validates that altered payload.
 
-- [ ] **Step 5: Export intended final P3 API**
+- [ ] **7.5 Export intended final P3 API**
 
-Update package root exports for the report, findings, preregistration, preflight, evaluators, and errors. Do not export any P2 identification symbol through the P3 namespace.
+Add report/finding/build/evaluation/preflight/error symbols to package root. Do not export any P2 identification symbol as a P3 symbol.
 
-- [ ] **Step 6: Run report and full focused P3 tests**
+- [ ] **7.6 Run report + full focused P3 GREEN**
 
 ```bash
 python3 -m unittest tests.test_external_validation_reporting -v
@@ -999,20 +963,22 @@ python3 -m unittest discover -s tests -p 'test_external_*.py' -v
 
 Expected: all P3 tests GREEN.
 
-- [ ] **Step 7: Run report-artifact and P2 identification regressions**
+- [ ] **7.7 Run exact existing artifact/P2/manifest regressions**
 
 ```bash
 python3 -m unittest \
   tests.test_report_artifact_policy \
-  tests.test_narrative_identification_reporting -v
+  tests.test_narrative_identification_reporting \
+  tests.test_experiment_manifest -v
 ```
 
-Expected: GREEN; P2 identification semantics are unchanged.
+Expected: GREEN; P2 identification semantics remain unchanged.
 
-- [ ] **Step 8: Commit**
+- [ ] **7.8 Commit**
 
 ```bash
-git add narrative_dynamics/contracts.py \
+git add \
+  narrative_dynamics/contracts.py \
   narrative_dynamics/external_validation.py \
   narrative_dynamics/__init__.py
 git commit -m "feat: attest external predictive validation reports"
@@ -1020,29 +986,27 @@ git commit -m "feat: attest external predictive validation reports"
 
 ---
 
-### Task 8: Full Regression, Scope Audit, and Exact-Head Proof
+## Task 8 — Full regression, scope audit, exact-head proof, and review
 
-**Files:**
-- No planned production changes.
-- Modify only if a regression exposes a defect caused by Tasks 2-7; any such correction must receive its own RED before the fix.
+**Files:** no planned production changes. Any regression defect caused by Tasks 2-7 gets its own focused RED before a fix.
 
-- [ ] **Step 1: Verify the focused P3 suite**
+- [ ] **8.1 Run focused P3 suite**
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_external_*.py' -v
 ```
 
-Expected: all external validation tests GREEN.
+Expected: GREEN.
 
-- [ ] **Step 2: Verify the complete Python suite**
+- [ ] **8.2 Run complete Python suite**
 
 ```bash
 python3 -m unittest discover -s tests -v
 ```
 
-Expected: all tests GREEN. Record the exact test count and `OK` output for the feature evidence.
+Expected: all tests GREEN. Record exact test count and `OK`.
 
-- [ ] **Step 3: Verify Lean/Python conformance exactly as CI**
+- [ ] **8.3 Run Lean/Python conformance exactly as workflow**
 
 ```bash
 lake build \
@@ -1058,7 +1022,7 @@ cmp conformance/lean_reference_vectors.json \
 
 Expected: exact byte-for-byte conformance.
 
-- [ ] **Step 4: Verify the Lean library and narrative theorem gates**
+- [ ] **8.4 Run full Lean and theorem gates**
 
 ```bash
 lake build
@@ -1066,33 +1030,40 @@ lake env lean NarrativeDynamics/Tests/StoryState.lean
 lake env lean NarrativeDynamics/Tests/Testimony.lean
 ```
 
-The normal CI theorem list remains authoritative; no Lean source should be changed by this feature.
+Expected: GREEN. No Lean source changed.
 
-- [ ] **Step 5: Audit scope and forbidden dependencies**
+- [ ] **8.5 Audit diff scope and forbidden production dependencies**
 
 ```bash
 git diff --check
 git diff --name-only f6dbe9e67d6dda064fa332989187e7e8a604039a...HEAD
-git grep -n "IdentificationStatus\|diagnose_identifiability\|ParameterIdentificationFinding" -- \
-  narrative_dynamics/observations/external.py \
-  narrative_dynamics/external_validation.py || true
+git grep -n \
+  "IdentificationStatus\|diagnose_identifiability\|ParameterIdentificationFinding" \
+  -- narrative_dynamics/observations/external.py \
+     narrative_dynamics/external_validation.py || true
 git status --short
 ```
 
-Expected production diff is limited to the approved P3 files/exports/stage. The grep must find no P2 identification dependency in P3 production modules. The words may appear in negative tests/spec/plan and are not a production violation.
+Expected production diff is limited to the five approved production files. The grep returns no P2 identification dependency in P3 production modules.
 
-- [ ] **Step 6: Verify no fake empirical fixture or Docker change entered scope**
+- [ ] **8.6 Prove no fake empirical fixture or Docker scope entered**
 
 ```bash
-git diff --name-only f6dbe9e67d6dda064fa332989187e7e8a604039a...HEAD | \
-  grep -E 'fixtures/observations|docker|Dockerfile|compose' && exit 1 || true
+if git diff --name-only \
+  f6dbe9e67d6dda064fa332989187e7e8a604039a...HEAD \
+  | grep -E '^(fixtures/observations/|.*Dockerfile|.*docker|.*compose)'; then
+  echo "unexpected fixture/docker scope"
+  exit 1
+fi
 ```
 
-Expected: no production/external empirical fixture and no Docker changes.
+Expected: success with no matched path.
 
-- [ ] **Step 7: Push exact feature head and require `proof` GREEN**
+- [ ] **8.7 Push exact feature head and require `proof` GREEN**
 
-Push `work/narrative-empirical-external-validation-v1`. The authoritative CI is `.github/workflows/proof.yml`; it runs Lean conformance, full Lean build/theorem tests, complete Python tests, StoryState, and Testimony. Do not run or wait for Docker acceptance.
+```bash
+git push origin work/narrative-empirical-external-validation-v1
+```
 
 Record:
 
@@ -1106,41 +1077,43 @@ StoryState GREEN
 Testimony GREEN
 ```
 
-Do not claim P3 GREEN before this exact-head run passes.
+Do not claim P3 GREEN before the exact-head `proof` run passes. Do not run Docker acceptance.
 
-- [ ] **Step 8: Perform final review before integration**
+- [ ] **8.8 Perform final scope/research review**
 
-Review specifically for:
+Verify explicitly:
 
 ```text
 predictive fit never becomes latent identification
-positive external origin is required
-synthetic fixtures are rejected
+positive external origin is mandatory
+known synthetic fixtures are rejected
 Brier/Log siblings freeze all non-score identities
-score-specific thresholds are preregistered
+score-specific thresholds are frozen before final evaluation
 both releases verify before either final execution
 strata do not resimulate
-constraints are selection-only and dual-score intersection based
-method evidence is lineage-only
+constraints are selection-only and use Brier/Log compatible-set intersection
+method-validation evidence is lineage-only
 aggregate report is attested and claim-safe
 no P0-P2 semantic drift
 ```
 
-If complete, invoke `superpowers:finishing-a-development-branch` for the integration choice. Do not close #38 or describe P3 as integrated until the chosen integration path and post-merge exact-head proof are complete.
+- [ ] **8.9 Invoke `superpowers:finishing-a-development-branch`**
 
-## Definition of Done
+Only after all gates above are GREEN. Choose the integration path there. Do not close #38 or call P3 integrated until the selected integration path completes and the integrated post-merge head has its own exact-head `proof` GREEN evidence.
 
-P3 V1 is complete only when all of the following hold on the integrated post-merge head:
+## Definition of done
 
-1. a positively declared external observational dataset can be bound to immutable source snapshot / transform / record namespace / partition lineage;
-2. known synthetic fixtures cannot enter the external path;
+P3 V1 is done only when the integrated post-merge head satisfies all twelve conditions:
+
+1. positive external observational origin is explicitly bound to source snapshot, transform identity, record namespace, dataset hash, and partition assignment;
+2. known synthetic fixtures cannot enter the P3 external path;
 3. one Brier and one Log sibling protocol are frozen with exact non-score identity and explicit score-specific thresholds;
-4. both witnessed/verified releases preflight before any final model execution;
+4. both witnessed/verified releases pass P3 preflight before either final model execution;
 5. the same frozen candidates are evaluated on the same final targets/seeds under both proper scores;
-6. global adequacy and pairwise observable separation are reported with protocol-scoped predictive vocabulary only;
-7. preregistered strata reuse existing final per-case losses and trigger no extra simulation;
-8. optional finite parameter constraints use selection-validation only, intersect Brier/Log compatible sets, retain the complete candidate-loss table, and never emit identification language;
-9. optional P2 method-validation hashes remain opaque lineage and do not transfer P2 statuses;
-10. `ExternalValidationReport` has `claim_scope == "external_observational_predictive_only"`, no identification status/conclusion field, `ExperimentStage.EXTERNAL_VALIDATION`, complete lineage, and passes generic attestation;
+6. global adequacy and pairwise observable separation use protocol-scoped predictive vocabulary only;
+7. preregistered strata reuse existing per-case final losses and trigger no extra simulation;
+8. optional finite parameter constraints use selection-validation only, intersect Brier/Log compatible sets, retain full candidate-loss evidence, and never emit identification language;
+9. optional P2 method-validation hashes remain opaque lineage and transfer no P2 status;
+10. `ExternalValidationReport` has `claim_scope == "external_observational_predictive_only"`, no identification/free-text conclusion field, `ExperimentStage.EXTERNAL_VALIDATION`, complete lineage, and passes generic attestation;
 11. existing P0-P2 APIs and semantics remain unchanged;
-12. complete Python, Lean/conformance, StoryState, Testimony, and exact-head GitHub `proof` gates are GREEN; Docker acceptance is not run.
+12. complete Python, Lean/conformance, StoryState, Testimony, and exact-head GitHub `proof` gates are GREEN, with Docker acceptance not run.
