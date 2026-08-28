@@ -1285,3 +1285,358 @@ __all__ += [
     "ExternalStratumScore",
     "evaluate_external_final",
 ]
+
+
+@dataclass(frozen=True)
+class ExternalConstraintCandidateLoss:
+    parameters: tuple[tuple[str, float], ...]
+    brier_loss: float
+    log_loss: float
+    brier_parent_manifest_hashes: tuple[str, ...]
+    log_parent_manifest_hashes: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        parameters = tuple(sorted((name, float(value)) for name, value in self.parameters))
+        if not parameters or len({name for name, _ in parameters}) != len(parameters):
+            raise ExternalValidationConstraintError(
+                "external constraint candidate parameters must be non-empty and unique"
+            )
+        if any(not math.isfinite(value) for _, value in parameters):
+            raise ExternalValidationConstraintError(
+                "external constraint candidate parameters must be finite"
+            )
+        object.__setattr__(self, "parameters", parameters)
+        object.__setattr__(
+            self,
+            "brier_loss",
+            _number(self.brier_loss, label="external constraint Brier candidate loss", minimum=0.0),
+        )
+        object.__setattr__(
+            self,
+            "log_loss",
+            _number(self.log_loss, label="external constraint Log candidate loss", minimum=0.0),
+        )
+        for field_name in (
+            "brier_parent_manifest_hashes",
+            "log_parent_manifest_hashes",
+        ):
+            values = tuple(
+                sorted(
+                    _hash(value, label="external constraint calibration manifest hash")
+                    for value in getattr(self, field_name)
+                )
+            )
+            if not values or len(set(values)) != len(values):
+                raise ExternalValidationConstraintError(
+                    "external constraint calibration manifest hashes must be non-empty and unique"
+                )
+            object.__setattr__(self, field_name, values)
+
+
+@dataclass(frozen=True)
+class ExternalCoordinateConstraint:
+    parameter_name: str
+    retained_values: tuple[float, ...]
+    constrained: bool
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "parameter_name",
+            _text(self.parameter_name, label="external constraint parameter name"),
+        )
+        values = tuple(sorted(set(float(value) for value in self.retained_values)))
+        if not values or any(not math.isfinite(value) for value in values):
+            raise ExternalValidationConstraintError(
+                "external constraint retained values must be non-empty and finite"
+            )
+        object.__setattr__(self, "retained_values", values)
+        if not isinstance(self.constrained, bool):
+            raise ExternalValidationConstraintError(
+                "external constraint coordinate status must be bool"
+            )
+        if self.constrained != (len(values) == 1):
+            raise ExternalValidationConstraintError(
+                "external constraint coordinate status does not match retained values"
+            )
+
+
+@dataclass(frozen=True)
+class ExternalConstraintFinding:
+    plan_hash: str
+    model_identity: Mapping[str, object]
+    candidate_losses: tuple[ExternalConstraintCandidateLoss, ...]
+    brier_compatible_parameters: tuple[tuple[tuple[str, float], ...], ...]
+    log_compatible_parameters: tuple[tuple[tuple[str, float], ...], ...]
+    compatible_parameters: tuple[tuple[tuple[str, float], ...], ...]
+    coordinates: tuple[ExternalCoordinateConstraint, ...]
+    status: ExternalConstraintStatus
+    parent_manifest_hashes: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "plan_hash", _hash(self.plan_hash, label="external constraint plan hash"))
+        object.__setattr__(
+            self,
+            "model_identity",
+            _mapping(self.model_identity, label="external constraint finding model identity"),
+        )
+        candidate_losses = tuple(sorted(self.candidate_losses, key=lambda item: item.parameters))
+        if not candidate_losses or any(
+            not isinstance(item, ExternalConstraintCandidateLoss) for item in candidate_losses
+        ):
+            raise ExternalValidationConstraintError(
+                "external constraint finding requires candidate losses"
+            )
+        if len({item.parameters for item in candidate_losses}) != len(candidate_losses):
+            raise ExternalValidationConstraintError(
+                "external constraint candidate parameters must be unique"
+            )
+        object.__setattr__(self, "candidate_losses", candidate_losses)
+        for field_name in (
+            "brier_compatible_parameters",
+            "log_compatible_parameters",
+            "compatible_parameters",
+        ):
+            values = tuple(sorted(tuple(tuple(pair) for pair in item) for item in getattr(self, field_name)))
+            if len(set(values)) != len(values):
+                raise ExternalValidationConstraintError(
+                    "external compatible parameter tuples must be unique"
+                )
+            object.__setattr__(self, field_name, values)
+        if not self.compatible_parameters:
+            raise ExternalValidationConstraintError(
+                "external constraint compatible intersection must be non-empty"
+            )
+        coordinates = tuple(sorted(self.coordinates, key=lambda item: item.parameter_name))
+        if not coordinates or any(
+            not isinstance(item, ExternalCoordinateConstraint) for item in coordinates
+        ):
+            raise ExternalValidationConstraintError(
+                "external constraint finding requires coordinate findings"
+            )
+        object.__setattr__(self, "coordinates", coordinates)
+        if not isinstance(self.status, ExternalConstraintStatus):
+            raise ExternalValidationConstraintError(
+                "external constraint finding status is invalid"
+            )
+        expected_status = (
+            ExternalConstraintStatus.CONSTRAINED
+            if all(item.constrained for item in coordinates)
+            else ExternalConstraintStatus.NOT_CONSTRAINED
+        )
+        if self.status is not expected_status:
+            raise ExternalValidationConstraintError(
+                "external constraint aggregate status does not match coordinates"
+            )
+        parents = tuple(
+            sorted(
+                _hash(value, label="external constraint parent manifest hash")
+                for value in self.parent_manifest_hashes
+            )
+        )
+        if not parents or len(set(parents)) != len(parents):
+            raise ExternalValidationConstraintError(
+                "external constraint parent manifest hashes must be non-empty and unique"
+            )
+        object.__setattr__(self, "parent_manifest_hashes", parents)
+
+
+def _external_constraint_score_table(
+    *,
+    runner: object,
+    plan: ExternalConstraintPlan,
+    model: object,
+    selection_targets: TargetConstructionReport,
+    extractor: object,
+    loss: object,
+    expected_loss_identity: Mapping[str, object],
+) -> tuple[
+    dict[tuple[tuple[str, float], ...], float],
+    tuple[str, ...],
+]:
+    from statistics import fmean
+
+    from narrative_dynamics.calibration import calibrate_grid
+
+    cases = {case.name: case for case in selection_targets.cases}
+    losses_by_parameters: dict[tuple[tuple[str, float], ...], list[float]] = {}
+    parent_hashes: list[str] = []
+    expected_parameters: set[tuple[tuple[str, float], ...]] | None = None
+    for case_name in plan.selection_case_names:
+        case = cases[case_name]
+        result = calibrate_grid(
+            runner=runner,
+            model=model,
+            scenario=case.scenario,
+            parameter_grid=plan.parameter_grid_map,
+            seeds=plan.simulation_seeds,
+            extractor=extractor,
+            target=case.target_map,
+            loss=loss,
+        )
+        if result.manifest is None:
+            raise ExternalValidationConstraintError(
+                "external constraint calibration is missing a manifest"
+            )
+        parent_hashes.append(result.manifest.content_hash)
+        current_parameters = {candidate.parameters for candidate in result.ranking}
+        if expected_parameters is None:
+            expected_parameters = current_parameters
+        elif current_parameters != expected_parameters:
+            raise ExternalValidationConstraintError(
+                "external constraint calibration candidate set drifted across cases"
+            )
+        for candidate in result.ranking:
+            losses_by_parameters.setdefault(candidate.parameters, []).append(float(candidate.loss))
+    if expected_parameters is None or not expected_parameters:
+        raise ExternalValidationConstraintError(
+            "external constraint calibration produced no candidates"
+        )
+    if metric_loss_identity(loss) != dict(expected_loss_identity):
+        raise ExternalValidationConstraintError(
+            "external constraint loss identity changed during evaluation"
+        )
+    return (
+        {
+            parameters: fmean(losses_by_parameters[parameters])
+            for parameters in sorted(expected_parameters)
+        },
+        tuple(parent_hashes),
+    )
+
+
+def evaluate_external_constraint(
+    *,
+    runner: object,
+    plan: ExternalConstraintPlan,
+    model: object,
+    selection_targets: TargetConstructionReport,
+    extractor: object,
+    brier_loss: object,
+    log_loss: object,
+) -> ExternalConstraintFinding:
+    from narrative_dynamics.simulation import SimulationRunner
+
+    if not isinstance(runner, SimulationRunner):
+        raise TypeError("external constraint evaluation requires SimulationRunner")
+    if not isinstance(plan, ExternalConstraintPlan):
+        raise TypeError("external constraint evaluation requires ExternalConstraintPlan")
+    if not isinstance(selection_targets, TargetConstructionReport):
+        raise TypeError("external constraint evaluation requires constructed targets")
+    if selection_targets.role is not ObservationPartitionRole.SELECTION_VALIDATION:
+        raise ExternalValidationConstraintError(
+            "external constraint evaluation requires selection-validation targets"
+        )
+    if component_identity(model) != dict(plan.model_identity):
+        raise ExternalValidationConstraintError(
+            "external constraint runtime model identity changed"
+        )
+    if callable_identity(extractor) != dict(plan.metric_identity):
+        raise ExternalValidationConstraintError(
+            "external constraint metric extractor changed"
+        )
+    if metric_loss_identity(brier_loss) != dict(plan.brier_loss_identity):
+        raise ExternalValidationConstraintError(
+            "external constraint Brier loss changed"
+        )
+    if metric_loss_identity(log_loss) != dict(plan.log_loss_identity):
+        raise ExternalValidationConstraintError(
+            "external constraint Log loss changed"
+        )
+    cases = {case.name: case for case in selection_targets.cases}
+    if any(name not in cases for name in plan.selection_case_names):
+        raise ExternalValidationConstraintError(
+            "external constraint selection cases changed"
+        )
+
+    brier_table, brier_parent_hashes = _external_constraint_score_table(
+        runner=runner,
+        plan=plan,
+        model=model,
+        selection_targets=selection_targets,
+        extractor=extractor,
+        loss=brier_loss,
+        expected_loss_identity=plan.brier_loss_identity,
+    )
+    log_table, log_parent_hashes = _external_constraint_score_table(
+        runner=runner,
+        plan=plan,
+        model=model,
+        selection_targets=selection_targets,
+        extractor=extractor,
+        loss=log_loss,
+        expected_loss_identity=plan.log_loss_identity,
+    )
+    if set(brier_table) != set(log_table):
+        raise ExternalValidationConstraintError(
+            "external constraint Brier/Log candidate sets disagree"
+        )
+
+    brier_best = min(brier_table.values())
+    log_best = min(log_table.values())
+    brier_compatible = tuple(
+        sorted(
+            parameters
+            for parameters, value in brier_table.items()
+            if value <= brier_best + plan.brier_acceptance_loss_delta
+        )
+    )
+    log_compatible = tuple(
+        sorted(
+            parameters
+            for parameters, value in log_table.items()
+            if value <= log_best + plan.log_acceptance_loss_delta
+        )
+    )
+    compatible = tuple(sorted(set(brier_compatible).intersection(log_compatible)))
+    if not compatible:
+        raise ExternalValidationConstraintError(
+            "external Brier/Log compatible parameter intersection is empty"
+        )
+
+    candidate_losses = tuple(
+        ExternalConstraintCandidateLoss(
+            parameters=parameters,
+            brier_loss=brier_table[parameters],
+            log_loss=log_table[parameters],
+            brier_parent_manifest_hashes=brier_parent_hashes,
+            log_parent_manifest_hashes=log_parent_hashes,
+        )
+        for parameters in sorted(brier_table)
+    )
+    coordinates: list[ExternalCoordinateConstraint] = []
+    for parameter_name in plan.target_coordinates:
+        retained_values = tuple(
+            sorted({dict(parameters)[parameter_name] for parameters in compatible})
+        )
+        coordinates.append(
+            ExternalCoordinateConstraint(
+                parameter_name=parameter_name,
+                retained_values=retained_values,
+                constrained=len(retained_values) == 1,
+            )
+        )
+    status = (
+        ExternalConstraintStatus.CONSTRAINED
+        if all(item.constrained for item in coordinates)
+        else ExternalConstraintStatus.NOT_CONSTRAINED
+    )
+    return ExternalConstraintFinding(
+        plan_hash=plan.content_hash,
+        model_identity=plan.model_identity,
+        candidate_losses=candidate_losses,
+        brier_compatible_parameters=brier_compatible,
+        log_compatible_parameters=log_compatible,
+        compatible_parameters=compatible,
+        coordinates=tuple(coordinates),
+        status=status,
+        parent_manifest_hashes=tuple(sorted(set(brier_parent_hashes + log_parent_hashes))),
+    )
+
+
+__all__ += [
+    "ExternalConstraintCandidateLoss",
+    "ExternalConstraintFinding",
+    "ExternalCoordinateConstraint",
+    "evaluate_external_constraint",
+]

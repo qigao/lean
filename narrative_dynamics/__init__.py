@@ -230,3 +230,17 @@ __all__ = [
     "validate_schema_value",
     "verify_protocol_release",
 ]
+
+from narrative_dynamics.external_validation import (
+    ExternalConstraintCandidateLoss,
+    ExternalConstraintFinding,
+    ExternalCoordinateConstraint,
+    evaluate_external_constraint,
+)
+
+__all__ += [
+    "ExternalConstraintCandidateLoss",
+    "ExternalConstraintFinding",
+    "ExternalCoordinateConstraint",
+    "evaluate_external_constraint",
+]
