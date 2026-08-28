@@ -199,15 +199,16 @@ The exact persisted values above are part of V1 and are not inferred from filena
 
 ### 5.3 Known synthetic rejection
 
-The external constructor fails closed if the dataset carries known non-empirical provenance including any of:
+The external constructor fails closed if the dataset carries known non-empirical provenance including either of:
 
 ```text
 source.kind = "synthetic_fixture"
 provenance.synthetic_non_empirical = true
-provenance.empirical_human_data = false
 ```
 
-This explicitly rejects the existing prison protocol-integration fixture and P2 synthetic-identification fixture from the P3 scientific path.
+`provenance.empirical_human_data = false` is **not**, by itself, proof that a dataset is synthetic: a real external observational source may concern non-human agents, organizations, or other units. Human-data scope must therefore not be inferred from that flag.
+
+The existing prison protocol-integration fixture and P2 synthetic-identification fixture are still rejected because they carry explicit synthetic source/provenance markers.
 
 ### 5.4 What the declaration does not prove
 
@@ -249,6 +250,9 @@ class ExternalValidationPreregistration:
     evidence_declaration_hash: str
     brier_protocol_hash: str
     log_protocol_hash: str
+    adequacy_thresholds_by_score: tuple[
+        tuple[ExternalScoreRole, AdequacyThresholds], ...
+    ]
     strata: tuple[ExternalStratum, ...]
     separation_rule: PairwiseSeparationRule
     constraint_plans: tuple[ExternalConstraintPlan, ...]
@@ -258,9 +262,11 @@ class ExternalValidationPreregistration:
 
 Its constructor receives the actual `ExternalEvidenceDeclaration` and the two actual `PreregisteredEvaluationProtocol` objects, validates every sibling invariant, and stores their hashes.
 
+`adequacy_thresholds_by_score` contains exactly one frozen threshold set for Brier and one for Log. This makes score-specific adequacy thresholds explicit before final evaluation rather than pretending that Brier and Log share a common numerical scale.
+
 ### 6.3 Brier / Log sibling invariants
 
-Before any final-test release can be accepted, the Brier and Log protocols must match exactly on all non-loss scientific inputs:
+Before any final-test release can be accepted, the Brier and Log protocols must match exactly on all scientific inputs that are not explicitly score-specific:
 
 - dataset hash;
 - train partition hash;
@@ -276,20 +282,22 @@ Before any final-test release can be accepted, the Brier and Log protocols must 
 - each candidate model identity;
 - each candidate selected parameter tuple;
 - each candidate selection-manifest lineage;
-- adequacy thresholds unless a threshold is inherently loss-specific and is represented explicitly inside the P3 score role;
 - protocol version.
 
-Permitted differences are limited to:
+Each protocol's `AdequacyThresholds` must exactly match the threshold set preregistered for its own score role. Brier and Log threshold numbers may differ because their loss scales differ, but that difference is frozen in `adequacy_thresholds_by_score` before final evaluation.
+
+Permitted sibling differences are limited to:
 
 - protocol name suffix needed to distinguish score role;
 - categorical loss identity;
+- the score-specific adequacy thresholds already frozen in the P3 preregistration;
 - the protocol's derived precommitment/content hash.
 
 One sibling must use the repository's canonical categorical Brier loss identity and the other the canonical categorical Log loss identity. Supplying two Brier protocols, two Log protocols, or an unknown loss family fails closed.
 
 ### 6.4 No post-final sibling construction
 
-The P3 aggregate preregistration hash binds both sibling protocol hashes before either final test is allowed to execute. It is invalid to run Brier final evaluation and construct the Log sibling afterward.
+The P3 aggregate preregistration hash binds both sibling protocol hashes and both score-specific threshold sets before either final test is allowed to execute. It is invalid to run Brier final evaluation and construct or retune the Log sibling afterward.
 
 ## 7. External release and witness gating
 
@@ -361,7 +369,7 @@ For one model and one score role, retain at least:
 - score role and loss identity;
 - global mean final loss;
 - global worst-case final loss;
-- frozen threshold identity;
+- frozen score-specific threshold identity;
 - per-score adequacy result;
 - child released-comparison manifest hash.
 
@@ -372,7 +380,7 @@ PREDICTIVE_ADEQUACY_MET
 PREDICTIVE_ADEQUACY_NOT_MET
 ```
 
-using the existing frozen adequacy thresholds.
+using the score-specific thresholds frozen in `ExternalValidationPreregistration` and already bound by the corresponding child protocol.
 
 ### 9.2 Aggregate model adequacy
 
@@ -401,11 +409,12 @@ V1 fixes `require_direction_agreement = true`.
 
 For a canonical model pair `(A, B)`:
 
-1. compute the signed mean-loss difference under Brier;
-2. compute the signed mean-loss difference under Log;
-3. require both scores to prefer the same model;
-4. require the absolute Brier difference to meet the Brier threshold;
-5. require the absolute Log difference to meet the Log threshold.
+1. reuse the mean-loss values produced by the existing released final comparisons rather than re-scoring with a second aggregation rule;
+2. compute the signed mean-loss difference under Brier;
+3. compute the signed mean-loss difference under Log;
+4. require both scores to prefer the same model;
+5. require the absolute Brier difference to meet the Brier threshold;
+6. require the absolute Log difference to meet the Log threshold.
 
 Only then may the finding be:
 
@@ -449,7 +458,7 @@ Strata refer to final target-case names, not runtime predicates.
 
 Global scores are always reported independently of strata.
 
-For each score role and model, the report retains per-stratum mean and worst loss. Pairwise score deltas are also reported per stratum, but P3 V1 does not create a separate stratum-specific winner status unless the preregistered global separation rule is explicitly evaluated on that stratum and stored as a separate finding.
+For each score role and model, the report retains per-stratum mean and worst loss using the same per-case scoring and weighting semantics as the existing final comparison. P3 introduces no post-hoc stratum weights. Pairwise score deltas are also reported per stratum, but P3 V1 does not create a separate stratum-specific winner status unless the preregistered global separation rule is explicitly evaluated on that stratum and stored as a separate finding.
 
 ## 12. External parameter constraints
 
@@ -496,6 +505,10 @@ There is no generator-truth requirement because external observational data do n
 An empty compatible set is an execution/protocol failure, not `NOT_CONSTRAINED_UNDER_EXTERNAL_PROTOCOL`.
 
 For a multi-coordinate plan, aggregate status is `CONSTRAINED_UNDER_EXTERNAL_PROTOCOL` only when every declared coordinate is constrained. The complete compatible set remains visible in the finding.
+
+Constraint findings retain the full canonical candidate-loss table under both score roles and the parent selection/calibration evidence needed to audit the compatible set. A lexically ranked best candidate is not sufficient evidence of a constraint.
+
+Every constraint statement is relative only to the declared finite grid, selection cases, seeds, losses, and acceptance deltas. It is not a claim about unsampled parameter values or structural identifiability.
 
 ### 12.4 Isolation from P2 identification
 
@@ -582,6 +595,7 @@ Canonical ordering rules:
 - parameter tuples sort by parameter name and then tuple value;
 - model pairs are stored in lexical model-name order;
 - score roles have fixed Brier-then-Log order;
+- score-specific threshold pairs use the fixed score-role order;
 - evidence and method hashes are validated SHA-256 identities and stored deterministically;
 - mappings are recursively frozen through existing canonical helpers or equivalent trusted helpers.
 
@@ -622,7 +636,7 @@ P3 fails closed on at least:
 - candidate-set mismatch;
 - frozen parameter mismatch;
 - selection lineage mismatch;
-- threshold drift outside explicitly represented loss-specific fields;
+- score-specific thresholds that do not match the frozen P3 threshold pair;
 - duplicate score family;
 - unknown score family;
 - P3 preregistration created from already divergent siblings.
@@ -659,7 +673,7 @@ P3 fails closed on at least:
 
 - external finding constructed with a P2 identification status;
 - aggregate claim scope changed from `external_observational_predictive_only`;
-- canonical payload containing a successful empirical/structural/cognitive identification status;
+- a P3 result status or claim field populated with a successful empirical/structural/cognitive identification value;
 - external report exposing a synthetic-identification result as its own empirical finding.
 
 ### 17.7 Report failures
@@ -695,6 +709,7 @@ Owns:
 - P3 claim/status enums;
 - Brier/Log sibling validation;
 - `ExternalValidationPreregistration`;
+- score-specific adequacy-threshold binding;
 - stratum declarations;
 - pairwise separation rule/findings;
 - optional external parameter-constraint plans/findings;
@@ -748,7 +763,7 @@ Require that:
 
 - P3 exposes no `IdentificationStatus` result;
 - a singleton external compatible set produces `CONSTRAINED_UNDER_EXTERNAL_PROTOCOL` rather than identification;
-- forbidden empirical/cognitive-identification status strings cannot enter a canonical P3 report;
+- forbidden empirical/cognitive-identification values cannot enter canonical P3 result status/claim fields;
 - claim scope is immutable.
 
 ### 20.2 Evidence-origin RED
@@ -758,11 +773,12 @@ Require that:
 - the existing `prison_initial_choice_v1.json` synthetic fixture is rejected by the P3 external path;
 - the P2 narrative-identification fixture is rejected;
 - absence of a synthetic marker is insufficient without positive external provenance;
+- `empirical_human_data = false` alone is not treated as a synthetic marker;
 - source snapshot, transform, namespace, dataset, and partition drift are rejected.
 
 ### 20.3 Sibling-protocol RED
 
-Require exact Brier/Log sibling equality on every non-loss identity and explicit rejection of target, seed, model, selected-parameter, threshold, metric, or selection-lineage drift.
+Require exact Brier/Log sibling equality on every non-score-specific identity and explicit rejection of target, seed, model, selected-parameter, metric, selection-lineage, or score-specific-threshold drift. Permit different Brier and Log threshold numbers only when they exactly match the two threshold sets frozen in the P3 preregistration.
 
 ### 20.4 Dual-release gate RED
 
@@ -782,7 +798,7 @@ Require:
 
 ### 20.6 Stratum RED
 
-Require complete exactly-once final-case coverage and deterministic global/stratum score aggregation.
+Require complete exactly-once final-case coverage and deterministic global/stratum score aggregation using existing final-comparison scoring semantics.
 
 ### 20.7 External-constraint RED
 
@@ -790,6 +806,7 @@ Require:
 
 - selection-only candidate evaluation;
 - intersection of Brier and Log compatible sets;
+- full candidate-loss evidence in the finding;
 - constrained and non-constrained cases;
 - empty compatible set as typed failure;
 - no generator-truth or P2-identification dependency.
@@ -831,7 +848,7 @@ P3 Empirical / External Validation V1 is architecturally complete when the imple
 
 1. bind an existing `ObservationDataset` to an explicit external source snapshot and transform lineage;
 2. reject known synthetic/non-empirical datasets and missing positive external provenance;
-3. freeze exactly one Brier and one Log sibling `PreregisteredEvaluationProtocol` with all non-loss identities equal;
+3. freeze exactly one Brier and one Log sibling `PreregisteredEvaluationProtocol` with all non-score-specific identities equal and score-specific adequacy thresholds explicitly preregistered;
 4. bind both siblings and the external evidence declaration into one P3 preregistration;
 5. require witnessed, verified releases for both siblings before either final test executes;
 6. evaluate the same frozen model candidates on the same final targets and seeds under both proper scores;
