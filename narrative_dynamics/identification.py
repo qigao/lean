@@ -9,9 +9,15 @@ import re
 from statistics import fmean
 from types import MappingProxyType
 
+from narrative_dynamics.calibration import calibrate_grid
 from narrative_dynamics.contracts import Scenario, stable_content_hash
 from narrative_dynamics.losses import MetricLoss, metric_loss_identity
-from narrative_dynamics.manifest import callable_identity, component_identity
+from narrative_dynamics.manifest import (
+    callable_identity,
+    component_identity,
+    required_manifest_hash,
+)
+from narrative_dynamics.metrics import aggregate_metrics
 from narrative_dynamics.observations.dataset import (
     ObservationDataset,
     ObservationPartitionRole,
@@ -20,6 +26,7 @@ from narrative_dynamics.observations.preregistration import (
     PreregisteredEvaluationProtocol,
 )
 from narrative_dynamics.observations.targets import CategoricalTargetSpec
+from narrative_dynamics.simulation import SimulationRunner
 from narrative_dynamics.uncertainty import (
     IdentifiabilityReport,
     ParameterAcceptanceSet,
@@ -938,12 +945,528 @@ def validate_sibling_final_protocols(
             )
 
 
-def evaluate_parameter_recovery_experiment(*args, **kwargs):
-    raise NotImplementedError("parameter recovery execution is implemented in Task 4")
+PolicyTuple = tuple[tuple[str, float], ...]
+PolicyComparisonRow = tuple[str, PolicyTuple, PolicyTuple]
 
 
-def certify_observational_equivalence(*args, **kwargs):
-    raise NotImplementedError("observational equivalence is implemented in Task 4")
+def _policy_tuple(
+    value: Mapping[str, float] | Iterable[tuple[str, float]],
+    *,
+    action_keys: tuple[str, ...],
+    label: str,
+) -> PolicyTuple:
+    items = value.items() if isinstance(value, Mapping) else value
+    probabilities: dict[str, float] = {}
+    try:
+        for raw_key, raw_probability in items:
+            key = _text(raw_key, label=f"{label} action key")
+            if key in probabilities:
+                raise IdentificationRecoveryError(
+                    f"{label} action keys must be unique"
+                )
+            probability = _finite(
+                raw_probability,
+                label=f"{label} probability for {key!r}",
+            )
+            if not 0.0 <= probability <= 1.0:
+                raise IdentificationRecoveryError(
+                    f"{label} probabilities must be in [0, 1]"
+                )
+            probabilities[key] = probability
+    except IdentificationProtocolError as error:
+        raise IdentificationRecoveryError(str(error)) from error
+    if set(probabilities) != set(action_keys):
+        raise IdentificationRecoveryError(
+            f"{label} must cover the declared observable action keys exactly"
+        )
+    if not math.isclose(
+        math.fsum(probabilities.values()),
+        1.0,
+        rel_tol=0.0,
+        abs_tol=_EQUIVALENCE_TOLERANCE,
+    ):
+        raise IdentificationRecoveryError(f"{label} must sum to one")
+    return tuple((key, probabilities[key]) for key in action_keys)
+
+
+@dataclass(frozen=True)
+class ObservationalEquivalenceFinding:
+    name: str
+    left_model_identity: Mapping[str, object]
+    right_model_identity: Mapping[str, object]
+    case_hashes: tuple[str, ...]
+    action_keys: tuple[str, ...]
+    policies: tuple[PolicyComparisonRow, ...]
+    max_abs_policy_delta: float
+    tolerance: float
+    equivalent: bool
+    parent_manifest_hashes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        try:
+            name = _text(self.name, label="observational equivalence name")
+            left_identity = _freeze_mapping(
+                self.left_model_identity,
+                label="left observational equivalence model identity",
+            )
+            right_identity = _freeze_mapping(
+                self.right_model_identity,
+                label="right observational equivalence model identity",
+            )
+            raw_case_hashes = tuple(self.case_hashes)
+            case_hashes = tuple(
+                sorted(
+                    _hash(item, label="observational equivalence case hash")
+                    for item in raw_case_hashes
+                )
+            )
+            if not case_hashes:
+                raise IdentificationRecoveryError(
+                    "observational equivalence requires at least one case"
+                )
+            if len(set(case_hashes)) != len(case_hashes):
+                raise IdentificationRecoveryError(
+                    "observational equivalence case hashes must be unique"
+                )
+            raw_action_keys = tuple(self.action_keys)
+            action_keys = tuple(
+                sorted(
+                    _text(item, label="observational equivalence action key")
+                    for item in raw_action_keys
+                )
+            )
+            if not action_keys:
+                raise IdentificationRecoveryError(
+                    "observational equivalence requires observable action keys"
+                )
+            if len(set(action_keys)) != len(action_keys):
+                raise IdentificationRecoveryError(
+                    "observational equivalence action keys must be unique"
+                )
+            tolerance = _finite(
+                self.tolerance,
+                label="observational equivalence tolerance",
+            )
+            maximum = _finite(
+                self.max_abs_policy_delta,
+                label="observational equivalence maximum policy delta",
+            )
+        except IdentificationProtocolError as error:
+            raise IdentificationRecoveryError(str(error)) from error
+        if tolerance < 0.0 or maximum < 0.0:
+            raise IdentificationRecoveryError(
+                "observational equivalence tolerance and delta must be non-negative"
+            )
+        if not isinstance(self.equivalent, bool):
+            raise IdentificationRecoveryError(
+                "observational equivalence flag must be boolean"
+            )
+        if not isinstance(self.policies, tuple):
+            raise IdentificationRecoveryError(
+                "observational equivalence policies must be a tuple"
+            )
+
+        rows: list[PolicyComparisonRow] = []
+        seen_cases: set[str] = set()
+        for raw_row in self.policies:
+            if not isinstance(raw_row, tuple) or len(raw_row) != 3:
+                raise IdentificationRecoveryError(
+                    "observational equivalence policy rows must be triples"
+                )
+            raw_case_hash, raw_left, raw_right = raw_row
+            try:
+                case_hash = _hash(
+                    raw_case_hash,
+                    label="observational equivalence policy case hash",
+                )
+            except IdentificationProtocolError as error:
+                raise IdentificationRecoveryError(str(error)) from error
+            if case_hash in seen_cases:
+                raise IdentificationRecoveryError(
+                    "observational equivalence policies must contain one row per case"
+                )
+            seen_cases.add(case_hash)
+            left_policy = _policy_tuple(
+                raw_left,
+                action_keys=action_keys,
+                label="left observational policy",
+            )
+            right_policy = _policy_tuple(
+                raw_right,
+                action_keys=action_keys,
+                label="right observational policy",
+            )
+            rows.append((case_hash, left_policy, right_policy))
+        if seen_cases != set(case_hashes):
+            raise IdentificationRecoveryError(
+                "observational equivalence policies must cover the frozen cases exactly"
+            )
+        rows_tuple = tuple(sorted(rows, key=lambda row: row[0]))
+        computed_maximum = max(
+            abs(dict(left)[key] - dict(right)[key])
+            for _case_hash, left, right in rows_tuple
+            for key in action_keys
+        )
+        if not math.isclose(
+            maximum,
+            computed_maximum,
+            rel_tol=0.0,
+            abs_tol=1e-15,
+        ):
+            raise IdentificationRecoveryError(
+                "observational equivalence maximum delta must match complete policies"
+            )
+        if self.equivalent is not (computed_maximum <= tolerance):
+            raise IdentificationRecoveryError(
+                "observational equivalence flag must match complete-policy delta"
+            )
+        try:
+            parents = tuple(
+                sorted(
+                    {
+                        _hash(
+                            item,
+                            label="observational equivalence parent manifest hash",
+                        )
+                        for item in self.parent_manifest_hashes
+                    }
+                )
+            )
+        except IdentificationProtocolError as error:
+            raise IdentificationRecoveryError(str(error)) from error
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "left_model_identity", left_identity)
+        object.__setattr__(self, "right_model_identity", right_identity)
+        object.__setattr__(self, "case_hashes", case_hashes)
+        object.__setattr__(self, "action_keys", action_keys)
+        object.__setattr__(self, "policies", rows_tuple)
+        object.__setattr__(self, "max_abs_policy_delta", maximum)
+        object.__setattr__(self, "tolerance", tolerance)
+        object.__setattr__(self, "parent_manifest_hashes", parents)
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "left_model_identity": self.left_model_identity,
+            "right_model_identity": self.right_model_identity,
+            "case_hashes": self.case_hashes,
+            "action_keys": self.action_keys,
+            "policies": tuple(
+                {
+                    "case_hash": case_hash,
+                    "left": left,
+                    "right": right,
+                }
+                for case_hash, left, right in self.policies
+            ),
+            "max_abs_policy_delta": self.max_abs_policy_delta,
+            "tolerance": self.tolerance,
+            "equivalent": self.equivalent,
+            "parent_manifest_hashes": self.parent_manifest_hashes,
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.identity_payload())
+
+
+def _recovery_identity_preflight(
+    *,
+    model: object,
+    experiment: ParameterRecoveryExperiment,
+    extractor: object,
+    loss: MetricLoss,
+) -> None:
+    try:
+        model_identity = component_identity(model)
+        metric_identity = callable_identity(extractor)
+        actual_loss_identity = metric_loss_identity(loss)
+    except (TypeError, ValueError) as error:
+        raise IdentificationRecoveryError(
+            "parameter recovery identity preflight failed"
+        ) from error
+    if model_identity != experiment.model_identity:
+        raise IdentificationRecoveryError(
+            "parameter recovery model identity drifted from its declaration"
+        )
+    if metric_identity != experiment.metric_identity:
+        raise IdentificationRecoveryError(
+            "parameter recovery metric identity drifted from its declaration"
+        )
+    if actual_loss_identity != experiment.loss_identity:
+        raise IdentificationRecoveryError(
+            "parameter recovery loss identity drifted from its declaration"
+        )
+
+
+def evaluate_parameter_recovery_experiment(
+    *,
+    runner: SimulationRunner,
+    model: object,
+    experiment: ParameterRecoveryExperiment,
+    extractor: object,
+    loss: MetricLoss,
+) -> ParameterIdentificationFinding:
+    if not isinstance(runner, SimulationRunner):
+        raise IdentificationRecoveryError(
+            "parameter recovery requires SimulationRunner"
+        )
+    if not isinstance(experiment, ParameterRecoveryExperiment):
+        raise IdentificationRecoveryError(
+            "parameter recovery requires ParameterRecoveryExperiment"
+        )
+    _recovery_identity_preflight(
+        model=model,
+        experiment=experiment,
+        extractor=extractor,
+        loss=loss,
+    )
+
+    try:
+        truth_parameters = dict(experiment.true_parameters)
+        targets: dict[str, Mapping[str, float]] = {}
+        parent_hashes: set[str] = set()
+        for case in experiment.cases:
+            truth_traces = runner.run_batch(
+                model,
+                case,
+                truth_parameters,
+                seeds=experiment.generation_seeds,
+            )
+            targets[case.content_hash] = aggregate_metrics(
+                truth_traces,
+                extractor,
+            )
+            parent_hashes.update(
+                required_manifest_hash(
+                    trace,
+                    label="synthetic recovery generation trace",
+                )
+                for trace in truth_traces
+            )
+
+        candidates = experiment.candidate_parameters
+        expected_candidates = set(candidates)
+        block_losses: dict[ParameterTuple, list[float]] = {
+            candidate: [] for candidate in candidates
+        }
+        accepted_blocks: dict[ParameterTuple, int] = {
+            candidate: 0 for candidate in candidates
+        }
+
+        for seed_block in experiment.calibration_seed_blocks:
+            case_losses: list[Mapping[ParameterTuple, float]] = []
+            for case in experiment.cases:
+                calibration = calibrate_grid(
+                    runner=runner,
+                    model=model,
+                    scenario=case,
+                    parameter_grid=experiment.parameter_grid,
+                    seeds=seed_block,
+                    extractor=extractor,
+                    target=targets[case.content_hash],
+                    loss=loss,
+                )
+                actual_candidates = tuple(
+                    candidate.parameters for candidate in calibration.ranking
+                )
+                if (
+                    len(actual_candidates) != len(candidates)
+                    or set(actual_candidates) != expected_candidates
+                ):
+                    raise IdentificationRecoveryError(
+                        "parameter recovery calibration changed the frozen candidate grid"
+                    )
+                parent_hashes.add(
+                    required_manifest_hash(
+                        calibration,
+                        label="synthetic recovery calibration",
+                    )
+                )
+                for candidate in calibration.ranking:
+                    parent_hashes.update(candidate.run_manifest_hashes)
+                case_losses.append(
+                    {
+                        candidate.parameters: candidate.loss
+                        for candidate in calibration.ranking
+                    }
+                )
+
+            aggregate_block = {
+                candidate: fmean(
+                    case_loss[candidate] for case_loss in case_losses
+                )
+                for candidate in candidates
+            }
+            if any(
+                not math.isfinite(value) or value < 0.0
+                for value in aggregate_block.values()
+            ):
+                raise IdentificationRecoveryError(
+                    "parameter recovery candidate loss must be finite and non-negative"
+                )
+            best_loss = min(aggregate_block.values())
+            for candidate in candidates:
+                candidate_loss = aggregate_block[candidate]
+                block_losses[candidate].append(candidate_loss)
+                if candidate_loss <= best_loss + experiment.acceptance_loss_delta:
+                    accepted_blocks[candidate] += 1
+
+        block_count = len(experiment.calibration_seed_blocks)
+        rows = tuple(
+            ParameterCandidateLoss(
+                parameters=candidate,
+                block_losses=tuple(block_losses[candidate]),
+                mean_loss=fmean(block_losses[candidate]),
+                accepted_blocks=accepted_blocks[candidate],
+                acceptance_fraction=accepted_blocks[candidate] / block_count,
+            )
+            for candidate in candidates
+        )
+        return interpret_parameter_identification(
+            experiment,
+            rows,
+            parent_manifest_hashes=tuple(sorted(parent_hashes)),
+        )
+    except SyntheticIdentificationError:
+        raise
+    except (TypeError, ValueError, RuntimeError, KeyError) as error:
+        raise IdentificationRecoveryError(
+            "parameter recovery execution failed"
+        ) from error
+
+
+def certify_observational_equivalence(
+    *,
+    name: str,
+    runner: SimulationRunner,
+    left_model: object,
+    right_model: object,
+    left_parameters: Mapping[str, float],
+    right_parameters: Mapping[str, float],
+    cases: tuple[Scenario, ...],
+    seeds: tuple[int, ...],
+    extractor: object,
+    action_keys: tuple[str, ...],
+    tolerance: float = _EQUIVALENCE_TOLERANCE,
+) -> ObservationalEquivalenceFinding:
+    if not isinstance(runner, SimulationRunner):
+        raise IdentificationRecoveryError(
+            "observational equivalence requires SimulationRunner"
+        )
+    try:
+        finding_name = _text(name, label="observational equivalence name")
+        case_tuple = tuple(cases)
+        if not case_tuple or any(
+            not isinstance(case, Scenario) for case in case_tuple
+        ):
+            raise IdentificationRecoveryError(
+                "observational equivalence cases must contain Scenario values"
+            )
+        if len({case.content_hash for case in case_tuple}) != len(case_tuple):
+            raise IdentificationRecoveryError(
+                "observational equivalence cases must be unique"
+            )
+        case_tuple = tuple(
+            sorted(case_tuple, key=lambda case: (case.id, case.content_hash))
+        )
+        seed_tuple = _seed_plan(seeds, label="observational equivalence seeds")
+        keys = tuple(
+            sorted(
+                _text(item, label="observational equivalence action key")
+                for item in action_keys
+            )
+        )
+        if not keys or len(set(keys)) != len(keys):
+            raise IdentificationRecoveryError(
+                "observational equivalence action keys must be non-empty and unique"
+            )
+        tolerance_value = _finite(
+            tolerance,
+            label="observational equivalence tolerance",
+        )
+        if tolerance_value < 0.0:
+            raise IdentificationRecoveryError(
+                "observational equivalence tolerance must be non-negative"
+            )
+        left_parameter_tuple = _parameter_tuple(
+            left_parameters,
+            label="left observational equivalence parameters",
+        )
+        right_parameter_tuple = _parameter_tuple(
+            right_parameters,
+            label="right observational equivalence parameters",
+        )
+    except IdentificationProtocolError as error:
+        raise IdentificationRecoveryError(str(error)) from error
+
+    try:
+        rows: list[PolicyComparisonRow] = []
+        parent_hashes: set[str] = set()
+        maximum = 0.0
+        for case in case_tuple:
+            left_traces = runner.run_batch(
+                left_model,
+                case,
+                dict(left_parameter_tuple),
+                seeds=seed_tuple,
+            )
+            right_traces = runner.run_batch(
+                right_model,
+                case,
+                dict(right_parameter_tuple),
+                seeds=seed_tuple,
+            )
+            left_policy = _policy_tuple(
+                aggregate_metrics(left_traces, extractor),
+                action_keys=keys,
+                label="left observational policy",
+            )
+            right_policy = _policy_tuple(
+                aggregate_metrics(right_traces, extractor),
+                action_keys=keys,
+                label="right observational policy",
+            )
+            rows.append((case.content_hash, left_policy, right_policy))
+            left_map = dict(left_policy)
+            right_map = dict(right_policy)
+            maximum = max(
+                maximum,
+                max(abs(left_map[key] - right_map[key]) for key in keys),
+            )
+            parent_hashes.update(
+                required_manifest_hash(
+                    trace,
+                    label="left observational equivalence trace",
+                )
+                for trace in left_traces
+            )
+            parent_hashes.update(
+                required_manifest_hash(
+                    trace,
+                    label="right observational equivalence trace",
+                )
+                for trace in right_traces
+            )
+
+        return ObservationalEquivalenceFinding(
+            name=finding_name,
+            left_model_identity=component_identity(left_model),
+            right_model_identity=component_identity(right_model),
+            case_hashes=tuple(case.content_hash for case in case_tuple),
+            action_keys=keys,
+            policies=tuple(rows),
+            max_abs_policy_delta=maximum,
+            tolerance=tolerance_value,
+            equivalent=maximum <= tolerance_value,
+            parent_manifest_hashes=tuple(sorted(parent_hashes)),
+        )
+    except SyntheticIdentificationError:
+        raise
+    except (TypeError, ValueError, RuntimeError, KeyError) as error:
+        raise IdentificationRecoveryError(
+            "observational equivalence execution failed"
+        ) from error
 
 
 def certify_information_intervention(*args, **kwargs):
@@ -970,6 +1493,7 @@ __all__ = [
     "IdentificationStatus",
     "InformationInterventionPair",
     "InterventionCertificationError",
+    "ObservationalEquivalenceFinding",
     "ParameterCandidateLoss",
     "ParameterIdentificationFinding",
     "ParameterRecoveryExperiment",
