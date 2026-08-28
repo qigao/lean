@@ -2304,7 +2304,7 @@ def score_model_comparison_by_stratum(
         raise IdentificationComparisonError(
             "comparison report does not bind the exact final protocol"
         )
-    if report.manifest.inputs.get("loss") != protocol.loss_identity:
+    if report.manifest.inputs.get("loss_identity") != protocol.loss_identity:
         raise IdentificationComparisonError(
             "comparison report loss drifted from final protocol"
         )
