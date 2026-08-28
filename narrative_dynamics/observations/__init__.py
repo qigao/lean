@@ -12,6 +12,12 @@ from .dataset import (
     ObservationRecord,
     load_observation_dataset,
 )
+from .external import (
+    EXTERNAL_CLAIM_SCOPE,
+    EXTERNAL_EVIDENCE_ORIGIN,
+    ExternalEvidenceDeclaration,
+    ExternalValidationError,
+)
 from .preregistration import (
     AdequacyThresholds,
     ComparisonPreregistration,
@@ -53,6 +59,10 @@ __all__ = [
     "ComparisonPreregistration",
     "ConstructedObservationCase",
     "ConstructedTargetSet",
+    "EXTERNAL_CLAIM_SCOPE",
+    "EXTERNAL_EVIDENCE_ORIGIN",
+    "ExternalEvidenceDeclaration",
+    "ExternalValidationError",
     "FrozenModelCandidate",
     "FrozenModelSpec",
     "ObservationCase",

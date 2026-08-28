@@ -20,6 +20,13 @@ from narrative_dynamics.contracts import (
     SimulatorModel,
     TraceEvent,
 )
+from narrative_dynamics.external_validation import (
+    EXTERNAL_CLAIM_SCOPE,
+    ExternalConstraintStatus,
+    ExternalScoreRole,
+    PredictiveAdequacyStatus,
+    PredictiveSeparationStatus,
+)
 from narrative_dynamics.losses import (
     DEFAULT_METRIC_LOSS,
     CategoricalBrierLoss,
@@ -33,6 +40,7 @@ from narrative_dynamics.losses import (
 from narrative_dynamics.manifest import stable_content_hash
 from narrative_dynamics.observations import (
     OBSERVATION_DATASET_SCHEMA_VERSION,
+    EXTERNAL_EVIDENCE_ORIGIN,
     AdequacyThresholds,
     AlternativeModelComparisonReport,
     AlternativeModelEvaluation,
@@ -41,6 +49,8 @@ from narrative_dynamics.observations import (
     ComparisonPreregistration,
     ConstructedObservationCase,
     ConstructedTargetSet,
+    ExternalEvidenceDeclaration,
+    ExternalValidationError,
     FrozenModelCandidate,
     FrozenModelSpec,
     ObservationCase,
@@ -102,6 +112,8 @@ from narrative_dynamics.simulation import ModelFactory, SimulationRunner
 
 __all__ = [
     "OBSERVATION_DATASET_SCHEMA_VERSION",
+    "EXTERNAL_CLAIM_SCOPE",
+    "EXTERNAL_EVIDENCE_ORIGIN",
     "AdequacyThresholds",
     "AlternativeModelComparisonReport",
     "AlternativeModelEvaluation",
@@ -122,6 +134,10 @@ __all__ = [
     "ExecutionCapture",
     "ExperimentManifest",
     "ExperimentStage",
+    "ExternalConstraintStatus",
+    "ExternalEvidenceDeclaration",
+    "ExternalScoreRole",
+    "ExternalValidationError",
     "FrozenModelCandidate",
     "FrozenModelSpec",
     "MetricLoss",
@@ -149,6 +165,8 @@ __all__ = [
     "ObservationPartition",
     "ObservationPartitionRole",
     "ObservationRecord",
+    "PredictiveAdequacyStatus",
+    "PredictiveSeparationStatus",
     "PreregisteredEvaluationProtocol",
     "ProcessExecutionResult",
     "ProcessLimits",
