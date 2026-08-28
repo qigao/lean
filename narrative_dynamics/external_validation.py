@@ -1640,3 +1640,394 @@ __all__ += [
     "ExternalCoordinateConstraint",
     "evaluate_external_constraint",
 ]
+
+
+from narrative_dynamics.contracts import ExperimentManifest, ExperimentStage
+
+
+class ExternalValidationReportError(ExternalValidationError):
+    pass
+
+
+@dataclass(frozen=True)
+class ExternalValidationReport:
+    preregistration_hash: str
+    evidence_declaration_hash: str
+    claim_scope: str
+    brier_protocol_hash: str
+    brier_release_hash: str
+    brier_verification_hash: str
+    log_protocol_hash: str
+    log_release_hash: str
+    log_verification_hash: str
+    brier_comparison_manifest_hash: str
+    log_comparison_manifest_hash: str
+    adequacy_findings: tuple[ExternalPredictiveAdequacyFinding, ...]
+    aggregate_adequacy: tuple[tuple[str, PredictiveAdequacyStatus], ...]
+    separation_findings: tuple[ExternalPairwiseSeparationFinding, ...]
+    stratum_scores: tuple[ExternalStratumScore, ...]
+    constraint_findings: tuple[ExternalConstraintFinding, ...]
+    method_validation_hashes: tuple[str, ...]
+    manifest: ExperimentManifest
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "preregistration_hash",
+            "evidence_declaration_hash",
+            "brier_protocol_hash",
+            "brier_release_hash",
+            "brier_verification_hash",
+            "log_protocol_hash",
+            "log_release_hash",
+            "log_verification_hash",
+            "brier_comparison_manifest_hash",
+            "log_comparison_manifest_hash",
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                _hash(getattr(self, field_name), label=field_name.replace("_", " ")),
+            )
+        if self.claim_scope != EXTERNAL_CLAIM_SCOPE:
+            raise ExternalValidationReportError(
+                "external validation report claim scope is fixed"
+            )
+
+        adequacy = tuple(
+            sorted(
+                tuple(self.adequacy_findings),
+                key=lambda item: (item.model_name, item.score_role.value),
+            )
+        )
+        if any(
+            not isinstance(item, ExternalPredictiveAdequacyFinding)
+            for item in adequacy
+        ):
+            raise ExternalValidationReportError(
+                "external validation report adequacy findings are invalid"
+            )
+        for item in adequacy:
+            if not isinstance(item.score_role, ExternalScoreRole):
+                raise ExternalValidationReportError(
+                    "external validation report adequacy score role is invalid"
+                )
+            if not isinstance(item.status, PredictiveAdequacyStatus):
+                raise ExternalValidationReportError(
+                    "external validation report adequacy status is invalid"
+                )
+            _hash(item.frozen_model_hash, label="external adequacy frozen model hash")
+            _hash(item.threshold_hash, label="external adequacy threshold hash")
+            parent_hash = _hash(
+                item.parent_comparison_manifest_hash,
+                label="external adequacy parent comparison manifest hash",
+            )
+            expected_parent = (
+                self.brier_comparison_manifest_hash
+                if item.score_role is ExternalScoreRole.BRIER
+                else self.log_comparison_manifest_hash
+            )
+            if parent_hash != expected_parent:
+                raise ExternalValidationReportError(
+                    "external adequacy finding binds the wrong child comparison"
+                )
+            _number(item.mean_loss, label="external adequacy mean loss", minimum=0.0)
+            _number(item.worst_loss, label="external adequacy worst loss", minimum=0.0)
+            _mapping(item.loss_identity, label="external adequacy loss identity")
+        object.__setattr__(self, "adequacy_findings", adequacy)
+
+        aggregate = tuple(sorted(tuple(self.aggregate_adequacy), key=lambda item: item[0]))
+        if not aggregate or len({name for name, _ in aggregate}) != len(aggregate):
+            raise ExternalValidationReportError(
+                "external validation aggregate adequacy must be non-empty and unique"
+            )
+        for model_name, status in aggregate:
+            _text(model_name, label="external aggregate adequacy model")
+            if not isinstance(status, PredictiveAdequacyStatus):
+                raise ExternalValidationReportError(
+                    "external validation aggregate adequacy status is invalid"
+                )
+        object.__setattr__(self, "aggregate_adequacy", aggregate)
+
+        separation = tuple(
+            sorted(
+                tuple(self.separation_findings),
+                key=lambda item: (item.left_model, item.right_model),
+            )
+        )
+        if any(
+            not isinstance(item, ExternalPairwiseSeparationFinding)
+            for item in separation
+        ):
+            raise ExternalValidationReportError(
+                "external validation separation findings are invalid"
+            )
+        for item in separation:
+            if not isinstance(item.status, PredictiveSeparationStatus):
+                raise ExternalValidationReportError(
+                    "external validation separation status is invalid"
+                )
+        object.__setattr__(self, "separation_findings", separation)
+
+        strata = tuple(
+            sorted(
+                tuple(self.stratum_scores),
+                key=lambda item: (
+                    item.stratum_name,
+                    item.score_role.value,
+                    item.model_name,
+                ),
+            )
+        )
+        if any(not isinstance(item, ExternalStratumScore) for item in strata):
+            raise ExternalValidationReportError(
+                "external validation stratum scores are invalid"
+            )
+        for item in strata:
+            if not isinstance(item.score_role, ExternalScoreRole):
+                raise ExternalValidationReportError(
+                    "external validation stratum score role is invalid"
+                )
+        object.__setattr__(self, "stratum_scores", strata)
+
+        constraints = tuple(
+            sorted(tuple(self.constraint_findings), key=lambda item: item.plan_hash)
+        )
+        if any(not isinstance(item, ExternalConstraintFinding) for item in constraints):
+            raise ExternalValidationReportError(
+                "external validation constraint findings are invalid"
+            )
+        if len({item.plan_hash for item in constraints}) != len(constraints):
+            raise ExternalValidationReportError(
+                "external validation constraint finding plan hashes must be unique"
+            )
+        for item in constraints:
+            if not isinstance(item.status, ExternalConstraintStatus):
+                raise ExternalValidationReportError(
+                    "external validation constraint status is invalid"
+                )
+        object.__setattr__(self, "constraint_findings", constraints)
+
+        method_hashes = tuple(
+            sorted(
+                _hash(value, label="external validation method lineage hash")
+                for value in self.method_validation_hashes
+            )
+        )
+        if len(set(method_hashes)) != len(method_hashes):
+            raise ExternalValidationReportError(
+                "external validation method lineage hashes must be unique"
+            )
+        object.__setattr__(self, "method_validation_hashes", method_hashes)
+
+        if not isinstance(self.manifest, ExperimentManifest):
+            raise ExternalValidationReportError(
+                "external validation report requires ExperimentManifest"
+            )
+        if self.manifest.stage is not ExperimentStage.EXTERNAL_VALIDATION:
+            raise ExternalValidationReportError(
+                "external validation report manifest stage is invalid"
+            )
+        expected_input_keys = {
+            "preregistration_hash",
+            "evidence_declaration_hash",
+            "claim_scope",
+            "brier_protocol_hash",
+            "log_protocol_hash",
+            "preflight_hash",
+            "method_validation_hashes",
+            "constraint_plan_hashes",
+        }
+        if set(self.manifest.inputs) != expected_input_keys:
+            raise ExternalValidationReportError(
+                "external validation report manifest inputs are incomplete"
+            )
+        expected_inputs = {
+            "preregistration_hash": self.preregistration_hash,
+            "evidence_declaration_hash": self.evidence_declaration_hash,
+            "claim_scope": EXTERNAL_CLAIM_SCOPE,
+            "brier_protocol_hash": self.brier_protocol_hash,
+            "log_protocol_hash": self.log_protocol_hash,
+            "method_validation_hashes": self.method_validation_hashes,
+            "constraint_plan_hashes": tuple(
+                item.plan_hash for item in self.constraint_findings
+            ),
+        }
+        for key, expected_value in expected_inputs.items():
+            if self.manifest.inputs[key] != expected_value:
+                raise ExternalValidationReportError(
+                    f"external validation report manifest input changed: {key}"
+                )
+        _hash(
+            self.manifest.inputs["preflight_hash"],
+            label="external validation report preflight hash",
+        )
+
+        expected_parents = {
+            self.brier_comparison_manifest_hash,
+            self.log_comparison_manifest_hash,
+            *self.method_validation_hashes,
+        }
+        for finding in self.constraint_findings:
+            expected_parents.update(finding.parent_manifest_hashes)
+        if self.manifest.parent_hashes != tuple(sorted(expected_parents)):
+            raise ExternalValidationReportError(
+                "external validation report parent lineage is incomplete or forged"
+            )
+
+
+def _validate_external_final_statuses(
+    final_evaluation: ExternalFinalEvaluation,
+) -> None:
+    if any(
+        not isinstance(item.status, PredictiveAdequacyStatus)
+        for item in final_evaluation.adequacy_findings
+    ):
+        raise ExternalValidationReportError(
+            "external final adequacy findings contain a non-P3 status"
+        )
+    if any(
+        not isinstance(status, PredictiveAdequacyStatus)
+        for _, status in final_evaluation.aggregate_adequacy
+    ):
+        raise ExternalValidationReportError(
+            "external final aggregate adequacy contains a non-P3 status"
+        )
+    if any(
+        not isinstance(item.status, PredictiveSeparationStatus)
+        for item in final_evaluation.separation_findings
+    ):
+        raise ExternalValidationReportError(
+            "external final separation findings contain a non-P3 status"
+        )
+
+
+def build_external_validation_report(
+    *,
+    preregistration: ExternalValidationPreregistration,
+    evidence: ExternalEvidenceDeclaration,
+    final_evaluation: ExternalFinalEvaluation,
+    constraint_findings: tuple[ExternalConstraintFinding, ...] = (),
+) -> ExternalValidationReport:
+    if not isinstance(preregistration, ExternalValidationPreregistration):
+        raise TypeError(
+            "external validation report requires ExternalValidationPreregistration"
+        )
+    if not isinstance(evidence, ExternalEvidenceDeclaration):
+        raise TypeError(
+            "external validation report requires ExternalEvidenceDeclaration"
+        )
+    if not isinstance(final_evaluation, ExternalFinalEvaluation):
+        raise TypeError(
+            "external validation report requires ExternalFinalEvaluation"
+        )
+    if evidence.content_hash != preregistration.evidence_declaration_hash:
+        raise ExternalValidationReportError(
+            "external validation report evidence does not match preregistration"
+        )
+    if preregistration.claim_scope != EXTERNAL_CLAIM_SCOPE:
+        raise ExternalValidationReportError(
+            "external validation preregistration claim scope changed"
+        )
+
+    preflight = final_evaluation.preflight
+    if preflight.preregistration_hash != preregistration.content_hash:
+        raise ExternalValidationReportError(
+            "external final preflight does not match preregistration"
+        )
+    if preflight.evidence_declaration_hash != evidence.content_hash:
+        raise ExternalValidationReportError(
+            "external final preflight does not match evidence declaration"
+        )
+    if preflight.brier_protocol_hash != preregistration.brier_protocol_hash:
+        raise ExternalValidationReportError(
+            "external final Brier protocol does not match preregistration"
+        )
+    if preflight.log_protocol_hash != preregistration.log_protocol_hash:
+        raise ExternalValidationReportError(
+            "external final Log protocol does not match preregistration"
+        )
+
+    findings = tuple(sorted(tuple(constraint_findings), key=lambda item: item.plan_hash))
+    if any(not isinstance(item, ExternalConstraintFinding) for item in findings):
+        raise ExternalValidationReportError(
+            "external validation report constraint finding type is invalid"
+        )
+    expected_plan_hashes = tuple(
+        sorted(plan.content_hash for plan in preregistration.constraint_plans)
+    )
+    actual_plan_hashes = tuple(item.plan_hash for item in findings)
+    if actual_plan_hashes != expected_plan_hashes:
+        raise ExternalValidationReportError(
+            "external validation report requires exactly the preregistered constraint findings"
+        )
+    if len(set(actual_plan_hashes)) != len(actual_plan_hashes):
+        raise ExternalValidationReportError(
+            "external validation report constraint findings must be unique"
+        )
+
+    _validate_external_final_statuses(final_evaluation)
+    if any(
+        not isinstance(item.status, ExternalConstraintStatus)
+        for item in findings
+    ):
+        raise ExternalValidationReportError(
+            "external validation constraint findings contain a non-P3 status"
+        )
+
+    brier_comparison_manifest_hash = _hash(
+        final_evaluation.brier_report.manifest.content_hash,
+        label="external Brier comparison manifest hash",
+    )
+    log_comparison_manifest_hash = _hash(
+        final_evaluation.log_report.manifest.content_hash,
+        label="external Log comparison manifest hash",
+    )
+    canonical_parent_hashes = {
+        brier_comparison_manifest_hash,
+        log_comparison_manifest_hash,
+        *preregistration.method_validation_hashes,
+    }
+    for finding in findings:
+        canonical_parent_hashes.update(finding.parent_manifest_hashes)
+
+    manifest = ExperimentManifest(
+        stage=ExperimentStage.EXTERNAL_VALIDATION,
+        inputs={
+            "preregistration_hash": preregistration.content_hash,
+            "evidence_declaration_hash": evidence.content_hash,
+            "claim_scope": EXTERNAL_CLAIM_SCOPE,
+            "brier_protocol_hash": preflight.brier_protocol_hash,
+            "log_protocol_hash": preflight.log_protocol_hash,
+            "preflight_hash": preflight.content_hash,
+            "method_validation_hashes": preregistration.method_validation_hashes,
+            "constraint_plan_hashes": expected_plan_hashes,
+        },
+        parent_hashes=tuple(sorted(canonical_parent_hashes)),
+    )
+    return ExternalValidationReport(
+        preregistration_hash=preregistration.content_hash,
+        evidence_declaration_hash=evidence.content_hash,
+        claim_scope=EXTERNAL_CLAIM_SCOPE,
+        brier_protocol_hash=preflight.brier_protocol_hash,
+        brier_release_hash=preflight.brier_release_hash,
+        brier_verification_hash=preflight.brier_verification_hash,
+        log_protocol_hash=preflight.log_protocol_hash,
+        log_release_hash=preflight.log_release_hash,
+        log_verification_hash=preflight.log_verification_hash,
+        brier_comparison_manifest_hash=brier_comparison_manifest_hash,
+        log_comparison_manifest_hash=log_comparison_manifest_hash,
+        adequacy_findings=final_evaluation.adequacy_findings,
+        aggregate_adequacy=final_evaluation.aggregate_adequacy,
+        separation_findings=final_evaluation.separation_findings,
+        stratum_scores=final_evaluation.stratum_scores,
+        constraint_findings=findings,
+        method_validation_hashes=preregistration.method_validation_hashes,
+        manifest=manifest,
+    )
+
+
+__all__ += [
+    "ExternalValidationReport",
+    "ExternalValidationReportError",
+    "build_external_validation_report",
+]

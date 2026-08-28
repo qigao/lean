@@ -244,3 +244,15 @@ __all__ += [
     "ExternalCoordinateConstraint",
     "evaluate_external_constraint",
 ]
+
+from narrative_dynamics.external_validation import (
+    ExternalValidationReport,
+    ExternalValidationReportError,
+    build_external_validation_report,
+)
+
+__all__ += [
+    "ExternalValidationReport",
+    "ExternalValidationReportError",
+    "build_external_validation_report",
+]
