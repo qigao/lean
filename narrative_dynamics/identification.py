@@ -2021,8 +2021,393 @@ def evaluate_information_intervention(
         ) from error
 
 
-def score_model_comparison_by_stratum(*args, **kwargs):
-    raise NotImplementedError("stratified final scoring is implemented in Task 6")
+GlobalModelScore = tuple[str, float, float]
+PairwiseMeanDelta = tuple[str, str, float]
+_EXPECTED_FINAL_STRATA = frozenset(
+    {"observational_equivalence", "memory_evidence", "future_information"}
+)
+
+
+@dataclass(frozen=True)
+class StratumModelScore:
+    stratum: str
+    model_name: str
+    mean_loss: float
+    worst_loss: float
+    case_names: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        try:
+            stratum = _text(self.stratum, label="comparison stratum")
+            model_name = _text(self.model_name, label="stratum model name")
+            mean_loss = _finite(self.mean_loss, label="stratum mean loss")
+            worst_loss = _finite(self.worst_loss, label="stratum worst loss")
+            case_names = tuple(
+                sorted(_text(item, label="stratum case name") for item in self.case_names)
+            )
+        except IdentificationProtocolError as error:
+            raise IdentificationComparisonError(str(error)) from error
+        if mean_loss < 0.0 or worst_loss < 0.0:
+            raise IdentificationComparisonError("stratum losses must be non-negative")
+        if not case_names or len(set(case_names)) != len(case_names):
+            raise IdentificationComparisonError(
+                "stratum case names must be non-empty and unique"
+            )
+        if worst_loss + 1e-15 < mean_loss:
+            raise IdentificationComparisonError(
+                "stratum worst loss cannot be below its mean loss"
+            )
+        object.__setattr__(self, "stratum", stratum)
+        object.__setattr__(self, "model_name", model_name)
+        object.__setattr__(self, "mean_loss", mean_loss)
+        object.__setattr__(self, "worst_loss", worst_loss)
+        object.__setattr__(self, "case_names", case_names)
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "stratum": self.stratum,
+            "model_name": self.model_name,
+            "mean_loss": self.mean_loss,
+            "worst_loss": self.worst_loss,
+            "case_names": self.case_names,
+        }
+
+
+@dataclass(frozen=True)
+class ScoredModelComparisonFinding:
+    protocol_hash: str
+    loss_identity: Mapping[str, object]
+    candidate_hashes: tuple[str, ...]
+    final_partition_hash: str
+    final_target_hash: str
+    final_seeds: tuple[int, ...]
+    global_scores: tuple[GlobalModelScore, ...]
+    stratum_scores: tuple[StratumModelScore, ...]
+    pairwise_mean_deltas: tuple[PairwiseMeanDelta, ...]
+    parent_comparison_manifest_hash: str
+
+    def __post_init__(self) -> None:
+        try:
+            protocol_hash = _hash(self.protocol_hash, label="comparison protocol hash")
+            loss_identity = _freeze_mapping(
+                self.loss_identity,
+                label="comparison loss identity",
+            )
+            candidate_hashes = tuple(
+                _hash(item, label="comparison candidate hash")
+                for item in self.candidate_hashes
+            )
+            final_partition_hash = _hash(
+                self.final_partition_hash,
+                label="comparison final partition hash",
+            )
+            final_target_hash = _hash(
+                self.final_target_hash,
+                label="comparison final target hash",
+            )
+            final_seeds = _seed_plan(
+                self.final_seeds,
+                label="comparison final seeds",
+            )
+            parent_hash = _hash(
+                self.parent_comparison_manifest_hash,
+                label="comparison parent manifest hash",
+            )
+        except IdentificationProtocolError as error:
+            raise IdentificationComparisonError(str(error)) from error
+        if loss_identity.get("name") not in {"categorical_brier", "categorical_log"}:
+            raise IdentificationComparisonError(
+                "synthetic comparison finding requires Brier or Log loss"
+            )
+        if not candidate_hashes or len(set(candidate_hashes)) != len(candidate_hashes):
+            raise IdentificationComparisonError(
+                "comparison candidate hashes must be non-empty and unique"
+            )
+
+        global_rows: list[GlobalModelScore] = []
+        seen_models: set[str] = set()
+        for raw in self.global_scores:
+            if not isinstance(raw, tuple) or len(raw) != 3:
+                raise IdentificationComparisonError(
+                    "global model scores must be triples"
+                )
+            raw_name, raw_mean, raw_worst = raw
+            try:
+                name = _text(raw_name, label="global score model name")
+                mean_loss = _finite(raw_mean, label=f"{name} global mean loss")
+                worst_loss = _finite(raw_worst, label=f"{name} global worst loss")
+            except IdentificationProtocolError as error:
+                raise IdentificationComparisonError(str(error)) from error
+            if name in seen_models:
+                raise IdentificationComparisonError(
+                    "global score model names must be unique"
+                )
+            seen_models.add(name)
+            if mean_loss < 0.0 or worst_loss < 0.0 or worst_loss + 1e-15 < mean_loss:
+                raise IdentificationComparisonError(
+                    "global comparison losses must be finite non-negative mean/worst values"
+                )
+            global_rows.append((name, mean_loss, worst_loss))
+        if not global_rows or len(global_rows) != len(candidate_hashes):
+            raise IdentificationComparisonError(
+                "global scores must cover every frozen candidate exactly once"
+            )
+        global_tuple = tuple(sorted(global_rows))
+
+        strata = tuple(self.stratum_scores)
+        if not strata or any(not isinstance(item, StratumModelScore) for item in strata):
+            raise IdentificationComparisonError(
+                "comparison finding requires stratum model scores"
+            )
+        if len({(item.stratum, item.model_name) for item in strata}) != len(strata):
+            raise IdentificationComparisonError(
+                "stratum scores must contain one row per stratum/model pair"
+            )
+        if {item.stratum for item in strata} != _EXPECTED_FINAL_STRATA:
+            raise IdentificationComparisonError(
+                "synthetic comparison must cover the exact final strata"
+            )
+        if {item.model_name for item in strata} != seen_models:
+            raise IdentificationComparisonError(
+                "every comparison stratum must use the frozen model set"
+            )
+        for stratum in _EXPECTED_FINAL_STRATA:
+            if {item.model_name for item in strata if item.stratum == stratum} != seen_models:
+                raise IdentificationComparisonError(
+                    "every final stratum must score every frozen model"
+                )
+        strata_tuple = tuple(sorted(strata, key=lambda item: (item.stratum, item.model_name)))
+
+        means = {name: mean_loss for name, mean_loss, _worst in global_tuple}
+        expected_pairs = tuple(
+            (left, right, means[left] - means[right])
+            for index, left in enumerate(sorted(means))
+            for right in sorted(means)[index + 1 :]
+        )
+        supplied_pairs: list[PairwiseMeanDelta] = []
+        for raw in self.pairwise_mean_deltas:
+            if not isinstance(raw, tuple) or len(raw) != 3:
+                raise IdentificationComparisonError(
+                    "pairwise mean deltas must be triples"
+                )
+            raw_left, raw_right, raw_delta = raw
+            try:
+                left = _text(raw_left, label="pairwise left model")
+                right = _text(raw_right, label="pairwise right model")
+                delta = _finite(raw_delta, label="pairwise mean delta")
+            except IdentificationProtocolError as error:
+                raise IdentificationComparisonError(str(error)) from error
+            if left >= right:
+                raise IdentificationComparisonError(
+                    "pairwise model names must use canonical order"
+                )
+            supplied_pairs.append((left, right, delta))
+        supplied_tuple = tuple(sorted(supplied_pairs))
+        if len(supplied_tuple) != len(expected_pairs):
+            raise IdentificationComparisonError(
+                "pairwise mean deltas must cover every frozen model pair"
+            )
+        for supplied, expected in zip(supplied_tuple, expected_pairs, strict=True):
+            if supplied[:2] != expected[:2] or not math.isclose(
+                supplied[2], expected[2], rel_tol=0.0, abs_tol=1e-15
+            ):
+                raise IdentificationComparisonError(
+                    "pairwise mean deltas must match global model means"
+                )
+
+        object.__setattr__(self, "protocol_hash", protocol_hash)
+        object.__setattr__(self, "loss_identity", loss_identity)
+        object.__setattr__(self, "candidate_hashes", candidate_hashes)
+        object.__setattr__(self, "final_partition_hash", final_partition_hash)
+        object.__setattr__(self, "final_target_hash", final_target_hash)
+        object.__setattr__(self, "final_seeds", final_seeds)
+        object.__setattr__(self, "global_scores", global_tuple)
+        object.__setattr__(self, "stratum_scores", strata_tuple)
+        object.__setattr__(self, "pairwise_mean_deltas", expected_pairs)
+        object.__setattr__(self, "parent_comparison_manifest_hash", parent_hash)
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "protocol_hash": self.protocol_hash,
+            "loss_identity": self.loss_identity,
+            "candidate_hashes": self.candidate_hashes,
+            "final_partition_hash": self.final_partition_hash,
+            "final_target_hash": self.final_target_hash,
+            "final_seeds": self.final_seeds,
+            "global_scores": self.global_scores,
+            "stratum_scores": tuple(item.identity_payload() for item in self.stratum_scores),
+            "pairwise_mean_deltas": self.pairwise_mean_deltas,
+            "parent_comparison_manifest_hash": self.parent_comparison_manifest_hash,
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.identity_payload())
+
+
+def score_model_comparison_by_stratum(
+    *,
+    dataset: ObservationDataset,
+    protocol: PreregisteredEvaluationProtocol,
+    report: object,
+) -> ScoredModelComparisonFinding:
+    from narrative_dynamics.model_comparison import ModelComparisonReport
+
+    if not isinstance(dataset, ObservationDataset):
+        raise IdentificationComparisonError(
+            "stratified comparison requires ObservationDataset"
+        )
+    if not isinstance(protocol, PreregisteredEvaluationProtocol):
+        raise IdentificationComparisonError(
+            "stratified comparison requires PreregisteredEvaluationProtocol"
+        )
+    if not isinstance(report, ModelComparisonReport):
+        raise IdentificationComparisonError(
+            "stratified comparison requires ModelComparisonReport"
+        )
+    if dataset.content_hash != protocol.dataset_hash:
+        raise IdentificationComparisonError(
+            "comparison dataset drifted from final protocol"
+        )
+    final_partition = dataset.partition(ObservationPartitionRole.FINAL_TEST)
+    if not final_partition.records:
+        raise IdentificationComparisonError(
+            "synthetic comparison requires record-oriented final partition"
+        )
+    if final_partition.content_hash != protocol.final_partition_hash:
+        raise IdentificationComparisonError(
+            "comparison final partition drifted from protocol"
+        )
+    record_by_name = {record.id: record for record in final_partition.records}
+    if len(record_by_name) != len(final_partition.records):
+        raise IdentificationComparisonError(
+            "final comparison case names must be unique"
+        )
+    stratum_by_name: dict[str, str] = {}
+    for name, record in record_by_name.items():
+        raw_stratum = record.metadata.get("stratum")
+        try:
+            stratum = _text(raw_stratum, label=f"final stratum for {name}")
+        except IdentificationProtocolError as error:
+            raise IdentificationComparisonError(str(error)) from error
+        stratum_by_name[name] = stratum
+    if set(stratum_by_name.values()) != _EXPECTED_FINAL_STRATA:
+        raise IdentificationComparisonError(
+            "final dataset must contain exactly the preregistered synthetic strata"
+        )
+
+    if report.baseline_name != protocol.baseline_name:
+        raise IdentificationComparisonError(
+            "comparison report baseline drifted from protocol"
+        )
+    if report.manifest.inputs.get("protocol_hash") != protocol.content_hash:
+        raise IdentificationComparisonError(
+            "comparison report does not bind the exact final protocol"
+        )
+    if report.manifest.inputs.get("loss") != protocol.loss_identity:
+        raise IdentificationComparisonError(
+            "comparison report loss drifted from final protocol"
+        )
+
+    candidates = tuple(protocol.candidates)
+    candidate_names = tuple(candidate.name for candidate in candidates)
+    candidate_hashes = tuple(candidate.content_hash for candidate in candidates)
+    if len(set(candidate_names)) != len(candidate_names):
+        raise IdentificationComparisonError(
+            "final protocol candidate names must be unique"
+        )
+    entries = {entry.name: entry for entry in report.ranking}
+    if len(entries) != len(report.ranking) or set(entries) != set(candidate_names):
+        raise IdentificationComparisonError(
+            "comparison report must cover the frozen candidates exactly"
+        )
+    candidate_by_name = {candidate.name: candidate for candidate in candidates}
+
+    global_scores: list[GlobalModelScore] = []
+    stratum_scores: list[StratumModelScore] = []
+    expected_case_names = set(record_by_name)
+    for model_name in sorted(entries):
+        entry = entries[model_name]
+        if entry.parameters != candidate_by_name[model_name].parameters:
+            raise IdentificationComparisonError(
+                "comparison report parameters drifted from frozen candidate"
+            )
+        evaluations = tuple(entry.final_test.validation.cases)
+        if len({case.name for case in evaluations}) != len(evaluations):
+            raise IdentificationComparisonError(
+                "comparison report case names must be unique per model"
+            )
+        case_loss = {case.name: case.loss for case in evaluations}
+        if set(case_loss) != expected_case_names:
+            raise IdentificationComparisonError(
+                "comparison report must score every frozen final case exactly once"
+            )
+        if any(
+            not isinstance(value, (int, float))
+            or isinstance(value, bool)
+            or not math.isfinite(float(value))
+            or float(value) < 0.0
+            for value in case_loss.values()
+        ):
+            raise IdentificationComparisonError(
+                "comparison case losses must be finite and non-negative"
+            )
+        losses = tuple(float(case_loss[name]) for name in sorted(case_loss))
+        computed_mean = fmean(losses)
+        computed_worst = max(losses)
+        if not math.isclose(
+            computed_mean, entry.mean_loss, rel_tol=0.0, abs_tol=1e-15
+        ) or not math.isclose(
+            computed_worst, entry.worst_loss, rel_tol=0.0, abs_tol=1e-15
+        ):
+            raise IdentificationComparisonError(
+                "comparison global scores must match complete final case losses"
+            )
+        global_scores.append((model_name, computed_mean, computed_worst))
+        for stratum in sorted(_EXPECTED_FINAL_STRATA):
+            names = tuple(
+                sorted(
+                    name
+                    for name, item_stratum in stratum_by_name.items()
+                    if item_stratum == stratum
+                )
+            )
+            stratum_losses = tuple(float(case_loss[name]) for name in names)
+            if not stratum_losses:
+                raise IdentificationComparisonError(
+                    "every synthetic final stratum must contain at least one case"
+                )
+            stratum_scores.append(
+                StratumModelScore(
+                    stratum=stratum,
+                    model_name=model_name,
+                    mean_loss=fmean(stratum_losses),
+                    worst_loss=max(stratum_losses),
+                    case_names=names,
+                )
+            )
+
+    mean_map = {name: mean for name, mean, _worst in global_scores}
+    pairwise = tuple(
+        (left, right, mean_map[left] - mean_map[right])
+        for index, left in enumerate(sorted(mean_map))
+        for right in sorted(mean_map)[index + 1 :]
+    )
+    return ScoredModelComparisonFinding(
+        protocol_hash=protocol.content_hash,
+        loss_identity=protocol.loss_identity,
+        candidate_hashes=candidate_hashes,
+        final_partition_hash=protocol.final_partition_hash,
+        final_target_hash=protocol.final_target_hash,
+        final_seeds=protocol.simulation_seeds,
+        global_scores=tuple(global_scores),
+        stratum_scores=tuple(stratum_scores),
+        pairwise_mean_deltas=pairwise,
+        parent_comparison_manifest_hash=required_manifest_hash(
+            report,
+            label="synthetic model comparison report",
+        ),
+    )
 
 
 def build_synthetic_identification_report(*args, **kwargs):
@@ -2042,6 +2427,8 @@ __all__ = [
     "ParameterCandidateLoss",
     "ParameterIdentificationFinding",
     "ParameterRecoveryExperiment",
+    "ScoredModelComparisonFinding",
+    "StratumModelScore",
     "SyntheticIdentificationError",
     "SyntheticIdentificationProtocol",
     "build_synthetic_identification_report",
