@@ -2440,3 +2440,532 @@ __all__ = [
     "score_model_comparison_by_stratum",
     "validate_sibling_final_protocols",
 ]
+
+
+# Task 7: aggregate report and attestation boundary.
+# This import is intentionally local to the reporting layer so the earlier
+# protocol/recovery/comparison slices keep their existing dependency surface.
+from narrative_dynamics.contracts import ExperimentManifest, ExperimentStage
+
+
+_REQUIRED_RECOVERY_SCHEMA = {
+    "joint-beta": (
+        frozenset({"beta_goal", "beta_action"}),
+        IdentificationStatus.IDENTIFIED_UNDER_PROTOCOL,
+    ),
+    "pressure": (
+        frozenset({"goal_pressure_scale"}),
+        IdentificationStatus.IDENTIFIED_UNDER_PROTOCOL,
+    ),
+    "instrumentality": (
+        frozenset({"instrumentality_scale"}),
+        IdentificationStatus.IDENTIFIED_UNDER_PROTOCOL,
+    ),
+    "scale-confounded": (
+        frozenset({"goal_pressure_scale", "instrumentality_scale"}),
+        IdentificationStatus.NOT_IDENTIFIED_UNDER_PROTOCOL,
+    ),
+}
+
+
+def _report_family_map(model_names: tuple[str, ...]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for model_name in model_names:
+        if not isinstance(model_name, str) or not model_name:
+            raise IdentificationReportError("comparison model names must be non-empty")
+        family = model_name.rsplit("-", 1)[-1]
+        if not family or family in result:
+            raise IdentificationReportError(
+                "comparison model names must expose unique family suffixes"
+            )
+        result[family] = model_name
+    return result
+
+
+def _report_conclusions(model_names: tuple[str, ...]) -> tuple[str, ...]:
+    families = _report_family_map(model_names)
+    if set(families) != {"reactive", "intentional", "planning"}:
+        raise IdentificationReportError(
+            "V1 synthetic report requires reactive, intentional, and planning families"
+        )
+    return (
+        "beta_goal and beta_action are identified under this frozen synthetic protocol.",
+        "goal_pressure_scale is identified under this frozen synthetic protocol.",
+        "instrumentality_scale is identified under this frozen synthetic protocol.",
+        "goal_pressure_scale and instrumentality_scale are not identified separately under this frozen synthetic protocol.",
+        "The preregistered latent candidates are observationally equivalent on the frozen equivalence fixture.",
+        "Intentional and Reactive are separated by the preregistered memory-evidence information intervention.",
+        "Planning and Intentional are separated by the preregistered future-information intervention.",
+        "Reactive, Intentional, and Planning are compared on the same frozen candidates, final targets, and seeds under Brier and Log scoring.",
+    )
+
+
+def _report_manifest_inputs(
+    *,
+    protocol_hash: str,
+    claim_scope: str,
+    parameter_findings: tuple[ParameterIdentificationFinding, ...],
+    equivalence_findings: tuple[ObservationalEquivalenceFinding, ...],
+    intervention_findings: tuple[InformationInterventionFinding, ...],
+    brier_comparison: ScoredModelComparisonFinding,
+    log_comparison: ScoredModelComparisonFinding,
+    conclusions: tuple[str, ...],
+) -> dict[str, object]:
+    return {
+        "protocol_hash": protocol_hash,
+        "claim_scope": claim_scope,
+        "parameter_finding_hashes": tuple(
+            item.content_hash for item in parameter_findings
+        ),
+        "equivalence_finding_hashes": tuple(
+            item.content_hash for item in equivalence_findings
+        ),
+        "intervention_finding_hashes": tuple(
+            item.content_hash for item in intervention_findings
+        ),
+        "brier_comparison_hash": brier_comparison.content_hash,
+        "log_comparison_hash": log_comparison.content_hash,
+        "conclusions_hash": stable_content_hash(conclusions),
+    }
+
+
+def _report_parent_hashes(
+    parameter_findings: tuple[ParameterIdentificationFinding, ...],
+    equivalence_findings: tuple[ObservationalEquivalenceFinding, ...],
+    intervention_findings: tuple[InformationInterventionFinding, ...],
+    brier_comparison: ScoredModelComparisonFinding,
+    log_comparison: ScoredModelComparisonFinding,
+) -> tuple[str, ...]:
+    parents: set[str] = set()
+    for finding in parameter_findings:
+        parents.update(finding.parent_manifest_hashes)
+    for finding in equivalence_findings:
+        parents.update(finding.parent_manifest_hashes)
+    for finding in intervention_findings:
+        parents.update(finding.parent_manifest_hashes)
+    parents.add(brier_comparison.parent_comparison_manifest_hash)
+    parents.add(log_comparison.parent_comparison_manifest_hash)
+    try:
+        return tuple(
+            sorted(
+                _hash(item, label="report parent manifest hash")
+                for item in parents
+            )
+        )
+    except IdentificationProtocolError as error:
+        raise IdentificationReportError(str(error)) from error
+
+
+@dataclass(frozen=True)
+class SyntheticIdentificationReport:
+    protocol_hash: str
+    claim_scope: str
+    parameter_findings: tuple[ParameterIdentificationFinding, ...]
+    equivalence_findings: tuple[ObservationalEquivalenceFinding, ...]
+    intervention_findings: tuple[InformationInterventionFinding, ...]
+    brier_comparison: ScoredModelComparisonFinding
+    log_comparison: ScoredModelComparisonFinding
+    conclusions: tuple[str, ...]
+    manifest: ExperimentManifest
+
+    def __post_init__(self) -> None:
+        try:
+            protocol_hash = _hash(self.protocol_hash, label="report protocol hash")
+        except IdentificationProtocolError as error:
+            raise IdentificationReportError(str(error)) from error
+        if self.claim_scope != _ALLOWED_CLAIM_SCOPE:
+            raise IdentificationReportError(
+                "synthetic identification report claim scope must be synthetic_protocol_only"
+            )
+
+        parameter_findings = tuple(
+            sorted(self.parameter_findings, key=lambda item: item.experiment_hash)
+        )
+        if not parameter_findings or any(
+            not isinstance(item, ParameterIdentificationFinding)
+            for item in parameter_findings
+        ):
+            raise IdentificationReportError(
+                "synthetic identification report requires parameter findings"
+            )
+        if len({item.content_hash for item in parameter_findings}) != len(
+            parameter_findings
+        ):
+            raise IdentificationReportError("parameter finding identities must be unique")
+
+        equivalence_findings = tuple(
+            sorted(self.equivalence_findings, key=lambda item: item.content_hash)
+        )
+        if not equivalence_findings or any(
+            not isinstance(item, ObservationalEquivalenceFinding)
+            for item in equivalence_findings
+        ):
+            raise IdentificationReportError(
+                "synthetic identification report requires equivalence findings"
+            )
+        if len({item.content_hash for item in equivalence_findings}) != len(
+            equivalence_findings
+        ):
+            raise IdentificationReportError("equivalence finding identities must be unique")
+
+        intervention_findings = tuple(
+            sorted(self.intervention_findings, key=lambda item: item.pair_hash)
+        )
+        if not intervention_findings or any(
+            not isinstance(item, InformationInterventionFinding)
+            for item in intervention_findings
+        ):
+            raise IdentificationReportError(
+                "synthetic identification report requires intervention findings"
+            )
+        if len({item.content_hash for item in intervention_findings}) != len(
+            intervention_findings
+        ):
+            raise IdentificationReportError("intervention finding identities must be unique")
+
+        if not isinstance(
+            self.brier_comparison, ScoredModelComparisonFinding
+        ) or not isinstance(self.log_comparison, ScoredModelComparisonFinding):
+            raise IdentificationReportError(
+                "synthetic identification report requires Brier and Log comparisons"
+            )
+        if self.brier_comparison.loss_identity.get("name") != "categorical_brier":
+            raise IdentificationReportError("report Brier comparison loss is invalid")
+        if self.log_comparison.loss_identity.get("name") != "categorical_log":
+            raise IdentificationReportError("report Log comparison loss is invalid")
+        for attribute in (
+            "candidate_hashes",
+            "final_partition_hash",
+            "final_target_hash",
+            "final_seeds",
+        ):
+            if getattr(self.brier_comparison, attribute) != getattr(
+                self.log_comparison, attribute
+            ):
+                raise IdentificationReportError(
+                    f"report Brier/Log comparisons drifted at {attribute}"
+                )
+
+        conclusions = tuple(self.conclusions)
+        expected_conclusions = _report_conclusions(
+            tuple(
+                name
+                for name, _mean, _worst in self.brier_comparison.global_scores
+            )
+        )
+        if conclusions != expected_conclusions:
+            raise IdentificationReportError(
+                "synthetic identification conclusions must be deterministically derived"
+            )
+        lowered = tuple(line.lower() for line in conclusions)
+        if any("structural" in line or "empirical" in line for line in lowered):
+            raise IdentificationReportError(
+                "synthetic identification conclusions exceed the claim scope"
+            )
+        for line in lowered:
+            if (
+                "not identified" in line
+                and "under this frozen synthetic protocol" not in line
+            ):
+                raise IdentificationReportError(
+                    "non-identification conclusions must be protocol scoped"
+                )
+            if any(
+                family in line
+                for family in ("reactive", "intentional", "planning")
+            ) and ("is identified" in line or "not identified" in line):
+                raise IdentificationReportError(
+                    "model-family conclusions must use separation/equivalence language"
+                )
+
+        if not isinstance(self.manifest, ExperimentManifest):
+            raise IdentificationReportError(
+                "synthetic identification report requires ExperimentManifest"
+            )
+        if self.manifest.stage is not ExperimentStage.SYNTHETIC_IDENTIFICATION:
+            raise IdentificationReportError(
+                "synthetic identification report manifest stage is invalid"
+            )
+        expected_inputs = _report_manifest_inputs(
+            protocol_hash=protocol_hash,
+            claim_scope=self.claim_scope,
+            parameter_findings=parameter_findings,
+            equivalence_findings=equivalence_findings,
+            intervention_findings=intervention_findings,
+            brier_comparison=self.brier_comparison,
+            log_comparison=self.log_comparison,
+            conclusions=conclusions,
+        )
+        if self.manifest.inputs != expected_inputs:
+            raise IdentificationReportError(
+                "synthetic identification report manifest inputs do not match evidence"
+            )
+        expected_parents = _report_parent_hashes(
+            parameter_findings,
+            equivalence_findings,
+            intervention_findings,
+            self.brier_comparison,
+            self.log_comparison,
+        )
+        if self.manifest.parent_hashes != expected_parents:
+            raise IdentificationReportError(
+                "synthetic identification report parent lineage is incomplete or forged"
+            )
+        object.__setattr__(self, "protocol_hash", protocol_hash)
+        object.__setattr__(self, "parameter_findings", parameter_findings)
+        object.__setattr__(self, "equivalence_findings", equivalence_findings)
+        object.__setattr__(self, "intervention_findings", intervention_findings)
+        object.__setattr__(self, "conclusions", conclusions)
+
+
+def _validate_recovery_evidence(
+    protocol: SyntheticIdentificationProtocol,
+    findings: tuple[ParameterIdentificationFinding, ...],
+) -> tuple[ParameterIdentificationFinding, ...]:
+    experiments = {item.name: item for item in protocol.recovery_experiments}
+    if set(experiments) != set(_REQUIRED_RECOVERY_SCHEMA):
+        raise IdentificationReportError(
+            "V1 report requires the exact preregistered recovery experiment set"
+        )
+    by_hash = {item.experiment_hash: item for item in findings}
+    if len(by_hash) != len(findings) or set(by_hash) != {
+        item.content_hash for item in experiments.values()
+    }:
+        raise IdentificationReportError(
+            "parameter findings must cover every preregistered recovery experiment exactly once"
+        )
+    ordered: list[ParameterIdentificationFinding] = []
+    for name in sorted(experiments):
+        experiment = experiments[name]
+        finding = by_hash[experiment.content_hash]
+        expected_coordinates, expected_status = _REQUIRED_RECOVERY_SCHEMA[name]
+        if set(experiment.target_coordinates) != set(expected_coordinates):
+            raise IdentificationReportError(
+                f"recovery experiment {name!r} target coordinates drifted"
+            )
+        if (
+            finding.true_parameters != experiment.true_parameters
+            or not finding.truth_retained
+        ):
+            raise IdentificationReportError(
+                f"recovery finding {name!r} does not retain the frozen synthetic truth"
+            )
+        if finding.status is not expected_status:
+            raise IdentificationReportError(
+                f"recovery finding {name!r} violates the required identification status"
+            )
+        accepted = tuple(finding.accepted_parameters.parameters)
+        if name != "scale-confounded":
+            if accepted != (experiment.true_parameters,):
+                raise IdentificationReportError(
+                    f"recovery finding {name!r} must retain exactly its true parameter tuple"
+                )
+        else:
+            truth = dict(experiment.true_parameters)
+            truth_product = (
+                truth["goal_pressure_scale"] * truth["instrumentality_scale"]
+            )
+            expected = tuple(
+                sorted(
+                    candidate
+                    for candidate in experiment.candidate_parameters
+                    if dict(candidate)["goal_pressure_scale"]
+                    * dict(candidate)["instrumentality_scale"]
+                    == truth_product
+                )
+            )
+            if tuple(sorted(accepted)) != expected or len(expected) < 2:
+                raise IdentificationReportError(
+                    "scale-confounded finding must retain the exact product-equivalence class"
+                )
+        ordered.append(finding)
+    return tuple(sorted(ordered, key=lambda item: item.experiment_hash))
+
+
+def _validate_equivalence_evidence(
+    protocol: SyntheticIdentificationProtocol,
+    findings: tuple[ObservationalEquivalenceFinding, ...],
+) -> tuple[ObservationalEquivalenceFinding, ...]:
+    if len(findings) != 1 or not isinstance(
+        findings[0], ObservationalEquivalenceFinding
+    ):
+        raise IdentificationReportError(
+            "V1 report requires exactly one observational-equivalence finding"
+        )
+    finding = findings[0]
+    if not finding.equivalent:
+        raise IdentificationReportError(
+            "V1 observational-equivalence evidence must certify equivalence"
+        )
+    if finding.tolerance != protocol.equivalence_tolerance:
+        raise IdentificationReportError(
+            "observational-equivalence tolerance drifted from the frozen protocol"
+        )
+    if not set(finding.case_hashes) <= set(protocol.final_case_hashes):
+        raise IdentificationReportError(
+            "observational-equivalence evidence must use frozen final-test cases"
+        )
+    return (finding,)
+
+
+def _protocol_family_map(
+    protocol: SyntheticIdentificationProtocol,
+) -> dict[str, str]:
+    return _report_family_map(
+        tuple(name for name, _identity in protocol.adapter_identities)
+    )
+
+
+def _validate_intervention_evidence(
+    protocol: SyntheticIdentificationProtocol,
+    findings: tuple[InformationInterventionFinding, ...],
+) -> tuple[InformationInterventionFinding, ...]:
+    pairs = {item.content_hash: item for item in protocol.intervention_pairs}
+    by_hash = {item.pair_hash: item for item in findings}
+    if len(by_hash) != len(findings) or set(by_hash) != set(pairs):
+        raise IdentificationReportError(
+            "intervention findings must cover every preregistered pair exactly once"
+        )
+    available_families = set(_protocol_family_map(protocol))
+    ordered: list[InformationInterventionFinding] = []
+    for pair_hash in sorted(pairs):
+        pair = pairs[pair_hash]
+        finding = by_hash[pair_hash]
+        if (
+            finding.name != pair.name
+            or finding.certified_diff[0] != pair.allowed_information_path
+        ):
+            raise IdentificationReportError(
+                "intervention finding identity or certified information path drifted"
+            )
+        if not finding.discriminating:
+            raise IdentificationReportError(
+                "required information intervention did not discriminate its model families"
+            )
+        if pair.expected_relationship is None:
+            raise IdentificationReportError(
+                "V1 report requires a preregistered model-family relationship"
+            )
+        required_families = set(pair.expected_relationship.split("_vs_"))
+        finding_families = {
+            family
+            for family, _baseline, _intervention in finding.family_policies
+        }
+        if (
+            required_families != finding_families
+            or not required_families <= available_families
+        ):
+            raise IdentificationReportError(
+                "intervention finding family set drifted from the frozen relationship"
+            )
+        ordered.append(finding)
+    return tuple(sorted(ordered, key=lambda item: item.pair_hash))
+
+
+def _validate_comparison_evidence(
+    protocol: SyntheticIdentificationProtocol,
+    brier: ScoredModelComparisonFinding,
+    log: ScoredModelComparisonFinding,
+) -> None:
+    if not isinstance(brier, ScoredModelComparisonFinding) or not isinstance(
+        log, ScoredModelComparisonFinding
+    ):
+        raise IdentificationReportError(
+            "V1 report requires typed Brier and Log comparison findings"
+        )
+    if brier.loss_identity != protocol.brier_loss_identity:
+        raise IdentificationReportError(
+            "Brier comparison loss identity drifted from the frozen protocol"
+        )
+    if log.loss_identity != protocol.log_loss_identity:
+        raise IdentificationReportError(
+            "Log comparison loss identity drifted from the frozen protocol"
+        )
+    for item in (brier, log):
+        if item.final_partition_hash != protocol.final_partition_hash:
+            raise IdentificationReportError(
+                "final comparison partition drifted from the frozen synthetic protocol"
+            )
+        if item.final_seeds != protocol.final_seeds:
+            raise IdentificationReportError(
+                "final comparison seeds drifted from the frozen synthetic protocol"
+            )
+    for attribute in (
+        "candidate_hashes",
+        "final_partition_hash",
+        "final_target_hash",
+        "final_seeds",
+    ):
+        if getattr(brier, attribute) != getattr(log, attribute):
+            raise IdentificationReportError(
+                f"Brier/Log comparison evidence drifted at {attribute}"
+            )
+    expected_models = {name for name, _identity in protocol.adapter_identities}
+    for item in (brier, log):
+        if {name for name, _mean, _worst in item.global_scores} != expected_models:
+            raise IdentificationReportError(
+                "final comparison model set drifted from the identification adapters"
+            )
+
+
+def build_synthetic_identification_report(
+    *,
+    protocol: SyntheticIdentificationProtocol,
+    parameter_findings: tuple[ParameterIdentificationFinding, ...],
+    equivalence_findings: tuple[ObservationalEquivalenceFinding, ...],
+    intervention_findings: tuple[InformationInterventionFinding, ...],
+    brier_comparison: ScoredModelComparisonFinding,
+    log_comparison: ScoredModelComparisonFinding,
+) -> SyntheticIdentificationReport:
+    if not isinstance(protocol, SyntheticIdentificationProtocol):
+        raise IdentificationReportError(
+            "synthetic identification report requires SyntheticIdentificationProtocol"
+        )
+    parameters = _validate_recovery_evidence(
+        protocol, tuple(parameter_findings)
+    )
+    equivalences = _validate_equivalence_evidence(
+        protocol, tuple(equivalence_findings)
+    )
+    interventions = _validate_intervention_evidence(
+        protocol, tuple(intervention_findings)
+    )
+    _validate_comparison_evidence(protocol, brier_comparison, log_comparison)
+    model_names = tuple(name for name, _identity in protocol.adapter_identities)
+    conclusions = _report_conclusions(model_names)
+    parents = _report_parent_hashes(
+        parameters,
+        equivalences,
+        interventions,
+        brier_comparison,
+        log_comparison,
+    )
+    inputs = _report_manifest_inputs(
+        protocol_hash=protocol.content_hash,
+        claim_scope=protocol.claim_scope,
+        parameter_findings=parameters,
+        equivalence_findings=equivalences,
+        intervention_findings=interventions,
+        brier_comparison=brier_comparison,
+        log_comparison=log_comparison,
+        conclusions=conclusions,
+    )
+    manifest = ExperimentManifest(
+        stage=ExperimentStage.SYNTHETIC_IDENTIFICATION,
+        inputs=inputs,
+        parent_hashes=parents,
+    )
+    return SyntheticIdentificationReport(
+        protocol_hash=protocol.content_hash,
+        claim_scope=protocol.claim_scope,
+        parameter_findings=parameters,
+        equivalence_findings=equivalences,
+        intervention_findings=interventions,
+        brier_comparison=brier_comparison,
+        log_comparison=log_comparison,
+        conclusions=conclusions,
+        manifest=manifest,
+    )
+
+
+__all__.append("SyntheticIdentificationReport")
