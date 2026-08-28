@@ -834,9 +834,9 @@ class SyntheticIdentificationProtocol:
         train = dataset.partition(ObservationPartitionRole.TRAIN)
         selection = dataset.partition(ObservationPartitionRole.SELECTION_VALIDATION)
         final = dataset.partition(ObservationPartitionRole.FINAL_TEST)
-        if not train.cases or not selection.cases or not final.cases:
+        if not train.records or not selection.records or not final.records:
             raise IdentificationProtocolError(
-                "synthetic identification requires case-oriented dataset partitions"
+                "synthetic identification requires record-oriented dataset partitions"
             )
         return cls(
             name=name,
@@ -849,11 +849,11 @@ class SyntheticIdentificationProtocol:
             train_partition_hash=train.content_hash,
             selection_partition_hash=selection.content_hash,
             final_partition_hash=final.content_hash,
-            train_case_hashes=tuple(case.scenario.content_hash for case in train.cases),
+            train_case_hashes=tuple(record.scenario.content_hash for record in train.records),
             selection_case_hashes=tuple(
-                case.scenario.content_hash for case in selection.cases
+                record.scenario.content_hash for record in selection.records
             ),
-            final_case_hashes=tuple(case.scenario.content_hash for case in final.cases),
+            final_case_hashes=tuple(record.scenario.content_hash for record in final.records),
             target_spec_hash=target_spec.content_hash,
             metric_identity=callable_identity(extractor),
             brier_loss_identity=metric_loss_identity(brier_loss),
