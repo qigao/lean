@@ -16,7 +16,7 @@ Narrative Synthetic Identification V1 completes the remaining P2 Identification 
 
 The scientific claim boundary is deliberately narrow:
 
-> Results may state that a model family or latent parameter is identified or not identified **under the frozen synthetic protocol**. They must not claim global structural identifiability, empirical identification of real human cognition, or validation of a real-world psychological mechanism.
+> A latent parameter may be reported as identified or not identified **under the frozen synthetic protocol**. Model families may be reported as observationally equivalent or separated under declared synthetic information conditions. The protocol must not claim global structural identifiability, empirical identification of real human cognition, or validation of a real-world psychological mechanism.
 
 The objective is not to force a unique global winner. The objective is to make the information conditions that identify or fail to identify richer cognitive structure explicit, reproducible, provenance-bound, and testable.
 
@@ -78,12 +78,14 @@ Rejected because tests alone cannot provide a first-class frozen protocol, typed
 
 ## 5. Scientific claim boundary
 
-All public identification findings use exactly two successful statuses:
+All public parameter-identification findings use exactly two successful statuses:
 
 - `IDENTIFIED_UNDER_PROTOCOL`
 - `NOT_IDENTIFIED_UNDER_PROTOCOL`
 
 These statuses are meaningful only relative to the exact frozen protocol, fixture, candidate grid, acceptance rule, model implementations, information conditions, seeds, and scoring identities recorded in lineage.
+
+Model-family findings use separate observational language such as `equivalent`, `separated`, or `discriminating`; they do not reuse parameter-identification statuses.
 
 The following are explicitly not permitted as successful statuses:
 
@@ -199,12 +201,14 @@ A completed recovery finding must retain:
 
 - experiment identity/hash;
 - true parameters;
-- complete candidate losses or parent calibration report hashes sufficient to recover them;
+- the complete canonical candidate-loss table for every evaluated parameter tuple;
 - accepted candidates;
 - whether truth is retained;
 - coordinate-wise `IdentifiabilityReport`;
 - typed `IdentificationStatus`;
-- parent manifest hashes.
+- parent calibration/report manifest hashes.
+
+Parent hashes supplement the candidate-loss table; they never substitute for the result data required to audit ties and acceptance.
 
 `calibration.best` alone is never sufficient evidence of identification.
 
@@ -626,9 +630,11 @@ After Stage A is frozen, result-dependent changes require a new protocol version
 
 ### 19.2 Stage B — final-model preregistration
 
-Training and selection-validation may select one parameterization per candidate model family according to already frozen procedures.
+Training and selection-validation select one parameterization per candidate model family according to already frozen procedures.
 
-After selection, freeze the exact candidate identities and selected parameters for final test.
+The primary parameter-selection loss is categorical Brier loss. This matches the existing P1 selection convention and is frozen in Stage A.
+
+After Brier-based selection, freeze the exact candidate identities and selected parameters once. Both final sibling protocols reuse this exact candidate set. Categorical log loss does not trigger a second training or selection pass.
 
 No candidate refit is allowed on final-test observations.
 
@@ -652,13 +658,15 @@ The siblings must be identical in:
 
 - dataset identity;
 - final partition;
-- target-construction identity except where the existing loss-specific final comparison requires no target difference;
+- exact target-construction identity and target payload;
 - model candidate identities;
-- selected parameters;
+- Brier-selected parameters frozen in Stage B;
 - metric extractor;
 - final simulation seeds;
 - model ordering/ranking rule;
 - identification strata.
+
+Loss choice may not change target construction or candidate selection.
 
 The only permitted differences are:
 
@@ -843,7 +851,7 @@ The frozen equivalence fixture must certify full policy-vector equivalence withi
 
 ### 26.7 Held-out Brier/log comparison
 
-The same frozen candidates, final cases, metric extractor, and final seeds complete both sibling proper-score protocols. Per-stratum results are retained.
+The same frozen candidates, final cases, metric extractor, target payload, and final seeds complete both sibling proper-score protocols. Per-stratum results are retained.
 
 ### 26.8 Explicit non-identifiability reporting
 
@@ -946,7 +954,7 @@ Narrative Synthetic Identification V1 is complete only when all of the following
 - the scale-confounded goal/instrumentality experiment correctly reports non-identification;
 - observational equivalence is certified from full policy vectors, not score ties;
 - information-only interventions separate the declared family pairs;
-- both frozen Brier and log final comparisons complete on the same candidates/cases/seeds;
+- both frozen Brier and log final comparisons complete on the same candidates/cases/seeds/targets;
 - aggregate report attestation succeeds;
 - feature-head proof is fully GREEN;
 - PR synthetic merge is fully GREEN;
