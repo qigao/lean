@@ -12,6 +12,7 @@ from tests.external_validation_fixtures import (
     build_preregistration,
     default_separation_rule,
     external_dataset,
+    final_targets,
     frozen_candidates,
     policy_metrics_v2,
     sibling_protocols,
@@ -94,6 +95,7 @@ class ExternalValidationPreregistrationTests(unittest.TestCase):
             evidence_declaration=declaration,
             brier_protocol=brier,
             log_protocol=log,
+            final_target_set=final_targets(data),
             strata=(
                 ExternalStratum("early", ("ext:final:1",)),
                 ExternalStratum("late", ("ext:final:2",)),

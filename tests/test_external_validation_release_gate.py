@@ -22,16 +22,22 @@ from tests.external_validation_fixtures import (
 try:
     from narrative_dynamics.external_validation import (
         ExternalValidationError,
-        execute_external_final_comparisons,
         preflight_external_releases,
     )
 except ImportError as error:
     ExternalValidationError = None
-    execute_external_final_comparisons = None
     preflight_external_releases = None
-    IMPORT_ERROR = error
+    PREFLIGHT_IMPORT_ERROR = error
 else:
-    IMPORT_ERROR = None
+    PREFLIGHT_IMPORT_ERROR = None
+
+try:
+    from narrative_dynamics.external_validation import evaluate_external_final
+except ImportError as error:
+    evaluate_external_final = None
+    FINAL_IMPORT_ERROR = error
+else:
+    FINAL_IMPORT_ERROR = None
 
 HASH0 = "sha256:" + "0" * 64
 
@@ -39,7 +45,7 @@ HASH0 = "sha256:" + "0" * 64
 class ExternalValidationReleaseGateTests(unittest.TestCase):
     def _fixture(self):
         if preflight_external_releases is None:
-            self.fail(f"external release gate API is missing: {IMPORT_ERROR}")
+            self.fail(f"external release gate API is missing: {PREFLIGHT_IMPORT_ERROR}")
         data, brier, log = sibling_protocols()
         declaration = build_external_declaration(data)
         prereg = build_preregistration(
@@ -74,6 +80,7 @@ class ExternalValidationReleaseGateTests(unittest.TestCase):
     def _preflight(self, fixture, **overrides):
         values = dict(
             preregistration=fixture["prereg"],
+            evidence=fixture["declaration"],
             brier_protocol=fixture["brier"],
             log_protocol=fixture["log"],
             brier_release=fixture["brier_release"],
@@ -120,6 +127,8 @@ class ExternalValidationReleaseGateTests(unittest.TestCase):
             self._preflight(fixture, log_verified=forged)
 
     def test_one_unverified_or_drifted_sibling_prevents_both_final_executions(self):
+        if evaluate_external_final is None:
+            self.fail(f"external final API is missing: {FINAL_IMPORT_ERROR}")
         fixture = self._fixture()
         invalid_log = ProtocolRelease.create(
             name="drifted-log",
@@ -136,21 +145,22 @@ class ExternalValidationReleaseGateTests(unittest.TestCase):
         brier_models, brier_sources = runtime_models(fixture["brier"].candidates)
         log_models, log_sources = runtime_models(fixture["log"].candidates)
         with self.assertRaises(ExternalValidationError):
-            execute_external_final_comparisons(
+            evaluate_external_final(
                 runner=SimulationRunner(),
                 preregistration=fixture["prereg"],
+                evidence=fixture["declaration"],
                 brier_protocol=fixture["brier"],
-                log_protocol=fixture["log"],
                 brier_release=fixture["brier_release"],
-                log_release=invalid_log,
                 brier_verified=fixture["brier_verified"],
-                log_verified=invalid_verified,
                 brier_models=brier_models,
-                log_models=log_models,
-                target_set=final_targets(fixture["dataset"]),
-                extractor=policy_metrics,
                 brier_loss=brier_loss(),
+                log_protocol=fixture["log"],
+                log_release=invalid_log,
+                log_verified=invalid_verified,
+                log_models=log_models,
                 log_loss=log_loss(),
+                final_targets=final_targets(fixture["dataset"]),
+                extractor=policy_metrics,
             )
         self.assertEqual(sum(model.calls for model in brier_sources + log_sources), 0)
 

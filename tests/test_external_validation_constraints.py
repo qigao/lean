@@ -40,7 +40,7 @@ class ExternalValidationConstraintTests(unittest.TestCase):
             plan=build_constraint_plan() if plan is None else plan,
             runner=SimulationRunner(),
             model=ProbabilityModel() if model is None else model,
-            target_set=selection_targets(data) if targets is None else targets,
+            selection_targets=selection_targets(data) if targets is None else targets,
             extractor=policy_metrics,
             brier_loss=brier_loss(),
             log_loss=log_loss(),
@@ -62,11 +62,13 @@ class ExternalValidationConstraintTests(unittest.TestCase):
         finding = self._evaluate(
             plan=build_constraint_plan(parameter_grid={"p": (0.2, 0.8)})
         )
-        self.assertEqual(len(finding.brier_candidate_losses), 2)
-        self.assertEqual(len(finding.log_candidate_losses), 2)
-        self.assertTrue(finding.parent_evaluation_hashes)
+        self.assertEqual(len(finding.candidate_losses), 2)
         self.assertTrue(
-            all(value.startswith("sha256:") for value in finding.parent_evaluation_hashes)
+            all(item.brier_loss >= 0.0 and item.log_loss >= 0.0 for item in finding.candidate_losses)
+        )
+        self.assertTrue(finding.parent_manifest_hashes)
+        self.assertTrue(
+            all(value.startswith("sha256:") for value in finding.parent_manifest_hashes)
         )
 
     def test_singleton_compatible_set_is_constrained_not_identified(self):
@@ -75,7 +77,7 @@ class ExternalValidationConstraintTests(unittest.TestCase):
         )
         self.assertEqual(
             finding.status,
-            ExternalConstraintStatus.CONSTRAINED_UNDER_EXTERNAL_PROTOCOL,
+            ExternalConstraintStatus.CONSTRAINED,
         )
         self.assertFalse(hasattr(finding, "identification_status"))
 
@@ -89,7 +91,7 @@ class ExternalValidationConstraintTests(unittest.TestCase):
         )
         self.assertEqual(
             finding.status,
-            ExternalConstraintStatus.NOT_CONSTRAINED_UNDER_EXTERNAL_PROTOCOL,
+            ExternalConstraintStatus.NOT_CONSTRAINED,
         )
         self.assertEqual(len(finding.compatible_parameters), 2)
 

@@ -390,6 +390,7 @@ def build_preregistration(
         evidence_declaration=declaration,
         brier_protocol=brier_protocol,
         log_protocol=log_protocol,
+        final_target_set=final_targets(data),
         adequacy_thresholds_by_score=(
             (ExternalScoreRole.BRIER, brier_thresholds),
             (ExternalScoreRole.LOG, log_thresholds),

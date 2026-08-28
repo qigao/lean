@@ -14,7 +14,6 @@ from tests.external_validation_fixtures import (
     build_constraint_plan,
     build_external_declaration,
     build_preregistration,
-    external_dataset,
     final_targets,
     log_loss,
     make_release,
@@ -31,14 +30,14 @@ try:
         ExternalValidationError,
         build_external_validation_report,
         evaluate_external_constraint,
-        run_external_final_validation,
+        evaluate_external_final,
     )
 except ImportError as error:
     EXTERNAL_CLAIM_SCOPE = None
     ExternalValidationError = None
     build_external_validation_report = None
     evaluate_external_constraint = None
-    run_external_final_validation = None
+    evaluate_external_final = None
     IMPORT_ERROR = error
 else:
     IMPORT_ERROR = None
@@ -48,7 +47,7 @@ HASH0 = "sha256:" + "0" * 64
 
 class ExternalValidationReportingTests(unittest.TestCase):
     def _evidence(self, *, with_constraint=True):
-        if run_external_final_validation is None:
+        if evaluate_external_final is None or build_external_validation_report is None:
             self.fail(f"external reporting API is missing: {IMPORT_ERROR}")
         data, brier, log = sibling_protocols()
         declaration = build_external_declaration(data)
@@ -74,21 +73,22 @@ class ExternalValidationReportingTests(unittest.TestCase):
         )
         brier_models, _ = runtime_models(brier.candidates)
         log_models, _ = runtime_models(log.candidates)
-        final_result = run_external_final_validation(
+        final_evaluation = evaluate_external_final(
             runner=SimulationRunner(),
             preregistration=prereg,
+            evidence=declaration,
             brier_protocol=brier,
-            log_protocol=log,
             brier_release=brier_release,
-            log_release=log_release,
             brier_verified=verify_release(brier_release, brier),
-            log_verified=verify_release(log_release, log),
             brier_models=brier_models,
-            log_models=log_models,
-            target_set=final_targets(data),
-            extractor=policy_metrics,
             brier_loss=brier_loss(),
+            log_protocol=log,
+            log_release=log_release,
+            log_verified=verify_release(log_release, log),
+            log_models=log_models,
             log_loss=log_loss(),
+            final_targets=final_targets(data),
+            extractor=policy_metrics,
         )
         constraint_findings = ()
         if with_constraint:
@@ -97,7 +97,7 @@ class ExternalValidationReportingTests(unittest.TestCase):
                     plan=plans[0],
                     runner=SimulationRunner(),
                     model=ProbabilityModel(),
-                    target_set=selection_targets(data),
+                    selection_targets=selection_targets(data),
                     extractor=policy_metrics,
                     brier_loss=brier_loss(),
                     log_loss=log_loss(),
@@ -105,14 +105,14 @@ class ExternalValidationReportingTests(unittest.TestCase):
             )
         report = build_external_validation_report(
             preregistration=prereg,
-            evidence_declaration=declaration,
-            final_result=final_result,
+            evidence=declaration,
+            final_evaluation=final_evaluation,
             constraint_findings=constraint_findings,
         )
         return {
             "declaration": declaration,
             "prereg": prereg,
-            "final_result": final_result,
+            "final_evaluation": final_evaluation,
             "constraint_findings": constraint_findings,
             "report": report,
         }
@@ -124,28 +124,35 @@ class ExternalValidationReportingTests(unittest.TestCase):
     def test_report_binds_evidence_preregistration_both_release_verifications_and_child_manifests(self):
         evidence = self._evidence()
         report = evidence["report"]
-        bundle = evidence["final_result"].comparisons
+        evaluation = evidence["final_evaluation"]
         self.assertEqual(
             report.evidence_declaration_hash,
             evidence["declaration"].content_hash,
         )
         self.assertEqual(report.preregistration_hash, evidence["prereg"].content_hash)
-        self.assertEqual(report.brier_release_hash, bundle.preflight.brier_release_hash)
-        self.assertEqual(report.log_release_hash, bundle.preflight.log_release_hash)
+        self.assertEqual(
+            report.brier_release_hash,
+            evaluation.preflight.brier_release_hash,
+        )
+        self.assertEqual(
+            report.log_release_hash,
+            evaluation.preflight.log_release_hash,
+        )
         self.assertEqual(
             report.brier_verification_hash,
-            bundle.preflight.brier_verification_hash,
+            evaluation.preflight.brier_verification_hash,
         )
         self.assertEqual(
             report.log_verification_hash,
-            bundle.preflight.log_verification_hash,
+            evaluation.preflight.log_verification_hash,
         )
         self.assertEqual(
-            report.child_comparison_manifest_hashes,
-            (
-                bundle.brier_comparison.manifest.content_hash,
-                bundle.log_comparison.manifest.content_hash,
-            ),
+            report.brier_comparison_manifest_hash,
+            evaluation.brier_report.manifest.content_hash,
+        )
+        self.assertEqual(
+            report.log_comparison_manifest_hash,
+            evaluation.log_report.manifest.content_hash,
         )
 
     def test_report_preserves_method_validation_hashes_as_opaque_lineage_only(self):
@@ -168,8 +175,8 @@ class ExternalValidationReportingTests(unittest.TestCase):
         with self.assertRaises(ExternalValidationError):
             build_external_validation_report(
                 preregistration=evidence["prereg"],
-                evidence_declaration=evidence["declaration"],
-                final_result=evidence["final_result"],
+                evidence=evidence["declaration"],
+                final_evaluation=evidence["final_evaluation"],
                 constraint_findings=(),
             )
 
