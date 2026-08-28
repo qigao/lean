@@ -1469,12 +1469,556 @@ def certify_observational_equivalence(
         ) from error
 
 
-def certify_information_intervention(*args, **kwargs):
-    raise NotImplementedError("information intervention certification is implemented in Task 5")
+ScenarioDiff = tuple[tuple[str, ...], object, object]
+FamilyPolicyRow = tuple[str, PolicyTuple, PolicyTuple]
+FamilyDeltaRow = tuple[str, float]
+CrossFamilyContrastRow = tuple[str, str, float, float]
 
 
-def evaluate_information_intervention(*args, **kwargs):
-    raise NotImplementedError("information intervention evaluation is implemented in Task 5")
+def _scenario_payload_diff(
+    left: object,
+    right: object,
+    prefix: tuple[str, ...] = (),
+) -> tuple[ScenarioDiff, ...]:
+    if isinstance(left, Mapping) and isinstance(right, Mapping):
+        keys = tuple(sorted(set(left) | set(right)))
+        diffs: list[ScenarioDiff] = []
+        missing = object()
+        for key in keys:
+            if not isinstance(key, str) or not key:
+                raise InterventionCertificationError(
+                    "information intervention payload keys must be non-empty strings"
+                )
+            left_value = left.get(key, missing)
+            right_value = right.get(key, missing)
+            if left_value is missing or right_value is missing:
+                raise InterventionCertificationError(
+                    "information intervention payload schemas must match recursively"
+                )
+            diffs.extend(
+                _scenario_payload_diff(
+                    left_value,
+                    right_value,
+                    prefix + (key,),
+                )
+            )
+        return tuple(diffs)
+    if type(left) is type(right) and left == right:
+        return ()
+    return ((prefix, left, right),)
+
+
+def certify_information_intervention(
+    pair: InformationInterventionPair,
+) -> ScenarioDiff:
+    if not isinstance(pair, InformationInterventionPair):
+        raise InterventionCertificationError(
+            "information intervention certification requires InformationInterventionPair"
+        )
+    diffs = _scenario_payload_diff(
+        pair.baseline.payload,
+        pair.intervention.payload,
+    )
+    if len(diffs) != 1:
+        raise InterventionCertificationError(
+            "information intervention must change exactly one payload leaf"
+        )
+    path, before, after = diffs[0]
+    if path != pair.allowed_information_path:
+        raise InterventionCertificationError(
+            "information intervention changed an undeclared field"
+        )
+    if path in pair.frozen_paths:
+        raise InterventionCertificationError(
+            "information intervention changed a frozen field"
+        )
+    return path, before, after
+
+
+def _intervention_policy(
+    value: Mapping[str, float] | Iterable[tuple[str, float]],
+    *,
+    label: str,
+) -> PolicyTuple:
+    items = tuple(value.items()) if isinstance(value, Mapping) else tuple(value)
+    raw_keys = tuple(item[0] for item in items)
+    try:
+        keys = tuple(sorted(_text(key, label=f"{label} action key") for key in raw_keys))
+    except IdentificationProtocolError as error:
+        raise InterventionCertificationError(str(error)) from error
+    if not keys or len(set(keys)) != len(keys):
+        raise InterventionCertificationError(
+            f"{label} action keys must be non-empty and unique"
+        )
+    try:
+        return _policy_tuple(items, action_keys=keys, label=label)
+    except IdentificationRecoveryError as error:
+        raise InterventionCertificationError(str(error)) from error
+
+
+@dataclass(frozen=True)
+class InformationInterventionFinding:
+    name: str
+    pair_hash: str
+    certified_diff: ScenarioDiff
+    family_policies: tuple[FamilyPolicyRow, ...]
+    within_family_max_deltas: tuple[FamilyDeltaRow, ...]
+    cross_family_contrasts: tuple[CrossFamilyContrastRow, ...]
+    tolerance: float
+    discriminating: bool
+    parent_manifest_hashes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        try:
+            name = _text(self.name, label="information intervention finding name")
+            pair_hash = _hash(self.pair_hash, label="information intervention pair hash")
+            tolerance = _finite(
+                self.tolerance,
+                label="information intervention tolerance",
+            )
+        except IdentificationProtocolError as error:
+            raise InterventionCertificationError(str(error)) from error
+        if tolerance != _EQUIVALENCE_TOLERANCE:
+            raise InterventionCertificationError(
+                "information intervention tolerance must be exactly 1e-12"
+            )
+        if not isinstance(self.discriminating, bool):
+            raise InterventionCertificationError(
+                "information intervention discriminating flag must be boolean"
+            )
+        diff = self.certified_diff
+        if not isinstance(diff, tuple) or len(diff) != 3:
+            raise InterventionCertificationError(
+                "certified information intervention diff must be one leaf triple"
+            )
+        raw_path, before, after = diff
+        if not isinstance(raw_path, tuple):
+            raise InterventionCertificationError(
+                "certified information intervention path must be a tuple"
+            )
+        try:
+            path = tuple(
+                _text(item, label="certified information path segment")
+                for item in raw_path
+            )
+            frozen_before = _freeze(before, label="certified information before value")
+            frozen_after = _freeze(after, label="certified information after value")
+        except IdentificationProtocolError as error:
+            raise InterventionCertificationError(str(error)) from error
+        if not path:
+            raise InterventionCertificationError(
+                "certified information intervention path must be non-empty"
+            )
+        if type(frozen_before) is type(frozen_after) and frozen_before == frozen_after:
+            raise InterventionCertificationError(
+                "certified information intervention must change its leaf value"
+            )
+
+        rows: list[FamilyPolicyRow] = []
+        seen_families: set[str] = set()
+        action_keys: tuple[str, ...] | None = None
+        for raw_row in self.family_policies:
+            if not isinstance(raw_row, tuple) or len(raw_row) != 3:
+                raise InterventionCertificationError(
+                    "information intervention family policies must be triples"
+                )
+            raw_family, raw_baseline, raw_intervention = raw_row
+            try:
+                family = _text(
+                    raw_family,
+                    label="information intervention family name",
+                )
+            except IdentificationProtocolError as error:
+                raise InterventionCertificationError(str(error)) from error
+            if family in seen_families:
+                raise InterventionCertificationError(
+                    "information intervention family names must be unique"
+                )
+            seen_families.add(family)
+            baseline_policy = _intervention_policy(
+                raw_baseline,
+                label=f"{family} baseline policy",
+            )
+            intervention_policy = _intervention_policy(
+                raw_intervention,
+                label=f"{family} intervention policy",
+            )
+            baseline_keys = tuple(key for key, _ in baseline_policy)
+            intervention_keys = tuple(key for key, _ in intervention_policy)
+            if baseline_keys != intervention_keys:
+                raise InterventionCertificationError(
+                    "information intervention policies must share one action schema"
+                )
+            if action_keys is None:
+                action_keys = baseline_keys
+            elif baseline_keys != action_keys:
+                raise InterventionCertificationError(
+                    "all intervention families must share one action schema"
+                )
+            rows.append((family, baseline_policy, intervention_policy))
+        if len(rows) < 2:
+            raise InterventionCertificationError(
+                "information intervention finding requires at least two families"
+            )
+        rows_tuple = tuple(sorted(rows, key=lambda row: row[0]))
+        assert action_keys is not None
+
+        computed_deltas = tuple(
+            (
+                family,
+                max(
+                    abs(dict(baseline)[key] - dict(intervention)[key])
+                    for key in action_keys
+                ),
+            )
+            for family, baseline, intervention in rows_tuple
+        )
+        supplied_deltas: list[FamilyDeltaRow] = []
+        try:
+            raw_deltas = tuple(self.within_family_max_deltas)
+            for raw in raw_deltas:
+                if not isinstance(raw, tuple) or len(raw) != 2:
+                    raise InterventionCertificationError(
+                        "within-family intervention deltas must be pairs"
+                    )
+                raw_family, raw_delta = raw
+                family = _text(
+                    raw_family,
+                    label="within-family intervention name",
+                )
+                delta = _finite(
+                    raw_delta,
+                    label=f"within-family intervention delta for {family}",
+                )
+                if delta < 0.0:
+                    raise InterventionCertificationError(
+                        "within-family intervention deltas must be non-negative"
+                    )
+                supplied_deltas.append((family, delta))
+        except IdentificationProtocolError as error:
+            raise InterventionCertificationError(str(error)) from error
+        supplied_deltas_tuple = tuple(sorted(supplied_deltas))
+        if tuple(family for family, _ in supplied_deltas_tuple) != tuple(
+            family for family, _ in computed_deltas
+        ):
+            raise InterventionCertificationError(
+                "within-family intervention deltas must cover every family exactly once"
+            )
+        for (family, supplied), (_computed_family, computed) in zip(
+            supplied_deltas_tuple,
+            computed_deltas,
+            strict=True,
+        ):
+            if not math.isclose(supplied, computed, rel_tol=0.0, abs_tol=1e-15):
+                raise InterventionCertificationError(
+                    f"within-family intervention delta for {family} must match policies"
+                )
+
+        computed_contrasts: list[CrossFamilyContrastRow] = []
+        for index, (left_family, left_baseline, left_intervention) in enumerate(rows_tuple):
+            for right_family, right_baseline, right_intervention in rows_tuple[index + 1 :]:
+                computed_contrasts.append(
+                    (
+                        left_family,
+                        right_family,
+                        max(
+                            abs(dict(left_baseline)[key] - dict(right_baseline)[key])
+                            for key in action_keys
+                        ),
+                        max(
+                            abs(
+                                dict(left_intervention)[key]
+                                - dict(right_intervention)[key]
+                            )
+                            for key in action_keys
+                        ),
+                    )
+                )
+        computed_contrasts_tuple = tuple(computed_contrasts)
+        supplied_contrasts: list[CrossFamilyContrastRow] = []
+        for raw in self.cross_family_contrasts:
+            if not isinstance(raw, tuple) or len(raw) != 4:
+                raise InterventionCertificationError(
+                    "cross-family intervention contrasts must be quadruples"
+                )
+            raw_left, raw_right, raw_baseline_delta, raw_intervention_delta = raw
+            try:
+                left = _text(raw_left, label="cross-family left name")
+                right = _text(raw_right, label="cross-family right name")
+                baseline_delta = _finite(
+                    raw_baseline_delta,
+                    label="cross-family baseline delta",
+                )
+                intervention_delta = _finite(
+                    raw_intervention_delta,
+                    label="cross-family intervention delta",
+                )
+            except IdentificationProtocolError as error:
+                raise InterventionCertificationError(str(error)) from error
+            if left >= right:
+                raise InterventionCertificationError(
+                    "cross-family contrast names must be in canonical order"
+                )
+            if baseline_delta < 0.0 or intervention_delta < 0.0:
+                raise InterventionCertificationError(
+                    "cross-family intervention deltas must be non-negative"
+                )
+            supplied_contrasts.append(
+                (left, right, baseline_delta, intervention_delta)
+            )
+        supplied_contrasts_tuple = tuple(sorted(supplied_contrasts))
+        if len(supplied_contrasts_tuple) != len(computed_contrasts_tuple):
+            raise InterventionCertificationError(
+                "cross-family contrasts must cover every family pair exactly once"
+            )
+        for supplied, computed in zip(
+            supplied_contrasts_tuple,
+            computed_contrasts_tuple,
+            strict=True,
+        ):
+            if supplied[:2] != computed[:2] or any(
+                not math.isclose(
+                    supplied[value_index],
+                    computed[value_index],
+                    rel_tol=0.0,
+                    abs_tol=1e-15,
+                )
+                for value_index in (2, 3)
+            ):
+                raise InterventionCertificationError(
+                    "cross-family intervention contrasts must match complete policies"
+                )
+
+        try:
+            parents = tuple(
+                sorted(
+                    {
+                        _hash(
+                            item,
+                            label="information intervention parent manifest hash",
+                        )
+                        for item in self.parent_manifest_hashes
+                    }
+                )
+            )
+        except IdentificationProtocolError as error:
+            raise InterventionCertificationError(str(error)) from error
+
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "pair_hash", pair_hash)
+        object.__setattr__(
+            self,
+            "certified_diff",
+            (path, frozen_before, frozen_after),
+        )
+        object.__setattr__(self, "family_policies", rows_tuple)
+        object.__setattr__(self, "within_family_max_deltas", computed_deltas)
+        object.__setattr__(
+            self,
+            "cross_family_contrasts",
+            computed_contrasts_tuple,
+        )
+        object.__setattr__(self, "tolerance", tolerance)
+        object.__setattr__(self, "parent_manifest_hashes", parents)
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "pair_hash": self.pair_hash,
+            "certified_diff": self.certified_diff,
+            "family_policies": tuple(
+                {
+                    "family": family,
+                    "baseline": baseline,
+                    "intervention": intervention,
+                }
+                for family, baseline, intervention in self.family_policies
+            ),
+            "within_family_max_deltas": self.within_family_max_deltas,
+            "cross_family_contrasts": self.cross_family_contrasts,
+            "tolerance": self.tolerance,
+            "discriminating": self.discriminating,
+            "parent_manifest_hashes": self.parent_manifest_hashes,
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.identity_payload())
+
+
+def evaluate_information_intervention(
+    *,
+    pair: InformationInterventionPair,
+    runner: SimulationRunner,
+    families: tuple[tuple[str, object, Mapping[str, float]], ...],
+    seeds: tuple[int, ...],
+    extractor: object,
+    action_keys: tuple[str, ...],
+    tolerance: float = _EQUIVALENCE_TOLERANCE,
+) -> InformationInterventionFinding:
+    certified_diff = certify_information_intervention(pair)
+    if not isinstance(runner, SimulationRunner):
+        raise InterventionCertificationError(
+            "information intervention evaluation requires SimulationRunner"
+        )
+    try:
+        seed_tuple = _seed_plan(seeds, label="information intervention seeds")
+        keys = tuple(
+            sorted(
+                _text(item, label="information intervention action key")
+                for item in action_keys
+            )
+        )
+        tolerance_value = _finite(
+            tolerance,
+            label="information intervention tolerance",
+        )
+    except IdentificationProtocolError as error:
+        raise InterventionCertificationError(str(error)) from error
+    if not keys or len(set(keys)) != len(keys):
+        raise InterventionCertificationError(
+            "information intervention action keys must be non-empty and unique"
+        )
+    if tolerance_value != _EQUIVALENCE_TOLERANCE:
+        raise InterventionCertificationError(
+            "information intervention tolerance must be exactly 1e-12"
+        )
+
+    canonical_families: list[tuple[str, object, ParameterTuple]] = []
+    seen: set[str] = set()
+    for raw_family, model, raw_parameters in families:
+        try:
+            family = _text(raw_family, label="information intervention family name")
+            parameters = _parameter_tuple(
+                raw_parameters,
+                label=f"information intervention {family} parameters",
+            )
+        except IdentificationProtocolError as error:
+            raise InterventionCertificationError(str(error)) from error
+        if family in seen:
+            raise InterventionCertificationError(
+                "information intervention family names must be unique"
+            )
+        seen.add(family)
+        canonical_families.append((family, model, parameters))
+    canonical_families.sort(key=lambda item: item[0])
+
+    if pair.expected_relationship == "intentional_vs_reactive":
+        required_families = {"intentional", "reactive"}
+        stable_family = "reactive"
+        responsive_family = "intentional"
+    elif pair.expected_relationship == "planning_vs_intentional":
+        required_families = {"intentional", "planning"}
+        stable_family = "intentional"
+        responsive_family = "planning"
+    else:
+        raise IdentificationProtocolError(
+            "information intervention relationship is unsupported"
+        )
+    if {family for family, _model, _parameters in canonical_families} != required_families:
+        raise InterventionCertificationError(
+            "information intervention families must match the preregistered relationship"
+        )
+
+    try:
+        family_policies: list[FamilyPolicyRow] = []
+        parent_hashes: set[str] = set()
+        for family, model, parameters in canonical_families:
+            baseline_traces = runner.run_batch(
+                model,
+                pair.baseline,
+                dict(parameters),
+                seeds=seed_tuple,
+            )
+            intervention_traces = runner.run_batch(
+                model,
+                pair.intervention,
+                dict(parameters),
+                seeds=seed_tuple,
+            )
+            baseline_policy = _policy_tuple(
+                aggregate_metrics(baseline_traces, extractor),
+                action_keys=keys,
+                label=f"{family} baseline intervention policy",
+            )
+            intervention_policy = _policy_tuple(
+                aggregate_metrics(intervention_traces, extractor),
+                action_keys=keys,
+                label=f"{family} intervention policy",
+            )
+            family_policies.append(
+                (family, baseline_policy, intervention_policy)
+            )
+            parent_hashes.update(
+                required_manifest_hash(
+                    trace,
+                    label=f"{family} baseline intervention trace",
+                )
+                for trace in baseline_traces
+            )
+            parent_hashes.update(
+                required_manifest_hash(
+                    trace,
+                    label=f"{family} intervention trace",
+                )
+                for trace in intervention_traces
+            )
+        family_policies_tuple = tuple(family_policies)
+        delta_map = {
+            family: max(
+                abs(dict(baseline)[key] - dict(intervention)[key])
+                for key in keys
+            )
+            for family, baseline, intervention in family_policies_tuple
+        }
+        within_deltas = tuple(sorted(delta_map.items()))
+        contrasts: list[CrossFamilyContrastRow] = []
+        for index, (left_family, left_baseline, left_intervention) in enumerate(
+            family_policies_tuple
+        ):
+            for (
+                right_family,
+                right_baseline,
+                right_intervention,
+            ) in family_policies_tuple[index + 1 :]:
+                contrasts.append(
+                    (
+                        left_family,
+                        right_family,
+                        max(
+                            abs(dict(left_baseline)[key] - dict(right_baseline)[key])
+                            for key in keys
+                        ),
+                        max(
+                            abs(
+                                dict(left_intervention)[key]
+                                - dict(right_intervention)[key]
+                            )
+                            for key in keys
+                        ),
+                    )
+                )
+        discriminating = (
+            delta_map[stable_family] <= tolerance_value
+            and delta_map[responsive_family] > tolerance_value
+        )
+        return InformationInterventionFinding(
+            name=pair.name,
+            pair_hash=pair.content_hash,
+            certified_diff=certified_diff,
+            family_policies=family_policies_tuple,
+            within_family_max_deltas=within_deltas,
+            cross_family_contrasts=tuple(contrasts),
+            tolerance=tolerance_value,
+            discriminating=discriminating,
+            parent_manifest_hashes=tuple(sorted(parent_hashes)),
+        )
+    except SyntheticIdentificationError:
+        raise
+    except (TypeError, ValueError, RuntimeError, KeyError) as error:
+        raise InterventionCertificationError(
+            "information intervention evaluation failed"
+        ) from error
 
 
 def score_model_comparison_by_stratum(*args, **kwargs):
@@ -1491,6 +2035,7 @@ __all__ = [
     "IdentificationRecoveryError",
     "IdentificationReportError",
     "IdentificationStatus",
+    "InformationInterventionFinding",
     "InformationInterventionPair",
     "InterventionCertificationError",
     "ObservationalEquivalenceFinding",
