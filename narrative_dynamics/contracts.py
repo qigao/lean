@@ -110,6 +110,7 @@ class ExperimentStage(str, Enum):
     REPEATED_CALIBRATION = "repeated_calibration"
     SEED_BLOCK_VARIATION = "seed_block_variation"
     SYNTHETIC_RECOVERY = "synthetic_recovery"
+    SYNTHETIC_IDENTIFICATION = "synthetic_identification"
     HELD_OUT_VALIDATION = "held_out_validation"
     ACCEPTANCE_VALIDATION = "acceptance_validation"
     SELECTION_VALIDATION = "selection_validation"
