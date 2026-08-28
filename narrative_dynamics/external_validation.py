@@ -967,3 +967,321 @@ __all__ = [
     "PredictiveSeparationStatus",
     "preflight_external_releases",
 ]
+
+
+@dataclass(frozen=True)
+class ExternalPredictiveAdequacyFinding:
+    model_name: str
+    frozen_model_hash: str
+    score_role: ExternalScoreRole
+    loss_identity: Mapping[str, object]
+    mean_loss: float
+    worst_loss: float
+    threshold_hash: str
+    status: PredictiveAdequacyStatus
+    parent_comparison_manifest_hash: str
+
+
+@dataclass(frozen=True)
+class ExternalPairwiseSeparationFinding:
+    left_model: str
+    right_model: str
+    brier_mean_loss_delta: float
+    log_mean_loss_delta: float
+    preferred_model: str | None
+    status: PredictiveSeparationStatus
+
+
+@dataclass(frozen=True)
+class ExternalStratumScore:
+    stratum_name: str
+    score_role: ExternalScoreRole
+    model_name: str
+    case_names: tuple[str, ...]
+    mean_loss: float
+    worst_loss: float
+
+
+@dataclass(frozen=True)
+class ExternalFinalEvaluation:
+    preflight: ExternalReleasePreflight
+    brier_report: object
+    log_report: object
+    adequacy_findings: tuple[ExternalPredictiveAdequacyFinding, ...]
+    aggregate_adequacy: tuple[tuple[str, PredictiveAdequacyStatus], ...]
+    separation_findings: tuple[ExternalPairwiseSeparationFinding, ...]
+    stratum_scores: tuple[ExternalStratumScore, ...]
+
+
+def _external_final_target_matches(
+    target_set: TargetConstructionReport,
+    protocol: PreregisteredEvaluationProtocol,
+) -> bool:
+    return (
+        target_set.role is ObservationPartitionRole.FINAL_TEST
+        and target_set.dataset_hash == protocol.dataset_hash
+        and target_set.partition_hash == protocol.final_partition_hash
+        and target_set.spec_hash == protocol.target_spec_hash
+        and target_set.content_hash == protocol.final_target_hash
+        and target_set.manifest.content_hash == protocol.final_target_manifest_hash
+    )
+
+
+def _external_adequacy_findings(
+    *,
+    brier_protocol: PreregisteredEvaluationProtocol,
+    brier_report: object,
+    log_protocol: PreregisteredEvaluationProtocol,
+    log_report: object,
+) -> tuple[
+    tuple[ExternalPredictiveAdequacyFinding, ...],
+    tuple[tuple[str, PredictiveAdequacyStatus], ...],
+]:
+    findings: list[ExternalPredictiveAdequacyFinding] = []
+    statuses: dict[str, dict[ExternalScoreRole, PredictiveAdequacyStatus]] = {}
+    for role, protocol, report in (
+        (ExternalScoreRole.BRIER, brier_protocol, brier_report),
+        (ExternalScoreRole.LOG, log_protocol, log_report),
+    ):
+        frozen_by_name = {candidate.name: candidate for candidate in protocol.candidates}
+        threshold_hash = stable_content_hash(protocol.thresholds.identity_payload())
+        for model_name in sorted(protocol.candidate_names):
+            entry = report.entry_map[model_name]
+            status = (
+                PredictiveAdequacyStatus.MET
+                if entry.adequate
+                else PredictiveAdequacyStatus.NOT_MET
+            )
+            statuses.setdefault(model_name, {})[role] = status
+            findings.append(
+                ExternalPredictiveAdequacyFinding(
+                    model_name=model_name,
+                    frozen_model_hash=frozen_by_name[model_name].content_hash,
+                    score_role=role,
+                    loss_identity=_mapping(
+                        protocol.loss_identity,
+                        label=f"{role.value} predictive loss identity",
+                    ),
+                    mean_loss=float(entry.mean_loss),
+                    worst_loss=float(entry.worst_loss),
+                    threshold_hash=threshold_hash,
+                    status=status,
+                    parent_comparison_manifest_hash=report.manifest.content_hash,
+                )
+            )
+    aggregate = tuple(
+        (
+            model_name,
+            PredictiveAdequacyStatus.MET
+            if statuses[model_name].get(ExternalScoreRole.BRIER)
+            is PredictiveAdequacyStatus.MET
+            and statuses[model_name].get(ExternalScoreRole.LOG)
+            is PredictiveAdequacyStatus.MET
+            else PredictiveAdequacyStatus.NOT_MET,
+        )
+        for model_name in sorted(statuses)
+    )
+    return tuple(findings), aggregate
+
+
+def _external_separation_findings(
+    *,
+    preregistration: ExternalValidationPreregistration,
+    brier_report: object,
+    log_report: object,
+) -> tuple[ExternalPairwiseSeparationFinding, ...]:
+    names = tuple(sorted(brier_report.entry_map))
+    if names != tuple(sorted(log_report.entry_map)):
+        raise ExternalValidationProtocolError(
+            "external final sibling comparisons have different model sets"
+        )
+    findings: list[ExternalPairwiseSeparationFinding] = []
+    rule = preregistration.separation_rule
+    for left_index, left in enumerate(names):
+        for right in names[left_index + 1 :]:
+            brier_delta = float(
+                brier_report.entry_map[left].mean_loss
+                - brier_report.entry_map[right].mean_loss
+            )
+            log_delta = float(
+                log_report.entry_map[left].mean_loss
+                - log_report.entry_map[right].mean_loss
+            )
+            same_direction = (
+                (brier_delta < 0.0 and log_delta < 0.0)
+                or (brier_delta > 0.0 and log_delta > 0.0)
+            )
+            separated = (
+                same_direction
+                and abs(brier_delta) >= rule.min_mean_loss_delta_brier
+                and abs(log_delta) >= rule.min_mean_loss_delta_log
+            )
+            preferred = None
+            if separated:
+                preferred = left if brier_delta < 0.0 else right
+            findings.append(
+                ExternalPairwiseSeparationFinding(
+                    left_model=left,
+                    right_model=right,
+                    brier_mean_loss_delta=brier_delta,
+                    log_mean_loss_delta=log_delta,
+                    preferred_model=preferred,
+                    status=(
+                        PredictiveSeparationStatus.SEPARATED
+                        if separated
+                        else PredictiveSeparationStatus.NOT_SEPARATED
+                    ),
+                )
+            )
+    return tuple(findings)
+
+
+def _external_stratum_scores(
+    *,
+    preregistration: ExternalValidationPreregistration,
+    brier_report: object,
+    log_report: object,
+) -> tuple[ExternalStratumScore, ...]:
+    scores: list[ExternalStratumScore] = []
+    for role, report in (
+        (ExternalScoreRole.BRIER, brier_report),
+        (ExternalScoreRole.LOG, log_report),
+    ):
+        for model_name in sorted(report.entry_map):
+            entry = report.entry_map[model_name]
+            case_losses = {
+                case.name: float(case.loss)
+                for case in entry.final_test.validation.cases
+            }
+            for stratum in preregistration.strata:
+                losses = tuple(case_losses[name] for name in stratum.final_case_names)
+                scores.append(
+                    ExternalStratumScore(
+                        stratum_name=stratum.name,
+                        score_role=role,
+                        model_name=model_name,
+                        case_names=stratum.final_case_names,
+                        mean_loss=sum(losses) / len(losses),
+                        worst_loss=max(losses),
+                    )
+                )
+    return tuple(scores)
+
+
+def evaluate_external_final(
+    *,
+    runner: object,
+    preregistration: ExternalValidationPreregistration,
+    evidence: ExternalEvidenceDeclaration,
+    brier_protocol: PreregisteredEvaluationProtocol,
+    brier_release: ProtocolRelease,
+    brier_verified: VerifiedProtocolRelease,
+    brier_models: tuple[object, ...],
+    brier_loss: object,
+    log_protocol: PreregisteredEvaluationProtocol,
+    log_release: ProtocolRelease,
+    log_verified: VerifiedProtocolRelease,
+    log_models: tuple[object, ...],
+    log_loss: object,
+    final_targets: TargetConstructionReport,
+    extractor: object,
+) -> ExternalFinalEvaluation:
+    from narrative_dynamics.observations.release import compare_released_models
+    from narrative_dynamics.simulation import SimulationRunner
+
+    if not isinstance(runner, SimulationRunner):
+        raise TypeError("external final evaluation requires SimulationRunner")
+    brier_models = tuple(brier_models)
+    log_models = tuple(log_models)
+    if not isinstance(final_targets, TargetConstructionReport):
+        raise TypeError("external final evaluation requires final targets")
+
+    preflight = preflight_external_releases(
+        preregistration=preregistration,
+        evidence=evidence,
+        brier_protocol=brier_protocol,
+        brier_release=brier_release,
+        brier_verified=brier_verified,
+        log_protocol=log_protocol,
+        log_release=log_release,
+        log_verified=log_verified,
+    )
+
+    if not _external_final_target_matches(final_targets, brier_protocol):
+        raise ExternalValidationProtocolError(
+            "external final targets do not match the Brier protocol"
+        )
+    if not _external_final_target_matches(final_targets, log_protocol):
+        raise ExternalValidationProtocolError(
+            "external final targets do not match the Log protocol"
+        )
+    if callable_identity(extractor) != dict(brier_protocol.metric_identity):
+        raise ExternalValidationProtocolError(
+            "external final metric extractor changed from preregistration"
+        )
+    if callable_identity(extractor) != dict(log_protocol.metric_identity):
+        raise ExternalValidationProtocolError(
+            "external final metric extractor differs across siblings"
+        )
+    if metric_loss_identity(brier_loss) != dict(brier_protocol.loss_identity):
+        raise ExternalValidationProtocolError(
+            "external final Brier loss changed from preregistration"
+        )
+    if metric_loss_identity(log_loss) != dict(log_protocol.loss_identity):
+        raise ExternalValidationProtocolError(
+            "external final Log loss changed from preregistration"
+        )
+
+    brier_report = compare_released_models(
+        runner=runner,
+        verified_release=brier_verified,
+        protocol=brier_protocol,
+        models=brier_models,
+        target_set=final_targets,
+        extractor=extractor,
+        loss=brier_loss,
+    )
+    log_report = compare_released_models(
+        runner=runner,
+        verified_release=log_verified,
+        protocol=log_protocol,
+        models=log_models,
+        target_set=final_targets,
+        extractor=extractor,
+        loss=log_loss,
+    )
+
+    adequacy_findings, aggregate_adequacy = _external_adequacy_findings(
+        brier_protocol=brier_protocol,
+        brier_report=brier_report,
+        log_protocol=log_protocol,
+        log_report=log_report,
+    )
+    separation_findings = _external_separation_findings(
+        preregistration=preregistration,
+        brier_report=brier_report,
+        log_report=log_report,
+    )
+    stratum_scores = _external_stratum_scores(
+        preregistration=preregistration,
+        brier_report=brier_report,
+        log_report=log_report,
+    )
+    return ExternalFinalEvaluation(
+        preflight=preflight,
+        brier_report=brier_report,
+        log_report=log_report,
+        adequacy_findings=adequacy_findings,
+        aggregate_adequacy=aggregate_adequacy,
+        separation_findings=separation_findings,
+        stratum_scores=stratum_scores,
+    )
+
+
+__all__ += [
+    "ExternalFinalEvaluation",
+    "ExternalPairwiseSeparationFinding",
+    "ExternalPredictiveAdequacyFinding",
+    "ExternalStratumScore",
+    "evaluate_external_final",
+]
