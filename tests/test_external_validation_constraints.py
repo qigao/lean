@@ -112,7 +112,7 @@ class ExternalValidationConstraintTests(unittest.TestCase):
 
     def test_constraint_path_has_no_generator_truth_or_p2_identifiability_dependency(self):
         with patch(
-            "narrative_dynamics.diagnostics.diagnose_identifiability",
+            "narrative_dynamics.uncertainty.diagnose_identifiability",
             side_effect=AssertionError("P2 identifiability must not run"),
         ):
             finding = self._evaluate()
