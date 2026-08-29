@@ -16,7 +16,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: qigao/lean
-          ref: e6f9cf51491d5785930186e7484b3258bf9cffe3
+          ref: 97dd0c7a7a9acbe50a491f01b7342172b7a6271c
           persist-credentials: false
       - name: Run focused dataset hash scaling regression
         run: python3 -m unittest tests.test_two_stage_dataset_hash_scaling -v
