@@ -2,6 +2,8 @@ name: proof
 
 on:
   push:
+    branches-ignore:
+      - "manual/**"
     paths-ignore:
       - "docs/superpowers/specs/**"
       - "docs/superpowers/plans/**"

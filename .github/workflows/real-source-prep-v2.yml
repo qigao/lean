@@ -1,0 +1,181 @@
+name: real-source-prep-v2
+
+on:
+  push:
+    branches:
+      - manual/real-source-prep-v2
+
+permissions:
+  contents: read
+
+jobs:
+  freeze-source:
+    name: Freeze pinned Feher Hare source
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout frozen study code
+        uses: actions/checkout@v4
+        with:
+          repository: qigao/lean
+          ref: 607059b23323e6ffde7d5ed6590e3652c0768868
+          path: study
+          persist-credentials: false
+
+      - name: Checkout pinned Feher Hare upstream
+        uses: actions/checkout@v4
+        with:
+          repository: carolfs/muddled_models
+          ref: 4567763780a2c596fd6510af720ec468a8214a8f
+          path: upstream/muddled_models
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Freeze and verify metadata-only source readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd study
+          python3 - <<'PY'
+          from collections import Counter
+          import json
+          from pathlib import Path
+          import subprocess
+
+          from narrative_dynamics.studies.feher_hare_two_stage_v1 import (
+              prepare_feher_hare_two_stage_v1,
+          )
+          from narrative_dynamics.studies.two_stage_source import (
+              freeze_feher_hare_v1_source_manifest,
+              verify_two_stage_snapshot,
+              write_two_stage_source_manifest,
+          )
+
+          STUDY_REVISION = "607059b23323e6ffde7d5ed6590e3652c0768868"
+          UPSTREAM_REVISION = "4567763780a2c596fd6510af720ec468a8214a8f"
+
+          study_root = Path.cwd().resolve()
+          upstream_root = (study_root.parent / "upstream" / "muddled_models").resolve()
+
+          study_head = subprocess.check_output(
+              ("git", "-C", str(study_root), "rev-parse", "HEAD"), text=True
+          ).strip()
+          upstream_head = subprocess.check_output(
+              ("git", "-C", str(upstream_root), "rev-parse", "HEAD"), text=True
+          ).strip()
+          if study_head != STUDY_REVISION:
+              raise RuntimeError(f"study checkout drifted: {study_head}")
+          if upstream_head != UPSTREAM_REVISION:
+              raise RuntimeError(f"upstream checkout drifted: {upstream_head}")
+
+          manifest = freeze_feher_hare_v1_source_manifest(upstream_root)
+          snapshot = verify_two_stage_snapshot(upstream_root, manifest)
+          prepared = prepare_feher_hare_two_stage_v1(
+              root=upstream_root,
+              manifest=manifest,
+          )
+
+          evidence_rows = tuple(
+              item for item in manifest.files if item.purpose == "scientific_evidence"
+          )
+          metadata_rows = tuple(
+              item for item in manifest.files if item.purpose == "transform_metadata"
+          )
+          eligible_by_task = Counter(
+              task for task, _participant in prepared.transform_report.eligible_participants
+          )
+          partition_totals = Counter(
+              role for _task, _participant, role in prepared.assignment.assignments
+          )
+          partition_by_task = Counter(
+              (task, role)
+              for task, _participant, role in prepared.assignment.assignments
+          )
+
+          expected_eligible = {"magic_carpet": 24, "spaceship": 21}
+          expected_partitions = {
+              "train": 27,
+              "selection_validation": 9,
+              "final_test": 9,
+          }
+          expected_task_partitions = {
+              ("magic_carpet", "train"): 14,
+              ("magic_carpet", "selection_validation"): 5,
+              ("magic_carpet", "final_test"): 5,
+              ("spaceship", "train"): 13,
+              ("spaceship", "selection_validation"): 4,
+              ("spaceship", "final_test"): 4,
+          }
+
+          if dict(eligible_by_task) != expected_eligible:
+              raise RuntimeError(
+                  f"eligible participant inventory drifted: {dict(eligible_by_task)}"
+              )
+          if dict(partition_totals) != expected_partitions:
+              raise RuntimeError(
+                  f"participant split totals drifted: {dict(partition_totals)}"
+              )
+          if dict(partition_by_task) != expected_task_partitions:
+              raise RuntimeError(
+                  f"task-stratified split drifted: {dict(partition_by_task)}"
+              )
+          if len(evidence_rows) != 45 or len(metadata_rows) != 45:
+              raise RuntimeError(
+                  "source manifest must contain 45 main-task files and 45 matching metadata files"
+              )
+          if len(snapshot.verified_file_identities) != 90:
+              raise RuntimeError("verified source manifest must bind exactly 90 files")
+
+          output_dir = Path("artifacts/real-source-prep")
+          output_dir.mkdir(parents=True, exist_ok=True)
+          manifest_path = output_dir / "feher_hare_two_stage_v1_source_manifest.json"
+          write_two_stage_source_manifest(manifest_path, manifest)
+
+          summary = {
+              "study_repository": "qigao/lean",
+              "study_repository_revision": study_head,
+              "upstream_repository": manifest.repository,
+              "upstream_revision": manifest.revision,
+              "source_manifest_hash": manifest.content_hash,
+              "source_snapshot_hash": snapshot.source_snapshot_hash,
+              "transform_report_hash": prepared.transform_report.content_hash,
+              "participant_assignment_hash": prepared.assignment.content_hash,
+              "dataset_hash": prepared.dataset.content_hash,
+              "final_target_hash": prepared.final_targets.content_hash,
+              "eligible_participants_by_task": dict(sorted(eligible_by_task.items())),
+              "partition_totals": dict(sorted(partition_totals.items())),
+              "partition_by_task": {
+                  f"{task}:{role}": count
+                  for (task, role), count in sorted(partition_by_task.items())
+              },
+              "manifest_scientific_evidence_files": len(evidence_rows),
+              "manifest_transform_metadata_files": len(metadata_rows),
+              "verified_file_count": len(snapshot.verified_file_identities),
+              "retained_trial_count": prepared.transform_report.retained_trial_count,
+              "slow_trial_count": prepared.transform_report.slow_trial_count,
+              "structural_exclusion_count": len(
+                  prepared.transform_report.structural_exclusions
+              ),
+              "final_model_execution": False,
+              "raw_human_rows_in_artifact": False,
+          }
+          summary_path = output_dir / "real_source_readiness.json"
+          summary_path.write_text(
+              json.dumps(summary, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+
+          print("BEGIN_SOURCE_MANIFEST_JSON")
+          print(manifest_path.read_text(encoding="utf-8"), end="")
+          print("END_SOURCE_MANIFEST_JSON")
+          print("BEGIN_REAL_SOURCE_READINESS_JSON")
+          print(summary_path.read_text(encoding="utf-8"), end="")
+          print("END_REAL_SOURCE_READINESS_JSON")
+          PY
+
+      - name: Upload metadata-only readiness artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: feher-hare-real-source-prep-v2-${{ github.run_id }}
+          path: study/artifacts/real-source-prep
+          if-no-files-found: error
+          retention-days: 7
