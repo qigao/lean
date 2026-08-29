@@ -1,0 +1,640 @@
+{
+  "content_hash": "sha256:3609e980af172823cfef78290e7f2337fdb337d67f1f27641e17d473aeedd10d",
+  "files": [
+    {
+      "git_blob_sha": "66ccdd32d6a1787ccc9c7f8b6f5b6251a3f3c6a3",
+      "path": "results/magic_carpet/choices/03187_config.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "03187",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "5e976a0a481875e7b2b06f43a9d8b23ddfffdb95",
+      "path": "results/magic_carpet/choices/03187_game.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "03187",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "ae8d28f93c0f7955014574db49bffbd20fbd4c58",
+      "path": "results/magic_carpet/choices/04862_config.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "04862",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "0a46e9665cde43b3ca313537861c3f4882c31d03",
+      "path": "results/magic_carpet/choices/04862_game.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "04862",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "1fc96dc1d791ee7b68d02c99ce7a4c26711e6936",
+      "path": "results/magic_carpet/choices/04936_config.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "04936",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "5f4226c12fa22c856490169926033870da53874f",
+      "path": "results/magic_carpet/choices/04936_game.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "04936",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "66ccdd32d6a1787ccc9c7f8b6f5b6251a3f3c6a3",
+      "path": "results/magic_carpet/choices/04960_config.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "04960",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "b76381db2f8fe8e3f50915c61f3668a6fe48b2fd",
+      "path": "results/magic_carpet/choices/04960_game.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "04960",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "ae8d28f93c0f7955014574db49bffbd20fbd4c58",
+      "path": "results/magic_carpet/choices/09695_config.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "09695",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "0b664e3fa6085d595aaf39dc8aed1318cd3f82d8",
+      "path": "results/magic_carpet/choices/09695_game.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "09695",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "ae8d28f93c0f7955014574db49bffbd20fbd4c58",
+      "path": "results/magic_carpet/choices/10951_config.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "10951",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "204084572cc7063a2cd833b12104349b1d3bacb0",
+      "path": "results/magic_carpet/choices/10951_game.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "10951",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "ae8d28f93c0f7955014574db49bffbd20fbd4c58",
+      "path": "results/magic_carpet/choices/16691_config.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "16691",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "51b2b65d1c8d7c616fa70417b03ae17f5b2d459b",
+      "path": "results/magic_carpet/choices/16691_game.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "16691",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "a3ba18508e2209e87896cbaa9a18fb6eb1b578d9",
+      "path": "results/magic_carpet/choices/17946_config.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "17946",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "6a69a78fddf78885c4fb19881e93845b0a8a9576",
+      "path": "results/magic_carpet/choices/17946_game.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "17946",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "66ccdd32d6a1787ccc9c7f8b6f5b6251a3f3c6a3",
+      "path": "results/magic_carpet/choices/23849_config.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "23849",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "757b927c407438f9182258101dc1161f1234c38d",
+      "path": "results/magic_carpet/choices/23849_game.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "23849",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "66ccdd32d6a1787ccc9c7f8b6f5b6251a3f3c6a3",
+      "path": "results/magic_carpet/choices/33765_config.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "33765",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "fcd33bb72cb5e3a459ff411a5fa827cd489bfc2a",
+      "path": "results/magic_carpet/choices/33765_game.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "33765",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "1fc96dc1d791ee7b68d02c99ce7a4c26711e6936",
+      "path": "results/magic_carpet/choices/35102_config.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "35102",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "ff965bc000433258df98c0c6f773ab4b65f493e0",
+      "path": "results/magic_carpet/choices/35102_game.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "35102",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "66ccdd32d6a1787ccc9c7f8b6f5b6251a3f3c6a3",
+      "path": "results/magic_carpet/choices/46080_config.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "46080",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "877b4c0bb00525558a7249dae238841e99c9398b",
+      "path": "results/magic_carpet/choices/46080_game.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "46080",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "ae8d28f93c0f7955014574db49bffbd20fbd4c58",
+      "path": "results/magic_carpet/choices/53366_config.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "53366",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "a325c051aac37728b1cdf71a533364e7d2e54648",
+      "path": "results/magic_carpet/choices/53366_game.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "53366",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "1fc96dc1d791ee7b68d02c99ce7a4c26711e6936",
+      "path": "results/magic_carpet/choices/55027_config.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "55027",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "438c1e21bdd669f8fc4c8a2816129ecfb9d501c0",
+      "path": "results/magic_carpet/choices/55027_game.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "55027",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "ae8d28f93c0f7955014574db49bffbd20fbd4c58",
+      "path": "results/magic_carpet/choices/57653_config.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "57653",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "dc71a7c903fc9dd6c981e1ca8fe8576e49f9410a",
+      "path": "results/magic_carpet/choices/57653_game.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "57653",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "ae8d28f93c0f7955014574db49bffbd20fbd4c58",
+      "path": "results/magic_carpet/choices/61120_config.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "61120",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "c24775b75e813860778559cd28aa0c224bbdc68b",
+      "path": "results/magic_carpet/choices/61120_game.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "61120",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "a3ba18508e2209e87896cbaa9a18fb6eb1b578d9",
+      "path": "results/magic_carpet/choices/63520_config.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "63520",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "cf6b79dca2c50a5a5052a5c062660b3ba4172312",
+      "path": "results/magic_carpet/choices/63520_game.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "63520",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "ae8d28f93c0f7955014574db49bffbd20fbd4c58",
+      "path": "results/magic_carpet/choices/68012_config.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "68012",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "ab37bf69ec26d643c5ea48dca912f49db4f15b47",
+      "path": "results/magic_carpet/choices/68012_game.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "68012",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "66ccdd32d6a1787ccc9c7f8b6f5b6251a3f3c6a3",
+      "path": "results/magic_carpet/choices/75759_config.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "75759",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "2a5027c1973d7940c170a8906d56f7a4a98a13d2",
+      "path": "results/magic_carpet/choices/75759_game.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "75759",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "ae8d28f93c0f7955014574db49bffbd20fbd4c58",
+      "path": "results/magic_carpet/choices/88310_config.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "88310",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "ac6b4e0e9a5c6d0cedf796753a368cb0f8106312",
+      "path": "results/magic_carpet/choices/88310_game.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "88310",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "a3ba18508e2209e87896cbaa9a18fb6eb1b578d9",
+      "path": "results/magic_carpet/choices/92975_config.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "92975",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "f52a468d87d9fba8521bdbbab3e6fe9e4974598f",
+      "path": "results/magic_carpet/choices/92975_game.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "92975",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "1fc96dc1d791ee7b68d02c99ce7a4c26711e6936",
+      "path": "results/magic_carpet/choices/97543_config.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "97543",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "13240cd7d24b1ddfcd5ecd480ad23bcb75a78e14",
+      "path": "results/magic_carpet/choices/97543_game.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "97543",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "1fc96dc1d791ee7b68d02c99ce7a4c26711e6936",
+      "path": "results/magic_carpet/choices/99461_config.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "99461",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "1be6219c0388e3c54510d003b786fd9d23804666",
+      "path": "results/magic_carpet/choices/99461_game.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "99461",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "1fc96dc1d791ee7b68d02c99ce7a4c26711e6936",
+      "path": "results/magic_carpet/choices/99845_config.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "99845",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "409934039a970da924008e9d97f71952e043df4e",
+      "path": "results/magic_carpet/choices/99845_game.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "99845",
+      "task_variant": "magic_carpet"
+    },
+    {
+      "git_blob_sha": "64a3269c90b0b9c920cdec0c16694b695d350827",
+      "path": "results/spaceship/choices/01968.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "01968",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "9b786d9b19bebc8b2cf781f674215969167f4738",
+      "path": "results/spaceship/choices/01968_info.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "01968",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "f1ff7d12513f0c002cbe34d97dd4bb1ca884e4e8",
+      "path": "results/spaceship/choices/05136.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "05136",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "9d4b9e92c46337fc51549a51e7d3d0209842c38e",
+      "path": "results/spaceship/choices/05136_info.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "05136",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "41b5c30bec28d4f61dc044c6d9ad11492b6f70a6",
+      "path": "results/spaceship/choices/12251.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "12251",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "f02b777ddeacfd418454be4218a45ef88cb0759c",
+      "path": "results/spaceship/choices/12251_info.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "12251",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "2dfd936743788599914b88bb53891a83dcb700c9",
+      "path": "results/spaceship/choices/13442.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "13442",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "8a71ed37680d7a23b2d40d94fe326150da5279ee",
+      "path": "results/spaceship/choices/13442_info.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "13442",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "e04c08ba933ddd3be0cab0c1b7a0e3c806cb7634",
+      "path": "results/spaceship/choices/14972.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "14972",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "f73c9f0c98a1e9b0c1f63cbbb9931421b6a6ef28",
+      "path": "results/spaceship/choices/14972_info.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "14972",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "7d0a1ab1899beaf5d3a16859640f3f2e7e19c8e7",
+      "path": "results/spaceship/choices/19470.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "19470",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "eb82c26fbb05ca2a87d247c862e6fc2cecb2a23c",
+      "path": "results/spaceship/choices/19470_info.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "19470",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "43caa95698af7f87bf4c9423a9d6a8750b4b1995",
+      "path": "results/spaceship/choices/21541.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "21541",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "8110c6b204337ae24f595d7c2f097c717c45ddd9",
+      "path": "results/spaceship/choices/21541_info.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "21541",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "a600bb1f682e1257d085336f7908f53633b23648",
+      "path": "results/spaceship/choices/28896.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "28896",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "2a9c129aec0433b141f613f973509e39a9180267",
+      "path": "results/spaceship/choices/28896_info.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "28896",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "ec8f783d4792586247183aa7cef3a3559344b4a6",
+      "path": "results/spaceship/choices/36455.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "36455",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "98994a468be640c6bf02d4b5b85186e617bfc07e",
+      "path": "results/spaceship/choices/36455_info.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "36455",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "3db275c8d1fa6ec6ef27c64a1ff20b5b9df5c345",
+      "path": "results/spaceship/choices/36495.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "36495",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "cba7126ca6609d8eb150382d90557cd2af388fbb",
+      "path": "results/spaceship/choices/36495_info.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "36495",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "683ba822801f5a3fbddbfa4a0c04fac70924afdc",
+      "path": "results/spaceship/choices/36848.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "36848",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "6ed1009155b6852f403366c93af9e581d92e40a1",
+      "path": "results/spaceship/choices/36848_info.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "36848",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "82779d0d82afa594f5a2659c8a2ae2a6e07f109c",
+      "path": "results/spaceship/choices/45878.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "45878",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "dbf7c1827d59e0ea71685c0ec09a36564e993556",
+      "path": "results/spaceship/choices/45878_info.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "45878",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "fa8d38df70d2c737037f7692c532a56b89b209bc",
+      "path": "results/spaceship/choices/62517.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "62517",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "6049c7d8428deaea8f9300af30a54ef53d5cfd14",
+      "path": "results/spaceship/choices/62517_info.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "62517",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "64cbea0e191d1b0cc7ba91f42998c2103b6cc665",
+      "path": "results/spaceship/choices/65532.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "65532",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "83e976710ebd1677f3282063fef8287fcda0622c",
+      "path": "results/spaceship/choices/65532_info.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "65532",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "6b60dd40d041946a7883f77f238e16b0fe09237d",
+      "path": "results/spaceship/choices/67722.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "67722",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "bcb3ff530dc4a62ed599a6d03fdc4c262fc1a525",
+      "path": "results/spaceship/choices/67722_info.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "67722",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "fd67c1751b951bd92979ab987bd1aa4ab0bfb0c8",
+      "path": "results/spaceship/choices/73081.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "73081",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "8bb98b49a9a49762e17f61fa1e49d4c3f7b6b496",
+      "path": "results/spaceship/choices/73081_info.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "73081",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "479dee1572796eeb13893c7d3096aa9debf6d15f",
+      "path": "results/spaceship/choices/74476.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "74476",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "d71dc936d07a0b07e138695f2e9b1c2288cd5563",
+      "path": "results/spaceship/choices/74476_info.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "74476",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "724ec185ab7d86792cf200dc74013e40b4b71143",
+      "path": "results/spaceship/choices/78906.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "78906",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "f106cb0006b9caaceceb85062c625e5fdefaeb81",
+      "path": "results/spaceship/choices/78906_info.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "78906",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "3eaf8fbeef8a6e7fb584d232880d9d968e964134",
+      "path": "results/spaceship/choices/80449.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "80449",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "d92e601f94cee0a7a04ba611c53bf9ff0ffda9cd",
+      "path": "results/spaceship/choices/80449_info.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "80449",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "482fe5ec71b60b2405b58f9a23efde4d6797315b",
+      "path": "results/spaceship/choices/81838.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "81838",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "9f6c8427b94de8ef75a6317f163a1942420ded77",
+      "path": "results/spaceship/choices/81838_info.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "81838",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "9ac7ab68cf4edbfb069a76d374080269d29d5a16",
+      "path": "results/spaceship/choices/99686.csv",
+      "purpose": "scientific_evidence",
+      "source_participant_id": "99686",
+      "task_variant": "spaceship"
+    },
+    {
+      "git_blob_sha": "0e18ddf06844d47fd4914bc2d810acbbf32920d2",
+      "path": "results/spaceship/choices/99686_info.txt",
+      "purpose": "transform_metadata",
+      "source_participant_id": "99686",
+      "task_variant": "spaceship"
+    }
+  ],
+  "license_reference": "LICENSE.txt",
+  "name": "feher-hare-two-stage-v1",
+  "repository": "carolfs/muddled_models",
+  "revision": "4567763780a2c596fd6510af720ec468a8214a8f",
+  "version": "1"
+}
