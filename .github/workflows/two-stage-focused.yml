@@ -1,9 +1,7 @@
 name: two-stage-focused
 
 on:
-  push:
-    branches:
-      - manual/real-source-prep-v2
+  workflow_dispatch:
 
 permissions:
   contents: read
