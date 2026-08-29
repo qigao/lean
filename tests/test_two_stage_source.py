@@ -3,10 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from tests.two_stage_test_support import (
     build_synthetic_two_stage_checkout,
     git_blob_sha,
+    run_git,
 )
 
 _SOURCE_IMPORT_ERROR: Exception | None = None
@@ -18,6 +20,15 @@ try:
     )
 except Exception as error:
     _SOURCE_IMPORT_ERROR = error
+
+_FREEZER_IMPORT_ERROR: Exception | None = None
+try:
+    import narrative_dynamics.studies.two_stage_source as two_stage_source
+    from narrative_dynamics.studies.two_stage_source import (
+        freeze_feher_hare_v1_source_manifest,
+    )
+except Exception as error:
+    _FREEZER_IMPORT_ERROR = error
 
 
 def _files(root: Path):
@@ -55,6 +66,12 @@ class TwoStageSourceTests(unittest.TestCase):
         self.assertIsNone(
             _SOURCE_IMPORT_ERROR,
             f"two-stage source boundary is missing: {_SOURCE_IMPORT_ERROR}",
+        )
+
+    def require_freezer(self) -> None:
+        self.assertIsNone(
+            _FREEZER_IMPORT_ERROR,
+            f"Feher/Hare source manifest freezer is missing: {_FREEZER_IMPORT_ERROR}",
         )
 
     def _manifest(self, root: Path, revision: str, *, reverse: bool = False):
@@ -168,6 +185,45 @@ class TwoStageSourceTests(unittest.TestCase):
             snapshot = verify_two_stage_snapshot(root, self._manifest(root, revision))
             self.assertEqual(snapshot.repository_revision, revision)
             self.assertEqual(snapshot.manifest_hash, self._manifest(root, revision).content_hash)
+
+    def test_feher_hare_manifest_freezer_requires_pinned_upstream_revision(self):
+        self.require_freezer()
+        with tempfile.TemporaryDirectory() as tmp:
+            root, _ = build_synthetic_two_stage_checkout(Path(tmp), magic_n=2, spaceship_n=2)
+            with self.assertRaises(ValueError):
+                freeze_feher_hare_v1_source_manifest(root)
+
+    def test_feher_hare_manifest_freezer_selects_only_main_and_matching_metadata(self):
+        self.require_freezer()
+        with tempfile.TemporaryDirectory() as tmp:
+            root, _ = build_synthetic_two_stage_checkout(Path(tmp), magic_n=2, spaceship_n=2)
+            orphan = root / "results" / "magic_carpet" / "choices" / "orphan_config.txt"
+            orphan.write_text("metadata without a main task file\n", encoding="utf-8")
+            run_git(root, "add", ".")
+            run_git(root, "commit", "-m", "add orphan metadata")
+            revision = run_git(root, "rev-parse", "HEAD")
+
+            with patch.object(two_stage_source, "_FEHER_HARE_UPSTREAM_REVISION", revision):
+                manifest = freeze_feher_hare_v1_source_manifest(root)
+
+            self.assertEqual(manifest.revision, revision)
+            self.assertEqual(manifest.repository, "carolfs/muddled_models")
+            self.assertEqual(len(manifest.files), 8)
+            self.assertNotIn(
+                "results/magic_carpet/choices/orphan_config.txt",
+                {item.path for item in manifest.files},
+            )
+            self.assertFalse(any(item.path.endswith("_practice.csv") for item in manifest.files))
+            evidence = [item for item in manifest.files if item.purpose == "scientific_evidence"]
+            metadata = [item for item in manifest.files if item.purpose == "transform_metadata"]
+            self.assertEqual(len(evidence), 4)
+            self.assertEqual(len(metadata), 4)
+            self.assertEqual(
+                {(item.task_variant, item.source_participant_id) for item in evidence},
+                {(item.task_variant, item.source_participant_id) for item in metadata},
+            )
+            snapshot = verify_two_stage_snapshot(root, manifest)
+            self.assertEqual(snapshot.repository_revision, revision)
 
 
 if __name__ == "__main__":
