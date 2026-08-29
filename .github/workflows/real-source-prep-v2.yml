@@ -17,7 +17,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: qigao/lean
-          ref: 607059b23323e6ffde7d5ed6590e3652c0768868
+          ref: 111b277114356cdaa3cb16a8ddc772bf26c47b79
           path: study
           persist-credentials: false
 
@@ -50,7 +50,7 @@ jobs:
               write_two_stage_source_manifest,
           )
 
-          STUDY_REVISION = "607059b23323e6ffde7d5ed6590e3652c0768868"
+          STUDY_REVISION = "111b277114356cdaa3cb16a8ddc772bf26c47b79"
           UPSTREAM_REVISION = "4567763780a2c596fd6510af720ec468a8214a8f"
 
           study_root = Path.cwd().resolve()
