@@ -40,6 +40,13 @@ from narrative_dynamics.external_validation import (
     evaluate_external_final,
     preflight_external_releases,
 )
+from narrative_dynamics.external_prediction import (
+    ExternalFinalPredictionArtifact,
+    ExternalModelPrediction,
+    ExternalSeedPrediction,
+    predict_external_final_once,
+    score_external_prediction_artifact,
+)
 from narrative_dynamics.losses import (
     DEFAULT_METRIC_LOSS,
     CategoricalBrierLoss,
@@ -151,10 +158,13 @@ __all__ = [
     "ExternalConstraintStatus",
     "ExternalEvidenceDeclaration",
     "ExternalFinalEvaluation",
+    "ExternalFinalPredictionArtifact",
+    "ExternalModelPrediction",
     "ExternalPairwiseSeparationFinding",
     "ExternalPredictiveAdequacyFinding",
     "ExternalReleasePreflight",
     "ExternalScoreRole",
+    "ExternalSeedPrediction",
     "ExternalStratum",
     "ExternalStratumScore",
     "ExternalValidationConstraintError",
@@ -225,7 +235,9 @@ __all__ = [
     "load_observation_dataset",
     "load_reference_suite",
     "metric_loss_identity",
+    "predict_external_final_once",
     "preflight_external_releases",
+    "score_external_prediction_artifact",
     "stable_content_hash",
     "validate_schema_value",
     "verify_protocol_release",
