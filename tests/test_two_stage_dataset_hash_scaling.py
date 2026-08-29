@@ -25,8 +25,8 @@ class TwoStageDatasetHashScalingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root, revision = build_synthetic_two_stage_checkout(
                 Path(tmp),
-                magic_n=3,
-                spaceship_n=3,
+                magic_n=5,
+                spaceship_n=5,
             )
             manifest = TwoStageSourceManifest(
                 name="synthetic-two-stage-source",
