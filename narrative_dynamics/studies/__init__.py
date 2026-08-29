@@ -64,3 +64,9 @@ from .two_stage_dataset_builder import (
 
 _two_stage_transform.build_two_stage_observation_dataset = _hash_cached_dataset_builder
 _feher_hare_two_stage_v1.build_two_stage_observation_dataset = _hash_cached_dataset_builder
+
+# Candidate-parallel V2 keeps FINAL outside the executor and exports only the
+# explicit TRAIN/SELECTION freeze entry point from the studies package.
+from .feher_hare_two_stage_parallel import fit_and_freeze_feher_hare_models_parallel
+
+__all__.append("fit_and_freeze_feher_hare_models_parallel")
