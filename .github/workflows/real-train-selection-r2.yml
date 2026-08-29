@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   fit-and-freeze:
-    if: github.event.head_commit.message == 'research: run empirical revision 2 train selection'
+    if: "${{ github.event.head_commit.message == 'research: run empirical revision 2 train selection' }}"
     name: Empirical Revision 2 Brier TRAIN + SELECTION
     runs-on: ubuntu-24.04
     timeout-minutes: 360
