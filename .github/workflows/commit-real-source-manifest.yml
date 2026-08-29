@@ -1,0 +1,110 @@
+name: commit-real-source-manifest
+
+on:
+  push:
+    branches:
+      - manual/commit-real-source-manifest
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  commit-manifest:
+    name: Commit verified real source manifest
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact research branch
+        uses: actions/checkout@v4
+        with:
+          repository: qigao/lean
+          ref: work/real-external-validation-two-stage-v1
+          fetch-depth: 1
+
+      - name: Require frozen implementation head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "97dd0c7a7a9acbe50a491f01b7342172b7a6271c"
+
+      - name: Download verified metadata-only readiness artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: feher-hare-real-source-prep-v2-33236374158
+          path: artifact
+          repository: qigao/lean
+          run-id: 33236374158
+          github-token: ${{ github.token }}
+
+      - name: Validate and stage manifest only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          artifact = Path("artifact")
+          manifest_path = artifact / "feher_hare_two_stage_v1_source_manifest.json"
+          readiness_path = artifact / "real_source_readiness.json"
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
+
+          expected_manifest_hash = "sha256:3609e980af172823cfef78290e7f2337fdb337d67f1f27641e17d473aeedd10d"
+          expected_study = "97dd0c7a7a9acbe50a491f01b7342172b7a6271c"
+          expected_upstream = "4567763780a2c596fd6510af720ec468a8214a8f"
+          allowed_top = {"content_hash", "files", "license_reference", "name", "repository", "revision", "version"}
+          allowed_file = {"git_blob_sha", "path", "purpose", "source_participant_id", "task_variant"}
+
+          if set(manifest) != allowed_top:
+              raise RuntimeError("source manifest top-level schema drifted")
+          if manifest["content_hash"] != expected_manifest_hash:
+              raise RuntimeError("source manifest hash drifted")
+          if manifest["revision"] != expected_upstream:
+              raise RuntimeError("source manifest upstream revision drifted")
+          if len(manifest["files"]) != 90:
+              raise RuntimeError("source manifest must bind exactly 90 files")
+          if any(set(row) != allowed_file for row in manifest["files"]):
+              raise RuntimeError("source manifest file schema drifted")
+          if any("practice" in row["path"].lower() or "question" in row["path"].lower() for row in manifest["files"]):
+              raise RuntimeError("practice/questionnaire path entered source manifest")
+          if sum(row["purpose"] == "scientific_evidence" for row in manifest["files"]) != 45:
+              raise RuntimeError("scientific evidence file count drifted")
+          if sum(row["purpose"] == "transform_metadata" for row in manifest["files"]) != 45:
+              raise RuntimeError("transform metadata file count drifted")
+
+          expected_ready = {
+              "study_repository_revision": expected_study,
+              "upstream_revision": expected_upstream,
+              "source_manifest_hash": expected_manifest_hash,
+              "verified_file_count": 90,
+              "retained_trial_count": 10074,
+              "slow_trial_count": 133,
+              "structural_exclusion_count": 0,
+              "final_model_execution": False,
+              "raw_human_rows_in_artifact": False,
+          }
+          for key, value in expected_ready.items():
+              if readiness.get(key) != value:
+                  raise RuntimeError(f"real source readiness drifted at {key}")
+          if readiness.get("eligible_participants_by_task") != {"magic_carpet": 24, "spaceship": 21}:
+              raise RuntimeError("eligible participant inventory drifted")
+          if readiness.get("partition_totals") != {"train": 27, "selection_validation": 9, "final_test": 9}:
+              raise RuntimeError("participant split totals drifted")
+
+          destination = Path("narrative_dynamics/studies/feher_hare_two_stage_v1_source_manifest.json")
+          destination.write_bytes(manifest_path.read_bytes())
+          PY
+
+          git add narrative_dynamics/studies/feher_hare_two_stage_v1_source_manifest.json
+          staged="$(git diff --cached --name-only)"
+          test "$staged" = "narrative_dynamics/studies/feher_hare_two_stage_v1_source_manifest.json"
+
+      - name: Commit manifest-only freeze
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Qi Gao"
+          git config user.email "qi.gao2012@gmail.com"
+          git commit -m "research: freeze feher hare two-stage source manifest"
+          git push origin HEAD:work/real-external-validation-two-stage-v1
