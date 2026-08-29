@@ -99,7 +99,7 @@ def evaluate_selection_shard_task(task: SelectionShardTask):
         suite=suite,
         extractor=value_metrics,
         loss=DEFAULT_METRIC_LOSS,
-    )
+    ).to_payload()
 
 
 def _reference():
@@ -139,7 +139,11 @@ def _assemble_with_executor(executor):
         SelectionShardTask(parameters=parameters)
         for parameters in accepted.parameters
     )
-    shards = executor.execute(evaluate_selection_shard_task, tasks)
+    payloads = executor.execute(evaluate_selection_shard_task, tasks)
+    shards = tuple(
+        SelectionCandidateShard.from_payload(payload)
+        for payload in payloads
+    )
     return assemble_selection_validation_report(
         model=model,
         accepted_parameters=accepted,

@@ -61,7 +61,7 @@ def evaluate_training_shard_task(task: TrainingShardTask):
         simulation_seeds=task.simulation_seeds,
         extractor=prison_initial_action_metrics,
         loss=brier_loss(),
-    )
+    ).to_payload()
 
 
 def _reference():
@@ -102,7 +102,11 @@ def _assemble_with_executor(executor):
         TrainingShardTask(parameters=parameters, simulation_seeds=SEEDS)
         for parameters in CANDIDATES
     )
-    shards = executor.execute(evaluate_training_shard_task, tasks)
+    payloads = executor.execute(evaluate_training_shard_task, tasks)
+    shards = tuple(
+        TrainingCandidateShard.from_payload(payload)
+        for payload in payloads
+    )
     return assemble_training_fit_report(
         model=model,
         target_report=target_report,

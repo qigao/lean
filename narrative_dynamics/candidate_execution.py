@@ -3,7 +3,9 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
-from typing import TypeVar
+import multiprocessing
+import os
+from typing import Protocol, TypeVar
 
 
 _Task = TypeVar("_Task")
@@ -12,6 +14,19 @@ _Result = TypeVar("_Result")
 
 class CandidateExecutionError(RuntimeError):
     """One candidate executor invocation failed before producing a complete result."""
+
+
+class CandidateExecutor(Protocol):
+    """Operational scheduler for independent candidate tasks."""
+
+    def execute(
+        self,
+        function: Callable[[_Task], _Result],
+        tasks: Iterable[_Task],
+        *,
+        initializer: Callable[..., object] | None = None,
+        initargs: Iterable[object] = (),
+    ) -> tuple[_Result, ...]: ...
 
 
 def _validate_initializer(
@@ -72,11 +87,13 @@ class SequentialCandidateExecutor:
 
 @dataclass(frozen=True)
 class ProcessCandidateExecutor:
-    """Bounded process executor that preserves the declared candidate order."""
+    """Bounded spawn-process executor preserving declared candidate order."""
 
-    max_workers: int
+    max_workers: int | None = None
 
     def __post_init__(self) -> None:
+        if self.max_workers is None:
+            return
         if (
             not isinstance(self.max_workers, int)
             or isinstance(self.max_workers, bool)
@@ -95,17 +112,39 @@ class ProcessCandidateExecutor:
         if not callable(function):
             raise TypeError("candidate executor function must be callable")
         task_values = tuple(tasks)
+        if not task_values:
+            return ()
         selected_initializer, initializer_args = _validate_initializer(
             initializer,
             initargs,
         )
+        available_workers = os.cpu_count() or 1
+        requested_workers = (
+            available_workers if self.max_workers is None else self.max_workers
+        )
+        effective_workers = min(
+            requested_workers,
+            available_workers,
+            len(task_values),
+        )
+        context = multiprocessing.get_context("spawn")
         try:
             with ProcessPoolExecutor(
-                max_workers=self.max_workers,
+                max_workers=effective_workers,
+                mp_context=context,
                 initializer=selected_initializer,
                 initargs=initializer_args,
             ) as executor:
-                return tuple(executor.map(function, task_values))
+                futures = tuple(
+                    executor.submit(function, task)
+                    for task in task_values
+                )
+                try:
+                    return tuple(future.result() for future in futures)
+                except Exception:
+                    for future in futures:
+                        future.cancel()
+                    raise
         except Exception as error:
             raise CandidateExecutionError(
                 "process candidate execution failed"
@@ -114,6 +153,7 @@ class ProcessCandidateExecutor:
 
 __all__ = [
     "CandidateExecutionError",
+    "CandidateExecutor",
     "ProcessCandidateExecutor",
     "SequentialCandidateExecutor",
 ]
