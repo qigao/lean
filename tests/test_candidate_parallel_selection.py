@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import unittest
 
 from narrative_dynamics.candidate_execution import (
@@ -203,6 +203,81 @@ class CandidateParallelSelectionContractTests(unittest.TestCase):
             assemble(shards[:-1])
         with self.assertRaises(ValueError):
             assemble(shards + (shards[0],))
+
+    def test_assembly_rejects_forged_selection_shard_fields_and_validation_lineage(self):
+        suite, accepted, model, shards = _shards()
+        first = shards[0]
+        first_case = first.cases[0]
+        forged_hash = stable_content_hash({"forged": "selection-shard"})
+        forged_run_hash = stable_content_hash({"forged": "selection-run"})
+
+        def assemble(values):
+            return assemble_selection_validation_report(
+                model=model,
+                accepted_parameters=accepted,
+                suite=suite,
+                extractor=value_metrics,
+                loss=DEFAULT_METRIC_LOSS,
+                shards=values,
+            )
+
+        mutations = (
+            (
+                "accepted-set",
+                lambda: replace(first, accepted_parameter_set_hash=forged_hash),
+            ),
+            (
+                "suite-hash",
+                lambda: replace(first, suite_hash=forged_hash),
+            ),
+            (
+                "suite-name",
+                lambda: replace(first, suite_name="forged-selection-suite"),
+            ),
+            (
+                "repository-identity",
+                lambda: replace(
+                    first,
+                    repository_identity={"forged": "repository"},
+                ),
+            ),
+            (
+                "model-identity",
+                lambda: replace(first, model_identity={"forged": "model"}),
+            ),
+            (
+                "parameters",
+                lambda: replace(first, parameters=(("level", 9.0),)),
+            ),
+            (
+                "case-coverage",
+                lambda: replace(
+                    first,
+                    cases=(replace(first_case, name="forged-case"),) + first.cases[1:],
+                ),
+            ),
+            (
+                "validation-manifest-lineage",
+                lambda: replace(
+                    first,
+                    cases=(
+                        replace(
+                            first_case,
+                            run_manifest_hashes=(
+                                forged_run_hash,
+                                first_case.run_manifest_hashes[1],
+                            ),
+                        ),
+                    )
+                    + first.cases[1:],
+                ),
+            ),
+        )
+        for label, mutate in mutations:
+            with self.subTest(forgery=label):
+                with self.assertRaises(ValueError):
+                    forged = mutate()
+                    assemble((forged,) + shards[1:])
 
     def test_executor_backends_preserve_exact_selection_report(self):
         reference = _reference()

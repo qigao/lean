@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import unittest
 
 from narrative_dynamics.adapters.prison_metrics import prison_initial_action_metrics
@@ -9,6 +9,7 @@ from narrative_dynamics.candidate_execution import (
     ProcessCandidateExecutor,
     SequentialCandidateExecutor,
 )
+from narrative_dynamics.contracts import stable_content_hash
 from narrative_dynamics.observations.dataset import ObservationPartitionRole
 from narrative_dynamics.simulation import SimulationRunner
 from tests.test_observational_training_fit import (
@@ -180,6 +181,85 @@ class CandidateParallelTrainingContractTests(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             assemble(shards + (undeclared,))
+
+    def test_assembly_rejects_forged_training_shard_fields_and_lineage(self):
+        target_report, model, shards = _shards()
+        first = shards[0]
+        first_case = first.cases[0]
+        forged_hash = stable_content_hash({"forged": "training-shard"})
+
+        def assemble(values):
+            return assemble_training_fit_report(
+                model=model,
+                target_report=target_report,
+                parameter_candidates=CANDIDATES,
+                simulation_seeds=SEEDS,
+                extractor=prison_initial_action_metrics,
+                loss=brier_loss(),
+                shards=values,
+            )
+
+        mutations = (
+            (
+                "target-report",
+                lambda: replace(first, target_report_hash=forged_hash),
+            ),
+            (
+                "model-identity",
+                lambda: replace(first, model_identity={"forged": "model"}),
+            ),
+            (
+                "repository-identity",
+                lambda: replace(
+                    first,
+                    repository_identity={"forged": "repository"},
+                ),
+            ),
+            (
+                "seed-plan",
+                lambda: replace(first, simulation_seeds=(101, 999)),
+            ),
+            (
+                "metric-identity",
+                lambda: replace(first, metric_identity={"forged": "metric"}),
+            ),
+            (
+                "loss-identity",
+                lambda: replace(first, loss_identity={"forged": "loss"}),
+            ),
+            (
+                "case-coverage",
+                lambda: replace(
+                    first,
+                    cases=(replace(first_case, name="forged-case"),) + first.cases[1:],
+                ),
+            ),
+            (
+                "parameters",
+                lambda: replace(first, parameters=(("p", 0.9),)),
+            ),
+            (
+                "run-manifest-lineage",
+                lambda: replace(
+                    first,
+                    cases=(
+                        replace(
+                            first_case,
+                            run_manifest_hashes=(
+                                first_case.run_manifest_hashes[0],
+                                first_case.run_manifest_hashes[0],
+                            ),
+                        ),
+                    )
+                    + first.cases[1:],
+                ),
+            ),
+        )
+        for label, mutate in mutations:
+            with self.subTest(forgery=label):
+                with self.assertRaises(ValueError):
+                    forged = mutate()
+                    assemble((forged,) + shards[1:])
 
     def test_executor_backends_preserve_exact_training_report(self):
         reference = _reference()

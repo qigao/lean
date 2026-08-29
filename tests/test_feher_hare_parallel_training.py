@@ -1,15 +1,19 @@
 from __future__ import annotations
 
-from dataclasses import fields
+from dataclasses import fields, replace
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from narrative_dynamics.attestation import RepositoryIdentity
 from narrative_dynamics.candidate_execution import (
+    CandidateExecutionError,
     ProcessCandidateExecutor,
     SequentialCandidateExecutor,
 )
+from narrative_dynamics.observations.selection_shards import SelectionCandidateShard
+from narrative_dynamics.observations.training_shards import TrainingCandidateShard
 from narrative_dynamics.simulation import SimulationRunner
 from narrative_dynamics.studies import feher_hare_two_stage_v1 as study
 from narrative_dynamics.studies.two_stage_source import TwoStageSourceManifest
@@ -19,6 +23,7 @@ from tests.two_stage_test_support import build_synthetic_two_stage_checkout
 
 _PARALLEL_IMPORT_ERROR: Exception | None = None
 try:
+    import narrative_dynamics.studies.feher_hare_two_stage_parallel as parallel_study
     from narrative_dynamics.studies.feher_hare_two_stage_parallel import (
         FeherHareCandidateTask,
         fit_and_freeze_feher_hare_models_parallel,
@@ -44,6 +49,62 @@ class AuditingCandidateExecutor:
             self.requests.append((phase, seeds))
             results.append(function(task))
         return tuple(results)
+
+
+class RepositoryAuditingProcessExecutor:
+    def __init__(self, *, max_workers: int = 2) -> None:
+        self.delegate = ProcessCandidateExecutor(max_workers=max_workers)
+        self.repository_identities: list[object] = []
+
+    def execute(self, function, tasks, *, initializer=None, initargs=()):
+        payloads = self.delegate.execute(
+            function,
+            tasks,
+            initializer=initializer,
+            initargs=initargs,
+        )
+        self.repository_identities.extend(
+            payload["repository_identity"] for payload in payloads
+        )
+        return payloads
+
+
+class ForgingRepositoryCandidateExecutor:
+    def __init__(self, repository_identity: RepositoryIdentity) -> None:
+        self.repository_identity = repository_identity.manifest_identity()
+
+    def execute(self, function, tasks, *, initializer=None, initargs=()):
+        if initializer is not None:
+            initializer(*tuple(initargs))
+        forged_payloads = []
+        for task in tuple(tasks):
+            payload = function(task)
+            if "target_report_hash" in payload:
+                shard = TrainingCandidateShard.from_payload(payload)
+            elif "accepted_parameter_set_hash" in payload:
+                shard = SelectionCandidateShard.from_payload(payload)
+            else:
+                raise AssertionError("unexpected Feher/Hare candidate shard payload")
+            forged_payloads.append(
+                replace(
+                    shard,
+                    repository_identity=self.repository_identity,
+                ).to_payload()
+            )
+        return tuple(forged_payloads)
+
+
+class InjectingFailureProcessExecutor:
+    def __init__(self) -> None:
+        self.delegate = ProcessCandidateExecutor(max_workers=2)
+
+    def execute(self, function, tasks, *, initializer=None, initargs=()):
+        return self.delegate.execute(
+            function,
+            (None,) + tuple(tasks),
+            initializer=initializer,
+            initargs=initargs,
+        )
 
 
 def _fixture(tmp: str):
@@ -181,14 +242,54 @@ class FeherHareParallelTrainingContractTests(unittest.TestCase):
         self.assertEqual(selection_seed_set, {201, 202})
         self.assertTrue({301, 302}.isdisjoint(all_requested_seeds))
 
-    def test_spawn_process_wrapper_matches_exact_reference(self):
+    def test_spawn_process_wrapper_matches_exact_reference_and_repository_identity(self):
+        executor = RepositoryAuditingProcessExecutor(max_workers=2)
         parallel = fit_and_freeze_feher_hare_models_parallel(
             root=self.root,
             manifest=self.manifest,
             repository_identity=self.identity,
-            executor=ProcessCandidateExecutor(max_workers=2),
+            executor=executor,
         )
         _assert_exact_freeze(self, parallel, self.reference)
+        self.assertTrue(executor.repository_identities)
+        self.assertTrue(
+            all(
+                identity == self.identity.manifest_identity()
+                for identity in executor.repository_identities
+            )
+        )
+
+    def test_worker_failure_is_atomic_and_never_assembles_partial_training(self):
+        with patch.object(
+            parallel_study,
+            "assemble_training_fit_report",
+            wraps=parallel_study.assemble_training_fit_report,
+        ) as assemble_training:
+            with self.assertRaises(CandidateExecutionError):
+                fit_and_freeze_feher_hare_models_parallel(
+                    root=self.root,
+                    manifest=self.manifest,
+                    repository_identity=self.identity,
+                    executor=InjectingFailureProcessExecutor(),
+                )
+            assemble_training.assert_not_called()
+
+    def test_parent_rejects_consistently_forged_worker_repository_identity(self):
+        forged_identity = RepositoryIdentity(
+            provider="test",
+            repository="attacker/forged",
+            checkout_commit="b" * 40,
+            source_commit="b" * 40,
+            ref="forged",
+            dirty=False,
+        )
+        with self.assertRaisesRegex(ValueError, "repository identity"):
+            fit_and_freeze_feher_hare_models_parallel(
+                root=self.root,
+                manifest=self.manifest,
+                repository_identity=self.identity,
+                executor=ForgingRepositoryCandidateExecutor(forged_identity),
+            )
 
 
 if __name__ == "__main__":
