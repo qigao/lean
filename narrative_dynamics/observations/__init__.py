@@ -48,6 +48,12 @@ from .training import (
     TrainingFitReport,
     fit_training_target_grid,
 )
+from .training_shards import (
+    TrainingCandidateShard,
+    TrainingShardCase,
+    assemble_training_fit_report,
+    evaluate_training_candidate,
+)
 
 __all__ = [
     "OBSERVATION_DATASET_SCHEMA_VERSION",
@@ -76,13 +82,17 @@ __all__ = [
     "ReleasedModelComparisonReport",
     "TargetConstructionReport",
     "TrainingCandidateFit",
+    "TrainingCandidateShard",
     "TrainingCaseFit",
     "TrainingFitReport",
+    "TrainingShardCase",
     "VerifiedProtocolRelease",
     "WitnessReceipt",
+    "assemble_training_fit_report",
     "compare_registered_models",
     "compare_released_models",
     "construct_categorical_targets",
+    "evaluate_training_candidate",
     "fit_training_target_grid",
     "load_observation_dataset",
     "verify_protocol_release",
