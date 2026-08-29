@@ -14,6 +14,11 @@ from narrative_dynamics.contracts import stable_content_hash
 _TASK_VARIANTS = frozenset({"magic_carpet", "spaceship"})
 _PURPOSES = frozenset({"scientific_evidence", "transform_metadata"})
 _SHA1_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+_FEHER_HARE_UPSTREAM_REPOSITORY = "carolfs/muddled_models"
+_FEHER_HARE_UPSTREAM_REVISION = "4567763780a2c596fd6510af720ec468a8214a8f"
+_FEHER_HARE_LICENSE_REFERENCE = "LICENSE.txt"
+_FEHER_HARE_MANIFEST_NAME = "feher-hare-two-stage-v1"
+_FEHER_HARE_MANIFEST_VERSION = "1"
 
 
 def _text(value: object, *, label: str) -> str:
@@ -187,6 +192,85 @@ def _git_blob_sha(path: Path) -> str:
     return hashlib.sha1(header + data).hexdigest()
 
 
+def _git_tree_files(root: Path) -> dict[str, str]:
+    try:
+        result = subprocess.run(
+            (
+                "git",
+                "-C",
+                str(root),
+                "ls-tree",
+                "-r",
+                "HEAD",
+                "--",
+                "results/magic_carpet/choices",
+                "results/spaceship/choices",
+            ),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise ValueError("two-stage source Git tree is unreadable") from error
+
+    entries: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        try:
+            metadata, relative_path = line.split("\t", 1)
+            _mode, kind, blob_sha = metadata.split()
+        except ValueError as error:
+            raise ValueError("two-stage source Git tree entry is malformed") from error
+        if kind != "blob":
+            continue
+        canonical_path = _relative_path(relative_path)
+        canonical_sha = _sha1(blob_sha, label="two-stage source tracked Git blob SHA")
+        if canonical_path in entries:
+            raise ValueError("two-stage source Git tree contains a duplicate path")
+        entries[canonical_path] = canonical_sha
+    return entries
+
+
+def _is_magic_evidence_path(path: str) -> bool:
+    return (
+        path.startswith("results/magic_carpet/choices/")
+        and path.endswith("_game.csv")
+    )
+
+
+def _is_spaceship_evidence_path(path: str) -> bool:
+    return (
+        path.startswith("results/spaceship/choices/")
+        and path.endswith(".csv")
+        and not path.endswith("_practice.csv")
+        and not path.endswith("_game.csv")
+    )
+
+
+def _tracked_evidence_paths(tree_files: dict[str, str]) -> frozenset[str]:
+    return frozenset(
+        path
+        for path in tree_files
+        if _is_magic_evidence_path(path) or _is_spaceship_evidence_path(path)
+    )
+
+
+def _evidence_identity(path: str) -> tuple[str, str]:
+    name = PurePosixPath(path).name
+    if _is_magic_evidence_path(path):
+        participant = name.removesuffix("_game.csv")
+        return "magic_carpet", _text(
+            participant,
+            label="Magic Carpet source participant identity",
+        )
+    if _is_spaceship_evidence_path(path):
+        participant = name.removesuffix(".csv")
+        return "spaceship", _text(
+            participant,
+            label="Spaceship source participant identity",
+        )
+    raise ValueError("two-stage source path is not an approved main-task evidence file")
+
+
 def _discovered_evidence_paths(root: Path) -> frozenset[str]:
     discovered: set[str] = set()
     magic = root / "results" / "magic_carpet" / "choices"
@@ -206,6 +290,94 @@ def _discovered_evidence_paths(root: Path) -> frozenset[str]:
             and not path.name.endswith("_game.csv")
         )
     return frozenset(discovered)
+
+
+def _require_tracked_file(
+    root: Path,
+    tree_files: dict[str, str],
+    relative_path: str,
+) -> str:
+    try:
+        tracked_sha = tree_files[relative_path]
+    except KeyError as error:
+        raise ValueError(
+            f"required two-stage source file is not tracked at HEAD: {relative_path}"
+        ) from error
+    path = root / relative_path
+    if not path.is_file():
+        raise ValueError(f"required two-stage source file is missing: {relative_path}")
+    actual_sha = _git_blob_sha(path)
+    if actual_sha != tracked_sha:
+        raise ValueError(
+            f"two-stage source file differs from pinned HEAD: {relative_path}"
+        )
+    return tracked_sha
+
+
+def freeze_feher_hare_v1_source_manifest(root: Path) -> TwoStageSourceManifest:
+    root = Path(root).resolve()
+    if not root.is_dir():
+        raise ValueError("Feher/Hare source root must be a directory")
+    repository_revision = _git_head(root)
+    if repository_revision != _FEHER_HARE_UPSTREAM_REVISION:
+        raise ValueError(
+            "Feher/Hare source checkout must be at the pinned upstream revision"
+        )
+
+    tree_files = _git_tree_files(root)
+    tracked_evidence = _tracked_evidence_paths(tree_files)
+    discovered_evidence = _discovered_evidence_paths(root)
+    if not tracked_evidence:
+        raise ValueError("Feher/Hare source checkout contains no approved main-task files")
+    if discovered_evidence != tracked_evidence:
+        missing = tuple(sorted(tracked_evidence - discovered_evidence))
+        extra = tuple(sorted(discovered_evidence - tracked_evidence))
+        raise ValueError(
+            "Feher/Hare local main-task files do not match pinned HEAD: "
+            f"missing={missing}, untracked_or_extra={extra}"
+        )
+
+    files: list[TwoStageSourceFile] = []
+    participant_keys: set[tuple[str, str]] = set()
+    for evidence_path in sorted(tracked_evidence):
+        task_variant, participant = _evidence_identity(evidence_path)
+        participant_key = (task_variant, participant)
+        if participant_key in participant_keys:
+            raise ValueError("Feher/Hare source participant appears more than once per task")
+        participant_keys.add(participant_key)
+
+        evidence_sha = _require_tracked_file(root, tree_files, evidence_path)
+        metadata_path = _expected_metadata_path(task_variant, participant)
+        metadata_sha = _require_tracked_file(root, tree_files, metadata_path)
+        files.extend(
+            (
+                TwoStageSourceFile(
+                    path=evidence_path,
+                    git_blob_sha=evidence_sha,
+                    task_variant=task_variant,
+                    source_participant_id=participant,
+                    purpose="scientific_evidence",
+                ),
+                TwoStageSourceFile(
+                    path=metadata_path,
+                    git_blob_sha=metadata_sha,
+                    task_variant=task_variant,
+                    source_participant_id=participant,
+                    purpose="transform_metadata",
+                ),
+            )
+        )
+
+    manifest = TwoStageSourceManifest(
+        name=_FEHER_HARE_MANIFEST_NAME,
+        version=_FEHER_HARE_MANIFEST_VERSION,
+        repository=_FEHER_HARE_UPSTREAM_REPOSITORY,
+        revision=repository_revision,
+        license_reference=_FEHER_HARE_LICENSE_REFERENCE,
+        files=tuple(files),
+    )
+    verify_two_stage_snapshot(root, manifest)
+    return manifest
 
 
 def verify_two_stage_snapshot(
@@ -343,6 +515,7 @@ __all__ = [
     "TwoStageSourceFile",
     "TwoStageSourceManifest",
     "VerifiedTwoStageSnapshot",
+    "freeze_feher_hare_v1_source_manifest",
     "load_two_stage_source_manifest",
     "verify_two_stage_snapshot",
     "write_two_stage_source_manifest",
