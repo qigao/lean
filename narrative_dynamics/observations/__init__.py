@@ -34,6 +34,12 @@ from .release import (
     compare_released_models,
     verify_protocol_release,
 )
+from .selection_shards import (
+    SelectionCandidateShard,
+    SelectionShardCase,
+    assemble_selection_validation_report,
+    evaluate_selection_candidate,
+)
 from .targets import (
     CategoricalTargetPlan,
     CategoricalTargetSpec,
@@ -80,6 +86,8 @@ __all__ = [
     "ProtocolRelease",
     "ProtocolReleaseVerificationError",
     "ReleasedModelComparisonReport",
+    "SelectionCandidateShard",
+    "SelectionShardCase",
     "TargetConstructionReport",
     "TrainingCandidateFit",
     "TrainingCandidateShard",
@@ -88,10 +96,12 @@ __all__ = [
     "TrainingShardCase",
     "VerifiedProtocolRelease",
     "WitnessReceipt",
+    "assemble_selection_validation_report",
     "assemble_training_fit_report",
     "compare_registered_models",
     "compare_released_models",
     "construct_categorical_targets",
+    "evaluate_selection_candidate",
     "evaluate_training_candidate",
     "fit_training_target_grid",
     "load_observation_dataset",
