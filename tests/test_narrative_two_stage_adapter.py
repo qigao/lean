@@ -73,6 +73,38 @@ class NarrativeTwoStageAdapterTests(unittest.TestCase):
             self.assertNotIn(banned, source)
         self.assertIn("run_runtime_decision", source)
 
+    def test_adapter_accepts_transform_prechoice_configuration_for_both_tasks(self):
+        self.require_adapter()
+        runner = SimulationRunner()
+        source = create_narrative_two_stage_reactive_source()
+        task_scenarios = (
+            Scenario(
+                id="magic-transform-config",
+                payload={
+                    "task_variant": "magic_carpet",
+                    "first_stage_configuration": (
+                        ("action_0_position", "left"),
+                        ("action_1_position", "right"),
+                    ),
+                    "history": (),
+                },
+            ),
+            Scenario(
+                id="spaceship-transform-config",
+                payload={
+                    "task_variant": "spaceship",
+                    "first_stage_configuration": (("symbol0", 0), ("symbol1", 1)),
+                    "history": (),
+                },
+            ),
+        )
+        for task_scenario in task_scenarios:
+            trace = runner.run_once(source, task_scenario, {"beta": 2.0}, seed=1)
+            self.assertEqual(
+                trace.outcome["first_stage_policy"],
+                {"action_0": 0.5, "action_1": 0.5},
+            )
+
     def test_reactive_is_neutral_with_empty_history(self):
         self.require_adapter()
         trace = SimulationRunner().run_once(
