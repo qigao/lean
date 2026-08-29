@@ -1,0 +1,347 @@
+name: real-preregistration-bundle-r2
+
+on:
+  push:
+    branches:
+      - manual/real-train-selection-r2
+
+permissions:
+  contents: read
+
+jobs:
+  build-bundle:
+    if: "${{ github.event.head_commit.message == 'research: build empirical revision 2 preregistration bundle' }}"
+    name: Build Empirical Revision 2 preregistration bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout frozen canonical study code
+        uses: actions/checkout@v4
+        with:
+          repository: qigao/lean
+          ref: 4f88a3e7db08f5129610cc73bcca2b38a888a181
+          path: study
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout pinned Feher Hare upstream
+        uses: actions/checkout@v4
+        with:
+          repository: carolfs/muddled_models
+          ref: 4567763780a2c596fd6510af720ec468a8214a8f
+          path: upstream/muddled_models
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Build metadata-only preregistration and release bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/build_real_preregistration_bundle_r2.py" <<'PY'
+          from __future__ import annotations
+
+          from collections.abc import Mapping
+          import json
+          from pathlib import Path
+          import subprocess
+
+          import narrative_dynamics.studies.feher_hare_two_stage_v1 as study
+          from narrative_dynamics.adapters.two_stage_metrics import (
+              two_stage_brier_loss,
+              two_stage_brier_thresholds,
+              two_stage_first_stage_policy_metrics,
+              two_stage_log_loss,
+              two_stage_log_thresholds,
+          )
+          from narrative_dynamics.contracts import stable_content_hash
+          from narrative_dynamics.external_validation import (
+              ExternalScoreRole,
+              ExternalValidationPreregistration,
+              PairwiseSeparationRule,
+          )
+          from narrative_dynamics.observations.external import EXTERNAL_CLAIM_SCOPE
+          from narrative_dynamics.observations.preregistration import (
+              FrozenModelSpec,
+              PreregisteredEvaluationProtocol,
+          )
+          from narrative_dynamics.observations.release import ProtocolRelease
+          from narrative_dynamics.studies.two_stage_osf import TwoStageOSFBundle
+          from narrative_dynamics.studies.two_stage_source import (
+              load_two_stage_source_manifest,
+              verify_two_stage_snapshot,
+          )
+
+          FROZEN = "4f88a3e7db08f5129610cc73bcca2b38a888a181"
+          UPSTREAM = "4567763780a2c596fd6510af720ec468a8214a8f"
+          MANIFEST_HASH = "sha256:3609e980af172823cfef78290e7f2337fdb337d67f1f27641e17d473aeedd10d"
+          SNAPSHOT_HASH = "sha256:25bdc2e4bff4110f38b098b89e7d59aa38c9658727fcc89a38d50e107d243186"
+          TRANSFORM_HASH = "sha256:2fb8ab6dc796a9e4ece5653a5485d865ef44dd0f5f7dff92d94a904932d6e541"
+          ASSIGNMENT_HASH = "sha256:fc144c35f6713e27f75141d678872cc04ca44c7a0fd8e109e8618c72b4111ccf"
+          DATASET_HASH = "sha256:17789130372d7eace05e1216a57bdae2ffbd519960333ffe814aee2d2d404781"
+          FINAL_TARGET_HASH = "sha256:927e1727d37993e9a5c887f79ac8712d07a155622deacf0a3122d41f90b16ed2"
+
+          TRAIN_SELECTION_RUN_ID = "33254738541"
+          TRAIN_SELECTION_ORCHESTRATION_COMMIT = "3522e9ac629d2cdfa4c102b04e0d8e482ac89140"
+          TRAIN_SELECTION_ARTIFACT_ID = "9717258303"
+          TRAIN_SELECTION_ARTIFACT_ZIP_DIGEST = "sha256:f4eb40a12a8b0ae62ec5c9e4baacf744a9311da491b60ac488ec24956a660616"
+          TRAIN_SELECTION_PAYLOAD_DIGEST = "sha256:77fa1bb80ab0c7ac737a09a8001f1d0c1432ce3bd991fd7191d07fdd0d8e05d5"
+
+          FAMILY_ORDER = ("reactive", "intentional", "planning")
+          FAMILY_FREEZE = {
+              "reactive": {
+                  "parameters": (("beta", 0.5),),
+                  "training_manifest_hash": "sha256:5b607a4bc0a8082809c2446a8248fb8659b0d9ba178687ddad96dc74e3f19622",
+                  "selection_manifest_hash": "sha256:e8414e301d19fc6acfd5accf055402ac995790f785402186c67ff95a48ee0c2e",
+                  "frozen_candidate_hash": "sha256:42a84ef10c207159ff98397fe2bd86594df6c8be0f41b98e876f7ae33cba9456",
+              },
+              "intentional": {
+                  "parameters": (("beta", 2.0), ("memory_decay", 0.5)),
+                  "training_manifest_hash": "sha256:47057311fe7450469c1710be49ba0e3b42aa7416fa2129f40761dbf8d237d4fc",
+                  "selection_manifest_hash": "sha256:498a512cd931afe276f78bf135bd5c8269e051920d4b876177d0aa9ea250806d",
+                  "frozen_candidate_hash": "sha256:68a01b5496e20095c1a603b30f1384bbe6a3ea22aac8cf74b7b97463c4935839",
+              },
+              "planning": {
+                  "parameters": (("beta", 4.0), ("memory_decay", 0.75)),
+                  "training_manifest_hash": "sha256:ef0f3caf4f2a02b2d719bc302d7409fc8c2d937eb13517d906d83b38c29b76ac",
+                  "selection_manifest_hash": "sha256:e347a3d7d523e2a35d0bb6b0f662343f5a01ddd1ff7d2efe95a8a5efa1986e74",
+                  "frozen_candidate_hash": "sha256:c0ed956c1b285153075e5a22e7fb51f6d53dcf8ad326cce82e39e0221c2e877c",
+              },
+          }
+
+          def git(*args: str) -> str:
+              return subprocess.check_output(args, text=True).strip()
+
+          def thaw(value: object) -> object:
+              if isinstance(value, Mapping):
+                  return {str(key): thaw(item) for key, item in value.items()}
+              if isinstance(value, tuple):
+                  return [thaw(item) for item in value]
+              if isinstance(value, list):
+                  return [thaw(item) for item in value]
+              return value
+
+          def with_hash(value: object) -> dict[str, object]:
+              payload = thaw(value.identity_payload())
+              assert isinstance(payload, dict)
+              payload["content_hash"] = value.content_hash
+              return payload
+
+          def main() -> None:
+              study_root = Path.cwd().resolve()
+              upstream_root = (study_root.parent / "upstream" / "muddled_models").resolve()
+
+              if git("git", "rev-parse", "HEAD") != FROZEN:
+                  raise RuntimeError("scientific checkout drifted")
+              if git("git", "-C", str(upstream_root), "rev-parse", "HEAD") != UPSTREAM:
+                  raise RuntimeError("upstream checkout drifted")
+              if subprocess.check_output(("git", "status", "--porcelain"), text=True):
+                  raise RuntimeError("scientific checkout must be clean")
+
+              manifest = load_two_stage_source_manifest(
+                  study_root / "narrative_dynamics/studies/feher_hare_two_stage_v1_source_manifest.json"
+              )
+              if manifest.content_hash != MANIFEST_HASH:
+                  raise RuntimeError("source manifest hash drifted")
+              snapshot = verify_two_stage_snapshot(upstream_root, manifest)
+              if snapshot.source_snapshot_hash != SNAPSHOT_HASH:
+                  raise RuntimeError("source snapshot hash drifted")
+
+              prepared = study.prepare_feher_hare_two_stage_v1(root=upstream_root, manifest=manifest)
+              if prepared.transform_report.content_hash != TRANSFORM_HASH:
+                  raise RuntimeError("transform hash drifted")
+              if prepared.assignment.content_hash != ASSIGNMENT_HASH:
+                  raise RuntimeError("participant assignment hash drifted")
+              if prepared.dataset.content_hash != DATASET_HASH:
+                  raise RuntimeError("dataset hash drifted")
+              if prepared.final_targets.content_hash != FINAL_TARGET_HASH:
+                  raise RuntimeError("FINAL target hash drifted")
+
+              sources = {family: source for family, source, _grid in study._family_sources()}
+              candidates = []
+              for family in FAMILY_ORDER:
+                  frozen = FAMILY_FREEZE[family]
+                  candidate = FrozenModelSpec.freeze(
+                      name=family,
+                      model=sources[family],
+                      parameters=frozen["parameters"],
+                      selection_manifest_hash=frozen["selection_manifest_hash"],
+                  )
+                  if candidate.content_hash != frozen["frozen_candidate_hash"]:
+                      raise RuntimeError(f"{family} frozen candidate identity drifted")
+                  candidates.append(candidate)
+              candidates = tuple(candidates)
+
+              brier_thresholds = two_stage_brier_thresholds()
+              log_thresholds = two_stage_log_thresholds()
+              brier_protocol = PreregisteredEvaluationProtocol.create(
+                  name="feher-hare-two-stage-v1:brier",
+                  version="1",
+                  dataset=prepared.dataset,
+                  target_spec=prepared.target_spec,
+                  extractor=two_stage_first_stage_policy_metrics,
+                  loss=two_stage_brier_loss(),
+                  simulation_seeds=study.FINAL_SEEDS,
+                  baseline_name="planning",
+                  candidates=candidates,
+                  thresholds=brier_thresholds,
+              )
+              log_protocol = PreregisteredEvaluationProtocol.create(
+                  name="feher-hare-two-stage-v1:log",
+                  version="1",
+                  dataset=prepared.dataset,
+                  target_spec=prepared.target_spec,
+                  extractor=two_stage_first_stage_policy_metrics,
+                  loss=two_stage_log_loss(),
+                  simulation_seeds=study.FINAL_SEEDS,
+                  baseline_name="planning",
+                  candidates=candidates,
+                  thresholds=log_thresholds,
+              )
+
+              strata = study._task_strata(prepared.final_targets)
+              separation_rule = PairwiseSeparationRule(
+                  min_mean_loss_delta_brier=study._BRIER_SEPARATION_DELTA,
+                  min_mean_loss_delta_log=study._LOG_SEPARATION_DELTA,
+              )
+              method_validation_hashes = (
+                  tuple(FAMILY_FREEZE[family]["training_manifest_hash"] for family in FAMILY_ORDER)
+                  + tuple(FAMILY_FREEZE[family]["selection_manifest_hash"] for family in FAMILY_ORDER)
+              )
+              preregistration = ExternalValidationPreregistration.create(
+                  name="feher-hare-two-stage-v1",
+                  version="1",
+                  evidence_declaration=prepared.evidence,
+                  brier_protocol=brier_protocol,
+                  log_protocol=log_protocol,
+                  final_target_set=prepared.final_targets,
+                  adequacy_thresholds_by_score=(
+                      (ExternalScoreRole.BRIER, brier_thresholds),
+                      (ExternalScoreRole.LOG, log_thresholds),
+                  ),
+                  strata=strata,
+                  separation_rule=separation_rule,
+                  constraint_plans=(),
+                  method_validation_hashes=method_validation_hashes,
+              )
+
+              def release(score_role: str, protocol: PreregisteredEvaluationProtocol) -> ProtocolRelease:
+                  return ProtocolRelease.create(
+                      name=f"feher-hare-two-stage-v1:{score_role}:release",
+                      version="1",
+                      protocol=protocol,
+                      source_revision={
+                          "repository_revision": FROZEN,
+                          "external_evidence_declaration_hash": prepared.evidence.content_hash,
+                          "external_validation_preregistration_hash": preregistration.content_hash,
+                          "score_role": score_role,
+                      },
+                  )
+
+              brier_release = release("brier", brier_protocol)
+              log_release = release("log", log_protocol)
+
+              scientific_contract = {
+                  "study": "feher-hare-two-stage-v1",
+                  "empirical_revision": 2,
+                  "train_selection_freeze": {
+                      "run_id": TRAIN_SELECTION_RUN_ID,
+                      "orchestration_commit": TRAIN_SELECTION_ORCHESTRATION_COMMIT,
+                      "artifact_id": TRAIN_SELECTION_ARTIFACT_ID,
+                      "artifact_zip_digest": TRAIN_SELECTION_ARTIFACT_ZIP_DIGEST,
+                      "artifact_payload_digest": TRAIN_SELECTION_PAYLOAD_DIGEST,
+                      "families": {
+                          family: {
+                              "parameters": FAMILY_FREEZE[family]["parameters"],
+                              "training_manifest_hash": FAMILY_FREEZE[family]["training_manifest_hash"],
+                              "selection_manifest_hash": FAMILY_FREEZE[family]["selection_manifest_hash"],
+                              "frozen_candidate_hash": FAMILY_FREEZE[family]["frozen_candidate_hash"],
+                          }
+                          for family in FAMILY_ORDER
+                      },
+                  },
+                  "train_seeds": study.TRAIN_SEEDS,
+                  "selection_seeds": study.SELECTION_SEEDS,
+                  "final_seeds": study.FINAL_SEEDS,
+                  "probability_floor": 1e-12,
+                  "adequacy_thresholds": {
+                      "brier": brier_thresholds.identity_payload(),
+                      "log": log_thresholds.identity_payload(),
+                  },
+                  "strata": tuple(stratum.identity_payload() for stratum in strata),
+                  "separation_rule": separation_rule.identity_payload(),
+                  "constraint_plans": (),
+                  "claim_scope": EXTERNAL_CLAIM_SCOPE,
+                  "final_model_execution": False,
+              }
+              osf_bundle = TwoStageOSFBundle(
+                  source_manifest_hash=manifest.content_hash,
+                  source_snapshot_hash=snapshot.source_snapshot_hash,
+                  transform_hash=prepared.transform_report.content_hash,
+                  participant_assignment_hash=prepared.assignment.content_hash,
+                  dataset_hash=prepared.dataset.content_hash,
+                  final_target_hash=prepared.final_targets.content_hash,
+                  frozen_candidate_hashes=tuple(candidate.content_hash for candidate in candidates),
+                  brier_protocol_hash=brier_protocol.content_hash,
+                  log_protocol_hash=log_protocol.content_hash,
+                  external_preregistration_hash=preregistration.content_hash,
+                  brier_release_hash=brier_release.content_hash,
+                  log_release_hash=log_release.content_hash,
+                  repository_revision=FROZEN,
+                  claim_scope=EXTERNAL_CLAIM_SCOPE,
+                  scientific_contract=scientific_contract,
+              )
+
+              payload = {
+                  "schema": "feher-hare-empirical-r2-registration-bundle-v1",
+                  "scientific_repository_revision": FROZEN,
+                  "upstream_revision": UPSTREAM,
+                  "source_manifest_hash": manifest.content_hash,
+                  "source_snapshot_hash": snapshot.source_snapshot_hash,
+                  "train_selection_freeze": scientific_contract["train_selection_freeze"],
+                  "external_evidence": with_hash(prepared.evidence),
+                  "frozen_candidates": [with_hash(candidate) for candidate in candidates],
+                  "brier_protocol": with_hash(brier_protocol),
+                  "log_protocol": with_hash(log_protocol),
+                  "external_preregistration": with_hash(preregistration),
+                  "brier_release": brier_release.to_payload(),
+                  "log_release": log_release.to_payload(),
+                  "osf_bundle": with_hash(osf_bundle),
+                  "final_model_execution": False,
+                  "raw_human_rows_in_artifact": False,
+              }
+              payload["serialization_digest"] = stable_content_hash(payload)
+
+              out = Path("artifacts/real-preregistration-r2")
+              out.mkdir(parents=True, exist_ok=True)
+              path = out / "registration_bundle.json"
+              path.write_text(json.dumps(thaw(payload), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+              print(json.dumps({
+                  "event": "real_preregistration_bundle_r2_complete",
+                  "scientific_repository_revision": FROZEN,
+                  "osf_bundle_hash": osf_bundle.content_hash,
+                  "serialization_digest": payload["serialization_digest"],
+                  "brier_protocol_hash": brier_protocol.content_hash,
+                  "log_protocol_hash": log_protocol.content_hash,
+                  "external_preregistration_hash": preregistration.content_hash,
+                  "brier_release_hash": brier_release.content_hash,
+                  "log_release_hash": log_release.content_hash,
+                  "frozen_candidate_hashes": [candidate.content_hash for candidate in candidates],
+                  "final_model_execution": False,
+              }, sort_keys=True), flush=True)
+
+          if __name__ == "__main__":
+              main()
+          PY
+
+          cd study
+          export PYTHONPATH="$PWD"
+          python3 -B "$RUNNER_TEMP/build_real_preregistration_bundle_r2.py"
+
+      - name: Upload immutable metadata-only preregistration bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: feher-hare-real-preregistration-r2-${{ github.run_id }}
+          path: study/artifacts/real-preregistration-r2/registration_bundle.json
+          if-no-files-found: error
+          retention-days: 90
