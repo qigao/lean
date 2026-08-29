@@ -96,7 +96,7 @@ class _HistoryTrial:
 @dataclass(frozen=True)
 class _ScenarioValues:
     task_variant: str
-    first_stage_configuration: tuple[tuple[str, str], ...]
+    first_stage_configuration: tuple[tuple[str, object], ...]
     history: tuple[_HistoryTrial, ...]
 
 
@@ -137,26 +137,79 @@ def _memory_decay(value: object) -> float:
     return decay
 
 
-def _configuration(value: object) -> tuple[tuple[str, str], ...]:
+def _configuration(
+    task_variant: str,
+    value: object,
+) -> tuple[tuple[str, object], ...]:
     if isinstance(value, Mapping):
         rows = tuple(value.items())
     elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
         rows = tuple(value)
     else:
-        raise TypeError("two-stage first-stage configuration must be a mapping or pair sequence")
-    parsed: list[tuple[str, str]] = []
+        raise TypeError(
+            "two-stage first-stage configuration must be a mapping or pair sequence"
+        )
+
+    parsed: dict[str, object] = {}
     for row in rows:
-        if not isinstance(row, Sequence) or isinstance(row, (str, bytes)) or len(row) != 2:
+        if (
+            not isinstance(row, Sequence)
+            or isinstance(row, (str, bytes))
+            or len(row) != 2
+        ):
             raise ValueError("two-stage first-stage configuration rows must be pairs")
-        action, position = row
-        if action not in _ACTIONS:
-            raise ValueError("two-stage first-stage configuration action is invalid")
-        if not isinstance(position, str) or not position:
-            raise ValueError("two-stage first-stage configuration position must be text")
-        parsed.append((action, position))
-    if {action for action, _ in parsed} != set(_ACTIONS) or len(parsed) != 2:
-        raise ValueError("two-stage first-stage configuration must cover both canonical actions")
-    return tuple(sorted(parsed))
+        raw_key, raw_value = row
+        if not isinstance(raw_key, str) or not raw_key:
+            raise ValueError("two-stage first-stage configuration keys must be text")
+        if raw_key in parsed:
+            raise ValueError("two-stage first-stage configuration keys must be unique")
+        parsed[raw_key] = raw_value
+
+    keys = set(parsed)
+    # Retain the original canonical adapter fixture shape as an accepted alias.
+    if keys == set(_ACTIONS):
+        positions = tuple(parsed[action] for action in _ACTIONS)
+        if any(not isinstance(position, str) or not position for position in positions):
+            raise ValueError(
+                "two-stage canonical first-stage positions must be non-empty text"
+            )
+        return tuple((key, parsed[key]) for key in sorted(parsed))
+
+    if task_variant == "magic_carpet":
+        expected = {"action_0_position", "action_1_position"}
+        if keys != expected:
+            raise ValueError(
+                "magic-carpet first-stage configuration must bind both action positions"
+            )
+        positions = tuple(parsed[key] for key in sorted(expected))
+        if any(position not in ("left", "right") for position in positions):
+            raise ValueError("magic-carpet action positions must be left or right")
+        if len(set(positions)) != 2:
+            raise ValueError("magic-carpet action positions must be distinct")
+        return tuple((key, parsed[key]) for key in sorted(parsed))
+
+    if task_variant == "spaceship":
+        expected = {"symbol0", "symbol1"}
+        if keys != expected:
+            raise ValueError(
+                "spaceship first-stage configuration must bind both displayed symbols"
+            )
+        symbols = tuple(parsed[key] for key in sorted(expected))
+        if any(
+            isinstance(symbol, bool)
+            or not isinstance(symbol, int)
+            or symbol not in (0, 1)
+            for symbol in symbols
+        ):
+            raise ValueError("spaceship displayed symbols must be binary integers")
+        if len(set(symbols)) != 2:
+            raise ValueError("spaceship displayed symbols must be distinct")
+        # Upstream re-encodes the observed first-stage choice by its common
+        # destination.  In that canonical action space action_0 commonly reaches
+        # state_0 and action_1 commonly reaches state_1 regardless of symbol order.
+        return tuple((key, parsed[key]) for key in sorted(parsed))
+
+    raise ValueError("unsupported two-stage task variant")
 
 
 def _history(value: object) -> tuple[_HistoryTrial, ...]:
@@ -210,7 +263,10 @@ def _scenario_values(scenario: object) -> _ScenarioValues:
         raise ValueError("unsupported two-stage task variant")
     return _ScenarioValues(
         task_variant=task_variant,
-        first_stage_configuration=_configuration(payload["first_stage_configuration"]),
+        first_stage_configuration=_configuration(
+            task_variant,
+            payload["first_stage_configuration"],
+        ),
         history=_history(payload["history"]),
     )
 
