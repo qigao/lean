@@ -70,3 +70,30 @@ _feher_hare_two_stage_v1.build_two_stage_observation_dataset = _hash_cached_data
 from .feher_hare_two_stage_parallel import fit_and_freeze_feher_hare_models_parallel
 
 __all__.append("fit_and_freeze_feher_hare_models_parallel")
+
+# Empirical Revision 3 replaces the abandoned external OSF witness gate with an
+# explicitly internal immutable repository lock. These exports are additive;
+# the existing OSF and locked-FINAL implementations remain unchanged.
+from .two_stage_internal_lock import (
+    INTERNAL_LOCK_AUTHORITY,
+    INTERNAL_LOCK_GOVERNANCE_MODE,
+    INTERNAL_LOCK_PROVIDER,
+    InternalRepositoryLockProof,
+    InternalRepositoryLockVerifier,
+    TwoStageInternalLockBundle,
+    create_internal_locked_protocol_release,
+    create_internal_repository_lock_receipt,
+)
+
+__all__.extend(
+    (
+        "INTERNAL_LOCK_AUTHORITY",
+        "INTERNAL_LOCK_GOVERNANCE_MODE",
+        "INTERNAL_LOCK_PROVIDER",
+        "InternalRepositoryLockProof",
+        "InternalRepositoryLockVerifier",
+        "TwoStageInternalLockBundle",
+        "create_internal_locked_protocol_release",
+        "create_internal_repository_lock_receipt",
+    )
+)
