@@ -1,7 +1,9 @@
 name: real-source-prep-v2
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - manual/real-source-prep-v2
 
 permissions:
   contents: read
@@ -15,7 +17,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: qigao/lean
-          ref: 111b277114356cdaa3cb16a8ddc772bf26c47b79
+          ref: 97dd0c7a7a9acbe50a491f01b7342172b7a6271c
           path: study
           persist-credentials: false
 
@@ -39,18 +41,15 @@ jobs:
           from pathlib import Path
           import subprocess
 
-          from narrative_dynamics.studies.feher_hare_two_stage_v1 import (
-              prepare_feher_hare_two_stage_v1,
-          )
+          from narrative_dynamics.studies.feher_hare_two_stage_v1 import prepare_feher_hare_two_stage_v1
           from narrative_dynamics.studies.two_stage_source import (
               freeze_feher_hare_v1_source_manifest,
               verify_two_stage_snapshot,
               write_two_stage_source_manifest,
           )
 
-          STUDY_REVISION = "111b277114356cdaa3cb16a8ddc772bf26c47b79"
+          STUDY_REVISION = "97dd0c7a7a9acbe50a491f01b7342172b7a6271c"
           UPSTREAM_REVISION = "4567763780a2c596fd6510af720ec468a8214a8f"
-
           study_root = Path.cwd().resolve()
           upstream_root = (study_root.parent / "upstream" / "muddled_models").resolve()
 
@@ -67,34 +66,18 @@ jobs:
 
           manifest = freeze_feher_hare_v1_source_manifest(upstream_root)
           snapshot = verify_two_stage_snapshot(upstream_root, manifest)
-          prepared = prepare_feher_hare_two_stage_v1(
-              root=upstream_root,
-              manifest=manifest,
-          )
+          prepared = prepare_feher_hare_two_stage_v1(root=upstream_root, manifest=manifest)
 
-          evidence_rows = tuple(
-              item for item in manifest.files if item.purpose == "scientific_evidence"
-          )
-          metadata_rows = tuple(
-              item for item in manifest.files if item.purpose == "transform_metadata"
-          )
-          eligible_by_task = Counter(
-              task for task, _participant in prepared.transform_report.eligible_participants
-          )
-          partition_totals = Counter(
-              role for _task, _participant, role in prepared.assignment.assignments
-          )
+          evidence_rows = tuple(item for item in manifest.files if item.purpose == "scientific_evidence")
+          metadata_rows = tuple(item for item in manifest.files if item.purpose == "transform_metadata")
+          eligible_by_task = Counter(task for task, _ in prepared.transform_report.eligible_participants)
+          partition_totals = Counter(role for _task, _participant, role in prepared.assignment.assignments)
           partition_by_task = Counter(
-              (task, role)
-              for task, _participant, role in prepared.assignment.assignments
+              (task, role) for task, _participant, role in prepared.assignment.assignments
           )
 
           expected_eligible = {"magic_carpet": 24, "spaceship": 21}
-          expected_partitions = {
-              "train": 27,
-              "selection_validation": 9,
-              "final_test": 9,
-          }
+          expected_partitions = {"train": 27, "selection_validation": 9, "final_test": 9}
           expected_task_partitions = {
               ("magic_carpet", "train"): 14,
               ("magic_carpet", "selection_validation"): 5,
@@ -105,21 +88,13 @@ jobs:
           }
 
           if dict(eligible_by_task) != expected_eligible:
-              raise RuntimeError(
-                  f"eligible participant inventory drifted: {dict(eligible_by_task)}"
-              )
+              raise RuntimeError(f"eligible participant inventory drifted: {dict(eligible_by_task)}")
           if dict(partition_totals) != expected_partitions:
-              raise RuntimeError(
-                  f"participant split totals drifted: {dict(partition_totals)}"
-              )
+              raise RuntimeError(f"participant split totals drifted: {dict(partition_totals)}")
           if dict(partition_by_task) != expected_task_partitions:
-              raise RuntimeError(
-                  f"task-stratified split drifted: {dict(partition_by_task)}"
-              )
+              raise RuntimeError(f"task-stratified split drifted: {dict(partition_by_task)}")
           if len(evidence_rows) != 45 or len(metadata_rows) != 45:
-              raise RuntimeError(
-                  "source manifest must contain 45 main-task files and 45 matching metadata files"
-              )
+              raise RuntimeError("source manifest must contain 45 main-task files and 45 matching metadata files")
           if len(snapshot.verified_file_identities) != 90:
               raise RuntimeError("verified source manifest must bind exactly 90 files")
 
@@ -150,17 +125,12 @@ jobs:
               "verified_file_count": len(snapshot.verified_file_identities),
               "retained_trial_count": prepared.transform_report.retained_trial_count,
               "slow_trial_count": prepared.transform_report.slow_trial_count,
-              "structural_exclusion_count": len(
-                  prepared.transform_report.structural_exclusions
-              ),
+              "structural_exclusion_count": len(prepared.transform_report.structural_exclusions),
               "final_model_execution": False,
               "raw_human_rows_in_artifact": False,
           }
           summary_path = output_dir / "real_source_readiness.json"
-          summary_path.write_text(
-              json.dumps(summary, indent=2, sort_keys=True) + "\n",
-              encoding="utf-8",
-          )
+          summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
           print("BEGIN_SOURCE_MANIFEST_JSON")
           print(manifest_path.read_text(encoding="utf-8"), end="")
