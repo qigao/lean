@@ -163,21 +163,47 @@ def _evaluate_feher_hare_candidate(task: FeherHareCandidateTask) -> dict[str, ob
     ).to_payload()
 
 
-def _training_shards(values: tuple[object, ...]) -> tuple[TrainingCandidateShard, ...]:
+def _require_worker_repository_identity(
+    shard_repository_identity: Mapping[str, object],
+    repository_identity: RepositoryIdentity,
+) -> None:
+    if shard_repository_identity != repository_identity.manifest_identity():
+        raise ValueError("Feher/Hare worker repository identity changed")
+
+
+def _training_shards(
+    values: tuple[object, ...],
+    *,
+    repository_identity: RepositoryIdentity,
+) -> tuple[TrainingCandidateShard, ...]:
     shards: list[TrainingCandidateShard] = []
     for value in values:
         if not isinstance(value, Mapping):
             raise TypeError("Feher/Hare TRAIN worker must return a shard payload")
-        shards.append(TrainingCandidateShard.from_payload(value))
+        shard = TrainingCandidateShard.from_payload(value)
+        _require_worker_repository_identity(
+            shard.repository_identity,
+            repository_identity,
+        )
+        shards.append(shard)
     return tuple(shards)
 
 
-def _selection_shards(values: tuple[object, ...]) -> tuple[SelectionCandidateShard, ...]:
+def _selection_shards(
+    values: tuple[object, ...],
+    *,
+    repository_identity: RepositoryIdentity,
+) -> tuple[SelectionCandidateShard, ...]:
     shards: list[SelectionCandidateShard] = []
     for value in values:
         if not isinstance(value, Mapping):
             raise TypeError("Feher/Hare SELECTION worker must return a shard payload")
-        shards.append(SelectionCandidateShard.from_payload(value))
+        shard = SelectionCandidateShard.from_payload(value)
+        _require_worker_repository_identity(
+            shard.repository_identity,
+            repository_identity,
+        )
+        shards.append(shard)
     return tuple(shards)
 
 
@@ -237,7 +263,10 @@ def fit_and_freeze_feher_hare_models_parallel(
             simulation_seeds=study.TRAIN_SEEDS,
             extractor=two_stage_first_stage_policy_metrics,
             loss=loss,
-            shards=_training_shards(tuple(training_values)),
+            shards=_training_shards(
+                tuple(training_values),
+                repository_identity=repository_identity,
+            ),
         )
         accepted = ParameterAcceptanceSet.from_parameters(
             training.candidate_parameters,
@@ -271,7 +300,10 @@ def fit_and_freeze_feher_hare_models_parallel(
             suite=selection_suite,
             extractor=two_stage_first_stage_policy_metrics,
             loss=loss,
-            shards=_selection_shards(tuple(selection_values)),
+            shards=_selection_shards(
+                tuple(selection_values),
+                repository_identity=repository_identity,
+            ),
         )
         frozen = FrozenModelSpec.from_selection(family, source, selection)
         rows.append(

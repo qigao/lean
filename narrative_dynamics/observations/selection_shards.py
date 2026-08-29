@@ -176,6 +176,7 @@ class SelectionCandidateShard:
     repository_identity: Mapping[str, object]
     metric_identity: Mapping[str, object]
     loss_identity: Mapping[str, object]
+    validation_manifest_hash: str
     cases: tuple[SelectionShardCase, ...]
     schema_version: int = SELECTION_CANDIDATE_SHARD_SCHEMA_VERSION
 
@@ -194,6 +195,7 @@ class SelectionCandidateShard:
         for attribute, label in (
             ("accepted_parameter_set_hash", "selection shard accepted-set hash"),
             ("suite_hash", "selection shard suite hash"),
+            ("validation_manifest_hash", "selection shard validation manifest hash"),
         ):
             object.__setattr__(
                 self,
@@ -250,6 +252,7 @@ class SelectionCandidateShard:
             "repository_identity": self.repository_identity,
             "metric_identity": self.metric_identity,
             "loss_identity": self.loss_identity,
+            "validation_manifest_hash": self.validation_manifest_hash,
             "cases": tuple(case.identity_payload() for case in self.cases),
         }
 
@@ -277,6 +280,7 @@ class SelectionCandidateShard:
             "repository_identity",
             "metric_identity",
             "loss_identity",
+            "validation_manifest_hash",
             "cases",
             "content_hash",
         }
@@ -309,6 +313,7 @@ class SelectionCandidateShard:
             repository_identity=payload["repository_identity"],
             metric_identity=payload["metric_identity"],
             loss_identity=payload["loss_identity"],
+            validation_manifest_hash=payload["validation_manifest_hash"],
             cases=tuple(cases),
         )
         declared = _validated_content_hash(
@@ -359,6 +364,10 @@ def evaluate_selection_candidate(
         repository_identity=runner.repository_identity.manifest_identity(),
         metric_identity=callable_identity(extractor),
         loss_identity=metric_loss_identity(selected_loss),
+        validation_manifest_hash=required_manifest_hash(
+            validation,
+            label="selection candidate validation",
+        ),
         cases=tuple(
             SelectionShardCase(
                 name=case.name,
@@ -500,6 +509,8 @@ def assemble_selection_validation_report(
             },
             parent_hashes=tuple(parent_hashes),
         )
+        if validation_manifest.content_hash != shard.validation_manifest_hash:
+            raise ValueError("selection shard validation manifest lineage changed")
         validation = HeldOutValidationReport(
             parameters=parameters,
             cases=tuple(held_out_cases),

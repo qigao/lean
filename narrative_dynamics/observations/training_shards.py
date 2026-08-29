@@ -176,6 +176,18 @@ class TrainingCandidateShard:
             raise ValueError("training shard case names must be unique")
         if any(len(case.run_manifest_hashes) != len(self.simulation_seeds) for case in cases):
             raise ValueError("training shard run lineage must match the seed plan")
+        for case in cases:
+            seed_by_run_hash: dict[str, int] = {}
+            for seed, run_hash in zip(
+                self.simulation_seeds,
+                case.run_manifest_hashes,
+                strict=True,
+            ):
+                prior_seed = seed_by_run_hash.setdefault(run_hash, seed)
+                if prior_seed != seed:
+                    raise ValueError(
+                        "training shard run lineage reuses one manifest across distinct seeds"
+                    )
         object.__setattr__(self, "cases", cases)
 
     def identity_payload(self) -> dict[str, object]:
