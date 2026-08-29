@@ -59,6 +59,7 @@ jobs:
           )
           from narrative_dynamics.studies.two_stage_source import (
               load_two_stage_source_manifest,
+              verify_two_stage_snapshot,
           )
 
 
@@ -110,6 +111,7 @@ jobs:
               )
               if manifest.content_hash != MANIFEST_HASH:
                   raise RuntimeError("committed real source manifest drifted")
+              source_snapshot = verify_two_stage_snapshot(upstream_root, manifest)
 
               repository_identity = detect_repository_identity(environ={}, cwd=study_root)
               if (
@@ -135,6 +137,7 @@ jobs:
                           "orchestration_commit": os.environ.get("GITHUB_SHA"),
                           "upstream_revision": UPSTREAM,
                           "source_manifest_hash": manifest.content_hash,
+                          "source_snapshot_hash": source_snapshot.source_snapshot_hash,
                           "dataset_hash": prepared.dataset.content_hash,
                           "executor": "spawn_process",
                           "max_workers": MAX_WORKERS,
@@ -179,7 +182,7 @@ jobs:
                   "repository_identity": repository_identity.manifest_identity(),
                   "upstream_revision": UPSTREAM,
                   "source_manifest_hash": manifest.content_hash,
-                  "source_snapshot_hash": manifest.snapshot_hash,
+                  "source_snapshot_hash": source_snapshot.source_snapshot_hash,
                   "dataset_hash": prepared.dataset.content_hash,
                   "train_target_hash": prepared.train_targets.content_hash,
                   "selection_target_hash": prepared.selection_targets.content_hash,
