@@ -1,9 +1,7 @@
 name: real-source-prep-v2
 
 on:
-  push:
-    branches:
-      - manual/real-source-prep-v2
+  workflow_dispatch:
 
 permissions:
   contents: read
