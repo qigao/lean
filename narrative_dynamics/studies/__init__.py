@@ -31,3 +31,15 @@ for _name in _two_stage_final.__all__:
     )
     if _name not in _feher_hare_two_stage_v1.__all__:
         _feher_hare_two_stage_v1.__all__.append(_name)
+
+# Install Study V1 Task 11 orchestration on the same canonical module.
+from . import two_stage_locked_final as _two_stage_locked_final
+
+for _name in _two_stage_locked_final.__all__:
+    setattr(
+        _feher_hare_two_stage_v1,
+        _name,
+        getattr(_two_stage_locked_final, _name),
+    )
+    if _name not in _feher_hare_two_stage_v1.__all__:
+        _feher_hare_two_stage_v1.__all__.append(_name)
