@@ -45,3 +45,12 @@ for _name in _two_stage_locked_final.__all__:
     )
     if _name not in _feher_hare_two_stage_v1.__all__:
         _feher_hare_two_stage_v1.__all__.append(_name)
+
+# The pinned Feher/Hare source uses -1 response/RT sentinels on slow rows.
+# Install the correction on the canonical transform module and on the Study V1
+# module, which imported the transform before this package initializer finished.
+from . import two_stage_transform as _two_stage_transform
+from .two_stage_slow_filter import transform_two_stage_snapshot as _slow_safe_transform
+
+_two_stage_transform.transform_two_stage_snapshot = _slow_safe_transform
+_feher_hare_two_stage_v1.transform_two_stage_snapshot = _slow_safe_transform
