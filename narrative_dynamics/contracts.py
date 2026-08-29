@@ -124,6 +124,7 @@ class ExperimentStage(str, Enum):
     OBSERVATION_TARGET_CONSTRUCTION = "observation_target_construction"
     MODEL_COMPARISON = "model_comparison"
     RELEASED_MODEL_COMPARISON = "released_model_comparison"
+    EXTERNAL_PREDICTION = "external_prediction"
     EXTERNAL_VALIDATION = "external_validation"
 
 
