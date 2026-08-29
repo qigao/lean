@@ -1,0 +1,25 @@
+name: two-stage-focused
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Exact qigao/lean commit SHA to test
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  focused:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact study revision
+        uses: actions/checkout@v4
+        with:
+          repository: qigao/lean
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - name: Run focused dataset hash scaling regression
+        run: python3 -m unittest tests.test_two_stage_dataset_hash_scaling -v
