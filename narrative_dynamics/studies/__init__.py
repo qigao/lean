@@ -54,3 +54,13 @@ from .two_stage_slow_filter import transform_two_stage_snapshot as _slow_safe_tr
 
 _two_stage_transform.transform_two_stage_snapshot = _slow_safe_transform
 _feher_hare_two_stage_v1.transform_two_stage_snapshot = _slow_safe_transform
+
+# Real Feher/Hare scale makes repeated full transform hashing quadratic.
+# Install a payload-equivalent dataset builder that computes immutable lineage
+# hashes once, then reuses them for record metadata and dataset provenance.
+from .two_stage_dataset_builder import (
+    build_two_stage_observation_dataset as _hash_cached_dataset_builder,
+)
+
+_two_stage_transform.build_two_stage_observation_dataset = _hash_cached_dataset_builder
+_feher_hare_two_stage_v1.build_two_stage_observation_dataset = _hash_cached_dataset_builder
