@@ -40,6 +40,17 @@ from narrative_dynamics.external_validation import (
     evaluate_external_final,
     preflight_external_releases,
 )
+import narrative_dynamics.external_validation as _external_validation
+from narrative_dynamics.external_final_assembly import (
+    assemble_external_final_from_reports as _assemble_external_final_from_reports,
+)
+
+_external_validation.assemble_external_final_from_reports = (
+    _assemble_external_final_from_reports
+)
+if "assemble_external_final_from_reports" not in _external_validation.__all__:
+    _external_validation.__all__.append("assemble_external_final_from_reports")
+
 from narrative_dynamics.external_prediction import (
     ExternalFinalPredictionArtifact,
     ExternalModelPrediction,
