@@ -17,6 +17,63 @@ def _implementation_identity() -> dict[str, object]:
     return identity
 
 
+def _parse_retained_spaceship_trial(
+    row: dict[str, str],
+    *,
+    participant: str,
+    path: str,
+) -> tuple[_base.CanonicalTwoStageTrial, int]:
+    """Parse one retained Spaceship row using the frozen upstream encoding.
+
+    Upstream ``symbol0`` and ``symbol1`` are independent binary indices for
+    spaceship and planet presentation, so all four 00/01/10/11 combinations
+    are valid.  The first-stage target remains the upstream relative-choice
+    recoding from transition type and final state.
+    """
+    trial_id = _base._int_text(row["trial"], label=f"{path}: trial")
+    common = _base._binary(row["common"], label=f"{path}: common")
+    reward = _base._binary(row["reward"], label=f"{path}: reward")
+    slow = _base._binary(row["slow"], label=f"{path}: slow")
+    latent = tuple(
+        _base._probability(row[name], label=f"{path}: {name}")
+        for name in ("rwrd_prob0", "rwrd_prob1", "rwrd_prob2", "rwrd_prob3")
+    )
+    symbol0 = _base._binary(row["symbol0"], label=f"{path}: symbol0")
+    symbol1 = _base._binary(row["symbol1"], label=f"{path}: symbol1")
+    _base._binary(row["choice1"], label=f"{path}: choice1")
+    _base._float_text(row["rt1"], label=f"{path}: rt1", minimum=0.0)
+    _base._float_text(row["rt2"], label=f"{path}: rt2", minimum=0.0)
+    final_state = _base._binary(row["final_state"], label=f"{path}: final_state")
+    choice2 = _base._binary(row["choice2"], label=f"{path}: choice2")
+    relative = final_state + 1 if common else 2 - final_state
+    return (
+        _base.CanonicalTwoStageTrial(
+            pre_choice=_base.TwoStagePreChoiceView(
+                task_variant="spaceship",
+                source_participant_id=participant,
+                trial_id=trial_id,
+                first_stage_configuration=(("symbol0", symbol0), ("symbol1", symbol1)),
+            ),
+            outcome=_base.TwoStageObservedOutcome(
+                first_stage_action=_base._canonical_action_from_one_two(
+                    relative,
+                    label="spaceship relative choice",
+                ),
+                transition_common=bool(common),
+                final_state=_base._canonical_state_from_zero_one(final_state),
+                second_stage_action=_base._canonical_action_from_zero_one(
+                    choice2,
+                    label="spaceship choice2",
+                ),
+                reward=reward,
+            ),
+            source_path=path,
+            audit_latent_reward_probabilities=latent,
+        ),
+        slow,
+    )
+
+
 def transform_two_stage_snapshot(
     snapshot: VerifiedTwoStageSnapshot,
     manifest: TwoStageSourceManifest,
@@ -27,7 +84,7 @@ def transform_two_stage_snapshot(
     responses and reaction times that never occurred.  The preregistered rule
     excludes those rows before target/history construction, so only ``trial``
     ordering and the binary ``slow`` flag are required before exclusion.
-    Retained rows still pass through the original strict task-specific parser.
+    Retained rows still pass through strict task-specific validation.
     """
     if not isinstance(snapshot, VerifiedTwoStageSnapshot):
         raise TypeError("two-stage transform requires a verified source snapshot")
@@ -63,7 +120,7 @@ def transform_two_stage_snapshot(
         else:
             _base._validate_spaceship_info(root, participant, files)
             rows = _base._read_rows(source_path, _base._SPACESHIP_HEADER)
-            parser = _base._parse_spaceship_trial
+            parser = _parse_retained_spaceship_trial
 
         _base._validate_trial_order(rows, path=source_path)
         participant_retained: list[_base.CanonicalTwoStageTrial] = []
