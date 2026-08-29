@@ -1,0 +1,238 @@
+name: real-train-selection-r2
+
+on:
+  push:
+    branches:
+      - manual/real-train-selection-r2
+
+permissions:
+  contents: read
+
+concurrency:
+  group: real-train-selection-r2
+  cancel-in-progress: false
+
+jobs:
+  fit-and-freeze:
+    if: github.event.head_commit.message == 'research: run empirical revision 2 train selection'
+    name: Empirical Revision 2 Brier TRAIN + SELECTION
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - name: Checkout frozen canonical study code
+        uses: actions/checkout@v4
+        with:
+          repository: qigao/lean
+          ref: 4f88a3e7db08f5129610cc73bcca2b38a888a181
+          path: study
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout pinned Feher Hare upstream
+        uses: actions/checkout@v4
+        with:
+          repository: carolfs/muddled_models
+          ref: 4567763780a2c596fd6510af720ec468a8214a8f
+          path: upstream/muddled_models
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Run frozen Brier TRAIN and SELECTION with candidate parallelism
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > "$RUNNER_TEMP/run_real_train_selection_r2.py" <<'PY'
+          from __future__ import annotations
+
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+
+          import narrative_dynamics.studies.feher_hare_two_stage_v1 as study
+          from narrative_dynamics.attestation import detect_repository_identity
+          from narrative_dynamics.candidate_execution import ProcessCandidateExecutor
+          from narrative_dynamics.studies.feher_hare_two_stage_parallel import (
+              fit_and_freeze_feher_hare_models_parallel,
+          )
+          from narrative_dynamics.studies.two_stage_source import (
+              load_two_stage_source_manifest,
+          )
+
+
+          FROZEN = "4f88a3e7db08f5129610cc73bcca2b38a888a181"
+          UPSTREAM = "4567763780a2c596fd6510af720ec468a8214a8f"
+          MANIFEST_HASH = "sha256:3609e980af172823cfef78290e7f2337fdb337d67f1f27641e17d473aeedd10d"
+          MAX_WORKERS = 4
+
+
+          def _git(*args: str) -> str:
+              return subprocess.check_output(args, text=True).strip()
+
+
+          def _digest(value: object) -> str:
+              payload = json.dumps(
+                  value,
+                  sort_keys=True,
+                  separators=(",", ":"),
+                  ensure_ascii=True,
+              ).encode("utf-8")
+              return "sha256:" + hashlib.sha256(payload).hexdigest()
+
+
+          def main() -> None:
+              study_root = Path.cwd().resolve()
+              upstream_root = (study_root.parent / "upstream" / "muddled_models").resolve()
+
+              if _git("git", "rev-parse", "HEAD") != FROZEN:
+                  raise RuntimeError("frozen canonical study checkout drifted")
+              if _git("git", "-C", str(upstream_root), "rev-parse", "HEAD") != UPSTREAM:
+                  raise RuntimeError("pinned Feher/Hare upstream checkout drifted")
+              status = subprocess.check_output(
+                  ("git", "status", "--porcelain"),
+                  text=True,
+              )
+              if status:
+                  raise RuntimeError(f"frozen canonical study checkout must be clean: {status!r}")
+
+              if study.TRAIN_SEEDS != (101, 102):
+                  raise RuntimeError("TRAIN seed plan drifted")
+              if study.SELECTION_SEEDS != (201, 202):
+                  raise RuntimeError("SELECTION seed plan drifted")
+              if study.FINAL_SEEDS != (301, 302):
+                  raise RuntimeError("FINAL seed plan drifted")
+
+              manifest = load_two_stage_source_manifest(
+                  study_root
+                  / "narrative_dynamics/studies/feher_hare_two_stage_v1_source_manifest.json"
+              )
+              if manifest.content_hash != MANIFEST_HASH:
+                  raise RuntimeError("committed real source manifest drifted")
+
+              repository_identity = detect_repository_identity(environ={}, cwd=study_root)
+              if (
+                  repository_identity.checkout_commit != FROZEN
+                  or repository_identity.source_commit != FROZEN
+              ):
+                  raise RuntimeError(
+                      "runner repository identity does not bind Empirical Revision 2"
+                  )
+              if repository_identity.dirty is not False:
+                  raise RuntimeError("Empirical Revision 2 checkout is not clean")
+
+              prepared = study.prepare_feher_hare_two_stage_v1(
+                  root=upstream_root,
+                  manifest=manifest,
+              )
+
+              print(
+                  json.dumps(
+                      {
+                          "event": "real_train_selection_r2_start",
+                          "scientific_repository_revision": FROZEN,
+                          "orchestration_commit": os.environ.get("GITHUB_SHA"),
+                          "upstream_revision": UPSTREAM,
+                          "source_manifest_hash": manifest.content_hash,
+                          "dataset_hash": prepared.dataset.content_hash,
+                          "executor": "spawn_process",
+                          "max_workers": MAX_WORKERS,
+                          "final_model_execution": False,
+                      },
+                      sort_keys=True,
+                  ),
+                  flush=True,
+              )
+
+              frozen_models = fit_and_freeze_feher_hare_models_parallel(
+                  root=upstream_root,
+                  manifest=manifest,
+                  repository_identity=repository_identity,
+                  executor=ProcessCandidateExecutor(max_workers=MAX_WORKERS),
+              )
+
+              if tuple(row.family for row in frozen_models.families) != (
+                  "reactive",
+                  "intentional",
+                  "planning",
+              ):
+                  raise RuntimeError("frozen family set/order drifted")
+
+              rows = []
+              for row in frozen_models.families:
+                  rows.append(
+                      {
+                          "family": row.family,
+                          "selected_parameters": list(row.frozen.parameters),
+                          "training_manifest_hash": row.training.manifest.content_hash,
+                          "selection_manifest_hash": row.selection.manifest.content_hash,
+                          "frozen_candidate_hash": row.frozen.content_hash,
+                      }
+                  )
+
+              summary = {
+                  "schema": "feher-hare-real-train-selection-r2-v1",
+                  "scientific_repository_revision": FROZEN,
+                  "orchestration_commit": os.environ.get("GITHUB_SHA"),
+                  "github_run_id": os.environ.get("GITHUB_RUN_ID"),
+                  "repository_identity": repository_identity.manifest_identity(),
+                  "upstream_revision": UPSTREAM,
+                  "source_manifest_hash": manifest.content_hash,
+                  "source_snapshot_hash": manifest.snapshot_hash,
+                  "dataset_hash": prepared.dataset.content_hash,
+                  "train_target_hash": prepared.train_targets.content_hash,
+                  "selection_target_hash": prepared.selection_targets.content_hash,
+                  "final_target_hash": prepared.final_targets.content_hash,
+                  "train_seed_set": list(study.TRAIN_SEEDS),
+                  "selection_seed_set": list(study.SELECTION_SEEDS),
+                  "forbidden_final_seed_set": list(study.FINAL_SEEDS),
+                  "families": rows,
+                  "executor": {
+                      "kind": "spawn_process",
+                      "max_workers": MAX_WORKERS,
+                      "scientific_identity": False,
+                  },
+                  "final_model_execution": False,
+                  "raw_human_rows_in_artifact": False,
+              }
+              summary["artifact_digest"] = _digest(summary)
+
+              out = Path("artifacts/real-train-selection-r2")
+              out.mkdir(parents=True, exist_ok=True)
+              path = out / "summary.json"
+              path.write_text(
+                  json.dumps(summary, indent=2, sort_keys=True) + "\n",
+                  encoding="utf-8",
+              )
+
+              print(
+                  json.dumps(
+                      {
+                          "event": "real_train_selection_r2_complete",
+                          "scientific_repository_revision": FROZEN,
+                          "artifact_digest": summary["artifact_digest"],
+                          "families": rows,
+                          "final_model_execution": False,
+                      },
+                      sort_keys=True,
+                  ),
+                  flush=True,
+              )
+
+
+          if __name__ == "__main__":
+              main()
+          PY
+
+          cd study
+          export PYTHONPATH="$PWD"
+          python3 -B "$RUNNER_TEMP/run_real_train_selection_r2.py"
+
+      - name: Upload metadata-only Revision 2 freeze
+        uses: actions/upload-artifact@v4
+        with:
+          name: feher-hare-real-train-selection-r2-${{ github.run_id }}
+          path: study/artifacts/real-train-selection-r2/summary.json
+          if-no-files-found: error
+          retention-days: 90
