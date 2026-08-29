@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import dataclass
 import unittest
 
+from narrative_dynamics.candidate_execution import (
+    ProcessCandidateExecutor,
+    SequentialCandidateExecutor,
+)
 from narrative_dynamics.contracts import ModelRun, Scenario, stable_content_hash
 from narrative_dynamics.losses import DEFAULT_METRIC_LOSS
 from narrative_dynamics.simulation import SimulationRunner
@@ -39,6 +44,19 @@ class ScaledLevelModel:
         )
 
 
+@dataclass(frozen=True)
+class SelectionShardTask:
+    parameters: tuple[tuple[str, float], ...]
+
+
+class ReverseResultCandidateExecutor:
+    def execute(self, function, tasks, *, initializer=None, initargs=()):
+        if initializer is not None:
+            initializer(*tuple(initargs))
+        results = tuple(function(task) for task in tuple(tasks))
+        return tuple(reversed(results))
+
+
 def value_metrics(trace):
     return {"value": float(trace.outcome["value"])}
 
@@ -71,6 +89,19 @@ def _fixture():
     return suite, accepted
 
 
+def evaluate_selection_shard_task(task: SelectionShardTask):
+    suite, accepted = _fixture()
+    return evaluate_selection_candidate(
+        runner=SimulationRunner(),
+        model=ScaledLevelModel(),
+        accepted_parameter_set=accepted,
+        parameters=task.parameters,
+        suite=suite,
+        extractor=value_metrics,
+        loss=DEFAULT_METRIC_LOSS,
+    )
+
+
 def _reference():
     suite, accepted = _fixture()
     return select_on_validation_suite(
@@ -99,6 +130,24 @@ def _shards():
         for parameters in accepted.parameters
     )
     return suite, accepted, model, shards
+
+
+def _assemble_with_executor(executor):
+    suite, accepted = _fixture()
+    model = ScaledLevelModel()
+    tasks = tuple(
+        SelectionShardTask(parameters=parameters)
+        for parameters in accepted.parameters
+    )
+    shards = executor.execute(evaluate_selection_shard_task, tasks)
+    return assemble_selection_validation_report(
+        model=model,
+        accepted_parameters=accepted,
+        suite=suite,
+        extractor=value_metrics,
+        loss=DEFAULT_METRIC_LOSS,
+        shards=shards,
+    )
 
 
 @unittest.skipIf(_IMPORT_ERROR is not None, "selection shard API is not implemented yet")
@@ -150,6 +199,23 @@ class CandidateParallelSelectionContractTests(unittest.TestCase):
             assemble(shards[:-1])
         with self.assertRaises(ValueError):
             assemble(shards + (shards[0],))
+
+    def test_executor_backends_preserve_exact_selection_report(self):
+        reference = _reference()
+        executors = (
+            ("sequential", SequentialCandidateExecutor()),
+            ("process-1", ProcessCandidateExecutor(max_workers=1)),
+            ("process-2", ProcessCandidateExecutor(max_workers=2)),
+        )
+        for name, executor in executors:
+            with self.subTest(executor=name):
+                self.assertEqual(_assemble_with_executor(executor), reference)
+
+    def test_reverse_completion_order_preserves_exact_selection_report(self):
+        self.assertEqual(
+            _assemble_with_executor(ReverseResultCandidateExecutor()),
+            _reference(),
+        )
 
 
 class CandidateParallelSelectionRedTests(unittest.TestCase):

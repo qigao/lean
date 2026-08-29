@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import dataclass
 import unittest
 
 from narrative_dynamics.adapters.prison_metrics import prison_initial_action_metrics
+from narrative_dynamics.candidate_execution import (
+    ProcessCandidateExecutor,
+    SequentialCandidateExecutor,
+)
 from narrative_dynamics.observations.dataset import ObservationPartitionRole
 from narrative_dynamics.simulation import SimulationRunner
 from tests.test_observational_training_fit import (
@@ -30,6 +35,33 @@ CANDIDATES = (
     (("p", 0.8),),
 )
 SEEDS = (101, 102)
+
+
+@dataclass(frozen=True)
+class TrainingShardTask:
+    parameters: tuple[tuple[str, float], ...]
+    simulation_seeds: tuple[int, ...]
+
+
+class ReverseResultCandidateExecutor:
+    def execute(self, function, tasks, *, initializer=None, initargs=()):
+        if initializer is not None:
+            initializer(*tuple(initargs))
+        results = tuple(function(task) for task in tuple(tasks))
+        return tuple(reversed(results))
+
+
+def evaluate_training_shard_task(task: TrainingShardTask):
+    target_report = targets_for(ObservationPartitionRole.TRAIN)
+    return evaluate_training_candidate(
+        runner=SimulationRunner(),
+        model=TrainingProbabilityModel(),
+        target_report=target_report,
+        parameters=task.parameters,
+        simulation_seeds=task.simulation_seeds,
+        extractor=prison_initial_action_metrics,
+        loss=brier_loss(),
+    )
 
 
 def _reference():
@@ -60,6 +92,25 @@ def _shards():
             loss=brier_loss(),
         )
         for parameters in CANDIDATES
+    )
+
+
+def _assemble_with_executor(executor):
+    target_report = targets_for(ObservationPartitionRole.TRAIN)
+    model = TrainingProbabilityModel()
+    tasks = tuple(
+        TrainingShardTask(parameters=parameters, simulation_seeds=SEEDS)
+        for parameters in CANDIDATES
+    )
+    shards = executor.execute(evaluate_training_shard_task, tasks)
+    return assemble_training_fit_report(
+        model=model,
+        target_report=target_report,
+        parameter_candidates=CANDIDATES,
+        simulation_seeds=SEEDS,
+        extractor=prison_initial_action_metrics,
+        loss=brier_loss(),
+        shards=shards,
     )
 
 
@@ -125,6 +176,23 @@ class CandidateParallelTrainingContractTests(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             assemble(shards + (undeclared,))
+
+    def test_executor_backends_preserve_exact_training_report(self):
+        reference = _reference()
+        executors = (
+            ("sequential", SequentialCandidateExecutor()),
+            ("process-1", ProcessCandidateExecutor(max_workers=1)),
+            ("process-2", ProcessCandidateExecutor(max_workers=2)),
+        )
+        for name, executor in executors:
+            with self.subTest(executor=name):
+                self.assertEqual(_assemble_with_executor(executor), reference)
+
+    def test_reverse_completion_order_preserves_exact_training_report(self):
+        self.assertEqual(
+            _assemble_with_executor(ReverseResultCandidateExecutor()),
+            _reference(),
+        )
 
 
 class CandidateParallelTrainingRedTests(unittest.TestCase):
