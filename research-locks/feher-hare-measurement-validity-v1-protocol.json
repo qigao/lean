@@ -1,0 +1,285 @@
+{
+  "anchor": {
+    "candidate_rows": [
+      {
+        "candidate_hash": "sha256:42a84ef10c207159ff98397fe2bd86594df6c8be0f41b98e876f7ae33cba9456",
+        "family": "reactive",
+        "parameters": [
+          [
+            "beta",
+            0.5
+          ]
+        ],
+        "selection_manifest_hash": "sha256:e8414e301d19fc6acfd5accf055402ac995790f785402186c67ff95a48ee0c2e",
+        "training_manifest_hash": "sha256:5b607a4bc0a8082809c2446a8248fb8659b0d9ba178687ddad96dc74e3f19622"
+      },
+      {
+        "candidate_hash": "sha256:68a01b5496e20095c1a603b30f1384bbe6a3ea22aac8cf74b7b97463c4935839",
+        "family": "intentional",
+        "parameters": [
+          [
+            "beta",
+            2.0
+          ],
+          [
+            "memory_decay",
+            0.5
+          ]
+        ],
+        "selection_manifest_hash": "sha256:498a512cd931afe276f78bf135bd5c8269e051920d4b876177d0aa9ea250806d",
+        "training_manifest_hash": "sha256:47057311fe7450469c1710be49ba0e3b42aa7416fa2129f40761dbf8d237d4fc"
+      },
+      {
+        "candidate_hash": "sha256:c0ed956c1b285153075e5a22e7fb51f6d53dcf8ad326cce82e39e0221c2e877c",
+        "family": "planning",
+        "parameters": [
+          [
+            "beta",
+            4.0
+          ],
+          [
+            "memory_decay",
+            0.75
+          ]
+        ],
+        "selection_manifest_hash": "sha256:e347a3d7d523e2a35d0bb6b0f662343f5a01ddd1ff7d2efe95a8a5efa1986e74",
+        "training_manifest_hash": "sha256:ef0f3caf4f2a02b2d719bc302d7409fc8c2d937eb13517d906d83b38c29b76ac"
+      }
+    ],
+    "dataset_hash": "sha256:17789130372d7eace05e1216a57bdae2ffbd519960333ffe814aee2d2d404781",
+    "excluded_final_partition_hash": "sha256:936ffe872644e888111007b300ea847484698be8fbfd7c2d54a177505a411047",
+    "excluded_final_target_hash": "sha256:927e1727d37993e9a5c887f79ac8712d07a155622deacf0a3122d41f90b16ed2",
+    "internal_lock_bundle_hash": "sha256:96e553e557d6e7314eb0b9b1d0aaa8696e01d7a6ddec0abde949be8c8d45602f",
+    "lock_commit": "f09d6afc96f0a720dd5e8e810f440cda0fe9f8a3",
+    "participant_assignment_hash": "sha256:fc144c35f6713e27f75141d678872cc04ca44c7a0fd8e109e8618c72b4111ccf",
+    "scientific_repository_revision": "d01232979cdfc9d902daab5f9e3e937079b56f69",
+    "selection_partition_hash": "sha256:ecdcfa1681b58888ebf4419372d5de7b75be9624cdd3307144371c5486eb1347",
+    "source_manifest_hash": "sha256:3609e980af172823cfef78290e7f2337fdb337d67f1f27641e17d473aeedd10d",
+    "source_snapshot_hash": "sha256:25bdc2e4bff4110f38b098b89e7d59aa38c9658727fcc89a38d50e107d243186",
+    "target_spec_hash": "sha256:3134c9dc424418c87379f8e451420fb2defe81b8f30a45d67cd9b1f453349713",
+    "train_partition_hash": "sha256:71ce56243338eb23b9dd5ad6dd901e4b0d0be4989742b66bbe7ea4f025f207da",
+    "train_selection_freeze_hash": "sha256:77fa1bb80ab0c7ac737a09a8001f1d0c1432ce3bd991fd7191d07fdd0d8e05d5",
+    "transform_hash": "sha256:2fb8ab6dc796a9e4ece5653a5485d865ef44dd0f5f7dff92d94a904932d6e541",
+    "upstream_revision": "4567763780a2c596fd6510af720ec468a8214a8f"
+  },
+  "design_file_sha256": "sha256:d52de6d0f3818d3bf0d496c4b258fb6d7bab7b913325ec87f3c6b30738ec4fbe",
+  "design_path": "docs/superpowers/specs/2026-08-30-narrative-measurement-validity-v1-design.md",
+  "final_model_execution": false,
+  "final_test_outcomes_analyzed": false,
+  "final_test_values_exposed_to_audit": false,
+  "parameter_selection_performed": false,
+  "parameter_training_performed": false,
+  "protocol": {
+    "aggregation_rules": [
+      "trial_equal",
+      "participant_equal"
+    ],
+    "allowed_roles": [
+      "train",
+      "selection_validation"
+    ],
+    "candidate_hashes": [
+      "sha256:42a84ef10c207159ff98397fe2bd86594df6c8be0f41b98e876f7ae33cba9456",
+      "sha256:68a01b5496e20095c1a603b30f1384bbe6a3ea22aac8cf74b7b97463c4935839",
+      "sha256:c0ed956c1b285153075e5a22e7fb51f6d53dcf8ad326cce82e39e0221c2e877c"
+    ],
+    "claim_scope": "external_observational_measurement_audit_only",
+    "empirical_anchor_hash": "sha256:bf5169cde45200df48009a5aea34efeeff7609b5b3f982b89829efbeadf2ff73",
+    "excluded_final_partition_hash": "sha256:936ffe872644e888111007b300ea847484698be8fbfd7c2d54a177505a411047",
+    "excluded_final_target_hash": "sha256:927e1727d37993e9a5c887f79ac8712d07a155622deacf0a3122d41f90b16ed2",
+    "implementation_identities": [
+      [
+        "anchor_loader",
+        {
+          "name": "narrative_dynamics.studies.feher_hare_measurement_validity_v1.load_feher_hare_r3_measurement_anchor",
+          "type": "builtins.function",
+          "version": "unversioned"
+        }
+      ],
+      [
+        "brier_loss",
+        {
+          "content_hash": "sha256:f45ac12ea386eb518725f28e358e7f1221c6c537d9e4d40a31ad8157d00654d7",
+          "groups": [
+            {
+              "keys": [
+                "first_stage.action_0",
+                "first_stage.action_1"
+              ],
+              "name": "first_stage",
+              "weight": 1.0
+            }
+          ],
+          "name": "categorical_brier",
+          "probability_tolerance": 1e-12,
+          "version": "1"
+        }
+      ],
+      [
+        "candidate_freezer",
+        {
+          "name": "narrative_dynamics.studies.feher_hare_measurement_validity_v1.freeze_feher_hare_measurement_candidates",
+          "type": "builtins.function",
+          "version": "unversioned"
+        }
+      ],
+      [
+        "diagnostic_builder",
+        {
+          "name": "narrative_dynamics.studies.feher_hare_measurement_validity_v1.build_feher_hare_stay_switch_diagnostics",
+          "type": "builtins.function",
+          "version": "unversioned"
+        }
+      ],
+      [
+        "empirical_invariance",
+        {
+          "name": "narrative_dynamics.studies.feher_hare_measurement_validity_v1.evaluate_feher_hare_empirical_invariance",
+          "type": "builtins.function",
+          "version": "unversioned"
+        }
+      ],
+      [
+        "invariance_combiner",
+        {
+          "name": "narrative_dynamics.studies.feher_hare_measurement_validity_v1.combine_feher_hare_exact_invariance",
+          "type": "builtins.function",
+          "version": "unversioned"
+        }
+      ],
+      [
+        "log_loss",
+        {
+          "content_hash": "sha256:8499cb12cedf220c27ec92dcc4e2a891d8de97f5c368cf1df6eb6f10527a6a9a",
+          "groups": [
+            {
+              "keys": [
+                "first_stage.action_0",
+                "first_stage.action_1"
+              ],
+              "name": "first_stage",
+              "weight": 1.0
+            }
+          ],
+          "name": "categorical_log",
+          "probability_tolerance": 1e-12,
+          "version": "1"
+        }
+      ],
+      [
+        "prediction_executor",
+        {
+          "name": "narrative_dynamics.studies.feher_hare_measurement_validity_v1.execute_feher_hare_measurement_predictions",
+          "type": "builtins.function",
+          "version": "unversioned"
+        }
+      ],
+      [
+        "prediction_scorer",
+        {
+          "name": "narrative_dynamics.measurement_validity.score_measurement_predictions",
+          "type": "builtins.function",
+          "version": "unversioned"
+        }
+      ],
+      [
+        "provisioner",
+        {
+          "name": "narrative_dynamics.studies.feher_hare_measurement_validity_v1.provision_feher_hare_measurement_input",
+          "type": "builtins.function",
+          "version": "unversioned"
+        }
+      ],
+      [
+        "report_assembler",
+        {
+          "name": "narrative_dynamics.studies.feher_hare_measurement_validity_v1.assemble_feher_hare_measurement_validity_report",
+          "type": "builtins.function",
+          "version": "unversioned"
+        }
+      ],
+      [
+        "report_attestor",
+        {
+          "name": "narrative_dynamics.report_artifact.attest_report",
+          "type": "builtins.function",
+          "version": "unversioned"
+        }
+      ],
+      [
+        "robustness_builder",
+        {
+          "name": "narrative_dynamics.measurement_validity.build_measurement_robustness_profile",
+          "type": "builtins.function",
+          "version": "unversioned"
+        }
+      ],
+      [
+        "semantic_evaluator",
+        {
+          "name": "narrative_dynamics.studies.feher_hare_measurement_validity_v1.evaluate_feher_hare_semantic_invariance",
+          "type": "builtins.function",
+          "version": "unversioned"
+        }
+      ]
+    ],
+    "material_reversal_references": [
+      [
+        "brier",
+        0.005
+      ],
+      [
+        "log",
+        0.006931471805599453
+      ]
+    ],
+    "name": "feher-hare-measurement-validity-v1",
+    "participant_influence_rule": "deterministic_leave_one_participant_out",
+    "scores": [
+      "brier",
+      "log"
+    ],
+    "seeds_by_role": [
+      [
+        "train",
+        [
+          101,
+          102
+        ]
+      ],
+      [
+        "selection_validation",
+        [
+          201,
+          202
+        ]
+      ]
+    ],
+    "semantic_fixture_hashes": [
+      "sha256:3a316e1b2db9ca1f0b1c9ff2d1d0a00ff95de728d580736f9a6e51fa342ea8b6",
+      "sha256:750e85e658ad64dac7ff8d860a1df9c5d8690a727a7185cfaf333442812b24e1",
+      "sha256:7fcad41fcdf47b42deac0da28828d75ed17d35054b17ff072408f8225548de63",
+      "sha256:cae86b5dda206cd690527be1b839bf30f2fcb0a66312ca3f6973101d5b3bae32",
+      "sha256:cbdcdc40743c78f5f153cfc057e546d285ef6dff041a6e54e2b251f904f60dd6"
+    ],
+    "semantic_permutations": [
+      "binary_coordinate_swap",
+      "coherent_action_state_relabel",
+      "magic_carpet_counterbalance",
+      "post_choice_outcome_exclusion",
+      "record_order_batch_permutation",
+      "second_stage_action_relabel",
+      "serial_spawn_executor_identity",
+      "spaceship_symbol_order"
+    ],
+    "stay_switch_definition": "reward_by_transition_previous_retained_trial",
+    "task_strata": [
+      "magic_carpet",
+      "spaceship"
+    ],
+    "version": "1"
+  },
+  "protocol_hash": "sha256:c5c40911aed2a6e2af97c39f702f656330530290420f8316a3af80019d3eaad4",
+  "r3_lock_commit": "f09d6afc96f0a720dd5e8e810f440cda0fe9f8a3",
+  "schema": "feher-hare-measurement-validity-v1-protocol-lock-v1"
+}
