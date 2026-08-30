@@ -2,16 +2,33 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+import json
 import math
+from pathlib import Path
+import re
 
-from narrative_dynamics.contracts import stable_content_hash
+from narrative_dynamics.adapters.narrative_two_stage import (
+    create_narrative_two_stage_intentional_source,
+    create_narrative_two_stage_planning_source,
+    create_narrative_two_stage_reactive_source,
+)
+from narrative_dynamics.contracts import Scenario, stable_content_hash
 from narrative_dynamics.measurement_validity import (
+    MEASUREMENT_CLAIM_SCOPE,
+    MeasurementAuditCase,
     MeasurementAuditInput,
     MeasurementPredictionArtifact,
     MeasurementValidityStatus,
     average_seed_metrics,
 )
 from narrative_dynamics.observations.dataset import ObservationPartitionRole
+from narrative_dynamics.observations.preregistration import FrozenModelSpec
+
+from .feher_hare_two_stage_v1 import (
+    PreparedFeherHareTwoStageV1,
+    prepare_feher_hare_two_stage_v1,
+)
+from .two_stage_source import TwoStageSourceManifest
 
 
 _TASKS = ("magic_carpet", "spaceship")
@@ -33,6 +50,88 @@ _DIAGNOSTIC_STATUSES = frozenset(
         MeasurementValidityStatus.NOT_ESTABLISHED,
     }
 )
+_REVISION_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+_HASH_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+FEHER_HARE_R3_LOCK_COMMIT = "f09d6afc96f0a720dd5e8e810f440cda0fe9f8a3"
+_R3_SCIENTIFIC_REVISION = "d01232979cdfc9d902daab5f9e3e937079b56f69"
+_R3_UPSTREAM_REVISION = "4567763780a2c596fd6510af720ec468a8214a8f"
+_R3_IDENTITIES = {
+    "source_manifest_hash": (
+        "sha256:3609e980af172823cfef78290e7f2337fdb337d67f1f27641e17d473aeedd10d"
+    ),
+    "source_snapshot_hash": (
+        "sha256:25bdc2e4bff4110f38b098b89e7d59aa38c9658727fcc89a38d50e107d243186"
+    ),
+    "transform_hash": (
+        "sha256:2fb8ab6dc796a9e4ece5653a5485d865ef44dd0f5f7dff92d94a904932d6e541"
+    ),
+    "participant_assignment_hash": (
+        "sha256:fc144c35f6713e27f75141d678872cc04ca44c7a0fd8e109e8618c72b4111ccf"
+    ),
+    "dataset_hash": (
+        "sha256:17789130372d7eace05e1216a57bdae2ffbd519960333ffe814aee2d2d404781"
+    ),
+    "target_spec_hash": (
+        "sha256:3134c9dc424418c87379f8e451420fb2defe81b8f30a45d67cd9b1f453349713"
+    ),
+    "train_partition_hash": (
+        "sha256:71ce56243338eb23b9dd5ad6dd901e4b0d0be4989742b66bbe7ea4f025f207da"
+    ),
+    "selection_partition_hash": (
+        "sha256:ecdcfa1681b58888ebf4419372d5de7b75be9624cdd3307144371c5486eb1347"
+    ),
+    "excluded_final_partition_hash": (
+        "sha256:936ffe872644e888111007b300ea847484698be8fbfd7c2d54a177505a411047"
+    ),
+    "excluded_final_target_hash": (
+        "sha256:927e1727d37993e9a5c887f79ac8712d07a155622deacf0a3122d41f90b16ed2"
+    ),
+    "train_selection_freeze_hash": (
+        "sha256:77fa1bb80ab0c7ac737a09a8001f1d0c1432ce3bd991fd7191d07fdd0d8e05d5"
+    ),
+    "internal_lock_bundle_hash": (
+        "sha256:96e553e557d6e7314eb0b9b1d0aaa8696e01d7a6ddec0abde949be8c8d45602f"
+    ),
+}
+_R3_CANDIDATES = {
+    "reactive": {
+        "parameters": (("beta", 0.5),),
+        "training_manifest_hash": (
+            "sha256:5b607a4bc0a8082809c2446a8248fb8659b0d9ba178687ddad96dc74e3f19622"
+        ),
+        "selection_manifest_hash": (
+            "sha256:e8414e301d19fc6acfd5accf055402ac995790f785402186c67ff95a48ee0c2e"
+        ),
+        "candidate_hash": (
+            "sha256:42a84ef10c207159ff98397fe2bd86594df6c8be0f41b98e876f7ae33cba9456"
+        ),
+    },
+    "intentional": {
+        "parameters": (("beta", 2.0), ("memory_decay", 0.5)),
+        "training_manifest_hash": (
+            "sha256:47057311fe7450469c1710be49ba0e3b42aa7416fa2129f40761dbf8d237d4fc"
+        ),
+        "selection_manifest_hash": (
+            "sha256:498a512cd931afe276f78bf135bd5c8269e051920d4b876177d0aa9ea250806d"
+        ),
+        "candidate_hash": (
+            "sha256:68a01b5496e20095c1a603b30f1384bbe6a3ea22aac8cf74b7b97463c4935839"
+        ),
+    },
+    "planning": {
+        "parameters": (("beta", 4.0), ("memory_decay", 0.75)),
+        "training_manifest_hash": (
+            "sha256:ef0f3caf4f2a02b2d719bc302d7409fc8c2d937eb13517d906d83b38c29b76ac"
+        ),
+        "selection_manifest_hash": (
+            "sha256:e347a3d7d523e2a35d0bb6b0f662343f5a01ddd1ff7d2efe95a8a5efa1986e74"
+        ),
+        "candidate_hash": (
+            "sha256:c0ed956c1b285153075e5a22e7fb51f6d53dcf8ad326cce82e39e0221c2e877c"
+        ),
+    },
+}
 
 
 def _text(value: object, *, label: str) -> str:
@@ -88,6 +187,823 @@ def _reward(value: object) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value not in (0, 1):
         raise ValueError("measurement diagnostic reward must be 0 or 1")
     return value
+
+
+def _revision(value: object, *, label: str) -> str:
+    if not isinstance(value, str) or _REVISION_PATTERN.fullmatch(value) is None:
+        raise ValueError(f"{label} must be a 40-character lowercase git revision")
+    return value
+
+
+def _content_hash(value: object, *, label: str) -> str:
+    if not isinstance(value, str) or _HASH_PATTERN.fullmatch(value) is None:
+        raise ValueError(f"{label} must be a sha256 content hash")
+    return value
+
+
+def _parameters(value: object, *, label: str) -> tuple[tuple[str, float], ...]:
+    try:
+        rows = tuple(value)
+    except TypeError as error:
+        raise TypeError(f"{label} must be a sequence") from error
+    canonical: dict[str, float] = {}
+    for row in rows:
+        if not isinstance(row, (list, tuple)) or len(row) != 2:
+            raise ValueError(f"{label} rows must be name/value pairs")
+        name = _text(row[0], label=f"{label} name")
+        if name in canonical:
+            raise ValueError(f"{label} names must be unique")
+        value_number = _finite(row[1], label=f"{label} {name!r}")
+        canonical[name] = value_number
+    if not canonical:
+        raise ValueError(f"{label} must be non-empty")
+    return tuple(sorted(canonical.items()))
+
+
+@dataclass(frozen=True)
+class FeherHareMeasurementCandidateRow:
+    family: str
+    parameters: tuple[tuple[str, float], ...]
+    training_manifest_hash: str
+    selection_manifest_hash: str
+    candidate_hash: str
+
+    def __post_init__(self) -> None:
+        family = _text(
+            self.family,
+            label="Feher/Hare measurement candidate family",
+        )
+        if family not in _MODELS:
+            raise ValueError("Feher/Hare measurement candidate family is unsupported")
+        object.__setattr__(self, "family", family)
+        parameters = _parameters(
+            self.parameters,
+            label=f"Feher/Hare {family} candidate parameters",
+        )
+        expected_names = (
+            ("beta",)
+            if family == "reactive"
+            else ("beta", "memory_decay")
+        )
+        if tuple(name for name, _ in parameters) != expected_names:
+            raise ValueError(
+                f"Feher/Hare {family} candidate parameter schema changed"
+            )
+        object.__setattr__(self, "parameters", parameters)
+        for attribute, label in (
+            ("training_manifest_hash", "training manifest hash"),
+            ("selection_manifest_hash", "selection manifest hash"),
+            ("candidate_hash", "frozen candidate hash"),
+        ):
+            object.__setattr__(
+                self,
+                attribute,
+                _content_hash(
+                    getattr(self, attribute),
+                    label=f"Feher/Hare {family} {label}",
+                ),
+            )
+
+    def to_payload(self) -> dict[str, object]:
+        return {
+            "family": self.family,
+            "parameters": [list(row) for row in self.parameters],
+            "training_manifest_hash": self.training_manifest_hash,
+            "selection_manifest_hash": self.selection_manifest_hash,
+            "candidate_hash": self.candidate_hash,
+        }
+
+    @classmethod
+    def from_payload(
+        cls,
+        payload: Mapping[str, object],
+    ) -> "FeherHareMeasurementCandidateRow":
+        if not isinstance(payload, Mapping):
+            raise TypeError("Feher/Hare measurement candidate payload must be a mapping")
+        expected = {
+            "family",
+            "parameters",
+            "training_manifest_hash",
+            "selection_manifest_hash",
+            "candidate_hash",
+        }
+        missing = expected - set(payload)
+        unknown = set(payload) - expected
+        if missing:
+            raise ValueError(
+                "Feher/Hare measurement candidate payload has missing fields: "
+                f"{tuple(sorted(missing))}"
+            )
+        if unknown:
+            raise ValueError(
+                "Feher/Hare measurement candidate payload has unknown fields: "
+                f"{tuple(sorted(unknown))}"
+            )
+        return cls(
+            family=payload["family"],
+            parameters=tuple(tuple(row) for row in payload["parameters"]),
+            training_manifest_hash=payload["training_manifest_hash"],
+            selection_manifest_hash=payload["selection_manifest_hash"],
+            candidate_hash=payload["candidate_hash"],
+        )
+
+
+@dataclass(frozen=True)
+class FeherHareMeasurementAnchor:
+    lock_commit: str
+    scientific_repository_revision: str
+    upstream_revision: str
+    source_manifest_hash: str
+    source_snapshot_hash: str
+    transform_hash: str
+    participant_assignment_hash: str
+    dataset_hash: str
+    target_spec_hash: str
+    train_partition_hash: str
+    selection_partition_hash: str
+    excluded_final_partition_hash: str
+    excluded_final_target_hash: str
+    train_selection_freeze_hash: str
+    internal_lock_bundle_hash: str
+    candidate_rows: tuple[FeherHareMeasurementCandidateRow, ...]
+
+    def __post_init__(self) -> None:
+        for attribute, label in (
+            ("lock_commit", "Feher/Hare measurement lock commit"),
+            (
+                "scientific_repository_revision",
+                "Feher/Hare scientific repository revision",
+            ),
+            ("upstream_revision", "Feher/Hare upstream revision"),
+        ):
+            object.__setattr__(
+                self,
+                attribute,
+                _revision(getattr(self, attribute), label=label),
+            )
+        for attribute in (
+            "source_manifest_hash",
+            "source_snapshot_hash",
+            "transform_hash",
+            "participant_assignment_hash",
+            "dataset_hash",
+            "target_spec_hash",
+            "train_partition_hash",
+            "selection_partition_hash",
+            "excluded_final_partition_hash",
+            "excluded_final_target_hash",
+            "train_selection_freeze_hash",
+            "internal_lock_bundle_hash",
+        ):
+            object.__setattr__(
+                self,
+                attribute,
+                _content_hash(
+                    getattr(self, attribute),
+                    label=f"Feher/Hare measurement {attribute.replace('_', ' ')}",
+                ),
+            )
+        rows = tuple(self.candidate_rows)
+        if any(
+            not isinstance(row, FeherHareMeasurementCandidateRow) for row in rows
+        ):
+            raise TypeError(
+                "Feher/Hare measurement candidate rows have the wrong type"
+            )
+        rows = tuple(sorted(rows, key=lambda row: _MODELS.index(row.family)))
+        if tuple(row.family for row in rows) != _MODELS:
+            raise ValueError(
+                "Feher/Hare measurement anchor requires all three candidate families"
+            )
+        if len({row.candidate_hash for row in rows}) != len(rows):
+            raise ValueError(
+                "Feher/Hare measurement candidate hashes must be unique"
+            )
+        object.__setattr__(self, "candidate_rows", rows)
+
+    def to_payload(self) -> dict[str, object]:
+        return {
+            "lock_commit": self.lock_commit,
+            "scientific_repository_revision": self.scientific_repository_revision,
+            "upstream_revision": self.upstream_revision,
+            "source_manifest_hash": self.source_manifest_hash,
+            "source_snapshot_hash": self.source_snapshot_hash,
+            "transform_hash": self.transform_hash,
+            "participant_assignment_hash": self.participant_assignment_hash,
+            "dataset_hash": self.dataset_hash,
+            "target_spec_hash": self.target_spec_hash,
+            "train_partition_hash": self.train_partition_hash,
+            "selection_partition_hash": self.selection_partition_hash,
+            "excluded_final_partition_hash": self.excluded_final_partition_hash,
+            "excluded_final_target_hash": self.excluded_final_target_hash,
+            "train_selection_freeze_hash": self.train_selection_freeze_hash,
+            "internal_lock_bundle_hash": self.internal_lock_bundle_hash,
+            "candidate_rows": [row.to_payload() for row in self.candidate_rows],
+        }
+
+    @classmethod
+    def from_payload(
+        cls,
+        payload: Mapping[str, object],
+    ) -> "FeherHareMeasurementAnchor":
+        if not isinstance(payload, Mapping):
+            raise TypeError("Feher/Hare measurement anchor payload must be a mapping")
+        expected = {
+            "lock_commit",
+            "scientific_repository_revision",
+            "upstream_revision",
+            "source_manifest_hash",
+            "source_snapshot_hash",
+            "transform_hash",
+            "participant_assignment_hash",
+            "dataset_hash",
+            "target_spec_hash",
+            "train_partition_hash",
+            "selection_partition_hash",
+            "excluded_final_partition_hash",
+            "excluded_final_target_hash",
+            "train_selection_freeze_hash",
+            "internal_lock_bundle_hash",
+            "candidate_rows",
+        }
+        missing = expected - set(payload)
+        unknown = set(payload) - expected
+        if missing:
+            raise ValueError(
+                "Feher/Hare measurement anchor payload has missing fields: "
+                f"{tuple(sorted(missing))}"
+            )
+        if unknown:
+            raise ValueError(
+                "Feher/Hare measurement anchor payload has unknown fields: "
+                f"{tuple(sorted(unknown))}"
+            )
+        return cls(
+            lock_commit=payload["lock_commit"],
+            scientific_repository_revision=payload[
+                "scientific_repository_revision"
+            ],
+            upstream_revision=payload["upstream_revision"],
+            source_manifest_hash=payload["source_manifest_hash"],
+            source_snapshot_hash=payload["source_snapshot_hash"],
+            transform_hash=payload["transform_hash"],
+            participant_assignment_hash=payload["participant_assignment_hash"],
+            dataset_hash=payload["dataset_hash"],
+            target_spec_hash=payload["target_spec_hash"],
+            train_partition_hash=payload["train_partition_hash"],
+            selection_partition_hash=payload["selection_partition_hash"],
+            excluded_final_partition_hash=payload[
+                "excluded_final_partition_hash"
+            ],
+            excluded_final_target_hash=payload["excluded_final_target_hash"],
+            train_selection_freeze_hash=payload[
+                "train_selection_freeze_hash"
+            ],
+            internal_lock_bundle_hash=payload["internal_lock_bundle_hash"],
+            candidate_rows=tuple(
+                FeherHareMeasurementCandidateRow.from_payload(row)
+                for row in payload["candidate_rows"]
+            ),
+        )
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_payload())
+
+
+def _mapping_field(
+    payload: Mapping[str, object],
+    key: str,
+    *,
+    label: str,
+) -> Mapping[str, object]:
+    value = payload.get(key)
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{label} is missing or invalid")
+    return value
+
+
+def _expect_identity(actual: object, expected: object, *, label: str) -> None:
+    if actual != expected:
+        raise ValueError(f"Feher/Hare {label} identity changed")
+
+
+def _candidate_rows_from_lock(
+    payload: Mapping[str, object],
+) -> tuple[FeherHareMeasurementCandidateRow, ...]:
+    freeze = _mapping_field(
+        payload,
+        "train_selection_freeze",
+        label="Feher/Hare TRAIN/SELECTION freeze",
+    )
+    families = _mapping_field(
+        freeze,
+        "families",
+        label="Feher/Hare TRAIN/SELECTION families",
+    )
+    if set(families) != set(_MODELS):
+        raise ValueError("Feher/Hare frozen candidate family set changed")
+    try:
+        frozen_candidates = tuple(payload["frozen_candidates"])
+    except (KeyError, TypeError) as error:
+        raise ValueError("Feher/Hare frozen candidates are missing") from error
+    by_name: dict[str, Mapping[str, object]] = {}
+    for raw_candidate in frozen_candidates:
+        if not isinstance(raw_candidate, Mapping):
+            raise ValueError("Feher/Hare frozen candidate row is invalid")
+        family = raw_candidate.get("name")
+        if family in by_name or family not in _MODELS:
+            raise ValueError("Feher/Hare frozen candidate family set changed")
+        by_name[family] = raw_candidate
+    if set(by_name) != set(_MODELS):
+        raise ValueError("Feher/Hare frozen candidate family set changed")
+
+    rows: list[FeherHareMeasurementCandidateRow] = []
+    for family in _MODELS:
+        family_row = families[family]
+        if not isinstance(family_row, Mapping):
+            raise ValueError(f"Feher/Hare {family} freeze row is invalid")
+        frozen_row = by_name[family]
+        family_parameters = _parameters(
+            family_row.get("parameters"),
+            label=f"Feher/Hare {family} freeze parameters",
+        )
+        frozen_parameters = _parameters(
+            frozen_row.get("parameters"),
+            label=f"Feher/Hare {family} frozen candidate parameters",
+        )
+        _expect_identity(
+            frozen_parameters,
+            family_parameters,
+            label=f"{family} candidate parameters",
+        )
+        _expect_identity(
+            frozen_row.get("selection_manifest_hash"),
+            family_row.get("selection_manifest_hash"),
+            label=f"{family} candidate selection manifest",
+        )
+        _expect_identity(
+            frozen_row.get("content_hash"),
+            family_row.get("frozen_candidate_hash"),
+            label=f"{family} candidate",
+        )
+        expected = _R3_CANDIDATES[family]
+        row = FeherHareMeasurementCandidateRow(
+            family=family,
+            parameters=family_parameters,
+            training_manifest_hash=family_row.get("training_manifest_hash"),
+            selection_manifest_hash=family_row.get("selection_manifest_hash"),
+            candidate_hash=family_row.get("frozen_candidate_hash"),
+        )
+        for attribute in (
+            "parameters",
+            "training_manifest_hash",
+            "selection_manifest_hash",
+            "candidate_hash",
+        ):
+            _expect_identity(
+                getattr(row, attribute),
+                expected[attribute],
+                label=f"{family} candidate {attribute.replace('_', ' ')}",
+            )
+        rows.append(row)
+    return tuple(rows)
+
+
+def load_feher_hare_r3_measurement_anchor(
+    lock_path: Path,
+    *,
+    lock_commit: str,
+) -> FeherHareMeasurementAnchor:
+    if lock_commit != FEHER_HARE_R3_LOCK_COMMIT:
+        raise ValueError("Feher/Hare measurement lock commit changed")
+    path = Path(lock_path)
+    with path.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    if not isinstance(payload, Mapping):
+        raise ValueError("Feher/Hare R3 lock payload must be a mapping")
+
+    _expect_identity(
+        payload.get("scientific_repository_revision"),
+        _R3_SCIENTIFIC_REVISION,
+        label="scientific repository revision",
+    )
+    _expect_identity(
+        payload.get("upstream_revision"),
+        _R3_UPSTREAM_REVISION,
+        label="upstream revision",
+    )
+    for field_name, label in (
+        ("source_manifest_hash", "source manifest"),
+        ("source_snapshot_hash", "source snapshot"),
+        ("transform_hash", "transform"),
+        ("participant_assignment_hash", "participant assignment"),
+        ("dataset_hash", "dataset"),
+        ("excluded_final_target_hash", "FINAL target"),
+    ):
+        source_field = (
+            "final_target_hash"
+            if field_name == "excluded_final_target_hash"
+            else field_name
+        )
+        _expect_identity(
+            payload.get(source_field),
+            _R3_IDENTITIES[field_name],
+            label=label,
+        )
+
+    freeze = _mapping_field(
+        payload,
+        "train_selection_freeze",
+        label="Feher/Hare TRAIN/SELECTION freeze",
+    )
+    _expect_identity(
+        freeze.get("artifact_payload_digest"),
+        _R3_IDENTITIES["train_selection_freeze_hash"],
+        label="TRAIN/SELECTION freeze",
+    )
+    brier = _mapping_field(
+        payload,
+        "brier_protocol",
+        label="Feher/Hare Brier protocol",
+    )
+    protocol_fields = (
+        ("dataset_hash", "dataset_hash", "dataset"),
+        ("target_spec_hash", "target_spec_hash", "target spec"),
+        ("train_partition_hash", "train_partition_hash", "TRAIN partition"),
+        (
+            "selection_partition_hash",
+            "selection_partition_hash",
+            "SELECTION partition",
+        ),
+        (
+            "final_partition_hash",
+            "excluded_final_partition_hash",
+            "FINAL partition",
+        ),
+    )
+    for source_field, anchor_field, label in protocol_fields:
+        _expect_identity(
+            brier.get(source_field),
+            _R3_IDENTITIES[anchor_field],
+            label=label,
+        )
+    log_protocol = payload.get("log_protocol")
+    if log_protocol is not None:
+        if not isinstance(log_protocol, Mapping):
+            raise ValueError("Feher/Hare Log protocol is invalid")
+        for source_field, _anchor_field, label in protocol_fields:
+            _expect_identity(
+                log_protocol.get(source_field),
+                brier.get(source_field),
+                label=f"Brier/Log {label}",
+            )
+
+    lock_bundle = _mapping_field(
+        payload,
+        "internal_lock_bundle",
+        label="Feher/Hare internal lock bundle",
+    )
+    _expect_identity(
+        lock_bundle.get("content_hash"),
+        _R3_IDENTITIES["internal_lock_bundle_hash"],
+        label="lock bundle",
+    )
+    repeated_bundle_fields = (
+        ("dataset_hash", "dataset_hash", "dataset"),
+        (
+            "participant_assignment_hash",
+            "participant_assignment_hash",
+            "participant assignment",
+        ),
+        ("final_target_hash", "final_target_hash", "FINAL target"),
+        (
+            "scientific_repository_revision",
+            "scientific_repository_revision",
+            "scientific repository revision",
+        ),
+        ("source_manifest_hash", "source_manifest_hash", "source manifest"),
+        ("source_snapshot_hash", "source_snapshot_hash", "source snapshot"),
+        ("transform_hash", "transform_hash", "transform"),
+        (
+            "train_selection_freeze_digest",
+            "train_selection_freeze",
+            "TRAIN/SELECTION freeze",
+        ),
+    )
+    for bundle_field, root_field, label in repeated_bundle_fields:
+        if bundle_field in lock_bundle:
+            if root_field == "train_selection_freeze":
+                expected_value = freeze.get("artifact_payload_digest")
+            else:
+                expected_value = payload.get(root_field)
+            _expect_identity(
+                lock_bundle[bundle_field],
+                expected_value,
+                label=f"lock bundle {label}",
+            )
+    candidate_rows = _candidate_rows_from_lock(payload)
+    if "frozen_candidate_hashes" in lock_bundle:
+        _expect_identity(
+            tuple(lock_bundle["frozen_candidate_hashes"]),
+            tuple(row.candidate_hash for row in candidate_rows),
+            label="lock bundle candidate",
+        )
+
+    return FeherHareMeasurementAnchor(
+        lock_commit=lock_commit,
+        scientific_repository_revision=payload[
+            "scientific_repository_revision"
+        ],
+        upstream_revision=payload["upstream_revision"],
+        source_manifest_hash=payload["source_manifest_hash"],
+        source_snapshot_hash=payload["source_snapshot_hash"],
+        transform_hash=payload["transform_hash"],
+        participant_assignment_hash=payload["participant_assignment_hash"],
+        dataset_hash=payload["dataset_hash"],
+        target_spec_hash=brier["target_spec_hash"],
+        train_partition_hash=brier["train_partition_hash"],
+        selection_partition_hash=brier["selection_partition_hash"],
+        excluded_final_partition_hash=brier["final_partition_hash"],
+        excluded_final_target_hash=payload["final_target_hash"],
+        train_selection_freeze_hash=freeze["artifact_payload_digest"],
+        internal_lock_bundle_hash=lock_bundle["content_hash"],
+        candidate_rows=candidate_rows,
+    )
+
+
+def freeze_feher_hare_measurement_candidates(
+    anchor: FeherHareMeasurementAnchor,
+) -> tuple[FrozenModelSpec, ...]:
+    if not isinstance(anchor, FeherHareMeasurementAnchor):
+        raise TypeError(
+            "Feher/Hare measurement candidates require a measurement anchor"
+        )
+    sources = {
+        "reactive": create_narrative_two_stage_reactive_source(),
+        "intentional": create_narrative_two_stage_intentional_source(),
+        "planning": create_narrative_two_stage_planning_source(),
+    }
+    candidates: list[FrozenModelSpec] = []
+    for row in anchor.candidate_rows:
+        candidate = FrozenModelSpec.freeze(
+            name=row.family,
+            model=sources[row.family],
+            parameters=dict(row.parameters),
+            selection_manifest_hash=row.selection_manifest_hash,
+        )
+        if candidate.content_hash != row.candidate_hash:
+            raise ValueError(f"{row.family} frozen candidate identity changed")
+        candidates.append(candidate)
+    return tuple(candidates)
+
+
+def _verify_prepared_anchor(
+    prepared: PreparedFeherHareTwoStageV1,
+    anchor: FeherHareMeasurementAnchor,
+) -> None:
+    checks = (
+        (
+            prepared.source_manifest.revision,
+            anchor.upstream_revision,
+            "upstream revision",
+        ),
+        (
+            prepared.source_manifest.content_hash,
+            anchor.source_manifest_hash,
+            "source manifest",
+        ),
+        (
+            prepared.transform_report.source_snapshot_hash,
+            anchor.source_snapshot_hash,
+            "source snapshot",
+        ),
+        (
+            prepared.transform_report.content_hash,
+            anchor.transform_hash,
+            "transform",
+        ),
+        (
+            prepared.assignment.content_hash,
+            anchor.participant_assignment_hash,
+            "participant assignment",
+        ),
+        (prepared.dataset.content_hash, anchor.dataset_hash, "dataset"),
+        (
+            prepared.target_spec.content_hash,
+            anchor.target_spec_hash,
+            "target spec",
+        ),
+        (
+            prepared.dataset.partition(
+                ObservationPartitionRole.TRAIN
+            ).content_hash,
+            anchor.train_partition_hash,
+            "TRAIN partition",
+        ),
+        (
+            prepared.dataset.partition(
+                ObservationPartitionRole.SELECTION_VALIDATION
+            ).content_hash,
+            anchor.selection_partition_hash,
+            "SELECTION partition",
+        ),
+        (
+            prepared.dataset.partition(
+                ObservationPartitionRole.FINAL_TEST
+            ).content_hash,
+            anchor.excluded_final_partition_hash,
+            "FINAL partition",
+        ),
+        (
+            prepared.final_targets.content_hash,
+            anchor.excluded_final_target_hash,
+            "FINAL target",
+        ),
+    )
+    for actual, expected, label in checks:
+        _expect_identity(actual, expected, label=label)
+    target_checks = (
+        (
+            prepared.train_targets,
+            ObservationPartitionRole.TRAIN,
+            anchor.train_partition_hash,
+            "TRAIN target",
+        ),
+        (
+            prepared.selection_targets,
+            ObservationPartitionRole.SELECTION_VALIDATION,
+            anchor.selection_partition_hash,
+            "SELECTION target",
+        ),
+        (
+            prepared.final_targets,
+            ObservationPartitionRole.FINAL_TEST,
+            anchor.excluded_final_partition_hash,
+            "FINAL target",
+        ),
+    )
+    for report, role, partition_hash, label in target_checks:
+        if report.role is not role:
+            raise ValueError(f"Feher/Hare {label} role changed")
+        _expect_identity(
+            report.dataset_hash,
+            anchor.dataset_hash,
+            label=f"{label} dataset",
+        )
+        _expect_identity(
+            report.spec_hash,
+            anchor.target_spec_hash,
+            label=f"{label} specification",
+        )
+        _expect_identity(
+            report.partition_hash,
+            partition_hash,
+            label=f"{label} partition",
+        )
+
+
+def _project_prepared_measurement_input(
+    prepared: PreparedFeherHareTwoStageV1,
+    anchor: FeherHareMeasurementAnchor,
+) -> MeasurementAuditInput:
+    if not isinstance(prepared, PreparedFeherHareTwoStageV1):
+        raise TypeError(
+            "Feher/Hare measurement projection requires prepared Study V1 data"
+        )
+    if not isinstance(anchor, FeherHareMeasurementAnchor):
+        raise TypeError(
+            "Feher/Hare measurement projection requires a measurement anchor"
+        )
+    _verify_prepared_anchor(prepared, anchor)
+    candidates = freeze_feher_hare_measurement_candidates(anchor)
+
+    projected_cases: list[MeasurementAuditCase] = []
+    reports = (
+        prepared.train_targets,
+        prepared.selection_targets,
+    )
+    for report in reports:
+        partition = prepared.dataset.partition(report.role)
+        records = {record.id: record for record in partition.records}
+        if set(records) != {case.name for case in report.cases}:
+            raise ValueError(
+                f"Feher/Hare {report.role.value} target/record coverage changed"
+            )
+        for target_case in report.cases:
+            record = records[target_case.name]
+            if target_case.scenario.content_hash != record.scenario.content_hash:
+                raise ValueError("Feher/Hare projected scenario identity changed")
+            if target_case.record_hash != record.content_hash:
+                raise ValueError("Feher/Hare projected record identity changed")
+            task = _task(
+                record.metadata.get("task_variant"),
+                label="Feher/Hare projected task variant",
+            )
+            participant = _text(
+                record.metadata.get("source_participant_id"),
+                label="Feher/Hare projected participant",
+            )
+            trial_index = record.metadata.get("source_trial_id")
+            if (
+                isinstance(trial_index, bool)
+                or not isinstance(trial_index, int)
+                or trial_index < 0
+            ):
+                raise ValueError(
+                    "Feher/Hare projected trial index must be non-negative"
+                )
+            if not isinstance(target_case.record_hash, str):
+                raise ValueError("Feher/Hare projected record hash is missing")
+            projected_cases.append(
+                MeasurementAuditCase(
+                    role=report.role,
+                    scenario=Scenario(
+                        id=(
+                            "measurement-case-"
+                            f"{target_case.record_hash.removeprefix('sha256:')}"
+                        ),
+                        payload=dict(target_case.scenario.payload),
+                    ),
+                    target=target_case.targets,
+                    task_variant=task,
+                    participant_group_hash=stable_content_hash(
+                        (task, participant)
+                    ),
+                    trial_index=trial_index,
+                    record_hash=target_case.record_hash,
+                )
+            )
+
+    commitments = tuple(
+        (
+            role,
+            stable_content_hash(
+                tuple(
+                    case.record_hash
+                    for case in sorted(
+                        (
+                            item
+                            for item in projected_cases
+                            if item.role is role
+                        ),
+                        key=lambda item: item.case_hash,
+                    )
+                )
+            ),
+        )
+        for role in (
+            ObservationPartitionRole.TRAIN,
+            ObservationPartitionRole.SELECTION_VALIDATION,
+        )
+    )
+    return MeasurementAuditInput(
+        claim_scope=MEASUREMENT_CLAIM_SCOPE,
+        source_manifest_hash=anchor.source_manifest_hash,
+        source_snapshot_hash=anchor.source_snapshot_hash,
+        transform_hash=anchor.transform_hash,
+        participant_assignment_hash=anchor.participant_assignment_hash,
+        dataset_hash=anchor.dataset_hash,
+        target_spec_hash=anchor.target_spec_hash,
+        allowed_partition_hashes=(
+            (ObservationPartitionRole.TRAIN, anchor.train_partition_hash),
+            (
+                ObservationPartitionRole.SELECTION_VALIDATION,
+                anchor.selection_partition_hash,
+            ),
+        ),
+        allowed_target_report_hashes=(
+            (
+                ObservationPartitionRole.TRAIN,
+                prepared.train_targets.content_hash,
+            ),
+            (
+                ObservationPartitionRole.SELECTION_VALIDATION,
+                prepared.selection_targets.content_hash,
+            ),
+        ),
+        allowed_case_commitments=commitments,
+        frozen_candidates=candidates,
+        excluded_final_partition_hash=anchor.excluded_final_partition_hash,
+        excluded_final_target_hash=anchor.excluded_final_target_hash,
+        cases=tuple(projected_cases),
+    )
+
+
+def provision_feher_hare_measurement_input(
+    root: Path,
+    manifest: TwoStageSourceManifest,
+    anchor: FeherHareMeasurementAnchor,
+) -> MeasurementAuditInput:
+    if not isinstance(manifest, TwoStageSourceManifest):
+        raise TypeError(
+            "Feher/Hare measurement provisioner requires TwoStageSourceManifest"
+        )
+    prepared = prepare_feher_hare_two_stage_v1(
+        root=Path(root),
+        manifest=manifest,
+    )
+    return _project_prepared_measurement_input(prepared, anchor)
 
 
 @dataclass(frozen=True)
@@ -550,7 +1466,14 @@ def build_feher_hare_stay_switch_diagnostics(
 
 
 __all__ = [
+    "FEHER_HARE_R3_LOCK_COMMIT",
+    "FeherHareMeasurementAnchor",
+    "FeherHareMeasurementCandidateRow",
     "StaySwitchCell",
     "StaySwitchDiagnostic",
+    "_project_prepared_measurement_input",
     "build_feher_hare_stay_switch_diagnostics",
+    "freeze_feher_hare_measurement_candidates",
+    "load_feher_hare_r3_measurement_anchor",
+    "provision_feher_hare_measurement_input",
 ]
