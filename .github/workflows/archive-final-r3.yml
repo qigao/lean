@@ -23,7 +23,7 @@ jobs:
           path: final-state
           fetch-depth: 1
 
-      - name: Download, verify, deterministically archive, and commit FINAL evidence
+      - name: Download, verify, archive, round-trip verify, and commit FINAL evidence
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -32,9 +32,7 @@ jobs:
 
           EXPECTED_PARENT=71c961d5d5c13ee8d435d636c3214d7edf55f0e7
           ARTIFACT_ID=9724984284
-          ACTIONS_RUN_ID=33287374761
           EXPECTED_ZIP_SHA=80462b8f8bb7de26fc159b378213a5d324af536fd34d17721653f58d03ab14d0
-          EXPECTED_ARCHIVE_SHA=9350596f88c2210475985846ddc6c872fcd30838d78cdfe4a0ce4370856f9aa8
           DEST=final-state/research-final/feher-hare-r3/evidence
           ARCHIVE=feher-hare-real-final-r3-33287374761.tar.xz
 
@@ -66,22 +64,29 @@ jobs:
           EOF
           sha256sum --check --strict "$RUNNER_TEMP/files.sha256"
 
-          test "$(find . -maxdepth 1 -type f -printf '%f\n' | sort | tr '\n' ' ')" = \
-            "attempt_ledger.json brier_score.json external_evaluation.json log_score.json prediction_artifact.json report_summary.json stay_switch_diagnostic.json terminal.json "
+          EXPECTED_NAMES="attempt_ledger.json brier_score.json external_evaluation.json log_score.json prediction_artifact.json report_summary.json stay_switch_diagnostic.json terminal.json "
+          test "$(find . -maxdepth 1 -type f -printf '%f\n' | sort | tr '\n' ' ')" = "$EXPECTED_NAMES"
 
           mkdir -p "$GITHUB_WORKSPACE/$DEST"
           tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
             -cJf "$GITHUB_WORKSPACE/$DEST/$ARCHIVE" \
             attempt_ledger.json external_evaluation.json brier_score.json log_score.json \
             prediction_artifact.json report_summary.json stay_switch_diagnostic.json terminal.json
-          echo "${EXPECTED_ARCHIVE_SHA}  $GITHUB_WORKSPACE/$DEST/$ARCHIVE" | sha256sum --check --strict
+          ARCHIVE_SHA="$(sha256sum "$GITHUB_WORKSPACE/$DEST/$ARCHIVE" | awk '{print $1}')"
 
-          python3 - "$GITHUB_WORKSPACE/$DEST/archive_manifest.json" <<'PY'
+          mkdir -p "$RUNNER_TEMP/roundtrip"
+          tar -xJf "$GITHUB_WORKSPACE/$DEST/$ARCHIVE" -C "$RUNNER_TEMP/roundtrip"
+          cd "$RUNNER_TEMP/roundtrip"
+          sha256sum --check --strict "$RUNNER_TEMP/files.sha256"
+          test "$(find . -maxdepth 1 -type f -printf '%f\n' | sort | tr '\n' ' ')" = "$EXPECTED_NAMES"
+
+          python3 - "$GITHUB_WORKSPACE/$DEST/archive_manifest.json" "$ARCHIVE_SHA" <<'PY'
           import json
           import pathlib
           import sys
 
           path = pathlib.Path(sys.argv[1])
+          archive_sha = sys.argv[2]
           payload = {
               "schema": "feher-hare-r3-final-durable-archive-v1",
               "scientific_repository_revision": "d01232979cdfc9d902daab5f9e3e937079b56f69",
@@ -90,9 +95,11 @@ jobs:
               "github_actions_run_id": 33287374761,
               "github_actions_artifact_id": 9724984284,
               "github_actions_zip_sha256": "80462b8f8bb7de26fc159b378213a5d324af536fd34d17721653f58d03ab14d0",
-              "archive_format": "deterministic-tar-xz",
+              "archive_format": "tar-xz",
               "archive_file": "feher-hare-real-final-r3-33287374761.tar.xz",
-              "archive_sha256": "9350596f88c2210475985846ddc6c872fcd30838d78cdfe4a0ce4370856f9aa8",
+              "archive_sha256": archive_sha,
+              "archive_round_trip_verified": True,
+              "canonical_identity_is_per_file_sha256": True,
               "files": {
                   "attempt_ledger.json": "eb9722169569cd2601d9f6e7727e949c78a7a1638f693e644c41ec88acaee726",
                   "external_evaluation.json": "55c9411c8d110c0b33794b076e204f7fa81f9bd856d7233a8823645008ecc0ca",
@@ -120,5 +127,5 @@ jobs:
           git -C final-state push origin HEAD:refs/heads/final/feher-hare-r3
 
           echo "ARCHIVE_COMMIT=$(git -C final-state rev-parse HEAD)"
-          echo "ARCHIVE_SHA256=${EXPECTED_ARCHIVE_SHA}"
+          echo "ARCHIVE_SHA256=${ARCHIVE_SHA}"
           echo "FINAL_EXECUTION_REPLAY=false"
