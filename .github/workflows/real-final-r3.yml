@@ -1,0 +1,664 @@
+name: real-final-r3
+
+on:
+  push:
+    branches:
+      - manual/empirical-r3-internal-final
+
+permissions:
+  contents: write
+
+jobs:
+  locked-final:
+    if: "${{ github.event.head_commit.message == 'research: execute authorized empirical revision 3 final' }}"
+    name: Execute authorized Empirical Revision 3 locked FINAL
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout one-shot FINAL state branch
+        uses: actions/checkout@v4
+        with:
+          repository: qigao/lean
+          ref: final/feher-hare-r3
+          path: final-state
+          fetch-depth: 2
+
+      - name: Checkout immutable R3 lock commit
+        uses: actions/checkout@v4
+        with:
+          repository: qigao/lean
+          ref: f09d6afc96f0a720dd5e8e810f440cda0fe9f8a3
+          path: lock
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout frozen Revision 3 scientific code
+        uses: actions/checkout@v4
+        with:
+          repository: qigao/lean
+          ref: d01232979cdfc9d902daab5f9e3e937079b56f69
+          path: study
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout pinned Feher Hare upstream
+        uses: actions/checkout@v4
+        with:
+          repository: carolfs/muddled_models
+          ref: 4567763780a2c596fd6510af720ec468a8214a8f
+          path: upstream/muddled_models
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Claim one-shot FINAL attempt before model execution
+        id: claim
+        shell: bash
+        run: |
+          set -euo pipefail
+          INITIAL=f09d6afc96f0a720dd5e8e810f440cda0fe9f8a3
+          R3=d01232979cdfc9d902daab5f9e3e937079b56f69
+          PREFLIGHT=sha256:57afeee777c24fd982949455772731930089a1057918d9559846cfe36c7cf16e
+          BRIER=sha256:7784fae9350ab2fcaba45b9bd8c7fe8947953f41b2da3b287e51771f0a664d01
+          LOG=sha256:b19d1533a159d201b7ecb155f5022049175cf443ff89d3b1ecb3c15da6c45f94
+          AUTH_COMMENT=5466160091
+
+          test "$(git -C final-state rev-parse HEAD)" = "$INITIAL"
+          test ! -e final-state/research-final/feher-hare-r3/start.json
+          test ! -e final-state/research-final/feher-hare-r3/terminal.json
+
+          ATTEMPT_ID="r3-final-${GITHUB_RUN_ID}"
+          STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          mkdir -p final-state/research-final/feher-hare-r3
+          python3 - "$ATTEMPT_ID" "$STARTED_AT" "$GITHUB_RUN_ID" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          attempt_id, started_at, run_id = sys.argv[1:]
+          payload = {
+              "schema": "feher-hare-r3-final-start-v1",
+              "attempt_id": attempt_id,
+              "started_at": started_at,
+              "github_run_id": run_id,
+              "authorization_issue": 40,
+              "authorization_comment_id": 5466160091,
+              "authorization_text": "I authorize R3 locked FINAL_TEST execution.",
+              "scientific_repository_revision": "d01232979cdfc9d902daab5f9e3e937079b56f69",
+              "lock_commit": "f09d6afc96f0a720dd5e8e810f440cda0fe9f8a3",
+              "preflight_hash": "sha256:57afeee777c24fd982949455772731930089a1057918d9559846cfe36c7cf16e",
+              "brier_release_hash": "sha256:7784fae9350ab2fcaba45b9bd8c7fe8947953f41b2da3b287e51771f0a664d01",
+              "log_release_hash": "sha256:b19d1533a159d201b7ecb155f5022049175cf443ff89d3b1ecb3c15da6c45f94",
+              "final_seeds": [301, 302],
+              "status": "authorized_execution_claimed",
+              "final_model_execution_entered": False,
+              "automatic_retry_allowed": False,
+          }
+          path = pathlib.Path("final-state/research-final/feher-hare-r3/start.json")
+          path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+
+          git -C final-state config user.name "qigao-r3-final"
+          git -C final-state config user.email "qigao-r3-final@users.noreply.github.com"
+          git -C final-state add research-final/feher-hare-r3/start.json
+          git -C final-state commit -m "research: claim empirical revision 3 final attempt"
+          CLAIM_COMMIT="$(git -C final-state rev-parse HEAD)"
+          test "$(git -C final-state rev-parse HEAD^)" = "$INITIAL"
+          git -C final-state push origin HEAD:refs/heads/final/feher-hare-r3
+
+          echo "attempt_id=${ATTEMPT_ID}" >> "$GITHUB_OUTPUT"
+          echo "started_at=${STARTED_AT}" >> "$GITHUB_OUTPUT"
+          echo "claim_commit=${CLAIM_COMMIT}" >> "$GITHUB_OUTPUT"
+
+      - name: Execute one sealed locked FINAL prediction pass
+        id: execute
+        shell: bash
+        env:
+          ATTEMPT_ID: ${{ steps.claim.outputs.attempt_id }}
+          STARTED_AT: ${{ steps.claim.outputs.started_at }}
+          CLAIM_COMMIT: ${{ steps.claim.outputs.claim_commit }}
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/run_real_final_r3.py" <<'PY'
+          from __future__ import annotations
+
+          from collections.abc import Mapping
+          from enum import Enum
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import sys
+
+          import narrative_dynamics.studies.feher_hare_two_stage_v1 as study
+          from narrative_dynamics.adapters.two_stage_metrics import (
+              two_stage_brier_loss,
+              two_stage_brier_thresholds,
+              two_stage_first_stage_policy_metrics,
+              two_stage_log_loss,
+              two_stage_log_thresholds,
+          )
+          from narrative_dynamics.contracts import stable_content_hash
+          from narrative_dynamics.external_validation import (
+              ExternalScoreRole,
+              ExternalValidationPreregistration,
+              PairwiseSeparationRule,
+              preflight_external_releases,
+          )
+          from narrative_dynamics.model_comparison import ComparisonModel
+          from narrative_dynamics.observations.preregistration import (
+              FrozenModelSpec,
+              PreregisteredEvaluationProtocol,
+          )
+          from narrative_dynamics.observations.release import (
+              ProtocolRelease,
+              verify_protocol_release,
+          )
+          from narrative_dynamics.report_artifact import attest_report
+          from narrative_dynamics.simulation import SimulationRunner
+          from narrative_dynamics.studies.two_stage_final import TwoStageFinalAttemptLedger
+          from narrative_dynamics.studies.two_stage_internal_lock import (
+              INTERNAL_LOCK_AUTHORITY,
+              INTERNAL_LOCK_GOVERNANCE_MODE,
+              InternalRepositoryLockProof,
+              InternalRepositoryLockVerifier,
+              create_internal_repository_lock_receipt,
+          )
+          from narrative_dynamics.studies.two_stage_locked_final import (
+              FinalInfrastructureError,
+              run_locked_feher_hare_final,
+          )
+          from narrative_dynamics.studies.two_stage_source import (
+              load_two_stage_source_manifest,
+              verify_two_stage_snapshot,
+          )
+          from narrative_dynamics.studies.feher_hare_two_stage_v1 import FeherHareProtocolBundle
+
+          R3 = "d01232979cdfc9d902daab5f9e3e937079b56f69"
+          LOCK_COMMIT = "f09d6afc96f0a720dd5e8e810f440cda0fe9f8a3"
+          LOCKED_AT = "2026-08-30T00:16:54Z"
+          UPSTREAM = "4567763780a2c596fd6510af720ec468a8214a8f"
+          FILE_SHA = "4574df7c6dcf36e2d7a34668e9280f78507ba332769fbcb96590c4a2e2fea601"
+          LOCK_BUNDLE_HASH = "sha256:96e553e557d6e7314eb0b9b1d0aaa8696e01d7a6ddec0abde949be8c8d45602f"
+          BRIER_RELEASE_HASH = "sha256:7784fae9350ab2fcaba45b9bd8c7fe8947953f41b2da3b287e51771f0a664d01"
+          LOG_RELEASE_HASH = "sha256:b19d1533a159d201b7ecb155f5022049175cf443ff89d3b1ecb3c15da6c45f94"
+          EXPECTED_PREFLIGHT_HASH = "sha256:57afeee777c24fd982949455772731930089a1057918d9559846cfe36c7cf16e"
+          SOURCE_MANIFEST_HASH = "sha256:3609e980af172823cfef78290e7f2337fdb337d67f1f27641e17d473aeedd10d"
+          SOURCE_SNAPSHOT_HASH = "sha256:25bdc2e4bff4110f38b098b89e7d59aa38c9658727fcc89a38d50e107d243186"
+          TRANSFORM_HASH = "sha256:2fb8ab6dc796a9e4ece5653a5485d865ef44dd0f5f7dff92d94a904932d6e541"
+          ASSIGNMENT_HASH = "sha256:fc144c35f6713e27f75141d678872cc04ca44c7a0fd8e109e8618c72b4111ccf"
+          DATASET_HASH = "sha256:17789130372d7eace05e1216a57bdae2ffbd519960333ffe814aee2d2d404781"
+          FINAL_TARGET_HASH = "sha256:927e1727d37993e9a5c887f79ac8712d07a155622deacf0a3122d41f90b16ed2"
+          BRIER_PROTOCOL_HASH = "sha256:7a9714b2d8571eeb4f37ce6d4f2ebe3f42cc962fad8cbffd50747f82402e5744"
+          LOG_PROTOCOL_HASH = "sha256:4c0d75d521dd121428d2208d361d91e27f7519422354b7754b19ecfb3fbab962"
+          PREREG_HASH = "sha256:e924106f114e648b15c37ffb3773126c4804b37412e903913d359bad1fc7de9f"
+          FAMILY_ORDER = ("reactive", "intentional", "planning")
+          PARAMETERS = {
+              "reactive": (("beta", 0.5),),
+              "intentional": (("beta", 2.0), ("memory_decay", 0.5)),
+              "planning": (("beta", 4.0), ("memory_decay", 0.75)),
+          }
+          TRAIN = {
+              "reactive": "sha256:5b607a4bc0a8082809c2446a8248fb8659b0d9ba178687ddad96dc74e3f19622",
+              "intentional": "sha256:47057311fe7450469c1710be49ba0e3b42aa7416fa2129f40761dbf8d237d4fc",
+              "planning": "sha256:ef0f3caf4f2a02b2d719bc302d7409fc8c2d937eb13517d906d83b38c29b76ac",
+          }
+          SELECTION = {
+              "reactive": "sha256:e8414e301d19fc6acfd5accf055402ac995790f785402186c67ff95a48ee0c2e",
+              "intentional": "sha256:498a512cd931afe276f78bf135bd5c8269e051920d4b876177d0aa9ea250806d",
+              "planning": "sha256:e347a3d7d523e2a35d0bb6b0f662343f5a01ddd1ff7d2efe95a8a5efa1986e74",
+          }
+          CANDIDATE = {
+              "reactive": "sha256:42a84ef10c207159ff98397fe2bd86594df6c8be0f41b98e876f7ae33cba9456",
+              "intentional": "sha256:68a01b5496e20095c1a603b30f1384bbe6a3ea22aac8cf74b7b97463c4935839",
+              "planning": "sha256:c0ed956c1b285153075e5a22e7fb51f6d53dcf8ad326cce82e39e0221c2e877c",
+          }
+
+          def thaw(value: object) -> object:
+              if isinstance(value, Mapping):
+                  return {str(key): thaw(item) for key, item in value.items()}
+              if isinstance(value, (tuple, list)):
+                  return [thaw(item) for item in value]
+              if isinstance(value, Enum):
+                  return value.value
+              return value
+
+          def write_json(path: Path, payload: object) -> None:
+              path.parent.mkdir(parents=True, exist_ok=True)
+              path.write_text(json.dumps(thaw(payload), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+          def score_payload(report) -> dict[str, object]:
+              return {
+                  "release_hash": report.release_hash,
+                  "verification_hash": report.verification_hash,
+                  "comparison_manifest_hash": report.comparison.manifest.content_hash,
+                  "baseline_name": report.comparison.baseline_name,
+                  "ranking": [
+                      {
+                          "name": entry.name,
+                          "parameters": entry.parameters,
+                          "mean_loss": entry.mean_loss,
+                          "worst_loss": entry.worst_loss,
+                          "delta_mean_from_baseline": entry.delta_mean_from_baseline,
+                          "delta_worst_from_baseline": entry.delta_worst_from_baseline,
+                          "adequate": entry.adequate,
+                      }
+                      for entry in report.comparison.ranking
+                  ],
+              }
+
+          def evaluation_payload(evaluation) -> dict[str, object]:
+              return {
+                  "preflight_hash": evaluation.preflight.content_hash,
+                  "adequacy_findings": [
+                      {
+                          "model_name": item.model_name,
+                          "frozen_model_hash": item.frozen_model_hash,
+                          "score_role": item.score_role.value,
+                          "mean_loss": item.mean_loss,
+                          "worst_loss": item.worst_loss,
+                          "threshold_hash": item.threshold_hash,
+                          "status": item.status.value,
+                          "parent_comparison_manifest_hash": item.parent_comparison_manifest_hash,
+                      }
+                      for item in evaluation.adequacy_findings
+                  ],
+                  "aggregate_adequacy": [
+                      [name, status.value] for name, status in evaluation.aggregate_adequacy
+                  ],
+                  "separation_findings": [
+                      {
+                          "left_model": item.left_model,
+                          "right_model": item.right_model,
+                          "brier_mean_loss_delta": item.brier_mean_loss_delta,
+                          "log_mean_loss_delta": item.log_mean_loss_delta,
+                          "preferred_model": item.preferred_model,
+                          "status": item.status.value,
+                      }
+                      for item in evaluation.separation_findings
+                  ],
+                  "stratum_scores": [
+                      {
+                          "stratum_name": item.stratum_name,
+                          "score_role": item.score_role.value,
+                          "model_name": item.model_name,
+                          "case_names": item.case_names,
+                          "mean_loss": item.mean_loss,
+                          "worst_loss": item.worst_loss,
+                      }
+                      for item in evaluation.stratum_scores
+                  ],
+              }
+
+          def diagnostic_payload(diagnostic) -> dict[str, object]:
+              return {
+                  "prediction_artifact_hash": diagnostic.prediction_artifact_hash,
+                  "content_hash": diagnostic.content_hash,
+                  "cells": [
+                      {
+                          "task_variant": cell.task_variant,
+                          "previous_reward": cell.previous_reward,
+                          "previous_transition_common": cell.previous_transition_common,
+                          "observation_count": cell.observation_count,
+                          "observed_stay_rate": cell.observed_stay_rate,
+                          "predicted_stay_probability_by_model": cell.predicted_stay_probability_by_model,
+                      }
+                      for cell in diagnostic.cells
+                  ],
+              }
+
+          def main() -> int:
+              out = Path("artifacts/real-final-r3")
+              out.mkdir(parents=True, exist_ok=True)
+              attempt_id = os.environ["ATTEMPT_ID"]
+              started_at = os.environ["STARTED_AT"]
+              claim_commit = os.environ["CLAIM_COMMIT"]
+              base_terminal = {
+                  "schema": "feher-hare-empirical-r3-final-terminal-v1",
+                  "attempt_id": attempt_id,
+                  "started_at": started_at,
+                  "github_run_id": os.environ.get("GITHUB_RUN_ID"),
+                  "claim_commit": claim_commit,
+                  "scientific_repository_revision": R3,
+                  "lock_commit": LOCK_COMMIT,
+                  "preflight_hash": EXPECTED_PREFLIGHT_HASH,
+                  "brier_release_hash": BRIER_RELEASE_HASH,
+                  "log_release_hash": LOG_RELEASE_HASH,
+                  "final_seeds": list(study.FINAL_SEEDS),
+              }
+              try:
+                  study_root = Path.cwd().resolve()
+                  lock_root = (study_root.parent / "lock").resolve()
+                  upstream_root = (study_root.parent / "upstream" / "muddled_models").resolve()
+                  lock_path = lock_root / "research-locks/feher-hare-r3-internal-final.json"
+                  if hashlib.sha256(lock_path.read_bytes()).hexdigest() != FILE_SHA:
+                      raise RuntimeError("immutable lock file bytes drifted")
+                  payload = json.loads(lock_path.read_text(encoding="utf-8"))
+                  if payload["internal_lock_bundle"]["content_hash"] != LOCK_BUNDLE_HASH:
+                      raise RuntimeError("internal lock bundle drifted")
+                  if payload["scientific_repository_revision"] != R3:
+                      raise RuntimeError("internal lock scientific revision drifted")
+                  if payload["external_registration"] is not False or payload["final_model_execution"] is not False:
+                      raise RuntimeError("internal lock governance state drifted")
+
+                  manifest = load_two_stage_source_manifest(
+                      study_root / "narrative_dynamics/studies/feher_hare_two_stage_v1_source_manifest.json"
+                  )
+                  snapshot = verify_two_stage_snapshot(upstream_root, manifest)
+                  prepared = study.prepare_feher_hare_two_stage_v1(root=upstream_root, manifest=manifest)
+                  for actual, expected, label in (
+                      (manifest.content_hash, SOURCE_MANIFEST_HASH, "source manifest"),
+                      (snapshot.source_snapshot_hash, SOURCE_SNAPSHOT_HASH, "source snapshot"),
+                      (prepared.transform_report.content_hash, TRANSFORM_HASH, "transform"),
+                      (prepared.assignment.content_hash, ASSIGNMENT_HASH, "participant assignment"),
+                      (prepared.dataset.content_hash, DATASET_HASH, "dataset"),
+                      (prepared.final_targets.content_hash, FINAL_TARGET_HASH, "FINAL target"),
+                  ):
+                      if actual != expected:
+                          raise RuntimeError(f"{label} identity drifted")
+
+                  sources = {family: source for family, source, _grid in study._family_sources()}
+                  candidates = []
+                  for family in FAMILY_ORDER:
+                      candidate = FrozenModelSpec.freeze(
+                          name=family,
+                          model=sources[family],
+                          parameters=PARAMETERS[family],
+                          selection_manifest_hash=SELECTION[family],
+                      )
+                      if candidate.content_hash != CANDIDATE[family]:
+                          raise RuntimeError(f"{family} frozen candidate drifted")
+                      candidates.append(candidate)
+                  candidates = tuple(candidates)
+
+                  brier_thresholds = two_stage_brier_thresholds()
+                  log_thresholds = two_stage_log_thresholds()
+                  brier_protocol = PreregisteredEvaluationProtocol.create(
+                      name="feher-hare-two-stage-v1:brier",
+                      version="1",
+                      dataset=prepared.dataset,
+                      target_spec=prepared.target_spec,
+                      extractor=two_stage_first_stage_policy_metrics,
+                      loss=two_stage_brier_loss(),
+                      simulation_seeds=study.FINAL_SEEDS,
+                      baseline_name="planning",
+                      candidates=candidates,
+                      thresholds=brier_thresholds,
+                  )
+                  log_protocol = PreregisteredEvaluationProtocol.create(
+                      name="feher-hare-two-stage-v1:log",
+                      version="1",
+                      dataset=prepared.dataset,
+                      target_spec=prepared.target_spec,
+                      extractor=two_stage_first_stage_policy_metrics,
+                      loss=two_stage_log_loss(),
+                      simulation_seeds=study.FINAL_SEEDS,
+                      baseline_name="planning",
+                      candidates=candidates,
+                      thresholds=log_thresholds,
+                  )
+                  if brier_protocol.content_hash != BRIER_PROTOCOL_HASH or log_protocol.content_hash != LOG_PROTOCOL_HASH:
+                      raise RuntimeError("sibling protocol identity drifted")
+                  if tuple(study.FINAL_SEEDS) != (301, 302):
+                      raise RuntimeError("FINAL seed plan drifted")
+
+                  preregistration = ExternalValidationPreregistration.create(
+                      name="feher-hare-two-stage-v1",
+                      version="1",
+                      evidence_declaration=prepared.evidence,
+                      brier_protocol=brier_protocol,
+                      log_protocol=log_protocol,
+                      final_target_set=prepared.final_targets,
+                      adequacy_thresholds_by_score=(
+                          (ExternalScoreRole.BRIER, brier_thresholds),
+                          (ExternalScoreRole.LOG, log_thresholds),
+                      ),
+                      strata=study._task_strata(prepared.final_targets),
+                      separation_rule=PairwiseSeparationRule(
+                          min_mean_loss_delta_brier=study._BRIER_SEPARATION_DELTA,
+                          min_mean_loss_delta_log=study._LOG_SEPARATION_DELTA,
+                      ),
+                      constraint_plans=(),
+                      method_validation_hashes=(
+                          *(TRAIN[family] for family in FAMILY_ORDER),
+                          *(SELECTION[family] for family in FAMILY_ORDER),
+                      ),
+                  )
+                  if preregistration.content_hash != PREREG_HASH:
+                      raise RuntimeError("evaluation preregistration drifted")
+
+                  protocols = FeherHareProtocolBundle(
+                      brier_protocol=brier_protocol,
+                      log_protocol=log_protocol,
+                      preregistration=preregistration,
+                  )
+                  brier_release = ProtocolRelease.from_payload(payload["brier_release"])
+                  log_release = ProtocolRelease.from_payload(payload["log_release"])
+                  if brier_release.content_hash != BRIER_RELEASE_HASH or log_release.content_hash != LOG_RELEASE_HASH:
+                      raise RuntimeError("R3 release identity drifted")
+
+                  proof = InternalRepositoryLockProof(
+                      repository=INTERNAL_LOCK_AUTHORITY,
+                      lock_commit=LOCK_COMMIT,
+                      locked_at=LOCKED_AT,
+                      lock_payload_hash=LOCK_BUNDLE_HASH,
+                      scientific_repository_revision=R3,
+                      release_hashes=(BRIER_RELEASE_HASH, LOG_RELEASE_HASH),
+                  )
+                  verifier = InternalRepositoryLockVerifier(proof)
+                  brier_receipt = create_internal_repository_lock_receipt(brier_release, proof)
+                  log_receipt = create_internal_repository_lock_receipt(log_release, proof)
+                  brier_verified = verify_protocol_release(
+                      brier_release,
+                      protocol=brier_protocol,
+                      receipts=(brier_receipt,),
+                      verifier=verifier,
+                  )
+                  log_verified = verify_protocol_release(
+                      log_release,
+                      protocol=log_protocol,
+                      receipts=(log_receipt,),
+                      verifier=verifier,
+                  )
+                  preflight = preflight_external_releases(
+                      preregistration=preregistration,
+                      evidence=prepared.evidence,
+                      brier_protocol=brier_protocol,
+                      brier_release=brier_release,
+                      brier_verified=brier_verified,
+                      log_protocol=log_protocol,
+                      log_release=log_release,
+                      log_verified=log_verified,
+                  )
+                  if preflight.content_hash != EXPECTED_PREFLIGHT_HASH:
+                      raise RuntimeError("authorized R3 preflight identity drifted")
+
+                  runtime_models = tuple(
+                      ComparisonModel(frozen=candidate, model=sources[candidate.name])
+                      for candidate in candidates
+                  )
+                  runner = SimulationRunner()
+                  ledger = TwoStageFinalAttemptLedger(())
+                  result = run_locked_feher_hare_final(
+                      runner=runner,
+                      prepared=prepared,
+                      protocols=protocols,
+                      brier_release=brier_release,
+                      brier_verified=brier_verified,
+                      log_release=log_release,
+                      log_verified=log_verified,
+                      runtime_models=runtime_models,
+                      repository_revision=R3,
+                      attempt_ledger=ledger,
+                      attempt_id=attempt_id,
+                      started_at=started_at,
+                  )
+
+                  report_artifact = attest_report(result.report)
+                  report_artifact.require_integrity()
+                  ledger_payload = {
+                      **result.attempt_ledger.identity_payload(),
+                      "content_hash": result.attempt_ledger.content_hash,
+                  }
+                  prediction_payload = {
+                      **result.prediction_artifact.identity_payload(),
+                      "content_hash": result.prediction_artifact.content_hash,
+                  }
+                  brier_payload = score_payload(result.brier_report)
+                  log_payload = score_payload(result.log_report)
+                  evaluation = evaluation_payload(result.external_evaluation)
+                  diagnostic = diagnostic_payload(result.diagnostic)
+                  report_summary = {
+                      "claim_scope": result.report.claim_scope,
+                      "report_artifact_hash": report_artifact.content_hash,
+                      "report_manifest_hash": result.report.manifest.content_hash,
+                      "preregistration_hash": result.report.preregistration_hash,
+                      "brier_protocol_hash": result.report.brier_protocol_hash,
+                      "brier_release_hash": result.report.brier_release_hash,
+                      "brier_verification_hash": result.report.brier_verification_hash,
+                      "log_protocol_hash": result.report.log_protocol_hash,
+                      "log_release_hash": result.report.log_release_hash,
+                      "log_verification_hash": result.report.log_verification_hash,
+                      "method_validation_hashes": result.report.method_validation_hashes,
+                      "constraint_findings": [],
+                      "aggregate_adequacy": evaluation["aggregate_adequacy"],
+                      "separation_findings": evaluation["separation_findings"],
+                  }
+                  terminal = {
+                      **base_terminal,
+                      "status": "completed",
+                      "final_model_execution_entered": True,
+                      "final_model_execution_completed": True,
+                      "attempt_ledger_hash": result.attempt_ledger.content_hash,
+                      "prediction_artifact_hash": result.prediction_artifact.content_hash,
+                      "brier_comparison_manifest_hash": result.brier_report.comparison.manifest.content_hash,
+                      "log_comparison_manifest_hash": result.log_report.comparison.manifest.content_hash,
+                      "diagnostic_hash": result.diagnostic.content_hash,
+                      "report_artifact_hash": report_artifact.content_hash,
+                      "automatic_retry_allowed": False,
+                  }
+                  terminal["serialization_digest"] = stable_content_hash(terminal)
+                  write_json(out / "attempt_ledger.json", ledger_payload)
+                  write_json(out / "prediction_artifact.json", prediction_payload)
+                  write_json(out / "brier_score.json", brier_payload)
+                  write_json(out / "log_score.json", log_payload)
+                  write_json(out / "external_evaluation.json", evaluation)
+                  write_json(out / "stay_switch_diagnostic.json", diagnostic)
+                  write_json(out / "report_summary.json", report_summary)
+                  write_json(out / "terminal.json", terminal)
+                  print(json.dumps({
+                      "event": "real_r3_final_complete",
+                      "attempt_id": attempt_id,
+                      "attempt_ledger_hash": result.attempt_ledger.content_hash,
+                      "prediction_artifact_hash": result.prediction_artifact.content_hash,
+                      "brier_best": result.brier_report.comparison.best.name,
+                      "brier_best_mean_loss": result.brier_report.comparison.best.mean_loss,
+                      "log_best": result.log_report.comparison.best.name,
+                      "log_best_mean_loss": result.log_report.comparison.best.mean_loss,
+                      "report_artifact_hash": report_artifact.content_hash,
+                      "claim_scope": result.report.claim_scope,
+                  }, sort_keys=True), flush=True)
+                  return 0
+              except FinalInfrastructureError as error:
+                  ledger = error.attempt_ledger
+                  terminal = {
+                      **base_terminal,
+                      "status": "infrastructure_failed",
+                      "failure_class": error.failure_class,
+                      "failure_message": str(error),
+                      "final_model_execution_entered": True,
+                      "final_model_execution_completed": False,
+                      "automatic_retry_allowed": True,
+                  }
+                  if ledger is not None:
+                      terminal["attempt_ledger_hash"] = ledger.content_hash
+                      write_json(out / "attempt_ledger.json", {
+                          **ledger.identity_payload(),
+                          "content_hash": ledger.content_hash,
+                      })
+                  terminal["serialization_digest"] = stable_content_hash(terminal)
+                  write_json(out / "terminal.json", terminal)
+                  print(json.dumps({"event": "real_r3_final_infrastructure_failed", "failure_class": error.failure_class}), flush=True)
+                  return 70
+              except Exception as error:
+                  ledger = getattr(error, "final_attempt_ledger", None)
+                  entered = ledger is not None
+                  terminal = {
+                      **base_terminal,
+                      "status": "revision_required" if entered else "pre_execution_failed",
+                      "failure_class": type(error).__name__,
+                      "failure_message": str(error),
+                      "final_model_execution_entered": entered,
+                      "final_model_execution_completed": False,
+                      "automatic_retry_allowed": False,
+                  }
+                  if ledger is not None:
+                      terminal["attempt_ledger_hash"] = ledger.content_hash
+                      write_json(out / "attempt_ledger.json", {
+                          **ledger.identity_payload(),
+                          "content_hash": ledger.content_hash,
+                      })
+                  terminal["serialization_digest"] = stable_content_hash(terminal)
+                  write_json(out / "terminal.json", terminal)
+                  print(json.dumps({"event": "real_r3_final_failed", "status": terminal["status"], "failure_class": type(error).__name__}), flush=True)
+                  return 71
+
+          if __name__ == "__main__":
+              sys.exit(main())
+          PY
+
+          cd study
+          export PYTHONPATH="$PWD"
+          python3 -B "$RUNNER_TEMP/run_real_final_r3.py"
+
+      - name: Upload sealed FINAL evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: feher-hare-real-final-r3-${{ github.run_id }}
+          path: study/artifacts/real-final-r3/
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Record terminal FINAL state on one-shot branch
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          CLAIM_COMMIT='${{ steps.claim.outputs.claim_commit }}'
+          test -n "$CLAIM_COMMIT"
+          git -C final-state fetch --depth=1 origin final/feher-hare-r3
+          test "$(git -C final-state rev-parse FETCH_HEAD)" = "$CLAIM_COMMIT"
+          git -C final-state reset --hard "$CLAIM_COMMIT"
+          mkdir -p final-state/research-final/feher-hare-r3
+
+          if test -f study/artifacts/real-final-r3/terminal.json; then
+            cp study/artifacts/real-final-r3/terminal.json \
+              final-state/research-final/feher-hare-r3/terminal.json
+          else
+            python3 - <<'PY'
+          import json
+          import pathlib
+          payload = {
+              "schema": "feher-hare-empirical-r3-final-terminal-v1",
+              "status": "runner_or_workflow_failed_without_terminal_artifact",
+              "scientific_repository_revision": "d01232979cdfc9d902daab5f9e3e937079b56f69",
+              "lock_commit": "f09d6afc96f0a720dd5e8e810f440cda0fe9f8a3",
+              "automatic_retry_allowed": False,
+          }
+          path = pathlib.Path("final-state/research-final/feher-hare-r3/terminal.json")
+          path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+          fi
+
+          if test -f study/artifacts/real-final-r3/attempt_ledger.json; then
+            cp study/artifacts/real-final-r3/attempt_ledger.json \
+              final-state/research-final/feher-hare-r3/attempt_ledger.json
+          fi
+          if test -f study/artifacts/real-final-r3/report_summary.json; then
+            cp study/artifacts/real-final-r3/report_summary.json \
+              final-state/research-final/feher-hare-r3/report_summary.json
+          fi
+
+          git -C final-state add research-final/feher-hare-r3
+          git -C final-state commit -m "research: record empirical revision 3 final terminal state"
+          git -C final-state push origin HEAD:refs/heads/final/feher-hare-r3
