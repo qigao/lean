@@ -1,0 +1,1005 @@
+name: real-measurement-validity-v1
+
+on:
+  push:
+    branches:
+      - manual/measurement-validity-v1-infra-replay-1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: real-measurement-validity-v1
+  cancel-in-progress: false
+
+jobs:
+  measurement-audit:
+    if: "${{ github.event.head_commit.message == 'research: run measurement validity v1' }}"
+    name: Run locked Measurement Validity V1 audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - name: Checkout orchestration head
+        uses: actions/checkout@v4
+        with:
+          repository: qigao/lean
+          ref: "${{ github.sha }}"
+          path: orchestration
+          fetch-depth: 2
+
+      - name: Derive and verify the exact scientific parent
+        id: parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          APPROVED=c979eafe650a506bf30f78ab5b35078742b54087
+          orchestration_sha="$(git -C orchestration rev-parse HEAD)"
+          test "$orchestration_sha" = "$GITHUB_SHA"
+          mapfile -t parents < <(
+            git -C orchestration cat-file -p HEAD |
+              awk '$1 == "parent" { print $2 }'
+          )
+          test "${#parents[@]}" -eq 1
+          scientific_sha="${parents[0]}"
+          test "$scientific_sha" = "$APPROVED"
+          echo "orchestration_sha=$orchestration_sha" >> "$GITHUB_OUTPUT"
+          echo "scientific_sha=$scientific_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout approved scientific parent
+        uses: actions/checkout@v4
+        with:
+          repository: qigao/lean
+          ref: "${{ steps.parent.outputs.scientific_sha }}"
+          path: study
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout immutable R3 lock
+        uses: actions/checkout@v4
+        with:
+          repository: qigao/lean
+          ref: f09d6afc96f0a720dd5e8e810f440cda0fe9f8a3
+          path: r3_lock
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout pinned Feher Hare upstream
+        uses: actions/checkout@v4
+        with:
+          repository: carolfs/muddled_models
+          ref: 4567763780a2c596fd6510af720ec468a8214a8f
+          path: upstream/muddled_models
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Freeze attempt start and verify all preflight identities
+        shell: bash
+        env:
+          SCIENTIFIC_SHA: "${{ steps.parent.outputs.scientific_sha }}"
+          ORCHESTRATION_SHA: "${{ steps.parent.outputs.orchestration_sha }}"
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/preflight_measurement_validity_v1.py" <<'PY'
+          from __future__ import annotations
+
+          from datetime import datetime, timezone
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+
+
+          APPROVED_SCIENTIFIC = "c979eafe650a506bf30f78ab5b35078742b54087"
+          R3_LOCK_COMMIT = "f09d6afc96f0a720dd5e8e810f440cda0fe9f8a3"
+          UPSTREAM_COMMIT = "4567763780a2c596fd6510af720ec468a8214a8f"
+          PROTOCOL_HASH = (
+              "sha256:c5c40911aed2a6e2af97c39f702f656330530290420f8316a3af80019d3eaad4"
+          )
+          PROTOCOL_LOCK_RAW_SHA256 = (
+              "6c2e754a146a8660e9c06d42fbf820d1022d279ffe1133d243c3b690d1e219b7"
+          )
+          R3_LOCK_RAW_SHA256 = (
+              "4574df7c6dcf36e2d7a34668e9280f78507ba332769fbcb96590c4a2e2fea601"
+          )
+          CLAIM_SCOPE = "external_observational_measurement_audit_only"
+          BOUNDARIES = {
+              "parameter_training_performed": False,
+              "parameter_selection_performed": False,
+              "final_test_values_exposed_to_audit": False,
+              "final_test_outcomes_analyzed": False,
+              "final_model_execution": False,
+          }
+
+
+          def canonical_hash(value: object) -> str:
+              encoded = json.dumps(
+                  value,
+                  sort_keys=True,
+                  separators=(",", ":"),
+                  ensure_ascii=True,
+              ).encode("utf-8")
+              return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+          def raw_hash(path: Path) -> str:
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+          def write_json(path: Path, value: object) -> None:
+              path.parent.mkdir(parents=True, exist_ok=True)
+              temporary = path.with_suffix(path.suffix + ".tmp")
+              temporary.write_text(
+                  json.dumps(value, indent=2, sort_keys=True) + "\n",
+                  encoding="utf-8",
+              )
+              temporary.replace(path)
+
+
+          def git_head(path: Path) -> str:
+              return subprocess.check_output(
+                  ("git", "-C", str(path), "rev-parse", "HEAD"),
+                  text=True,
+              ).strip()
+
+
+          def attempt_document(
+              start: dict[str, object],
+              terminal: dict[str, object] | None,
+          ) -> dict[str, object]:
+              document = {
+                  "schema": "feher-hare-measurement-validity-v1-attempt-v1",
+                  "start": start,
+                  "start_hash": canonical_hash(start),
+                  "terminal": terminal,
+                  **BOUNDARIES,
+              }
+              document["content_hash"] = canonical_hash(document)
+              return document
+
+
+          study_root = Path.cwd().resolve()
+          workspace = study_root.parent
+          artifact_dir = workspace / "measurement-validity-v1-evidence"
+          attempt_path = artifact_dir / "measurement_validity_attempt.json"
+          protocol_lock_path = (
+              study_root
+              / "research-locks"
+              / "feher-hare-measurement-validity-v1-protocol.json"
+          )
+          r3_lock_root = workspace / "r3_lock"
+          r3_lock_path = (
+              r3_lock_root
+              / "research-locks"
+              / "feher-hare-r3-internal-final.json"
+          )
+          upstream_root = workspace / "upstream" / "muddled_models"
+          scientific_sha = os.environ["SCIENTIFIC_SHA"]
+          orchestration_sha = os.environ["ORCHESTRATION_SHA"]
+          start = {
+              "attempt_id": f"measurement-validity-v1-{os.environ['GITHUB_RUN_ID']}",
+              "github_run_id": os.environ["GITHUB_RUN_ID"],
+              "scientific_revision": scientific_sha,
+              "orchestration_revision": orchestration_sha,
+              "started_at_utc": datetime.now(timezone.utc)
+              .isoformat(timespec="seconds")
+              .replace("+00:00", "Z"),
+              "protocol_hash": PROTOCOL_HASH,
+              "r3_lock_commit": R3_LOCK_COMMIT,
+              "upstream_revision": UPSTREAM_COMMIT,
+              "claim_scope": CLAIM_SCOPE,
+          }
+          write_json(attempt_path, attempt_document(start, None))
+
+          try:
+              from narrative_dynamics.measurement_validity import (
+                  MEASUREMENT_CLAIM_SCOPE,
+                  MeasurementValidityProtocol,
+              )
+              from narrative_dynamics.studies.feher_hare_measurement_validity_v1 import (
+                  FEHER_HARE_R3_LOCK_COMMIT,
+                  FeherHareMeasurementAnchor,
+                  build_feher_hare_measurement_protocol,
+                  frozen_feher_hare_semantic_fixtures,
+                  load_feher_hare_r3_measurement_anchor,
+              )
+
+              if scientific_sha != APPROVED_SCIENTIFIC:
+                  raise RuntimeError("scientific parent is not the approved exact head")
+              if git_head(study_root) != APPROVED_SCIENTIFIC:
+                  raise RuntimeError("scientific checkout drifted")
+              if git_head(r3_lock_root) != R3_LOCK_COMMIT:
+                  raise RuntimeError("R3 lock checkout drifted")
+              if git_head(upstream_root) != UPSTREAM_COMMIT:
+                  raise RuntimeError("upstream checkout drifted")
+              if FEHER_HARE_R3_LOCK_COMMIT != R3_LOCK_COMMIT:
+                  raise RuntimeError("compiled R3 lock constant drifted")
+              if MEASUREMENT_CLAIM_SCOPE != CLAIM_SCOPE:
+                  raise RuntimeError("measurement claim scope drifted")
+              if raw_hash(protocol_lock_path) != PROTOCOL_LOCK_RAW_SHA256:
+                  raise RuntimeError("measurement protocol-lock bytes drifted")
+              if raw_hash(r3_lock_path) != R3_LOCK_RAW_SHA256:
+                  raise RuntimeError("R3 lock bytes drifted")
+
+              lock_payload = json.loads(
+                  protocol_lock_path.read_text(encoding="utf-8")
+              )
+              if set(lock_payload) != {
+                  "schema",
+                  "design_path",
+                  "design_file_sha256",
+                  "r3_lock_commit",
+                  "anchor",
+                  "protocol",
+                  "protocol_hash",
+                  "parameter_training_performed",
+                  "parameter_selection_performed",
+                  "final_test_values_exposed_to_audit",
+                  "final_test_outcomes_analyzed",
+                  "final_model_execution",
+              }:
+                  raise RuntimeError("measurement protocol-lock schema drifted")
+              if lock_payload["protocol_hash"] != PROTOCOL_HASH:
+                  raise RuntimeError("measurement protocol hash drifted")
+              if lock_payload["r3_lock_commit"] != R3_LOCK_COMMIT:
+                  raise RuntimeError("measurement protocol R3 lock drifted")
+              if any(lock_payload[name] is not False for name in BOUNDARIES):
+                  raise RuntimeError("measurement protocol execution boundary drifted")
+
+              embedded_anchor = FeherHareMeasurementAnchor.from_payload(
+                  lock_payload["anchor"]
+              )
+              loaded_anchor = load_feher_hare_r3_measurement_anchor(
+                  r3_lock_path,
+                  lock_commit=R3_LOCK_COMMIT,
+              )
+              if loaded_anchor != embedded_anchor:
+                  raise RuntimeError("R3 lock projection differs from frozen anchor")
+              if loaded_anchor.upstream_revision != UPSTREAM_COMMIT:
+                  raise RuntimeError("frozen upstream revision drifted")
+
+              protocol = build_feher_hare_measurement_protocol(loaded_anchor)
+              frozen_protocol = MeasurementValidityProtocol.from_payload(
+                  lock_payload["protocol"]
+              )
+              if protocol != frozen_protocol:
+                  raise RuntimeError("rebuilt measurement protocol drifted")
+              if protocol.content_hash != PROTOCOL_HASH:
+                  raise RuntimeError("rebuilt measurement protocol hash drifted")
+              rebuilt_bytes = json.dumps(
+                  protocol.to_payload(),
+                  sort_keys=True,
+                  separators=(",", ":"),
+              )
+              frozen_bytes = json.dumps(
+                  lock_payload["protocol"],
+                  sort_keys=True,
+                  separators=(",", ":"),
+              )
+              if rebuilt_bytes != frozen_bytes:
+                  raise RuntimeError("rebuilt measurement protocol payload drifted")
+              if protocol.claim_scope != CLAIM_SCOPE:
+                  raise RuntimeError("protocol claim scope drifted")
+              if tuple(role.value for role in protocol.allowed_roles) != (
+                  "train",
+                  "selection_validation",
+              ):
+                  raise RuntimeError("protocol allowed roles drifted")
+              if len(protocol.candidate_hashes) != 3:
+                  raise RuntimeError("protocol candidate count drifted")
+              seed_plan = {
+                  role.value: tuple(seeds)
+                  for role, seeds in protocol.seeds_by_role
+              }
+              if seed_plan != {
+                  "train": (101, 102),
+                  "selection_validation": (201, 202),
+              }:
+                  raise RuntimeError("protocol seed plan drifted")
+              if {301, 302}.intersection(
+                  seed for seeds in seed_plan.values() for seed in seeds
+              ):
+                  raise RuntimeError("FINAL seeds entered measurement protocol")
+              fixture_hashes = tuple(
+                  sorted(
+                      fixture.content_hash
+                      for fixture in frozen_feher_hare_semantic_fixtures()
+                  )
+              )
+              if fixture_hashes != protocol.semantic_fixture_hashes:
+                  raise RuntimeError("semantic fixture identities drifted")
+
+              marker = {
+                  "schema": "feher-hare-measurement-validity-v1-preflight-v1",
+                  "attempt_id": start["attempt_id"],
+                  "scientific_revision": scientific_sha,
+                  "orchestration_revision": orchestration_sha,
+                  "protocol_hash": protocol.content_hash,
+                  "anchor_hash": loaded_anchor.content_hash,
+                  "r3_lock_commit": R3_LOCK_COMMIT,
+                  "upstream_revision": UPSTREAM_COMMIT,
+                  "allowed_roles": tuple(seed_plan),
+                  "candidate_count": len(protocol.candidate_hashes),
+                  "seeds_by_role": seed_plan,
+                  **BOUNDARIES,
+              }
+              marker["content_hash"] = canonical_hash(marker)
+              write_json(
+                  Path(os.environ["RUNNER_TEMP"])
+                  / "measurement_validity_v1_preflight.json",
+                  marker,
+              )
+              print(
+                  json.dumps(
+                      {
+                          "event": "measurement_validity_v1_preflight_green",
+                          "scientific_revision": scientific_sha,
+                          "protocol_hash": protocol.content_hash,
+                          **BOUNDARIES,
+                      },
+                      sort_keys=True,
+                  ),
+                  flush=True,
+              )
+          except Exception as error:
+              terminal = {
+                  "attempt_id": start["attempt_id"],
+                  "scientific_revision": scientific_sha,
+                  "orchestration_revision": orchestration_sha,
+                  "started_at_utc": start["started_at_utc"],
+                  "terminal_class": "infrastructure_incomplete",
+                  "protocol_hash": PROTOCOL_HASH,
+                  "report_hash": None,
+                  "error_type": type(error).__name__,
+                  "error_message_hash": (
+                      "sha256:"
+                      + hashlib.sha256(str(error).encode("utf-8")).hexdigest()
+                  ),
+                  "artifact_file_hashes": (),
+                  "failure_stage": "preflight",
+              }
+              terminal["content_hash"] = canonical_hash(terminal)
+              write_json(attempt_path, attempt_document(start, terminal))
+              print(
+                  json.dumps(
+                      {
+                          "event": "measurement_validity_v1_infrastructure_incomplete",
+                          "failure_stage": "preflight",
+                          "error_type": type(error).__name__,
+                          "error_message_hash": terminal["error_message_hash"],
+                      },
+                      sort_keys=True,
+                  ),
+                  flush=True,
+              )
+              raise SystemExit(1)
+          PY
+
+          cd study
+          export PYTHONPATH="$PWD"
+          python3 -B "$RUNNER_TEMP/preflight_measurement_validity_v1.py"
+
+      - name: Run the frozen real measurement audit once
+        shell: bash
+        env:
+          SCIENTIFIC_SHA: "${{ steps.parent.outputs.scientific_sha }}"
+          ORCHESTRATION_SHA: "${{ steps.parent.outputs.orchestration_sha }}"
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/run_measurement_validity_v1.py" <<'PY'
+          from __future__ import annotations
+
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+
+
+          APPROVED_SCIENTIFIC = "c979eafe650a506bf30f78ab5b35078742b54087"
+          R3_LOCK_COMMIT = "f09d6afc96f0a720dd5e8e810f440cda0fe9f8a3"
+          UPSTREAM_COMMIT = "4567763780a2c596fd6510af720ec468a8214a8f"
+          PROTOCOL_HASH = (
+              "sha256:c5c40911aed2a6e2af97c39f702f656330530290420f8316a3af80019d3eaad4"
+          )
+          CLAIM_SCOPE = "external_observational_measurement_audit_only"
+          MAX_WORKERS = 4
+          BOUNDARIES = {
+              "parameter_training_performed": False,
+              "parameter_selection_performed": False,
+              "final_test_values_exposed_to_audit": False,
+              "final_test_outcomes_analyzed": False,
+              "final_model_execution": False,
+          }
+          SCIENTIFIC_FILENAMES = (
+              "measurement_validity_report.json",
+              "measurement_validity_report_artifact.json",
+              "measurement_validity_attestation.json",
+              "measurement_execution_manifest_index.json",
+          )
+
+
+          def canonical_hash(value: object) -> str:
+              encoded = json.dumps(
+                  value,
+                  sort_keys=True,
+                  separators=(",", ":"),
+                  ensure_ascii=True,
+              ).encode("utf-8")
+              return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+          def file_hash(path: Path) -> str:
+              return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+          def write_json(path: Path, value: object) -> None:
+              path.parent.mkdir(parents=True, exist_ok=True)
+              temporary = path.with_suffix(path.suffix + ".tmp")
+              temporary.write_text(
+                  json.dumps(value, indent=2, sort_keys=True) + "\n",
+                  encoding="utf-8",
+              )
+              temporary.replace(path)
+
+
+          def git_head(path: Path) -> str:
+              return subprocess.check_output(
+                  ("git", "-C", str(path), "rev-parse", "HEAD"),
+                  text=True,
+              ).strip()
+
+
+          def attempt_document(
+              start: dict[str, object],
+              terminal: dict[str, object],
+          ) -> dict[str, object]:
+              document = {
+                  "schema": "feher-hare-measurement-validity-v1-attempt-v1",
+                  "start": start,
+                  "start_hash": canonical_hash(start),
+                  "terminal": terminal,
+                  **BOUNDARIES,
+              }
+              document["content_hash"] = canonical_hash(document)
+              return document
+
+
+          def envelope(
+              *,
+              schema: str,
+              anchor,
+              payload_name: str,
+              payload: object,
+          ) -> dict[str, object]:
+              value = {
+                  "schema": schema,
+                  "scientific_revision": os.environ["SCIENTIFIC_SHA"],
+                  "orchestration_revision": os.environ["ORCHESTRATION_SHA"],
+                  "r3_lock_commit": R3_LOCK_COMMIT,
+                  "upstream_revision": UPSTREAM_COMMIT,
+                  "claim_scope": CLAIM_SCOPE,
+                  "source_manifest_hash": anchor.source_manifest_hash,
+                  "source_snapshot_hash": anchor.source_snapshot_hash,
+                  "transform_hash": anchor.transform_hash,
+                  "participant_assignment_hash": (
+                      anchor.participant_assignment_hash
+                  ),
+                  "dataset_hash": anchor.dataset_hash,
+                  "target_spec_hash": anchor.target_spec_hash,
+                  "allowed_partition_hashes": (
+                      ("train", anchor.train_partition_hash),
+                      (
+                          "selection_validation",
+                          anchor.selection_partition_hash,
+                      ),
+                  ),
+                  "excluded_final_partition_hash": (
+                      anchor.excluded_final_partition_hash
+                  ),
+                  "excluded_final_target_hash": (
+                      anchor.excluded_final_target_hash
+                  ),
+                  "candidate_hashes": tuple(
+                      row.candidate_hash for row in anchor.candidate_rows
+                  ),
+                  "protocol_hash": PROTOCOL_HASH,
+                  "raw_human_rows_in_artifact": False,
+                  payload_name: payload,
+                  **BOUNDARIES,
+              }
+              value["content_hash"] = canonical_hash(value)
+              return value
+
+
+          def main() -> int:
+              study_root = Path.cwd().resolve()
+              workspace = study_root.parent
+              artifact_dir = workspace / "measurement-validity-v1-evidence"
+              attempt_path = artifact_dir / "measurement_validity_attempt.json"
+              attempt_document_value = json.loads(
+                  attempt_path.read_text(encoding="utf-8")
+              )
+              start = attempt_document_value["start"]
+              if attempt_document_value.get("terminal") is not None:
+                  raise RuntimeError("measurement attempt already has a terminal")
+              scientific_sha = os.environ["SCIENTIFIC_SHA"]
+              orchestration_sha = os.environ["ORCHESTRATION_SHA"]
+              stage = "imports"
+
+              try:
+                  from narrative_dynamics.attestation import (
+                      detect_repository_identity,
+                  )
+                  from narrative_dynamics.candidate_execution import (
+                      ProcessCandidateExecutor,
+                  )
+                  from narrative_dynamics.measurement_validity import (
+                      MeasurementAuditAttempt,
+                      MeasurementTerminalClass,
+                      MeasurementValidityProtocol,
+                      measurement_report_payload,
+                  )
+                  from narrative_dynamics.studies.feher_hare_measurement_validity_v1 import (
+                      FeherHareMeasurementAnchor,
+                      build_feher_hare_measurement_protocol,
+                      load_feher_hare_r3_measurement_anchor,
+                      run_feher_hare_measurement_validity_v1,
+                  )
+                  from narrative_dynamics.studies.two_stage_source import (
+                      load_two_stage_source_manifest,
+                      verify_two_stage_snapshot,
+                  )
+
+                  stage = "identity_reverification"
+                  preflight_path = (
+                      Path(os.environ["RUNNER_TEMP"])
+                      / "measurement_validity_v1_preflight.json"
+                  )
+                  preflight = json.loads(
+                      preflight_path.read_text(encoding="utf-8")
+                  )
+                  if preflight["scientific_revision"] != APPROVED_SCIENTIFIC:
+                      raise RuntimeError("preflight scientific revision drifted")
+                  if preflight["protocol_hash"] != PROTOCOL_HASH:
+                      raise RuntimeError("preflight protocol hash drifted")
+                  if scientific_sha != APPROVED_SCIENTIFIC:
+                      raise RuntimeError("scientific parent drifted")
+                  if git_head(study_root) != APPROVED_SCIENTIFIC:
+                      raise RuntimeError("scientific checkout drifted")
+
+                  r3_lock_root = workspace / "r3_lock"
+                  upstream_root = workspace / "upstream" / "muddled_models"
+                  if git_head(r3_lock_root) != R3_LOCK_COMMIT:
+                      raise RuntimeError("R3 lock checkout drifted")
+                  if git_head(upstream_root) != UPSTREAM_COMMIT:
+                      raise RuntimeError("upstream checkout drifted")
+                  r3_lock_path = (
+                      r3_lock_root
+                      / "research-locks"
+                      / "feher-hare-r3-internal-final.json"
+                  )
+                  protocol_lock_path = (
+                      study_root
+                      / "research-locks"
+                      / "feher-hare-measurement-validity-v1-protocol.json"
+                  )
+                  protocol_lock = json.loads(
+                      protocol_lock_path.read_text(encoding="utf-8")
+                  )
+                  anchor = load_feher_hare_r3_measurement_anchor(
+                      r3_lock_path,
+                      lock_commit=R3_LOCK_COMMIT,
+                  )
+                  if anchor != FeherHareMeasurementAnchor.from_payload(
+                      protocol_lock["anchor"]
+                  ):
+                      raise RuntimeError("runtime anchor drifted")
+                  protocol = build_feher_hare_measurement_protocol(anchor)
+                  if protocol != MeasurementValidityProtocol.from_payload(
+                      protocol_lock["protocol"]
+                  ):
+                      raise RuntimeError("runtime protocol payload drifted")
+                  if protocol.content_hash != PROTOCOL_HASH:
+                      raise RuntimeError("runtime protocol hash drifted")
+
+                  manifest = load_two_stage_source_manifest(
+                      study_root
+                      / "narrative_dynamics"
+                      / "studies"
+                      / "feher_hare_two_stage_v1_source_manifest.json"
+                  )
+                  if manifest.content_hash != anchor.source_manifest_hash:
+                      raise RuntimeError("source manifest identity drifted")
+                  snapshot = verify_two_stage_snapshot(upstream_root, manifest)
+                  if snapshot.source_snapshot_hash != anchor.source_snapshot_hash:
+                      raise RuntimeError("source snapshot identity drifted")
+                  repository_identity = detect_repository_identity(
+                      environ={},
+                      cwd=study_root,
+                  )
+                  if (
+                      repository_identity.checkout_commit
+                      != APPROVED_SCIENTIFIC
+                      or repository_identity.source_commit
+                      != APPROVED_SCIENTIFIC
+                      or repository_identity.dirty is not False
+                  ):
+                      raise RuntimeError(
+                          "runtime repository identity does not bind scientific head"
+                      )
+
+                  stage = "measurement_execution"
+                  result = run_feher_hare_measurement_validity_v1(
+                      root=upstream_root,
+                      manifest=manifest,
+                      lock_path=r3_lock_path,
+                      lock_commit=R3_LOCK_COMMIT,
+                      repository_identity=repository_identity,
+                      executor=ProcessCandidateExecutor(
+                          max_workers=MAX_WORKERS
+                      ),
+                  )
+                  result.attestation.require_integrity()
+                  if result.protocol != protocol:
+                      raise RuntimeError("result protocol identity drifted")
+                  if result.report.claim_scope != CLAIM_SCOPE:
+                      raise RuntimeError("result claim scope drifted")
+                  if any(getattr(result.report, name) is not False for name in BOUNDARIES):
+                      raise RuntimeError("result execution boundary drifted")
+
+                  stage = "artifact_assembly"
+                  report_payload = measurement_report_payload(result.report)
+                  report_envelope = envelope(
+                      schema=(
+                          "feher-hare-measurement-validity-v1-report-envelope-v1"
+                      ),
+                      anchor=anchor,
+                      payload_name="report",
+                      payload=report_payload,
+                  )
+                  artifact_envelope = envelope(
+                      schema=(
+                          "feher-hare-measurement-validity-v1-report-artifact-envelope-v1"
+                      ),
+                      anchor=anchor,
+                      payload_name="report_artifact",
+                      payload=result.artifact.manifest_identity(),
+                  )
+                  attestation_envelope = envelope(
+                      schema=(
+                          "feher-hare-measurement-validity-v1-attestation-envelope-v1"
+                      ),
+                      anchor=anchor,
+                      payload_name="attestation",
+                      payload={
+                          "report_hash": result.report.content_hash,
+                          "report_artifact_hash": result.artifact.content_hash,
+                          "attestation_hash": result.attestation.content_hash,
+                          "integrity_required": True,
+                      },
+                  )
+
+                  seed_plan = {
+                      role.value: tuple(seeds)
+                      for role, seeds in protocol.seeds_by_role
+                  }
+                  allowed_case_count = sum(
+                      count for _role, _task, count in result.report.record_counts
+                  )
+                  expected_manifest_count = sum(
+                      count
+                      * len(seed_plan[role])
+                      * len(protocol.candidate_hashes)
+                      for role, _task, count in result.report.record_counts
+                  )
+                  manifest_hashes = tuple(
+                      result.report.execution_manifest_hashes
+                  )
+                  if len(set(manifest_hashes)) != len(manifest_hashes):
+                      raise RuntimeError("execution manifest index is not unique")
+                  if result.prediction_hash is None:
+                      if manifest_hashes:
+                          raise RuntimeError(
+                              "pre-execution RED cannot have execution manifests"
+                          )
+                      expected_manifest_count = 0
+                  elif len(manifest_hashes) != expected_manifest_count:
+                      raise RuntimeError(
+                          "execution manifest count does not reconcile"
+                      )
+                  if (
+                      result.report.terminal_class
+                      is MeasurementTerminalClass.GREEN
+                      and len(manifest_hashes) != expected_manifest_count
+                  ):
+                      raise RuntimeError(
+                          "GREEN execution manifest coverage is incomplete"
+                      )
+                  index_envelope = envelope(
+                      schema=(
+                          "feher-hare-measurement-validity-v1-"
+                          "execution-manifest-index-v1"
+                      ),
+                      anchor=anchor,
+                      payload_name="execution_index",
+                      payload={
+                          "prediction_artifact_hash": result.prediction_hash,
+                          "allowed_case_count": allowed_case_count,
+                          "candidate_count": len(protocol.candidate_hashes),
+                          "seeds_by_role": seed_plan,
+                          "expected_execution_manifest_count": (
+                              expected_manifest_count
+                          ),
+                          "execution_manifest_count": len(manifest_hashes),
+                          "execution_manifest_hashes": manifest_hashes,
+                      },
+                  )
+
+                  paths = {
+                      "measurement_validity_report.json": report_envelope,
+                      "measurement_validity_report_artifact.json": (
+                          artifact_envelope
+                      ),
+                      "measurement_validity_attestation.json": (
+                          attestation_envelope
+                      ),
+                      "measurement_execution_manifest_index.json": (
+                          index_envelope
+                      ),
+                  }
+                  for filename, value in paths.items():
+                      write_json(artifact_dir / filename, value)
+                  artifact_file_hashes = tuple(
+                      (filename, file_hash(artifact_dir / filename))
+                      for filename in sorted(paths)
+                  )
+                  attempt = MeasurementAuditAttempt(
+                      attempt_id=str(start["attempt_id"]),
+                      scientific_revision=scientific_sha,
+                      orchestration_revision=orchestration_sha,
+                      started_at_utc=str(start["started_at_utc"]),
+                      terminal_class=result.report.terminal_class,
+                      protocol_hash=PROTOCOL_HASH,
+                      report_hash=result.report.content_hash,
+                      error_type=None,
+                      error_message_hash=None,
+                      artifact_file_hashes=artifact_file_hashes,
+                  )
+                  terminal = {
+                      **attempt.identity_payload(),
+                      "content_hash": attempt.content_hash,
+                      "result_hash": result.content_hash,
+                      "prediction_artifact_hash": result.prediction_hash,
+                      "report_artifact_hash": result.artifact.content_hash,
+                      "execution_manifest_count": len(manifest_hashes),
+                      "failure_stage": None,
+                  }
+                  write_json(
+                      attempt_path,
+                      attempt_document(start, terminal),
+                  )
+                  print(
+                      json.dumps(
+                          {
+                              "event": "measurement_validity_v1_terminal",
+                              "terminal_class": (
+                                  result.report.terminal_class.value
+                              ),
+                              "scientific_revision": scientific_sha,
+                              "protocol_hash": PROTOCOL_HASH,
+                              "report_hash": result.report.content_hash,
+                              "report_artifact_hash": (
+                                  result.artifact.content_hash
+                              ),
+                              "execution_manifest_count": len(manifest_hashes),
+                              **BOUNDARIES,
+                          },
+                          sort_keys=True,
+                      ),
+                      flush=True,
+                  )
+                  return (
+                      0
+                      if result.report.terminal_class
+                      is MeasurementTerminalClass.GREEN
+                      else 2
+                  )
+              except Exception as error:
+                  for filename in SCIENTIFIC_FILENAMES:
+                      path = artifact_dir / filename
+                      if path.exists():
+                          path.unlink()
+                  message_hash = (
+                      "sha256:"
+                      + hashlib.sha256(str(error).encode("utf-8")).hexdigest()
+                  )
+                  terminal_fields = {
+                      "attempt_id": str(start["attempt_id"]),
+                      "scientific_revision": scientific_sha,
+                      "orchestration_revision": orchestration_sha,
+                      "started_at_utc": str(start["started_at_utc"]),
+                      "terminal_class": "infrastructure_incomplete",
+                      "protocol_hash": PROTOCOL_HASH,
+                      "report_hash": None,
+                      "error_type": type(error).__name__,
+                      "error_message_hash": message_hash,
+                      "artifact_file_hashes": (),
+                  }
+                  try:
+                      attempt = MeasurementAuditAttempt(**terminal_fields)
+                      terminal = {
+                          **attempt.identity_payload(),
+                          "content_hash": attempt.content_hash,
+                          "failure_stage": stage,
+                      }
+                  except Exception:
+                      terminal = {
+                          **terminal_fields,
+                          "content_hash": canonical_hash(terminal_fields),
+                          "failure_stage": stage,
+                      }
+                  write_json(
+                      attempt_path,
+                      attempt_document(start, terminal),
+                  )
+                  print(
+                      json.dumps(
+                          {
+                              "event": (
+                                  "measurement_validity_v1_"
+                                  "infrastructure_incomplete"
+                              ),
+                              "failure_stage": stage,
+                              "error_type": type(error).__name__,
+                              "error_message_hash": message_hash,
+                              **BOUNDARIES,
+                          },
+                          sort_keys=True,
+                      ),
+                      flush=True,
+                  )
+                  return 1
+
+
+          if __name__ == "__main__":
+              raise SystemExit(main())
+          PY
+
+          cd study
+          export PYTHONPATH="$PWD"
+          python3 -B "$RUNNER_TEMP/run_measurement_validity_v1.py"
+
+      - name: Ensure a terminal attempt exists
+        if: always()
+        shell: bash
+        env:
+          SCIENTIFIC_SHA: c979eafe650a506bf30f78ab5b35078742b54087
+          ORCHESTRATION_SHA: "${{ github.sha }}"
+        run: |
+          set -euo pipefail
+          python3 -B <<'PY'
+          from datetime import datetime, timezone
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+
+          PROTOCOL_HASH = (
+              "sha256:c5c40911aed2a6e2af97c39f702f656330530290420f8316a3af80019d3eaad4"
+          )
+          BOUNDARIES = {
+              "parameter_training_performed": False,
+              "parameter_selection_performed": False,
+              "final_test_values_exposed_to_audit": False,
+              "final_test_outcomes_analyzed": False,
+              "final_model_execution": False,
+          }
+
+
+          def canonical_hash(value: object) -> str:
+              encoded = json.dumps(
+                  value,
+                  sort_keys=True,
+                  separators=(",", ":"),
+                  ensure_ascii=True,
+              ).encode("utf-8")
+              return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+          def write_json(path: Path, value: object) -> None:
+              path.parent.mkdir(parents=True, exist_ok=True)
+              path.write_text(
+                  json.dumps(value, indent=2, sort_keys=True) + "\n",
+                  encoding="utf-8",
+              )
+
+
+          artifact_dir = Path("measurement-validity-v1-evidence")
+          attempt_path = artifact_dir / "measurement_validity_attempt.json"
+          existing = None
+          if attempt_path.exists():
+              try:
+                  existing = json.loads(
+                      attempt_path.read_text(encoding="utf-8")
+                  )
+              except (OSError, ValueError):
+                  existing = None
+          if isinstance(existing, dict) and existing.get("terminal") is not None:
+              raise SystemExit(0)
+
+          for filename in (
+              "measurement_validity_report.json",
+              "measurement_validity_report_artifact.json",
+              "measurement_validity_attestation.json",
+              "measurement_execution_manifest_index.json",
+          ):
+              path = artifact_dir / filename
+              if path.exists():
+                  path.unlink()
+          started = (
+              datetime.now(timezone.utc)
+              .isoformat(timespec="seconds")
+              .replace("+00:00", "Z")
+          )
+          start = (
+              existing.get("start")
+              if isinstance(existing, dict)
+              and isinstance(existing.get("start"), dict)
+              else {
+                  "attempt_id": (
+                      f"measurement-validity-v1-{os.environ['GITHUB_RUN_ID']}"
+                  ),
+                  "github_run_id": os.environ["GITHUB_RUN_ID"],
+                  "scientific_revision": os.environ["SCIENTIFIC_SHA"],
+                  "orchestration_revision": os.environ["ORCHESTRATION_SHA"],
+                  "started_at_utc": started,
+                  "protocol_hash": PROTOCOL_HASH,
+                  "r3_lock_commit": (
+                      "f09d6afc96f0a720dd5e8e810f440cda0fe9f8a3"
+                  ),
+                  "upstream_revision": (
+                      "4567763780a2c596fd6510af720ec468a8214a8f"
+                  ),
+                  "claim_scope": (
+                      "external_observational_measurement_audit_only"
+                  ),
+              }
+          )
+          message = "workflow ended before a typed terminal attempt was written"
+          terminal = {
+              "attempt_id": start["attempt_id"],
+              "scientific_revision": os.environ["SCIENTIFIC_SHA"],
+              "orchestration_revision": os.environ["ORCHESTRATION_SHA"],
+              "started_at_utc": start["started_at_utc"],
+              "terminal_class": "infrastructure_incomplete",
+              "protocol_hash": PROTOCOL_HASH,
+              "report_hash": None,
+              "error_type": "WorkflowTerminatedBeforeTerminal",
+              "error_message_hash": (
+                  "sha256:" + hashlib.sha256(message.encode("utf-8")).hexdigest()
+              ),
+              "artifact_file_hashes": (),
+              "failure_stage": "workflow",
+          }
+          terminal["content_hash"] = canonical_hash(terminal)
+          document = {
+              "schema": "feher-hare-measurement-validity-v1-attempt-v1",
+              "start": start,
+              "start_hash": canonical_hash(start),
+              "terminal": terminal,
+              **BOUNDARIES,
+          }
+          document["content_hash"] = canonical_hash(document)
+          write_json(attempt_path, document)
+          PY
+
+      - name: Upload Measurement Validity V1 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: feher-hare-measurement-validity-v1-${{ github.run_id }}
+          path: measurement-validity-v1-evidence/
+          if-no-files-found: error
+          retention-days: 90
