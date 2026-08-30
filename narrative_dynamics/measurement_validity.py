@@ -761,10 +761,6 @@ class MeasurementAuditInput:
                     (role.value, value)
                     for role, value in self.allowed_partition_hashes
                 ),
-                "allowed_target_report_hashes": tuple(
-                    (role.value, value)
-                    for role, value in self.allowed_target_report_hashes
-                ),
                 "frozen_candidate_hashes": tuple(
                     candidate.content_hash for candidate in self.frozen_candidates
                 ),

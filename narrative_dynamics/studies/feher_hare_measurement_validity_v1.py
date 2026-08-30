@@ -25,7 +25,7 @@ from narrative_dynamics.candidate_execution import (
     SequentialCandidateExecutor,
 )
 from narrative_dynamics.contracts import Scenario, stable_content_hash
-from narrative_dynamics.manifest import required_manifest_hash
+from narrative_dynamics.manifest import callable_identity, required_manifest_hash
 from narrative_dynamics.measurement_validity import (
     ExactInvarianceFinding,
     MEASUREMENT_CLAIM_SCOPE,
@@ -46,9 +46,14 @@ from narrative_dynamics.measurement_validity import (
     permute_binary_metric_map,
     score_measurement_predictions,
 )
-from narrative_dynamics.losses import evaluate_metric_loss
+from narrative_dynamics.losses import evaluate_metric_loss, metric_loss_identity
 from narrative_dynamics.observations.dataset import ObservationPartitionRole
 from narrative_dynamics.observations.preregistration import FrozenModelSpec
+from narrative_dynamics.report_artifact import (
+    AggregateReportArtifact,
+    AttestedReport,
+    attest_report,
+)
 from narrative_dynamics.simulation import SimulationRunner
 
 from .feher_hare_two_stage_v1 import (
@@ -3114,17 +3119,449 @@ def assemble_feher_hare_measurement_validity_report(
     )
 
 
+def _measurement_anchor_empirical_hash(
+    anchor: FeherHareMeasurementAnchor,
+) -> str:
+    return stable_content_hash(
+        {
+            "claim_scope": MEASUREMENT_CLAIM_SCOPE,
+            "source_manifest_hash": anchor.source_manifest_hash,
+            "source_snapshot_hash": anchor.source_snapshot_hash,
+            "transform_hash": anchor.transform_hash,
+            "participant_assignment_hash": anchor.participant_assignment_hash,
+            "dataset_hash": anchor.dataset_hash,
+            "target_spec_hash": anchor.target_spec_hash,
+            "allowed_partition_hashes": (
+                (
+                    ObservationPartitionRole.TRAIN.value,
+                    anchor.train_partition_hash,
+                ),
+                (
+                    ObservationPartitionRole.SELECTION_VALIDATION.value,
+                    anchor.selection_partition_hash,
+                ),
+            ),
+            "frozen_candidate_hashes": tuple(
+                row.candidate_hash for row in anchor.candidate_rows
+            ),
+            "excluded_final_partition_hash": (
+                anchor.excluded_final_partition_hash
+            ),
+            "excluded_final_target_hash": anchor.excluded_final_target_hash,
+        }
+    )
+
+
+def _measurement_implementation_identities(
+) -> tuple[tuple[str, Mapping[str, object]], ...]:
+    return (
+        (
+            "anchor_loader",
+            callable_identity(load_feher_hare_r3_measurement_anchor),
+        ),
+        (
+            "provisioner",
+            callable_identity(provision_feher_hare_measurement_input),
+        ),
+        (
+            "candidate_freezer",
+            callable_identity(freeze_feher_hare_measurement_candidates),
+        ),
+        (
+            "semantic_evaluator",
+            callable_identity(evaluate_feher_hare_semantic_invariance),
+        ),
+        (
+            "prediction_executor",
+            callable_identity(execute_feher_hare_measurement_predictions),
+        ),
+        (
+            "empirical_invariance",
+            callable_identity(evaluate_feher_hare_empirical_invariance),
+        ),
+        (
+            "invariance_combiner",
+            callable_identity(combine_feher_hare_exact_invariance),
+        ),
+        (
+            "prediction_scorer",
+            callable_identity(score_measurement_predictions),
+        ),
+        (
+            "robustness_builder",
+            callable_identity(build_measurement_robustness_profile),
+        ),
+        (
+            "diagnostic_builder",
+            callable_identity(build_feher_hare_stay_switch_diagnostics),
+        ),
+        (
+            "report_assembler",
+            callable_identity(assemble_feher_hare_measurement_validity_report),
+        ),
+        ("report_attestor", callable_identity(attest_report)),
+        ("brier_loss", metric_loss_identity(two_stage_brier_loss())),
+        ("log_loss", metric_loss_identity(two_stage_log_loss())),
+    )
+
+
+def build_feher_hare_measurement_protocol(
+    anchor: FeherHareMeasurementAnchor,
+) -> MeasurementValidityProtocol:
+    if not isinstance(anchor, FeherHareMeasurementAnchor):
+        raise TypeError(
+            "Feher/Hare measurement protocol requires FeherHareMeasurementAnchor"
+        )
+    fixtures = frozen_feher_hare_semantic_fixtures()
+    return MeasurementValidityProtocol(
+        name="feher-hare-measurement-validity-v1",
+        version="1",
+        claim_scope=MEASUREMENT_CLAIM_SCOPE,
+        empirical_anchor_hash=_measurement_anchor_empirical_hash(anchor),
+        allowed_roles=(
+            ObservationPartitionRole.TRAIN,
+            ObservationPartitionRole.SELECTION_VALIDATION,
+        ),
+        candidate_hashes=tuple(
+            row.candidate_hash for row in anchor.candidate_rows
+        ),
+        seeds_by_role=(
+            (ObservationPartitionRole.TRAIN, (101, 102)),
+            (
+                ObservationPartitionRole.SELECTION_VALIDATION,
+                (201, 202),
+            ),
+        ),
+        semantic_fixture_hashes=tuple(
+            fixture.content_hash for fixture in fixtures
+        ),
+        semantic_permutations=(
+            "binary_coordinate_swap",
+            "coherent_action_state_relabel",
+            "second_stage_action_relabel",
+            "magic_carpet_counterbalance",
+            "spaceship_symbol_order",
+            "post_choice_outcome_exclusion",
+            "record_order_batch_permutation",
+            "serial_spawn_executor_identity",
+        ),
+        task_strata=_TASKS,
+        aggregation_rules=(
+            "trial_equal",
+            "participant_equal",
+        ),
+        scores=("brier", "log"),
+        material_reversal_references=(
+            (MeasurementScore.BRIER, 0.005),
+            (MeasurementScore.LOG, 0.006931471805599453),
+        ),
+        participant_influence_rule=(
+            "deterministic_leave_one_participant_out"
+        ),
+        stay_switch_definition=(
+            "reward_by_transition_previous_retained_trial"
+        ),
+        excluded_final_partition_hash=anchor.excluded_final_partition_hash,
+        excluded_final_target_hash=anchor.excluded_final_target_hash,
+        implementation_identities=_measurement_implementation_identities(),
+    )
+
+
+def _require_measurement_implementation(
+    protocol: MeasurementValidityProtocol,
+    name: str,
+    actual_identity: Mapping[str, object],
+) -> None:
+    expected = dict(protocol.implementation_identities).get(name)
+    if expected is None:
+        raise ValueError(
+            f"Feher/Hare measurement protocol lacks {name!r} implementation identity"
+        )
+    if dict(expected) != dict(actual_identity):
+        raise ValueError(
+            f"Feher/Hare measurement {name!r} implementation identity changed"
+        )
+
+
+@dataclass(frozen=True)
+class FeherHareMeasurementValidityResult:
+    audit_input_hash: str
+    protocol: MeasurementValidityProtocol
+    prediction_hash: str | None
+    report: MeasurementValidityReport
+    artifact: AggregateReportArtifact
+    attestation: AttestedReport[MeasurementValidityReport]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "audit_input_hash",
+            _content_hash(
+                self.audit_input_hash,
+                label="Feher/Hare measurement result audit input hash",
+            ),
+        )
+        if not isinstance(self.protocol, MeasurementValidityProtocol):
+            raise TypeError(
+                "Feher/Hare measurement result protocol has the wrong type"
+            )
+        if self.prediction_hash is not None:
+            object.__setattr__(
+                self,
+                "prediction_hash",
+                _content_hash(
+                    self.prediction_hash,
+                    label="Feher/Hare measurement result prediction hash",
+                ),
+            )
+        if not isinstance(self.report, MeasurementValidityReport):
+            raise TypeError(
+                "Feher/Hare measurement result report has the wrong type"
+            )
+        if not isinstance(self.artifact, AggregateReportArtifact):
+            raise TypeError(
+                "Feher/Hare measurement result artifact has the wrong type"
+            )
+        if not isinstance(self.attestation, AttestedReport):
+            raise TypeError(
+                "Feher/Hare measurement result attestation has the wrong type"
+            )
+        if self.report.audit_input_hash != self.audit_input_hash:
+            raise ValueError(
+                "Feher/Hare measurement result audit input identity changed"
+            )
+        if self.report.protocol_hash != self.protocol.content_hash:
+            raise ValueError(
+                "Feher/Hare measurement result protocol identity changed"
+            )
+        if self.report.prediction_artifact_hash != self.prediction_hash:
+            raise ValueError(
+                "Feher/Hare measurement result prediction identity changed"
+            )
+        if not self.artifact.matches(self.report):
+            raise ValueError(
+                "Feher/Hare measurement result artifact does not match report"
+            )
+        if self.attestation.report is not self.report:
+            raise ValueError(
+                "Feher/Hare measurement result attestation report changed"
+            )
+        if self.attestation.artifact != self.artifact:
+            raise ValueError(
+                "Feher/Hare measurement result attestation artifact changed"
+            )
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "audit_input_hash": self.audit_input_hash,
+            "protocol_hash": self.protocol.content_hash,
+            "prediction_hash": self.prediction_hash,
+            "report_hash": self.report.content_hash,
+            "artifact_hash": self.artifact.content_hash,
+            "attestation_hash": self.attestation.content_hash,
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.identity_payload())
+
+
+def _finalize_feher_hare_measurement_result(
+    *,
+    audit_input: MeasurementAuditInput,
+    protocol: MeasurementValidityProtocol,
+    prediction_artifact: MeasurementPredictionArtifact | None,
+    report: MeasurementValidityReport,
+) -> FeherHareMeasurementValidityResult:
+    _require_measurement_implementation(
+        protocol,
+        "report_attestor",
+        callable_identity(attest_report),
+    )
+    attestation = attest_report(report)
+    artifact = attestation.artifact
+    return FeherHareMeasurementValidityResult(
+        audit_input_hash=audit_input.content_hash,
+        protocol=protocol,
+        prediction_hash=(
+            None
+            if prediction_artifact is None
+            else prediction_artifact.content_hash
+        ),
+        report=report,
+        artifact=artifact,
+        attestation=attestation,
+    )
+
+
+def run_feher_hare_measurement_validity_v1(
+    *,
+    root: Path,
+    manifest: TwoStageSourceManifest,
+    lock_path: Path,
+    lock_commit: str,
+    repository_identity: RepositoryIdentity,
+    executor: CandidateExecutor,
+) -> FeherHareMeasurementValidityResult:
+    anchor = load_feher_hare_r3_measurement_anchor(
+        Path(lock_path),
+        lock_commit=lock_commit,
+    )
+    audit_input = provision_feher_hare_measurement_input(
+        Path(root),
+        manifest,
+        anchor,
+    )
+    protocol = build_feher_hare_measurement_protocol(anchor)
+    for name, function in (
+        ("anchor_loader", load_feher_hare_r3_measurement_anchor),
+        ("provisioner", provision_feher_hare_measurement_input),
+        ("candidate_freezer", freeze_feher_hare_measurement_candidates),
+        ("semantic_evaluator", evaluate_feher_hare_semantic_invariance),
+        (
+            "prediction_executor",
+            execute_feher_hare_measurement_predictions,
+        ),
+        ("empirical_invariance", evaluate_feher_hare_empirical_invariance),
+        ("invariance_combiner", combine_feher_hare_exact_invariance),
+        ("prediction_scorer", score_measurement_predictions),
+        ("robustness_builder", build_measurement_robustness_profile),
+        (
+            "diagnostic_builder",
+            build_feher_hare_stay_switch_diagnostics,
+        ),
+        (
+            "report_assembler",
+            assemble_feher_hare_measurement_validity_report,
+        ),
+    ):
+        _require_measurement_implementation(
+            protocol,
+            name,
+            callable_identity(function),
+        )
+    if protocol.empirical_anchor_hash != audit_input.empirical_anchor_hash:
+        raise ValueError(
+            "Feher/Hare measurement protocol empirical anchor changed"
+        )
+    protocol.build_manifest(audit_input)
+
+    candidates = freeze_feher_hare_measurement_candidates(anchor)
+    if tuple(candidate.content_hash for candidate in candidates) != tuple(
+        candidate.content_hash for candidate in audit_input.frozen_candidates
+    ):
+        raise ValueError(
+            "Feher/Hare measurement provisioned candidate identities changed"
+        )
+    semantic_findings = evaluate_feher_hare_semantic_invariance(
+        repository_identity,
+        candidates,
+    )
+    if any(
+        row.status is MeasurementValidityStatus.EXACT_INVARIANCE_FAILED
+        for row in semantic_findings
+    ):
+        report = assemble_feher_hare_measurement_validity_report(
+            audit_input=audit_input,
+            protocol=protocol,
+            prediction_artifact=None,
+            exact_invariance_findings=semantic_findings,
+            robustness_profile=None,
+            stay_switch_diagnostics=(),
+        )
+        return _finalize_feher_hare_measurement_result(
+            audit_input=audit_input,
+            protocol=protocol,
+            prediction_artifact=None,
+            report=report,
+        )
+
+    prediction_artifact = execute_feher_hare_measurement_predictions(
+        repository_identity,
+        audit_input,
+        protocol,
+        executor,
+    )
+    empirical_findings = evaluate_feher_hare_empirical_invariance(
+        audit_input,
+        prediction_artifact,
+        protocol,
+    )
+    complete_gate = combine_feher_hare_exact_invariance(
+        semantic_findings,
+        empirical_findings,
+    )
+    complete_findings = semantic_findings + empirical_findings + (complete_gate,)
+    if complete_gate.status is MeasurementValidityStatus.EXACT_INVARIANCE_FAILED:
+        report = assemble_feher_hare_measurement_validity_report(
+            audit_input=audit_input,
+            protocol=protocol,
+            prediction_artifact=prediction_artifact,
+            exact_invariance_findings=complete_findings,
+            robustness_profile=None,
+            stay_switch_diagnostics=(),
+        )
+        return _finalize_feher_hare_measurement_result(
+            audit_input=audit_input,
+            protocol=protocol,
+            prediction_artifact=prediction_artifact,
+            report=report,
+        )
+
+    brier_loss = two_stage_brier_loss()
+    log_loss = two_stage_log_loss()
+    _require_measurement_implementation(
+        protocol,
+        "brier_loss",
+        metric_loss_identity(brier_loss),
+    )
+    _require_measurement_implementation(
+        protocol,
+        "log_loss",
+        metric_loss_identity(log_loss),
+    )
+    case_losses = score_measurement_predictions(
+        audit_input,
+        prediction_artifact,
+        (brier_loss, log_loss),
+    )
+    robustness_profile = build_measurement_robustness_profile(
+        case_losses,
+        protocol,
+    )
+    diagnostics = build_feher_hare_stay_switch_diagnostics(
+        audit_input,
+        prediction_artifact,
+    )
+    report = assemble_feher_hare_measurement_validity_report(
+        audit_input=audit_input,
+        protocol=protocol,
+        prediction_artifact=prediction_artifact,
+        exact_invariance_findings=complete_findings,
+        robustness_profile=robustness_profile,
+        stay_switch_diagnostics=diagnostics,
+    )
+    return _finalize_feher_hare_measurement_result(
+        audit_input=audit_input,
+        protocol=protocol,
+        prediction_artifact=prediction_artifact,
+        report=report,
+    )
+
+
 __all__ = [
     "FEHER_HARE_R3_LOCK_COMMIT",
     "FeherHareMeasurementAnchor",
     "FeherHareMeasurementCandidateRow",
     "FeherHareMeasurementPredictionTask",
+    "FeherHareMeasurementValidityResult",
     "FeherHareSemanticFixture",
     "StaySwitchCell",
     "StaySwitchDiagnostic",
     "_project_prepared_measurement_input",
     "assemble_feher_hare_measurement_validity_report",
     "build_feher_hare_stay_switch_diagnostics",
+    "build_feher_hare_measurement_protocol",
     "combine_feher_hare_exact_invariance",
     "evaluate_feher_hare_empirical_invariance",
     "evaluate_feher_hare_semantic_invariance",
@@ -3133,4 +3570,5 @@ __all__ = [
     "frozen_feher_hare_semantic_fixtures",
     "load_feher_hare_r3_measurement_anchor",
     "provision_feher_hare_measurement_input",
+    "run_feher_hare_measurement_validity_v1",
 ]
