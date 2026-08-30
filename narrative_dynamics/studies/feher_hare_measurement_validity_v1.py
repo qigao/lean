@@ -8,21 +8,32 @@ from pathlib import Path
 import re
 
 from narrative_dynamics.adapters.narrative_two_stage import (
+    NarrativeTwoStageModelSource,
     create_narrative_two_stage_intentional_source,
     create_narrative_two_stage_planning_source,
     create_narrative_two_stage_reactive_source,
 )
+from narrative_dynamics.adapters.two_stage_metrics import (
+    two_stage_first_stage_policy_metrics,
+)
+from narrative_dynamics.attestation import RepositoryIdentity
+from narrative_dynamics.candidate_execution import CandidateExecutor
 from narrative_dynamics.contracts import Scenario, stable_content_hash
+from narrative_dynamics.manifest import required_manifest_hash
 from narrative_dynamics.measurement_validity import (
     MEASUREMENT_CLAIM_SCOPE,
     MeasurementAuditCase,
     MeasurementAuditInput,
+    MeasurementModelPrediction,
     MeasurementPredictionArtifact,
+    MeasurementSeedPrediction,
+    MeasurementValidityProtocol,
     MeasurementValidityStatus,
     average_seed_metrics,
 )
 from narrative_dynamics.observations.dataset import ObservationPartitionRole
 from narrative_dynamics.observations.preregistration import FrozenModelSpec
+from narrative_dynamics.simulation import SimulationRunner
 
 from .feher_hare_two_stage_v1 import (
     PreparedFeherHareTwoStageV1,
@@ -1007,6 +1018,423 @@ def provision_feher_hare_measurement_input(
 
 
 @dataclass(frozen=True)
+class FeherHareMeasurementPredictionTask:
+    family: str
+    case_hash: str
+    seed: int
+
+    def __post_init__(self) -> None:
+        family = _text(
+            self.family,
+            label="Feher/Hare measurement prediction task family",
+        )
+        if family not in _MODELS:
+            raise ValueError(
+                "Feher/Hare measurement prediction task family is unsupported"
+            )
+        object.__setattr__(self, "family", family)
+        object.__setattr__(
+            self,
+            "case_hash",
+            _content_hash(
+                self.case_hash,
+                label="Feher/Hare measurement prediction task case hash",
+            ),
+        )
+        if isinstance(self.seed, bool) or not isinstance(self.seed, int):
+            raise TypeError(
+                "Feher/Hare measurement prediction task seed must be an integer"
+            )
+        if self.seed in (301, 302):
+            raise ValueError(
+                "Feher/Hare measurement prediction task cannot use FINAL seeds"
+            )
+
+
+@dataclass(frozen=True)
+class _MeasurementWorkerCase:
+    case_hash: str
+    scenario: Scenario
+    role: ObservationPartitionRole
+
+
+@dataclass(frozen=True)
+class _MeasurementWorkerContext:
+    repository_identity: RepositoryIdentity
+    family: str
+    source: NarrativeTwoStageModelSource
+    candidate: FrozenModelSpec
+    cases: Mapping[str, _MeasurementWorkerCase]
+    seeds_by_role: Mapping[ObservationPartitionRole, tuple[int, ...]]
+    runner: SimulationRunner
+
+
+_MEASUREMENT_WORKER_CONTEXT: _MeasurementWorkerContext | None = None
+
+
+def _source_for_family(family: str) -> NarrativeTwoStageModelSource:
+    sources = {
+        "reactive": create_narrative_two_stage_reactive_source,
+        "intentional": create_narrative_two_stage_intentional_source,
+        "planning": create_narrative_two_stage_planning_source,
+    }
+    if family not in sources:
+        raise ValueError("Feher/Hare measurement worker family is unsupported")
+    return sources[family]()
+
+
+def _thaw_worker_value(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {
+            str(key): _thaw_worker_value(item) for key, item in value.items()
+        }
+    if isinstance(value, tuple):
+        return tuple(_thaw_worker_value(item) for item in value)
+    return value
+
+
+def _measurement_worker_case_rows(
+    audit_input: MeasurementAuditInput,
+) -> tuple[dict[str, object], ...]:
+    return tuple(
+        {
+            "case_hash": case.case_hash,
+            "scenario_id": case.scenario.id,
+            "scenario_payload": _thaw_worker_value(case.scenario.payload),
+            "scenario_hash": case.scenario.content_hash,
+            "role": case.role.value,
+        }
+        for case in audit_input.cases
+    )
+
+
+def _initialize_feher_hare_measurement_worker(
+    repository_identity: RepositoryIdentity,
+    family: str,
+    parameters: tuple[tuple[str, float], ...],
+    selection_manifest_hash: str,
+    candidate_hash: str,
+    case_rows: tuple[Mapping[str, object], ...],
+    seeds_by_role: tuple[tuple[str, tuple[int, ...]], ...],
+) -> None:
+    if not isinstance(repository_identity, RepositoryIdentity):
+        raise TypeError(
+            "Feher/Hare measurement worker requires RepositoryIdentity"
+        )
+    source = _source_for_family(family)
+    candidate = FrozenModelSpec.freeze(
+        name=family,
+        model=source,
+        parameters=dict(parameters),
+        selection_manifest_hash=selection_manifest_hash,
+    )
+    if candidate.content_hash != candidate_hash:
+        raise ValueError(
+            f"Feher/Hare measurement worker {family} candidate identity changed"
+        )
+    cases: dict[str, _MeasurementWorkerCase] = {}
+    for raw_case in case_rows:
+        if not isinstance(raw_case, Mapping):
+            raise TypeError("Feher/Hare measurement worker case row is invalid")
+        expected_fields = {
+            "case_hash",
+            "scenario_id",
+            "scenario_payload",
+            "scenario_hash",
+            "role",
+        }
+        if set(raw_case) != expected_fields:
+            raise ValueError("Feher/Hare measurement worker case schema changed")
+        case_hash = _content_hash(
+            raw_case["case_hash"],
+            label="Feher/Hare measurement worker case hash",
+        )
+        scenario = Scenario(
+            id=_text(
+                raw_case["scenario_id"],
+                label="Feher/Hare measurement worker scenario id",
+            ),
+            payload=raw_case["scenario_payload"],
+        )
+        if scenario.content_hash != raw_case["scenario_hash"]:
+            raise ValueError(
+                "Feher/Hare measurement worker scenario identity changed"
+            )
+        try:
+            role = ObservationPartitionRole(raw_case["role"])
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "Feher/Hare measurement worker role is unsupported"
+            ) from error
+        if role is ObservationPartitionRole.FINAL_TEST:
+            raise ValueError("Feher/Hare measurement worker cannot receive FINAL cases")
+        if case_hash in cases:
+            raise ValueError("Feher/Hare measurement worker case hashes must be unique")
+        cases[case_hash] = _MeasurementWorkerCase(
+            case_hash=case_hash,
+            scenario=scenario,
+            role=role,
+        )
+    if not cases:
+        raise ValueError("Feher/Hare measurement worker cases must be non-empty")
+
+    seed_map: dict[ObservationPartitionRole, tuple[int, ...]] = {}
+    for raw_role, raw_seeds in seeds_by_role:
+        try:
+            role = ObservationPartitionRole(raw_role)
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "Feher/Hare measurement worker seed role is unsupported"
+            ) from error
+        seeds = tuple(raw_seeds)
+        if (
+            role is ObservationPartitionRole.FINAL_TEST
+            or not seeds
+            or any(
+                isinstance(seed, bool) or not isinstance(seed, int)
+                for seed in seeds
+            )
+            or len(set(seeds)) != len(seeds)
+            or any(seed in (301, 302) for seed in seeds)
+        ):
+            raise ValueError("Feher/Hare measurement worker seed plan changed")
+        if role in seed_map:
+            raise ValueError("Feher/Hare measurement worker seed roles must be unique")
+        seed_map[role] = seeds
+    if set(seed_map) != {
+        ObservationPartitionRole.TRAIN,
+        ObservationPartitionRole.SELECTION_VALIDATION,
+    }:
+        raise ValueError("Feher/Hare measurement worker seed coverage changed")
+
+    global _MEASUREMENT_WORKER_CONTEXT
+    _MEASUREMENT_WORKER_CONTEXT = _MeasurementWorkerContext(
+        repository_identity=repository_identity,
+        family=family,
+        source=source,
+        candidate=candidate,
+        cases=cases,
+        seeds_by_role=seed_map,
+        runner=SimulationRunner(repository_identity=repository_identity),
+    )
+
+
+def _evaluate_feher_hare_measurement_prediction(
+    task: FeherHareMeasurementPredictionTask,
+) -> dict[str, object]:
+    context = _MEASUREMENT_WORKER_CONTEXT
+    if context is None:
+        raise RuntimeError("Feher/Hare measurement worker is not initialized")
+    if not isinstance(task, FeherHareMeasurementPredictionTask):
+        raise TypeError(
+            "Feher/Hare measurement worker requires a prediction task"
+        )
+    if task.family != context.family:
+        raise ValueError(
+            "Feher/Hare measurement worker task family changed after initialization"
+        )
+    if task.case_hash not in context.cases:
+        raise ValueError("Feher/Hare measurement worker task case is unknown")
+    case = context.cases[task.case_hash]
+    if task.seed not in context.seeds_by_role[case.role]:
+        raise ValueError(
+            "Feher/Hare measurement worker task seed changed for its role"
+        )
+    trace = context.runner.run_once(
+        context.source,
+        case.scenario,
+        dict(context.candidate.parameters),
+        seed=task.seed,
+    )
+    if trace.scenario_id != case.scenario.id:
+        raise RuntimeError(
+            "Feher/Hare measurement prediction trace scenario changed"
+        )
+    if trace.seed != task.seed:
+        raise RuntimeError("Feher/Hare measurement prediction trace seed changed")
+    if trace.parameters != context.candidate.parameters:
+        raise RuntimeError(
+            "Feher/Hare measurement prediction trace parameters changed"
+        )
+    metrics = tuple(sorted(two_stage_first_stage_policy_metrics(trace).items()))
+    return {
+        "repository_identity": context.repository_identity.manifest_identity(),
+        "family": context.family,
+        "candidate_hash": context.candidate.content_hash,
+        "case_hash": case.case_hash,
+        "scenario_hash": case.scenario.content_hash,
+        "role": case.role.value,
+        "seed": task.seed,
+        "metrics": metrics,
+        "run_manifest_hash": required_manifest_hash(
+            trace,
+            label="Feher/Hare measurement prediction trace",
+        ),
+    }
+
+
+def _measurement_seed_prediction_from_payload(
+    payload: object,
+    *,
+    repository_identity: RepositoryIdentity,
+    expected_family: str,
+    expected_candidate_hash: str,
+) -> MeasurementSeedPrediction:
+    if not isinstance(payload, Mapping):
+        raise TypeError(
+            "Feher/Hare measurement worker must return a mapping payload"
+        )
+    expected_fields = {
+        "repository_identity",
+        "family",
+        "candidate_hash",
+        "case_hash",
+        "scenario_hash",
+        "role",
+        "seed",
+        "metrics",
+        "run_manifest_hash",
+    }
+    if set(payload) != expected_fields:
+        raise ValueError("Feher/Hare measurement worker payload schema changed")
+    if payload["repository_identity"] != repository_identity.manifest_identity():
+        raise ValueError(
+            "Feher/Hare measurement worker repository identity changed"
+        )
+    if payload["family"] != expected_family:
+        raise ValueError("Feher/Hare measurement worker family changed")
+    if payload["candidate_hash"] != expected_candidate_hash:
+        raise ValueError("Feher/Hare measurement worker candidate changed")
+    return MeasurementSeedPrediction(
+        case_hash=payload["case_hash"],
+        scenario_hash=payload["scenario_hash"],
+        role=payload["role"],
+        model_name=payload["family"],
+        seed=payload["seed"],
+        metrics=tuple(tuple(row) for row in payload["metrics"]),
+        run_manifest_hash=payload["run_manifest_hash"],
+    )
+
+
+def execute_feher_hare_measurement_predictions(
+    repository_identity: RepositoryIdentity,
+    audit_input: MeasurementAuditInput,
+    protocol: MeasurementValidityProtocol,
+    executor: CandidateExecutor,
+) -> MeasurementPredictionArtifact:
+    if not isinstance(repository_identity, RepositoryIdentity):
+        raise TypeError(
+            "Feher/Hare measurement prediction requires RepositoryIdentity"
+        )
+    if not isinstance(audit_input, MeasurementAuditInput):
+        raise TypeError(
+            "Feher/Hare measurement prediction requires MeasurementAuditInput"
+        )
+    if not isinstance(protocol, MeasurementValidityProtocol):
+        raise TypeError(
+            "Feher/Hare measurement prediction requires MeasurementValidityProtocol"
+        )
+    execute = getattr(executor, "execute", None)
+    if not callable(execute):
+        raise TypeError(
+            "Feher/Hare measurement prediction requires a CandidateExecutor"
+        )
+    if protocol.empirical_anchor_hash != audit_input.empirical_anchor_hash:
+        raise ValueError("Feher/Hare measurement protocol empirical anchor changed")
+    if protocol.candidate_hashes != tuple(
+        candidate.content_hash for candidate in audit_input.frozen_candidates
+    ):
+        raise ValueError("Feher/Hare measurement protocol candidates changed")
+    if protocol.allowed_roles != (
+        ObservationPartitionRole.TRAIN,
+        ObservationPartitionRole.SELECTION_VALIDATION,
+    ):
+        raise ValueError("Feher/Hare measurement protocol roles changed")
+    seeds_by_role = dict(protocol.seeds_by_role)
+    if any(seed in (301, 302) for seeds in seeds_by_role.values() for seed in seeds):
+        raise ValueError("Feher/Hare measurement protocol contains FINAL seeds")
+
+    candidates = {
+        candidate.name: candidate for candidate in audit_input.frozen_candidates
+    }
+    if tuple(candidates) != _MODELS:
+        raise ValueError("Feher/Hare measurement candidate family set changed")
+    case_rows = _measurement_worker_case_rows(audit_input)
+    seed_rows = tuple(
+        (role.value, seeds) for role, seeds in protocol.seeds_by_role
+    )
+    expected_keys = {
+        (case.case_hash, seed)
+        for case in audit_input.cases
+        for seed in seeds_by_role[case.role]
+    }
+
+    models: list[MeasurementModelPrediction] = []
+    all_run_manifest_hashes: list[str] = []
+    for family in _MODELS:
+        candidate = candidates[family]
+        tasks = tuple(
+            FeherHareMeasurementPredictionTask(
+                family=family,
+                case_hash=case.case_hash,
+                seed=seed,
+            )
+            for case in audit_input.cases
+            for seed in seeds_by_role[case.role]
+        )
+        raw_results = tuple(
+            execute(
+                _evaluate_feher_hare_measurement_prediction,
+                tasks,
+                initializer=_initialize_feher_hare_measurement_worker,
+                initargs=(
+                    repository_identity,
+                    family,
+                    candidate.parameters,
+                    candidate.selection_manifest_hash,
+                    candidate.content_hash,
+                    case_rows,
+                    seed_rows,
+                ),
+            )
+        )
+        predictions = tuple(
+            _measurement_seed_prediction_from_payload(
+                payload,
+                repository_identity=repository_identity,
+                expected_family=family,
+                expected_candidate_hash=candidate.content_hash,
+            )
+            for payload in raw_results
+        )
+        keys = tuple((row.case_hash, row.seed) for row in predictions)
+        if len(set(keys)) != len(keys):
+            raise ValueError(
+                f"Feher/Hare measurement {family} worker returned a duplicate row"
+            )
+        if set(keys) != expected_keys or len(keys) != len(expected_keys):
+            raise ValueError(
+                f"Feher/Hare measurement {family} worker coverage changed"
+            )
+        models.append(
+            MeasurementModelPrediction(
+                model_name=family,
+                candidate_hash=candidate.content_hash,
+                rows=predictions,
+            )
+        )
+        all_run_manifest_hashes.extend(
+            row.run_manifest_hash for row in predictions
+        )
+    return MeasurementPredictionArtifact(
+        protocol_hash=protocol.content_hash,
+        audit_input_hash=audit_input.content_hash,
+        models=tuple(models),
+        execution_manifest_hashes=tuple(all_run_manifest_hashes),
+    )
+
+
+@dataclass(frozen=True)
 class StaySwitchCell:
     task_variant: str
     reward: int
@@ -1469,10 +1897,12 @@ __all__ = [
     "FEHER_HARE_R3_LOCK_COMMIT",
     "FeherHareMeasurementAnchor",
     "FeherHareMeasurementCandidateRow",
+    "FeherHareMeasurementPredictionTask",
     "StaySwitchCell",
     "StaySwitchDiagnostic",
     "_project_prepared_measurement_input",
     "build_feher_hare_stay_switch_diagnostics",
+    "execute_feher_hare_measurement_predictions",
     "freeze_feher_hare_measurement_candidates",
     "load_feher_hare_r3_measurement_anchor",
     "provision_feher_hare_measurement_input",
