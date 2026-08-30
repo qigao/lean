@@ -70,3 +70,11 @@ _feher_hare_two_stage_v1.build_two_stage_observation_dataset = _hash_cached_data
 from .feher_hare_two_stage_parallel import fit_and_freeze_feher_hare_models_parallel
 
 __all__.append("fit_and_freeze_feher_hare_models_parallel")
+
+# Measurement Validity V1 is a study-specific pipeline.  Export its runner
+# here while keeping it out of the narrative_dynamics package root.
+from .feher_hare_measurement_validity_v1 import (
+    run_feher_hare_measurement_validity_v1,
+)
+
+__all__.append("run_feher_hare_measurement_validity_v1")
