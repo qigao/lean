@@ -68,6 +68,16 @@ from narrative_dynamics.losses import (
     evaluate_metric_loss,
     metric_loss_identity,
 )
+from narrative_dynamics.measurement_validity import (
+    MEASUREMENT_CLAIM_SCOPE,
+    MeasurementAggregation,
+    MeasurementAuditCase,
+    MeasurementAuditInput,
+    MeasurementScore,
+    MeasurementTerminalClass,
+    MeasurementValidityProtocol,
+    MeasurementValidityStatus,
+)
 from narrative_dynamics.manifest import stable_content_hash
 from narrative_dynamics.observations import (
     OBSERVATION_DATASET_SCHEMA_VERSION,
@@ -185,6 +195,14 @@ __all__ = [
     "FrozenModelCandidate",
     "FrozenModelSpec",
     "MetricLoss",
+    "MEASUREMENT_CLAIM_SCOPE",
+    "MeasurementAggregation",
+    "MeasurementAuditCase",
+    "MeasurementAuditInput",
+    "MeasurementScore",
+    "MeasurementTerminalClass",
+    "MeasurementValidityProtocol",
+    "MeasurementValidityStatus",
     "ModelCancelled",
     "ModelComparisonEntry",
     "ModelComparisonReport",
