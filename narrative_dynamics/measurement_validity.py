@@ -7,12 +7,17 @@ import math
 import re
 from types import MappingProxyType
 
+from narrative_dynamics.adapters.two_stage_metrics import (
+    two_stage_brier_loss,
+    two_stage_log_loss,
+)
 from narrative_dynamics.contracts import (
     ExperimentManifest,
     ExperimentStage,
     Scenario,
     stable_content_hash,
 )
+from narrative_dynamics.losses import evaluate_metric_loss
 from narrative_dynamics.observations.dataset import ObservationPartitionRole
 from narrative_dynamics.observations.preregistration import FrozenModelSpec
 
@@ -58,6 +63,22 @@ class MeasurementTerminalClass(str, Enum):
     GREEN = "green"
     SCIENTIFIC_RED = "scientific_red"
     INFRASTRUCTURE_INCOMPLETE = "infrastructure_incomplete"
+
+
+_EXACT_STATUSES = frozenset(
+    {
+        MeasurementValidityStatus.EXACT_INVARIANCE_MET,
+        MeasurementValidityStatus.EXACT_INVARIANCE_FAILED,
+    }
+)
+_DEPENDENCE_STATUSES = frozenset(
+    {
+        MeasurementValidityStatus.STABLE_UNDER_FROZEN_AUDIT,
+        MeasurementValidityStatus.MATERIALLY_MEASUREMENT_DEPENDENT,
+        MeasurementValidityStatus.INCONCLUSIVE_SENSITIVITY,
+        MeasurementValidityStatus.NOT_ESTABLISHED,
+    }
+)
 
 
 def _text(value: object, *, label: str) -> str:
@@ -177,6 +198,325 @@ def _target_rows(value: object) -> tuple[tuple[str, float], ...]:
     ):
         raise ValueError("measurement target probabilities must sum to one")
     return tuple(canonical)
+
+
+def _validity_status(
+    value: MeasurementValidityStatus | str,
+    *,
+    allowed: frozenset[MeasurementValidityStatus],
+    label: str,
+) -> MeasurementValidityStatus:
+    try:
+        status = (
+            value
+            if isinstance(value, MeasurementValidityStatus)
+            else MeasurementValidityStatus(value)
+        )
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{label} is unsupported") from error
+    if status not in allowed:
+        raise ValueError(f"{label} is unsupported")
+    return status
+
+
+@dataclass(frozen=True)
+class ExactInvarianceFinding:
+    check_name: str
+    status: MeasurementValidityStatus | str
+    original_hash: str
+    transformed_hash: str
+    details_hash: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "check_name",
+            _text(self.check_name, label="measurement invariance check name"),
+        )
+        status = _validity_status(
+            self.status,
+            allowed=_EXACT_STATUSES,
+            label="measurement exact-invariance status",
+        )
+        object.__setattr__(self, "status", status)
+        original = _hash(
+            self.original_hash,
+            label="measurement invariance original hash",
+        )
+        transformed = _hash(
+            self.transformed_hash,
+            label="measurement invariance transformed hash",
+        )
+        if (
+            status is MeasurementValidityStatus.EXACT_INVARIANCE_MET
+            and original != transformed
+        ):
+            raise ValueError("exact invariance cannot be met when hashes differ")
+        if (
+            status is MeasurementValidityStatus.EXACT_INVARIANCE_FAILED
+            and original == transformed
+        ):
+            raise ValueError("exact invariance cannot fail when hashes match")
+        object.__setattr__(self, "original_hash", original)
+        object.__setattr__(self, "transformed_hash", transformed)
+        object.__setattr__(
+            self,
+            "details_hash",
+            _hash(self.details_hash, label="measurement invariance details hash"),
+        )
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "check_name": self.check_name,
+            "status": self.status.value,
+            "original_hash": self.original_hash,
+            "transformed_hash": self.transformed_hash,
+            "details_hash": self.details_hash,
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.identity_payload())
+
+
+def classify_material_reversal(
+    deltas: object,
+    references: object,
+) -> MeasurementValidityStatus:
+    try:
+        raw_deltas = tuple(deltas)
+        raw_references = tuple(references)
+    except TypeError as error:
+        raise TypeError("measurement deltas and references must be sequences") from error
+    if not raw_deltas or len(raw_deltas) != len(raw_references):
+        raise ValueError(
+            "measurement deltas and references must be non-empty aligned sequences"
+        )
+    canonical_deltas = tuple(
+        _finite(value, label="measurement comparison delta")
+        for value in raw_deltas
+    )
+    canonical_references = tuple(
+        _finite(value, label="measurement comparison reference")
+        for value in raw_references
+    )
+    if any(reference <= 0.0 for reference in canonical_references):
+        raise ValueError("measurement comparison references must be positive")
+
+    negative_material = any(
+        delta <= -reference
+        for delta, reference in zip(
+            canonical_deltas,
+            canonical_references,
+            strict=True,
+        )
+    )
+    positive_material = any(
+        delta >= reference
+        for delta, reference in zip(
+            canonical_deltas,
+            canonical_references,
+            strict=True,
+        )
+    )
+    if negative_material and positive_material:
+        return MeasurementValidityStatus.MATERIALLY_MEASUREMENT_DEPENDENT
+    if any(delta < 0.0 for delta in canonical_deltas) and any(
+        delta > 0.0 for delta in canonical_deltas
+    ):
+        return MeasurementValidityStatus.INCONCLUSIVE_SENSITIVITY
+    return MeasurementValidityStatus.STABLE_UNDER_FROZEN_AUDIT
+
+
+@dataclass(frozen=True)
+class MeasurementDependenceFinding:
+    dimension: str
+    score: MeasurementScore | str
+    aggregation: MeasurementAggregation | str
+    task: str
+    model_pair: tuple[str, str]
+    deltas: tuple[float, ...]
+    references: tuple[float, ...]
+    status: MeasurementValidityStatus | str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "dimension",
+            _text(self.dimension, label="measurement dependence dimension"),
+        )
+        try:
+            score = (
+                self.score
+                if isinstance(self.score, MeasurementScore)
+                else MeasurementScore(self.score)
+            )
+        except (TypeError, ValueError) as error:
+            raise ValueError("measurement dependence score is unsupported") from error
+        object.__setattr__(self, "score", score)
+        try:
+            aggregation = (
+                self.aggregation
+                if isinstance(self.aggregation, MeasurementAggregation)
+                else MeasurementAggregation(self.aggregation)
+            )
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "measurement dependence aggregation is unsupported"
+            ) from error
+        object.__setattr__(self, "aggregation", aggregation)
+        object.__setattr__(
+            self,
+            "task",
+            _text(self.task, label="measurement dependence task"),
+        )
+
+        try:
+            pair = tuple(self.model_pair)
+        except TypeError as error:
+            raise TypeError("measurement dependence model pair must be a sequence") from error
+        if len(pair) != 2 or any(name not in _FAMILY_ORDER for name in pair):
+            raise ValueError("measurement dependence model pair is unsupported")
+        if pair[0] == pair[1]:
+            raise ValueError("measurement dependence model pair must be distinct")
+        canonical_pair = tuple(sorted(pair, key=_FAMILY_ORDER.index))
+        if pair != canonical_pair:
+            raise ValueError("measurement dependence model pair must be canonical")
+        object.__setattr__(self, "model_pair", pair)
+
+        try:
+            raw_deltas = tuple(self.deltas)
+            raw_references = tuple(self.references)
+        except TypeError as error:
+            raise TypeError(
+                "measurement dependence values must be sequences"
+            ) from error
+        canonical_deltas = tuple(
+            _finite(value, label="measurement dependence delta")
+            for value in raw_deltas
+        )
+        canonical_references = tuple(
+            _finite(value, label="measurement dependence reference")
+            for value in raw_references
+        )
+        if not canonical_deltas or len(canonical_deltas) != len(
+            canonical_references
+        ):
+            raise ValueError(
+                "measurement dependence values must be non-empty and aligned"
+            )
+        if any(reference <= 0.0 for reference in canonical_references):
+            raise ValueError("measurement dependence references must be positive")
+        object.__setattr__(self, "deltas", canonical_deltas)
+        object.__setattr__(self, "references", canonical_references)
+
+        status = _validity_status(
+            self.status,
+            allowed=_DEPENDENCE_STATUSES,
+            label="measurement dependence status",
+        )
+        if status is not MeasurementValidityStatus.NOT_ESTABLISHED:
+            expected = classify_material_reversal(
+                canonical_deltas,
+                canonical_references,
+            )
+            if status is not expected:
+                raise ValueError(
+                    "measurement dependence status disagrees with frozen rule"
+                )
+        object.__setattr__(self, "status", status)
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "dimension": self.dimension,
+            "score": self.score.value,
+            "aggregation": self.aggregation.value,
+            "task": self.task,
+            "model_pair": self.model_pair,
+            "deltas": self.deltas,
+            "references": self.references,
+            "status": self.status.value,
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.identity_payload())
+
+
+def permute_binary_metric_map(values: object) -> dict[str, float]:
+    canonical = dict(_target_rows(values))
+    return {
+        _TARGET_KEYS[0]: canonical[_TARGET_KEYS[1]],
+        _TARGET_KEYS[1]: canonical[_TARGET_KEYS[0]],
+    }
+
+
+def evaluate_categorical_coordinate_invariance(
+    target: object,
+    prediction: object,
+) -> ExactInvarianceFinding:
+    canonical_target = dict(_target_rows(target))
+    canonical_prediction = dict(_target_rows(prediction))
+    transformed_target = permute_binary_metric_map(canonical_target)
+    transformed_prediction = permute_binary_metric_map(canonical_prediction)
+
+    original_losses = {
+        MeasurementScore.BRIER.value: evaluate_metric_loss(
+            two_stage_brier_loss(),
+            canonical_prediction,
+            canonical_target,
+        ),
+        MeasurementScore.LOG.value: evaluate_metric_loss(
+            two_stage_log_loss(),
+            canonical_prediction,
+            canonical_target,
+        ),
+    }
+    transformed_losses = {
+        MeasurementScore.BRIER.value: evaluate_metric_loss(
+            two_stage_brier_loss(),
+            transformed_prediction,
+            transformed_target,
+        ),
+        MeasurementScore.LOG.value: evaluate_metric_loss(
+            two_stage_log_loss(),
+            transformed_prediction,
+            transformed_target,
+        ),
+    }
+    original_payload = {
+        "target": _target_rows(canonical_target),
+        "prediction": _target_rows(canonical_prediction),
+        "losses": original_losses,
+    }
+    transformed_payload = {
+        "target": _target_rows(permute_binary_metric_map(transformed_target)),
+        "prediction": _target_rows(
+            permute_binary_metric_map(transformed_prediction)
+        ),
+        "losses": transformed_losses,
+    }
+    original_hash = stable_content_hash(original_payload)
+    transformed_hash = stable_content_hash(transformed_payload)
+    status = (
+        MeasurementValidityStatus.EXACT_INVARIANCE_MET
+        if original_hash == transformed_hash
+        else MeasurementValidityStatus.EXACT_INVARIANCE_FAILED
+    )
+    return ExactInvarianceFinding(
+        check_name="binary_coordinate_swap",
+        status=status,
+        original_hash=original_hash,
+        transformed_hash=transformed_hash,
+        details_hash=stable_content_hash(
+            {
+                "permuted_target": _target_rows(transformed_target),
+                "permuted_prediction": _target_rows(transformed_prediction),
+                "original_losses": original_losses,
+                "transformed_losses": transformed_losses,
+            }
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -837,12 +1177,17 @@ def _reference_rows(
 
 
 __all__ = [
+    "ExactInvarianceFinding",
     "MEASUREMENT_CLAIM_SCOPE",
     "MeasurementAggregation",
     "MeasurementAuditCase",
     "MeasurementAuditInput",
+    "MeasurementDependenceFinding",
     "MeasurementScore",
     "MeasurementTerminalClass",
     "MeasurementValidityProtocol",
     "MeasurementValidityStatus",
+    "classify_material_reversal",
+    "evaluate_categorical_coordinate_invariance",
+    "permute_binary_metric_map",
 ]
