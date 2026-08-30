@@ -34,9 +34,12 @@ from narrative_dynamics.measurement_validity import (
     MeasurementCaseLoss,
     MeasurementModelPrediction,
     MeasurementPredictionArtifact,
+    MeasurementRobustnessProfile,
     MeasurementScore,
     MeasurementSeedPrediction,
+    MeasurementTerminalClass,
     MeasurementValidityProtocol,
+    MeasurementValidityReport,
     MeasurementValidityStatus,
     average_seed_metrics,
     build_measurement_robustness_profile,
@@ -2832,6 +2835,285 @@ def build_feher_hare_stay_switch_diagnostics(
     return tuple(diagnostics)
 
 
+_SEMANTIC_EXACT_CHECKS = (
+    "task_canonicalization",
+    "semantic_executor_invariance",
+)
+_EMPIRICAL_EXACT_CHECKS = (
+    "categorical_coordinate_invariance",
+    "record_order_batch_invariance",
+)
+_COMPLETE_EXACT_CHECKS = (
+    *_SEMANTIC_EXACT_CHECKS,
+    *_EMPIRICAL_EXACT_CHECKS,
+    "feher_hare_exact_invariance_gate",
+)
+
+
+def _report_exact_invariance_findings(
+    value: object,
+    *,
+    prediction_performed: bool,
+) -> tuple[ExactInvarianceFinding, ...]:
+    try:
+        rows = tuple(value)
+    except TypeError as error:
+        raise TypeError(
+            "Feher/Hare measurement report invariance findings must be a sequence"
+        ) from error
+    if any(not isinstance(row, ExactInvarianceFinding) for row in rows):
+        raise TypeError(
+            "Feher/Hare measurement report invariance findings must contain "
+            "ExactInvarianceFinding values"
+        )
+    expected_names = (
+        _COMPLETE_EXACT_CHECKS
+        if prediction_performed
+        else _SEMANTIC_EXACT_CHECKS
+    )
+    by_name = {row.check_name: row for row in rows}
+    if len(by_name) != len(rows) or set(by_name) != set(expected_names):
+        raise ValueError(
+            "Feher/Hare measurement report invariance finding set changed"
+        )
+    canonical = tuple(by_name[name] for name in expected_names)
+    if not prediction_performed:
+        if not any(
+            row.status is MeasurementValidityStatus.EXACT_INVARIANCE_FAILED
+            for row in canonical
+        ):
+            raise ValueError(
+                "Feher/Hare pre-execution report requires a failed semantic gate"
+            )
+        return canonical
+
+    gate = by_name["feher_hare_exact_invariance_gate"]
+    component_failed = any(
+        by_name[name].status
+        is MeasurementValidityStatus.EXACT_INVARIANCE_FAILED
+        for name in (*_SEMANTIC_EXACT_CHECKS, *_EMPIRICAL_EXACT_CHECKS)
+    )
+    expected_gate_status = (
+        MeasurementValidityStatus.EXACT_INVARIANCE_FAILED
+        if component_failed
+        else MeasurementValidityStatus.EXACT_INVARIANCE_MET
+    )
+    if gate.status is not expected_gate_status:
+        raise ValueError(
+            "Feher/Hare measurement report combined invariance gate changed"
+        )
+    return canonical
+
+
+def _measurement_report_counts(
+    audit_input: MeasurementAuditInput,
+) -> tuple[
+    tuple[tuple[str, str, int], ...],
+    tuple[tuple[str, str, int], ...],
+]:
+    record_counts: list[tuple[str, str, int]] = []
+    participant_counts: list[tuple[str, str, int]] = []
+    for role in (
+        ObservationPartitionRole.TRAIN,
+        ObservationPartitionRole.SELECTION_VALIDATION,
+    ):
+        for task in _TASKS:
+            rows = tuple(
+                case
+                for case in audit_input.cases
+                if case.role is role and case.task_variant == task
+            )
+            if not rows:
+                raise ValueError(
+                    "Feher/Hare measurement report role/task stratum is empty"
+                )
+            record_counts.append((role.value, task, len(rows)))
+            participant_counts.append(
+                (
+                    role.value,
+                    task,
+                    len({case.participant_group_hash for case in rows}),
+                )
+            )
+    return tuple(record_counts), tuple(participant_counts)
+
+
+def _measurement_report_diagnostic_counts(
+    diagnostics: tuple[StaySwitchDiagnostic, ...],
+) -> tuple[tuple[str, str, int, bool, int], ...]:
+    return tuple(
+        (
+            diagnostic.task_variant,
+            diagnostic.model_name,
+            cell.reward,
+            cell.transition_common,
+            cell.count,
+        )
+        for diagnostic in diagnostics
+        for cell in diagnostic.cells
+    )
+
+
+def assemble_feher_hare_measurement_validity_report(
+    *,
+    audit_input: MeasurementAuditInput,
+    protocol: MeasurementValidityProtocol,
+    prediction_artifact: MeasurementPredictionArtifact | None,
+    exact_invariance_findings: object,
+    robustness_profile: MeasurementRobustnessProfile | None,
+    stay_switch_diagnostics: object,
+) -> MeasurementValidityReport:
+    if not isinstance(audit_input, MeasurementAuditInput):
+        raise TypeError(
+            "Feher/Hare measurement report requires MeasurementAuditInput"
+        )
+    if not isinstance(protocol, MeasurementValidityProtocol):
+        raise TypeError(
+            "Feher/Hare measurement report requires MeasurementValidityProtocol"
+        )
+    if protocol.empirical_anchor_hash != audit_input.empirical_anchor_hash:
+        raise ValueError("Feher/Hare measurement report empirical anchor changed")
+    if protocol.candidate_hashes != tuple(
+        candidate.content_hash for candidate in audit_input.frozen_candidates
+    ):
+        raise ValueError("Feher/Hare measurement report candidates changed")
+    if protocol.allowed_roles != (
+        ObservationPartitionRole.TRAIN,
+        ObservationPartitionRole.SELECTION_VALIDATION,
+    ):
+        raise ValueError("Feher/Hare measurement report roles changed")
+    if (
+        protocol.excluded_final_partition_hash
+        != audit_input.excluded_final_partition_hash
+        or protocol.excluded_final_target_hash
+        != audit_input.excluded_final_target_hash
+    ):
+        raise ValueError("Feher/Hare measurement report excluded FINAL identity changed")
+
+    prediction_performed = prediction_artifact is not None
+    if prediction_performed:
+        if not isinstance(prediction_artifact, MeasurementPredictionArtifact):
+            raise TypeError(
+                "Feher/Hare measurement report prediction must be "
+                "MeasurementPredictionArtifact or None"
+            )
+        _validate_empirical_invariance_binding(
+            audit_input,
+            prediction_artifact,
+            protocol,
+        )
+    findings = _report_exact_invariance_findings(
+        exact_invariance_findings,
+        prediction_performed=prediction_performed,
+    )
+    failed = any(
+        row.status is MeasurementValidityStatus.EXACT_INVARIANCE_FAILED
+        for row in findings
+    )
+    terminal_class = (
+        MeasurementTerminalClass.SCIENTIFIC_RED
+        if failed
+        else MeasurementTerminalClass.GREEN
+    )
+
+    try:
+        diagnostics = tuple(stay_switch_diagnostics)
+    except TypeError as error:
+        raise TypeError(
+            "Feher/Hare measurement report diagnostics must be a sequence"
+        ) from error
+    if any(not isinstance(row, StaySwitchDiagnostic) for row in diagnostics):
+        raise TypeError(
+            "Feher/Hare measurement report diagnostics must contain "
+            "StaySwitchDiagnostic values"
+        )
+
+    if terminal_class is MeasurementTerminalClass.SCIENTIFIC_RED:
+        if robustness_profile is not None:
+            raise ValueError(
+                "Feher/Hare scientific RED report cannot contain robustness"
+            )
+        if diagnostics:
+            raise ValueError(
+                "Feher/Hare scientific RED report cannot contain diagnostics"
+            )
+    else:
+        if prediction_artifact is None:
+            raise ValueError(
+                "Feher/Hare GREEN report requires a prediction artifact"
+            )
+        if not isinstance(robustness_profile, MeasurementRobustnessProfile):
+            raise TypeError(
+                "Feher/Hare GREEN report requires MeasurementRobustnessProfile"
+            )
+        expected_profile = build_measurement_robustness_profile(
+            score_measurement_predictions(
+                audit_input,
+                prediction_artifact,
+                (two_stage_brier_loss(), two_stage_log_loss()),
+            ),
+            protocol,
+        )
+        if robustness_profile.content_hash != expected_profile.content_hash:
+            raise ValueError(
+                "Feher/Hare measurement report robustness identity changed"
+            )
+        expected_diagnostics = build_feher_hare_stay_switch_diagnostics(
+            audit_input,
+            prediction_artifact,
+        )
+        if tuple(row.content_hash for row in diagnostics) != tuple(
+            row.content_hash for row in expected_diagnostics
+        ):
+            raise ValueError(
+                "Feher/Hare measurement report diagnostic identity changed"
+            )
+
+    record_counts, participant_counts = _measurement_report_counts(audit_input)
+    diagnostic_counts = _measurement_report_diagnostic_counts(diagnostics)
+    return MeasurementValidityReport(
+        terminal_class=terminal_class,
+        claim_scope=MEASUREMENT_CLAIM_SCOPE,
+        protocol_hash=protocol.content_hash,
+        audit_input_hash=audit_input.content_hash,
+        empirical_anchor_hash=audit_input.empirical_anchor_hash,
+        allowed_partition_hashes=tuple(
+            (role.value, content_hash)
+            for role, content_hash in audit_input.allowed_partition_hashes
+        ),
+        allowed_target_report_hashes=tuple(
+            (role.value, content_hash)
+            for role, content_hash in audit_input.allowed_target_report_hashes
+        ),
+        excluded_final_partition_hash=audit_input.excluded_final_partition_hash,
+        excluded_final_target_hash=audit_input.excluded_final_target_hash,
+        candidate_hashes=tuple(
+            candidate.content_hash for candidate in audit_input.frozen_candidates
+        ),
+        prediction_artifact_hash=(
+            None
+            if prediction_artifact is None
+            else prediction_artifact.content_hash
+        ),
+        execution_manifest_hashes=(
+            ()
+            if prediction_artifact is None
+            else prediction_artifact.execution_manifest_hashes
+        ),
+        exact_invariance_findings=findings,
+        robustness_profile=robustness_profile,
+        stay_switch_diagnostics=diagnostics,
+        record_counts=record_counts,
+        participant_counts=participant_counts,
+        diagnostic_cell_counts=diagnostic_counts,
+        parameter_training_performed=False,
+        parameter_selection_performed=False,
+        final_test_values_exposed_to_audit=False,
+        final_test_outcomes_analyzed=False,
+        final_model_execution=False,
+    )
+
+
 __all__ = [
     "FEHER_HARE_R3_LOCK_COMMIT",
     "FeherHareMeasurementAnchor",
@@ -2841,6 +3123,7 @@ __all__ = [
     "StaySwitchCell",
     "StaySwitchDiagnostic",
     "_project_prepared_measurement_input",
+    "assemble_feher_hare_measurement_validity_report",
     "build_feher_hare_stay_switch_diagnostics",
     "combine_feher_hare_exact_invariance",
     "evaluate_feher_hare_empirical_invariance",
