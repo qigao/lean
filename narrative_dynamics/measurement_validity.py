@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
 import math
 import re
@@ -28,6 +29,7 @@ from narrative_dynamics.observations.preregistration import FrozenModelSpec
 
 MEASUREMENT_CLAIM_SCOPE = "external_observational_measurement_audit_only"
 _CONTENT_HASH_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
+_GIT_REVISION_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 _PROBABILITY_TOLERANCE = 1e-12
 _ALLOWED_ROLES = (
     ObservationPartitionRole.TRAIN,
@@ -2503,6 +2505,763 @@ def build_measurement_robustness_profile(
     )
 
 
+def _terminal_class(
+    value: MeasurementTerminalClass | str,
+) -> MeasurementTerminalClass:
+    try:
+        return (
+            value
+            if isinstance(value, MeasurementTerminalClass)
+            else MeasurementTerminalClass(value)
+        )
+    except (TypeError, ValueError) as error:
+        raise ValueError("measurement terminal class is unsupported") from error
+
+
+def _report_role_hash_pairs(
+    value: object,
+    *,
+    label: str,
+) -> tuple[tuple[str, str], ...]:
+    return tuple(
+        (role.value, content_hash)
+        for role, content_hash in _role_hash_pairs(value, label=label)
+    )
+
+
+def _report_hashes(
+    value: object,
+    *,
+    label: str,
+    expected_count: int | None = None,
+    allow_empty: bool = False,
+    sort_values: bool = False,
+) -> tuple[str, ...]:
+    try:
+        raw_rows = tuple(value)
+    except TypeError as error:
+        raise TypeError(f"{label} must be a sequence") from error
+    rows = tuple(_hash(row, label=f"{label} hash") for row in raw_rows)
+    if not allow_empty and not rows:
+        raise ValueError(f"{label} must be non-empty")
+    if expected_count is not None and len(rows) != expected_count:
+        raise ValueError(f"{label} must contain exactly {expected_count} hashes")
+    if len(set(rows)) != len(rows):
+        raise ValueError(f"{label} hashes must be unique")
+    return tuple(sorted(rows)) if sort_values else rows
+
+
+def _report_exact_findings(value: object) -> tuple[ExactInvarianceFinding, ...]:
+    try:
+        rows = tuple(value)
+    except TypeError as error:
+        raise TypeError(
+            "measurement report exact-invariance findings must be a sequence"
+        ) from error
+    if not rows or any(not isinstance(row, ExactInvarianceFinding) for row in rows):
+        raise TypeError(
+            "measurement report exact-invariance findings must contain "
+            "ExactInvarianceFinding values"
+        )
+    names = tuple(row.check_name for row in rows)
+    if len(set(names)) != len(names):
+        raise ValueError(
+            "measurement report exact-invariance finding names must be unique"
+        )
+    return rows
+
+
+_STAY_SWITCH_PAYLOAD_FIELDS = {
+    "task_variant",
+    "model_name",
+    "cells",
+    "observed_interaction",
+    "model_interaction",
+    "status",
+}
+_STAY_SWITCH_CELL_PAYLOAD_FIELDS = {
+    "task_variant",
+    "reward",
+    "transition_common",
+    "observed_stay_probability",
+    "model_expected_stay_probability",
+    "count",
+    "status",
+}
+
+
+def _stay_switch_identity_payload(value: object) -> Mapping[str, object]:
+    identity_method = getattr(value, "identity_payload", None)
+    if not callable(identity_method):
+        raise TypeError(
+            "measurement report stay/switch diagnostics must be aggregate diagnostics"
+        )
+    payload = identity_method()
+    if not isinstance(payload, Mapping) or set(payload) != _STAY_SWITCH_PAYLOAD_FIELDS:
+        raise TypeError(
+            "measurement report stay/switch diagnostic payload changed"
+        )
+    try:
+        cells = tuple(payload["cells"])
+    except TypeError as error:
+        raise TypeError(
+            "measurement report stay/switch diagnostic cells must be a sequence"
+        ) from error
+    if len(cells) != 4 or any(
+        not isinstance(cell, Mapping)
+        or set(cell) != _STAY_SWITCH_CELL_PAYLOAD_FIELDS
+        for cell in cells
+    ):
+        raise TypeError(
+            "measurement report stay/switch diagnostic cell payload changed"
+        )
+    content_hash = getattr(value, "content_hash", None)
+    if content_hash != stable_content_hash(payload):
+        raise ValueError(
+            "measurement report stay/switch diagnostic identity changed"
+        )
+    return payload
+
+
+def _report_stay_switch_diagnostics(value: object) -> tuple[object, ...]:
+    try:
+        rows = tuple(value)
+    except TypeError as error:
+        raise TypeError(
+            "measurement report stay/switch diagnostics must be a sequence"
+        ) from error
+    coordinates: list[tuple[object, object]] = []
+    for row in rows:
+        payload = _stay_switch_identity_payload(row)
+        coordinates.append((payload["task_variant"], payload["model_name"]))
+    if len(set(coordinates)) != len(coordinates):
+        raise ValueError(
+            "measurement report stay/switch diagnostic coordinates must be unique"
+        )
+    return rows
+
+
+def _report_stratum_counts(
+    value: object,
+    *,
+    label: str,
+) -> tuple[tuple[str, str, int], ...]:
+    try:
+        raw_rows = tuple(value)
+    except TypeError as error:
+        raise TypeError(f"measurement report {label} must be a sequence") from error
+    rows: list[tuple[str, str, int]] = []
+    for raw_row in raw_rows:
+        if not isinstance(raw_row, tuple) or len(raw_row) != 3:
+            raise ValueError(
+                f"measurement report {label} rows must be role/task/count triples"
+            )
+        role = _role(raw_row[0])
+        task = _text(raw_row[1], label=f"measurement report {label} task")
+        if task not in _TASK_ORDER:
+            raise ValueError(f"measurement report {label} task is unsupported")
+        count = raw_row[2]
+        if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+            raise ValueError(
+                f"measurement report {label} values must be positive integers"
+            )
+        rows.append((role.value, task, count))
+    coordinates = tuple((role, task) for role, task, _ in rows)
+    if len(set(coordinates)) != len(coordinates):
+        raise ValueError(f"measurement report {label} coordinates must be unique")
+    return tuple(
+        sorted(
+            rows,
+            key=lambda row: (
+                tuple(role.value for role in _ALLOWED_ROLES).index(row[0]),
+                _TASK_ORDER.index(row[1]),
+            ),
+        )
+    )
+
+
+def _report_diagnostic_cell_counts(
+    value: object,
+) -> tuple[tuple[str, str, int, bool, int], ...]:
+    try:
+        raw_rows = tuple(value)
+    except TypeError as error:
+        raise TypeError(
+            "measurement report diagnostic cell counts must be a sequence"
+        ) from error
+    rows: list[tuple[str, str, int, bool, int]] = []
+    for raw_row in raw_rows:
+        if not isinstance(raw_row, tuple) or len(raw_row) != 5:
+            raise ValueError(
+                "measurement report diagnostic cell count rows must be "
+                "task/model/reward/transition/count tuples"
+            )
+        task = _text(
+            raw_row[0],
+            label="measurement report diagnostic cell task",
+        )
+        model = _text(
+            raw_row[1],
+            label="measurement report diagnostic cell model",
+        )
+        reward = raw_row[2]
+        transition_common = raw_row[3]
+        count = raw_row[4]
+        if task not in _TASK_ORDER or model not in _FAMILY_ORDER:
+            raise ValueError(
+                "measurement report diagnostic cell coordinate is unsupported"
+            )
+        if isinstance(reward, bool) or reward not in (0, 1):
+            raise ValueError("measurement report diagnostic cell reward is unsupported")
+        if not isinstance(transition_common, bool):
+            raise ValueError(
+                "measurement report diagnostic cell transition must be boolean"
+            )
+        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+            raise ValueError(
+                "measurement report diagnostic cell count must be non-negative"
+            )
+        rows.append((task, model, reward, transition_common, count))
+    coordinates = tuple(row[:4] for row in rows)
+    if len(set(coordinates)) != len(coordinates):
+        raise ValueError(
+            "measurement report diagnostic cell count coordinates must be unique"
+        )
+    return tuple(
+        sorted(
+            rows,
+            key=lambda row: (
+                _TASK_ORDER.index(row[0]),
+                _FAMILY_ORDER.index(row[1]),
+                row[2],
+                int(row[3]),
+            ),
+        )
+    )
+
+
+def _measurement_report_manifest(
+    *,
+    terminal_class: MeasurementTerminalClass,
+    claim_scope: str,
+    protocol_hash: str,
+    audit_input_hash: str,
+    empirical_anchor_hash: str,
+    allowed_partition_hashes: tuple[tuple[str, str], ...],
+    allowed_target_report_hashes: tuple[tuple[str, str], ...],
+    excluded_final_partition_hash: str,
+    excluded_final_target_hash: str,
+    candidate_hashes: tuple[str, ...],
+    prediction_artifact_hash: str | None,
+    execution_manifest_hashes: tuple[str, ...],
+    exact_invariance_findings: tuple[ExactInvarianceFinding, ...],
+    robustness_profile: MeasurementRobustnessProfile | None,
+    stay_switch_diagnostics: tuple[object, ...],
+    record_counts: tuple[tuple[str, str, int], ...],
+    participant_counts: tuple[tuple[str, str, int], ...],
+    diagnostic_cell_counts: tuple[tuple[str, str, int, bool, int], ...],
+) -> ExperimentManifest:
+    finding_hashes = tuple(row.content_hash for row in exact_invariance_findings)
+    diagnostic_hashes = tuple(
+        str(getattr(row, "content_hash")) for row in stay_switch_diagnostics
+    )
+    robustness_hash = (
+        None if robustness_profile is None else robustness_profile.content_hash
+    )
+    parents = (
+        protocol_hash,
+        audit_input_hash,
+        empirical_anchor_hash,
+        *(value for _, value in allowed_partition_hashes),
+        *(value for _, value in allowed_target_report_hashes),
+        excluded_final_partition_hash,
+        excluded_final_target_hash,
+        *candidate_hashes,
+        *(() if prediction_artifact_hash is None else (prediction_artifact_hash,)),
+        *execution_manifest_hashes,
+        *finding_hashes,
+        *(() if robustness_hash is None else (robustness_hash,)),
+        *diagnostic_hashes,
+    )
+    return ExperimentManifest(
+        stage=ExperimentStage.MEASUREMENT_AUDIT,
+        inputs={
+            "artifact_type": "measurement_validity_report",
+            "terminal_class": terminal_class.value,
+            "claim_scope": claim_scope,
+            "protocol_hash": protocol_hash,
+            "audit_input_hash": audit_input_hash,
+            "empirical_anchor_hash": empirical_anchor_hash,
+            "allowed_partition_hashes": allowed_partition_hashes,
+            "allowed_target_report_hashes": allowed_target_report_hashes,
+            "excluded_final_partition_hash": excluded_final_partition_hash,
+            "excluded_final_target_hash": excluded_final_target_hash,
+            "candidate_hashes": candidate_hashes,
+            "prediction_artifact_hash": prediction_artifact_hash,
+            "execution_manifest_hashes": execution_manifest_hashes,
+            "exact_invariance_finding_hashes": finding_hashes,
+            "robustness_profile_hash": robustness_hash,
+            "stay_switch_diagnostic_hashes": diagnostic_hashes,
+            "record_counts": record_counts,
+            "participant_counts": participant_counts,
+            "diagnostic_cell_counts": diagnostic_cell_counts,
+            "execution_boundary": {
+                "parameter_training_performed": False,
+                "parameter_selection_performed": False,
+                "final_test_values_exposed_to_audit": False,
+                "final_test_outcomes_analyzed": False,
+                "final_model_execution": False,
+            },
+        },
+        parent_hashes=parents,
+    )
+
+
+@dataclass(frozen=True)
+class MeasurementValidityReport:
+    terminal_class: MeasurementTerminalClass | str
+    claim_scope: str
+    protocol_hash: str
+    audit_input_hash: str
+    empirical_anchor_hash: str
+    allowed_partition_hashes: tuple[tuple[str, str], ...]
+    allowed_target_report_hashes: tuple[tuple[str, str], ...]
+    excluded_final_partition_hash: str
+    excluded_final_target_hash: str
+    candidate_hashes: tuple[str, ...]
+    prediction_artifact_hash: str | None
+    execution_manifest_hashes: tuple[str, ...]
+    exact_invariance_findings: tuple[ExactInvarianceFinding, ...]
+    robustness_profile: MeasurementRobustnessProfile | None
+    stay_switch_diagnostics: tuple[object, ...]
+    record_counts: tuple[tuple[str, str, int], ...]
+    participant_counts: tuple[tuple[str, str, int], ...]
+    diagnostic_cell_counts: tuple[tuple[str, str, int, bool, int], ...]
+    parameter_training_performed: bool
+    parameter_selection_performed: bool
+    final_test_values_exposed_to_audit: bool
+    final_test_outcomes_analyzed: bool
+    final_model_execution: bool
+    manifest: ExperimentManifest | None = field(default=None, compare=False)
+
+    def __post_init__(self) -> None:
+        terminal = _terminal_class(self.terminal_class)
+        if terminal is MeasurementTerminalClass.INFRASTRUCTURE_INCOMPLETE:
+            raise ValueError(
+                "measurement infrastructure incomplete belongs in an attempt record"
+            )
+        object.__setattr__(self, "terminal_class", terminal)
+        if self.claim_scope != MEASUREMENT_CLAIM_SCOPE:
+            raise ValueError("measurement report claim scope changed")
+        for attribute, label in (
+            ("protocol_hash", "protocol hash"),
+            ("audit_input_hash", "audit input hash"),
+            ("empirical_anchor_hash", "empirical anchor hash"),
+            ("excluded_final_partition_hash", "excluded FINAL partition hash"),
+            ("excluded_final_target_hash", "excluded FINAL target hash"),
+        ):
+            object.__setattr__(
+                self,
+                attribute,
+                _hash(getattr(self, attribute), label=f"measurement report {label}"),
+            )
+        if self.excluded_final_partition_hash == self.excluded_final_target_hash:
+            raise ValueError("measurement report excluded FINAL identities must differ")
+        object.__setattr__(
+            self,
+            "allowed_partition_hashes",
+            _report_role_hash_pairs(
+                self.allowed_partition_hashes,
+                label="measurement report allowed partition hashes",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "allowed_target_report_hashes",
+            _report_role_hash_pairs(
+                self.allowed_target_report_hashes,
+                label="measurement report allowed target report hashes",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "candidate_hashes",
+            _report_hashes(
+                self.candidate_hashes,
+                label="measurement report candidate hashes",
+                expected_count=3,
+            ),
+        )
+        if self.prediction_artifact_hash is not None:
+            object.__setattr__(
+                self,
+                "prediction_artifact_hash",
+                _hash(
+                    self.prediction_artifact_hash,
+                    label="measurement report prediction artifact hash",
+                ),
+            )
+        object.__setattr__(
+            self,
+            "execution_manifest_hashes",
+            _report_hashes(
+                self.execution_manifest_hashes,
+                label="measurement report execution manifest hashes",
+                allow_empty=True,
+                sort_values=True,
+            ),
+        )
+        findings = _report_exact_findings(self.exact_invariance_findings)
+        object.__setattr__(self, "exact_invariance_findings", findings)
+        if self.robustness_profile is not None and not isinstance(
+            self.robustness_profile,
+            MeasurementRobustnessProfile,
+        ):
+            raise TypeError(
+                "measurement report robustness profile must be "
+                "MeasurementRobustnessProfile or None"
+            )
+        diagnostics = _report_stay_switch_diagnostics(
+            self.stay_switch_diagnostics
+        )
+        object.__setattr__(self, "stay_switch_diagnostics", diagnostics)
+        record_counts = _report_stratum_counts(
+            self.record_counts,
+            label="record counts",
+        )
+        participant_counts = _report_stratum_counts(
+            self.participant_counts,
+            label="participant counts",
+        )
+        diagnostic_counts = _report_diagnostic_cell_counts(
+            self.diagnostic_cell_counts
+        )
+        object.__setattr__(self, "record_counts", record_counts)
+        object.__setattr__(self, "participant_counts", participant_counts)
+        object.__setattr__(self, "diagnostic_cell_counts", diagnostic_counts)
+
+        for attribute in (
+            "parameter_training_performed",
+            "parameter_selection_performed",
+            "final_test_values_exposed_to_audit",
+            "final_test_outcomes_analyzed",
+            "final_model_execution",
+        ):
+            value = getattr(self, attribute)
+            if not isinstance(value, bool) or value:
+                raise ValueError(f"measurement report {attribute} must be false")
+
+        failed = any(
+            row.status is MeasurementValidityStatus.EXACT_INVARIANCE_FAILED
+            for row in findings
+        )
+        expected_terminal = (
+            MeasurementTerminalClass.SCIENTIFIC_RED
+            if failed
+            else MeasurementTerminalClass.GREEN
+        )
+        if terminal is not expected_terminal:
+            raise ValueError(
+                "measurement report terminal class disagrees with exact-invariance gate"
+            )
+        has_prediction = self.prediction_artifact_hash is not None
+        has_execution = bool(self.execution_manifest_hashes)
+        if has_prediction != has_execution:
+            raise ValueError(
+                "measurement report prediction and execution identities must appear together"
+            )
+        if terminal is MeasurementTerminalClass.GREEN:
+            if not has_prediction:
+                raise ValueError("GREEN measurement report requires a prediction artifact")
+            if self.robustness_profile is None:
+                raise ValueError("GREEN measurement report requires robustness")
+            if not diagnostics or not diagnostic_counts:
+                raise ValueError("GREEN measurement report requires diagnostics")
+        else:
+            if self.robustness_profile is not None:
+                raise ValueError(
+                    "scientific RED measurement report cannot contain robustness"
+                )
+            if diagnostics or diagnostic_counts:
+                raise ValueError(
+                    "scientific RED measurement report cannot contain diagnostics"
+                )
+
+        expected_diagnostic_counts = tuple(
+            (
+                str(payload["task_variant"]),
+                str(payload["model_name"]),
+                int(cell["reward"]),
+                bool(cell["transition_common"]),
+                int(cell["count"]),
+            )
+            for row in diagnostics
+            for payload in (_stay_switch_identity_payload(row),)
+            for cell in tuple(payload["cells"])
+        )
+        expected_diagnostic_counts = _report_diagnostic_cell_counts(
+            expected_diagnostic_counts
+        )
+        if diagnostic_counts != expected_diagnostic_counts:
+            raise ValueError(
+                "measurement report diagnostic cell counts changed"
+            )
+
+        expected_manifest = _measurement_report_manifest(
+            terminal_class=terminal,
+            claim_scope=self.claim_scope,
+            protocol_hash=self.protocol_hash,
+            audit_input_hash=self.audit_input_hash,
+            empirical_anchor_hash=self.empirical_anchor_hash,
+            allowed_partition_hashes=self.allowed_partition_hashes,
+            allowed_target_report_hashes=self.allowed_target_report_hashes,
+            excluded_final_partition_hash=self.excluded_final_partition_hash,
+            excluded_final_target_hash=self.excluded_final_target_hash,
+            candidate_hashes=self.candidate_hashes,
+            prediction_artifact_hash=self.prediction_artifact_hash,
+            execution_manifest_hashes=self.execution_manifest_hashes,
+            exact_invariance_findings=findings,
+            robustness_profile=self.robustness_profile,
+            stay_switch_diagnostics=diagnostics,
+            record_counts=record_counts,
+            participant_counts=participant_counts,
+            diagnostic_cell_counts=diagnostic_counts,
+        )
+        if self.manifest is None:
+            object.__setattr__(self, "manifest", expected_manifest)
+        else:
+            if not isinstance(self.manifest, ExperimentManifest):
+                raise TypeError(
+                    "measurement report manifest must be ExperimentManifest"
+                )
+            if self.manifest.stage is not ExperimentStage.MEASUREMENT_AUDIT:
+                raise ValueError(
+                    "measurement report manifest stage must be measurement_audit"
+                )
+            if self.manifest.content_hash != expected_manifest.content_hash:
+                raise ValueError("measurement report manifest binding changed")
+
+    def identity_payload(self) -> dict[str, object]:
+        assert isinstance(self.manifest, ExperimentManifest)
+        return {
+            "terminal_class": self.terminal_class.value,
+            "claim_scope": self.claim_scope,
+            "protocol_hash": self.protocol_hash,
+            "audit_input_hash": self.audit_input_hash,
+            "empirical_anchor_hash": self.empirical_anchor_hash,
+            "allowed_partition_hashes": self.allowed_partition_hashes,
+            "allowed_target_report_hashes": self.allowed_target_report_hashes,
+            "excluded_final_partition_hash": self.excluded_final_partition_hash,
+            "excluded_final_target_hash": self.excluded_final_target_hash,
+            "candidate_hashes": self.candidate_hashes,
+            "prediction_artifact_hash": self.prediction_artifact_hash,
+            "execution_manifest_hashes": self.execution_manifest_hashes,
+            "exact_invariance_findings": tuple(
+                row.identity_payload() for row in self.exact_invariance_findings
+            ),
+            "robustness_profile": (
+                None
+                if self.robustness_profile is None
+                else self.robustness_profile.identity_payload()
+            ),
+            "stay_switch_diagnostics": tuple(
+                _stay_switch_identity_payload(row)
+                for row in self.stay_switch_diagnostics
+            ),
+            "record_counts": self.record_counts,
+            "participant_counts": self.participant_counts,
+            "diagnostic_cell_counts": self.diagnostic_cell_counts,
+            "parameter_training_performed": self.parameter_training_performed,
+            "parameter_selection_performed": self.parameter_selection_performed,
+            "final_test_values_exposed_to_audit": (
+                self.final_test_values_exposed_to_audit
+            ),
+            "final_test_outcomes_analyzed": self.final_test_outcomes_analyzed,
+            "final_model_execution": self.final_model_execution,
+            "manifest_hash": self.manifest.content_hash,
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.identity_payload())
+
+
+def measurement_report_payload(
+    report: MeasurementValidityReport,
+) -> dict[str, object]:
+    if not isinstance(report, MeasurementValidityReport):
+        raise TypeError(
+            "measurement report serialization requires MeasurementValidityReport"
+        )
+    return {**report.identity_payload(), "content_hash": report.content_hash}
+
+
+def _attempt_revision(value: object, *, label: str) -> str:
+    if not isinstance(value, str) or _GIT_REVISION_PATTERN.fullmatch(value) is None:
+        raise ValueError(f"{label} must be a 40-character lowercase git revision")
+    return value
+
+
+def _attempt_started_at(value: object) -> str:
+    started = _text(value, label="measurement attempt start time")
+    if not started.endswith("Z"):
+        raise ValueError("measurement attempt start time must be UTC with a Z suffix")
+    try:
+        parsed = datetime.fromisoformat(started[:-1] + "+00:00")
+    except ValueError as error:
+        raise ValueError("measurement attempt start time must be ISO-8601") from error
+    if parsed.utcoffset() != timezone.utc.utcoffset(parsed):
+        raise ValueError("measurement attempt start time must be UTC")
+    return started
+
+
+def _attempt_artifact_file_hashes(
+    value: object,
+) -> tuple[tuple[str, str], ...]:
+    try:
+        raw_rows = tuple(value)
+    except TypeError as error:
+        raise TypeError(
+            "measurement attempt artifact file hashes must be a sequence"
+        ) from error
+    rows: list[tuple[str, str]] = []
+    for raw_row in raw_rows:
+        if not isinstance(raw_row, tuple) or len(raw_row) != 2:
+            raise ValueError(
+                "measurement attempt artifact file hashes must be name/hash pairs"
+            )
+        rows.append(
+            (
+                _text(raw_row[0], label="measurement attempt artifact file name"),
+                _hash(
+                    raw_row[1],
+                    label="measurement attempt artifact file hash",
+                ),
+            )
+        )
+    names = tuple(name for name, _ in rows)
+    if len(set(names)) != len(names):
+        raise ValueError("measurement attempt artifact file names must be unique")
+    return tuple(sorted(rows))
+
+
+@dataclass(frozen=True)
+class MeasurementAuditAttempt:
+    attempt_id: str
+    scientific_revision: str
+    orchestration_revision: str
+    started_at_utc: str
+    terminal_class: MeasurementTerminalClass | str
+    protocol_hash: str
+    report_hash: str | None
+    error_type: str | None
+    error_message_hash: str | None
+    artifact_file_hashes: tuple[tuple[str, str], ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "attempt_id",
+            _text(self.attempt_id, label="measurement attempt id"),
+        )
+        object.__setattr__(
+            self,
+            "scientific_revision",
+            _attempt_revision(
+                self.scientific_revision,
+                label="measurement attempt scientific revision",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "orchestration_revision",
+            _attempt_revision(
+                self.orchestration_revision,
+                label="measurement attempt orchestration revision",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "started_at_utc",
+            _attempt_started_at(self.started_at_utc),
+        )
+        terminal = _terminal_class(self.terminal_class)
+        object.__setattr__(self, "terminal_class", terminal)
+        object.__setattr__(
+            self,
+            "protocol_hash",
+            _hash(
+                self.protocol_hash,
+                label="measurement attempt protocol hash",
+            ),
+        )
+        if self.report_hash is not None:
+            object.__setattr__(
+                self,
+                "report_hash",
+                _hash(
+                    self.report_hash,
+                    label="measurement attempt report hash",
+                ),
+            )
+        if self.error_type is not None:
+            object.__setattr__(
+                self,
+                "error_type",
+                _text(self.error_type, label="measurement attempt error type"),
+            )
+        if self.error_message_hash is not None:
+            object.__setattr__(
+                self,
+                "error_message_hash",
+                _hash(
+                    self.error_message_hash,
+                    label="measurement attempt error message hash",
+                ),
+            )
+        object.__setattr__(
+            self,
+            "artifact_file_hashes",
+            _attempt_artifact_file_hashes(self.artifact_file_hashes),
+        )
+        if terminal is MeasurementTerminalClass.INFRASTRUCTURE_INCOMPLETE:
+            if self.report_hash is not None:
+                raise ValueError(
+                    "infrastructure-incomplete measurement attempt cannot bind a report"
+                )
+            if self.error_type is None or self.error_message_hash is None:
+                raise ValueError(
+                    "infrastructure-incomplete measurement attempt requires an error"
+                )
+        else:
+            if self.report_hash is None:
+                raise ValueError(
+                    "scientific measurement attempt requires a report hash"
+                )
+            if self.error_type is not None or self.error_message_hash is not None:
+                raise ValueError(
+                    "scientific measurement attempt cannot contain an infrastructure error"
+                )
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "attempt_id": self.attempt_id,
+            "scientific_revision": self.scientific_revision,
+            "orchestration_revision": self.orchestration_revision,
+            "started_at_utc": self.started_at_utc,
+            "terminal_class": self.terminal_class.value,
+            "protocol_hash": self.protocol_hash,
+            "report_hash": self.report_hash,
+            "error_type": self.error_type,
+            "error_message_hash": self.error_message_hash,
+            "artifact_file_hashes": self.artifact_file_hashes,
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.identity_payload())
+
+
 def _seed_rows(
     value: object,
 ) -> tuple[tuple[ObservationPartitionRole, tuple[int, ...]], ...]:
@@ -2568,6 +3327,7 @@ __all__ = [
     "MEASUREMENT_CLAIM_SCOPE",
     "MeasurementAggregation",
     "MeasurementAggregateLoss",
+    "MeasurementAuditAttempt",
     "MeasurementAuditCase",
     "MeasurementAuditInput",
     "MeasurementCaseLoss",
@@ -2579,6 +3339,7 @@ __all__ = [
     "MeasurementScore",
     "MeasurementSeedPrediction",
     "MeasurementTerminalClass",
+    "MeasurementValidityReport",
     "MeasurementValidityProtocol",
     "MeasurementValidityStatus",
     "ParticipantInfluenceRange",
@@ -2586,6 +3347,7 @@ __all__ = [
     "classify_material_reversal",
     "build_measurement_robustness_profile",
     "evaluate_categorical_coordinate_invariance",
+    "measurement_report_payload",
     "average_seed_metrics",
     "participant_equal_mean",
     "permute_binary_metric_map",
