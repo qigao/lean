@@ -1608,6 +1608,901 @@ def score_measurement_predictions(
     )
 
 
+def _aggregation(
+    value: MeasurementAggregation | str,
+    *,
+    label: str,
+) -> MeasurementAggregation:
+    try:
+        return (
+            value
+            if isinstance(value, MeasurementAggregation)
+            else MeasurementAggregation(value)
+        )
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{label} is unsupported") from error
+
+
+def _score(value: MeasurementScore | str, *, label: str) -> MeasurementScore:
+    try:
+        return value if isinstance(value, MeasurementScore) else MeasurementScore(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{label} is unsupported") from error
+
+
+def _participant_loss_rows(
+    participant_losses: object,
+) -> tuple[tuple[str, tuple[float, ...]], ...]:
+    if not isinstance(participant_losses, Mapping):
+        raise TypeError("measurement participant losses must be a mapping")
+    if not participant_losses:
+        raise ValueError("measurement participant losses must be non-empty")
+    rows: list[tuple[str, tuple[float, ...]]] = []
+    for participant_hash, raw_losses in participant_losses.items():
+        canonical_hash = _hash(
+            participant_hash,
+            label="measurement participant loss group hash",
+        )
+        try:
+            losses = tuple(raw_losses)
+        except TypeError as error:
+            raise TypeError(
+                "measurement participant loss values must be sequences"
+            ) from error
+        if not losses:
+            raise ValueError(
+                "measurement participant loss values must be non-empty"
+            )
+        canonical_losses = tuple(
+            _finite(value, label="measurement participant loss")
+            for value in losses
+        )
+        if any(value < 0.0 for value in canonical_losses):
+            raise ValueError("measurement participant losses must be non-negative")
+        rows.append((canonical_hash, canonical_losses))
+    return tuple(sorted(rows))
+
+
+def trial_equal_mean(participant_losses: object) -> float:
+    rows = _participant_loss_rows(participant_losses)
+    losses = tuple(value for _, values in rows for value in values)
+    return _canonical_numeric_zero(math.fsum(losses) / len(losses))
+
+
+def participant_equal_mean(participant_losses: object) -> float:
+    rows = _participant_loss_rows(participant_losses)
+    participant_means = tuple(
+        math.fsum(values) / len(values) for _, values in rows
+    )
+    return _canonical_numeric_zero(
+        math.fsum(participant_means) / len(participant_means)
+    )
+
+
+@dataclass(frozen=True)
+class MeasurementAggregateLoss:
+    model_name: str
+    score: MeasurementScore | str
+    aggregation: MeasurementAggregation | str
+    task_variant: str
+    role: ObservationPartitionRole | str
+    mean_loss: float
+    case_count: int
+    participant_count: int
+
+    def __post_init__(self) -> None:
+        model_name = _text(
+            self.model_name,
+            label="measurement aggregate model name",
+        )
+        if model_name not in _FAMILY_ORDER:
+            raise ValueError("measurement aggregate model is unsupported")
+        object.__setattr__(self, "model_name", model_name)
+        object.__setattr__(
+            self,
+            "score",
+            _score(self.score, label="measurement aggregate score"),
+        )
+        object.__setattr__(
+            self,
+            "aggregation",
+            _aggregation(
+                self.aggregation,
+                label="measurement aggregate aggregation",
+            ),
+        )
+        task = _text(
+            self.task_variant,
+            label="measurement aggregate task variant",
+        )
+        if task not in _TASK_ORDER:
+            raise ValueError("measurement aggregate task variant is unsupported")
+        object.__setattr__(self, "task_variant", task)
+        object.__setattr__(self, "role", _role(self.role))
+        mean_loss = _finite(
+            self.mean_loss,
+            label="measurement aggregate mean loss",
+        )
+        if mean_loss < 0.0:
+            raise ValueError("measurement aggregate mean loss must be non-negative")
+        object.__setattr__(
+            self,
+            "mean_loss",
+            _canonical_numeric_zero(mean_loss),
+        )
+        for attribute in ("case_count", "participant_count"):
+            value = getattr(self, attribute)
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or value <= 0
+            ):
+                raise ValueError(
+                    f"measurement aggregate {attribute} must be a positive integer"
+                )
+        if self.participant_count > self.case_count:
+            raise ValueError(
+                "measurement aggregate participant count cannot exceed case count"
+            )
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "model_name": self.model_name,
+            "score": self.score.value,
+            "aggregation": self.aggregation.value,
+            "task_variant": self.task_variant,
+            "role": self.role.value,
+            "mean_loss": self.mean_loss,
+            "case_count": self.case_count,
+            "participant_count": self.participant_count,
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.identity_payload())
+
+
+@dataclass(frozen=True)
+class MeasurementPairwiseDelta:
+    first_model: str
+    second_model: str
+    score: MeasurementScore | str
+    aggregation: MeasurementAggregation | str
+    task_variant: str
+    role: ObservationPartitionRole | str
+    delta: float
+
+    def __post_init__(self) -> None:
+        pair = (self.first_model, self.second_model)
+        if any(name not in _FAMILY_ORDER for name in pair) or pair[0] == pair[1]:
+            raise ValueError("measurement pairwise models are unsupported")
+        if pair != tuple(sorted(pair, key=_FAMILY_ORDER.index)):
+            raise ValueError("measurement pairwise models must be canonical")
+        object.__setattr__(
+            self,
+            "score",
+            _score(self.score, label="measurement pairwise score"),
+        )
+        object.__setattr__(
+            self,
+            "aggregation",
+            _aggregation(
+                self.aggregation,
+                label="measurement pairwise aggregation",
+            ),
+        )
+        task = _text(
+            self.task_variant,
+            label="measurement pairwise task variant",
+        )
+        if task not in _TASK_ORDER:
+            raise ValueError("measurement pairwise task variant is unsupported")
+        object.__setattr__(self, "task_variant", task)
+        object.__setattr__(self, "role", _role(self.role))
+        object.__setattr__(
+            self,
+            "delta",
+            _canonical_numeric_zero(
+                _finite(self.delta, label="measurement pairwise delta")
+            ),
+        )
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "first_model": self.first_model,
+            "second_model": self.second_model,
+            "score": self.score.value,
+            "aggregation": self.aggregation.value,
+            "task_variant": self.task_variant,
+            "role": self.role.value,
+            "delta": self.delta,
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.identity_payload())
+
+
+@dataclass(frozen=True)
+class ParticipantInfluenceRange:
+    role: ObservationPartitionRole | str
+    task_variant: str
+    score: MeasurementScore | str
+    aggregation: MeasurementAggregation | str
+    first_model: str
+    second_model: str
+    minimum_delta: float | None
+    maximum_delta: float | None
+    omitted_participant_count: int
+    status: MeasurementValidityStatus | str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "role", _role(self.role))
+        task = _text(
+            self.task_variant,
+            label="measurement influence task variant",
+        )
+        if task not in _TASK_ORDER:
+            raise ValueError("measurement influence task variant is unsupported")
+        object.__setattr__(self, "task_variant", task)
+        object.__setattr__(
+            self,
+            "score",
+            _score(self.score, label="measurement influence score"),
+        )
+        object.__setattr__(
+            self,
+            "aggregation",
+            _aggregation(
+                self.aggregation,
+                label="measurement influence aggregation",
+            ),
+        )
+        pair = (self.first_model, self.second_model)
+        if any(name not in _FAMILY_ORDER for name in pair) or pair[0] == pair[1]:
+            raise ValueError("measurement influence model pair is unsupported")
+        if pair != tuple(sorted(pair, key=_FAMILY_ORDER.index)):
+            raise ValueError("measurement influence model pair must be canonical")
+        if (
+            isinstance(self.omitted_participant_count, bool)
+            or not isinstance(self.omitted_participant_count, int)
+            or self.omitted_participant_count <= 0
+        ):
+            raise ValueError(
+                "measurement omitted participant count must be a positive integer"
+            )
+        status = _validity_status(
+            self.status,
+            allowed=_DEPENDENCE_STATUSES,
+            label="measurement influence status",
+        )
+        object.__setattr__(self, "status", status)
+        if status is MeasurementValidityStatus.NOT_ESTABLISHED:
+            if self.minimum_delta is not None or self.maximum_delta is not None:
+                raise ValueError(
+                    "not-established measurement influence cannot contain a range"
+                )
+            return
+        if self.minimum_delta is None or self.maximum_delta is None:
+            raise ValueError(
+                "established measurement influence requires a complete range"
+            )
+        minimum = _canonical_numeric_zero(
+            _finite(self.minimum_delta, label="measurement influence minimum")
+        )
+        maximum = _canonical_numeric_zero(
+            _finite(self.maximum_delta, label="measurement influence maximum")
+        )
+        if minimum > maximum:
+            raise ValueError(
+                "measurement influence minimum cannot exceed maximum"
+            )
+        object.__setattr__(self, "minimum_delta", minimum)
+        object.__setattr__(self, "maximum_delta", maximum)
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "role": self.role.value,
+            "task_variant": self.task_variant,
+            "score": self.score.value,
+            "aggregation": self.aggregation.value,
+            "first_model": self.first_model,
+            "second_model": self.second_model,
+            "minimum_delta": self.minimum_delta,
+            "maximum_delta": self.maximum_delta,
+            "omitted_participant_count": self.omitted_participant_count,
+            "status": self.status.value,
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.identity_payload())
+
+
+def _aggregate_sort_key(
+    row: MeasurementAggregateLoss,
+) -> tuple[int, int, int, int, int]:
+    return (
+        _ALLOWED_ROLES.index(row.role),
+        _TASK_ORDER.index(row.task_variant),
+        tuple(MeasurementScore).index(row.score),
+        tuple(MeasurementAggregation).index(row.aggregation),
+        _FAMILY_ORDER.index(row.model_name),
+    )
+
+
+def aggregate_measurement_losses(
+    rows: object,
+    aggregation: MeasurementAggregation | str,
+) -> tuple[MeasurementAggregateLoss, ...]:
+    selected_aggregation = _aggregation(
+        aggregation,
+        label="measurement aggregation",
+    )
+    try:
+        canonical_rows = tuple(rows)
+    except TypeError as error:
+        raise TypeError("measurement case losses must be a sequence") from error
+    if not canonical_rows:
+        raise ValueError("measurement case losses must be non-empty")
+    if any(not isinstance(row, MeasurementCaseLoss) for row in canonical_rows):
+        raise TypeError(
+            "measurement aggregation rows must be MeasurementCaseLoss values"
+        )
+    row_keys = tuple(
+        (row.case_hash, row.model_name, row.score) for row in canonical_rows
+    )
+    if len(set(row_keys)) != len(row_keys):
+        raise ValueError("measurement case loss rows contain a duplicate")
+
+    groups: dict[
+        tuple[
+            ObservationPartitionRole,
+            str,
+            MeasurementScore,
+            str,
+        ],
+        list[MeasurementCaseLoss],
+    ] = {}
+    for row in canonical_rows:
+        key = (row.role, row.task_variant, row.score, row.model_name)
+        groups.setdefault(key, []).append(row)
+
+    aggregates: list[MeasurementAggregateLoss] = []
+    for (role, task, score, model_name), group_rows in groups.items():
+        participant_losses: dict[str, list[float]] = {}
+        for row in group_rows:
+            participant_losses.setdefault(row.participant_group_hash, []).append(
+                row.value
+            )
+        mean_loss = (
+            trial_equal_mean(participant_losses)
+            if selected_aggregation is MeasurementAggregation.TRIAL_EQUAL
+            else participant_equal_mean(participant_losses)
+        )
+        aggregates.append(
+            MeasurementAggregateLoss(
+                model_name=model_name,
+                score=score,
+                aggregation=selected_aggregation,
+                task_variant=task,
+                role=role,
+                mean_loss=mean_loss,
+                case_count=len(group_rows),
+                participant_count=len(participant_losses),
+            )
+        )
+    return tuple(sorted(aggregates, key=_aggregate_sort_key))
+
+
+def _pairwise_sort_key(
+    row: MeasurementPairwiseDelta,
+) -> tuple[int, int, int, int, int, int]:
+    return (
+        _ALLOWED_ROLES.index(row.role),
+        _TASK_ORDER.index(row.task_variant),
+        tuple(MeasurementScore).index(row.score),
+        tuple(MeasurementAggregation).index(row.aggregation),
+        _FAMILY_ORDER.index(row.first_model),
+        _FAMILY_ORDER.index(row.second_model),
+    )
+
+
+def _dependence_sort_key(
+    row: MeasurementDependenceFinding,
+) -> tuple[str, int, int, str, int, int]:
+    return (
+        row.dimension,
+        tuple(MeasurementScore).index(row.score),
+        tuple(MeasurementAggregation).index(row.aggregation),
+        row.task,
+        _FAMILY_ORDER.index(row.model_pair[0]),
+        _FAMILY_ORDER.index(row.model_pair[1]),
+    )
+
+
+def _influence_sort_key(
+    row: ParticipantInfluenceRange,
+) -> tuple[int, int, int, int, int, int]:
+    return (
+        _ALLOWED_ROLES.index(row.role),
+        _TASK_ORDER.index(row.task_variant),
+        tuple(MeasurementScore).index(row.score),
+        tuple(MeasurementAggregation).index(row.aggregation),
+        _FAMILY_ORDER.index(row.first_model),
+        _FAMILY_ORDER.index(row.second_model),
+    )
+
+
+@dataclass(frozen=True)
+class MeasurementRobustnessProfile:
+    aggregate_losses: tuple[MeasurementAggregateLoss, ...]
+    pairwise_deltas: tuple[MeasurementPairwiseDelta, ...]
+    task_findings: tuple[MeasurementDependenceFinding, ...]
+    aggregation_findings: tuple[MeasurementDependenceFinding, ...]
+    score_findings: tuple[MeasurementDependenceFinding, ...]
+    participant_influence: tuple[ParticipantInfluenceRange, ...]
+
+    def __post_init__(self) -> None:
+        specifications = (
+            (
+                "aggregate_losses",
+                MeasurementAggregateLoss,
+                _aggregate_sort_key,
+            ),
+            (
+                "pairwise_deltas",
+                MeasurementPairwiseDelta,
+                _pairwise_sort_key,
+            ),
+            ("task_findings", MeasurementDependenceFinding, _dependence_sort_key),
+            (
+                "aggregation_findings",
+                MeasurementDependenceFinding,
+                _dependence_sort_key,
+            ),
+            ("score_findings", MeasurementDependenceFinding, _dependence_sort_key),
+            (
+                "participant_influence",
+                ParticipantInfluenceRange,
+                _influence_sort_key,
+            ),
+        )
+        for attribute, row_type, sort_key in specifications:
+            rows = tuple(getattr(self, attribute))
+            if not rows:
+                raise ValueError(f"measurement robustness {attribute} must be non-empty")
+            if any(not isinstance(row, row_type) for row in rows):
+                raise TypeError(
+                    f"measurement robustness {attribute} contains the wrong row type"
+                )
+            rows = tuple(sorted(rows, key=sort_key))
+            hashes = tuple(row.content_hash for row in rows)
+            if len(set(hashes)) != len(hashes):
+                raise ValueError(
+                    f"measurement robustness {attribute} contains duplicate rows"
+                )
+            object.__setattr__(self, attribute, rows)
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "aggregate_losses": tuple(
+                row.identity_payload() for row in self.aggregate_losses
+            ),
+            "pairwise_deltas": tuple(
+                row.identity_payload() for row in self.pairwise_deltas
+            ),
+            "task_findings": tuple(
+                row.identity_payload() for row in self.task_findings
+            ),
+            "aggregation_findings": tuple(
+                row.identity_payload() for row in self.aggregation_findings
+            ),
+            "score_findings": tuple(
+                row.identity_payload() for row in self.score_findings
+            ),
+            "participant_influence": tuple(
+                row.identity_payload() for row in self.participant_influence
+            ),
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.identity_payload())
+
+
+_MODEL_PAIRS = tuple(
+    (_FAMILY_ORDER[first_index], _FAMILY_ORDER[second_index])
+    for first_index in range(len(_FAMILY_ORDER))
+    for second_index in range(first_index + 1, len(_FAMILY_ORDER))
+)
+
+
+def _validated_profile_rows(rows: object) -> tuple[MeasurementCaseLoss, ...]:
+    try:
+        canonical_rows = tuple(rows)
+    except TypeError as error:
+        raise TypeError("measurement robustness rows must be a sequence") from error
+    if not canonical_rows:
+        raise ValueError("measurement robustness rows must be non-empty")
+    if any(not isinstance(row, MeasurementCaseLoss) for row in canonical_rows):
+        raise TypeError(
+            "measurement robustness rows must be MeasurementCaseLoss values"
+        )
+    keys = tuple(
+        (row.case_hash, row.model_name, row.score) for row in canonical_rows
+    )
+    if len(set(keys)) != len(keys):
+        raise ValueError("measurement robustness rows contain a duplicate")
+    if {row.role for row in canonical_rows} != set(_ALLOWED_ROLES):
+        raise ValueError("measurement robustness requires both partition roles")
+    if {row.task_variant for row in canonical_rows} != set(_TASK_ORDER):
+        raise ValueError("measurement robustness requires both task strata")
+    if {row.score for row in canonical_rows} != set(MeasurementScore):
+        raise ValueError("measurement robustness requires both scores")
+    if {row.model_name for row in canonical_rows} != set(_FAMILY_ORDER):
+        raise ValueError("measurement robustness requires every model")
+
+    cases: dict[str, list[MeasurementCaseLoss]] = {}
+    for row in canonical_rows:
+        cases.setdefault(row.case_hash, []).append(row)
+    expected_coordinates = {
+        (model_name, score)
+        for model_name in _FAMILY_ORDER
+        for score in MeasurementScore
+    }
+    for case_hash, case_rows in cases.items():
+        metadata = {
+            (
+                row.role,
+                row.task_variant,
+                row.participant_group_hash,
+            )
+            for row in case_rows
+        }
+        if len(metadata) != 1:
+            raise ValueError(
+                f"measurement robustness case metadata changed for {case_hash}"
+            )
+        coordinates = {(row.model_name, row.score) for row in case_rows}
+        if coordinates != expected_coordinates:
+            raise ValueError(
+                f"measurement robustness model/score coverage changed for {case_hash}"
+            )
+    for role in _ALLOWED_ROLES:
+        for task in _TASK_ORDER:
+            if not any(
+                row.role is role and row.task_variant == task
+                for row in canonical_rows
+            ):
+                raise ValueError(
+                    "measurement robustness role/task stratum is missing"
+                )
+    return tuple(
+        sorted(
+            canonical_rows,
+            key=lambda row: (
+                _ALLOWED_ROLES.index(row.role),
+                _TASK_ORDER.index(row.task_variant),
+                row.case_hash,
+                tuple(MeasurementScore).index(row.score),
+                _FAMILY_ORDER.index(row.model_name),
+            ),
+        )
+    )
+
+
+def _group_mean(
+    rows: tuple[MeasurementCaseLoss, ...],
+    *,
+    role: ObservationPartitionRole,
+    task: str,
+    score: MeasurementScore,
+    aggregation: MeasurementAggregation,
+    model_name: str,
+    omitted_participant: str | None = None,
+) -> float:
+    participant_losses: dict[str, list[float]] = {}
+    for row in rows:
+        if (
+            row.role is role
+            and row.task_variant == task
+            and row.score is score
+            and row.model_name == model_name
+            and row.participant_group_hash != omitted_participant
+        ):
+            participant_losses.setdefault(row.participant_group_hash, []).append(
+                row.value
+            )
+    if not participant_losses:
+        raise ValueError("measurement robustness omission removed all support")
+    return (
+        trial_equal_mean(participant_losses)
+        if aggregation is MeasurementAggregation.TRIAL_EQUAL
+        else participant_equal_mean(participant_losses)
+    )
+
+
+def build_measurement_robustness_profile(
+    rows: object,
+    protocol: MeasurementValidityProtocol,
+) -> MeasurementRobustnessProfile:
+    if not isinstance(protocol, MeasurementValidityProtocol):
+        raise TypeError(
+            "measurement robustness profile requires MeasurementValidityProtocol"
+        )
+    canonical_rows = _validated_profile_rows(rows)
+    references = dict(protocol.material_reversal_references)
+
+    aggregates = tuple(
+        aggregate
+        for aggregation in MeasurementAggregation
+        for aggregate in aggregate_measurement_losses(
+            canonical_rows,
+            aggregation,
+        )
+    )
+    aggregate_map = {
+        (
+            row.role,
+            row.task_variant,
+            row.score,
+            row.aggregation,
+            row.model_name,
+        ): row
+        for row in aggregates
+    }
+    expected_aggregate_count = (
+        len(_ALLOWED_ROLES)
+        * len(_TASK_ORDER)
+        * len(MeasurementScore)
+        * len(MeasurementAggregation)
+        * len(_FAMILY_ORDER)
+    )
+    if len(aggregate_map) != expected_aggregate_count:
+        raise ValueError("measurement robustness aggregate coverage changed")
+
+    pairwise: list[MeasurementPairwiseDelta] = []
+    pair_map: dict[
+        tuple[
+            ObservationPartitionRole,
+            str,
+            MeasurementScore,
+            MeasurementAggregation,
+            str,
+            str,
+        ],
+        MeasurementPairwiseDelta,
+    ] = {}
+    for role in _ALLOWED_ROLES:
+        for task in _TASK_ORDER:
+            for score in MeasurementScore:
+                for aggregation in MeasurementAggregation:
+                    for first_model, second_model in _MODEL_PAIRS:
+                        first = aggregate_map[
+                            (role, task, score, aggregation, first_model)
+                        ]
+                        second = aggregate_map[
+                            (role, task, score, aggregation, second_model)
+                        ]
+                        pair = MeasurementPairwiseDelta(
+                            first_model=first_model,
+                            second_model=second_model,
+                            score=score,
+                            aggregation=aggregation,
+                            task_variant=task,
+                            role=role,
+                            delta=_canonical_numeric_zero(
+                                first.mean_loss - second.mean_loss
+                            ),
+                        )
+                        key = (
+                            role,
+                            task,
+                            score,
+                            aggregation,
+                            first_model,
+                            second_model,
+                        )
+                        pair_map[key] = pair
+                        pairwise.append(pair)
+
+    task_findings: list[MeasurementDependenceFinding] = []
+    for role in _ALLOWED_ROLES:
+        for score in MeasurementScore:
+            reference = references[score]
+            for aggregation in MeasurementAggregation:
+                for model_pair in _MODEL_PAIRS:
+                    deltas = tuple(
+                        pair_map[
+                            (
+                                role,
+                                task,
+                                score,
+                                aggregation,
+                                model_pair[0],
+                                model_pair[1],
+                            )
+                        ].delta
+                        for task in _TASK_ORDER
+                    )
+                    margin = (reference,) * len(deltas)
+                    task_findings.append(
+                        MeasurementDependenceFinding(
+                            dimension="task",
+                            score=score,
+                            aggregation=aggregation,
+                            task=(
+                                f"{role.value}:"
+                                "magic_carpet_vs_spaceship"
+                            ),
+                            model_pair=model_pair,
+                            deltas=deltas,
+                            references=margin,
+                            status=classify_material_reversal(deltas, margin),
+                        )
+                    )
+
+    aggregation_findings: list[MeasurementDependenceFinding] = []
+    for role in _ALLOWED_ROLES:
+        for task in _TASK_ORDER:
+            for score in MeasurementScore:
+                reference = references[score]
+                for model_pair in _MODEL_PAIRS:
+                    deltas = tuple(
+                        pair_map[
+                            (
+                                role,
+                                task,
+                                score,
+                                aggregation,
+                                model_pair[0],
+                                model_pair[1],
+                            )
+                        ].delta
+                        for aggregation in MeasurementAggregation
+                    )
+                    margin = (reference,) * len(deltas)
+                    aggregation_findings.append(
+                        MeasurementDependenceFinding(
+                            dimension="aggregation",
+                            score=score,
+                            aggregation=MeasurementAggregation.TRIAL_EQUAL,
+                            task=f"{role.value}:{task}",
+                            model_pair=model_pair,
+                            deltas=deltas,
+                            references=margin,
+                            status=classify_material_reversal(deltas, margin),
+                        )
+                    )
+
+    score_findings: list[MeasurementDependenceFinding] = []
+    score_order = tuple(MeasurementScore)
+    for role in _ALLOWED_ROLES:
+        for task in _TASK_ORDER:
+            for aggregation in MeasurementAggregation:
+                for model_pair in _MODEL_PAIRS:
+                    deltas = tuple(
+                        pair_map[
+                            (
+                                role,
+                                task,
+                                score,
+                                aggregation,
+                                model_pair[0],
+                                model_pair[1],
+                            )
+                        ].delta
+                        for score in score_order
+                    )
+                    margins = tuple(references[score] for score in score_order)
+                    score_findings.append(
+                        MeasurementDependenceFinding(
+                            dimension="score",
+                            score=MeasurementScore.BRIER,
+                            aggregation=aggregation,
+                            task=f"{role.value}:{task}",
+                            model_pair=model_pair,
+                            deltas=deltas,
+                            references=margins,
+                            status=classify_material_reversal(deltas, margins),
+                        )
+                    )
+
+    participant_influence: list[ParticipantInfluenceRange] = []
+    for role in _ALLOWED_ROLES:
+        for task in _TASK_ORDER:
+            participants = tuple(
+                sorted(
+                    {
+                        row.participant_group_hash
+                        for row in canonical_rows
+                        if row.role is role and row.task_variant == task
+                    }
+                )
+            )
+            for score in MeasurementScore:
+                reference = references[score]
+                for aggregation in MeasurementAggregation:
+                    for first_model, second_model in _MODEL_PAIRS:
+                        if len(participants) == 1:
+                            participant_influence.append(
+                                ParticipantInfluenceRange(
+                                    role=role,
+                                    task_variant=task,
+                                    score=score,
+                                    aggregation=aggregation,
+                                    first_model=first_model,
+                                    second_model=second_model,
+                                    minimum_delta=None,
+                                    maximum_delta=None,
+                                    omitted_participant_count=1,
+                                    status=MeasurementValidityStatus.NOT_ESTABLISHED,
+                                )
+                            )
+                            continue
+                        omitted_deltas = tuple(
+                            _canonical_numeric_zero(
+                                _group_mean(
+                                    canonical_rows,
+                                    role=role,
+                                    task=task,
+                                    score=score,
+                                    aggregation=aggregation,
+                                    model_name=first_model,
+                                    omitted_participant=participant,
+                                )
+                                - _group_mean(
+                                    canonical_rows,
+                                    role=role,
+                                    task=task,
+                                    score=score,
+                                    aggregation=aggregation,
+                                    model_name=second_model,
+                                    omitted_participant=participant,
+                                )
+                            )
+                            for participant in participants
+                        )
+                        baseline = pair_map[
+                            (
+                                role,
+                                task,
+                                score,
+                                aggregation,
+                                first_model,
+                                second_model,
+                            )
+                        ].delta
+                        classification_values = (baseline,) + omitted_deltas
+                        participant_influence.append(
+                            ParticipantInfluenceRange(
+                                role=role,
+                                task_variant=task,
+                                score=score,
+                                aggregation=aggregation,
+                                first_model=first_model,
+                                second_model=second_model,
+                                minimum_delta=min(omitted_deltas),
+                                maximum_delta=max(omitted_deltas),
+                                omitted_participant_count=len(participants),
+                                status=classify_material_reversal(
+                                    classification_values,
+                                    (reference,) * len(classification_values),
+                                ),
+                            )
+                        )
+
+    return MeasurementRobustnessProfile(
+        aggregate_losses=aggregates,
+        pairwise_deltas=tuple(pairwise),
+        task_findings=tuple(task_findings),
+        aggregation_findings=tuple(aggregation_findings),
+        score_findings=tuple(score_findings),
+        participant_influence=tuple(participant_influence),
+    )
+
+
 def _seed_rows(
     value: object,
 ) -> tuple[tuple[ObservationPartitionRole, tuple[int, ...]], ...]:
@@ -1672,20 +2567,28 @@ __all__ = [
     "ExactInvarianceFinding",
     "MEASUREMENT_CLAIM_SCOPE",
     "MeasurementAggregation",
+    "MeasurementAggregateLoss",
     "MeasurementAuditCase",
     "MeasurementAuditInput",
     "MeasurementCaseLoss",
     "MeasurementDependenceFinding",
     "MeasurementModelPrediction",
+    "MeasurementPairwiseDelta",
     "MeasurementPredictionArtifact",
+    "MeasurementRobustnessProfile",
     "MeasurementScore",
     "MeasurementSeedPrediction",
     "MeasurementTerminalClass",
     "MeasurementValidityProtocol",
     "MeasurementValidityStatus",
+    "ParticipantInfluenceRange",
+    "aggregate_measurement_losses",
     "classify_material_reversal",
+    "build_measurement_robustness_profile",
     "evaluate_categorical_coordinate_invariance",
     "average_seed_metrics",
+    "participant_equal_mean",
     "permute_binary_metric_map",
     "score_measurement_predictions",
+    "trial_equal_mean",
 ]
