@@ -1,0 +1,352 @@
+name: verify-internal-lock-r3
+
+on:
+  push:
+    branches:
+      - manual/empirical-r3-internal-final
+
+permissions:
+  contents: read
+
+jobs:
+  verify-preflight:
+    if: "${{ github.event.head_commit.message == 'research: verify empirical revision 3 internal lock' }}"
+    name: Verify R3 internal lock zero-FINAL preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout immutable R3 lock commit
+        uses: actions/checkout@v4
+        with:
+          repository: qigao/lean
+          ref: f09d6afc96f0a720dd5e8e810f440cda0fe9f8a3
+          path: lock
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout frozen Revision 3 scientific code
+        uses: actions/checkout@v4
+        with:
+          repository: qigao/lean
+          ref: d01232979cdfc9d902daab5f9e3e937079b56f69
+          path: study
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout pinned Feher Hare upstream
+        uses: actions/checkout@v4
+        with:
+          repository: carolfs/muddled_models
+          ref: 4567763780a2c596fd6510af720ec468a8214a8f
+          path: upstream/muddled_models
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify two internal receipts and zero-FINAL preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/verify_internal_lock_r3.py" <<'PY'
+          from __future__ import annotations
+
+          from collections.abc import Mapping
+          import hashlib
+          import json
+          from pathlib import Path
+          from unittest.mock import patch
+
+          import narrative_dynamics.studies.feher_hare_two_stage_v1 as study
+          from narrative_dynamics.adapters.two_stage_metrics import (
+              two_stage_brier_loss,
+              two_stage_brier_thresholds,
+              two_stage_first_stage_policy_metrics,
+              two_stage_log_loss,
+              two_stage_log_thresholds,
+          )
+          from narrative_dynamics.contracts import stable_content_hash
+          from narrative_dynamics.external_validation import (
+              ExternalScoreRole,
+              ExternalValidationPreregistration,
+              PairwiseSeparationRule,
+              preflight_external_releases,
+          )
+          from narrative_dynamics.observations.preregistration import (
+              FrozenModelSpec,
+              PreregisteredEvaluationProtocol,
+          )
+          from narrative_dynamics.observations.release import (
+              ProtocolRelease,
+              verify_protocol_release,
+          )
+          from narrative_dynamics.simulation import SimulationRunner
+          from narrative_dynamics.studies.two_stage_internal_lock import (
+              INTERNAL_LOCK_AUTHORITY,
+              INTERNAL_LOCK_GOVERNANCE_MODE,
+              InternalRepositoryLockProof,
+              InternalRepositoryLockVerifier,
+              create_internal_repository_lock_receipt,
+          )
+          from narrative_dynamics.studies.two_stage_source import (
+              load_two_stage_source_manifest,
+              verify_two_stage_snapshot,
+          )
+
+          R3 = "d01232979cdfc9d902daab5f9e3e937079b56f69"
+          LOCK_COMMIT = "f09d6afc96f0a720dd5e8e810f440cda0fe9f8a3"
+          LOCKED_AT = "2026-08-30T00:16:54Z"
+          UPSTREAM = "4567763780a2c596fd6510af720ec468a8214a8f"
+          FILE_SHA = "4574df7c6dcf36e2d7a34668e9280f78507ba332769fbcb96590c4a2e2fea601"
+          LOCK_BUNDLE_HASH = "sha256:96e553e557d6e7314eb0b9b1d0aaa8696e01d7a6ddec0abde949be8c8d45602f"
+          BRIER_RELEASE_HASH = "sha256:7784fae9350ab2fcaba45b9bd8c7fe8947953f41b2da3b287e51771f0a664d01"
+          LOG_RELEASE_HASH = "sha256:b19d1533a159d201b7ecb155f5022049175cf443ff89d3b1ecb3c15da6c45f94"
+          SOURCE_MANIFEST_HASH = "sha256:3609e980af172823cfef78290e7f2337fdb337d67f1f27641e17d473aeedd10d"
+          SOURCE_SNAPSHOT_HASH = "sha256:25bdc2e4bff4110f38b098b89e7d59aa38c9658727fcc89a38d50e107d243186"
+          TRANSFORM_HASH = "sha256:2fb8ab6dc796a9e4ece5653a5485d865ef44dd0f5f7dff92d94a904932d6e541"
+          ASSIGNMENT_HASH = "sha256:fc144c35f6713e27f75141d678872cc04ca44c7a0fd8e109e8618c72b4111ccf"
+          DATASET_HASH = "sha256:17789130372d7eace05e1216a57bdae2ffbd519960333ffe814aee2d2d404781"
+          FINAL_TARGET_HASH = "sha256:927e1727d37993e9a5c887f79ac8712d07a155622deacf0a3122d41f90b16ed2"
+          BRIER_PROTOCOL_HASH = "sha256:7a9714b2d8571eeb4f37ce6d4f2ebe3f42cc962fad8cbffd50747f82402e5744"
+          LOG_PROTOCOL_HASH = "sha256:4c0d75d521dd121428d2208d361d91e27f7519422354b7754b19ecfb3fbab962"
+          PREREG_HASH = "sha256:e924106f114e648b15c37ffb3773126c4804b37412e903913d359bad1fc7de9f"
+
+          FAMILY_ORDER = ("reactive", "intentional", "planning")
+          PARAMETERS = {
+              "reactive": (("beta", 0.5),),
+              "intentional": (("beta", 2.0), ("memory_decay", 0.5)),
+              "planning": (("beta", 4.0), ("memory_decay", 0.75)),
+          }
+          TRAIN = {
+              "reactive": "sha256:5b607a4bc0a8082809c2446a8248fb8659b0d9ba178687ddad96dc74e3f19622",
+              "intentional": "sha256:47057311fe7450469c1710be49ba0e3b42aa7416fa2129f40761dbf8d237d4fc",
+              "planning": "sha256:ef0f3caf4f2a02b2d719bc302d7409fc8c2d937eb13517d906d83b38c29b76ac",
+          }
+          SELECTION = {
+              "reactive": "sha256:e8414e301d19fc6acfd5accf055402ac995790f785402186c67ff95a48ee0c2e",
+              "intentional": "sha256:498a512cd931afe276f78bf135bd5c8269e051920d4b876177d0aa9ea250806d",
+              "planning": "sha256:e347a3d7d523e2a35d0bb6b0f662343f5a01ddd1ff7d2efe95a8a5efa1986e74",
+          }
+          CANDIDATE = {
+              "reactive": "sha256:42a84ef10c207159ff98397fe2bd86594df6c8be0f41b98e876f7ae33cba9456",
+              "intentional": "sha256:68a01b5496e20095c1a603b30f1384bbe6a3ea22aac8cf74b7b97463c4935839",
+              "planning": "sha256:c0ed956c1b285153075e5a22e7fb51f6d53dcf8ad326cce82e39e0221c2e877c",
+          }
+
+          def thaw(value: object) -> object:
+              if isinstance(value, Mapping):
+                  return {str(key): thaw(item) for key, item in value.items()}
+              if isinstance(value, tuple):
+                  return [thaw(item) for item in value]
+              return value
+
+          def main() -> None:
+              study_root = Path.cwd().resolve()
+              lock_root = (study_root.parent / "lock").resolve()
+              upstream_root = (study_root.parent / "upstream" / "muddled_models").resolve()
+              lock_path = lock_root / "research-locks/feher-hare-r3-internal-final.json"
+
+              if hashlib.sha256(lock_path.read_bytes()).hexdigest() != FILE_SHA:
+                  raise RuntimeError("immutable lock file bytes drifted")
+              payload = json.loads(lock_path.read_text(encoding="utf-8"))
+              if payload["internal_lock_bundle"]["content_hash"] != LOCK_BUNDLE_HASH:
+                  raise RuntimeError("internal lock bundle drifted")
+              if payload["scientific_repository_revision"] != R3:
+                  raise RuntimeError("internal lock scientific revision drifted")
+              if payload["external_registration"] is not False:
+                  raise RuntimeError("internal lock unexpectedly claims external registration")
+              if payload["final_model_execution"] is not False:
+                  raise RuntimeError("internal lock was created after FINAL execution")
+
+              manifest = load_two_stage_source_manifest(
+                  study_root / "narrative_dynamics/studies/feher_hare_two_stage_v1_source_manifest.json"
+              )
+              snapshot = verify_two_stage_snapshot(upstream_root, manifest)
+              prepared = study.prepare_feher_hare_two_stage_v1(root=upstream_root, manifest=manifest)
+              for actual, expected, label in (
+                  (manifest.content_hash, SOURCE_MANIFEST_HASH, "source manifest"),
+                  (snapshot.source_snapshot_hash, SOURCE_SNAPSHOT_HASH, "source snapshot"),
+                  (prepared.transform_report.content_hash, TRANSFORM_HASH, "transform"),
+                  (prepared.assignment.content_hash, ASSIGNMENT_HASH, "participant assignment"),
+                  (prepared.dataset.content_hash, DATASET_HASH, "dataset"),
+                  (prepared.final_targets.content_hash, FINAL_TARGET_HASH, "FINAL target"),
+              ):
+                  if actual != expected:
+                      raise RuntimeError(f"{label} identity drifted")
+
+              sources = {family: source for family, source, _grid in study._family_sources()}
+              candidates = []
+              for family in FAMILY_ORDER:
+                  candidate = FrozenModelSpec.freeze(
+                      name=family,
+                      model=sources[family],
+                      parameters=PARAMETERS[family],
+                      selection_manifest_hash=SELECTION[family],
+                  )
+                  if candidate.content_hash != CANDIDATE[family]:
+                      raise RuntimeError(f"{family} frozen candidate drifted")
+                  candidates.append(candidate)
+              candidates = tuple(candidates)
+
+              brier_thresholds = two_stage_brier_thresholds()
+              log_thresholds = two_stage_log_thresholds()
+              brier_protocol = PreregisteredEvaluationProtocol.create(
+                  name="feher-hare-two-stage-v1:brier",
+                  version="1",
+                  dataset=prepared.dataset,
+                  target_spec=prepared.target_spec,
+                  extractor=two_stage_first_stage_policy_metrics,
+                  loss=two_stage_brier_loss(),
+                  simulation_seeds=study.FINAL_SEEDS,
+                  baseline_name="planning",
+                  candidates=candidates,
+                  thresholds=brier_thresholds,
+              )
+              log_protocol = PreregisteredEvaluationProtocol.create(
+                  name="feher-hare-two-stage-v1:log",
+                  version="1",
+                  dataset=prepared.dataset,
+                  target_spec=prepared.target_spec,
+                  extractor=two_stage_first_stage_policy_metrics,
+                  loss=two_stage_log_loss(),
+                  simulation_seeds=study.FINAL_SEEDS,
+                  baseline_name="planning",
+                  candidates=candidates,
+                  thresholds=log_thresholds,
+              )
+              if brier_protocol.content_hash != BRIER_PROTOCOL_HASH:
+                  raise RuntimeError("Brier protocol drifted")
+              if log_protocol.content_hash != LOG_PROTOCOL_HASH:
+                  raise RuntimeError("Log protocol drifted")
+
+              preregistration = ExternalValidationPreregistration.create(
+                  name="feher-hare-two-stage-v1",
+                  version="1",
+                  evidence_declaration=prepared.evidence,
+                  brier_protocol=brier_protocol,
+                  log_protocol=log_protocol,
+                  final_target_set=prepared.final_targets,
+                  adequacy_thresholds_by_score=(
+                      (ExternalScoreRole.BRIER, brier_thresholds),
+                      (ExternalScoreRole.LOG, log_thresholds),
+                  ),
+                  strata=study._task_strata(prepared.final_targets),
+                  separation_rule=PairwiseSeparationRule(
+                      min_mean_loss_delta_brier=study._BRIER_SEPARATION_DELTA,
+                      min_mean_loss_delta_log=study._LOG_SEPARATION_DELTA,
+                  ),
+                  constraint_plans=(),
+                  method_validation_hashes=(
+                      *(TRAIN[family] for family in FAMILY_ORDER),
+                      *(SELECTION[family] for family in FAMILY_ORDER),
+                  ),
+              )
+              if preregistration.content_hash != PREREG_HASH:
+                  raise RuntimeError("evaluation preregistration drifted")
+
+              brier_release = ProtocolRelease.from_payload(payload["brier_release"])
+              log_release = ProtocolRelease.from_payload(payload["log_release"])
+              if brier_release.content_hash != BRIER_RELEASE_HASH:
+                  raise RuntimeError("R3 Brier release drifted")
+              if log_release.content_hash != LOG_RELEASE_HASH:
+                  raise RuntimeError("R3 Log release drifted")
+
+              proof = InternalRepositoryLockProof(
+                  repository=INTERNAL_LOCK_AUTHORITY,
+                  lock_commit=LOCK_COMMIT,
+                  locked_at=LOCKED_AT,
+                  lock_payload_hash=LOCK_BUNDLE_HASH,
+                  scientific_repository_revision=R3,
+                  release_hashes=(BRIER_RELEASE_HASH, LOG_RELEASE_HASH),
+              )
+              verifier = InternalRepositoryLockVerifier(proof)
+              brier_receipt = create_internal_repository_lock_receipt(brier_release, proof)
+              log_receipt = create_internal_repository_lock_receipt(log_release, proof)
+
+              with patch.object(
+                  SimulationRunner,
+                  "run_once",
+                  side_effect=AssertionError("FINAL run_once forbidden during R3 preflight"),
+              ), patch.object(
+                  SimulationRunner,
+                  "run_batch",
+                  side_effect=AssertionError("FINAL run_batch forbidden during R3 preflight"),
+              ):
+                  brier_verified = verify_protocol_release(
+                      brier_release,
+                      protocol=brier_protocol,
+                      receipts=(brier_receipt,),
+                      verifier=verifier,
+                  )
+                  log_verified = verify_protocol_release(
+                      log_release,
+                      protocol=log_protocol,
+                      receipts=(log_receipt,),
+                      verifier=verifier,
+                  )
+                  preflight = preflight_external_releases(
+                      preregistration=preregistration,
+                      evidence=prepared.evidence,
+                      brier_protocol=brier_protocol,
+                      brier_release=brier_release,
+                      brier_verified=brier_verified,
+                      log_protocol=log_protocol,
+                      log_release=log_release,
+                      log_verified=log_verified,
+                  )
+
+              summary = {
+                  "schema": "feher-hare-empirical-r3-internal-preflight-v1",
+                  "scientific_repository_revision": R3,
+                  "lock_commit": LOCK_COMMIT,
+                  "lock_reference": proof.reference,
+                  "locked_at": LOCKED_AT,
+                  "lock_payload_file_sha256": FILE_SHA,
+                  "lock_bundle_hash": LOCK_BUNDLE_HASH,
+                  "proof_hash": proof.content_hash,
+                  "governance_mode": INTERNAL_LOCK_GOVERNANCE_MODE,
+                  "external_registration": False,
+                  "brier_release_hash": BRIER_RELEASE_HASH,
+                  "log_release_hash": LOG_RELEASE_HASH,
+                  "brier_receipt": brier_receipt.to_payload(),
+                  "log_receipt": log_receipt.to_payload(),
+                  "brier_verification_hash": brier_verified.content_hash,
+                  "log_verification_hash": log_verified.content_hash,
+                  "preflight_hash": preflight.content_hash,
+                  "final_model_executions": 0,
+                  "final_model_execution": False,
+                  "manual_final_authorization_required": True,
+              }
+              summary["serialization_digest"] = stable_content_hash(summary)
+              out = Path("artifacts/real-internal-preflight-r3/preflight_summary.json")
+              out.parent.mkdir(parents=True, exist_ok=True)
+              out.write_text(json.dumps(thaw(summary), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+              print(json.dumps({
+                  "event": "real_internal_preflight_r3_complete",
+                  "lock_commit": LOCK_COMMIT,
+                  "proof_hash": proof.content_hash,
+                  "brier_receipt_hash": brier_receipt.content_hash,
+                  "log_receipt_hash": log_receipt.content_hash,
+                  "brier_verification_hash": brier_verified.content_hash,
+                  "log_verification_hash": log_verified.content_hash,
+                  "preflight_hash": preflight.content_hash,
+                  "final_model_executions": 0,
+                  "final_model_execution": False,
+                  "manual_final_authorization_required": True,
+                  "serialization_digest": summary["serialization_digest"],
+              }, sort_keys=True), flush=True)
+
+          if __name__ == "__main__":
+              main()
+          PY
+
+          cd study
+          export PYTHONPATH="$PWD"
+          python3 -B "$RUNNER_TEMP/verify_internal_lock_r3.py"
+
+      - name: Upload R3 internal preflight evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: feher-hare-real-internal-preflight-r3-${{ github.run_id }}
+          path: study/artifacts/real-internal-preflight-r3/preflight_summary.json
+          if-no-files-found: warn
+          retention-days: 90
