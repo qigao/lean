@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 import math
 from pathlib import Path
@@ -14,23 +14,36 @@ from narrative_dynamics.adapters.narrative_two_stage import (
     create_narrative_two_stage_reactive_source,
 )
 from narrative_dynamics.adapters.two_stage_metrics import (
+    two_stage_brier_loss,
     two_stage_first_stage_policy_metrics,
+    two_stage_log_loss,
 )
 from narrative_dynamics.attestation import RepositoryIdentity
-from narrative_dynamics.candidate_execution import CandidateExecutor
+from narrative_dynamics.candidate_execution import (
+    CandidateExecutor,
+    ProcessCandidateExecutor,
+    SequentialCandidateExecutor,
+)
 from narrative_dynamics.contracts import Scenario, stable_content_hash
 from narrative_dynamics.manifest import required_manifest_hash
 from narrative_dynamics.measurement_validity import (
+    ExactInvarianceFinding,
     MEASUREMENT_CLAIM_SCOPE,
     MeasurementAuditCase,
     MeasurementAuditInput,
+    MeasurementCaseLoss,
     MeasurementModelPrediction,
     MeasurementPredictionArtifact,
+    MeasurementScore,
     MeasurementSeedPrediction,
     MeasurementValidityProtocol,
     MeasurementValidityStatus,
     average_seed_metrics,
+    build_measurement_robustness_profile,
+    permute_binary_metric_map,
+    score_measurement_predictions,
 )
+from narrative_dynamics.losses import evaluate_metric_loss
 from narrative_dynamics.observations.dataset import ObservationPartitionRole
 from narrative_dynamics.observations.preregistration import FrozenModelSpec
 from narrative_dynamics.simulation import SimulationRunner
@@ -1434,6 +1447,932 @@ def execute_feher_hare_measurement_predictions(
     )
 
 
+_SEMANTIC_METRICS = (
+    "first_stage.action_0",
+    "first_stage.action_1",
+)
+_SEMANTIC_SEED = 41
+_SEMANTIC_VARIANTS = ("original", "transformed")
+
+
+@dataclass(frozen=True)
+class FeherHareSemanticFixture:
+    name: str
+    original_scenario: Scenario
+    transformed_scenario: Scenario
+    inverse_metric_permutation: tuple[tuple[str, str], ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "name",
+            _text(self.name, label="Feher/Hare semantic fixture name"),
+        )
+        if not isinstance(self.original_scenario, Scenario) or not isinstance(
+            self.transformed_scenario,
+            Scenario,
+        ):
+            raise TypeError("Feher/Hare semantic fixture requires Scenario values")
+        try:
+            raw_permutation = tuple(self.inverse_metric_permutation)
+        except TypeError as error:
+            raise TypeError(
+                "Feher/Hare semantic metric permutation must be a sequence"
+            ) from error
+        permutation: dict[str, str] = {}
+        for row in raw_permutation:
+            if not isinstance(row, tuple) or len(row) != 2:
+                raise ValueError(
+                    "Feher/Hare semantic metric permutation rows must be pairs"
+                )
+            source = _text(
+                row[0],
+                label="Feher/Hare semantic metric permutation source",
+            )
+            destination = _text(
+                row[1],
+                label="Feher/Hare semantic metric permutation destination",
+            )
+            if source in permutation:
+                raise ValueError(
+                    "Feher/Hare semantic metric permutation sources must be unique"
+                )
+            permutation[source] = destination
+        if set(permutation) != set(_SEMANTIC_METRICS) or set(
+            permutation.values()
+        ) != set(_SEMANTIC_METRICS):
+            raise ValueError(
+                "Feher/Hare semantic metric permutation must be a binary bijection"
+            )
+        object.__setattr__(
+            self,
+            "inverse_metric_permutation",
+            tuple((name, permutation[name]) for name in _SEMANTIC_METRICS),
+        )
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "original_scenario": {
+                "id": self.original_scenario.id,
+                "content_hash": self.original_scenario.content_hash,
+            },
+            "transformed_scenario": {
+                "id": self.transformed_scenario.id,
+                "content_hash": self.transformed_scenario.content_hash,
+            },
+            "inverse_metric_permutation": self.inverse_metric_permutation,
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.identity_payload())
+
+
+def _frozen_semantic_history() -> tuple[dict[str, object], ...]:
+    return (
+        {
+            "trial_id": 0,
+            "first_stage_action": "action_0",
+            "transition_common": True,
+            "final_state": "state_0",
+            "second_stage_action": "action_0",
+            "reward": 1,
+        },
+        {
+            "trial_id": 1,
+            "first_stage_action": "action_1",
+            "transition_common": False,
+            "final_state": "state_0",
+            "second_stage_action": "action_1",
+            "reward": 0,
+        },
+        {
+            "trial_id": 2,
+            "first_stage_action": "action_0",
+            "transition_common": False,
+            "final_state": "state_1",
+            "second_stage_action": "action_1",
+            "reward": 1,
+        },
+    )
+
+
+def _relabel_semantic_history(
+    history: object,
+    *,
+    first_stage: bool = False,
+    second_stage: bool = False,
+    final_state: bool = False,
+) -> tuple[dict[str, object], ...]:
+    action_swap = {"action_0": "action_1", "action_1": "action_0"}
+    state_swap = {"state_0": "state_1", "state_1": "state_0"}
+    rows: list[dict[str, object]] = []
+    for raw_row in tuple(history):
+        if not isinstance(raw_row, Mapping):
+            raise TypeError("Feher/Hare semantic history rows must be mappings")
+        row = dict(raw_row)
+        if first_stage:
+            row["first_stage_action"] = action_swap[row["first_stage_action"]]
+        if second_stage:
+            row["second_stage_action"] = action_swap[row["second_stage_action"]]
+        if final_state:
+            row["final_state"] = state_swap[row["final_state"]]
+        rows.append(row)
+    return tuple(rows)
+
+
+def _swapped_configuration(
+    configuration: object,
+    first_key: str,
+    second_key: str,
+) -> tuple[tuple[str, object], ...]:
+    values = dict(tuple(configuration))
+    if set(values) != {first_key, second_key}:
+        raise ValueError("Feher/Hare semantic configuration schema changed")
+    values[first_key], values[second_key] = values[second_key], values[first_key]
+    return tuple((key, values[key]) for key in sorted(values))
+
+
+def _semantic_scenario(
+    fixture_name: str,
+    variant: str,
+    *,
+    task_variant: str,
+    configuration: tuple[tuple[str, object], ...],
+    history: tuple[dict[str, object], ...],
+) -> Scenario:
+    return Scenario(
+        id=f"measurement-semantic-{fixture_name}-{variant}",
+        payload={
+            "task_variant": task_variant,
+            "first_stage_configuration": configuration,
+            "history": history,
+        },
+    )
+
+
+def frozen_feher_hare_semantic_fixtures() -> tuple[FeherHareSemanticFixture, ...]:
+    history = _frozen_semantic_history()
+    magic_configuration = (
+        ("action_0_position", "left"),
+        ("action_1_position", "right"),
+    )
+    swapped_magic_configuration = _swapped_configuration(
+        magic_configuration,
+        "action_0_position",
+        "action_1_position",
+    )
+    spaceship_configuration = (("symbol0", 0), ("symbol1", 1))
+    swapped_spaceship_configuration = _swapped_configuration(
+        spaceship_configuration,
+        "symbol0",
+        "symbol1",
+    )
+    identity = tuple((name, name) for name in _SEMANTIC_METRICS)
+    swap = (
+        ("first_stage.action_0", "first_stage.action_1"),
+        ("first_stage.action_1", "first_stage.action_0"),
+    )
+
+    coherent_name = "coherent_action_state_relabel"
+    second_stage_name = "second_stage_action_relabel"
+    magic_name = "magic_carpet_counterbalance"
+    spaceship_name = "spaceship_symbol_order"
+    post_choice_name = "post_choice_outcome_exclusion"
+    post_choice_payload = {
+        "task_variant": "magic_carpet",
+        "first_stage_configuration": magic_configuration,
+        "history": history,
+    }
+    return (
+        FeherHareSemanticFixture(
+            name=coherent_name,
+            original_scenario=_semantic_scenario(
+                coherent_name,
+                "original",
+                task_variant="magic_carpet",
+                configuration=magic_configuration,
+                history=history,
+            ),
+            transformed_scenario=_semantic_scenario(
+                coherent_name,
+                "transformed",
+                task_variant="magic_carpet",
+                configuration=swapped_magic_configuration,
+                history=_relabel_semantic_history(
+                    history,
+                    first_stage=True,
+                    second_stage=True,
+                    final_state=True,
+                ),
+            ),
+            inverse_metric_permutation=swap,
+        ),
+        FeherHareSemanticFixture(
+            name=second_stage_name,
+            original_scenario=_semantic_scenario(
+                second_stage_name,
+                "original",
+                task_variant="magic_carpet",
+                configuration=magic_configuration,
+                history=history,
+            ),
+            transformed_scenario=_semantic_scenario(
+                second_stage_name,
+                "transformed",
+                task_variant="magic_carpet",
+                configuration=magic_configuration,
+                history=_relabel_semantic_history(history, second_stage=True),
+            ),
+            inverse_metric_permutation=identity,
+        ),
+        FeherHareSemanticFixture(
+            name=magic_name,
+            original_scenario=_semantic_scenario(
+                magic_name,
+                "original",
+                task_variant="magic_carpet",
+                configuration=magic_configuration,
+                history=history,
+            ),
+            transformed_scenario=_semantic_scenario(
+                magic_name,
+                "transformed",
+                task_variant="magic_carpet",
+                configuration=swapped_magic_configuration,
+                history=history,
+            ),
+            inverse_metric_permutation=identity,
+        ),
+        FeherHareSemanticFixture(
+            name=spaceship_name,
+            original_scenario=_semantic_scenario(
+                spaceship_name,
+                "original",
+                task_variant="spaceship",
+                configuration=spaceship_configuration,
+                history=history,
+            ),
+            transformed_scenario=_semantic_scenario(
+                spaceship_name,
+                "transformed",
+                task_variant="spaceship",
+                configuration=swapped_spaceship_configuration,
+                history=history,
+            ),
+            inverse_metric_permutation=identity,
+        ),
+        FeherHareSemanticFixture(
+            name=post_choice_name,
+            original_scenario=Scenario(
+                id=f"measurement-semantic-{post_choice_name}-before-outcome-a",
+                payload=post_choice_payload,
+            ),
+            transformed_scenario=Scenario(
+                id=f"measurement-semantic-{post_choice_name}-before-outcome-b",
+                payload=post_choice_payload,
+            ),
+            inverse_metric_permutation=identity,
+        ),
+    )
+
+
+@dataclass(frozen=True)
+class _FeherHareSemanticExecutionTask:
+    repository_identity: RepositoryIdentity
+    family: str
+    parameters: tuple[tuple[str, float], ...]
+    selection_manifest_hash: str
+    candidate_hash: str
+    fixture_name: str
+    variant: str
+    scenario_id: str
+    scenario_payload: Mapping[str, object]
+    scenario_hash: str
+
+
+_SEMANTIC_WORKER_CACHE: dict[
+    tuple[str, str, str],
+    tuple[NarrativeTwoStageModelSource, FrozenModelSpec, SimulationRunner],
+] = {}
+
+
+def _evaluate_feher_hare_semantic_task(
+    task: _FeherHareSemanticExecutionTask,
+) -> dict[str, object]:
+    if not isinstance(task, _FeherHareSemanticExecutionTask):
+        raise TypeError("Feher/Hare semantic worker requires a semantic task")
+    if not isinstance(task.repository_identity, RepositoryIdentity):
+        raise TypeError("Feher/Hare semantic worker requires RepositoryIdentity")
+    if task.family not in _MODELS:
+        raise ValueError("Feher/Hare semantic worker family changed")
+    if task.variant not in _SEMANTIC_VARIANTS:
+        raise ValueError("Feher/Hare semantic worker variant changed")
+    cache_key = (
+        task.repository_identity.content_hash,
+        task.family,
+        task.candidate_hash,
+    )
+    context = _SEMANTIC_WORKER_CACHE.get(cache_key)
+    if context is None:
+        source = _source_for_family(task.family)
+        candidate = FrozenModelSpec.freeze(
+            name=task.family,
+            model=source,
+            parameters=dict(task.parameters),
+            selection_manifest_hash=task.selection_manifest_hash,
+        )
+        if candidate.content_hash != task.candidate_hash:
+            raise ValueError(
+                f"Feher/Hare semantic {task.family} candidate identity changed"
+            )
+        context = (
+            source,
+            candidate,
+            SimulationRunner(repository_identity=task.repository_identity),
+        )
+        _SEMANTIC_WORKER_CACHE[cache_key] = context
+    source, candidate, runner = context
+    scenario = Scenario(
+        id=task.scenario_id,
+        payload=_thaw_worker_value(task.scenario_payload),
+    )
+    if scenario.content_hash != task.scenario_hash:
+        raise ValueError("Feher/Hare semantic scenario identity changed")
+    trace = runner.run_once(
+        source,
+        scenario,
+        dict(candidate.parameters),
+        seed=_SEMANTIC_SEED,
+    )
+    return {
+        "repository_identity": task.repository_identity.manifest_identity(),
+        "fixture_name": task.fixture_name,
+        "variant": task.variant,
+        "family": task.family,
+        "candidate_hash": candidate.content_hash,
+        "scenario_hash": scenario.content_hash,
+        "metrics": tuple(
+            sorted(two_stage_first_stage_policy_metrics(trace).items())
+        ),
+        "run_manifest_hash": required_manifest_hash(
+            trace,
+            label="Feher/Hare semantic trace",
+        ),
+    }
+
+
+def _semantic_candidate_map(
+    candidates: object,
+) -> dict[str, FrozenModelSpec]:
+    try:
+        rows = tuple(candidates)
+    except TypeError as error:
+        raise TypeError("Feher/Hare semantic candidates must be a sequence") from error
+    if len(rows) != len(_MODELS) or any(
+        not isinstance(row, FrozenModelSpec) for row in rows
+    ):
+        raise TypeError(
+            "Feher/Hare semantic candidates must contain three FrozenModelSpec values"
+        )
+    by_name = {row.name: row for row in rows}
+    if set(by_name) != set(_MODELS) or len(by_name) != len(rows):
+        raise ValueError(
+            "Feher/Hare semantic candidates must be reactive, intentional, and planning"
+        )
+    for family in _MODELS:
+        candidate = by_name[family]
+        reconstructed = FrozenModelSpec.freeze(
+            name=family,
+            model=_source_for_family(family),
+            parameters=dict(candidate.parameters),
+            selection_manifest_hash=candidate.selection_manifest_hash,
+        )
+        if reconstructed.content_hash != candidate.content_hash:
+            raise ValueError(
+                f"Feher/Hare semantic {family} candidate identity changed"
+            )
+    return {family: by_name[family] for family in _MODELS}
+
+
+def _semantic_result_rows(results: object) -> tuple[dict[str, object], ...]:
+    try:
+        raw_rows = tuple(results)
+    except TypeError as error:
+        raise TypeError("Feher/Hare semantic results must be a sequence") from error
+    expected_fields = {
+        "repository_identity",
+        "fixture_name",
+        "variant",
+        "family",
+        "candidate_hash",
+        "scenario_hash",
+        "metrics",
+        "run_manifest_hash",
+    }
+    rows: list[dict[str, object]] = []
+    for raw_row in raw_rows:
+        if not isinstance(raw_row, Mapping) or set(raw_row) != expected_fields:
+            raise ValueError("Feher/Hare semantic worker result schema changed")
+        row = dict(raw_row)
+        if row["family"] not in _MODELS or row["variant"] not in _SEMANTIC_VARIANTS:
+            raise ValueError("Feher/Hare semantic worker result coordinate changed")
+        rows.append(row)
+    coordinate_keys = tuple(
+        (row["fixture_name"], row["family"], row["variant"])
+        for row in rows
+    )
+    if len(set(coordinate_keys)) != len(coordinate_keys):
+        raise ValueError("Feher/Hare semantic worker returned duplicate results")
+    return tuple(
+        sorted(
+            rows,
+            key=lambda row: (
+                str(row["fixture_name"]),
+                _MODELS.index(str(row["family"])),
+                _SEMANTIC_VARIANTS.index(str(row["variant"])),
+            ),
+        )
+    )
+
+
+def _canonical_semantic_scenario_payload(
+    fixture: FeherHareSemanticFixture,
+    scenario: Scenario,
+    *,
+    transformed: bool,
+) -> object:
+    payload = _thaw_worker_value(scenario.payload)
+    if not isinstance(payload, dict):
+        raise TypeError("Feher/Hare semantic scenario payload must be a mapping")
+    if not transformed or fixture.name == "post_choice_outcome_exclusion":
+        return payload
+    if fixture.name == "coherent_action_state_relabel":
+        payload["first_stage_configuration"] = _swapped_configuration(
+            payload["first_stage_configuration"],
+            "action_0_position",
+            "action_1_position",
+        )
+        payload["history"] = _relabel_semantic_history(
+            payload["history"],
+            first_stage=True,
+            second_stage=True,
+            final_state=True,
+        )
+    elif fixture.name == "second_stage_action_relabel":
+        payload["history"] = _relabel_semantic_history(
+            payload["history"],
+            second_stage=True,
+        )
+    elif fixture.name == "magic_carpet_counterbalance":
+        payload["first_stage_configuration"] = _swapped_configuration(
+            payload["first_stage_configuration"],
+            "action_0_position",
+            "action_1_position",
+        )
+    elif fixture.name == "spaceship_symbol_order":
+        payload["first_stage_configuration"] = _swapped_configuration(
+            payload["first_stage_configuration"],
+            "symbol0",
+            "symbol1",
+        )
+    else:
+        raise ValueError("Feher/Hare semantic fixture is unsupported")
+    return payload
+
+
+def _semantic_loss_payload(metrics: Mapping[str, float]) -> tuple[tuple[str, float], ...]:
+    target = {
+        "first_stage.action_0": 1.0,
+        "first_stage.action_1": 0.0,
+    }
+    return (
+        (
+            MeasurementScore.BRIER.value,
+            evaluate_metric_loss(two_stage_brier_loss(), metrics, target),
+        ),
+        (
+            MeasurementScore.LOG.value,
+            evaluate_metric_loss(two_stage_log_loss(), metrics, target),
+        ),
+    )
+
+
+def _exact_invariance_finding(
+    check_name: str,
+    original_payload: object,
+    transformed_payload: object,
+    *,
+    details_payload: object,
+) -> ExactInvarianceFinding:
+    original_hash = stable_content_hash(original_payload)
+    transformed_hash = stable_content_hash(transformed_payload)
+    return ExactInvarianceFinding(
+        check_name=check_name,
+        status=(
+            MeasurementValidityStatus.EXACT_INVARIANCE_MET
+            if original_hash == transformed_hash
+            else MeasurementValidityStatus.EXACT_INVARIANCE_FAILED
+        ),
+        original_hash=original_hash,
+        transformed_hash=transformed_hash,
+        details_hash=stable_content_hash(details_payload),
+    )
+
+
+def evaluate_feher_hare_semantic_invariance(
+    repository_identity: RepositoryIdentity,
+    candidates: object,
+) -> tuple[ExactInvarianceFinding, ...]:
+    if not isinstance(repository_identity, RepositoryIdentity):
+        raise TypeError(
+            "Feher/Hare semantic invariance requires RepositoryIdentity"
+        )
+    candidate_map = _semantic_candidate_map(candidates)
+    fixtures = frozen_feher_hare_semantic_fixtures()
+    if not fixtures or any(
+        not isinstance(row, FeherHareSemanticFixture) for row in fixtures
+    ):
+        raise TypeError(
+            "Feher/Hare semantic fixtures must contain FeherHareSemanticFixture values"
+        )
+    if len({row.name for row in fixtures}) != len(fixtures):
+        raise ValueError("Feher/Hare semantic fixture names must be unique")
+
+    tasks = tuple(
+        _FeherHareSemanticExecutionTask(
+            repository_identity=repository_identity,
+            family=family,
+            parameters=candidate_map[family].parameters,
+            selection_manifest_hash=candidate_map[family].selection_manifest_hash,
+            candidate_hash=candidate_map[family].content_hash,
+            fixture_name=fixture.name,
+            variant=variant,
+            scenario_id=scenario.id,
+            scenario_payload=_thaw_worker_value(scenario.payload),
+            scenario_hash=scenario.content_hash,
+        )
+        for fixture in fixtures
+        for family in _MODELS
+        for variant, scenario in (
+            ("original", fixture.original_scenario),
+            ("transformed", fixture.transformed_scenario),
+        )
+    )
+    sequential_rows = _semantic_result_rows(
+        SequentialCandidateExecutor().execute(
+            _evaluate_feher_hare_semantic_task,
+            tasks,
+        )
+    )
+    process_rows = _semantic_result_rows(
+        ProcessCandidateExecutor(max_workers=2).execute(
+            _evaluate_feher_hare_semantic_task,
+            tasks,
+        )
+    )
+    expected_coordinates = {
+        (fixture.name, family, variant)
+        for fixture in fixtures
+        for family in _MODELS
+        for variant in _SEMANTIC_VARIANTS
+    }
+    if {
+        (row["fixture_name"], row["family"], row["variant"])
+        for row in sequential_rows
+    } != expected_coordinates or len(sequential_rows) != len(expected_coordinates):
+        raise ValueError("Feher/Hare semantic sequential coverage changed")
+    if {
+        (row["fixture_name"], row["family"], row["variant"])
+        for row in process_rows
+    } != expected_coordinates or len(process_rows) != len(expected_coordinates):
+        raise ValueError("Feher/Hare semantic process coverage changed")
+
+    sequential_map = {
+        (row["fixture_name"], row["family"], row["variant"]): row
+        for row in sequential_rows
+    }
+    original_payload: list[dict[str, object]] = []
+    transformed_payload: list[dict[str, object]] = []
+    for fixture in fixtures:
+        permutation = dict(fixture.inverse_metric_permutation)
+        for family in _MODELS:
+            original = sequential_map[(fixture.name, family, "original")]
+            transformed = sequential_map[(fixture.name, family, "transformed")]
+            original_metrics = dict(original["metrics"])
+            transformed_metrics = dict(transformed["metrics"])
+            canonical_transformed_metrics = {
+                destination: transformed_metrics[source]
+                for source, destination in permutation.items()
+            }
+            original_payload.append(
+                {
+                    "fixture_name": fixture.name,
+                    "family": family,
+                    "candidate_hash": original["candidate_hash"],
+                    "scenario": _canonical_semantic_scenario_payload(
+                        fixture,
+                        fixture.original_scenario,
+                        transformed=False,
+                    ),
+                    "metrics": tuple(sorted(original_metrics.items())),
+                    "losses": _semantic_loss_payload(original_metrics),
+                }
+            )
+            transformed_payload.append(
+                {
+                    "fixture_name": fixture.name,
+                    "family": family,
+                    "candidate_hash": transformed["candidate_hash"],
+                    "scenario": _canonical_semantic_scenario_payload(
+                        fixture,
+                        fixture.transformed_scenario,
+                        transformed=True,
+                    ),
+                    "metrics": tuple(
+                        sorted(canonical_transformed_metrics.items())
+                    ),
+                    "losses": _semantic_loss_payload(
+                        canonical_transformed_metrics
+                    ),
+                }
+            )
+
+    task_finding = _exact_invariance_finding(
+        "task_canonicalization",
+        tuple(original_payload),
+        tuple(transformed_payload),
+        details_payload={
+            "semantic_seed": _SEMANTIC_SEED,
+            "fixture_hashes": tuple(row.content_hash for row in fixtures),
+            "candidate_hashes": tuple(
+                candidate_map[family].content_hash for family in _MODELS
+            ),
+        },
+    )
+    executor_finding = _exact_invariance_finding(
+        "semantic_executor_invariance",
+        sequential_rows,
+        process_rows,
+        details_payload={
+            "semantic_seed": _SEMANTIC_SEED,
+            "sequential_executor": "SequentialCandidateExecutor",
+            "process_executor": "ProcessCandidateExecutor(max_workers=2,spawn)",
+            "task_count": len(tasks),
+        },
+    )
+    return (task_finding, executor_finding)
+
+
+def _validate_empirical_invariance_binding(
+    audit_input: MeasurementAuditInput,
+    prediction_artifact: MeasurementPredictionArtifact,
+    protocol: MeasurementValidityProtocol,
+) -> None:
+    if not isinstance(audit_input, MeasurementAuditInput):
+        raise TypeError(
+            "Feher/Hare empirical invariance requires MeasurementAuditInput"
+        )
+    if not isinstance(prediction_artifact, MeasurementPredictionArtifact):
+        raise TypeError(
+            "Feher/Hare empirical invariance requires MeasurementPredictionArtifact"
+        )
+    if not isinstance(protocol, MeasurementValidityProtocol):
+        raise TypeError(
+            "Feher/Hare empirical invariance requires MeasurementValidityProtocol"
+        )
+    if prediction_artifact.protocol_hash != protocol.content_hash:
+        raise ValueError("Feher/Hare empirical invariance protocol binding changed")
+    if prediction_artifact.audit_input_hash != audit_input.content_hash:
+        raise ValueError("Feher/Hare empirical invariance audit input binding changed")
+    if protocol.empirical_anchor_hash != audit_input.empirical_anchor_hash:
+        raise ValueError("Feher/Hare empirical invariance protocol anchor changed")
+    if protocol.candidate_hashes != tuple(
+        candidate.content_hash for candidate in audit_input.frozen_candidates
+    ):
+        raise ValueError("Feher/Hare empirical invariance protocol candidates changed")
+    if dict(protocol.seeds_by_role) != _SEEDS_BY_ROLE:
+        raise ValueError("Feher/Hare empirical invariance protocol seed plan changed")
+
+
+def _measurement_profile_payload(
+    case_losses: tuple[MeasurementCaseLoss, ...],
+    profile_hash: str,
+) -> dict[str, object]:
+    return {
+        "case_losses": tuple(row.identity_payload() for row in case_losses),
+        "robustness_profile_hash": profile_hash,
+    }
+
+
+def _coordinate_permuted_case_losses(
+    audit_input: MeasurementAuditInput,
+    prediction_artifact: MeasurementPredictionArtifact,
+    protocol: MeasurementValidityProtocol,
+    original_losses: tuple[MeasurementCaseLoss, ...],
+) -> tuple[MeasurementCaseLoss, ...]:
+    seeds_by_role = dict(protocol.seeds_by_role)
+    losses_by_score = {
+        MeasurementScore.BRIER: two_stage_brier_loss(),
+        MeasurementScore.LOG: two_stage_log_loss(),
+    }
+    transformed: dict[
+        tuple[str, str, MeasurementScore],
+        MeasurementCaseLoss,
+    ] = {}
+    for case in audit_input.cases:
+        transformed_target = permute_binary_metric_map(dict(case.target))
+        for model_name in _MODELS:
+            model = prediction_artifact.model_map[model_name]
+            averaged = dict(
+                average_seed_metrics(
+                    tuple(
+                        model.row_map[(case.case_hash, seed)].metric_map
+                        for seed in seeds_by_role[case.role]
+                    )
+                )
+            )
+            transformed_prediction = permute_binary_metric_map(averaged)
+            for score in MeasurementScore:
+                row = MeasurementCaseLoss(
+                    case_hash=case.case_hash,
+                    role=case.role,
+                    task_variant=case.task_variant,
+                    participant_group_hash=case.participant_group_hash,
+                    model_name=model_name,
+                    score=score,
+                    value=evaluate_metric_loss(
+                        losses_by_score[score],
+                        transformed_prediction,
+                        transformed_target,
+                    ),
+                )
+                transformed[(case.case_hash, model_name, score)] = row
+    return tuple(
+        transformed[(row.case_hash, row.model_name, row.score)]
+        for row in original_losses
+    )
+
+
+def evaluate_feher_hare_empirical_invariance(
+    audit_input: MeasurementAuditInput,
+    prediction_artifact: MeasurementPredictionArtifact,
+    protocol: MeasurementValidityProtocol,
+) -> tuple[ExactInvarianceFinding, ...]:
+    _validate_empirical_invariance_binding(
+        audit_input,
+        prediction_artifact,
+        protocol,
+    )
+    scoring_losses = (two_stage_brier_loss(), two_stage_log_loss())
+    original_losses = score_measurement_predictions(
+        audit_input,
+        prediction_artifact,
+        scoring_losses,
+    )
+    original_profile = build_measurement_robustness_profile(
+        original_losses,
+        protocol,
+    )
+    transformed_losses = _coordinate_permuted_case_losses(
+        audit_input,
+        prediction_artifact,
+        protocol,
+        original_losses,
+    )
+    transformed_profile = build_measurement_robustness_profile(
+        transformed_losses,
+        protocol,
+    )
+    coordinate_finding = _exact_invariance_finding(
+        "categorical_coordinate_invariance",
+        _measurement_profile_payload(
+            original_losses,
+            original_profile.content_hash,
+        ),
+        _measurement_profile_payload(
+            transformed_losses,
+            transformed_profile.content_hash,
+        ),
+        details_payload={
+            "protocol_hash": protocol.content_hash,
+            "audit_input_hash": audit_input.content_hash,
+            "prediction_artifact_hash": prediction_artifact.content_hash,
+            "transformation": "simultaneous_binary_target_prediction_swap",
+        },
+    )
+
+    reordered_input = replace(
+        audit_input,
+        cases=tuple(reversed(audit_input.cases)),
+    )
+    reordered_models = tuple(
+        MeasurementModelPrediction(
+            model_name=model.model_name,
+            candidate_hash=model.candidate_hash,
+            rows=tuple(reversed(model.rows)),
+        )
+        for model in reversed(prediction_artifact.models)
+    )
+    reordered_artifact = MeasurementPredictionArtifact(
+        protocol_hash=prediction_artifact.protocol_hash,
+        audit_input_hash=reordered_input.content_hash,
+        models=reordered_models,
+        execution_manifest_hashes=tuple(
+            reversed(prediction_artifact.execution_manifest_hashes)
+        ),
+    )
+    reordered_losses = score_measurement_predictions(
+        reordered_input,
+        reordered_artifact,
+        scoring_losses,
+    )
+    reordered_profile = build_measurement_robustness_profile(
+        reordered_losses,
+        protocol,
+    )
+    order_finding = _exact_invariance_finding(
+        "record_order_batch_invariance",
+        {
+            "audit_input_hash": audit_input.content_hash,
+            "prediction_artifact_hash": prediction_artifact.content_hash,
+            **_measurement_profile_payload(
+                original_losses,
+                original_profile.content_hash,
+            ),
+        },
+        {
+            "audit_input_hash": reordered_input.content_hash,
+            "prediction_artifact_hash": reordered_artifact.content_hash,
+            **_measurement_profile_payload(
+                reordered_losses,
+                reordered_profile.content_hash,
+            ),
+        },
+        details_payload={
+            "protocol_hash": protocol.content_hash,
+            "transformation": "reverse_cases_models_rows_and_manifest_index",
+        },
+    )
+    return (coordinate_finding, order_finding)
+
+
+def _ordered_exact_findings(
+    findings: object,
+    expected_names: tuple[str, ...],
+    *,
+    label: str,
+) -> tuple[ExactInvarianceFinding, ...]:
+    try:
+        rows = tuple(findings)
+    except TypeError as error:
+        raise TypeError(f"{label} findings must be a sequence") from error
+    if not rows or any(not isinstance(row, ExactInvarianceFinding) for row in rows):
+        raise TypeError(f"{label} findings must contain ExactInvarianceFinding values")
+    by_name = {row.check_name: row for row in rows}
+    if len(by_name) != len(rows) or set(by_name) != set(expected_names):
+        raise ValueError(f"{label} finding set changed")
+    return tuple(by_name[name] for name in expected_names)
+
+
+def combine_feher_hare_exact_invariance(
+    semantic_findings: object,
+    empirical_findings: object,
+) -> ExactInvarianceFinding:
+    semantic = _ordered_exact_findings(
+        semantic_findings,
+        ("task_canonicalization", "semantic_executor_invariance"),
+        label="Feher/Hare semantic invariance",
+    )
+    empirical = _ordered_exact_findings(
+        empirical_findings,
+        (
+            "categorical_coordinate_invariance",
+            "record_order_batch_invariance",
+        ),
+        label="Feher/Hare empirical invariance",
+    )
+    rows = semantic + empirical
+    expected_payload = tuple(
+        (row.check_name, MeasurementValidityStatus.EXACT_INVARIANCE_MET.value)
+        for row in rows
+    )
+    actual_payload = tuple(
+        (row.check_name, row.status.value)
+        for row in rows
+    )
+    return _exact_invariance_finding(
+        "feher_hare_exact_invariance_gate",
+        expected_payload,
+        actual_payload,
+        details_payload={
+            "rule": "all_exact_invariance_findings_must_be_met",
+            "finding_hashes": tuple(row.content_hash for row in rows),
+        },
+    )
+
+
 @dataclass(frozen=True)
 class StaySwitchCell:
     task_variant: str
@@ -1898,12 +2837,17 @@ __all__ = [
     "FeherHareMeasurementAnchor",
     "FeherHareMeasurementCandidateRow",
     "FeherHareMeasurementPredictionTask",
+    "FeherHareSemanticFixture",
     "StaySwitchCell",
     "StaySwitchDiagnostic",
     "_project_prepared_measurement_input",
     "build_feher_hare_stay_switch_diagnostics",
+    "combine_feher_hare_exact_invariance",
+    "evaluate_feher_hare_empirical_invariance",
+    "evaluate_feher_hare_semantic_invariance",
     "execute_feher_hare_measurement_predictions",
     "freeze_feher_hare_measurement_candidates",
+    "frozen_feher_hare_semantic_fixtures",
     "load_feher_hare_r3_measurement_anchor",
     "provision_feher_hare_measurement_input",
 ]
