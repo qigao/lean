@@ -1,0 +1,27 @@
+{
+  "attempt_id": "r3-final-33287374761",
+  "attempt_ledger_hash": "sha256:acca4ab4f2da344483abeaf75efc1e8d577d16bb0f8e48b7a5c3409fa7d8fb26",
+  "automatic_retry_allowed": false,
+  "brier_comparison_manifest_hash": "sha256:7342950e3e09fa9ef5b6618712ff1385c843a12585e20cba007128ce6559ec63",
+  "brier_release_hash": "sha256:7784fae9350ab2fcaba45b9bd8c7fe8947953f41b2da3b287e51771f0a664d01",
+  "claim_commit": "17fb31a0318f06d9d4657be8bf00aa4d45503fb8",
+  "diagnostic_hash": "sha256:7c2b75520eb511127243fcab4ebe27ab8f4b7b07fa9ba1ce8d829a15bef4402e",
+  "final_model_execution_completed": true,
+  "final_model_execution_entered": true,
+  "final_seeds": [
+    301,
+    302
+  ],
+  "github_run_id": "33287374761",
+  "lock_commit": "f09d6afc96f0a720dd5e8e810f440cda0fe9f8a3",
+  "log_comparison_manifest_hash": "sha256:0f17da5f1d345aa4c1c56ca91d2ab82b6f9ec8bc3c85ca020496e2689ce6f9fd",
+  "log_release_hash": "sha256:b19d1533a159d201b7ecb155f5022049175cf443ff89d3b1ecb3c15da6c45f94",
+  "prediction_artifact_hash": "sha256:848dc4eee02c0579e228fdfee9e42a7f2ae2406a3c6d4c6923e355aa091a0897",
+  "preflight_hash": "sha256:57afeee777c24fd982949455772731930089a1057918d9559846cfe36c7cf16e",
+  "report_artifact_hash": "sha256:2b1b9f683637e9e6088eefe0975100563d6e3ca21f9c4d2408b9464730e84923",
+  "schema": "feher-hare-empirical-r3-final-terminal-v1",
+  "scientific_repository_revision": "d01232979cdfc9d902daab5f9e3e937079b56f69",
+  "serialization_digest": "sha256:d9a491fa754bb5814830e45017da9e947866953a22967cdf183b453e3b013d91",
+  "started_at": "2026-08-30T02:11:01Z",
+  "status": "completed"
+}

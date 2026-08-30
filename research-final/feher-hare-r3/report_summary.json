@@ -1,0 +1,61 @@
+{
+  "aggregate_adequacy": [
+    [
+      "intentional",
+      "predictive_adequacy_met"
+    ],
+    [
+      "planning",
+      "predictive_adequacy_met"
+    ],
+    [
+      "reactive",
+      "predictive_adequacy_met"
+    ]
+  ],
+  "brier_protocol_hash": "sha256:7a9714b2d8571eeb4f37ce6d4f2ebe3f42cc962fad8cbffd50747f82402e5744",
+  "brier_release_hash": "sha256:7784fae9350ab2fcaba45b9bd8c7fe8947953f41b2da3b287e51771f0a664d01",
+  "brier_verification_hash": "sha256:5a256fa57075c2641422b06d8ef5e061fc4f2bb64dd6fb8561f4ec3590672e73",
+  "claim_scope": "external_observational_predictive_only",
+  "constraint_findings": [],
+  "log_protocol_hash": "sha256:4c0d75d521dd121428d2208d361d91e27f7519422354b7754b19ecfb3fbab962",
+  "log_release_hash": "sha256:b19d1533a159d201b7ecb155f5022049175cf443ff89d3b1ecb3c15da6c45f94",
+  "log_verification_hash": "sha256:e201be3a6623c2194241dbfd222ff49f45d6e007be774ca5cfc76134cded0880",
+  "method_validation_hashes": [
+    "sha256:47057311fe7450469c1710be49ba0e3b42aa7416fa2129f40761dbf8d237d4fc",
+    "sha256:498a512cd931afe276f78bf135bd5c8269e051920d4b876177d0aa9ea250806d",
+    "sha256:5b607a4bc0a8082809c2446a8248fb8659b0d9ba178687ddad96dc74e3f19622",
+    "sha256:e347a3d7d523e2a35d0bb6b0f662343f5a01ddd1ff7d2efe95a8a5efa1986e74",
+    "sha256:e8414e301d19fc6acfd5accf055402ac995790f785402186c67ff95a48ee0c2e",
+    "sha256:ef0f3caf4f2a02b2d719bc302d7409fc8c2d937eb13517d906d83b38c29b76ac"
+  ],
+  "preregistration_hash": "sha256:e924106f114e648b15c37ffb3773126c4804b37412e903913d359bad1fc7de9f",
+  "report_artifact_hash": "sha256:2b1b9f683637e9e6088eefe0975100563d6e3ca21f9c4d2408b9464730e84923",
+  "report_manifest_hash": "sha256:dcc216a1b7c23f090839c7c830ba3bffca1e1db7e90e1f21c92b9f8300f2c935",
+  "separation_findings": [
+    {
+      "brier_mean_loss_delta": 0.01847614582452234,
+      "left_model": "intentional",
+      "log_mean_loss_delta": 0.018640498462347277,
+      "preferred_model": "planning",
+      "right_model": "planning",
+      "status": "predictively_separated_under_protocol"
+    },
+    {
+      "brier_mean_loss_delta": -0.0065719985220045185,
+      "left_model": "intentional",
+      "log_mean_loss_delta": -0.006724318442141497,
+      "preferred_model": null,
+      "right_model": "reactive",
+      "status": "not_predictively_separated_under_protocol"
+    },
+    {
+      "brier_mean_loss_delta": -0.025048144346526857,
+      "left_model": "planning",
+      "log_mean_loss_delta": -0.025364816904488774,
+      "preferred_model": "planning",
+      "right_model": "reactive",
+      "status": "predictively_separated_under_protocol"
+    }
+  ]
+}
