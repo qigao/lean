@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 import math
 import re
@@ -17,7 +17,11 @@ from narrative_dynamics.contracts import (
     Scenario,
     stable_content_hash,
 )
-from narrative_dynamics.losses import evaluate_metric_loss
+from narrative_dynamics.losses import (
+    MetricLoss,
+    evaluate_metric_loss,
+    metric_loss_identity,
+)
 from narrative_dynamics.observations.dataset import ObservationPartitionRole
 from narrative_dynamics.observations.preregistration import FrozenModelSpec
 
@@ -29,6 +33,10 @@ _ALLOWED_ROLES = (
     ObservationPartitionRole.TRAIN,
     ObservationPartitionRole.SELECTION_VALIDATION,
 )
+_SEEDS_BY_ROLE = {
+    ObservationPartitionRole.TRAIN: (101, 102),
+    ObservationPartitionRole.SELECTION_VALIDATION: (201, 202),
+}
 _FAMILY_ORDER = ("reactive", "intentional", "planning")
 _TASK_ORDER = ("magic_carpet", "spaceship")
 _TARGET_KEYS = (
@@ -1112,6 +1120,494 @@ class MeasurementValidityProtocol:
         )
 
 
+def _canonical_numeric_zero(value: float) -> float:
+    return (
+        0.0
+        if math.isclose(float(value), 0.0, rel_tol=0.0, abs_tol=1e-15)
+        else float(value)
+    )
+
+
+def average_seed_metrics(seed_metrics: object) -> tuple[tuple[str, float], ...]:
+    try:
+        raw_rows = tuple(seed_metrics)
+    except TypeError as error:
+        raise TypeError("measurement seed metrics must be a sequence") from error
+    if not raw_rows:
+        raise ValueError("measurement seed metrics must be non-empty")
+    canonical = tuple(_target_rows(row) for row in raw_rows)
+    averaged = tuple(
+        (
+            key,
+            _canonical_numeric_zero(
+                math.fsum(dict(row)[key] for row in canonical) / len(canonical)
+            ),
+        )
+        for key in _TARGET_KEYS
+    )
+    return _target_rows(averaged)
+
+
+@dataclass(frozen=True)
+class MeasurementSeedPrediction:
+    case_hash: str
+    scenario_hash: str
+    role: ObservationPartitionRole | str
+    model_name: str
+    seed: int
+    metrics: tuple[tuple[str, float], ...]
+    run_manifest_hash: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "case_hash",
+            _hash(self.case_hash, label="measurement prediction case hash"),
+        )
+        object.__setattr__(
+            self,
+            "scenario_hash",
+            _hash(self.scenario_hash, label="measurement prediction scenario hash"),
+        )
+        object.__setattr__(self, "role", _role(self.role))
+        object.__setattr__(
+            self,
+            "model_name",
+            _text(self.model_name, label="measurement prediction model name"),
+        )
+        if isinstance(self.seed, bool) or not isinstance(self.seed, int):
+            raise TypeError("measurement prediction seed must be an integer")
+        object.__setattr__(self, "metrics", _target_rows(self.metrics))
+        object.__setattr__(
+            self,
+            "run_manifest_hash",
+            _hash(
+                self.run_manifest_hash,
+                label="measurement prediction run manifest hash",
+            ),
+        )
+
+    @property
+    def metric_map(self) -> dict[str, float]:
+        return dict(self.metrics)
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "case_hash": self.case_hash,
+            "scenario_hash": self.scenario_hash,
+            "role": self.role.value,
+            "model_name": self.model_name,
+            "seed": self.seed,
+            "metrics": self.metrics,
+            "run_manifest_hash": self.run_manifest_hash,
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.identity_payload())
+
+
+def _prediction_row_key(
+    row: MeasurementSeedPrediction,
+) -> tuple[int, str, int, str]:
+    return (
+        _ALLOWED_ROLES.index(row.role),
+        row.case_hash,
+        row.seed,
+        row.scenario_hash,
+    )
+
+
+@dataclass(frozen=True)
+class MeasurementModelPrediction:
+    model_name: str
+    candidate_hash: str
+    rows: tuple[MeasurementSeedPrediction, ...]
+
+    def __post_init__(self) -> None:
+        name = _text(self.model_name, label="measurement prediction model name")
+        object.__setattr__(self, "model_name", name)
+        object.__setattr__(
+            self,
+            "candidate_hash",
+            _hash(
+                self.candidate_hash,
+                label="measurement prediction candidate hash",
+            ),
+        )
+        rows = tuple(self.rows)
+        if not rows:
+            raise ValueError("measurement model prediction requires rows")
+        if any(not isinstance(row, MeasurementSeedPrediction) for row in rows):
+            raise TypeError(
+                "measurement model prediction rows must be MeasurementSeedPrediction values"
+            )
+        if any(row.model_name != name for row in rows):
+            raise ValueError("measurement prediction row model name changed")
+        keys = tuple((row.case_hash, row.seed) for row in rows)
+        if len(set(keys)) != len(keys):
+            raise ValueError(
+                "measurement model prediction case/seed pairs must be unique"
+            )
+        object.__setattr__(self, "rows", tuple(sorted(rows, key=_prediction_row_key)))
+
+    @property
+    def row_map(self) -> dict[tuple[str, int], MeasurementSeedPrediction]:
+        return {(row.case_hash, row.seed): row for row in self.rows}
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "model_name": self.model_name,
+            "candidate_hash": self.candidate_hash,
+            "rows": tuple(row.identity_payload() for row in self.rows),
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.identity_payload())
+
+
+def _model_order(model: MeasurementModelPrediction) -> tuple[int, str]:
+    if model.model_name in _FAMILY_ORDER:
+        return (_FAMILY_ORDER.index(model.model_name), model.model_name)
+    return (len(_FAMILY_ORDER), model.model_name)
+
+
+def _prediction_manifest(
+    *,
+    protocol_hash: str,
+    audit_input_hash: str,
+    models: tuple[MeasurementModelPrediction, ...],
+    execution_manifest_hashes: tuple[str, ...],
+) -> ExperimentManifest:
+    return ExperimentManifest(
+        stage=ExperimentStage.MEASUREMENT_AUDIT,
+        inputs={
+            "artifact_type": "measurement_prediction",
+            "protocol_hash": protocol_hash,
+            "audit_input_hash": audit_input_hash,
+            "model_prediction_hashes": tuple(
+                model.content_hash for model in models
+            ),
+            "execution_manifest_hashes": execution_manifest_hashes,
+        },
+        parent_hashes=execution_manifest_hashes,
+    )
+
+
+@dataclass(frozen=True)
+class MeasurementPredictionArtifact:
+    protocol_hash: str
+    audit_input_hash: str
+    models: tuple[MeasurementModelPrediction, ...]
+    execution_manifest_hashes: tuple[str, ...]
+    manifest: ExperimentManifest | None = field(default=None, compare=False)
+
+    def __post_init__(self) -> None:
+        protocol_hash = _hash(
+            self.protocol_hash,
+            label="measurement prediction protocol hash",
+        )
+        audit_input_hash = _hash(
+            self.audit_input_hash,
+            label="measurement prediction audit input hash",
+        )
+        object.__setattr__(self, "protocol_hash", protocol_hash)
+        object.__setattr__(self, "audit_input_hash", audit_input_hash)
+
+        models = tuple(self.models)
+        if not models:
+            raise ValueError("measurement prediction artifact requires models")
+        if any(not isinstance(model, MeasurementModelPrediction) for model in models):
+            raise TypeError(
+                "measurement prediction artifact models must be MeasurementModelPrediction values"
+            )
+        models = tuple(sorted(models, key=_model_order))
+        names = tuple(model.model_name for model in models)
+        if len(set(names)) != len(names):
+            raise ValueError("measurement prediction model names must be unique")
+        coverage = tuple(
+            (row.case_hash, row.scenario_hash, row.role.value, row.seed)
+            for row in models[0].rows
+        )
+        if any(
+            tuple(
+                (row.case_hash, row.scenario_hash, row.role.value, row.seed)
+                for row in model.rows
+            )
+            != coverage
+            for model in models[1:]
+        ):
+            raise ValueError(
+                "measurement prediction models must share exact coverage"
+            )
+        object.__setattr__(self, "models", models)
+
+        row_manifests = tuple(
+            row.run_manifest_hash for model in models for row in model.rows
+        )
+        if len(set(row_manifests)) != len(row_manifests):
+            raise ValueError(
+                "measurement prediction run manifest hashes must be globally unique"
+            )
+        try:
+            raw_execution_manifests = tuple(self.execution_manifest_hashes)
+        except TypeError as error:
+            raise TypeError(
+                "measurement execution manifest hashes must be a sequence"
+            ) from error
+        execution_manifests = tuple(
+            _hash(value, label="measurement execution manifest hash")
+            for value in raw_execution_manifests
+        )
+        if len(set(execution_manifests)) != len(execution_manifests):
+            raise ValueError(
+                "measurement execution manifest hashes must be unique"
+            )
+        execution_manifests = tuple(sorted(execution_manifests))
+        if set(execution_manifests) != set(row_manifests):
+            raise ValueError(
+                "measurement execution manifest index does not match prediction rows"
+            )
+        object.__setattr__(
+            self,
+            "execution_manifest_hashes",
+            execution_manifests,
+        )
+
+        expected_manifest = _prediction_manifest(
+            protocol_hash=protocol_hash,
+            audit_input_hash=audit_input_hash,
+            models=models,
+            execution_manifest_hashes=execution_manifests,
+        )
+        if self.manifest is None:
+            object.__setattr__(self, "manifest", expected_manifest)
+        else:
+            if not isinstance(self.manifest, ExperimentManifest):
+                raise TypeError(
+                    "measurement prediction manifest must be ExperimentManifest"
+                )
+            if self.manifest.stage is not ExperimentStage.MEASUREMENT_AUDIT:
+                raise ValueError(
+                    "measurement prediction manifest stage must be measurement_audit"
+                )
+            if self.manifest.inputs.get("protocol_hash") != protocol_hash:
+                raise ValueError("measurement prediction protocol hash mismatch")
+            if self.manifest.inputs.get("audit_input_hash") != audit_input_hash:
+                raise ValueError("measurement prediction audit input hash mismatch")
+            if self.manifest.content_hash != expected_manifest.content_hash:
+                raise ValueError("measurement prediction manifest binding changed")
+
+    @property
+    def model_map(self) -> dict[str, MeasurementModelPrediction]:
+        return {model.model_name: model for model in self.models}
+
+    def identity_payload(self) -> dict[str, object]:
+        assert isinstance(self.manifest, ExperimentManifest)
+        return {
+            "protocol_hash": self.protocol_hash,
+            "audit_input_hash": self.audit_input_hash,
+            "models": tuple(model.identity_payload() for model in self.models),
+            "execution_manifest_hashes": self.execution_manifest_hashes,
+            "manifest_hash": self.manifest.content_hash,
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.identity_payload())
+
+
+@dataclass(frozen=True)
+class MeasurementCaseLoss:
+    case_hash: str
+    role: ObservationPartitionRole | str
+    task_variant: str
+    participant_group_hash: str
+    model_name: str
+    score: MeasurementScore | str
+    value: float
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "case_hash",
+            _hash(self.case_hash, label="measurement case loss case hash"),
+        )
+        object.__setattr__(self, "role", _role(self.role))
+        task = _text(self.task_variant, label="measurement case loss task variant")
+        if task not in _TASK_ORDER:
+            raise ValueError("measurement case loss task variant is unsupported")
+        object.__setattr__(self, "task_variant", task)
+        object.__setattr__(
+            self,
+            "participant_group_hash",
+            _hash(
+                self.participant_group_hash,
+                label="measurement case loss participant group hash",
+            ),
+        )
+        model_name = _text(
+            self.model_name,
+            label="measurement case loss model name",
+        )
+        if model_name not in _FAMILY_ORDER:
+            raise ValueError("measurement case loss model is unsupported")
+        object.__setattr__(self, "model_name", model_name)
+        try:
+            score = (
+                self.score
+                if isinstance(self.score, MeasurementScore)
+                else MeasurementScore(self.score)
+            )
+        except (TypeError, ValueError) as error:
+            raise ValueError("measurement case loss score is unsupported") from error
+        object.__setattr__(self, "score", score)
+        value = _finite(self.value, label="measurement case loss")
+        if value < 0.0:
+            raise ValueError("measurement case loss must be non-negative")
+        object.__setattr__(self, "value", _canonical_numeric_zero(value))
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "case_hash": self.case_hash,
+            "role": self.role.value,
+            "task_variant": self.task_variant,
+            "participant_group_hash": self.participant_group_hash,
+            "model_name": self.model_name,
+            "score": self.score.value,
+            "value": self.value,
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.identity_payload())
+
+
+def _measurement_losses(
+    losses: object,
+) -> tuple[tuple[MeasurementScore, MetricLoss], ...]:
+    try:
+        raw_losses = tuple(losses)
+    except TypeError as error:
+        raise TypeError("measurement scoring losses must be a sequence") from error
+    expected = {
+        MeasurementScore.BRIER: metric_loss_identity(two_stage_brier_loss()),
+        MeasurementScore.LOG: metric_loss_identity(two_stage_log_loss()),
+    }
+    resolved: dict[MeasurementScore, MetricLoss] = {}
+    for loss in raw_losses:
+        identity = metric_loss_identity(loss)
+        matching = tuple(
+            score
+            for score, expected_identity in expected.items()
+            if identity == expected_identity
+        )
+        if len(matching) != 1:
+            raise ValueError("measurement scoring loss changed")
+        score = matching[0]
+        if score in resolved:
+            raise ValueError("measurement scoring losses must be unique")
+        resolved[score] = loss
+    if set(resolved) != set(MeasurementScore):
+        raise ValueError("measurement scoring requires Brier and Log losses")
+    return tuple((score, resolved[score]) for score in MeasurementScore)
+
+
+def score_measurement_predictions(
+    audit_input: MeasurementAuditInput,
+    prediction_artifact: MeasurementPredictionArtifact,
+    losses: object,
+) -> tuple[MeasurementCaseLoss, ...]:
+    if not isinstance(audit_input, MeasurementAuditInput):
+        raise TypeError("measurement scoring requires MeasurementAuditInput")
+    if not isinstance(prediction_artifact, MeasurementPredictionArtifact):
+        raise TypeError(
+            "measurement scoring requires MeasurementPredictionArtifact"
+        )
+    if prediction_artifact.audit_input_hash != audit_input.content_hash:
+        raise ValueError("measurement prediction audit input changed")
+    scoring_losses = _measurement_losses(losses)
+
+    candidate_map = {
+        candidate.name: candidate for candidate in audit_input.frozen_candidates
+    }
+    model_map = prediction_artifact.model_map
+    if tuple(model_map) != _FAMILY_ORDER:
+        raise ValueError("measurement prediction candidate set changed")
+    for model_name in _FAMILY_ORDER:
+        if model_map[model_name].candidate_hash != candidate_map[model_name].content_hash:
+            raise ValueError(
+                f"measurement prediction candidate changed for {model_name!r}"
+            )
+
+    expected_coverage = {
+        (
+            case.case_hash,
+            case.scenario.content_hash,
+            case.role,
+            seed,
+        )
+        for case in audit_input.cases
+        for seed in _SEEDS_BY_ROLE[case.role]
+    }
+    for model_name in _FAMILY_ORDER:
+        actual_coverage = {
+            (row.case_hash, row.scenario_hash, row.role, row.seed)
+            for row in model_map[model_name].rows
+        }
+        if actual_coverage != expected_coverage or len(
+            model_map[model_name].rows
+        ) != len(expected_coverage):
+            raise ValueError(
+                f"measurement prediction coverage changed for {model_name!r}"
+            )
+
+    rows: list[MeasurementCaseLoss] = []
+    for case in audit_input.cases:
+        seeds = _SEEDS_BY_ROLE[case.role]
+        for model_name in _FAMILY_ORDER:
+            prediction_map = model_map[model_name].row_map
+            averaged = dict(
+                average_seed_metrics(
+                    tuple(
+                        prediction_map[(case.case_hash, seed)].metric_map
+                        for seed in seeds
+                    )
+                )
+            )
+            for score, loss in scoring_losses:
+                rows.append(
+                    MeasurementCaseLoss(
+                        case_hash=case.case_hash,
+                        role=case.role,
+                        task_variant=case.task_variant,
+                        participant_group_hash=case.participant_group_hash,
+                        model_name=model_name,
+                        score=score,
+                        value=_canonical_numeric_zero(
+                            evaluate_metric_loss(
+                                loss,
+                                averaged,
+                                dict(case.target),
+                            )
+                        ),
+                    )
+                )
+    return tuple(
+        sorted(
+            rows,
+            key=lambda row: (
+                _ALLOWED_ROLES.index(row.role),
+                _TASK_ORDER.index(row.task_variant),
+                row.case_hash,
+                _FAMILY_ORDER.index(row.model_name),
+                tuple(MeasurementScore).index(row.score),
+            ),
+        )
+    )
+
+
 def _seed_rows(
     value: object,
 ) -> tuple[tuple[ObservationPartitionRole, tuple[int, ...]], ...]:
@@ -1141,11 +1637,7 @@ def _seed_rows(
         canonical[role] = seeds
     if set(canonical) != set(_ALLOWED_ROLES):
         raise ValueError("measurement seeds require TRAIN and SELECTION_VALIDATION")
-    expected = {
-        ObservationPartitionRole.TRAIN: (101, 102),
-        ObservationPartitionRole.SELECTION_VALIDATION: (201, 202),
-    }
-    if canonical != expected:
+    if canonical != _SEEDS_BY_ROLE:
         raise ValueError("measurement seed plan changed from the frozen audit")
     return tuple((role, canonical[role]) for role in _ALLOWED_ROLES)
 
@@ -1182,12 +1674,18 @@ __all__ = [
     "MeasurementAggregation",
     "MeasurementAuditCase",
     "MeasurementAuditInput",
+    "MeasurementCaseLoss",
     "MeasurementDependenceFinding",
+    "MeasurementModelPrediction",
+    "MeasurementPredictionArtifact",
     "MeasurementScore",
+    "MeasurementSeedPrediction",
     "MeasurementTerminalClass",
     "MeasurementValidityProtocol",
     "MeasurementValidityStatus",
     "classify_material_reversal",
     "evaluate_categorical_coordinate_invariance",
+    "average_seed_metrics",
     "permute_binary_metric_map",
+    "score_measurement_predictions",
 ]
