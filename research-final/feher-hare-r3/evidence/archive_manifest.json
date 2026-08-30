@@ -1,0 +1,26 @@
+{
+  "archive_file": "feher-hare-real-final-r3-33287374761.tar.xz",
+  "archive_format": "tar-xz",
+  "archive_round_trip_verified": true,
+  "archive_sha256": "7d79d61ce2cb115ed6f375dd1b29eeb6a59632a7f3ba614a028bc96e61411e2e",
+  "canonical_identity_is_per_file_sha256": true,
+  "files": {
+    "attempt_ledger.json": "eb9722169569cd2601d9f6e7727e949c78a7a1638f693e644c41ec88acaee726",
+    "brier_score.json": "5a4ec1d9433e66509aca058a3340c0fb5efd52e2e46d910ffcc896fe055e72e2",
+    "external_evaluation.json": "55c9411c8d110c0b33794b076e204f7fa81f9bd856d7233a8823645008ecc0ca",
+    "log_score.json": "6a8fea934b7f4689924ade20c2c26c7f4cf99cfa0167deeed6a0a968c4b40c34",
+    "prediction_artifact.json": "0bde3b5230fec0c0619e7b9836dff03ed961352e94cd9de1e2d182500c66ab12",
+    "report_summary.json": "0242c1aaefe5386f48ca70d097f2fa24747fc89cf4b4f86369db285fa1a43bcc",
+    "stay_switch_diagnostic.json": "f278cf705bf2f40ea328046047261ac915da1cd6b1c883b2428bf3ae567f0af1",
+    "terminal.json": "eccdf3d72e936214aff7de15e5b76310464b7856a4b1d7f1fa87728f433239fc"
+  },
+  "final_execution_replay": false,
+  "final_terminal_commit": "71c961d5d5c13ee8d435d636c3214d7edf55f0e7",
+  "github_actions_artifact_id": 9724984284,
+  "github_actions_run_id": 33287374761,
+  "github_actions_zip_sha256": "80462b8f8bb7de26fc159b378213a5d324af536fd34d17721653f58d03ab14d0",
+  "lock_commit": "f09d6afc96f0a720dd5e8e810f440cda0fe9f8a3",
+  "raw_human_rows_in_archive": false,
+  "schema": "feher-hare-r3-final-durable-archive-v1",
+  "scientific_repository_revision": "d01232979cdfc9d902daab5f9e3e937079b56f69"
+}
