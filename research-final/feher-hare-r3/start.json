@@ -1,0 +1,21 @@
+{
+  "attempt_id": "r3-final-33287374761",
+  "authorization_comment_id": 5466160091,
+  "authorization_issue": 40,
+  "authorization_text": "I authorize R3 locked FINAL_TEST execution.",
+  "automatic_retry_allowed": false,
+  "brier_release_hash": "sha256:7784fae9350ab2fcaba45b9bd8c7fe8947953f41b2da3b287e51771f0a664d01",
+  "final_model_execution_entered": false,
+  "final_seeds": [
+    301,
+    302
+  ],
+  "github_run_id": "33287374761",
+  "lock_commit": "f09d6afc96f0a720dd5e8e810f440cda0fe9f8a3",
+  "log_release_hash": "sha256:b19d1533a159d201b7ecb155f5022049175cf443ff89d3b1ecb3c15da6c45f94",
+  "preflight_hash": "sha256:57afeee777c24fd982949455772731930089a1057918d9559846cfe36c7cf16e",
+  "schema": "feher-hare-r3-final-start-v1",
+  "scientific_repository_revision": "d01232979cdfc9d902daab5f9e3e937079b56f69",
+  "started_at": "2026-08-30T02:11:01Z",
+  "status": "authorized_execution_claimed"
+}
