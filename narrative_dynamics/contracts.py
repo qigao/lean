@@ -126,6 +126,7 @@ class ExperimentStage(str, Enum):
     RELEASED_MODEL_COMPARISON = "released_model_comparison"
     EXTERNAL_PREDICTION = "external_prediction"
     EXTERNAL_VALIDATION = "external_validation"
+    MEASUREMENT_AUDIT = "measurement_audit"
 
 
 @dataclass(frozen=True)
