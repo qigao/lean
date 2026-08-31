@@ -921,6 +921,121 @@ assert tuple(item.event_id for item in information_chain(story, telling.event_id
 )
 ```
 
+### Perceptual environment graph V15
+
+V15 adds a deterministic analyst/query projection over an exact situated-world
+round. Perception edges are directed: an open meeting-room door permits visual,
+clear auditory, and direct interaction access, while a closed door leaves only a
+weaker auditory edge. The closed-door projection below detects that something was
+heard without exposing its actor, action, outcome, or details.
+
+```python
+from narrative_dynamics.abm import (
+    EmbodiedAgentSpec,
+    PassageSpec,
+    PassageState,
+    PlaceSpec,
+    SituatedActionIntent,
+    SituatedActionKind,
+    SituatedAgentPerceptionProfile,
+    SituatedEdgeActivation,
+    SituatedEventSignalProfile,
+    SituatedPerceptionEdge,
+    SituatedPerceptionLayer,
+    SituatedPerceptionModel,
+    SituatedPerceptFidelity,
+    SituatedWorldModel,
+    SituatedWorldState,
+    can_situated_agents_interact,
+    derive_situated_perception_reach,
+    initialize_situated_world,
+    percepts_for_agent,
+    project_situated_percepts,
+    resolve_situated_round,
+)
+
+office = SituatedWorldModel(
+    "perception-office",
+    "1",
+    (PlaceSpec("corridor", "Corridor"), PlaceSpec("meeting", "Meeting room")),
+    (PassageSpec("meeting-door", "corridor", "meeting", initially_open=False),),
+    (
+        EmbodiedAgentSpec("alice", "analyst", "corridor"),
+        EmbodiedAgentSpec("bob", "manager", "meeting"),
+    ),
+)
+perception_model = SituatedPerceptionModel(
+    "office-perception",
+    "1",
+    office,
+    (
+        SituatedPerceptionEdge(
+            "door-visual-open", SituatedPerceptionLayer.VISIBILITY,
+            "corridor", "meeting", 1.0,
+            SituatedEdgeActivation.PASSAGE_OPEN, "meeting-door",
+        ),
+        SituatedPerceptionEdge(
+            "door-audio-open", SituatedPerceptionLayer.AUDITORY,
+            "corridor", "meeting", 5.0,
+            SituatedEdgeActivation.PASSAGE_OPEN, "meeting-door",
+        ),
+        SituatedPerceptionEdge(
+            "door-audio-closed", SituatedPerceptionLayer.AUDITORY,
+            "corridor", "meeting", 25.0,
+            SituatedEdgeActivation.PASSAGE_CLOSED, "meeting-door",
+        ),
+        SituatedPerceptionEdge(
+            "door-interaction-open", SituatedPerceptionLayer.INTERACTION,
+            "corridor", "meeting", 0.0,
+            SituatedEdgeActivation.PASSAGE_OPEN, "meeting-door",
+        ),
+    ),
+    (
+        SituatedAgentPerceptionProfile("alice", 1.0, 20.0, 45.0),
+        SituatedAgentPerceptionProfile("bob", 1.0, 20.0, 45.0),
+    ),
+    (SituatedEventSignalProfile(SituatedActionKind.TELL, True, 60.0),),
+)
+closed_state = initialize_situated_world(office)
+open_state = SituatedWorldState(
+    closed_state.model_id,
+    closed_state.model_hash,
+    closed_state.round_index,
+    closed_state.parent_state_hash,
+    closed_state.agents,
+    closed_state.objects,
+    (PassageState("meeting-door", True),),
+)
+open_reach = derive_situated_perception_reach(
+    perception_model, open_state, source_place_id="corridor"
+)
+assert open_reach.visual_costs["meeting"] == 1.0
+assert open_reach.auditory_losses["meeting"] == 5.0
+
+tell_round = resolve_situated_round(
+    office,
+    closed_state,
+    (SituatedActionIntent(
+        "alice-tells-secret", "alice", SituatedActionKind.TELL,
+        message="The meeting is confidential.",
+    ),),
+)
+closed = project_situated_percepts(perception_model, tell_round)
+bob = percepts_for_agent(closed, "bob")
+assert bob[0].fidelity is SituatedPerceptFidelity.DETECTED
+assert bob[0].details == ()
+assert bob[0].actor_agent_id is None
+assert can_situated_agents_interact(
+    perception_model, tell_round.prior_state, "alice", "bob"
+) is False
+```
+
+This is query-only: V15 does not replace V10-V14 observation, cognition, or memory
+admission. See the [perceptual-environment architecture
+spec](docs/superpowers/specs/2026-08-31-simulated-story-production-architecture-design.md);
+the next boundary is a separately reviewed percept-to-cognition/memory integration
+plan.
+
 ### Situated cognitive agents V11
 
 V11 lets those embodied agents update private probability distributions and choose

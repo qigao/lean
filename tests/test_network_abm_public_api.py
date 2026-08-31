@@ -4,7 +4,7 @@ import narrative_dynamics.abm as abm
 
 
 class NetworkABMPublicAPITests(unittest.TestCase):
-    def test_public_api_exports_current_v14_surface(self):
+    def test_public_api_exports_current_v15_surface(self):
         self.assertEqual(
             set(abm.__all__),
             {
@@ -228,6 +228,20 @@ class NetworkABMPublicAPITests(unittest.TestCase):
                 "recall_situated_memories_with_social_trust",
                 "simulate_situated_social_cognitive_round",
                 "simulate_situated_social_cognition",
+                "SituatedPerceptionLayer",
+                "SituatedEdgeActivation",
+                "SituatedPerceptFidelity",
+                "SituatedPerceptionEdge",
+                "SituatedAgentPerceptionProfile",
+                "SituatedEventSignalProfile",
+                "SituatedPerceptionModel",
+                "SituatedPerceptionReach",
+                "SituatedPercept",
+                "SituatedPerceptualProjection",
+                "derive_situated_perception_reach",
+                "can_situated_agents_interact",
+                "project_situated_percepts",
+                "percepts_for_agent",
             },
         )
         for name in abm.__all__:
