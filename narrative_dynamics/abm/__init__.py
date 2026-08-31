@@ -67,6 +67,12 @@ from narrative_dynamics.abm.lifecycle_metrics import (
     PopulationLifecycleMetrics,
     measure_population_lifecycle,
 )
+from narrative_dynamics.abm.rewiring_contracts import (
+    EdgeTopologyState,
+    EndogenousRewiringModel,
+    RewiringPopulationState,
+    initialize_rewiring_population,
+)
 
 
 __all__ = (
@@ -120,4 +126,8 @@ __all__ = (
     "simulate_lifecycle_population",
     "PopulationLifecycleMetrics",
     "measure_population_lifecycle",
+    "EndogenousRewiringModel",
+    "EdgeTopologyState",
+    "RewiringPopulationState",
+    "initialize_rewiring_population",
 )
