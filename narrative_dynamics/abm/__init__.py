@@ -117,6 +117,10 @@ from narrative_dynamics.abm.autonomy import (
     simulate_autonomous_population,
     simulate_autonomous_round,
 )
+from narrative_dynamics.abm.autonomy_metrics import (
+    AgentAutonomyMetrics,
+    measure_agent_autonomy,
+)
 
 
 __all__ = (
@@ -204,4 +208,6 @@ __all__ = (
     "AutonomousTrajectory",
     "simulate_autonomous_round",
     "simulate_autonomous_population",
+    "AgentAutonomyMetrics",
+    "measure_agent_autonomy",
 )

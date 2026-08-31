@@ -316,6 +316,96 @@ assert metrics.active_population == 3
 assert metrics.mean_trust == 0.625
 ```
 
+### Agent autonomy V6
+
+Active agents can make deterministic local decisions from post-round belief,
+received transmissions, prior source trust, role policy, and finite verification
+budget. Decisions to share, remain silent, verify, or exit are stored as
+auditable intents and affect later rounds only.
+
+```python
+from narrative_dynamics.abm import (
+    AutonomousNetworkModel,
+    EdgeSelector,
+    EvolvingNetworkModel,
+    LifecycleEventKind,
+    NetworkABMModel,
+    NetworkAgentSpec,
+    PopulationLifecycleEvent,
+    RoleDecisionPolicy,
+    SocialEdge,
+    SocialNetwork,
+    TruthObservation,
+    initialize_autonomous_population,
+    measure_agent_autonomy,
+    simulate_autonomous_round,
+)
+
+catalog = NetworkABMModel(
+    "autonomy-catalog",
+    "1",
+    (
+        NetworkAgentSpec("a", "source", 1.0, 0.5, 0.5),
+        NetworkAgentSpec("b", "relay", 1.0, 0.5, 0.5),
+        NetworkAgentSpec("c", "recipient", 1.0, 0.5, 0.5),
+    ),
+    SocialNetwork(
+        ("a", "b", "c"),
+        (
+            SocialEdge("a", "b", "peer", 1.0, active=True),
+            SocialEdge("b", "c", "peer", 1.0, active=False),
+        ),
+    ),
+)
+evolving = EvolvingNetworkModel(
+    "autonomous-evolution",
+    "1",
+    catalog,
+    initial_active_agent_ids=("a", "c"),
+    learning_rate=0.5,
+    initial_trust=0.5,
+    dissolution_similarity=0.2,
+    formation_similarity=0.8,
+)
+autonomous = AutonomousNetworkModel(
+    "local-decisions",
+    "1",
+    evolving,
+    (
+        RoleDecisionPolicy("source", True, 0.5, 0.4, None, 1),
+        RoleDecisionPolicy("relay", True, 0.5, 0.6, 0.2, 2),
+        RoleDecisionPolicy("recipient", False, 0.5, 0.6, 0.2, 1),
+    ),
+)
+initial = initialize_autonomous_population(
+    autonomous,
+    beliefs={"a": 1.0, "c": 0.5},
+)
+result = simulate_autonomous_round(
+    autonomous,
+    initial,
+    environment_events=(
+        PopulationLifecycleEvent("b", LifecycleEventKind.ENTER),
+    ),
+    truth_observations=(
+        TruthObservation(EdgeSelector("a", "b", "peer"), 1.0),
+    ),
+)
+relay_intent = next(item for item in result.intents if item.agent_id == "b")
+relay_resource = next(item for item in result.next_state.agents if item.agent_id == "b")
+learned_trust = next(
+    item.trust
+    for item in result.next_state.evolving_state.edge_trust
+    if item.edge.source_agent_id == "a"
+)
+metrics = measure_agent_autonomy(autonomous, result.next_state)
+assert relay_intent.verification_edge == EdgeSelector("a", "b", "peer")
+assert relay_resource.remaining_verification_budget == 1
+assert learned_trust == 0.75
+assert metrics.verification_count == 1
+assert metrics.active_sharing_count == 2
+```
+
 ## Verification
 
 GitHub Actions runs:
