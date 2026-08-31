@@ -37,14 +37,16 @@ def agent_model(agent_id: str, *, prior_approved: float = 0.5):
         SituatedObservationSymbol("denied", "evidence opposes approval"),
     )
     rules = (
-        SituatedObservationRule("inspect-approved", "approved", SituatedActionKind.INSPECT, "inspected", "restructuring", "approved"),
-        SituatedObservationRule("tell-approved", "approved", SituatedActionKind.TELL, "told", "message", "The restructuring is approved."),
+        SituatedObservationRule("inspect-approved", "approved", "inspect", SituatedActionKind.INSPECT, "inspected", "restructuring", "approved"),
+        SituatedObservationRule("tell-approved", "approved", "tell", SituatedActionKind.TELL, "told", "message", "The restructuring is approved."),
     )
-    likelihoods = (
-        SituatedObservationLikelihood("approved", "approved", 0.9),
-        SituatedObservationLikelihood("approved", "denied", 0.1),
-        SituatedObservationLikelihood("denied", "approved", 0.1),
-        SituatedObservationLikelihood("denied", "denied", 0.9),
+    likelihoods = tuple(
+        SituatedObservationLikelihood(action.action_id, hypothesis.hypothesis_id, symbol.symbol_id, (
+            0.9 if hypothesis.hypothesis_id == symbol.symbol_id else 0.1
+        ) if action.action_id in {"inspect", "tell"} else 0.5)
+        for action in actions
+        for hypothesis in hypotheses
+        for symbol in symbols
     )
     goals = (SituatedGoalSpec("inform", "discover and share reliable information", 1.0),)
     reward_values = {

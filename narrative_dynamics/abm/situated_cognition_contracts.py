@@ -90,6 +90,7 @@ class SituatedObservationSymbol:
 class SituatedObservationRule:
     rule_id: str
     symbol_id: str
+    likelihood_action_id: str
     event_kind: SituatedActionKind
     outcome: str | None = None
     detail_name: str | None = None
@@ -98,6 +99,7 @@ class SituatedObservationRule:
     def __post_init__(self) -> None:
         object.__setattr__(self, "rule_id", _text(self.rule_id, label="situated observation rule id"))
         object.__setattr__(self, "symbol_id", _text(self.symbol_id, label="situated observation rule symbol id"))
+        object.__setattr__(self, "likelihood_action_id", _text(self.likelihood_action_id, label="situated observation rule likelihood action id"))
         if not isinstance(self.event_kind, SituatedActionKind):
             raise TypeError("situated observation rule event kind must be SituatedActionKind")
         object.__setattr__(self, "outcome", _optional_text(self.outcome, label="situated observation rule outcome"))
@@ -109,6 +111,7 @@ class SituatedObservationRule:
     def to_dict(self) -> dict[str, object]:
         return {
             "rule_id": self.rule_id, "symbol_id": self.symbol_id,
+            "likelihood_action_id": self.likelihood_action_id,
             "event_kind": self.event_kind.value, "outcome": self.outcome,
             "detail_name": self.detail_name, "detail_value": self.detail_value,
         }
@@ -120,17 +123,19 @@ class SituatedObservationRule:
 
 @dataclass(frozen=True)
 class SituatedObservationLikelihood:
+    action_id: str
     hypothesis_id: str
     symbol_id: str
     probability: float
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "action_id", _text(self.action_id, label="likelihood action id"))
         object.__setattr__(self, "hypothesis_id", _text(self.hypothesis_id, label="likelihood hypothesis id"))
         object.__setattr__(self, "symbol_id", _text(self.symbol_id, label="likelihood symbol id"))
         object.__setattr__(self, "probability", _probability(self.probability, label="likelihood probability"))
 
     def to_dict(self) -> dict[str, object]:
-        return {"hypothesis_id": self.hypothesis_id, "symbol_id": self.symbol_id, "probability": self.probability}
+        return {"action_id": self.action_id, "hypothesis_id": self.hypothesis_id, "symbol_id": self.symbol_id, "probability": self.probability}
 
 
 @dataclass(frozen=True)
@@ -251,7 +256,7 @@ class SituatedAgentCognitiveModel:
             ("hypotheses", self.hypotheses, SituatedHypothesis, lambda item: item.hypothesis_id),
             ("observation_symbols", self.observation_symbols, SituatedObservationSymbol, lambda item: item.symbol_id),
             ("observation_rules", self.observation_rules, SituatedObservationRule, lambda item: item.rule_id),
-            ("likelihoods", self.likelihoods, SituatedObservationLikelihood, lambda item: (item.hypothesis_id, item.symbol_id)),
+            ("likelihoods", self.likelihoods, SituatedObservationLikelihood, lambda item: (item.action_id, item.hypothesis_id, item.symbol_id)),
             ("actions", self.actions, SituatedActionSpec, lambda item: item.action_id),
             ("transitions", self.transitions, SituatedHypothesisTransition, lambda item: (item.action_id, item.prior_hypothesis_id, item.next_hypothesis_id)),
             ("goals", self.goals, SituatedGoalSpec, lambda item: item.goal_id),
@@ -277,15 +282,16 @@ class SituatedAgentCognitiveModel:
         object.__setattr__(self, "prior_belief", PlanningBeliefState(dict(self.prior_belief.probabilities)))
         if set(self.prior_belief.probabilities) != hypothesis_ids:
             raise ValueError("cognitive prior belief must cover exact hypotheses")
-        if any(item.symbol_id not in symbol_ids for item in self.observation_rules):
-            raise ValueError("observation rule must reference a declared symbol")
-        likelihood_keys = {(item.hypothesis_id, item.symbol_id) for item in self.likelihoods}
-        if likelihood_keys != {(h, s) for h in hypothesis_ids for s in symbol_ids}:
-            raise ValueError("cognitive likelihood matrix must cover exact hypotheses and symbols")
-        for hypothesis_id in hypothesis_ids:
-            total = math.fsum(item.probability for item in self.likelihoods if item.hypothesis_id == hypothesis_id)
-            if not math.isclose(total, 1.0, rel_tol=0.0, abs_tol=_TOLERANCE):
-                raise ValueError("cognitive likelihood row must sum to 1")
+        if any(item.symbol_id not in symbol_ids or item.likelihood_action_id not in action_ids for item in self.observation_rules):
+            raise ValueError("observation rule must reference a declared symbol and action")
+        likelihood_keys = {(item.action_id, item.hypothesis_id, item.symbol_id) for item in self.likelihoods}
+        if likelihood_keys != {(a, h, s) for a in action_ids for h in hypothesis_ids for s in symbol_ids}:
+            raise ValueError("cognitive likelihood matrix must cover exact actions, hypotheses, and symbols")
+        for action_id in action_ids:
+            for hypothesis_id in hypothesis_ids:
+                total = math.fsum(item.probability for item in self.likelihoods if item.action_id == action_id and item.hypothesis_id == hypothesis_id)
+                if not math.isclose(total, 1.0, rel_tol=0.0, abs_tol=_TOLERANCE):
+                    raise ValueError("cognitive likelihood row must sum to 1")
         if not isinstance(self.action_schedule, tuple) or not self.action_schedule:
             raise ValueError("cognitive action schedule must be a non-empty tuple")
         schedule = []

@@ -40,7 +40,7 @@ class SituatedCognitionContractTests(unittest.TestCase):
             replace(base, likelihoods=base.likelihoods[:-1])
         wrong = tuple(
             replace(item, probability=0.8)
-            if item.hypothesis_id == "approved" and item.symbol_id == "approved"
+            if item.action_id == "inspect" and item.hypothesis_id == "approved" and item.symbol_id == "approved"
             else item
             for item in base.likelihoods
         )
