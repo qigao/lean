@@ -264,7 +264,6 @@ class FinalUnlockGrant:
             _revision(self.scientific_revision, label="scientific_revision"),
         )
         for field_name in (
-            "ledger_head_hash",
             "preflight_hash",
             "authorization_receipt_hash",
             "brier_release_hash",
@@ -275,6 +274,11 @@ class FinalUnlockGrant:
                 field_name,
                 _hash(getattr(self, field_name), label=field_name),
             )
+        object.__setattr__(
+            self,
+            "ledger_head_hash",
+            _revision(self.ledger_head_hash, label="ledger_head_hash"),
+        )
         object.__setattr__(
             self,
             "lock_commit",
