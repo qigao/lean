@@ -90,6 +90,13 @@ from narrative_dynamics.abm.evolving_contracts import (
     EvolvingPopulationState,
     initialize_evolving_population,
 )
+from narrative_dynamics.abm.evolving import (
+    EvolvingRoundResult,
+    EvolvingTrajectory,
+    evolving_active_population_view,
+    simulate_evolving_population,
+    simulate_evolving_round,
+)
 
 
 __all__ = (
@@ -158,4 +165,9 @@ __all__ = (
     "EvolvingNetworkModel",
     "EvolvingPopulationState",
     "initialize_evolving_population",
+    "EvolvingRoundResult",
+    "EvolvingTrajectory",
+    "evolving_active_population_view",
+    "simulate_evolving_round",
+    "simulate_evolving_population",
 )
