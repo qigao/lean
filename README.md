@@ -238,6 +238,84 @@ assert metrics.active_edge_count == 2
 assert metrics.cumulative_rewirings == 1
 ```
 
+### Unified evolving network V5
+
+Lifecycle, learned source trust, and endogenous topology can run in one atomic
+state transition. Lifecycle events determine current participants; prior trust
+and topology determine current propagation; feedback learning and rewiring are
+committed together for the next round.
+
+```python
+from narrative_dynamics.abm import (
+    EdgeSelector,
+    EvolvingNetworkModel,
+    LifecycleEventKind,
+    NetworkABMModel,
+    NetworkAgentSpec,
+    PopulationLifecycleEvent,
+    SocialEdge,
+    SocialNetwork,
+    TruthFeedback,
+    initialize_evolving_population,
+    measure_evolving_system,
+    simulate_evolving_round,
+)
+
+catalog = NetworkABMModel(
+    "unified-catalog",
+    "1",
+    (
+        NetworkAgentSpec("a", "source", 1.0, 0.5, 0.5),
+        NetworkAgentSpec("b", "relay", 1.0, 0.5, 0.5),
+        NetworkAgentSpec("c", "recipient", 1.0, 0.5, 0.5),
+    ),
+    SocialNetwork(
+        ("a", "b", "c"),
+        (
+            SocialEdge("a", "b", "peer", 1.0, active=True),
+            SocialEdge("b", "c", "peer", 1.0, active=False),
+        ),
+    ),
+)
+evolving = EvolvingNetworkModel(
+    "unified-evolution",
+    "1",
+    catalog,
+    initial_active_agent_ids=("a", "c"),
+    learning_rate=0.5,
+    initial_trust=0.5,
+    dissolution_similarity=0.2,
+    formation_similarity=0.8,
+)
+initial = initialize_evolving_population(
+    evolving,
+    beliefs={"a": 1.0, "c": 0.5},
+)
+result = simulate_evolving_round(
+    evolving,
+    initial,
+    events=(PopulationLifecycleEvent("b", LifecycleEventKind.ENTER),),
+    feedback=(TruthFeedback(EdgeSelector("a", "b", "peer"), 1.0),),
+)
+b = next(item for item in result.next_state.members if item.agent_id == "b")
+ab_trust = next(
+    item.trust
+    for item in result.next_state.edge_trust
+    if item.edge.source_agent_id == "a"
+)
+bc_active = next(
+    item.active
+    for item in result.next_state.edge_topology
+    if item.edge.source_agent_id == "b"
+)
+metrics = measure_evolving_system(evolving, result.next_state)
+assert b.belief == 0.5
+assert ab_trust == 0.75
+assert bc_active
+assert metrics.active_population == 3
+assert metrics.mean_trust == 0.625
+```
+
 ## Verification
 
 GitHub Actions runs:

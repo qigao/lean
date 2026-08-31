@@ -97,6 +97,10 @@ from narrative_dynamics.abm.evolving import (
     simulate_evolving_population,
     simulate_evolving_round,
 )
+from narrative_dynamics.abm.evolving_metrics import (
+    EvolvingSystemMetrics,
+    measure_evolving_system,
+)
 
 
 __all__ = (
@@ -170,4 +174,6 @@ __all__ = (
     "evolving_active_population_view",
     "simulate_evolving_round",
     "simulate_evolving_population",
+    "EvolvingSystemMetrics",
+    "measure_evolving_system",
 )

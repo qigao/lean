@@ -191,8 +191,8 @@ git commit -m "feat: run unified evolving network rounds"
 ```python
 def test_metrics_cover_membership_cognition_trust_and_structure():
     metrics = measure_evolving_system(model, state)
-    self.assertEqual(metrics.active_population, 2)
-    self.assertEqual(metrics.mean_active_belief, 1.0)
+    self.assertEqual(metrics.active_population, 3)
+    self.assertEqual(metrics.mean_active_belief, 2 / 3)
     self.assertEqual(metrics.mean_trust, 0.625)
     self.assertEqual(metrics.learned_edge_rate, 0.5)
     self.assertEqual(metrics.effective_active_edge_count, 2)
