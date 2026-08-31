@@ -102,7 +102,7 @@ class SituatedMemoryRecordTests(unittest.TestCase):
         )
 
         self.assertEqual(first.content_hash, reordered.content_hash)
-        self.assertNotEqual(first.content_hash, memory_record(active=False).content_hash)
+        self.assertNotEqual(first.content_hash, replace(first, active=False).content_hash)
 
     def test_record_rejects_mismatched_observer_identity(self):
         with self.assertRaisesRegex(ValueError, "memory id must equal observation id"):
