@@ -50,6 +50,7 @@ from narrative_dynamics.cross_dataset_release import (
     preflight_transfer_releases,
 )
 from narrative_dynamics.cross_dataset_authorization import AUTHORIZATION_HEADER
+from narrative_dynamics.cross_dataset_prediction import TransferRunProgress
 from narrative_dynamics.studies.feher_hare_measurement_validity_v1 import (
     FEHER_HARE_R3_LOCK_COMMIT,
     FeherHareMeasurementAnchor,
@@ -715,3 +716,77 @@ def authorization_comment(
     }
     values.update(overrides)
     return values
+
+
+def zero_shot_freeze():
+    from narrative_dynamics.cross_dataset_candidates import freeze_zero_shot_candidates
+
+    return freeze_zero_shot_candidates(r3_anchor(), new_source_lineage())
+
+
+def refit_freeze():
+    from narrative_dynamics.cross_dataset_candidates import freeze_refit_candidates
+
+    prepared, _backend = prepared_transfer()
+    return freeze_refit_candidates(
+        train=prepared.train,
+        selection=prepared.selection_validation,
+        evaluations=complete_36_point_evaluations(),
+        brier_loss_identity=digest("brier"),
+        builder_identities=builder_identities(),
+        simulation_identity=digest("simulation"),
+        tie_break_identity="lexical_parameters_v1",
+        target_spec_hash=digest("transfer-target-spec"),
+        split_manifest_hash=prepared.split_manifest.content_hash,
+    )
+
+
+def final_worker_projection(case_count: int = 4):
+    from narrative_dynamics.cross_dataset_capabilities import FinalWorkerProjection
+
+    return FinalWorkerProjection(
+        rows=synthetic_transfer_trials()[:case_count],
+        commitment_hash=digest(f"synthetic-final-commitment-{case_count}"),
+    )
+
+
+class RecordingTransferEvaluator:
+    def __init__(self, calls: list[tuple[object, ...]], *, invalid=None) -> None:
+        self.calls = calls
+        self.invalid = invalid
+        self.inputs: list[object] = []
+
+    def __call__(self, model_input, candidate, seed):
+        self.inputs.append(model_input)
+        key = (
+            model_input.case_token,
+            candidate.path,
+            candidate.family.value,
+            candidate.parameters,
+            seed,
+        )
+        self.calls.append(key)
+        if isinstance(self.invalid, BaseException):
+            raise self.invalid
+        if self.invalid is not None:
+            return self.invalid
+        return (0.4, 0.6)
+
+
+def recording_evaluator(calls: list[tuple[object, ...]], *, invalid=None):
+    return RecordingTransferEvaluator(calls, invalid=invalid)
+
+
+class RecordingProgress:
+    def __init__(self, calls: list[tuple[object, ...]]) -> None:
+        self.calls = calls
+        self.rows: list[TransferRunProgress] = []
+
+    def __call__(self, row: TransferRunProgress) -> None:
+        self.rows.append(row)
+        if row.completed_model_runs != len(self.calls):
+            raise AssertionError("progress was not persisted before the next run")
+
+
+def recording_progress(calls: list[tuple[object, ...]]) -> RecordingProgress:
+    return RecordingProgress(calls)
