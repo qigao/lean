@@ -85,6 +85,11 @@ from narrative_dynamics.abm.rewiring_metrics import (
     NetworkStructureMetrics,
     measure_network_structure,
 )
+from narrative_dynamics.abm.evolving_contracts import (
+    EvolvingNetworkModel,
+    EvolvingPopulationState,
+    initialize_evolving_population,
+)
 
 
 __all__ = (
@@ -150,4 +155,7 @@ __all__ = (
     "simulate_rewiring_population",
     "NetworkStructureMetrics",
     "measure_network_structure",
+    "EvolvingNetworkModel",
+    "EvolvingPopulationState",
+    "initialize_evolving_population",
 )
