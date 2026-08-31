@@ -260,15 +260,21 @@ def initialize_situated_percept_memory(
 ) -> SituatedPerceptMemoryIndexReport:
     try:
         with _transaction(database_path) as connection:
-            connection.executescript(_SCHEMA)
-            version = connection.execute(
-                "SELECT value FROM percept_memory_metadata WHERE key = 'schema_version'"
+            metadata_exists = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' "
+                "AND name = 'percept_memory_metadata'"
             ).fetchone()
-            if version is None or version["value"] != _SCHEMA_VERSION:
-                actual = "missing" if version is None else version["value"]
-                raise RuntimeError(
-                    f"unsupported situated percept memory schema version {actual}"
-                )
+            if metadata_exists is not None:
+                version = connection.execute(
+                    "SELECT value FROM percept_memory_metadata "
+                    "WHERE key = 'schema_version'"
+                ).fetchone()
+                if version is None or version["value"] != _SCHEMA_VERSION:
+                    actual = "missing" if version is None else version["value"]
+                    raise RuntimeError(
+                        f"unsupported situated percept memory schema version {actual}"
+                    )
+            connection.executescript(_SCHEMA)
             count = connection.execute(
                 "SELECT COUNT(*) AS count FROM percept_memory_records"
             ).fetchone()["count"]

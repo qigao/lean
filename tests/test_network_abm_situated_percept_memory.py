@@ -193,6 +193,38 @@ class SituatedPerceptMemoryStorageTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
+    def test_incompatible_schema_is_rejected_before_database_modification(self) -> None:
+        connection = sqlite3.connect(self.database)
+        try:
+            connection.execute(
+                "CREATE TABLE percept_memory_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+            )
+            connection.execute(
+                "INSERT INTO percept_memory_metadata(key, value) VALUES ('schema_version', '999')"
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        with self.assertRaisesRegex(RuntimeError, "schema version 999"):
+            initialize_situated_percept_memory(self.database)
+
+        connection = sqlite3.connect(self.database)
+        try:
+            tables = tuple(
+                item[0]
+                for item in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+                )
+            )
+            version = connection.execute(
+                "SELECT value FROM percept_memory_metadata WHERE key = 'schema_version'"
+            ).fetchone()[0]
+        finally:
+            connection.close()
+        self.assertEqual(tables, ("percept_memory_metadata",))
+        self.assertEqual(version, "999")
+
     def test_story_ingestion_persists_only_disclosed_private_fields(self) -> None:
         detected_model = perception_model()
         detected_story = private_story(detected_model, door_open=False)
