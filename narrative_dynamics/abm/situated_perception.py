@@ -9,12 +9,20 @@ from narrative_dynamics.abm.situated_contracts import (
     SituatedWorldState,
     validate_situated_state,
 )
+from narrative_dynamics.abm.situated import (
+    ObservationChannel,
+    SituatedActionKind,
+    SituatedRoundResult,
+)
 from narrative_dynamics.abm.situated_perception_contracts import (
     SituatedEdgeActivation,
     SituatedPerceptionEdge,
     SituatedPerceptionLayer,
     SituatedPerceptionModel,
     SituatedPerceptionReach,
+    SituatedPercept,
+    SituatedPerceptFidelity,
+    SituatedPerceptualProjection,
 )
 
 
@@ -133,7 +141,133 @@ def can_situated_agents_interact(
     )
 
 
+def project_situated_percepts(
+    model: SituatedPerceptionModel,
+    round_result: SituatedRoundResult,
+) -> SituatedPerceptualProjection:
+    """Project one resolved round into private, sanitized actor percepts."""
+
+    if not isinstance(round_result, SituatedRoundResult):
+        raise TypeError("situated percept projection requires SituatedRoundResult")
+    _validate_inputs(model, round_result.prior_state)
+    _validate_inputs(model, round_result.next_state)
+
+    percepts = []
+    bodies = {item.agent_id: item for item in round_result.prior_state.agents}
+    profiles = {item.agent_id: item for item in model.agent_profiles}
+    signals = {item.kind: item for item in model.signal_profiles}
+    reaches = {
+        place_id: derive_situated_perception_reach(
+            model,
+            round_result.prior_state,
+            source_place_id=place_id,
+        )
+        for place_id in {item.place_id for item in round_result.events}
+    }
+    for event in round_result.events:
+        channel = (
+            ObservationChannel.INSPECTION
+            if event.kind is SituatedActionKind.INSPECT
+            else ObservationChannel.SELF
+        )
+        percepts.append(SituatedPercept(
+            percept_id=f"{event.event_id}:p:{event.actor_agent_id}",
+            round_index=event.round_index,
+            agent_id=event.actor_agent_id,
+            source_event_id=event.event_id,
+            source_event_hash=event.content_hash,
+            channels=(channel,),
+            fidelity=SituatedPerceptFidelity.EXACT,
+            actor_agent_id=event.actor_agent_id,
+            kind=event.kind,
+            place_id=event.place_id,
+            outcome=event.outcome,
+            details=event.details,
+        ))
+        signal = signals.get(event.kind)
+        if signal is None:
+            continue
+        reach = reaches[event.place_id]
+        for agent_id in sorted(bodies):
+            if agent_id == event.actor_agent_id:
+                continue
+            profile = profiles[agent_id]
+            observer_place_id = bodies[agent_id].place_id
+            visual_cost = reach.visual_costs.get(observer_place_id)
+            visible = (
+                signal.visually_observable
+                and visual_cost is not None
+                and visual_cost <= profile.max_visual_cost
+            )
+            auditory_loss = reach.auditory_losses.get(observer_place_id)
+            received_sound = (
+                None
+                if signal.auditory_intensity is None or auditory_loss is None
+                else signal.auditory_intensity - auditory_loss
+            )
+            clear = (
+                received_sound is not None
+                and received_sound >= profile.minimum_clear_sound
+            )
+            detected = (
+                received_sound is not None
+                and received_sound >= profile.minimum_detectable_sound
+            )
+            channels = tuple(
+                channel
+                for channel, accessible in (
+                    (ObservationChannel.VISUAL, visible),
+                    (ObservationChannel.AUDITORY, detected),
+                )
+                if accessible
+            )
+            if clear:
+                fidelity = SituatedPerceptFidelity.EXACT
+            elif visible:
+                fidelity = SituatedPerceptFidelity.IDENTIFIED
+            elif detected:
+                fidelity = SituatedPerceptFidelity.DETECTED
+            else:
+                continue
+            percepts.append(SituatedPercept(
+                percept_id=f"{event.event_id}:p:{agent_id}",
+                round_index=event.round_index,
+                agent_id=agent_id,
+                source_event_id=event.event_id,
+                source_event_hash=event.content_hash,
+                channels=channels,
+                fidelity=fidelity,
+                actor_agent_id=event.actor_agent_id if fidelity is not SituatedPerceptFidelity.DETECTED else None,
+                kind=event.kind if fidelity is not SituatedPerceptFidelity.DETECTED else None,
+                place_id=event.place_id if fidelity is not SituatedPerceptFidelity.DETECTED else None,
+                outcome=event.outcome if fidelity is SituatedPerceptFidelity.EXACT else None,
+                details=event.details if fidelity is SituatedPerceptFidelity.EXACT else (),
+            ))
+    return SituatedPerceptualProjection(
+        model_id=model.model_id,
+        model_hash=model.content_hash,
+        prior_state_hash=round_result.prior_state.content_hash,
+        round_result_hash=round_result.content_hash,
+        percepts=tuple(percepts),
+    )
+
+
+def percepts_for_agent(
+    projection: SituatedPerceptualProjection,
+    agent_id: str,
+) -> tuple[SituatedPercept, ...]:
+    """Return the canonical percept sequence addressed to one agent."""
+
+    if not isinstance(projection, SituatedPerceptualProjection):
+        raise TypeError("situated percept query requires SituatedPerceptualProjection")
+    if not isinstance(agent_id, str) or not agent_id.strip():
+        raise ValueError("situated percept query agent id must be a non-empty string")
+    return tuple(item for item in projection.percepts if item.agent_id == agent_id)
+
+
 __all__ = (
     "derive_situated_perception_reach",
     "can_situated_agents_interact",
+    "project_situated_percepts",
+    "percepts_for_agent",
 )
