@@ -217,6 +217,7 @@ class SituatedPerceptMemoryRecallTests(unittest.TestCase):
         self.assertEqual(len(recalled.admissions), 1)
         self.assertEqual(recalled.admissions[0].source_trust, 0.5)
         self.assertEqual(recalled.admissions[0].evidence_weight, 0.5)
+        self.assertIsNone(recalled.admissions[0].lexical_rank)
         self.assertGreater(recalled.next_mind.belief.probabilities["approved"], 0.5)
         self.assertLess(recalled.next_mind.belief.probabilities["approved"], 0.9)
 

@@ -223,7 +223,7 @@ def _insert_values(memory: SituatedPerceptMemoryRecord) -> tuple[object, ...]:
 
 
 def _row_to_memory(row: sqlite3.Row) -> SituatedPerceptMemoryRecord:
-    return SituatedPerceptMemoryRecord(
+    memory = SituatedPerceptMemoryRecord(
         memory_id=row["memory_id"],
         agent_id=row["agent_id"],
         percept_id=row["percept_id"],
@@ -253,6 +253,11 @@ def _row_to_memory(row: sqlite3.Row) -> SituatedPerceptMemoryRecord:
         summary=row["summary"],
         active=bool(row["active"]),
     )
+    if row["source_hash"] != _source_hash(memory):
+        raise SituatedPerceptMemoryConflictError(
+            "percept memory row failed source integrity verification"
+        )
+    return memory
 
 
 def initialize_situated_percept_memory(
@@ -375,13 +380,14 @@ def ingest_situated_percept_story(
         with _transaction(database_path) as connection:
             for memory in memories:
                 row = connection.execute(
-                    "SELECT source_hash FROM percept_memory_records "
+                    "SELECT * FROM percept_memory_records "
                     "WHERE agent_id = ? AND percept_id = ?",
                     (memory.agent_id, memory.percept_id),
                 ).fetchone()
                 source_hash = _source_hash(memory)
                 if row is not None:
-                    if row["source_hash"] != source_hash:
+                    stored = _row_to_memory(row)
+                    if _source_hash(stored) != source_hash:
                         raise SituatedPerceptMemoryConflictError(
                             "percept memory identity has conflicting private content"
                         )
@@ -570,12 +576,15 @@ def rebuild_situated_percept_memory_index(
     initialize_situated_percept_memory(database_path)
     try:
         with _transaction(database_path) as connection:
+            rows = connection.execute(
+                "SELECT * FROM percept_memory_records"
+            ).fetchall()
+            for row in rows:
+                _row_to_memory(row)
             connection.execute(
                 "INSERT INTO percept_memory_fts(percept_memory_fts) VALUES ('rebuild')"
             )
-            count = connection.execute(
-                "SELECT COUNT(*) AS count FROM percept_memory_records"
-            ).fetchone()["count"]
+            count = len(rows)
     except sqlite3.Error as error:
         raise SituatedPerceptMemoryStorageError(
             "failed to rebuild situated percept memory index"

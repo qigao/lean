@@ -441,7 +441,7 @@ def recall_situated_percept_memories(
             memory.confidence,
             memory.salience,
             weight,
-            hit.lexical_rank,
+            None,
             prior,
             posterior,
             trust,

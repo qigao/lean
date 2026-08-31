@@ -317,6 +317,48 @@ class SituatedPerceptMemoryStorageTests(unittest.TestCase):
                 "bob",
             )
 
+    def test_tampered_authoritative_row_is_rejected_by_every_read_path(self) -> None:
+        model = perception_model()
+        story = private_story(model, door_open=False)
+        ingest_situated_percept_story(self.database, model, story, "bob")
+        detected = next(
+            item
+            for item in list_situated_percept_memories(self.database, "bob")
+            if item.fidelity is SituatedPerceptFidelity.DETECTED
+        )
+        connection = sqlite3.connect(self.database)
+        try:
+            connection.execute(
+                "UPDATE percept_memory_records SET summary = ?, confidence = 1.0 "
+                "WHERE agent_id = ? AND percept_id = ?",
+                (SECRET, "bob", detected.percept_id),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        operations = (
+            lambda: list_situated_percept_memories(self.database, "bob"),
+            lambda: search_situated_percept_memories(
+                self.database,
+                SituatedPerceptMemoryQuery("bob", text=SECRET),
+            ),
+            lambda: ingest_situated_percept_story(
+                self.database, model, story, "bob"
+            ),
+            lambda: set_situated_percept_memory_active(
+                self.database, "bob", detected.memory_id, False
+            ),
+            lambda: rebuild_situated_percept_memory_index(self.database),
+        )
+        for operation in operations:
+            with self.subTest(operation=operation):
+                with self.assertRaisesRegex(
+                    SituatedPerceptMemoryConflictError,
+                    "integrity",
+                ):
+                    operation()
+
     def test_percept_tables_coexist_without_mutating_legacy_memory_rows(self) -> None:
         initialize_situated_memory(self.database)
         model = perception_model()
