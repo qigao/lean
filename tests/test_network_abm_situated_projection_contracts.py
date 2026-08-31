@@ -298,6 +298,45 @@ class NarrativeProjectionContractTests(unittest.TestCase):
             with self.subTest(scene=inconsistent_scene), self.assertRaisesRegex(ValueError, "scene.*match"):
                 NarrativeProjection(HASH_A, None, POLICY, (selected_beat,), (inconsistent_scene,), valid_cut)
 
+    def test_authored_policy_rejects_cut_scene_order_that_differs_from_event_order(self):
+        authored_policy = NarrativeProjectionPolicy(
+            "flashback", "1.0", NarrativeAuthority.OBJECTIVE,
+            temporal_order=NarrativeTemporalOrder.AUTHORED,
+            authored_event_order=("event-2", "event-1"),
+        )
+        event_one = beat("beat-1", source_event_id="event-1", round_index=1)
+        event_two = beat("beat-2", source_event_id="event-2", round_index=2)
+        with self.assertRaisesRegex(ValueError, "authored.*order"):
+            NarrativeProjection(
+                HASH_A, None, authored_policy, (event_one, event_two),
+                (
+                    NarrativeScene("scene-1", ("beat-1",), 1, 1, "office", None),
+                    NarrativeScene("scene-2", ("beat-2",), 2, 2, "office", None),
+                ),
+                NarrativeCut("cut-1", ("scene-1", "scene-2"), (entitlement(),)),
+            )
+
+    def test_authored_policy_rejects_noncontiguous_repeated_source_event_groups(self):
+        authored_policy = NarrativeProjectionPolicy(
+            "flashback", "1.0", NarrativeAuthority.OBJECTIVE,
+            temporal_order=NarrativeTemporalOrder.AUTHORED,
+            authored_event_order=("event-1", "event-2"),
+        )
+        first_event_one = beat("beat-1", source_event_id="event-1", round_index=1)
+        event_two = beat("beat-2", source_event_id="event-2", round_index=2)
+        second_event_one = beat("beat-3", source_event_id="event-1", round_index=3)
+        with self.assertRaisesRegex(ValueError, "authored.*contiguous"):
+            NarrativeProjection(
+                HASH_A, None, authored_policy,
+                (first_event_one, event_two, second_event_one),
+                (
+                    NarrativeScene("scene-1", ("beat-1",), 1, 1, "office", None),
+                    NarrativeScene("scene-2", ("beat-2",), 2, 2, "office", None),
+                    NarrativeScene("scene-3", ("beat-3",), 3, 3, "office", None),
+                ),
+                NarrativeCut("cut-1", ("scene-1", "scene-2", "scene-3"), (entitlement(),)),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -447,12 +447,6 @@ class NarrativeProjection:
             raise TypeError("narrative projection cut must be NarrativeCut")
         beat_map = {item.beat_id: item for item in self.beats}
         entitlement_map = {item.entitlement_id: item for item in self.cut.entitlements}
-        if self.policy.temporal_order is NarrativeTemporalOrder.AUTHORED:
-            source_event_ids = tuple(item.source_event_id for item in self.beats)
-            if any(item is None for item in source_event_ids):
-                raise ValueError("authored narrative projections require every beat to bind a source event")
-            if set(source_event_ids) != set(self.policy.authored_event_order):
-                raise ValueError("authored narrative projection source events must exactly match authored event order")
         for item in self.beats:
             missing_causes = set(item.cause_beat_ids).difference(beat_map)
             if missing_causes:
@@ -494,6 +488,29 @@ class NarrativeProjection:
             cut_membership[scene_id] += 1
         if any(count != 1 for count in cut_membership.values()):
             raise ValueError("every narrative scene must occur in exactly one cut")
+        if self.policy.temporal_order is NarrativeTemporalOrder.AUTHORED:
+            presentation_beats = tuple(
+                beat_map[beat_id]
+                for scene_id in self.cut.scene_ids
+                for beat_id in scene_map[scene_id].beat_ids
+            )
+            source_event_ids = tuple(item.source_event_id for item in presentation_beats)
+            if any(item is None for item in source_event_ids):
+                raise ValueError("authored narrative projections require every beat to bind a source event")
+            derived_order: list[str] = []
+            seen_source_events: set[str] = set()
+            previous_source_event: str | None = None
+            for source_event_id in source_event_ids:
+                assert source_event_id is not None
+                if source_event_id == previous_source_event:
+                    continue
+                if source_event_id in seen_source_events:
+                    raise ValueError("authored narrative projection source event groups must be contiguous")
+                seen_source_events.add(source_event_id)
+                derived_order.append(source_event_id)
+                previous_source_event = source_event_id
+            if tuple(derived_order) != self.policy.authored_event_order:
+                raise ValueError("authored narrative projection source event order must match authored event order")
         self._validate_authority(entitlement_map)
 
     def _validate_authority(self, entitlement_map: Mapping[str, NarrativeEntitlement]) -> None:
