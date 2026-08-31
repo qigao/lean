@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import hashlib
 import json
 from pathlib import Path
@@ -826,10 +827,28 @@ def carry_forward_statuses(
 
 
 def valid_negative_scoring_input() -> dict[str, object]:
-    brier, log = sibling_releases()
+    artifact = sealed_prediction_artifact((0.4, 0.6))
+    baseline = fit_train_base_rate(train_projection())
+    original_brier, original_log = sibling_releases()
+    brier = TransferScoreRelease.create(
+        replace(
+            original_brier.protocol,
+            baseline_hash=baseline.content_hash,
+            final_commitment_hash=artifact.final_commitment_hash,
+        ),
+        release_receipt_hash=original_brier.release_receipt_hash,
+    )
+    log = TransferScoreRelease.create(
+        replace(
+            original_log.protocol,
+            baseline_hash=baseline.content_hash,
+            final_commitment_hash=artifact.final_commitment_hash,
+        ),
+        release_receipt_hash=original_log.release_receipt_hash,
+    )
     return {
-        "artifact": sealed_prediction_artifact((0.4, 0.6)),
-        "baseline": fit_train_base_rate(train_projection()),
+        "artifact": artifact,
+        "baseline": baseline,
         "brier_release": brier,
         "log_release": log,
         "semantic_invariance_receipt_hash": digest("semantic-invariance"),
