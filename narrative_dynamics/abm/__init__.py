@@ -9,6 +9,13 @@ from narrative_dynamics.abm.contracts import (
     SocialNetwork,
     initialize_population,
 )
+from narrative_dynamics.abm.simulation import (
+    InformationTransmission,
+    NetworkRoundResult,
+    PopulationTrajectory,
+    simulate_population,
+    simulate_round,
+)
 
 
 __all__ = (
@@ -19,4 +26,9 @@ __all__ = (
     "NetworkAgentState",
     "PopulationState",
     "initialize_population",
+    "InformationTransmission",
+    "NetworkRoundResult",
+    "PopulationTrajectory",
+    "simulate_round",
+    "simulate_population",
 )
