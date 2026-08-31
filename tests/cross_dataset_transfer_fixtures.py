@@ -18,6 +18,11 @@ from narrative_dynamics.cross_dataset_source import (
     SemanticRelabeling,
     SemanticStageReceipt,
 )
+from narrative_dynamics.cross_dataset_privacy import (
+    PrivateParticipant,
+    RestrictedStudySecret,
+    assign_participant_roles,
+)
 
 
 def digest(label: str) -> str:
@@ -316,3 +321,27 @@ def same_prechoice_different_postchoice_rows() -> tuple[dict[str, object], dict[
         "reward": 0,
     }
     return original, mutated
+
+
+def synthetic_stratified_participants(
+    counts: tuple[int, ...] = (10, 15),
+) -> tuple[PrivateParticipant, ...]:
+    return tuple(
+        PrivateParticipant(
+            participant_id=f"private-s{stratum_index}-p{participant_index:03d}",
+            source_stratum=f"s{stratum_index}",
+        )
+        for stratum_index, count in enumerate(counts)
+        for participant_index in range(count)
+    )
+
+
+def assigned_split():
+    secret = RestrictedStudySecret.from_bytes(bytes(range(32)))
+    return assign_participant_roles(
+        namespace="cross-dataset-transfer-v1",
+        source_snapshot_hash=digest("snapshot"),
+        participants=synthetic_stratified_participants(),
+        secret=secret,
+        transform_attestation_hash=digest("transform-attestation"),
+    )
