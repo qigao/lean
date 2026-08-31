@@ -73,6 +73,14 @@ from narrative_dynamics.abm.rewiring_contracts import (
     RewiringPopulationState,
     initialize_rewiring_population,
 )
+from narrative_dynamics.abm.rewiring import (
+    EdgeRewiringUpdate,
+    RewiringRoundResult,
+    RewiringTrajectory,
+    rewiring_population_view,
+    simulate_rewiring_population,
+    simulate_rewiring_round,
+)
 
 
 __all__ = (
@@ -130,4 +138,10 @@ __all__ = (
     "EdgeTopologyState",
     "RewiringPopulationState",
     "initialize_rewiring_population",
+    "EdgeRewiringUpdate",
+    "RewiringRoundResult",
+    "RewiringTrajectory",
+    "rewiring_population_view",
+    "simulate_rewiring_round",
+    "simulate_rewiring_population",
 )
