@@ -135,6 +135,11 @@ from narrative_dynamics.abm.roles import (
     simulate_dynamic_role_population,
     simulate_dynamic_role_round,
 )
+from narrative_dynamics.abm.role_metrics import (
+    RoleDynamicsMetrics,
+    RolePopulationCount,
+    measure_role_dynamics,
+)
 
 
 __all__ = (
@@ -234,4 +239,7 @@ __all__ = (
     "DynamicRoleTrajectory",
     "simulate_dynamic_role_round",
     "simulate_dynamic_role_population",
+    "RolePopulationCount",
+    "RoleDynamicsMetrics",
+    "measure_role_dynamics",
 )

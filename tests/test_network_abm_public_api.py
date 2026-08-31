@@ -104,6 +104,9 @@ class NetworkABMPublicAPITests(unittest.TestCase):
                 "DynamicRoleTrajectory",
                 "simulate_dynamic_role_round",
                 "simulate_dynamic_role_population",
+                "RolePopulationCount",
+                "RoleDynamicsMetrics",
+                "measure_role_dynamics",
             },
         )
         for name in abm.__all__:

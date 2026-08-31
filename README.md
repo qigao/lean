@@ -406,6 +406,124 @@ assert metrics.verification_count == 1
 assert metrics.active_sharing_count == 2
 ```
 
+### Dynamic roles V7
+
+Roles can evolve from each agent's own post-round belief, action history, and
+time in its current role. The old role governs the complete current round; a
+matched transition is auditable and changes policy lookup only in later rounds.
+Changing role never replenishes the agent's finite verification budget.
+
+```python
+from narrative_dynamics.abm import (
+    AutonomousNetworkModel,
+    DynamicRoleModel,
+    EdgeSelector,
+    EvolvingNetworkModel,
+    LifecycleEventKind,
+    NetworkABMModel,
+    NetworkAgentSpec,
+    PopulationLifecycleEvent,
+    RoleDecisionPolicy,
+    RoleTransitionRule,
+    SocialEdge,
+    SocialNetwork,
+    TruthObservation,
+    initialize_dynamic_role_population,
+    measure_role_dynamics,
+    simulate_dynamic_role_round,
+)
+
+catalog = NetworkABMModel(
+    "role-catalog",
+    "1",
+    (
+        NetworkAgentSpec("a", "source", 1.0, 0.5, 0.5),
+        NetworkAgentSpec("b", "relay", 1.0, 0.5, 0.5),
+        NetworkAgentSpec("c", "recipient", 1.0, 0.5, 0.5),
+    ),
+    SocialNetwork(
+        ("a", "b", "c"),
+        (
+            SocialEdge("a", "b", "peer", 1.0, active=True),
+            SocialEdge("b", "c", "peer", 1.0, active=False),
+        ),
+    ),
+)
+evolving = EvolvingNetworkModel(
+    "role-evolution",
+    "1",
+    catalog,
+    initial_active_agent_ids=("a", "c"),
+    learning_rate=0.5,
+    initial_trust=0.5,
+    dissolution_similarity=0.2,
+    formation_similarity=0.8,
+)
+autonomy = AutonomousNetworkModel(
+    "role-autonomy",
+    "1",
+    evolving,
+    (
+        RoleDecisionPolicy("source", True, 0.5, 0.4, None, 1),
+        RoleDecisionPolicy("relay", True, 0.5, 0.6, 0.2, 2),
+        RoleDecisionPolicy("recipient", False, 0.5, 0.6, 0.2, 1),
+    ),
+)
+roles = DynamicRoleModel(
+    "endogenous-roles",
+    "1",
+    autonomy,
+    (
+        RoleTransitionRule(
+            "relay",
+            "source",
+            priority=0,
+            minimum_belief=0.5,
+            minimum_rounds_in_role=1,
+            minimum_verification_count=1,
+        ),
+    ),
+)
+initial = initialize_dynamic_role_population(
+    roles,
+    beliefs={"a": 1.0, "c": 0.5},
+)
+first = simulate_dynamic_role_round(
+    roles,
+    initial,
+    environment_events=(
+        PopulationLifecycleEvent("b", LifecycleEventKind.ENTER),
+    ),
+    truth_observations=(
+        TruthObservation(EdgeSelector("a", "b", "peer"), 1.0),
+    ),
+)
+transition = next(item for item in first.transitions if item.agent_id == "b")
+relay_resource = next(
+    item for item in first.next_state.autonomy_state.agents if item.agent_id == "b"
+)
+second = simulate_dynamic_role_round(
+    roles,
+    first.next_state,
+    truth_observations=(
+        TruthObservation(EdgeSelector("b", "c", "peer"), 1.0),
+    ),
+)
+next_intent = next(
+    item for item in second.autonomy_result.intents if item.agent_id == "b"
+)
+metrics = measure_role_dynamics(roles, first.next_state)
+source_count = next(
+    item.count for item in metrics.active_role_counts if item.role == "source"
+)
+assert transition.from_role == "relay"
+assert transition.to_role == "source"
+assert relay_resource.remaining_verification_budget == 1
+assert next_intent.role == "source"
+assert metrics.transition_count == 1
+assert source_count == 2
+```
+
 ## Verification
 
 GitHub Actions runs:
