@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 
 from narrative_dynamics.cross_dataset_search import (
     DatasetCandidateCatalog,
@@ -36,6 +37,11 @@ from narrative_dynamics.cross_dataset_candidates import (
     TransferFamily,
 )
 from narrative_dynamics.cross_dataset_inference import _ParticipantLossBlock
+from narrative_dynamics.cross_dataset_ledger import (
+    GitTransferAttemptStore,
+    TransferAttemptEvent,
+    TransferAttemptEventType,
+)
 from narrative_dynamics.studies.feher_hare_measurement_validity_v1 import (
     FEHER_HARE_R3_LOCK_COMMIT,
     FeherHareMeasurementAnchor,
@@ -564,4 +570,63 @@ def participant_blocks(
             losses=(value,),
         )
         for index, value in enumerate(means)
+    )
+
+
+def local_git_attempt_store(root: Path) -> GitTransferAttemptStore:
+    remote = root / "attempt-ledger.git"
+    if not remote.exists():
+        subprocess.run(
+            ("git", "init", "--bare", str(remote)),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    client_index = len(tuple(root.glob("ledger-client-*")))
+    return GitTransferAttemptStore(
+        remote=remote,
+        workspace=root / f"ledger-client-{client_index}",
+    )
+
+
+def two_git_store_clients(
+    root: Path,
+) -> tuple[GitTransferAttemptStore, GitTransferAttemptStore]:
+    first = local_git_attempt_store(root)
+    second = local_git_attempt_store(root)
+    return first, second
+
+
+def attempt_event(
+    event_type: TransferAttemptEventType,
+    *,
+    parent: str,
+    **details: object,
+) -> TransferAttemptEvent:
+    return TransferAttemptEvent.create(
+        event_type=event_type,
+        parent_ledger_head=parent,
+        scientific_revision="a" * 40,
+        attempt_id="attempt-synthetic-v1",
+        timestamp_utc="2026-08-30T12:00:00Z",
+        repository_receipt_hash=digest("repository-receipt"),
+        run_receipt_hash=digest("run-receipt"),
+        job_receipt_hash=digest("job-receipt"),
+        details=details,
+    )
+
+
+def final_started_event(*, parent: str) -> TransferAttemptEvent:
+    return attempt_event(
+        TransferAttemptEventType.FINAL_STARTED,
+        parent=parent,
+        authorization_receipt_hash=digest("authorization-receipt"),
+    )
+
+
+def failure_event(*, parent: str) -> TransferAttemptEvent:
+    return attempt_event(
+        TransferAttemptEventType.REVISION_REQUIRED,
+        parent=parent,
+        failure_class="SCHEMA",
     )
