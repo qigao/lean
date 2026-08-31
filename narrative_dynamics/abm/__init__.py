@@ -231,6 +231,27 @@ from narrative_dynamics.abm.situated_cognition import (
     simulate_situated_cognition,
     simulate_situated_cognitive_round,
 )
+from narrative_dynamics.abm.situated_memory_contracts import (
+    MemoryChannelPolicy,
+    SituatedMemoryIndexReport,
+    SituatedMemoryPolicy,
+    SituatedMemoryQuery,
+    SituatedMemoryRecord,
+    SituatedMemorySearchHit,
+    SituatedMemoryWriteReport,
+    standard_situated_memory_policy,
+)
+from narrative_dynamics.abm.situated_memory import (
+    SituatedMemoryConflictError,
+    SituatedMemoryStorageError,
+    ingest_situated_memory,
+    ingest_situated_story,
+    initialize_situated_memory,
+    list_situated_memories,
+    rebuild_situated_memory_index,
+    search_situated_memories,
+    set_situated_memory_active,
+)
 
 
 __all__ = (
@@ -408,4 +429,21 @@ __all__ = (
     "simulate_situated_cognitive_round",
     "explain_situated_decision",
     "simulate_situated_cognition",
+    "MemoryChannelPolicy",
+    "SituatedMemoryPolicy",
+    "SituatedMemoryRecord",
+    "SituatedMemoryQuery",
+    "SituatedMemorySearchHit",
+    "SituatedMemoryWriteReport",
+    "SituatedMemoryIndexReport",
+    "standard_situated_memory_policy",
+    "SituatedMemoryStorageError",
+    "SituatedMemoryConflictError",
+    "initialize_situated_memory",
+    "ingest_situated_memory",
+    "ingest_situated_story",
+    "list_situated_memories",
+    "search_situated_memories",
+    "set_situated_memory_active",
+    "rebuild_situated_memory_index",
 )

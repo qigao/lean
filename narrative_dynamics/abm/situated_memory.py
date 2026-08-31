@@ -12,10 +12,17 @@ from narrative_dynamics.abm.situated import ObservationChannel, SituatedActionKi
 from narrative_dynamics.abm.situated_contracts import EvidenceFact
 from narrative_dynamics.abm.situated_memory_contracts import (
     SituatedMemoryIndexReport,
+    SituatedMemoryPolicy,
     SituatedMemoryQuery,
     SituatedMemoryRecord,
     SituatedMemorySearchHit,
     SituatedMemoryWriteReport,
+    standard_situated_memory_policy,
+)
+from narrative_dynamics.abm.situated_story import (
+    SituatedPerspectiveEvent,
+    SituatedStory,
+    perspective_timeline,
 )
 
 
@@ -278,6 +285,74 @@ def ingest_situated_memory(
     return SituatedMemoryWriteReport(agent_id, inserted, existing, ids)
 
 
+def _perspective_summary(item: SituatedPerspectiveEvent) -> str:
+    event = item.event
+    parts = [
+        f"round {event.round_index}",
+        event.actor_agent_id,
+        event.kind.value,
+        f"at {event.place_id}",
+    ]
+    if event.target_id is not None:
+        parts.append(f"target {event.target_id}")
+    parts.extend(("success" if event.success else "failed", f"outcome {event.outcome}"))
+    parts.extend(f"{detail.name} {detail.value}" for detail in event.details)
+    return "; ".join(parts)
+
+
+def _perspective_memory(
+    story: SituatedStory,
+    item: SituatedPerspectiveEvent,
+    policy: SituatedMemoryPolicy,
+) -> SituatedMemoryRecord:
+    event = item.event
+    observation = item.observation
+    attribution = policy.for_channel(observation.channel)
+    return SituatedMemoryRecord(
+        memory_id=observation.observation_id,
+        agent_id=observation.agent_id,
+        observation_id=observation.observation_id,
+        story_model_id=story.model_id,
+        story_model_hash=story.model_hash,
+        event_id=event.event_id,
+        event_hash=event.content_hash,
+        round_index=event.round_index,
+        sequence=event.sequence,
+        action_id=event.action_id,
+        kind=event.kind,
+        actor_agent_id=event.actor_agent_id,
+        place_id=event.place_id,
+        target_id=event.target_id,
+        success=event.success,
+        outcome=event.outcome,
+        details=event.details,
+        cause_event_ids=event.cause_event_ids,
+        channel=observation.channel,
+        confidence=attribution.confidence,
+        salience=attribution.salience,
+        policy_hash=policy.content_hash,
+        summary=_perspective_summary(item),
+    )
+
+
+def ingest_situated_story(
+    database_path: str | Path,
+    story: SituatedStory,
+    agent_id: str,
+    policy: SituatedMemoryPolicy | None = None,
+) -> SituatedMemoryWriteReport:
+    """Persist only the observations available in one agent's story perspective."""
+
+    if not isinstance(story, SituatedStory):
+        raise TypeError("situated memory story ingestion requires a SituatedStory")
+    selected_policy = standard_situated_memory_policy() if policy is None else policy
+    if not isinstance(selected_policy, SituatedMemoryPolicy):
+        raise TypeError("situated memory story ingestion policy must be SituatedMemoryPolicy")
+    perspective = perspective_timeline(story, agent_id)
+    memories = tuple(_perspective_memory(story, item, selected_policy) for item in perspective)
+    return ingest_situated_memory(database_path, agent_id, memories)
+
+
 def list_situated_memories(
     database_path: str | Path,
     agent_id: str,
@@ -429,6 +504,7 @@ __all__ = (
     "SituatedMemoryConflictError",
     "initialize_situated_memory",
     "ingest_situated_memory",
+    "ingest_situated_story",
     "list_situated_memories",
     "search_situated_memories",
     "set_situated_memory_active",

@@ -1071,6 +1071,89 @@ assert tuple(
 ) == ("inspect", "tell", "tell")
 ```
 
+### Agent-private long-term memory V12
+
+V12 can persist those private perspectives across process restarts. Ordinary SQLite
+rows retain the structured event provenance; FTS5 is only a rebuildable text index.
+Every ingestion and query is explicitly scoped to one agent.
+
+```python
+from tempfile import TemporaryDirectory
+
+from narrative_dynamics.abm import (
+    EmbodiedAgentSpec,
+    EvidenceFact,
+    PlaceSpec,
+    SituatedActionIntent,
+    SituatedActionKind,
+    SituatedMemoryQuery,
+    SituatedWorldModel,
+    WorldObjectSpec,
+    advance_situated_story,
+    ingest_situated_story,
+    initialize_situated_story,
+    initialize_situated_world,
+    search_situated_memories,
+)
+
+world = SituatedWorldModel(
+    "memory-office",
+    "1",
+    (PlaceSpec("records", "Records"), PlaceSpec("manager", "Manager office")),
+    (),
+    (
+        EmbodiedAgentSpec("alice", "analyst", "records", 1),
+        EmbodiedAgentSpec("bob", "engineer", "records", 1),
+        EmbodiedAgentSpec("dana", "manager", "manager", 1),
+    ),
+    (WorldObjectSpec(
+        "memo", "official memo", "records", False,
+        (EvidenceFact("restructuring", "approved"),),
+    ),),
+)
+story = initialize_situated_story(world, initialize_situated_world(world))
+story = advance_situated_story(world, story, (
+    SituatedActionIntent(
+        "inspect-memo", "alice", SituatedActionKind.INSPECT, "memo"
+    ),
+))
+inspection = next(
+    event for event in story.rounds[-1].events if event.actor_agent_id == "alice"
+)
+story = advance_situated_story(world, story, (
+    SituatedActionIntent(
+        "tell-bob",
+        "alice",
+        SituatedActionKind.TELL,
+        message="The restructuring is approved.",
+        source_event_ids=(inspection.event_id,),
+    ),
+))
+
+with TemporaryDirectory() as temporary:
+    database = f"{temporary}/memories.sqlite3"
+    for agent_id in ("alice", "bob", "dana"):
+        ingest_situated_story(database, story, agent_id)
+
+    alice = search_situated_memories(
+        database, SituatedMemoryQuery("alice", text="restructuring")
+    )
+    bob = search_situated_memories(
+        database, SituatedMemoryQuery("bob", text="restructuring")
+    )
+    dana = search_situated_memories(
+        database, SituatedMemoryQuery("dana", text="restructuring")
+    )
+    assert inspection.event_id in {hit.memory.event_id for hit in alice}
+    assert inspection.event_id not in {hit.memory.event_id for hit in bob}
+    assert len(bob) == 1  # Bob remembers Alice's audible telling.
+    assert dana == ()     # Dana observed neither event.
+```
+
+V12 deliberately does not feed retrieved rows back into cognition. V13 will add
+agent-private RAG so an early memory can influence a later belief and POMDP choice;
+V14 will add consolidation, contradiction handling, and relationship learning.
+
 ## Verification
 
 GitHub Actions runs:
