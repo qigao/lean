@@ -58,6 +58,9 @@ from narrative_dynamics.cross_dataset_prediction import TransferRunProgress
 from narrative_dynamics.cross_dataset_reporting import (
     CarryForwardSensitivityStatus,
 )
+from narrative_dynamics.studies.cross_dataset_transfer_locked_final import (
+    TransferFinalInfrastructureError,
+)
 from narrative_dynamics.studies.feher_hare_measurement_validity_v1 import (
     FEHER_HARE_R3_LOCK_COMMIT,
     FeherHareMeasurementAnchor,
@@ -857,4 +860,159 @@ def valid_negative_scoring_input() -> dict[str, object]:
         "task_condition_strata": ("s0", "synthetic-condition"),
         "participant_influence_hash": digest("participant-influence"),
         "forbidden_archive_values": ("private-p1", "private-p2"),
+    }
+
+
+class RecordingEvidenceSink:
+    def __init__(self, order: list[str], *, fail: bool = False) -> None:
+        self.order = order
+        self.fail = fail
+        self.snapshots: list[dict[str, object]] = []
+
+    def persist_aggregate_state(self, history) -> None:
+        self.order.append("evidence:persist")
+        if self.fail:
+            self.fail = False
+            raise RuntimeError("synthetic evidence persistence failure")
+        self.snapshots.append(
+            {
+                "final_started_count": history.final_started_count,
+                "final_projection_openings": history.final_projection_openings,
+                "completed_model_runs": history.completed_model_runs,
+                "prediction_artifact_hashes": history.prediction_artifact_hashes,
+                "score_artifact_hashes": history.score_artifact_hashes,
+                "terminal_count": history.terminal_count,
+            }
+        )
+
+
+def locked_final_inputs(
+    root: Path,
+    *,
+    order: list[str] | None = None,
+    fail_at: str | None = None,
+    infrastructure_failure: bool = True,
+    evidence_failure: bool = False,
+) -> dict[str, object]:
+    selected_order = [] if order is None else order
+    participants = synthetic_stratified_participants((5,))
+    secret = RestrictedStudySecret.from_bytes(bytes(range(32)))
+    role_index, split_manifest = assign_participant_roles(
+        namespace="locked-final-fixture",
+        source_snapshot_hash=digest("locked-snapshot"),
+        participants=participants,
+        secret=secret,
+        transform_attestation_hash=digest("locked-transform"),
+    )
+    trials = tuple(
+        CanonicalTransferTrial(
+            participant_key=participant.participant_id,
+            trial_id=1,
+            source_stratum=participant.source_stratum,
+            first_stage_action="action_1" if index % 2 else "action_0",
+            transition_common=True,
+            final_state="state_0",
+            second_stage_action="second_0",
+            reward=index % 2,
+            row_commitment=digest(f"locked-row-{index}"),
+        )
+        for index, participant in enumerate(participants)
+    )
+    prepared, backend = provision_transfer_capabilities(
+        source_identity_hash=digest("locked-source"),
+        trials=trials,
+        role_index=role_index,
+        split_manifest=split_manifest,
+    )
+    zero = zero_shot_freeze()
+    refit = refit_freeze()
+    baseline = fit_train_base_rate(prepared.train)
+    candidate_hashes = tuple(
+        row.content_hash for row in zero.candidates + refit.selected_candidates
+    )
+    shared: dict[str, object] = {
+        "scientific_revision": "a" * 40,
+        "source_identity_hash": prepared.source_identity_hash,
+        "transform_identity_hash": digest("locked-transform"),
+        "split_manifest_hash": prepared.split_manifest.content_hash,
+        "candidate_hashes": candidate_hashes,
+        "baseline_hash": baseline.content_hash,
+        "final_commitment_hash": prepared.final_commitment.content_hash,
+        "prediction_artifact_identity": digest("prediction-artifact-schema"),
+    }
+    brier = TransferScoreRelease.create(
+        build_transfer_protocol(
+            score=TransferScore.BRIER,
+            score_identity=digest("locked-brier-score"),
+            **shared,
+        ),
+        release_receipt_hash=digest("locked-brier-release"),
+    )
+    log = TransferScoreRelease.create(
+        build_transfer_protocol(
+            score=TransferScore.LOG,
+            score_identity=digest("locked-log-score"),
+            **shared,
+        ),
+        release_receipt_hash=digest("locked-log-release"),
+    )
+    store = local_git_attempt_store(root)
+    preflight = preflight_transfer_releases(
+        brier,
+        log,
+        store=store,
+        completed_at_utc="2026-08-30T13:00:00Z",
+    )
+    from narrative_dynamics.cross_dataset_authorization import parse_transfer_authorization
+
+    authorization = parse_transfer_authorization(
+        issue_number=43,
+        comment=authorization_comment(preflight),
+        authorized_owner="qigao",
+        preflight=preflight,
+        lock_commit="b" * 40,
+        store=store,
+    )
+    backend.bind_unlock_policy(
+        prepared.final_vault_handle,
+        FinalUnlockGrant(
+            scientific_revision=preflight.scientific_revision,
+            ledger_head_hash=preflight.ledger_head_hash,
+            preflight_hash=preflight.content_hash,
+            authorization_receipt_hash=authorization.content_hash,
+            brier_release_hash=preflight.brier_release_hash,
+            log_release_hash=preflight.log_release_hash,
+            lock_commit=authorization.lock_commit,
+        ),
+    )
+    calls: list[tuple[object, ...]] = []
+
+    def stage_hook(stage: str) -> None:
+        selected_order.append(stage)
+        if stage == fail_at:
+            if infrastructure_failure:
+                raise TransferFinalInfrastructureError(f"synthetic failure at {stage}")
+            raise ValueError(f"synthetic schema failure at {stage}")
+
+    return {
+        "store": store,
+        "preflight": preflight,
+        "authorization": authorization,
+        "vault_backend": backend,
+        "vault_handle": prepared.final_vault_handle,
+        "zero_shot": zero,
+        "refit": refit,
+        "baseline": baseline,
+        "brier_release": brier,
+        "log_release": log,
+        "evaluator": recording_evaluator(calls),
+        "semantic_invariance_receipt_hash": digest("locked-semantic"),
+        "carry_forward_statuses": carry_forward_statuses(),
+        "task_condition_strata": ("s0", "synthetic-condition"),
+        "participant_influence_hash": digest("locked-influence"),
+        "evidence_sink": RecordingEvidenceSink(
+            selected_order,
+            fail=evidence_failure,
+        ),
+        "stage_hook": stage_hook,
     }
