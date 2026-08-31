@@ -5,10 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 import math
 from pathlib import Path
+from collections.abc import Mapping
 
 from narrative_dynamics.contracts import stable_content_hash
 from narrative_dynamics.narrative.runtime_planning import PlanningBeliefState
-from narrative_dynamics.abm.situated import SituatedObservation, SituatedWorldEvent
+from narrative_dynamics.abm.situated import (
+    SituatedActionKind,
+    SituatedObservation,
+    SituatedWorldEvent,
+)
 from narrative_dynamics.abm.situated_cognition import (
     SituatedCognitiveRoundResult,
     _advance_situated_cognitive_round,
@@ -55,6 +60,7 @@ class SituatedMemoryRecallAdmission:
     lexical_rank: float | None
     prior_belief: PlanningBeliefState
     posterior_belief: PlanningBeliefState
+    source_trust: float = 1.0
 
     def __post_init__(self) -> None:
         for name in ("agent_id", "cue_id", "memory_id", "event_id"):
@@ -64,12 +70,17 @@ class SituatedMemoryRecallAdmission:
         matched = (self.rule_id, self.symbol_id, self.likelihood_action_id)
         if any(item is None for item in matched) and any(item is not None for item in matched):
             raise ValueError("situated recall cognitive match fields must be all present or all absent")
-        for name in ("confidence", "salience", "evidence_weight"):
+        for name in ("confidence", "salience", "evidence_weight", "source_trust"):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0.0 <= value <= 1.0:
                 raise ValueError(f"situated recall {name.replace('_', ' ')} must be in [0, 1]")
-        if not math.isclose(self.evidence_weight, self.confidence * self.salience, rel_tol=0.0, abs_tol=1e-12):
-            raise ValueError("situated recall evidence weight must equal confidence times salience")
+        if not math.isclose(
+            self.evidence_weight,
+            self.confidence * self.salience * self.source_trust,
+            rel_tol=0.0,
+            abs_tol=1e-12,
+        ):
+            raise ValueError("situated recall evidence weight must include confidence, salience, and source trust")
         if self.lexical_rank is not None and (
             isinstance(self.lexical_rank, bool) or not isinstance(self.lexical_rank, (int, float))
         ):
@@ -78,7 +89,7 @@ class SituatedMemoryRecallAdmission:
             raise TypeError("situated recall admission requires planning beliefs")
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload = {
             "agent_id": self.agent_id,
             "cue_id": self.cue_id,
             "memory_id": self.memory_id,
@@ -93,6 +104,9 @@ class SituatedMemoryRecallAdmission:
             "prior_belief": self.prior_belief.to_dict(),
             "posterior_belief": self.posterior_belief.to_dict(),
         }
+        if self.source_trust != 1.0:
+            payload["source_trust"] = self.source_trust
+        return payload
 
     @property
     def content_hash(self) -> str:
@@ -281,6 +295,7 @@ def recall_situated_memories(
     *,
     story: SituatedStory,
     state: SituatedCognitiveState,
+    _source_trust_by_source: Mapping[str, float] | None = None,
 ) -> SituatedMemoryRecallResult:
     """Recall relevant private memories once and temper their Bayesian evidence."""
 
@@ -306,6 +321,13 @@ def recall_situated_memories(
     ):
         raise ValueError("situated recall mind must belong to the current cognitive state")
     round_index = state.round_index
+    source_trust_by_source = {} if _source_trust_by_source is None else dict(_source_trust_by_source)
+    agent_ids = {item.agent_id for item in model.cognitive_model.agents}
+    for source_id, trust in source_trust_by_source.items():
+        if source_id not in agent_ids:
+            raise ValueError("situated recall source trust agent must belong to the model")
+        if isinstance(trust, bool) or not isinstance(trust, (int, float)) or not 0.0 <= trust <= 1.0:
+            raise ValueError("situated recall source trust must be in [0, 1]")
 
     policy = next(item for item in model.agents if item.agent_id == mind.agent_id)
     if round_index == 0 or not policy.cues:
@@ -354,7 +376,12 @@ def recall_situated_memories(
         perspective = _memory_perspective(memory)
         rule = match_situated_observation_rule(agent_model, perspective)
         prior = belief
-        weight = memory.confidence * memory.salience
+        source_trust = (
+            source_trust_by_source.get(memory.actor_agent_id, 1.0)
+            if memory.kind is SituatedActionKind.TELL and memory.actor_agent_id != mind.agent_id
+            else 1.0
+        )
+        weight = memory.confidence * memory.salience * source_trust
         if rule is None:
             posterior = prior
             rule_id = symbol_id = likelihood_action_id = None
@@ -383,6 +410,7 @@ def recall_situated_memories(
             hit.lexical_rank,
             prior,
             posterior,
+            source_trust,
         ))
         belief = posterior
         recalled.add(memory.memory_id)
@@ -404,6 +432,25 @@ def simulate_situated_memory_cognitive_round(
     state: SituatedCognitiveState,
 ) -> SituatedMemoryCognitiveRoundResult:
     """Advance one synchronous round after direct admission and private recall."""
+
+    return _simulate_situated_memory_cognitive_round(
+        database_path,
+        model,
+        story,
+        state,
+        source_trust_by_observer=None,
+    )
+
+
+def _simulate_situated_memory_cognitive_round(
+    database_path: str | Path,
+    model: SituatedMemoryCognitiveModel,
+    story: SituatedStory,
+    state: SituatedCognitiveState,
+    *,
+    source_trust_by_observer: Mapping[str, Mapping[str, float]] | None,
+) -> SituatedMemoryCognitiveRoundResult:
+    """Internal V13 round hook used by V14 directed source trust."""
 
     if not isinstance(model, SituatedMemoryCognitiveModel):
         raise TypeError("memory cognitive simulation requires a SituatedMemoryCognitiveModel")
@@ -438,6 +485,11 @@ def simulate_situated_memory_cognitive_round(
             direct.next_mind,
             story=story,
             state=state,
+            _source_trust_by_source=(
+                None
+                if source_trust_by_observer is None
+                else source_trust_by_observer.get(agent_id, {})
+            ),
         )
         recalls.append(recalled)
         admitted_minds[agent_id] = recalled.next_mind

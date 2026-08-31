@@ -129,7 +129,7 @@
 
   For auditory confidence `0.7`, salience `0.75`, and source trust `0.5`, assert
   effective weight `0.2625` and approved posterior
-  `0.5605187319884727` from a `0.5/0.5` prior. Assert V13 default trust keeps weight
+  `0.560431654676259` from a `0.5/0.5` prior. Assert V13 default trust keeps weight
   `0.525` and posterior `0.6423728813559322`.
 
 - [ ] **Step 2: Run and verify RED**
@@ -217,4 +217,3 @@
 - Type consistency: Task 1 state feeds Task 2 transition; Task 2 relationships feed
   Task 3 trust multipliers; Task 3 artifacts are exactly the symbols exported in
   Task 4.
-
