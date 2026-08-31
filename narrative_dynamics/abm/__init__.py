@@ -111,6 +111,12 @@ from narrative_dynamics.abm.autonomy_contracts import (
     TruthObservation,
     initialize_autonomous_population,
 )
+from narrative_dynamics.abm.autonomy import (
+    AutonomousRoundResult,
+    AutonomousTrajectory,
+    simulate_autonomous_population,
+    simulate_autonomous_round,
+)
 
 
 __all__ = (
@@ -194,4 +200,8 @@ __all__ = (
     "AutonomousNetworkModel",
     "AutonomousPopulationState",
     "initialize_autonomous_population",
+    "AutonomousRoundResult",
+    "AutonomousTrajectory",
+    "simulate_autonomous_round",
+    "simulate_autonomous_population",
 )
