@@ -81,6 +81,10 @@ from narrative_dynamics.abm.rewiring import (
     simulate_rewiring_population,
     simulate_rewiring_round,
 )
+from narrative_dynamics.abm.rewiring_metrics import (
+    NetworkStructureMetrics,
+    measure_network_structure,
+)
 
 
 __all__ = (
@@ -144,4 +148,6 @@ __all__ = (
     "rewiring_population_view",
     "simulate_rewiring_round",
     "simulate_rewiring_population",
+    "NetworkStructureMetrics",
+    "measure_network_structure",
 )

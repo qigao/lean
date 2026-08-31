@@ -182,6 +182,62 @@ assert metrics.active_population == 2
 assert metrics.cumulative_entries == 2
 ```
 
+### Endogenous network rewiring V4
+
+Relationships can now respond to the information-driven beliefs of their
+endpoints. Each round propagates over the prior topology, then applies
+hysteretic similarity thresholds; formed or dissolved edges affect the next
+round only. Candidate relationship identities remain fixed and auditable.
+
+```python
+from narrative_dynamics.abm import (
+    EndogenousRewiringModel,
+    NetworkABMModel,
+    NetworkAgentSpec,
+    SocialEdge,
+    SocialNetwork,
+    initialize_rewiring_population,
+    measure_network_structure,
+    simulate_rewiring_population,
+)
+
+catalog = NetworkABMModel(
+    "rewiring-catalog",
+    "1",
+    (
+        NetworkAgentSpec("a", "source", 1.0, 0.5, 0.5),
+        NetworkAgentSpec("b", "relay", 1.0, 0.5, 0.5),
+        NetworkAgentSpec("c", "recipient", 1.0, 0.5, 0.5),
+    ),
+    SocialNetwork(
+        ("a", "b", "c"),
+        (
+            SocialEdge("a", "b", "peer", 1.0, active=True),
+            SocialEdge("b", "c", "peer", 1.0, active=False),
+        ),
+    ),
+)
+rewiring = EndogenousRewiringModel(
+    "belief-driven-network",
+    "1",
+    catalog,
+    dissolution_similarity=0.2,
+    formation_similarity=0.8,
+)
+initial = initialize_rewiring_population(
+    rewiring,
+    beliefs={"a": 1.0, "b": 0.0, "c": 1.0},
+)
+trajectory = simulate_rewiring_population(rewiring, initial, rounds=2)
+first_round_edges = trajectory.rounds[0].transmissions
+second_round_edges = trajectory.rounds[1].transmissions
+metrics = measure_network_structure(rewiring, trajectory.final_state)
+assert len(first_round_edges) == 1
+assert len(second_round_edges) == 2
+assert metrics.active_edge_count == 2
+assert metrics.cumulative_rewirings == 1
+```
+
 ## Verification
 
 GitHub Actions runs:

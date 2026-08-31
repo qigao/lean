@@ -4,7 +4,7 @@ import narrative_dynamics.abm as abm
 
 
 class NetworkABMPublicAPITests(unittest.TestCase):
-    def test_public_api_exports_complete_v3_surface(self):
+    def test_public_api_exports_complete_v4_surface(self):
         self.assertEqual(
             set(abm.__all__),
             {
@@ -58,6 +58,18 @@ class NetworkABMPublicAPITests(unittest.TestCase):
                 "simulate_lifecycle_population",
                 "PopulationLifecycleMetrics",
                 "measure_population_lifecycle",
+                "EndogenousRewiringModel",
+                "EdgeTopologyState",
+                "RewiringPopulationState",
+                "initialize_rewiring_population",
+                "EdgeRewiringUpdate",
+                "RewiringRoundResult",
+                "RewiringTrajectory",
+                "rewiring_population_view",
+                "simulate_rewiring_round",
+                "simulate_rewiring_population",
+                "NetworkStructureMetrics",
+                "measure_network_structure",
             },
         )
         for name in abm.__all__:
