@@ -254,9 +254,9 @@ class InterventionComparison:
             if not math.isfinite(value):
                 raise ValueError("intervention metric deltas must be finite")
             expected = treatment_values[name] - baseline_values[name]
-            if value != expected:
+            if not math.isclose(value, expected, rel_tol=0.0, abs_tol=1e-15):
                 raise ValueError("intervention metric delta does not match paired metrics")
-            deltas[name] = value
+            deltas[name] = expected
         object.__setattr__(self, "metric_deltas", MappingProxyType(deltas))
 
     def to_dict(self) -> dict[str, object]:

@@ -25,6 +25,60 @@ The dependency-free `narrative_dynamics` package currently provides:
 
 Registered models still execute only through `SimulationRunner`; registration does not make a third-party model trusted or empirically valid.
 
+## Network interaction and emergence V1
+
+The dependency-free `narrative_dynamics.abm` package adds a fixed-population
+agent-based runtime. Directed social edges constrain information delivery;
+belief, exposure, and broadcasting state persist across synchronous rounds;
+macro metrics and paired network interventions make population effects explicit.
+
+```python
+from narrative_dynamics.abm import (
+    EdgeSelector,
+    NetworkABMModel,
+    NetworkAgentSpec,
+    NetworkIntervention,
+    SocialEdge,
+    SocialNetwork,
+    compare_intervention,
+    initialize_population,
+    measure_emergence,
+    simulate_population,
+)
+
+agents = tuple(
+    NetworkAgentSpec(agent_id, role, 1.0, 0.5, 0.5)
+    for agent_id, role in (("a", "source"), ("b", "relay"), ("c", "recipient"))
+)
+model = NetworkABMModel(
+    "line-network",
+    "1",
+    agents,
+    SocialNetwork(
+        ("a", "b", "c"),
+        (
+            SocialEdge("a", "b", "peer", 1.0),
+            SocialEdge("b", "c", "peer", 1.0),
+        ),
+    ),
+)
+initial = initialize_population(model, beliefs={"a": 1.0})
+trajectory = simulate_population(model, initial, rounds=2)
+metrics = measure_emergence(model, trajectory.final_state)
+assert metrics.adoption_rate == 1.0
+
+cut_bridge = NetworkIntervention(
+    "cut-bridge",
+    disabled_edges=(EdgeSelector("b", "c", "peer"),),
+)
+comparison = compare_intervention(model, initial, cut_bridge, rounds=2)
+assert abs(comparison.metric_deltas["adoption_rate"] + 1 / 3) < 1e-12
+```
+
+V1 deliberately keeps identities, roles, and the population roster fixed. It
+models information-driven behavioral change; population lifecycle, network
+rewiring, learned parameters, and stochastic contact remain later phases.
+
 ## Verification
 
 GitHub Actions runs:
