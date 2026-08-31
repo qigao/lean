@@ -12,9 +12,14 @@ from narrative_dynamics.abm.situated_perception_contracts import SituatedPercept
 from narrative_dynamics.abm.situated_percept_social_cognition import (
     SituatedPerceptSocialCognitiveTrajectory,
 )
+from narrative_dynamics.abm.situated_social_memory_contracts import (
+    SituatedClaimStatus,
+    SituatedSocialEvidenceKind,
+)
 from narrative_dynamics.abm.situated_projection_contracts import (
     NarrativeAuthority,
     NarrativeBeat,
+    NarrativeBeatPhase,
     NarrativeBeatKind,
     NarrativeCut,
     NarrativeEntitlement,
@@ -31,6 +36,13 @@ from narrative_dynamics.abm.situated_story import SituatedStory, objective_timel
 
 _INFORMATION_ACTIONS = {SituatedActionKind.INSPECT, SituatedActionKind.TELL}
 _UNDISCLOSED_PLACE = "undisclosed"
+_PHASE_ORDER = {
+    NarrativeBeatPhase.MEMORY_RECALL: 0,
+    NarrativeBeatPhase.BELIEF: 1,
+    NarrativeBeatPhase.DECISION: 2,
+    NarrativeBeatPhase.WORLD: 3,
+    NarrativeBeatPhase.SOCIAL: 4,
+}
 
 
 def _stable_id(prefix: str, value: object) -> str:
@@ -94,7 +106,7 @@ def _percept_facts(percept: SituatedPercept) -> tuple[NarrativeFact, ...]:
 
 @dataclass(frozen=True)
 class _Candidate:
-    source_event_id: str
+    source_event_id: str | None
     round_index: int
     sequence: int
     place_id: str
@@ -105,6 +117,8 @@ class _Candidate:
     entitlement: NarrativeEntitlement
     direct_cause_event_ids: tuple[str, ...]
     magnitude: float = 1.0
+    phase: NarrativeBeatPhase = NarrativeBeatPhase.WORLD
+    additional_supports: tuple[NarrativeSupportRef, ...] = ()
 
 
 def _entitlement(
@@ -114,7 +128,9 @@ def _entitlement(
     round_index: int,
     facts: tuple[NarrativeFact, ...],
     support: NarrativeSupportRef,
+    additional_supports: tuple[NarrativeSupportRef, ...] = (),
 ) -> NarrativeEntitlement:
+    supports = (support,) + additional_supports
     entitlement_id = _stable_id(
         "entitlement",
         {
@@ -122,7 +138,7 @@ def _entitlement(
             "owner_agent_id": owner_agent_id,
             "round_index": round_index,
             "facts": [item.to_dict() for item in facts],
-            "support": support.to_dict(),
+            "support": [item.to_dict() for item in supports],
         },
     )
     return NarrativeEntitlement(
@@ -131,7 +147,7 @@ def _entitlement(
         owner_agent_id,
         round_index,
         facts,
-        (support,),
+        supports,
     )
 
 
@@ -230,7 +246,7 @@ def _float_fact(value: float) -> str:
 
 def _private_artifact_candidate(
     *,
-    source_event_id: str,
+    source_event_id: str | None,
     round_index: int,
     sequence: int,
     place_id: str,
@@ -242,6 +258,8 @@ def _private_artifact_candidate(
     artifact_hash: str,
     facts: tuple[tuple[str, object], ...],
     magnitude: float,
+    phase: NarrativeBeatPhase,
+    additional_supports: tuple[NarrativeSupportRef, ...] = (),
 ) -> _Candidate:
     support = NarrativeSupportRef(artifact_kind, artifact_id, artifact_hash)
     fact_items = _fact_items(facts)
@@ -260,10 +278,109 @@ def _private_artifact_candidate(
             round_index=round_index,
             facts=fact_items,
             support=support,
+            additional_supports=additional_supports,
         ),
         (),
         magnitude,
+        phase,
+        additional_supports,
     )
+
+
+def _unique_evidence(items):
+    return items[0] if len(items) == 1 else None
+
+
+def _claim_trigger_evidence(prior, claim, evidence):
+    if prior is None and claim.status in {
+        SituatedClaimStatus.CONFIRMED,
+        SituatedClaimStatus.CONTRADICTED,
+        SituatedClaimStatus.FORGOTTEN,
+    }:
+        return None
+    if prior is not None and claim.status is SituatedClaimStatus.FORGOTTEN:
+        return None
+    if prior is not None and prior.status is SituatedClaimStatus.ACTIVE and claim.status in {
+        SituatedClaimStatus.CONFIRMED,
+        SituatedClaimStatus.CONTRADICTED,
+    }:
+        return _unique_evidence(tuple(
+            item
+            for item in evidence
+            if item.kind is SituatedSocialEvidenceKind.VERIFICATION
+            and item.observer_agent_id == claim.observer_agent_id
+            and item.topic_id == claim.topic_id
+            and (
+                (claim.status is SituatedClaimStatus.CONFIRMED and item.symbol_id == claim.symbol_id)
+                or (
+                    claim.status is SituatedClaimStatus.CONTRADICTED
+                    and item.symbol_id != claim.symbol_id
+                )
+            )
+        ))
+    if prior is not None and claim.status is SituatedClaimStatus.SUPERSEDED:
+        return _unique_evidence(tuple(
+            item
+            for item in evidence
+            if item.kind is SituatedSocialEvidenceKind.TESTIMONY
+            and item.observer_agent_id == claim.observer_agent_id
+            and item.source_agent_id == claim.source_agent_id
+            and item.topic_id == claim.topic_id
+            and item.symbol_id != claim.symbol_id
+        ))
+    return _unique_evidence(tuple(
+        item
+        for item in evidence
+        if item.kind is SituatedSocialEvidenceKind.TESTIMONY
+        and item.observer_agent_id == claim.observer_agent_id
+        and item.source_agent_id == claim.source_agent_id
+        and item.topic_id == claim.topic_id
+        and item.symbol_id == claim.symbol_id
+        and item.event_id in claim.event_ids
+    ))
+
+
+def _relationship_trigger_evidence(
+    prior_claims,
+    next_claims,
+    relationship,
+    evidence,
+):
+    next_by_id = {item.claim_id: item for item in next_claims}
+    affected = tuple(
+        (prior, next_by_id.get(prior.claim_id))
+        for prior in prior_claims
+        if prior.observer_agent_id == relationship.observer_agent_id
+        and prior.source_agent_id == relationship.source_agent_id
+        and prior.status is SituatedClaimStatus.ACTIVE
+        and next_by_id.get(prior.claim_id) is not None
+        and next_by_id[prior.claim_id].status
+        in {SituatedClaimStatus.CONFIRMED, SituatedClaimStatus.CONTRADICTED}
+    )
+    matches = []
+    for prior, next_claim in affected:
+        assert next_claim is not None
+        matches.extend(
+            item
+            for item in evidence
+            if item.kind is SituatedSocialEvidenceKind.VERIFICATION
+            and item.observer_agent_id == relationship.observer_agent_id
+            and item.topic_id == prior.topic_id
+            and (
+                (
+                    next_claim.status is SituatedClaimStatus.CONFIRMED
+                    and item.symbol_id == prior.symbol_id
+                )
+                or (
+                    next_claim.status is SituatedClaimStatus.CONTRADICTED
+                    and item.symbol_id != prior.symbol_id
+                )
+            )
+        )
+    unique = {
+        item.content_hash: item for item in matches
+    }
+    return _unique_evidence(tuple(unique[key] for key in sorted(unique)))
 
 
 def _belief_facts(decision) -> tuple[tuple[str, object], ...]:
@@ -308,6 +425,10 @@ def _trajectory_candidates(
             item.agent_id: item.own_place_id
             for item in round_result.cognitive_round.cognitive_round.prior_state.minds
         }
+        next_places = {
+            item.agent_id: item.own_place_id
+            for item in round_result.next_cognitive_state.minds
+        }
         sequence = 0
 
         for decision in round_result.decisions:
@@ -333,7 +454,7 @@ def _trajectory_candidates(
                 candidates.append(_private_artifact_candidate(
                     source_event_id=event.event_id,
                     round_index=decision.round_index,
-                    sequence=sequence,
+                    sequence=event.sequence,
                     place_id=places[owner],
                     owner_agent_id=owner,
                     agent_ids=(owner,),
@@ -343,13 +464,14 @@ def _trajectory_candidates(
                     artifact_hash=decision.content_hash,
                     facts=_belief_facts(decision),
                     magnitude=magnitude,
+                    phase=NarrativeBeatPhase.BELIEF,
                 ))
             if prior_action is not None and prior_action != decision.selected_action_id:
                 sequence += 1
                 candidates.append(_private_artifact_candidate(
                     source_event_id=event.event_id,
                     round_index=decision.round_index,
-                    sequence=sequence,
+                    sequence=event.sequence,
                     place_id=places[owner],
                     owner_agent_id=owner,
                     agent_ids=(owner,),
@@ -364,6 +486,7 @@ def _trajectory_candidates(
                         ("decision.selected_action_id", decision.selected_action_id),
                     ),
                     magnitude=1.0,
+                    phase=NarrativeBeatPhase.DECISION,
                 ))
 
         if policy.include_memories:
@@ -402,21 +525,44 @@ def _trajectory_candidates(
                             ("admission.evidence_weight", _float_fact(admission.evidence_weight)),
                         ),
                         magnitude=admission.evidence_weight,
+                        phase=NarrativeBeatPhase.MEMORY_RECALL,
                     ))
 
         social_update = round_result.social_update
+        for item in social_update.admitted_evidence:
+            if item.event_id not in event_by_id:
+                raise ValueError(
+                    "trajectory social evidence event must belong to the accepted story"
+                )
+        update_support = NarrativeSupportRef(
+            "social_memory_update",
+            f"{trajectory.social_model_id}:{social_update.next_state.round_index}",
+            social_update.content_hash,
+        )
         prior_claims = {item.claim_id: item for item in social_update.prior_state.claims}
         if policy.include_claim_revisions:
             for claim in social_update.next_state.claims:
                 prior = prior_claims.get(claim.claim_id)
                 if claim == prior or claim.observer_agent_id not in authorized:
                     continue
+                trigger = _claim_trigger_evidence(
+                    prior,
+                    claim,
+                    social_update.admitted_evidence,
+                )
+                additional_supports = (update_support,) + (() if trigger is None else (
+                    NarrativeSupportRef(
+                        "social_evidence",
+                        trigger.evidence_id,
+                        trigger.content_hash,
+                    ),
+                ))
                 sequence += 1
                 candidates.append(_private_artifact_candidate(
-                    source_event_id=claim.event_ids[-1],
+                    source_event_id=None if trigger is None else trigger.event_id,
                     round_index=social_update.next_state.round_index,
                     sequence=sequence,
-                    place_id=places[claim.observer_agent_id],
+                    place_id=next_places[claim.observer_agent_id],
                     owner_agent_id=claim.observer_agent_id,
                     agent_ids=(claim.observer_agent_id, claim.source_agent_id),
                     kind=NarrativeBeatKind.CLAIM_REVISION,
@@ -434,6 +580,8 @@ def _trajectory_candidates(
                         ("claim.support_count", claim.support_count),
                     ),
                     magnitude=1.0,
+                    phase=NarrativeBeatPhase.SOCIAL,
+                    additional_supports=additional_supports,
                 ))
 
         prior_relationships = {
@@ -448,24 +596,27 @@ def _trajectory_candidates(
                 ]
                 if relationship == prior or owner not in authorized:
                     continue
-                evidence = [
-                    item
-                    for item in social_update.admitted_evidence
-                    if item.observer_agent_id == owner
-                ]
-                if not evidence:
-                    raise ValueError(
-                        "trajectory relationship change requires admitted social evidence"
-                    )
-                source_event_id = evidence[-1].event_id
+                trigger = _relationship_trigger_evidence(
+                    social_update.prior_state.claims,
+                    social_update.next_state.claims,
+                    relationship,
+                    social_update.admitted_evidence,
+                )
+                additional_supports = (update_support,) + (() if trigger is None else (
+                    NarrativeSupportRef(
+                        "social_evidence",
+                        trigger.evidence_id,
+                        trigger.content_hash,
+                    ),
+                ))
                 sequence += 1
                 trust_delta = relationship.trust - prior.trust
                 affinity_delta = relationship.affinity - prior.affinity
                 candidates.append(_private_artifact_candidate(
-                    source_event_id=source_event_id,
+                    source_event_id=None if trigger is None else trigger.event_id,
                     round_index=social_update.next_state.round_index,
                     sequence=sequence,
-                    place_id=places[owner],
+                    place_id=next_places[owner],
                     owner_agent_id=owner,
                     agent_ids=(owner, relationship.source_agent_id),
                     kind=NarrativeBeatKind.RELATIONSHIP_CHANGE,
@@ -486,12 +637,16 @@ def _trajectory_candidates(
                         ("relationship.affinity_delta", _float_fact(affinity_delta)),
                     ),
                     magnitude=abs(trust_delta) + abs(affinity_delta),
+                    phase=NarrativeBeatPhase.SOCIAL,
+                    additional_supports=additional_supports,
                 ))
 
     return tuple(candidates)
 
 
-def _candidate_key(candidate: _Candidate) -> tuple[str, str | None, str, str, str]:
+def _candidate_key(
+    candidate: _Candidate,
+) -> tuple[str | None, str | None, str, str, str]:
     return (
         candidate.source_event_id,
         candidate.active_pov_agent_id,
@@ -508,6 +663,7 @@ def _candidate_beat_id(candidate: _Candidate) -> str:
             "source_event_id": candidate.source_event_id,
             "active_pov_agent_id": candidate.active_pov_agent_id,
             "kind": candidate.base_kind.value,
+            "phase": candidate.phase.value,
             "support": candidate.support.to_dict(),
         },
     )
@@ -533,16 +689,18 @@ def _beat(
         candidate.active_pov_agent_id,
         candidate.agent_ids,
         policy.weight_for(candidate.base_kind) * candidate.magnitude,
-        (candidate.support,),
+        (candidate.support,) + candidate.additional_supports,
         (candidate.entitlement.entitlement_id,),
         cause_beat_ids,
         source_event_id=candidate.source_event_id,
+        phase=candidate.phase,
     )
 
 
 def _chronological_key(candidate: _Candidate) -> tuple[object, ...]:
     return (
         candidate.round_index,
+        _PHASE_ORDER[candidate.phase],
         candidate.sequence,
         candidate.active_pov_agent_id or "",
         _candidate_beat_id(candidate),
@@ -555,7 +713,9 @@ def _lane(candidate: _Candidate) -> str | None:
 
 def _authorized_causes(
     candidate: _Candidate,
-    by_lane_and_event: dict[tuple[str | None, str], tuple[_Candidate, ...]],
+    by_lane_and_event: dict[
+        tuple[str | None, str | None], tuple[_Candidate, ...]
+    ],
 ) -> tuple[_Candidate, ...]:
     causes = tuple(
         cause
@@ -573,7 +733,7 @@ def _select_candidates(
     by_lane: dict[str | None, list[_Candidate]] = {}
     for candidate in candidates:
         by_lane.setdefault(_lane(candidate), []).append(candidate)
-    selected: set[tuple[str, str | None, str]] = set()
+    selected: set[tuple[str | None, str | None, str, str, str]] = set()
     for lane_candidates in by_lane.values():
         ordered = sorted(lane_candidates, key=_chronological_key)
         for candidate in ordered:
@@ -598,7 +758,9 @@ def _select_candidates(
                     anchors.append(left)
                 anchors.append(right)
 
-    by_lane_and_event: dict[tuple[str | None, str], tuple[_Candidate, ...]] = {}
+    by_lane_and_event: dict[
+        tuple[str | None, str | None], tuple[_Candidate, ...]
+    ] = {}
     for candidate in candidates:
         key = (_lane(candidate), candidate.source_event_id)
         by_lane_and_event[key] = by_lane_and_event.get(key, ()) + (candidate,)
@@ -631,7 +793,11 @@ def _order_candidates(
     story_event_ids = {item.event_id for item in objective_timeline(story)}
     if any(item not in story_event_ids for item in policy.authored_event_order):
         raise ValueError("authored event order ids must belong to the accepted story")
-    selected_event_ids = {item.source_event_id for item in candidates}
+    selected_event_ids = {
+        item.source_event_id
+        for item in candidates
+        if item.source_event_id is not None
+    }
     if (
         len(policy.authored_event_order) != len(selected_event_ids)
         or set(policy.authored_event_order) != selected_event_ids
@@ -645,7 +811,10 @@ def _order_candidates(
     return tuple(
         sorted(
             candidates,
-            key=lambda item: (position[item.source_event_id], _chronological_key(item)),
+            key=lambda item: (
+                position.get(item.source_event_id, len(position)),
+                _chronological_key(item),
+            ),
         )
     )
 
@@ -653,7 +822,9 @@ def _order_candidates(
 def _make_beats(
     candidates: tuple[_Candidate, ...], policy: NarrativeProjectionPolicy
 ) -> tuple[NarrativeBeat, ...]:
-    by_lane_and_event: dict[tuple[str | None, str], tuple[_Candidate, ...]] = {}
+    by_lane_and_event: dict[
+        tuple[str | None, str | None], tuple[_Candidate, ...]
+    ] = {}
     for candidate in candidates:
         key = (_lane(candidate), candidate.source_event_id)
         by_lane_and_event[key] = by_lane_and_event.get(key, ()) + (candidate,)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import unittest
 
+import narrative_dynamics.abm.situated_projection_contracts as projection_contracts
 from narrative_dynamics.abm.situated_projection_contracts import (
     NarrativeAuthority,
     NarrativeBeat,
@@ -68,6 +69,16 @@ def scene(scene_id: str = "scene-1", beat_ids: tuple[str, ...] = ("beat-1",)) ->
 
 
 class NarrativeProjectionContractTests(unittest.TestCase):
+    def test_narrative_beat_phase_is_public_and_world_is_the_compatible_default(self):
+        self.assertTrue(hasattr(projection_contracts, "NarrativeBeatPhase"))
+        phase = projection_contracts.NarrativeBeatPhase
+        self.assertEqual(
+            [item.value for item in phase],
+            ["memory_recall", "belief", "decision", "world", "social"],
+        )
+        self.assertIs(beat().phase, phase.WORLD)
+        self.assertEqual(beat().to_dict()["phase"], "world")
+
     def test_limited_policy_requires_exactly_one_named_agent(self):
         with self.assertRaisesRegex(ValueError, "exactly one POV agent"):
             NarrativeProjectionPolicy(

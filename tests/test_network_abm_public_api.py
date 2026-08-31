@@ -303,6 +303,7 @@ class NetworkABMPublicAPITests(unittest.TestCase):
                 "NarrativeAuthority",
                 "NarrativeTemporalOrder",
                 "NarrativeBeatKind",
+                "NarrativeBeatPhase",
                 "NarrativeEntitlementScope",
                 "NarrativeSupportRef",
                 "NarrativeFact",

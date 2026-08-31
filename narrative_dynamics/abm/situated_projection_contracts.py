@@ -89,6 +89,14 @@ class NarrativeBeatKind(str, Enum):
     CAUSAL_PAYOFF = "causal_payoff"
 
 
+class NarrativeBeatPhase(str, Enum):
+    MEMORY_RECALL = "memory_recall"
+    BELIEF = "belief"
+    DECISION = "decision"
+    WORLD = "world"
+    SOCIAL = "social"
+
+
 class NarrativeEntitlementScope(str, Enum):
     OBJECTIVE = "objective"
     PRIVATE = "private"
@@ -287,6 +295,7 @@ class NarrativeBeat:
     entitlement_ids: tuple[str, ...]
     cause_beat_ids: tuple[str, ...]
     source_event_id: str | None = None
+    phase: NarrativeBeatPhase = NarrativeBeatPhase.WORLD
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "beat_id", _text(self.beat_id, label="narrative beat id"))
@@ -326,6 +335,8 @@ class NarrativeBeat:
             "source_event_id",
             _optional_text(self.source_event_id, label="narrative beat source event id"),
         )
+        if not isinstance(self.phase, NarrativeBeatPhase):
+            raise TypeError("narrative beat phase must be NarrativeBeatPhase")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -341,6 +352,7 @@ class NarrativeBeat:
             "entitlement_ids": list(self.entitlement_ids),
             "cause_beat_ids": list(self.cause_beat_ids),
             "source_event_id": self.source_event_id,
+            "phase": self.phase.value,
         }
 
     @property
@@ -495,13 +507,12 @@ class NarrativeProjection:
                 for beat_id in scene_map[scene_id].beat_ids
             )
             source_event_ids = tuple(item.source_event_id for item in presentation_beats)
-            if any(item is None for item in source_event_ids):
-                raise ValueError("authored narrative projections require every beat to bind a source event")
             derived_order: list[str] = []
             seen_source_events: set[str] = set()
             previous_source_event: str | None = None
             for source_event_id in source_event_ids:
-                assert source_event_id is not None
+                if source_event_id is None:
+                    continue
                 if source_event_id == previous_source_event:
                     continue
                 if source_event_id in seen_source_events:
@@ -551,6 +562,7 @@ __all__ = (
     "NarrativeAuthority",
     "NarrativeTemporalOrder",
     "NarrativeBeatKind",
+    "NarrativeBeatPhase",
     "NarrativeEntitlementScope",
     "NarrativeSupportRef",
     "NarrativeFact",
