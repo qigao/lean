@@ -1,3 +1,4 @@
+from dataclasses import replace
 import json
 from tempfile import TemporaryDirectory
 import unittest
@@ -5,19 +6,33 @@ import unittest
 from narrative_dynamics.abm.situated import SituatedActionKind
 from narrative_dynamics.abm.situated_grounding import (
     build_situated_grounding_prompt,
+    compile_situated_semantic_grounding,
+    grounded_claims_to_situated_social_evidence,
     parse_situated_grounding_retrieval_plan,
+    replay_situated_semantic_grounding,
 )
 from narrative_dynamics.abm.situated_grounding_contracts import (
+    SituatedGroundingModality,
+    SituatedGroundingPolarity,
     SituatedGroundingPredicate,
     SituatedGroundingProviderIdentity,
     SituatedGroundingRequest,
+    SituatedGroundingTemporalScope,
     SituatedSemanticGroundingModel,
+)
+from narrative_dynamics.abm.situated_percept_memory_cognition import (
+    initialize_situated_percept_memory_cognition,
 )
 from narrative_dynamics.abm.situated_percept_memory import (
     ingest_situated_percept_story,
     list_situated_percept_memories,
 )
 from narrative_dynamics.abm.situated_perception_contracts import SituatedPerceptFidelity
+from narrative_dynamics.abm.situated_social_memory import advance_situated_social_memory
+from narrative_dynamics.abm.situated_social_memory_contracts import (
+    SituatedSocialEvidenceKind,
+    initialize_situated_social_memory,
+)
 from tests.situated_cognition_fixtures import cognitive_office_model
 from tests.test_network_abm_situated_percept_cognition import SECRET, perception_model
 from tests.test_network_abm_situated_percept_memory import private_story
@@ -52,7 +67,11 @@ class FixtureProvider:
 
     def complete_json(self, *, task, payload):
         self.calls.append((task, payload))
-        return json.dumps(self.response, ensure_ascii=False)
+        return (
+            self.response
+            if isinstance(self.response, str)
+            else json.dumps(self.response, ensure_ascii=False)
+        )
 
 
 class SituatedPrivateGroundingContextTests(unittest.TestCase):
@@ -185,6 +204,194 @@ class SituatedPrivateGroundingContextTests(unittest.TestCase):
                 SituatedGroundingRequest(
                     "cross-agent", "bob", alice.memory_id, "What happened?", 3
                 ),
+            )
+
+
+class SituatedSemanticGroundingTests(SituatedPrivateGroundingContextTests):
+    def _prompt(self, *, agent_id="bob", memory=None):
+        primary = self._primary(agent_id) if memory is None else memory
+        return build_situated_grounding_prompt(
+            self.database,
+            self.model,
+            SituatedGroundingRequest(
+                f"ground-{agent_id}",
+                agent_id,
+                primary.memory_id,
+                "What is the restructuring status?",
+                5,
+            ),
+        )
+
+    @staticmethod
+    def _claim_payload(evidence_id, **changes):
+        payload = {
+            "subject_id": "memo",
+            "predicate_id": "restructuring-status",
+            "value_id": "approved",
+            "polarity": "affirmed",
+            "modality": "asserted",
+            "temporal_scope": "present",
+            "source_agent_id": "alice",
+            "confidence": 0.82,
+            "evidence_ids": [evidence_id],
+        }
+        payload.update(changes)
+        return payload
+
+    def test_provider_compiles_strict_json_into_replayable_artifact(self):
+        prompt = self._prompt()
+        provider = FixtureProvider({
+            "claims": [self._claim_payload(prompt.primary_evidence_id)]
+        })
+
+        artifact = compile_situated_semantic_grounding(prompt, provider)
+
+        self.assertEqual(len(provider.calls), 1)
+        self.assertEqual(provider.calls[0][0], "situated_semantic_grounding_v1")
+        self.assertEqual(artifact.prompt_hash, prompt.content_hash)
+        self.assertEqual(artifact.provider, provider.identity)
+        accepted = artifact.claims[0]
+        self.assertIs(accepted.polarity, SituatedGroundingPolarity.AFFIRMED)
+        self.assertIs(accepted.modality, SituatedGroundingModality.ASSERTED)
+        self.assertIs(accepted.temporal_scope, SituatedGroundingTemporalScope.PRESENT)
+        self.assertIs(replay_situated_semantic_grounding(self.model, artifact), artifact)
+        self.assertEqual(len(provider.calls), 1, "replay must not invoke a provider")
+
+        same = compile_situated_semantic_grounding(prompt, provider)
+        self.assertEqual(same, artifact)
+        self.assertEqual(same.content_hash, artifact.content_hash)
+
+    def test_unknown_schema_vocabulary_and_unavailable_evidence_fail_closed(self):
+        prompt = self._prompt()
+        base = self._claim_payload(prompt.primary_evidence_id)
+        cases = []
+        extra_top = {"claims": [base], "explanation": "trust me"}
+        cases.append((extra_top, "exact schema"))
+        extra_claim = dict(base, explanation="hidden reasoning")
+        cases.append(({"claims": [extra_claim]}, "exact schema"))
+        cases.append(({"claims": [dict(base, subject_id="invented")]}, "subject"))
+        cases.append(({"claims": [dict(base, predicate_id="invented")]}, "predicate"))
+        cases.append(({"claims": [dict(base, value_id="invented")]}, "value"))
+        cases.append(({"claims": [dict(base, evidence_ids=["private-to-someone-else"])]}, "evidence"))
+        cases.append(({"claims": [dict(base, source_agent_id="carol")]}, "source"))
+        for response, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(ValueError, message):
+                    compile_situated_semantic_grounding(
+                        prompt, FixtureProvider(response)
+                    )
+
+    def test_malformed_duplicate_or_non_object_provider_json_is_rejected(self):
+        prompt = self._prompt()
+        responses = (
+            "not-json",
+            "[]",
+            '{"claims": [], "claims": []}',
+            '{"claims": NaN}',
+        )
+        for response in responses:
+            with self.subTest(response=response):
+                with self.assertRaises(ValueError):
+                    compile_situated_semantic_grounding(
+                        prompt, FixtureProvider(response)
+                    )
+
+    def test_detected_sound_cannot_support_message_semantics(self):
+        database = f"{self.temporary.name}/detected-grounding.sqlite3"
+        perception = perception_model()
+        story = private_story(perception, door_open=False)
+        ingest_situated_percept_story(database, perception, story, "bob")
+        model = grounding_model(perception)
+        memory = next(
+            item
+            for item in list_situated_percept_memories(database, "bob")
+            if item.fidelity is SituatedPerceptFidelity.DETECTED
+        )
+        prompt = build_situated_grounding_prompt(
+            database,
+            model,
+            SituatedGroundingRequest(
+                "detected-claim", "bob", memory.memory_id, "What was said?", 3
+            ),
+        )
+
+        with self.assertRaisesRegex(ValueError, "exact evidence"):
+            compile_situated_semantic_grounding(
+                prompt,
+                FixtureProvider({
+                    "claims": [self._claim_payload(prompt.primary_evidence_id)]
+                }),
+            )
+
+    def test_asserted_affirmed_tell_claim_bridges_to_v14_testimony(self):
+        prompt = self._prompt()
+        artifact = compile_situated_semantic_grounding(
+            prompt,
+            FixtureProvider({
+                "claims": [self._claim_payload(prompt.primary_evidence_id)]
+            }),
+        )
+
+        evidence = grounded_claims_to_situated_social_evidence(self.model, artifact)
+
+        self.assertEqual(len(evidence), 1)
+        self.assertIs(evidence[0].kind, SituatedSocialEvidenceKind.TESTIMONY)
+        self.assertEqual(evidence[0].observer_agent_id, "bob")
+        self.assertEqual(evidence[0].source_agent_id, "alice")
+        self.assertEqual(evidence[0].topic_id, "restructuring")
+        self.assertEqual(evidence[0].symbol_id, "approved")
+        perception_bound_story = replace(
+            self.story, perception_model=self.perception
+        )
+        cognition = initialize_situated_percept_memory_cognition(
+            self.model.percept_memory_model, perception_bound_story
+        )
+        social = initialize_situated_social_memory(
+            self.model.social_memory_model, cognition
+        )
+        update = advance_situated_social_memory(
+            self.model.social_memory_model,
+            cognition,
+            social,
+            cognition,
+            evidence,
+        )
+        self.assertEqual(update.next_state.claims[0].symbol_id, "approved")
+
+    def test_exact_inspection_bridges_to_source_less_verification(self):
+        inspection = next(
+            item
+            for item in list_situated_percept_memories(self.database, "alice")
+            if item.kind is SituatedActionKind.INSPECT
+        )
+        prompt = self._prompt(agent_id="alice", memory=inspection)
+        artifact = compile_situated_semantic_grounding(
+            prompt,
+            FixtureProvider({"claims": [self._claim_payload(
+                prompt.primary_evidence_id, source_agent_id=None
+            )]}),
+        )
+
+        evidence = grounded_claims_to_situated_social_evidence(self.model, artifact)
+
+        self.assertEqual(len(evidence), 1)
+        self.assertIs(evidence[0].kind, SituatedSocialEvidenceKind.VERIFICATION)
+        self.assertEqual(evidence[0].observer_agent_id, "alice")
+        self.assertIsNone(evidence[0].source_agent_id)
+
+    def test_non_asserted_or_negative_claim_stays_grounded_but_does_not_enter_v14(self):
+        prompt = self._prompt()
+        responses = (
+            self._claim_payload(prompt.primary_evidence_id, modality="uncertain"),
+            self._claim_payload(prompt.primary_evidence_id, polarity="denied"),
+        )
+        for response in responses:
+            artifact = compile_situated_semantic_grounding(
+                prompt, FixtureProvider({"claims": [response]})
+            )
+            self.assertEqual(
+                grounded_claims_to_situated_social_evidence(self.model, artifact),
+                (),
             )
 
 

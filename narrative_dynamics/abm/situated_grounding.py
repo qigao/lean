@@ -7,14 +7,20 @@ import json
 from pathlib import Path
 from typing import Protocol
 
+from narrative_dynamics.contracts import stable_content_hash
 from narrative_dynamics.abm.situated import ObservationChannel, SituatedActionKind
 from narrative_dynamics.abm.situated_grounding_contracts import (
+    SituatedGroundedClaim,
     SituatedGroundingEvidence,
     SituatedGroundingEvidenceKind,
+    SituatedGroundingModality,
+    SituatedGroundingPolarity,
     SituatedGroundingPrompt,
     SituatedGroundingProviderIdentity,
     SituatedGroundingRequest,
     SituatedGroundingRetrievalPlan,
+    SituatedGroundingTemporalScope,
+    SituatedSemanticGroundingArtifact,
     SituatedSemanticGroundingModel,
 )
 from narrative_dynamics.abm.situated_percept_memory import (
@@ -26,6 +32,10 @@ from narrative_dynamics.abm.situated_percept_memory_contracts import (
 )
 from narrative_dynamics.abm.situated_perception_contracts import (
     SituatedPerceptFidelity,
+)
+from narrative_dynamics.abm.situated_social_memory_contracts import (
+    SituatedSocialEvidence,
+    SituatedSocialEvidenceKind,
 )
 
 
@@ -300,8 +310,239 @@ def build_situated_grounding_prompt(
     )
 
 
+_CLAIM_KEYS = frozenset({
+    "subject_id",
+    "predicate_id",
+    "value_id",
+    "polarity",
+    "modality",
+    "temporal_scope",
+    "source_agent_id",
+    "confidence",
+    "evidence_ids",
+})
+
+
+def _claim_from_json(value: object) -> SituatedGroundedClaim:
+    if not isinstance(value, dict) or set(value) != _CLAIM_KEYS:
+        raise ValueError("grounded claim must use the exact schema")
+    for key in ("subject_id", "predicate_id", "value_id"):
+        if not isinstance(value[key], str):
+            raise ValueError(f"grounded claim {key.replace('_', ' ')} must be a string")
+    source = value["source_agent_id"]
+    if source is not None and not isinstance(source, str):
+        raise ValueError("grounded claim source agent id must be a string or null")
+    evidence_ids = value["evidence_ids"]
+    if not isinstance(evidence_ids, list) or any(not isinstance(item, str) for item in evidence_ids):
+        raise ValueError("grounded claim evidence ids must be a JSON string array")
+    try:
+        polarity = SituatedGroundingPolarity(value["polarity"])
+        modality = SituatedGroundingModality(value["modality"])
+        temporal_scope = SituatedGroundingTemporalScope(value["temporal_scope"])
+    except (TypeError, ValueError) as error:
+        raise ValueError("grounded claim enum value is unknown") from error
+    return SituatedGroundedClaim(
+        value["subject_id"],
+        value["predicate_id"],
+        value["value_id"],
+        polarity,
+        modality,
+        temporal_scope,
+        source,
+        value["confidence"],
+        tuple(evidence_ids),
+    )
+
+
+def _validate_claim(
+    model: SituatedSemanticGroundingModel,
+    observer_agent_id: str,
+    evidence_by_id: Mapping[str, SituatedGroundingEvidence],
+    claim: SituatedGroundedClaim,
+) -> None:
+    if claim.subject_id not in model.subject_ids:
+        raise ValueError("grounded claim subject is outside the finite vocabulary")
+    predicate = model.predicate(claim.predicate_id)
+    if predicate is None:
+        raise ValueError("grounded claim predicate is outside the finite vocabulary")
+    if claim.value_id not in predicate.value_ids:
+        raise ValueError("grounded claim value is outside its predicate vocabulary")
+    world_agents = {
+        item.agent_id
+        for item in model.percept_memory_model.cognitive_model.world_model.agents
+    }
+    if claim.source_agent_id is not None and claim.source_agent_id not in world_agents:
+        raise ValueError("grounded claim source is outside the world agent vocabulary")
+    try:
+        cited = tuple(evidence_by_id[item] for item in claim.evidence_ids)
+    except KeyError as error:
+        raise ValueError("grounded claim evidence is not privately available") from error
+    if any(item.agent_id != observer_agent_id for item in cited):
+        raise ValueError("grounded claim evidence is not private to the observer")
+    if any(item.fidelity is not SituatedPerceptFidelity.EXACT for item in cited):
+        raise ValueError("grounded semantic claims require exact evidence")
+    if claim.source_agent_id is not None and not any(
+        item.actor_agent_id == claim.source_agent_id for item in cited
+    ):
+        raise ValueError("grounded claim source is unsupported by cited evidence")
+    for item in cited:
+        if item.event_kind is SituatedActionKind.TELL and not any(
+            detail.name == "message" for detail in item.details
+        ):
+            raise ValueError("exact tell grounding requires disclosed message evidence")
+
+
+def validate_situated_semantic_grounding_artifact(
+    model: SituatedSemanticGroundingModel,
+    artifact: SituatedSemanticGroundingArtifact,
+) -> None:
+    """Validate an accepted artifact without invoking or trusting its provider."""
+
+    if not isinstance(model, SituatedSemanticGroundingModel):
+        raise TypeError("semantic grounding validation requires a grounding model")
+    if not isinstance(artifact, SituatedSemanticGroundingArtifact):
+        raise TypeError("semantic grounding validation requires a grounding artifact")
+    if artifact.model_id != model.model_id or artifact.model_hash != model.content_hash:
+        raise ValueError("semantic grounding artifact must bind the exact model")
+    world_agents = {
+        item.agent_id
+        for item in model.percept_memory_model.cognitive_model.world_model.agents
+    }
+    if artifact.observer_agent_id not in world_agents:
+        raise ValueError("semantic grounding artifact observer must be a world agent")
+    if len(artifact.evidence) > model.maximum_evidence_items:
+        raise ValueError("semantic grounding artifact exceeds the evidence budget")
+    if len(artifact.claims) > model.maximum_claims:
+        raise ValueError("semantic grounding artifact exceeds the claim budget")
+    evidence_by_id = {item.evidence_id: item for item in artifact.evidence}
+    for claim in artifact.claims:
+        _validate_claim(model, artifact.observer_agent_id, evidence_by_id, claim)
+
+
+def compile_situated_semantic_grounding(
+    prompt: SituatedGroundingPrompt,
+    provider: SituatedStructuredLanguageProvider,
+) -> SituatedSemanticGroundingArtifact:
+    """Compile one provider proposal into an accepted, replayable artifact."""
+
+    if not isinstance(prompt, SituatedGroundingPrompt):
+        raise TypeError("semantic grounding compilation requires a grounding prompt")
+    response = _provider_response(
+        provider,
+        task="situated_semantic_grounding_v1",
+        payload=prompt.to_provider_payload(),
+    )
+    value = _strict_json_mapping(response)
+    if set(value) != {"claims"}:
+        raise ValueError("semantic grounding response must use the exact schema")
+    values = value["claims"]
+    if not isinstance(values, list):
+        raise ValueError("semantic grounding claims must be a JSON array")
+    if len(values) > prompt.model.maximum_claims:
+        raise ValueError("semantic grounding response exceeds the claim budget")
+    claims = tuple(_claim_from_json(item) for item in values)
+    artifact = SituatedSemanticGroundingArtifact(
+        prompt.model.model_id,
+        prompt.model.content_hash,
+        prompt.request.request_id,
+        prompt.request.agent_id,
+        provider.identity,
+        prompt.content_hash,
+        stable_content_hash({"provider_response": response}),
+        prompt.evidence,
+        claims,
+    )
+    validate_situated_semantic_grounding_artifact(prompt.model, artifact)
+    return artifact
+
+
+def replay_situated_semantic_grounding(
+    model: SituatedSemanticGroundingModel,
+    artifact: SituatedSemanticGroundingArtifact,
+) -> SituatedSemanticGroundingArtifact:
+    """Replay means deterministic validation of the accepted payload, with no call."""
+
+    validate_situated_semantic_grounding_artifact(model, artifact)
+    return artifact
+
+
+def _social_anchor(
+    observer_agent_id: str,
+    source_agent_id: str | None,
+    evidence: SituatedGroundingEvidence,
+) -> SituatedSocialEvidenceKind | None:
+    if evidence.fidelity is not SituatedPerceptFidelity.EXACT:
+        return None
+    if source_agent_id is not None:
+        if (
+            source_agent_id == observer_agent_id
+            or evidence.event_kind is not SituatedActionKind.TELL
+            or evidence.actor_agent_id != source_agent_id
+            or not any(item.name == "message" for item in evidence.details)
+        ):
+            return None
+        return SituatedSocialEvidenceKind.TESTIMONY
+    if (
+        evidence.event_kind is SituatedActionKind.INSPECT
+        and evidence.actor_agent_id == observer_agent_id
+    ):
+        return SituatedSocialEvidenceKind.VERIFICATION
+    return None
+
+
+def grounded_claims_to_situated_social_evidence(
+    model: SituatedSemanticGroundingModel,
+    artifact: SituatedSemanticGroundingArtifact,
+) -> tuple[SituatedSocialEvidence, ...]:
+    """Bridge only definite positive topic claims into the existing V14 input."""
+
+    validate_situated_semantic_grounding_artifact(model, artifact)
+    evidence_by_id = {item.evidence_id: item for item in artifact.evidence}
+    result = []
+    for claim in artifact.claims:
+        predicate = model.predicate(claim.predicate_id)
+        if (
+            predicate is None
+            or predicate.social_topic_id is None
+            or claim.polarity is not SituatedGroundingPolarity.AFFIRMED
+            or claim.modality is not SituatedGroundingModality.ASSERTED
+        ):
+            continue
+        for evidence_id in claim.evidence_ids:
+            source = evidence_by_id[evidence_id]
+            kind = _social_anchor(
+                artifact.observer_agent_id,
+                claim.source_agent_id,
+                source,
+            )
+            if kind is None:
+                continue
+            identity = stable_content_hash({
+                "artifact_hash": artifact.content_hash,
+                "claim_hash": claim.content_hash,
+                "evidence_id": source.evidence_id,
+                "social_kind": kind.value,
+            })
+            result.append(SituatedSocialEvidence(
+                identity,
+                kind,
+                artifact.observer_agent_id,
+                predicate.social_topic_id,
+                claim.value_id,
+                source.round_index,
+                source.source_event_id,
+                claim.source_agent_id,
+                source.memory_id,
+            ))
+    return tuple(sorted(result, key=lambda item: (item.round_index, item.evidence_id)))
+
+
 __all__ = (
     "SituatedStructuredLanguageProvider",
     "parse_situated_grounding_retrieval_plan",
     "build_situated_grounding_prompt",
+    "validate_situated_semantic_grounding_artifact",
+    "compile_situated_semantic_grounding",
+    "replay_situated_semantic_grounding",
+    "grounded_claims_to_situated_social_evidence",
 )
