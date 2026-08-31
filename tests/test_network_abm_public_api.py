@@ -4,7 +4,7 @@ import narrative_dynamics.abm as abm
 
 
 class NetworkABMPublicAPITests(unittest.TestCase):
-    def test_public_api_exports_current_v10_surface(self):
+    def test_public_api_exports_current_v11_surface(self):
         self.assertEqual(
             set(abm.__all__),
             {
@@ -157,6 +157,31 @@ class NetworkABMPublicAPITests(unittest.TestCase):
                 "causal_ancestors",
                 "information_chain",
                 "explain_situated_event",
+                "SituatedHypothesis",
+                "SituatedObservationSymbol",
+                "SituatedObservationRule",
+                "SituatedObservationLikelihood",
+                "SituatedActionSpec",
+                "SituatedHypothesisTransition",
+                "SituatedGoalSpec",
+                "SituatedGoalReward",
+                "SituatedAgentCognitiveModel",
+                "SituatedCognitiveModel",
+                "SituatedAgentMindState",
+                "SituatedCognitiveState",
+                "initialize_situated_cognition",
+                "validate_situated_cognitive_state",
+                "SituatedBeliefAdmission",
+                "SituatedBeliefAdmissionResult",
+                "SituatedCognitiveDecision",
+                "SituatedCognitiveRoundResult",
+                "SituatedDecisionExplanation",
+                "SituatedCognitiveTrajectory",
+                "admit_situated_observations",
+                "decide_situated_action",
+                "simulate_situated_cognitive_round",
+                "explain_situated_decision",
+                "simulate_situated_cognition",
             },
         )
         for name in abm.__all__:

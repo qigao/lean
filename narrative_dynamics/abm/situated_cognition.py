@@ -10,7 +10,11 @@ from collections.abc import Mapping
 from grounded_goal_softmax import finite_softmax
 from narrative_dynamics.contracts import stable_content_hash
 from narrative_dynamics.narrative.runtime_planning import PlanningBeliefState
-from narrative_dynamics.abm.situated import SituatedActionIntent, SituatedActionKind
+from narrative_dynamics.abm.situated import (
+    ObservationChannel,
+    SituatedActionIntent,
+    SituatedActionKind,
+)
 from narrative_dynamics.abm.situated_story import (
     SituatedPerspectiveEvent,
     SituatedStory,
@@ -97,6 +101,14 @@ class SituatedCognitiveDecision:
     def __post_init__(self) -> None:
         if not isinstance(self.round_index, int) or isinstance(self.round_index, bool) or self.round_index <= 0:
             raise ValueError("situated cognitive decision round must be positive")
+        if not isinstance(self.feasible_action_ids, tuple) or any(
+            not isinstance(item, str) or not item.strip()
+            for item in self.feasible_action_ids
+        ):
+            raise TypeError("situated decision feasible action ids must be a tuple of strings")
+        if len(set(self.feasible_action_ids)) != len(self.feasible_action_ids):
+            raise ValueError("situated decision feasible action ids must be unique")
+        object.__setattr__(self, "feasible_action_ids", tuple(sorted(self.feasible_action_ids)))
         values = _freeze_float_map(self.action_values, label="situated decision action values")
         policy = _freeze_float_map(self.action_policy, label="situated decision action policy")
         if set(values) != set(policy) or set(values) != set(self.feasible_action_ids):
@@ -150,6 +162,8 @@ class SituatedCognitiveRoundResult:
         ids = tuple(item.agent_id for item in self.decisions)
         if len(set(ids)) != len(ids):
             raise ValueError("cognitive round requires unique agent decisions")
+        if set(ids) != {item.agent_id for item in self.prior_state.minds}:
+            raise ValueError("cognitive round decisions must cover exact prior mind roster")
         object.__setattr__(self, "decisions", tuple(sorted(self.decisions, key=lambda item: item.agent_id)))
 
     def to_dict(self) -> dict[str, object]:
@@ -164,7 +178,92 @@ class SituatedCognitiveRoundResult:
         return stable_content_hash(self.to_dict())
 
 
+@dataclass(frozen=True)
+class SituatedDecisionExplanation:
+    agent_id: str
+    round_index: int
+    selected_action_id: str
+    most_likely_hypothesis_id: str
+    hypothesis_probability: float
+    action_probability: float
+    expected_value: float
+    goal_contributions: Mapping[str, float]
+    admitted_evidence_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        for name in ("hypothesis_probability", "action_probability"):
+            value = getattr(self, name)
+            if not 0.0 <= value <= 1.0:
+                raise ValueError(f"situated explanation {name} must be in [0, 1]")
+        object.__setattr__(self, "goal_contributions", _freeze_float_map(self.goal_contributions, label="situated explanation goal contributions"))
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "agent_id": self.agent_id, "round_index": self.round_index,
+            "selected_action_id": self.selected_action_id,
+            "most_likely_hypothesis_id": self.most_likely_hypothesis_id,
+            "hypothesis_probability": self.hypothesis_probability,
+            "action_probability": self.action_probability, "expected_value": self.expected_value,
+            "goal_contributions": dict(self.goal_contributions),
+            "admitted_evidence_ids": list(self.admitted_evidence_ids),
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_dict())
+
+
+@dataclass(frozen=True)
+class SituatedCognitiveTrajectory:
+    model_id: str
+    model_hash: str
+    initial_story: SituatedStory
+    initial_state: SituatedCognitiveState
+    rounds: tuple[SituatedCognitiveRoundResult, ...]
+    final_story: SituatedStory
+    final_state: SituatedCognitiveState
+
+    def __post_init__(self) -> None:
+        if not self.rounds:
+            raise ValueError("situated cognitive trajectory requires at least one round")
+        if (
+            self.initial_state.model_id != self.model_id
+            or self.initial_state.model_hash != self.model_hash
+            or self.final_state.model_id != self.model_id
+            or self.final_state.model_hash != self.model_hash
+        ):
+            raise ValueError("situated cognitive trajectory must bind exact model identity")
+        story = self.initial_story
+        state = self.initial_state
+        for item in self.rounds:
+            if item.prior_story_hash != story.content_hash or item.prior_state != state:
+                raise ValueError("situated cognitive trajectory chain is discontinuous")
+            story = item.next_story
+            state = item.next_state
+        if story != self.final_story or state != self.final_state:
+            raise ValueError("situated cognitive trajectory final values must equal chain tail")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "model_id": self.model_id, "model_hash": self.model_hash,
+            "initial_story_hash": self.initial_story.content_hash,
+            "initial_state": self.initial_state.to_dict(),
+            "rounds": [item.to_dict() for item in self.rounds],
+            "final_story_hash": self.final_story.content_hash,
+            "final_state": self.final_state.to_dict(),
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_dict())
+
+
 def _matching_rule(model: SituatedAgentCognitiveModel, item: SituatedPerspectiveEvent):
+    if (
+        item.event.kind is SituatedActionKind.TELL
+        and item.observation.channel is ObservationChannel.SELF
+    ):
+        return None
     matches = []
     details = {(detail.name, detail.value) for detail in item.event.details}
     for rule in model.observation_rules:
@@ -400,8 +499,62 @@ def simulate_situated_cognitive_round(
     return SituatedCognitiveRoundResult(state, story.content_hash, tuple(decisions), next_story, next_state)
 
 
+def explain_situated_decision(
+    result: SituatedCognitiveRoundResult,
+    agent_id: str,
+) -> SituatedDecisionExplanation:
+    if not isinstance(result, SituatedCognitiveRoundResult):
+        raise TypeError("situated decision explanation requires a cognitive round")
+    try:
+        decision = next(item for item in result.decisions if item.agent_id == agent_id)
+    except StopIteration as error:
+        raise ValueError("explanation agent must have a decision in the round") from error
+    maximum = max(decision.posterior_belief.probabilities.values())
+    hypothesis_id = min(
+        key for key, value in decision.posterior_belief.probabilities.items()
+        if value == maximum
+    )
+    return SituatedDecisionExplanation(
+        agent_id=agent_id,
+        round_index=decision.round_index,
+        selected_action_id=decision.selected_action_id,
+        most_likely_hypothesis_id=hypothesis_id,
+        hypothesis_probability=maximum,
+        action_probability=decision.action_policy[decision.selected_action_id],
+        expected_value=decision.action_values[decision.selected_action_id],
+        goal_contributions=decision.selected_goal_contributions,
+        admitted_evidence_ids=decision.admitted_observation_ids,
+    )
+
+
+def simulate_situated_cognition(
+    model: SituatedCognitiveModel,
+    initial_story: SituatedStory,
+    initial_state: SituatedCognitiveState,
+    *,
+    round_count: int,
+) -> SituatedCognitiveTrajectory:
+    if not isinstance(round_count, int) or isinstance(round_count, bool) or round_count <= 0:
+        raise ValueError("situated cognitive simulation requires a positive round count")
+    validate_situated_cognitive_state(model, initial_story, initial_state)
+    story = initial_story
+    state = initial_state
+    rounds = []
+    for _ in range(round_count):
+        result = simulate_situated_cognitive_round(model, story, state)
+        rounds.append(result)
+        story = result.next_story
+        state = result.next_state
+    return SituatedCognitiveTrajectory(
+        model.model_id, model.content_hash, initial_story, initial_state,
+        tuple(rounds), story, state,
+    )
+
+
 __all__ = (
     "SituatedBeliefAdmission", "SituatedBeliefAdmissionResult", "SituatedCognitiveDecision",
-    "SituatedCognitiveRoundResult", "admit_situated_observations", "decide_situated_action",
-    "simulate_situated_cognitive_round",
+    "SituatedCognitiveRoundResult", "SituatedDecisionExplanation", "SituatedCognitiveTrajectory",
+    "admit_situated_observations", "decide_situated_action",
+    "simulate_situated_cognitive_round", "explain_situated_decision",
+    "simulate_situated_cognition",
 )

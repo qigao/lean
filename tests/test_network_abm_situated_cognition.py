@@ -45,6 +45,28 @@ class SituatedCognitionRuntimeTests(unittest.TestCase):
         self.assertEqual(repeated.next_mind, alice.next_mind)
         self.assertEqual(repeated.admissions, ())
 
+    def test_self_telling_is_remembered_but_not_reused_as_external_evidence(self):
+        model, story, state = initial_case()
+        story = advance_situated_story(model.world_model, story, (
+            SituatedActionIntent(
+                "self-tell", "alice", SituatedActionKind.TELL,
+                message="The restructuring is approved.",
+            ),
+        ))
+        alice_model = next(item for item in model.agents if item.agent_id == "alice")
+        result = admit_situated_observations(
+            alice_model,
+            mind(state, "alice"),
+            perspective_timeline(story, "alice"),
+        )
+        tell_event_id = next(
+            item.event_id for item in story.rounds[-1].events
+            if item.actor_agent_id == "alice"
+        )
+        self.assertEqual(result.admissions, ())
+        self.assertEqual(result.next_mind.belief, mind(state, "alice").belief)
+        self.assertIn(tell_event_id, result.next_mind.observed_event_ids)
+
     def test_planner_values_information_and_uses_lexical_map_ties(self):
         model, story, state = initial_case()
         alice_model = next(item for item in model.agents if item.agent_id == "alice")
@@ -103,6 +125,18 @@ class SituatedCognitionRuntimeTests(unittest.TestCase):
         self.assertEqual(reordered, model)
         right = simulate_situated_cognitive_round(reordered, story, state)
         self.assertEqual(left, right)
+
+    def test_decision_and_round_reject_duplicate_or_incomplete_agent_coverage(self):
+        model, story, state = initial_case()
+        result = simulate_situated_cognitive_round(model, story, state)
+        decision = result.decisions[0]
+        with self.assertRaisesRegex(ValueError, "feasible action ids must be unique"):
+            replace(
+                decision,
+                feasible_action_ids=decision.feasible_action_ids + (decision.feasible_action_ids[0],),
+            )
+        with self.assertRaisesRegex(ValueError, "exact prior mind roster"):
+            replace(result, decisions=result.decisions[:-1])
 
 
 if __name__ == "__main__":

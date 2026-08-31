@@ -921,6 +921,156 @@ assert tuple(item.event_id for item in information_chain(story, telling.event_id
 )
 ```
 
+### Situated cognitive agents V11
+
+V11 lets those embodied agents update private probability distributions and choose
+their own physical actions with finite-horizon planning. Decision records preserve
+the evidence, belief, action values, policy, and weighted goal contributions that
+actually produced each action.
+
+```python
+from narrative_dynamics.abm import (
+    EmbodiedAgentSpec,
+    EvidenceFact,
+    PassageSpec,
+    PlaceSpec,
+    SituatedActionKind,
+    SituatedActionSpec,
+    SituatedAgentCognitiveModel,
+    SituatedCognitiveModel,
+    SituatedGoalReward,
+    SituatedGoalSpec,
+    SituatedHypothesis,
+    SituatedObservationLikelihood,
+    SituatedObservationRule,
+    SituatedObservationSymbol,
+    SituatedWorldModel,
+    WorldObjectSpec,
+    explain_situated_decision,
+    information_chain,
+    initialize_situated_cognition,
+    initialize_situated_story,
+    initialize_situated_world,
+    simulate_situated_cognition,
+)
+from narrative_dynamics.narrative.runtime_planning import PlanningBeliefState
+
+world = SituatedWorldModel(
+    "autonomous-office",
+    "1",
+    (PlaceSpec("records", "Records"), PlaceSpec("open", "Open office")),
+    (PassageSpec("records-open", "records", "open"),),
+    (
+        EmbodiedAgentSpec("alice", "analyst", "records", 1),
+        EmbodiedAgentSpec("bob", "engineer", "open", 1),
+    ),
+    (WorldObjectSpec(
+        "memo", "official memo", "records", True,
+        (EvidenceFact("restructuring", "approved"),),
+    ),),
+)
+actions = (
+    SituatedActionSpec("inspect", SituatedActionKind.INSPECT, "memo", required_place_ids=("records",), repeatable=False),
+    SituatedActionSpec("move", SituatedActionKind.MOVE, "records-open", required_place_ids=("records",), repeatable=False),
+    SituatedActionSpec(
+        "tell", SituatedActionKind.TELL,
+        message="The restructuring is approved.",
+        required_place_ids=("open",),
+        repeatable=False,
+        source_event_kinds=(SituatedActionKind.INSPECT, SituatedActionKind.TELL),
+    ),
+    SituatedActionSpec("wait", SituatedActionKind.WAIT),
+)
+hypotheses = (
+    SituatedHypothesis("approved", "approved"),
+    SituatedHypothesis("denied", "denied"),
+)
+symbols = (
+    SituatedObservationSymbol("approved", "supports approval"),
+    SituatedObservationSymbol("denied", "opposes approval"),
+)
+rules = (
+    SituatedObservationRule(
+        "memo-approved", "approved", "inspect",
+        SituatedActionKind.INSPECT, "inspected", "restructuring", "approved",
+    ),
+    SituatedObservationRule(
+        "heard-approved", "approved", "tell",
+        SituatedActionKind.TELL, "told", "message",
+        "The restructuring is approved.",
+    ),
+)
+likelihoods = tuple(
+    SituatedObservationLikelihood(
+        action.action_id,
+        hypothesis.hypothesis_id,
+        symbol.symbol_id,
+        (0.9 if hypothesis.hypothesis_id == symbol.symbol_id else 0.1)
+        if action.action_id in {"inspect", "tell"} else 0.5,
+    )
+    for action in actions
+    for hypothesis in hypotheses
+    for symbol in symbols
+)
+reward_values = {
+    ("approved", "inspect"): 3.0, ("denied", "inspect"): 3.0,
+    ("approved", "move"): 2.0, ("denied", "move"): 0.0,
+    ("approved", "tell"): 4.0, ("denied", "tell"): -4.0,
+    ("approved", "wait"): 0.0, ("denied", "wait"): 0.0,
+}
+
+
+def cognitive_agent(agent_id):
+    return SituatedAgentCognitiveModel(
+        agent_id,
+        hypotheses,
+        PlanningBeliefState({"approved": 0.5, "denied": 0.5}),
+        symbols,
+        rules,
+        likelihoods,
+        actions,
+        (("inspect", "move", "tell", "wait"), ("move", "tell", "wait")),
+        (),
+        (SituatedGoalSpec("inform", "discover and share reliable information"),),
+        tuple(
+            SituatedGoalReward("inform", hypothesis, action, value)
+            for (hypothesis, action), value in reward_values.items()
+        ),
+        0.8,
+        4.0,
+    )
+
+
+cognition = SituatedCognitiveModel(
+    "autonomous-office-cognition", "1", world,
+    (cognitive_agent("alice"), cognitive_agent("bob")),
+)
+initial_story = initialize_situated_story(world, initialize_situated_world(world))
+initial_minds = initialize_situated_cognition(cognition, initial_story)
+trajectory = simulate_situated_cognition(
+    cognition, initial_story, initial_minds, round_count=4
+)
+choices = {
+    (result.next_state.round_index, decision.agent_id): decision.selected_action_id
+    for result in trajectory.rounds
+    for decision in result.decisions
+}
+assert choices[(1, "alice")] == "inspect"
+assert choices[(2, "alice")] == "move"
+assert choices[(3, "alice")] == "tell"
+assert choices[(4, "bob")] == "tell"
+bob_explanation = explain_situated_decision(trajectory.rounds[-1], "bob")
+assert bob_explanation.most_likely_hypothesis_id == "approved"
+bob_tell = next(
+    event for event in trajectory.final_story.rounds[-1].events
+    if event.actor_agent_id == "bob"
+)
+assert tuple(
+    event.kind.value
+    for event in information_chain(trajectory.final_story, bob_tell.event_id)
+) == ("inspect", "tell", "tell")
+```
+
 ## Verification
 
 GitHub Actions runs:
