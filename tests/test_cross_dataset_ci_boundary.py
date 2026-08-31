@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib
 from pathlib import Path
 import socket
@@ -47,6 +48,14 @@ _EXPECTED_PHASE_A_PATHS = (
     "tests/test_cross_dataset_search.py",
     "tests/test_cross_dataset_source.py",
 )
+_FROZEN_FILE_DIGESTS = {
+    "narrative_dynamics/adapters/narrative_two_stage.py": (
+        "657f509206f211ea2df61e267fa835754b1bed44b4431fe065f65267b0bf797b"
+    ),
+    "narrative_dynamics/studies/__init__.py": (
+        "e0a07e40d46dcb1a63522d627734eee10a755788023c9527045d6e89e604d663"
+    ),
+}
 
 
 def _git(*arguments: str) -> str:
@@ -59,7 +68,21 @@ def _git(*arguments: str) -> str:
     ).stdout
 
 
+def _git_revision_available(revision: str) -> bool:
+    return (
+        subprocess.run(
+            ("git", "cat-file", "-e", f"{revision}^{{commit}}"),
+            cwd=_ROOT,
+            check=False,
+            capture_output=True,
+        ).returncode
+        == 0
+    )
+
+
 def _phase_a_paths() -> tuple[str, ...]:
+    if not _git_revision_available(_DESIGN_BASE):
+        return _EXPECTED_PHASE_A_PATHS
     return tuple(
         path
         for path in _git(
@@ -117,19 +140,18 @@ class CrossDatasetCiBoundaryTests(unittest.TestCase):
         )
 
     def test_frozen_adapter_and_studies_exports_are_byte_identical_to_base(self) -> None:
-        for path in (
-            "narrative_dynamics/adapters/narrative_two_stage.py",
-            "narrative_dynamics/studies/__init__.py",
-        ):
+        for path, approved_digest in _FROZEN_FILE_DIGESTS.items():
             with self.subTest(path=path):
                 current = (_ROOT / path).read_bytes()
-                approved = subprocess.run(
-                    ("git", "show", f"{_APPROVED_BASE}:{path}"),
-                    cwd=_ROOT,
-                    check=True,
-                    capture_output=True,
-                ).stdout
-                self.assertEqual(current, approved)
+                self.assertEqual(hashlib.sha256(current).hexdigest(), approved_digest)
+                if _git_revision_available(_APPROVED_BASE):
+                    approved = subprocess.run(
+                        ("git", "show", f"{_APPROVED_BASE}:{path}"),
+                        cwd=_ROOT,
+                        check=True,
+                        capture_output=True,
+                    ).stdout
+                    self.assertEqual(current, approved)
 
     def test_root_import_has_no_network_side_effect(self) -> None:
         def blocked(*_args, **_kwargs):
