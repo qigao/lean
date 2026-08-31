@@ -20,6 +20,8 @@ from narrative_dynamics.abm.situated import (
     _validate_round_observation_projection,
     resolve_situated_round,
 )
+from narrative_dynamics.abm.situated_perception import project_situated_percepts
+from narrative_dynamics.abm.situated_perception_contracts import SituatedPerceptionModel
 
 
 _CONTENT_HASH = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -74,6 +76,7 @@ class SituatedStory:
     model_hash: str
     initial_state: SituatedWorldState
     rounds: tuple[SituatedRoundResult, ...] = ()
+    perception_model: SituatedPerceptionModel | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.model_id, str) or not self.model_id.strip():
@@ -88,6 +91,14 @@ class SituatedStory:
             raise ValueError("situated story initial state must reference its model")
         if not isinstance(self.rounds, tuple) or any(not isinstance(item, SituatedRoundResult) for item in self.rounds):
             raise TypeError("situated story rounds must be a tuple of SituatedRoundResult values")
+        if self.perception_model is not None:
+            if not isinstance(self.perception_model, SituatedPerceptionModel):
+                raise TypeError("situated story perception model must be SituatedPerceptionModel")
+            if (
+                self.perception_model.world_model.model_id != self.model_id
+                or self.perception_model.world_model.content_hash != self.model_hash
+            ):
+                raise ValueError("situated story perception model must bind the exact world")
         expected = self.initial_state
         known_events: dict[str, SituatedWorldEvent] = {}
         known_observation_ids: set[str] = set()
@@ -113,7 +124,10 @@ class SituatedStory:
                         if cause_id not in known_events:
                             raise ValueError("situated causal reference must identify an earlier event")
                         if cause_id not in prior_observed[event.actor_agent_id]:
-                            raise ValueError("tell source must be an event the speaker previously observed")
+                            access = "perceived" if self.perception_model is not None else "observed"
+                            raise ValueError(
+                                f"tell source must be an event the speaker previously {access}"
+                            )
                 current_event_ids.add(event.event_id)
                 known_events[event.event_id] = event
             _validate_round_observation_projection(
@@ -137,7 +151,13 @@ class SituatedStory:
                     )
                 known_observation_ids.add(observation.observation_id)
                 known_observation_pairs.add(pair)
-                seen_this_round[observation.agent_id].add(observation.event_id)
+                if self.perception_model is None:
+                    seen_this_round[observation.agent_id].add(observation.event_id)
+            if self.perception_model is not None:
+                projection = project_situated_percepts(self.perception_model, result)
+                for percept in projection.percepts:
+                    if percept.kind is not None:
+                        seen_this_round[percept.agent_id].add(percept.source_event_id)
             for agent_id, event_ids in seen_this_round.items():
                 prior_observed[agent_id].update(event_ids)
             expected = result.next_state
@@ -147,23 +167,36 @@ class SituatedStory:
         return self.initial_state if not self.rounds else self.rounds[-1].next_state
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload = {
             "model_id": self.model_id,
             "model_hash": self.model_hash,
             "initial_state": self.initial_state.to_dict(),
             "rounds": [item.to_dict() for item in self.rounds],
         }
+        if self.perception_model is not None:
+            payload["perception_model_hash"] = self.perception_model.content_hash
+        return payload
 
     @property
     def content_hash(self) -> str:
         return stable_content_hash(self.to_dict())
 
 
-def initialize_situated_story(model: SituatedWorldModel, initial_state: SituatedWorldState) -> SituatedStory:
+def initialize_situated_story(
+    model: SituatedWorldModel,
+    initial_state: SituatedWorldState,
+    *,
+    perception_model: SituatedPerceptionModel | None = None,
+) -> SituatedStory:
     validate_situated_state(model, initial_state)
     if initial_state.round_index != 0:
         raise ValueError("situated story initialization requires round zero")
-    return SituatedStory(model.model_id, model.content_hash, initial_state)
+    return SituatedStory(
+        model.model_id,
+        model.content_hash,
+        initial_state,
+        perception_model=perception_model,
+    )
 
 
 def advance_situated_story(
@@ -176,17 +209,29 @@ def advance_situated_story(
     if story.model_id != model.model_id or story.model_hash != model.content_hash:
         raise ValueError("situated story must reference the exact model")
     result = resolve_situated_round(model, story.current_state, intents)
-    return SituatedStory(story.model_id, story.model_hash, story.initial_state, story.rounds + (result,))
+    return SituatedStory(
+        story.model_id,
+        story.model_hash,
+        story.initial_state,
+        story.rounds + (result,),
+        story.perception_model,
+    )
 
 
 def replay_situated_story(
     model: SituatedWorldModel,
     initial_state: SituatedWorldState,
     action_schedule: tuple[tuple[SituatedActionIntent, ...], ...],
+    *,
+    perception_model: SituatedPerceptionModel | None = None,
 ) -> SituatedStory:
     if not isinstance(action_schedule, tuple) or any(not isinstance(item, tuple) for item in action_schedule):
         raise TypeError("situated action schedule must be a tuple of intent tuples")
-    story = initialize_situated_story(model, initial_state)
+    story = initialize_situated_story(
+        model,
+        initial_state,
+        perception_model=perception_model,
+    )
     for intents in action_schedule:
         story = advance_situated_story(model, story, intents)
     return story
@@ -206,6 +251,7 @@ def perspective_timeline(story: SituatedStory, agent_id: str) -> tuple[SituatedP
         story.model_hash,
         story.initial_state,
         story.rounds,
+        story.perception_model,
     )
     agent_ids = {item.agent_id for item in story.initial_state.agents}
     if agent_id not in agent_ids:

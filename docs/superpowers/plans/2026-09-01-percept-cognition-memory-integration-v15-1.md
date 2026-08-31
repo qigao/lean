@@ -45,6 +45,7 @@
 - Create: `narrative_dynamics/abm/situated_percept_cognition.py`
 - Create: `tests/test_network_abm_situated_percept_cognition.py`
 - Modify: `narrative_dynamics/abm/situated_cognition.py`
+- Modify: `narrative_dynamics/abm/situated_story.py`
 
 **Interfaces:**
 - Consumes: `SituatedPerceptionModel`, `SituatedPercept`, `SituatedStory`, `SituatedAgentCognitiveModel`, `SituatedCognitiveModel`, and `SituatedCognitiveState`.
@@ -134,6 +135,8 @@
 
   Extract the existing decision core in `situated_cognition.py` so legacy `decide_situated_action()` supplies `(event_id, kind)` candidates from `SituatedPerspectiveEvent`, while the new runtime supplies only percepts whose `kind` is disclosed. Do not change the legacy function's result or hash.
 
+  Add an optional `perception_model` binding to `SituatedStory`. Omit it from serialization when absent so every legacy story hash remains unchanged. When present, story validation must re-derive each projection and authorize TELL source references only from prior percepts whose action kind was disclosed; a merely `DETECTED` event is not a valid source. The new cognitive round returns a perception-bound story while leaving every objective event and round unchanged.
+
   Define:
 
   ```python
@@ -167,7 +170,7 @@
   Commit:
 
   ```text
-  git add narrative_dynamics/abm/situated_cognition.py narrative_dynamics/abm/situated_percept_cognition.py tests/test_network_abm_situated_percept_cognition.py
+  git add docs/superpowers/plans/2026-09-01-percept-cognition-memory-integration-v15-1.md narrative_dynamics/abm/situated_story.py narrative_dynamics/abm/situated_cognition.py narrative_dynamics/abm/situated_percept_cognition.py tests/test_network_abm_situated_percept_cognition.py
   git commit -m "feat: admit private percepts into cognition"
   ```
 
