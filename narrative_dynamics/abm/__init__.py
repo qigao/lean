@@ -101,6 +101,16 @@ from narrative_dynamics.abm.evolving_metrics import (
     EvolvingSystemMetrics,
     measure_evolving_system,
 )
+from narrative_dynamics.abm.autonomy_contracts import (
+    AgentActionIntent,
+    AutonomousAgentState,
+    AutonomousNetworkModel,
+    AutonomousPopulationState,
+    RoleDecisionPolicy,
+    SharingDecision,
+    TruthObservation,
+    initialize_autonomous_population,
+)
 
 
 __all__ = (
@@ -176,4 +186,12 @@ __all__ = (
     "simulate_evolving_population",
     "EvolvingSystemMetrics",
     "measure_evolving_system",
+    "SharingDecision",
+    "RoleDecisionPolicy",
+    "TruthObservation",
+    "AgentActionIntent",
+    "AutonomousAgentState",
+    "AutonomousNetworkModel",
+    "AutonomousPopulationState",
+    "initialize_autonomous_population",
 )
