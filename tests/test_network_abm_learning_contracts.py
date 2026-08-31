@@ -1,7 +1,12 @@
 import math
 import unittest
 
-from narrative_dynamics.abm import EdgeSelector
+from narrative_dynamics.abm import (
+    EdgeSelector,
+    NetworkABMModel,
+    NetworkAgentSpec,
+    SocialNetwork,
+)
 from narrative_dynamics.abm.adaptive_contracts import (
     AdaptivePopulationState,
     AdaptiveTrustModel,
@@ -122,6 +127,16 @@ class AdaptiveTrustContractTests(unittest.TestCase):
         model = AdaptiveTrustModel("adaptive", "1", trust_base_model(), 0.5, 0.5)
         with self.assertRaisesRegex(ValueError, "unknown agent"):
             initialize_adaptive_population(model, beliefs={"missing": 1.0})
+
+    def test_adaptive_model_requires_an_edge_to_learn(self):
+        base = NetworkABMModel(
+            "isolated",
+            "1",
+            (NetworkAgentSpec("a", "isolated", 1.0, 0.5, 0.5),),
+            SocialNetwork(("a",), ()),
+        )
+        with self.assertRaisesRegex(ValueError, "at least one social edge"):
+            AdaptiveTrustModel("adaptive", "1", base, 0.5, 0.5)
 
 
 if __name__ == "__main__":

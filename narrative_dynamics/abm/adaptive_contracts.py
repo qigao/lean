@@ -47,6 +47,8 @@ class AdaptiveTrustModel:
         )
         if not isinstance(self.base_model, NetworkABMModel):
             raise TypeError("adaptive trust model base model must be NetworkABMModel")
+        if not self.base_model.network.edges:
+            raise ValueError("adaptive trust model requires at least one social edge")
         object.__setattr__(
             self,
             "learning_rate",
