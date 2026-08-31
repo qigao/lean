@@ -24,5 +24,5 @@
 
 - [ ] Add an independent V9 example calibrating a baseline and comparing a treatment on holdout cases.
 - [ ] Execute all README Python blocks independently.
-- [ ] Run all network ABM tests, 40 targeted narrative regressions, compileall, diff check, placeholder scan, git status, and commit audit.
+- [ ] Run all network ABM tests, 40 targeted narrative regressions, compileall, diff check, unfinished-marker scan, git status, and commit audit.
 - [ ] Commit `docs: expose calibrated ABM experiments`, push, and update PR #44 with V1–V9 evidence.

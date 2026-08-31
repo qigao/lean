@@ -679,6 +679,159 @@ assert all(
 )
 ```
 
+### Calibrated experiment suite V9
+
+Experiment protocols lock the V8-selected candidate as baseline, replay every
+arm on the same holdout cases, and report signed effects and objective-specific
+ranking without reusing training cases as outcomes.
+
+```python
+from narrative_dynamics.abm import (
+    ABMCalibrationCandidate,
+    ABMCalibrationWeights,
+    ABMExperimentArm,
+    ABMExperimentProtocol,
+    AutonomousNetworkModel,
+    CalibrationSplit,
+    DynamicRoleModel,
+    EdgeSelector,
+    EmpiricalABMCase,
+    EmpiricalABMDataset,
+    EvolvingNetworkModel,
+    ExperimentObjective,
+    NetworkABMModel,
+    NetworkAgentSpec,
+    RoleDecisionPolicy,
+    RoleTransitionRule,
+    SocialEdge,
+    SocialNetwork,
+    TruthObservation,
+    apply_calibration_candidate,
+    calibrate_dynamic_role_model,
+    initialize_dynamic_role_population,
+    observe_dynamic_role_state,
+    run_calibrated_abm_experiment,
+    simulate_dynamic_role_population,
+)
+
+catalog = NetworkABMModel(
+    "experiment-catalog",
+    "1",
+    (
+        NetworkAgentSpec("a", "source", 1.0, 0.5, 0.5),
+        NetworkAgentSpec("b", "recipient", 1.0, 0.5, 0.5),
+    ),
+    SocialNetwork(
+        ("a", "b"),
+        (SocialEdge("a", "b", "peer", 1.0, active=True),),
+    ),
+)
+evolving = EvolvingNetworkModel(
+    "experiment-evolution",
+    "1",
+    catalog,
+    initial_active_agent_ids=("a", "b"),
+    learning_rate=0.5,
+    initial_trust=0.5,
+    dissolution_similarity=0.2,
+    formation_similarity=0.8,
+)
+autonomy = AutonomousNetworkModel(
+    "experiment-autonomy",
+    "1",
+    evolving,
+    (
+        RoleDecisionPolicy("source", True, 0.5, 0.4, None, 0),
+        RoleDecisionPolicy("recipient", False, 0.5, 1.0, None, 1),
+    ),
+)
+base = DynamicRoleModel(
+    "experiment-roles",
+    "1",
+    autonomy,
+    (
+        RoleTransitionRule(
+            "recipient",
+            "source",
+            priority=0,
+            minimum_belief=0.4,
+            minimum_rounds_in_role=1,
+            minimum_verification_count=1,
+        ),
+    ),
+)
+baseline_candidate = ABMCalibrationCandidate(0.5, 0.2, 0.8)
+treatment_candidate = ABMCalibrationCandidate(0.2, 0.2, 0.8)
+environment_schedule = ((),)
+truth_schedule = ((
+    TruthObservation(EdgeSelector("a", "b", "peer"), 1.0),
+),)
+
+
+def experiment_case(case_id, split, b_belief):
+    generator = apply_calibration_candidate(base, baseline_candidate)
+    beliefs = (("a", 1.0), ("b", b_belief))
+    initial = initialize_dynamic_role_population(generator, beliefs=dict(beliefs))
+    trajectory = simulate_dynamic_role_population(
+        generator,
+        initial,
+        environment_event_schedule=environment_schedule,
+        truth_observation_schedule=truth_schedule,
+    )
+    return EmpiricalABMCase(
+        case_id,
+        split,
+        beliefs,
+        environment_schedule,
+        truth_schedule,
+        tuple(
+            observe_dynamic_role_state(generator, item.next_state)
+            for item in trajectory.rounds
+        ),
+    )
+
+
+dataset = EmpiricalABMDataset(
+    "experiment-observations",
+    "1",
+    (
+        experiment_case("train", CalibrationSplit.TRAIN, 0.0),
+        experiment_case("holdout", CalibrationSplit.HOLDOUT, 0.2),
+    ),
+)
+calibration = calibrate_dynamic_role_model(
+    base,
+    dataset,
+    candidates=(treatment_candidate, baseline_candidate),
+    weights=ABMCalibrationWeights.uniform(),
+)
+protocol = ABMExperimentProtocol(
+    "trust-treatment",
+    "1",
+    "baseline",
+    "mean_trust",
+    ExperimentObjective.MAXIMIZE,
+    (
+        ABMExperimentArm("baseline", baseline_candidate),
+        ABMExperimentArm("treatment", treatment_candidate),
+    ),
+)
+experiment = run_calibrated_abm_experiment(
+    base,
+    dataset,
+    calibration,
+    protocol,
+)
+arm_results = {item.arm.arm_id: item for item in experiment.arm_results}
+assert calibration.selected_candidate == baseline_candidate
+assert experiment.ranking == ("baseline", "treatment")
+assert arm_results["baseline"].delta_from_baseline == 0.0
+assert arm_results["treatment"].delta_from_baseline < 0.0
+assert tuple(
+    item.case_id for item in arm_results["baseline"].case_results
+) == ("holdout",)
+```
+
 ## Verification
 
 GitHub Actions runs:
