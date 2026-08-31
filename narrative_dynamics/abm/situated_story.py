@@ -17,6 +17,7 @@ from narrative_dynamics.abm.situated import (
     SituatedObservation,
     SituatedRoundResult,
     SituatedWorldEvent,
+    _validate_round_observation_projection,
     resolve_situated_round,
 )
 
@@ -89,6 +90,8 @@ class SituatedStory:
             raise TypeError("situated story rounds must be a tuple of SituatedRoundResult values")
         expected = self.initial_state
         known_events: dict[str, SituatedWorldEvent] = {}
+        known_observation_ids: set[str] = set()
+        known_observation_pairs: set[tuple[str, str]] = set()
         prior_observed: dict[str, set[str]] = {item.agent_id: set() for item in self.initial_state.agents}
         for result in self.rounds:
             if result.prior_state != expected:
@@ -113,6 +116,11 @@ class SituatedStory:
                             raise ValueError("tell source must be an event the speaker previously observed")
                 current_event_ids.add(event.event_id)
                 known_events[event.event_id] = event
+            _validate_round_observation_projection(
+                result.prior_state,
+                result.events,
+                result.observations,
+            )
             seen_this_round: dict[str, set[str]] = {agent_id: set() for agent_id in prior_observed}
             for observation in result.observations:
                 event = event_by_id.get(observation.event_id)
@@ -120,6 +128,15 @@ class SituatedStory:
                     raise ValueError("situated observation must reference an exact same-round event")
                 if observation.agent_id not in prior_observed:
                     raise ValueError("situated observation agent must belong to the story")
+                if observation.observation_id in known_observation_ids:
+                    raise ValueError("situated story observation ids must be globally unique")
+                pair = (observation.agent_id, observation.event_id)
+                if pair in known_observation_pairs:
+                    raise ValueError(
+                        "situated story observation agent/event pairs must be globally unique"
+                    )
+                known_observation_ids.add(observation.observation_id)
+                known_observation_pairs.add(pair)
                 seen_this_round[observation.agent_id].add(observation.event_id)
             for agent_id, event_ids in seen_this_round.items():
                 prior_observed[agent_id].update(event_ids)
@@ -182,6 +199,14 @@ def objective_timeline(story: SituatedStory) -> tuple[SituatedWorldEvent, ...]:
 
 
 def perspective_timeline(story: SituatedStory, agent_id: str) -> tuple[SituatedPerspectiveEvent, ...]:
+    if not isinstance(story, SituatedStory):
+        raise TypeError("perspective timeline requires a SituatedStory")
+    SituatedStory(
+        story.model_id,
+        story.model_hash,
+        story.initial_state,
+        story.rounds,
+    )
     agent_ids = {item.agent_id for item in story.initial_state.agents}
     if agent_id not in agent_ids:
         raise ValueError("perspective agent must belong to the story")

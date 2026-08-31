@@ -41,7 +41,7 @@ def _finite_number(value: object, *, label: str, nonnegative: bool = True) -> fl
         raise ValueError(f"{label} must be finite")
     if nonnegative and number < 0.0:
         raise ValueError(f"{label} must be non-negative")
-    return number
+    return 0.0 if number == 0.0 else number
 
 
 class SituatedPerceptionLayer(str, Enum):
@@ -321,6 +321,19 @@ class SituatedPercept:
         else:
             if any(item is None for item in identified) or self.outcome is None:
                 raise ValueError("exact percept requires actor, kind, place, and outcome")
+
+        if (
+            ObservationChannel.INSPECTION in self.channels
+            and self.kind is not SituatedActionKind.INSPECT
+        ):
+            raise ValueError("inspection channel requires inspect kind")
+        if self.kind is SituatedActionKind.INSPECT:
+            if self.fidelity is not SituatedPerceptFidelity.EXACT:
+                raise ValueError("inspect percepts require exact fidelity")
+            if self.agent_id != self.actor_agent_id:
+                raise ValueError("inspect percepts must be actor-addressed")
+            if self.channels != (ObservationChannel.INSPECTION,):
+                raise ValueError("inspect percepts must be inspection-channel-only")
 
         for private_channel in (ObservationChannel.SELF, ObservationChannel.INSPECTION):
             if private_channel in self.channels:

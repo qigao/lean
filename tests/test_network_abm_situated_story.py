@@ -1,7 +1,14 @@
+from dataclasses import replace
 import unittest
 
-from narrative_dynamics.abm.situated import SituatedActionIntent, SituatedActionKind
+from narrative_dynamics.abm.situated import (
+    ObservationChannel,
+    SituatedActionIntent,
+    SituatedActionKind,
+    SituatedObservation,
+)
 from narrative_dynamics.abm.situated_story import (
+    SituatedStory,
     advance_situated_story,
     causal_ancestors,
     direct_causes,
@@ -41,6 +48,64 @@ def office_story():
 
 
 class SituatedStoryTests(unittest.TestCase):
+    def test_story_rejects_forged_private_inspection_observer(self):
+        model, state = office_state()
+        story = advance_situated_story(
+            model,
+            initialize_situated_story(model, state),
+            (act("inspect", "alice", SituatedActionKind.INSPECT, "memo"),),
+        )
+        result = story.rounds[0]
+        inspection = next(
+            item for item in result.events if item.actor_agent_id == "alice"
+        )
+        forged = SituatedObservation(
+            "forged-bob-inspection",
+            inspection.round_index,
+            "bob",
+            inspection.event_id,
+            inspection.content_hash,
+            ObservationChannel.INSPECTION,
+        )
+
+        with self.assertRaisesRegex(ValueError, "observation projection"):
+            forged_round = replace(
+                result,
+                observations=result.observations + (forged,),
+            )
+            SituatedStory(
+                story.model_id,
+                story.model_hash,
+                story.initial_state,
+                (forged_round,),
+            )
+
+    def test_round_rejects_duplicate_observation_id_and_agent_event_pair(self):
+        model, state = office_state()
+        story = advance_situated_story(
+            model,
+            initialize_situated_story(model, state),
+            (),
+        )
+        result = story.rounds[0]
+        first, second = result.observations[:2]
+
+        with self.assertRaisesRegex(ValueError, "observation ids must be unique"):
+            replace(
+                result,
+                observations=(
+                    first,
+                    replace(second, observation_id=first.observation_id),
+                ) + result.observations[2:],
+            )
+        with self.assertRaisesRegex(ValueError, "agent/event pairs must be unique"):
+            replace(
+                result,
+                observations=result.observations + (
+                    replace(first, observation_id="duplicate-agent-event"),
+                ),
+            )
+
     def test_office_story_preserves_objective_and_private_timelines(self):
         _, _, story, inspect_id, alice_tell_id, bob_tell_id = office_story()
         objective_ids = {item.event_id for item in objective_timeline(story)}

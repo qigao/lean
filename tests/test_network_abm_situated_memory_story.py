@@ -1,9 +1,13 @@
+from copy import copy
+from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
 from narrative_dynamics.abm import (
+    ObservationChannel,
     SituatedActionIntent,
     SituatedActionKind,
+    SituatedObservation,
     SituatedMemoryQuery,
     ingest_situated_story,
     list_situated_memories,
@@ -49,6 +53,35 @@ def office_memory_story():
 
 
 class SituatedMemoryStoryTests(unittest.TestCase):
+    def test_story_ingestion_rejects_forged_private_inspection_observer(self):
+        _, story, inspection, _ = office_memory_story()
+        forged_observation = SituatedObservation(
+            "forged-bob-inspection",
+            inspection.round_index,
+            "bob",
+            inspection.event_id,
+            inspection.content_hash,
+            ObservationChannel.INSPECTION,
+        )
+        forged_round = copy(story.rounds[0])
+        object.__setattr__(
+            forged_round,
+            "observations",
+            forged_round.observations + (forged_observation,),
+        )
+        forged_story = copy(story)
+        object.__setattr__(
+            forged_story,
+            "rounds",
+            (forged_round,) + story.rounds[1:],
+        )
+
+        with TemporaryDirectory() as temporary:
+            database_path = f"{temporary}/forged-memory.sqlite3"
+            with self.assertRaisesRegex(ValueError, "observation projection"):
+                ingest_situated_story(database_path, forged_story, "bob")
+            self.assertFalse(Path(database_path).exists())
+
     def test_story_ingestion_projects_only_each_agents_private_perspective(self):
         _, story, inspection, telling = office_memory_story()
         with TemporaryDirectory() as temporary:

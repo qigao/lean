@@ -283,6 +283,8 @@ class SituatedPerceptProjectionTests(unittest.TestCase):
         percepts = tuple(item for item in projection.percepts if item.source_event_id == event.event_id)
         self.assertEqual(len(percepts), 1)
         self.assertEqual(percepts[0].agent_id, "alice")
+        self.assertEqual(percepts[0].actor_agent_id, "alice")
+        self.assertEqual(percepts[0].kind, SituatedActionKind.INSPECT)
         self.assertEqual(percepts[0].channels, (ObservationChannel.INSPECTION,))
         self.assertEqual(percepts[0].fidelity, SituatedPerceptFidelity.EXACT)
 

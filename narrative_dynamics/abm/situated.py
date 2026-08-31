@@ -188,6 +188,91 @@ class SituatedObservation:
         return stable_content_hash(self.to_dict())
 
 
+def _expected_observation_channels(
+    prior_state: SituatedWorldState,
+    event: SituatedWorldEvent,
+) -> dict[str, ObservationChannel]:
+    bodies = {item.agent_id: item for item in prior_state.agents}
+    if event.actor_agent_id not in bodies:
+        raise ValueError("situated event actor must belong to the prior state")
+    audience = {
+        event.actor_agent_id: (
+            ObservationChannel.INSPECTION
+            if event.kind is SituatedActionKind.INSPECT
+            else ObservationChannel.SELF
+        )
+    }
+    if event.kind is SituatedActionKind.TELL:
+        observable_places = {event.place_id}
+        channel = ObservationChannel.AUDITORY
+    elif event.kind in {SituatedActionKind.TAKE, SituatedActionKind.DROP}:
+        observable_places = {event.place_id}
+        channel = ObservationChannel.VISUAL
+    elif event.kind is SituatedActionKind.MOVE:
+        observable_places = {event.place_id}
+        if event.success:
+            destinations = tuple(
+                item.value
+                for item in event.details
+                if item.name == "destination_place_id"
+            )
+            if len(destinations) != 1:
+                raise ValueError(
+                    "successful move event must identify exactly one destination"
+                )
+            observable_places.add(destinations[0])
+        channel = ObservationChannel.VISUAL
+    else:
+        return audience
+    for body in prior_state.agents:
+        if (
+            body.agent_id != event.actor_agent_id
+            and body.place_id in observable_places
+        ):
+            audience[body.agent_id] = channel
+    return audience
+
+
+def _validate_round_observation_projection(
+    prior_state: SituatedWorldState,
+    events: tuple[SituatedWorldEvent, ...],
+    observations: tuple[SituatedObservation, ...],
+) -> None:
+    observation_ids = tuple(item.observation_id for item in observations)
+    if len(set(observation_ids)) != len(observation_ids):
+        raise ValueError("situated round observation ids must be unique")
+    pairs = tuple((item.agent_id, item.event_id) for item in observations)
+    if len(set(pairs)) != len(pairs):
+        raise ValueError("situated round observation agent/event pairs must be unique")
+    event_by_id = {item.event_id: item for item in events}
+    if len(event_by_id) != len(events):
+        raise ValueError("situated round event ids must be unique")
+    actual: dict[tuple[str, str], ObservationChannel] = {}
+    for observation in observations:
+        event = event_by_id.get(observation.event_id)
+        if (
+            event is None
+            or observation.event_hash != event.content_hash
+            or observation.round_index != event.round_index
+        ):
+            raise ValueError(
+                "situated observation must reference an exact same-round event"
+            )
+        actual[(observation.agent_id, observation.event_id)] = observation.channel
+    expected = {
+        (agent_id, event.event_id): channel
+        for event in events
+        for agent_id, channel in _expected_observation_channels(
+            prior_state,
+            event,
+        ).items()
+    }
+    if actual != expected:
+        raise ValueError(
+            "situated round observations must equal the authorized observation projection"
+        )
+
+
 @dataclass(frozen=True)
 class SituatedRoundResult:
     prior_state: SituatedWorldState
@@ -211,6 +296,11 @@ class SituatedRoundResult:
             raise ValueError("situated round must advance exactly one round")
         if self.next_state.parent_state_hash != self.prior_state.content_hash:
             raise ValueError("situated round next state must reference its prior state")
+        _validate_round_observation_projection(
+            self.prior_state,
+            self.events,
+            self.observations,
+        )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -397,25 +487,8 @@ def resolve_situated_round(
     validate_situated_state(model, next_state)
 
     observations: list[SituatedObservation] = []
-    for intent, event in zip(canonical, events):
-        audience: dict[str, ObservationChannel] = {intent.agent_id: ObservationChannel.SELF}
-        if intent.kind is SituatedActionKind.INSPECT:
-            audience[intent.agent_id] = ObservationChannel.INSPECTION
-        elif intent.kind is SituatedActionKind.TELL:
-            for body in state.agents:
-                if body.place_id == event.place_id and body.agent_id != intent.agent_id:
-                    audience[body.agent_id] = ObservationChannel.AUDITORY
-        elif intent.kind in {SituatedActionKind.TAKE, SituatedActionKind.DROP}:
-            for body in state.agents:
-                if body.place_id == event.place_id and body.agent_id != intent.agent_id:
-                    audience[body.agent_id] = ObservationChannel.VISUAL
-        elif intent.kind is SituatedActionKind.MOVE:
-            visible_places = {event.place_id}
-            if event.success:
-                visible_places.add(passages[intent.target_id].target_place_id)
-            for body in state.agents:
-                if body.place_id in visible_places and body.agent_id != intent.agent_id:
-                    audience[body.agent_id] = ObservationChannel.VISUAL
+    for event in events:
+        audience = _expected_observation_channels(state, event)
         for agent_id, channel in sorted(audience.items()):
             observations.append(SituatedObservation(
                 observation_id=f"{event.event_id}:o:{agent_id}",

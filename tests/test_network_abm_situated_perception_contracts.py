@@ -135,8 +135,122 @@ class SituatedPerceptionLeafContractTests(unittest.TestCase):
                 with self.assertRaises((ValueError, TypeError)):
                     SituatedEventSignalProfile(SituatedActionKind.TELL, True, intensity)
 
+    def test_signed_zero_is_canonicalized_across_numeric_leaf_contracts(self) -> None:
+        positive_edge = SituatedPerceptionEdge(
+            "zero-edge",
+            SituatedPerceptionLayer.VISIBILITY,
+            "lobby",
+            "lobby",
+            0.0,
+        )
+        negative_edge = SituatedPerceptionEdge(
+            "zero-edge",
+            SituatedPerceptionLayer.VISIBILITY,
+            "lobby",
+            "lobby",
+            -0.0,
+        )
+        positive_profile = SituatedAgentPerceptionProfile(
+            "alice", 0.0, 0.0, 0.0
+        )
+        negative_profile = SituatedAgentPerceptionProfile(
+            "alice", -0.0, -0.0, -0.0
+        )
+        positive_signal = SituatedEventSignalProfile(
+            SituatedActionKind.TELL,
+            True,
+            0.0,
+        )
+        negative_signal = SituatedEventSignalProfile(
+            SituatedActionKind.TELL,
+            True,
+            -0.0,
+        )
+        positive_reach = SituatedPerceptionReach(
+            HASH_A,
+            HASH_B,
+            "lobby",
+            {"lobby": 0.0},
+            {"lobby": 0.0},
+            (),
+        )
+        negative_reach = SituatedPerceptionReach(
+            HASH_A,
+            HASH_B,
+            "lobby",
+            {"lobby": -0.0},
+            {"lobby": -0.0},
+            (),
+        )
+
+        for positive, negative in (
+            (positive_edge, negative_edge),
+            (positive_profile, negative_profile),
+            (positive_signal, negative_signal),
+            (positive_reach, negative_reach),
+        ):
+            with self.subTest(contract=type(positive).__name__):
+                self.assertEqual(negative, positive)
+                self.assertEqual(negative.content_hash, positive.content_hash)
+        stored_zeros = (
+            negative_edge.cost,
+            negative_profile.max_visual_cost,
+            negative_profile.minimum_detectable_sound,
+            negative_profile.minimum_clear_sound,
+            negative_signal.auditory_intensity,
+            negative_reach.visual_costs["lobby"],
+            negative_reach.auditory_losses["lobby"],
+        )
+        self.assertTrue(
+            all(math.copysign(1.0, item) == 1.0 for item in stored_zeros)
+        )
+
 
 class SituatedPerceptionModelContractTests(unittest.TestCase):
+    def test_composed_model_canonicalizes_signed_zero_objects_and_hashes(self) -> None:
+        world = office_world()
+        positive = SituatedPerceptionModel(
+            "zero-model",
+            "1",
+            world,
+            (
+                SituatedPerceptionEdge(
+                    "zero-edge",
+                    SituatedPerceptionLayer.VISIBILITY,
+                    "lobby",
+                    "lobby",
+                    0.0,
+                ),
+            ),
+            tuple(
+                SituatedAgentPerceptionProfile(item.agent_id, 0.0, 0.0, 0.0)
+                for item in world.agents
+            ),
+            (SituatedEventSignalProfile(SituatedActionKind.TELL, True, 0.0),),
+        )
+        negative = SituatedPerceptionModel(
+            "zero-model",
+            "1",
+            world,
+            (
+                SituatedPerceptionEdge(
+                    "zero-edge",
+                    SituatedPerceptionLayer.VISIBILITY,
+                    "lobby",
+                    "lobby",
+                    -0.0,
+                ),
+            ),
+            tuple(
+                SituatedAgentPerceptionProfile(item.agent_id, -0.0, -0.0, -0.0)
+                for item in world.agents
+            ),
+            (SituatedEventSignalProfile(SituatedActionKind.TELL, True, -0.0),),
+        )
+
+        self.assertEqual(negative, positive)
+        self.assertEqual(negative.content_hash, positive.content_hash)
+
     def test_model_requires_closed_world_references_and_exact_agent_profiles(self) -> None:
         world = office_world()
         with self.assertRaises((ValueError, TypeError)):
@@ -194,6 +308,65 @@ class SituatedPerceptionReachAndPerceptContractTests(unittest.TestCase):
             SituatedPercept("inspection-other", 1, "alice", "event", HASH_C, (ObservationChannel.INSPECTION,), SituatedPerceptFidelity.EXACT, "bob", SituatedActionKind.INSPECT, "records", "inspected")
         valid = SituatedPercept("inspection-exact", 1, "alice", "event", HASH_C, (ObservationChannel.INSPECTION,), SituatedPerceptFidelity.EXACT, "alice", SituatedActionKind.INSPECT, "records", "inspected")
         self.assertEqual(valid.agent_id, valid.actor_agent_id)
+
+    def test_inspect_identity_requires_exact_actor_addressed_inspection_channel(self) -> None:
+        with self.assertRaisesRegex(ValueError, "inspect percepts require exact fidelity"):
+            SituatedPercept(
+                "identified-inspect",
+                1,
+                "alice",
+                "event",
+                HASH_C,
+                (ObservationChannel.VISUAL,),
+                SituatedPerceptFidelity.IDENTIFIED,
+                "alice",
+                SituatedActionKind.INSPECT,
+                "records",
+            )
+        with self.assertRaisesRegex(ValueError, "inspect percepts must be actor-addressed"):
+            SituatedPercept(
+                "other-agent-inspect",
+                1,
+                "bob",
+                "event",
+                HASH_C,
+                (ObservationChannel.AUDITORY, ObservationChannel.VISUAL),
+                SituatedPerceptFidelity.EXACT,
+                "alice",
+                SituatedActionKind.INSPECT,
+                "records",
+                "inspected",
+            )
+        with self.assertRaisesRegex(ValueError, "inspection-channel-only"):
+            SituatedPercept(
+                "public-inspect",
+                1,
+                "alice",
+                "event",
+                HASH_C,
+                (ObservationChannel.VISUAL,),
+                SituatedPerceptFidelity.EXACT,
+                "alice",
+                SituatedActionKind.INSPECT,
+                "records",
+                "inspected",
+            )
+
+    def test_inspection_channel_implies_inspect_kind(self) -> None:
+        with self.assertRaisesRegex(ValueError, "inspection channel requires inspect kind"):
+            SituatedPercept(
+                "inspection-tell",
+                1,
+                "alice",
+                "event",
+                HASH_C,
+                (ObservationChannel.INSPECTION,),
+                SituatedPerceptFidelity.EXACT,
+                "alice",
+                SituatedActionKind.TELL,
+                "records",
+                "told",
+            )
 
     def test_percept_shape_has_no_world_event_field(self) -> None:
         field_names = {item.name for item in fields(SituatedPercept)}
