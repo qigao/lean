@@ -313,3 +313,65 @@ __all__ += [
     "ExternalValidationReportError",
     "build_external_validation_report",
 ]
+
+from narrative_dynamics.cross_dataset_search import (
+    CROSS_DATASET_TRANSFER_CLAIM_SCOPE,
+    DatasetCandidateCatalog,
+    DatasetCatalogEntry,
+    DatasetSearchProtocol,
+    DatasetSelectionDecision,
+    DatasetSelectionStatus,
+    select_dataset_candidate,
+)
+from narrative_dynamics.cross_dataset_source import (
+    DatasetSourceFile,
+    DatasetSourceManifest,
+    SemanticInvarianceEvidence,
+    TransformReceipt,
+    VerifiedSourceSnapshot,
+)
+from narrative_dynamics.cross_dataset_privacy import PublicSplitManifest
+from narrative_dynamics.cross_dataset_candidates import (
+    RefitCandidateFreeze,
+    ZeroShotCandidateFreeze,
+)
+from narrative_dynamics.cross_dataset_inference import TransferInferenceEvidence
+from narrative_dynamics.cross_dataset_release import (
+    DualTransferPreflight,
+    TransferProtocol,
+    TransferScore,
+    TransferScoreRelease,
+)
+from narrative_dynamics.cross_dataset_authorization import (
+    TransferAuthorizationReceipt,
+)
+from narrative_dynamics.cross_dataset_reporting import (
+    CrossDatasetTransferReport,
+    TransferStudyTerminal,
+)
+
+__all__ += [
+    "CROSS_DATASET_TRANSFER_CLAIM_SCOPE",
+    "CrossDatasetTransferReport",
+    "DatasetCandidateCatalog",
+    "DatasetCatalogEntry",
+    "DatasetSearchProtocol",
+    "DatasetSelectionDecision",
+    "DatasetSelectionStatus",
+    "DatasetSourceFile",
+    "DatasetSourceManifest",
+    "DualTransferPreflight",
+    "PublicSplitManifest",
+    "RefitCandidateFreeze",
+    "SemanticInvarianceEvidence",
+    "TransferAuthorizationReceipt",
+    "TransferInferenceEvidence",
+    "TransferProtocol",
+    "TransferScore",
+    "TransferScoreRelease",
+    "TransferStudyTerminal",
+    "TransformReceipt",
+    "VerifiedSourceSnapshot",
+    "ZeroShotCandidateFreeze",
+    "select_dataset_candidate",
+]
