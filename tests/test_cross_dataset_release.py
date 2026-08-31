@@ -77,6 +77,7 @@ class CrossDatasetReleaseTests(unittest.TestCase):
     def test_shared_identity_drift_is_rejected(self) -> None:
         brier, log = sibling_releases()
         fields = (
+            "scientific_revision",
             "source_identity_hash",
             "transform_identity_hash",
             "split_manifest_hash",
@@ -86,10 +87,12 @@ class CrossDatasetReleaseTests(unittest.TestCase):
         )
         for field in fields:
             with self.subTest(field=field):
-                drifted_protocol = replace(
-                    brier.protocol,
-                    **{field: digest(f"wrong-{field}")},
+                drifted_value = (
+                    "b" * 40
+                    if field == "scientific_revision"
+                    else digest(f"wrong-{field}")
                 )
+                drifted_protocol = replace(brier.protocol, **{field: drifted_value})
                 drifted = TransferScoreRelease.create(
                     drifted_protocol,
                     release_receipt_hash=digest(f"wrong-{field}-receipt"),
@@ -131,7 +134,6 @@ class CrossDatasetReleaseTests(unittest.TestCase):
             ("limitations", LIMITATIONS[:-1]),
             ("external_registration", True),
             ("carry_forward_requirement_ids", CARRY_FORWARD_REQUIREMENT_IDS[:-1]),
-            ("scientific_revision", "b" * 40),
         )
         for field, value in mutations:
             with self.subTest(field=field):
