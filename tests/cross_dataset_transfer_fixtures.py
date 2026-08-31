@@ -43,10 +43,13 @@ from narrative_dynamics.cross_dataset_ledger import (
     TransferAttemptEventType,
 )
 from narrative_dynamics.cross_dataset_release import (
+    DualTransferPreflight,
     TransferScore,
     TransferScoreRelease,
     build_transfer_protocol,
+    preflight_transfer_releases,
 )
+from narrative_dynamics.cross_dataset_authorization import AUTHORIZATION_HEADER
 from narrative_dynamics.studies.feher_hare_measurement_validity_v1 import (
     FEHER_HARE_R3_LOCK_COMMIT,
     FeherHareMeasurementAnchor,
@@ -671,3 +674,44 @@ def sibling_releases() -> tuple[TransferScoreRelease, TransferScoreRelease]:
             release_receipt_hash=digest("log-release-receipt"),
         ),
     )
+
+
+def dual_preflight(
+    root: Path,
+) -> tuple[DualTransferPreflight, GitTransferAttemptStore]:
+    store = local_git_attempt_store(root)
+    preflight = preflight_transfer_releases(
+        *sibling_releases(),
+        store=store,
+        completed_at_utc="2026-08-30T13:00:00Z",
+    )
+    return preflight, store
+
+
+def authorization_comment(
+    preflight: DualTransferPreflight,
+    *,
+    lock_commit: str = "b" * 40,
+    **overrides: object,
+) -> dict[str, object]:
+    body = "\n".join(
+        (
+            AUTHORIZATION_HEADER,
+            f"scientific_sha={preflight.scientific_revision}",
+            f"lock_commit={lock_commit}",
+            f"preflight_hash={preflight.content_hash}",
+            f"brier_release_hash={preflight.brier_release_hash}",
+            f"log_release_hash={preflight.log_release_hash}",
+        )
+    )
+    values: dict[str, object] = {
+        "comment_id": 123456789,
+        "html_url": "https://github.com/qigao/lean/issues/43#issuecomment-123456789",
+        "author_login": "qigao",
+        "created_at": "2026-08-30T14:00:00Z",
+        "updated_at": "2026-08-30T14:00:00Z",
+        "body": body,
+        "deleted": False,
+    }
+    values.update(overrides)
+    return values
