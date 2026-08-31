@@ -10,6 +10,7 @@ from unittest.mock import patch
 import urllib.request
 
 import narrative_dynamics
+from narrative_dynamics.cross_dataset_source import DatasetSourceManifest
 
 
 _DESIGN_BASE = "0378a40e934b3b241d6883df709aa056caec5f69"
@@ -105,6 +106,12 @@ class CrossDatasetCiBoundaryTests(unittest.TestCase):
             blocked,
         ):
             importlib.reload(narrative_dynamics)
+
+    def test_z_root_import_preserves_loaded_transfer_module_identities(self) -> None:
+        self.assertIs(
+            narrative_dynamics.DatasetSourceManifest,
+            DatasetSourceManifest,
+        )
 
 
 if __name__ == "__main__":
