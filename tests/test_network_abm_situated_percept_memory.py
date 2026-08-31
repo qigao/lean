@@ -13,6 +13,7 @@ from narrative_dynamics.abm.situated_memory import initialize_situated_memory
 from narrative_dynamics.abm.situated_perception_contracts import SituatedPerceptFidelity
 from narrative_dynamics.abm.situated_percept_memory import (
     SituatedPerceptMemoryConflictError,
+    SituatedPerceptMemoryStorageError,
     ingest_situated_percept_story,
     initialize_situated_percept_memory,
     list_situated_percept_memories,
@@ -206,7 +207,7 @@ class SituatedPerceptMemoryStorageTests(unittest.TestCase):
         finally:
             connection.close()
 
-        with self.assertRaisesRegex(RuntimeError, "schema version 999"):
+        with self.assertRaisesRegex(SituatedPerceptMemoryStorageError, "schema version 999"):
             initialize_situated_percept_memory(self.database)
 
         connection = sqlite3.connect(self.database)

@@ -271,7 +271,7 @@ def initialize_situated_percept_memory(
                 ).fetchone()
                 if version is None or version["value"] != _SCHEMA_VERSION:
                     actual = "missing" if version is None else version["value"]
-                    raise RuntimeError(
+                    raise SituatedPerceptMemoryStorageError(
                         f"unsupported situated percept memory schema version {actual}"
                     )
             connection.executescript(_SCHEMA)
