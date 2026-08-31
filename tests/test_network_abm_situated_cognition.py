@@ -6,6 +6,7 @@ from narrative_dynamics.abm.situated_cognition import (
     admit_situated_observations,
     decide_situated_action,
     simulate_situated_cognitive_round,
+    simulate_situated_cognition,
 )
 from narrative_dynamics.abm.situated_cognition_contracts import initialize_situated_cognition
 from narrative_dynamics.abm.situated_contracts import initialize_situated_world
@@ -29,6 +30,30 @@ def mind(state, agent_id):
 
 
 class SituatedCognitionRuntimeTests(unittest.TestCase):
+    def test_v11_content_hashes_remain_backward_compatible(self):
+        model, story, state = initial_case()
+        result = simulate_situated_cognitive_round(model, story, state)
+        trajectory = simulate_situated_cognition(
+            model, story, state, round_count=2
+        )
+
+        self.assertEqual(
+            state.content_hash,
+            "sha256:96a48d2252b98cd606785ba8a6c45ddc5e4c2029ee994e950ad39994e8be06b5",
+        )
+        self.assertEqual(
+            result.decisions[0].content_hash,
+            "sha256:0b5e493aa0be4508dc0593a0d8e7c26d924c099ab01f213721c83bada0b9656f",
+        )
+        self.assertEqual(
+            result.content_hash,
+            "sha256:21a1af5848fb3023374bec4a1f53a626d721bb4f60aa2f6833e031632cac937e",
+        )
+        self.assertEqual(
+            trajectory.content_hash,
+            "sha256:764d12cc15dfc54e2ac5d923c658f4911edacfad2709955e1f12f522c8c2076e",
+        )
+
     def test_private_inspection_updates_only_observer_and_is_idempotent(self):
         model, story, state = initial_case()
         story = advance_situated_story(model.world_model, story, (

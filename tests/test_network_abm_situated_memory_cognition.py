@@ -118,14 +118,16 @@ class SituatedMemoryRecallTests(unittest.TestCase):
             model,
             agent_model(model, "alice"),
             mind(state, "alice"),
-            round_index=state.round_index,
+            story=story,
+            state=state,
         )
         bob = recall_situated_memories(
             self.database_path,
             model,
             agent_model(model, "bob"),
             mind(state, "bob"),
-            round_index=state.round_index,
+            story=story,
+            state=state,
         )
 
         self.assertEqual(len(alice.admissions), 1)
@@ -149,7 +151,8 @@ class SituatedMemoryRecallTests(unittest.TestCase):
             model,
             agent_model(model, "alice"),
             alice.next_mind,
-            round_index=state.round_index,
+            story=story,
+            state=state,
         )
         self.assertEqual(repeated.admissions, ())
         self.assertEqual(repeated.next_mind, alice.next_mind)
@@ -176,11 +179,63 @@ class SituatedMemoryRecallTests(unittest.TestCase):
             model,
             agent_model(model, "alice"),
             already_processed,
-            round_index=state.round_index,
+            story=story,
+            state=state,
         )
 
         self.assertEqual(result.admissions, ())
         self.assertEqual(result.next_mind, already_processed)
+
+    def test_excluded_top_hit_is_backfilled_with_next_eligible_memory(self):
+        cognition = cognitive_office_model()
+        story = initialize_situated_story(
+            cognition.world_model,
+            initialize_situated_world(cognition.world_model),
+        )
+        for round_number in (1, 2):
+            story = advance_situated_story(cognition.world_model, story, (
+                SituatedActionIntent(
+                    f"inspect-{round_number}",
+                    "alice",
+                    SituatedActionKind.INSPECT,
+                    "memo",
+                ),
+            ))
+        story = advance_situated_story(cognition.world_model, story, (
+            SituatedActionIntent("move", "alice", SituatedActionKind.MOVE, "records-open"),
+        ))
+        cue = SituatedMemoryRecallCue(
+            "restructuring",
+            "restructuring",
+            required_place_ids=("open",),
+            event_kinds=(SituatedActionKind.INSPECT,),
+            limit=1,
+        )
+        model = recall_model({"alice": (cue,)})
+        ingest_situated_story(self.database_path, story, "alice", model.memory_policy)
+        state = initialize_situated_memory_cognition(model, story)
+
+        first = recall_situated_memories(
+            self.database_path,
+            model,
+            agent_model(model, "alice"),
+            mind(state, "alice"),
+            story=story,
+            state=state,
+        )
+        second = recall_situated_memories(
+            self.database_path,
+            model,
+            agent_model(model, "alice"),
+            first.next_mind,
+            story=story,
+            state=state,
+        )
+
+        self.assertEqual(len(first.admissions), 1)
+        self.assertEqual(first.admissions[0].event_id, story.rounds[1].events[0].event_id)
+        self.assertEqual(len(second.admissions), 1)
+        self.assertEqual(second.admissions[0].event_id, story.rounds[0].events[0].event_id)
 
     def test_auditory_memory_uses_confidence_and_salience_tempering(self):
         cognition, story, inspection = inspection_and_move_story()
@@ -200,7 +255,8 @@ class SituatedMemoryRecallTests(unittest.TestCase):
             model,
             agent_model(model, "bob"),
             mind(state, "bob"),
-            round_index=state.round_index,
+            story=story,
+            state=state,
         )
 
         self.assertEqual(len(result.admissions), 1)
@@ -228,7 +284,8 @@ class SituatedMemoryRecallTests(unittest.TestCase):
             model,
             agent_model(model, "alice"),
             mind(state, "alice"),
-            round_index=state.round_index,
+            story=story,
+            state=state,
         )
 
         self.assertEqual(len(result.admissions), 1)
@@ -271,7 +328,8 @@ class SituatedMemoryRecallTests(unittest.TestCase):
             model,
             agent_model(model, "alice"),
             mind(state, "alice"),
-            round_index=state.round_index,
+            story=checkpoint_story,
+            state=state,
         )
 
         self.assertEqual(result.admissions, ())

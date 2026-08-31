@@ -457,12 +457,14 @@ def search_situated_memories(
             rows = connection.execute(statement, tuple(parameters)).fetchall()
     except sqlite3.Error as error:
         raise SituatedMemoryStorageError("failed to search situated memories") from error
+    excluded = set(query.excluded_memory_ids)
     hits = [
         SituatedMemorySearchHit(
             _row_to_memory(row),
             _private_literal_rank(row["summary"], query.text) if text_uses_fts else None,
         )
         for row in rows
+        if row["memory_id"] not in excluded
     ]
     hits.sort(key=lambda item: (
         item.lexical_rank if item.lexical_rank is not None else 0.0,

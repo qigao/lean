@@ -7,7 +7,11 @@ from narrative_dynamics.abm.situated import (
     SituatedActionKind,
 )
 from narrative_dynamics.abm.situated_contracts import initialize_situated_world
-from narrative_dynamics.abm.situated_cognition import explain_situated_decision
+from narrative_dynamics.abm.situated_cognition import (
+    admit_situated_observations,
+    explain_situated_decision,
+    simulate_situated_cognitive_round,
+)
 from narrative_dynamics.abm.situated_memory import ingest_situated_story
 from narrative_dynamics.abm.situated_memory_cognition import (
     simulate_situated_memory_cognition,
@@ -20,7 +24,11 @@ from narrative_dynamics.abm.situated_memory_cognition_contracts import (
     initialize_situated_memory_cognition,
 )
 from narrative_dynamics.abm.situated_memory_contracts import standard_situated_memory_policy
-from narrative_dynamics.abm.situated_story import advance_situated_story, initialize_situated_story
+from narrative_dynamics.abm.situated_story import (
+    advance_situated_story,
+    initialize_situated_story,
+    perspective_timeline,
+)
 from tests.situated_cognition_fixtures import cognitive_office_model
 
 
@@ -77,6 +85,27 @@ def mind(state, agent_id):
 
 
 class SituatedMemoryCognitiveStoryTests(unittest.TestCase):
+    def test_checkpoint_floor_is_enforced_by_public_v11_entry_points(self):
+        cognition, story, _ = historical_office_case()
+        model = memory_model(cognition, recall_alice=False)
+        state = initialize_situated_memory_cognition(model, story)
+        alice_model = next(item for item in cognition.agents if item.agent_id == "alice")
+
+        admission = admit_situated_observations(
+            alice_model,
+            mind(state, "alice"),
+            perspective_timeline(story, "alice"),
+        )
+        result = simulate_situated_cognitive_round(cognition, story, state)
+
+        self.assertEqual(admission.admissions, ())
+        self.assertEqual(admission.next_mind, mind(state, "alice"))
+        self.assertEqual(decision(result, "alice").selected_action_id, "wait")
+        self.assertAlmostEqual(
+            decision(result, "alice").posterior_belief.probabilities["approved"],
+            0.5,
+        )
+
     def test_office_checkpoint_control_and_recall_choose_different_actions(self):
         cognition, story, inspection = historical_office_case()
         control_model = memory_model(cognition, recall_alice=False)

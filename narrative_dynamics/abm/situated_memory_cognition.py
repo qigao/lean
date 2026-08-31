@@ -279,7 +279,8 @@ def recall_situated_memories(
     agent_model: SituatedAgentCognitiveModel,
     mind: SituatedAgentMindState,
     *,
-    round_index: int,
+    story: SituatedStory,
+    state: SituatedCognitiveState,
 ) -> SituatedMemoryRecallResult:
     """Recall relevant private memories once and temper their Bayesian evidence."""
 
@@ -295,10 +296,16 @@ def recall_situated_memories(
     )
     if expected_agent != agent_model:
         raise ValueError("situated recall agent model must belong to the exact memory cognitive model")
-    if not isinstance(round_index, int) or isinstance(round_index, bool) or round_index < 0:
-        raise ValueError("situated recall round index must be non-negative")
-    if round_index < mind.observation_floor_round:
-        raise ValueError("situated recall cannot precede the mind observation floor")
+    validate_situated_cognitive_state(model.cognitive_model, story, state)
+    state_mind = next(item for item in state.minds if item.agent_id == mind.agent_id)
+    if (
+        mind.own_place_id != state_mind.own_place_id
+        or mind.observation_floor_round != state_mind.observation_floor_round
+        or mind.selected_action_ids != state_mind.selected_action_ids
+        or mind.decision_count != state_mind.decision_count
+    ):
+        raise ValueError("situated recall mind must belong to the current cognitive state")
+    round_index = state.round_index
 
     policy = next(item for item in model.agents if item.agent_id == mind.agent_id)
     if round_index == 0 or not policy.cues:
@@ -320,6 +327,9 @@ def recall_situated_memories(
             min_confidence=cue.min_confidence,
             limit=cue.limit,
             story_model_hash=model.cognitive_model.world_model.content_hash,
+            excluded_memory_ids=tuple(
+                excluded_observations | recalled | seen_observations
+            ),
         )
         for hit in search_situated_memories(database_path, query):
             memory = hit.memory
@@ -426,7 +436,8 @@ def simulate_situated_memory_cognitive_round(
             model,
             model_by_id[agent_id],
             direct.next_mind,
-            round_index=state.round_index,
+            story=story,
+            state=state,
         )
         recalls.append(recalled)
         admitted_minds[agent_id] = recalled.next_mind

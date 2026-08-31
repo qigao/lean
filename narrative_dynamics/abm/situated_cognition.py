@@ -136,16 +136,18 @@ class SituatedCognitiveDecision:
         object.__setattr__(self, "selected_goal_contributions", _freeze_float_map(self.selected_goal_contributions, label="situated decision goal contributions"))
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload = {
             "agent_id": self.agent_id, "round_index": self.round_index,
             "prior_belief": self.prior_belief.to_dict(), "posterior_belief": self.posterior_belief.to_dict(),
             "admitted_observation_ids": list(self.admitted_observation_ids), "admitted_symbol_ids": list(self.admitted_symbol_ids),
             "feasible_action_ids": list(self.feasible_action_ids), "action_values": dict(self.action_values),
             "action_policy": dict(self.action_policy), "selected_action_id": self.selected_action_id,
             "selected_goal_contributions": dict(self.selected_goal_contributions), "intent": self.intent.to_dict(),
-            "recalled_memory_ids": list(self.recalled_memory_ids),
-            "recalled_symbol_ids": list(self.recalled_symbol_ids),
         }
+        if self.recalled_memory_ids or self.recalled_symbol_ids:
+            payload["recalled_memory_ids"] = list(self.recalled_memory_ids)
+            payload["recalled_symbol_ids"] = list(self.recalled_symbol_ids)
+        return payload
 
     @property
     def content_hash(self) -> str:
@@ -212,7 +214,7 @@ class SituatedDecisionExplanation:
         object.__setattr__(self, "goal_contributions", _freeze_float_map(self.goal_contributions, label="situated explanation goal contributions"))
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload = {
             "agent_id": self.agent_id, "round_index": self.round_index,
             "selected_action_id": self.selected_action_id,
             "most_likely_hypothesis_id": self.most_likely_hypothesis_id,
@@ -220,9 +222,11 @@ class SituatedDecisionExplanation:
             "action_probability": self.action_probability, "expected_value": self.expected_value,
             "goal_contributions": dict(self.goal_contributions),
             "admitted_evidence_ids": list(self.admitted_evidence_ids),
-            "recalled_memory_ids": list(self.recalled_memory_ids),
-            "recalled_symbol_ids": list(self.recalled_symbol_ids),
         }
+        if self.recalled_memory_ids or self.recalled_symbol_ids:
+            payload["recalled_memory_ids"] = list(self.recalled_memory_ids)
+            payload["recalled_symbol_ids"] = list(self.recalled_symbol_ids)
+        return payload
 
     @property
     def content_hash(self) -> str:
@@ -315,7 +319,12 @@ def admit_situated_observations(
     belief = mind.belief
     likelihoods = {(item.action_id, item.hypothesis_id, item.symbol_id): item.probability for item in model.likelihoods}
     admissions = []
-    new_items = [item for item in perspective if item.observation.observation_id not in processed]
+    new_items = [
+        item
+        for item in perspective
+        if item.event.round_index > mind.observation_floor_round
+        and item.observation.observation_id not in processed
+    ]
     for item in new_items:
         processed.add(item.observation.observation_id)
         observed.add(item.event.event_id)

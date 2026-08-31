@@ -411,13 +411,15 @@ class SituatedAgentMindState:
             raise ValueError("situated mind observation floor round must be non-negative")
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload = {
             "agent_id": self.agent_id, "belief": self.belief.to_dict(), "own_place_id": self.own_place_id,
             "processed_observation_ids": list(self.processed_observation_ids), "observed_event_ids": list(self.observed_event_ids),
             "selected_action_ids": list(self.selected_action_ids), "decision_count": self.decision_count,
-            "recalled_memory_ids": list(self.recalled_memory_ids),
-            "observation_floor_round": self.observation_floor_round,
         }
+        if self.recalled_memory_ids or self.observation_floor_round != 0:
+            payload["recalled_memory_ids"] = list(self.recalled_memory_ids)
+            payload["observation_floor_round"] = self.observation_floor_round
+        return payload
 
     @property
     def content_hash(self) -> str:
@@ -460,12 +462,14 @@ class SituatedCognitiveState:
         object.__setattr__(self, "minds", tuple(sorted(self.minds, key=lambda item: item.agent_id)))
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload = {
             "model_id": self.model_id, "model_hash": self.model_hash, "round_index": self.round_index,
             "parent_state_hash": self.parent_state_hash, "story_hash": self.story_hash,
             "minds": [item.to_dict() for item in self.minds],
-            "checkpoint": self.checkpoint,
         }
+        if self.checkpoint:
+            payload["checkpoint"] = True
+        return payload
 
     @property
     def content_hash(self) -> str:
