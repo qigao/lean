@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+import re
 
 from narrative_dynamics.contracts import stable_content_hash
 from narrative_dynamics.abm.situated_contracts import (
@@ -15,6 +16,9 @@ from narrative_dynamics.abm.situated_contracts import (
     WorldObjectState,
     validate_situated_state,
 )
+
+
+_CONTENT_HASH = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 def _text(value: object, *, label: str) -> str:
@@ -162,6 +166,8 @@ class SituatedObservation:
     def __post_init__(self) -> None:
         for name in ("observation_id", "agent_id", "event_id", "event_hash"):
             object.__setattr__(self, name, _text(getattr(self, name), label=f"situated observation {name}"))
+        if _CONTENT_HASH.fullmatch(self.event_hash) is None:
+            raise ValueError("situated observation event hash must be a sha256 content hash")
         if not isinstance(self.round_index, int) or isinstance(self.round_index, bool) or self.round_index <= 0:
             raise ValueError("situated observation round index must be positive")
         if not isinstance(self.channel, ObservationChannel):

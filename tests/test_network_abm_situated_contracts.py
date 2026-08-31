@@ -27,6 +27,8 @@ class SituatedWorldContractTests(unittest.TestCase):
         self.assertEqual(state.model_hash, model.content_hash)
         self.assertTrue(model.content_hash.startswith("sha256:"))
         self.assertTrue(state.content_hash.startswith("sha256:"))
+        self.assertTrue(all(item.content_hash.startswith("sha256:") for item in model.places))
+        self.assertTrue(all(item.content_hash.startswith("sha256:") for item in state.objects))
         validate_situated_state(model, state)
 
     def test_model_rejects_unknown_endpoints_and_initial_locations(self):

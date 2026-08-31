@@ -66,6 +66,10 @@ class PlaceSpec:
     def to_dict(self) -> dict[str, object]:
         return {"place_id": self.place_id, "label": self.label}
 
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_dict())
+
 
 @dataclass(frozen=True)
 class PassageSpec:
@@ -91,6 +95,10 @@ class PassageSpec:
             "initially_open": self.initially_open,
         }
 
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_dict())
+
 
 @dataclass(frozen=True)
 class EmbodiedAgentSpec:
@@ -112,6 +120,10 @@ class EmbodiedAgentSpec:
             "initial_place_id": self.initial_place_id,
             "inventory_capacity": self.inventory_capacity,
         }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_dict())
 
 
 @dataclass(frozen=True)
@@ -143,6 +155,10 @@ class WorldObjectSpec:
             "portable": self.portable,
             "evidence": [item.to_dict() for item in self.evidence],
         }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_dict())
 
 
 @dataclass(frozen=True)
@@ -217,6 +233,10 @@ class AgentBodyState:
     def to_dict(self) -> dict[str, object]:
         return {"agent_id": self.agent_id, "place_id": self.place_id}
 
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_dict())
+
 
 @dataclass(frozen=True)
 class WorldObjectState:
@@ -234,6 +254,10 @@ class WorldObjectState:
     def to_dict(self) -> dict[str, object]:
         return {"object_id": self.object_id, "place_id": self.place_id, "holder_agent_id": self.holder_agent_id}
 
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_dict())
+
 
 @dataclass(frozen=True)
 class PassageState:
@@ -247,6 +271,10 @@ class PassageState:
 
     def to_dict(self) -> dict[str, object]:
         return {"passage_id": self.passage_id, "open": self.open}
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_dict())
 
 
 @dataclass(frozen=True)

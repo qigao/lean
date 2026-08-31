@@ -4,7 +4,7 @@ import narrative_dynamics.abm as abm
 
 
 class NetworkABMPublicAPITests(unittest.TestCase):
-    def test_public_api_exports_current_v7_surface(self):
+    def test_public_api_exports_current_v10_surface(self):
         self.assertEqual(
             set(abm.__all__),
             {
@@ -126,6 +126,37 @@ class NetworkABMPublicAPITests(unittest.TestCase):
                 "ABMExperimentArmResult",
                 "CalibratedABMExperimentReport",
                 "run_calibrated_abm_experiment",
+                "EvidenceFact",
+                "PlaceSpec",
+                "PassageSpec",
+                "EmbodiedAgentSpec",
+                "WorldObjectSpec",
+                "SituatedWorldModel",
+                "AgentBodyState",
+                "WorldObjectState",
+                "PassageState",
+                "SituatedWorldState",
+                "initialize_situated_world",
+                "validate_situated_state",
+                "SituatedActionKind",
+                "ObservationChannel",
+                "SituatedActionIntent",
+                "SituatedWorldEvent",
+                "SituatedObservation",
+                "SituatedRoundResult",
+                "resolve_situated_round",
+                "SituatedPerspectiveEvent",
+                "SituatedEventExplanation",
+                "SituatedStory",
+                "initialize_situated_story",
+                "advance_situated_story",
+                "replay_situated_story",
+                "objective_timeline",
+                "perspective_timeline",
+                "direct_causes",
+                "causal_ancestors",
+                "information_chain",
+                "explain_situated_event",
             },
         )
         for name in abm.__all__:

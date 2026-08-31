@@ -832,6 +832,95 @@ assert tuple(
 ) == ("holdout",)
 ```
 
+### Situated story world V10
+
+V10 places independent agents in a physical topology. Actions change one objective
+world, but each agent receives only local observations. The analyst can reconstruct
+the grounded event and information chain without giving agents access to global
+truth.
+
+```python
+from narrative_dynamics.abm import (
+    EmbodiedAgentSpec,
+    EvidenceFact,
+    PassageSpec,
+    PlaceSpec,
+    SituatedActionIntent,
+    SituatedActionKind,
+    SituatedWorldModel,
+    WorldObjectSpec,
+    advance_situated_story,
+    information_chain,
+    initialize_situated_story,
+    initialize_situated_world,
+    perspective_timeline,
+)
+
+office = SituatedWorldModel(
+    "office-story",
+    "1",
+    (
+        PlaceSpec("records", "Records room"),
+        PlaceSpec("open", "Open office"),
+        PlaceSpec("manager", "Manager office"),
+    ),
+    (PassageSpec("records-open", "records", "open"),),
+    (
+        EmbodiedAgentSpec("alice", "analyst", "records", 1),
+        EmbodiedAgentSpec("bob", "engineer", "open", 1),
+        EmbodiedAgentSpec("dana", "manager", "manager", 1),
+    ),
+    (
+        WorldObjectSpec(
+            "memo",
+            "official memo",
+            "records",
+            portable=True,
+            evidence=(EvidenceFact("restructuring", "approved"),),
+        ),
+    ),
+)
+initial = initialize_situated_world(office)
+story = initialize_situated_story(office, initial)
+story = advance_situated_story(office, story, (
+    SituatedActionIntent(
+        "inspect-memo", "alice", SituatedActionKind.INSPECT, "memo"
+    ),
+))
+inspection = next(
+    event for event in story.rounds[-1].events if event.actor_agent_id == "alice"
+)
+story = advance_situated_story(office, story, (
+    SituatedActionIntent(
+        "move-to-open", "alice", SituatedActionKind.MOVE, "records-open"
+    ),
+))
+story = advance_situated_story(office, story, (
+    SituatedActionIntent(
+        "tell-bob",
+        "alice",
+        SituatedActionKind.TELL,
+        message="The restructuring is approved.",
+        source_event_ids=(inspection.event_id,),
+    ),
+))
+telling = next(
+    event for event in story.rounds[-1].events if event.actor_agent_id == "alice"
+)
+
+alice_view = perspective_timeline(story, "alice")
+bob_view = perspective_timeline(story, "bob")
+dana_view = perspective_timeline(story, "dana")
+assert inspection.event_id in {item.event.event_id for item in alice_view}
+assert inspection.event_id not in {item.event.event_id for item in bob_view}
+assert telling.event_id in {item.event.event_id for item in bob_view}
+assert telling.event_id not in {item.event.event_id for item in dana_view}
+assert tuple(item.event_id for item in information_chain(story, telling.event_id)) == (
+    inspection.event_id,
+    telling.event_id,
+)
+```
+
 ## Verification
 
 GitHub Actions runs:

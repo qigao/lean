@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 
 from narrative_dynamics.contracts import stable_content_hash
 from narrative_dynamics.abm.situated_contracts import (
@@ -20,6 +21,9 @@ from narrative_dynamics.abm.situated import (
 )
 
 
+_CONTENT_HASH = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+
 @dataclass(frozen=True)
 class SituatedPerspectiveEvent:
     """One observed event joined to the exact private access record."""
@@ -35,6 +39,10 @@ class SituatedPerspectiveEvent:
 
     def to_dict(self) -> dict[str, object]:
         return {"event": self.event.to_dict(), "observation": self.observation.to_dict()}
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_dict())
 
 
 @dataclass(frozen=True)
@@ -69,7 +77,7 @@ class SituatedStory:
     def __post_init__(self) -> None:
         if not isinstance(self.model_id, str) or not self.model_id.strip():
             raise ValueError("situated story model id must be non-empty")
-        if not isinstance(self.model_hash, str) or not self.model_hash.startswith("sha256:"):
+        if not isinstance(self.model_hash, str) or _CONTENT_HASH.fullmatch(self.model_hash) is None:
             raise ValueError("situated story model hash must be a content hash")
         if not isinstance(self.initial_state, SituatedWorldState):
             raise TypeError("situated story initial state must be SituatedWorldState")
