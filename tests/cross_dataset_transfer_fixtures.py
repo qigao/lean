@@ -36,7 +36,10 @@ from narrative_dynamics.cross_dataset_candidates import (
     REACTIVE_GRID,
     TransferFamily,
 )
-from narrative_dynamics.cross_dataset_inference import _ParticipantLossBlock
+from narrative_dynamics.cross_dataset_inference import (
+    _ParticipantLossBlock,
+    fit_train_base_rate,
+)
 from narrative_dynamics.cross_dataset_ledger import (
     GitTransferAttemptStore,
     TransferAttemptEvent,
@@ -51,6 +54,9 @@ from narrative_dynamics.cross_dataset_release import (
 )
 from narrative_dynamics.cross_dataset_authorization import AUTHORIZATION_HEADER
 from narrative_dynamics.cross_dataset_prediction import TransferRunProgress
+from narrative_dynamics.cross_dataset_reporting import (
+    CarryForwardSensitivityStatus,
+)
 from narrative_dynamics.studies.feher_hare_measurement_validity_v1 import (
     FEHER_HARE_R3_LOCK_COMMIT,
     FeherHareMeasurementAnchor,
@@ -790,3 +796,46 @@ class RecordingProgress:
 
 def recording_progress(calls: list[tuple[object, ...]]) -> RecordingProgress:
     return RecordingProgress(calls)
+
+
+def sealed_prediction_artifact(
+    probabilities: tuple[float, float] = (0.4, 0.6),
+):
+    from narrative_dynamics.cross_dataset_prediction import execute_transfer_final_predictions
+
+    calls: list[tuple[object, ...]] = []
+    projection = final_worker_projection(4)
+    return execute_transfer_final_predictions(
+        projection=projection,
+        zero_shot=zero_shot_freeze(),
+        refit=refit_freeze(),
+        seeds=(301, 302),
+        evaluator=recording_evaluator(calls, invalid=probabilities),
+        progress=recording_progress(calls),
+        expected_final_commitment_hash=projection.commitment_hash,
+        prediction_artifact_identity=sibling_releases()[0].prediction_artifact_identity,
+    )
+
+
+def carry_forward_statuses(
+    status: CarryForwardSensitivityStatus = CarryForwardSensitivityStatus.COMPARABLE,
+):
+    from narrative_dynamics.cross_dataset_release import CARRY_FORWARD_REQUIREMENT_IDS
+
+    return tuple((requirement_id, status) for requirement_id in CARRY_FORWARD_REQUIREMENT_IDS)
+
+
+def valid_negative_scoring_input() -> dict[str, object]:
+    brier, log = sibling_releases()
+    return {
+        "artifact": sealed_prediction_artifact((0.4, 0.6)),
+        "baseline": fit_train_base_rate(train_projection()),
+        "brier_release": brier,
+        "log_release": log,
+        "semantic_invariance_receipt_hash": digest("semantic-invariance"),
+        "semantic_invariance_pass": True,
+        "carry_forward_statuses": carry_forward_statuses(),
+        "task_condition_strata": ("s0", "synthetic-condition"),
+        "participant_influence_hash": digest("participant-influence"),
+        "forbidden_archive_values": ("private-p1", "private-p2"),
+    }
