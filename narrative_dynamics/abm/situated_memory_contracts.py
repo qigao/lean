@@ -231,6 +231,7 @@ class SituatedMemoryQuery:
     min_confidence: float = 0.0
     include_inactive: bool = False
     limit: int = 20
+    story_model_hash: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "agent_id", _text(self.agent_id, label="situated memory query agent id"))
@@ -258,6 +259,12 @@ class SituatedMemoryQuery:
             raise TypeError("situated memory query include inactive must be boolean")
         if not isinstance(self.limit, int) or isinstance(self.limit, bool) or not 1 <= self.limit <= 1000:
             raise ValueError("situated memory query limit must be between 1 and 1000")
+        if self.story_model_hash is not None:
+            object.__setattr__(
+                self,
+                "story_model_hash",
+                _hash(self.story_model_hash, label="situated memory query story model hash"),
+            )
 
 
 @dataclass(frozen=True)

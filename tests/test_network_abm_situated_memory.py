@@ -24,6 +24,7 @@ from narrative_dynamics.abm.situated_memory_contracts import (
 HASH_A = "sha256:" + "a" * 64
 HASH_B = "sha256:" + "b" * 64
 HASH_C = "sha256:" + "c" * 64
+HASH_D = "sha256:" + "d" * 64
 
 
 def record(
@@ -292,6 +293,30 @@ class SituatedMemoryRetrievalTests(SituatedMemoryDatabaseTestCase):
 
         self.assertEqual(tuple(item.memory.memory_id for item in hits), ("alice-tell",))
         self.assertIsNone(hits[0].lexical_rank)
+
+    def test_story_model_hash_filter_is_authoritative(self):
+        other_world = replace(
+            self.alice_inspection,
+            memory_id="alice-other-world",
+            observation_id="alice-other-world",
+            event_id="other-world-event",
+            story_model_hash=HASH_D,
+        )
+        ingest_situated_memory(self.database_path, "alice", (other_world,))
+
+        hits = search_situated_memories(
+            self.database_path,
+            SituatedMemoryQuery(
+                "alice",
+                text="restructuring",
+                story_model_hash=HASH_A,
+            ),
+        )
+
+        self.assertEqual(
+            {item.memory.memory_id for item in hits},
+            {"alice-inspect", "alice-tell"},
+        )
 
     def test_activation_is_private_soft_deletion(self):
         deactivated = set_situated_memory_active(

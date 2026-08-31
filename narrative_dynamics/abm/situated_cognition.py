@@ -258,7 +258,11 @@ class SituatedCognitiveTrajectory:
         return stable_content_hash(self.to_dict())
 
 
-def _matching_rule(model: SituatedAgentCognitiveModel, item: SituatedPerspectiveEvent):
+def match_situated_observation_rule(
+    model: SituatedAgentCognitiveModel,
+    item: SituatedPerspectiveEvent,
+):
+    """Return the unique cognitive rule matched by one private observation."""
     if (
         item.event.kind is SituatedActionKind.TELL
         and item.observation.channel is ObservationChannel.SELF
@@ -299,7 +303,7 @@ def admit_situated_observations(
     for item in new_items:
         processed.add(item.observation.observation_id)
         observed.add(item.event.event_id)
-        rule = _matching_rule(model, item)
+        rule = match_situated_observation_rule(model, item)
         if rule is None:
             continue
         masses = {
@@ -554,7 +558,7 @@ def simulate_situated_cognition(
 __all__ = (
     "SituatedBeliefAdmission", "SituatedBeliefAdmissionResult", "SituatedCognitiveDecision",
     "SituatedCognitiveRoundResult", "SituatedDecisionExplanation", "SituatedCognitiveTrajectory",
-    "admit_situated_observations", "decide_situated_action",
+    "match_situated_observation_rule", "admit_situated_observations", "decide_situated_action",
     "simulate_situated_cognitive_round", "explain_situated_decision",
     "simulate_situated_cognition",
 )

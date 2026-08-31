@@ -445,6 +445,9 @@ def search_situated_memories(
     if query.max_round is not None:
         clauses.append("m.round_index <= ?")
         parameters.append(query.max_round)
+    if query.story_model_hash is not None:
+        clauses.append("m.story_model_hash = ?")
+        parameters.append(query.story_model_hash)
     clauses.append("m.confidence >= ?")
     parameters.append(query.min_confidence)
 
