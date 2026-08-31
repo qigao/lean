@@ -501,17 +501,34 @@ def _simulate_situated_percept_memory_cognitive_round(
     next_round = state.round_index + 1
     for agent_id in sorted(model_by_id):
         private = perceptual_timeline(model.perception_model, story, agent_id)
+        claim_keys = set(
+            ()
+            if consolidated_claim_keys_by_observer is None
+            else consolidated_claim_keys_by_observer.get(agent_id, frozenset())
+        )
         direct = admit_situated_percepts(
             model_by_id[agent_id],
             mind_by_id[agent_id],
             private,
             _claim_topic_by_symbol=claim_topic_by_symbol,
-            _consolidated_claim_keys=(
-                None
-                if consolidated_claim_keys_by_observer is None
-                else consolidated_claim_keys_by_observer.get(agent_id, frozenset())
-            ),
+            _consolidated_claim_keys=frozenset(claim_keys),
         )
+        private_by_id = {item.percept_id: item for item in private}
+        if claim_topic_by_symbol is not None:
+            for admission in direct.admissions:
+                percept = private_by_id[admission.observation_id]
+                if (
+                    percept.kind is SituatedActionKind.TELL
+                    and percept.actor_agent_id is not None
+                    and percept.actor_agent_id != agent_id
+                    and admission.symbol_id in claim_topic_by_symbol
+                ):
+                    scope = (
+                        percept.actor_agent_id,
+                        claim_topic_by_symbol[admission.symbol_id],
+                    )
+                    claim_keys = {key for key in claim_keys if key[:2] != scope}
+                    claim_keys.add((scope[0], scope[1], admission.symbol_id))
         recalled = recall_situated_percept_memories(
             database_path,
             model,
@@ -523,11 +540,7 @@ def _simulate_situated_percept_memory_cognitive_round(
                 None if source_trust_by_observer is None else source_trust_by_observer.get(agent_id, {})
             ),
             _claim_topic_by_symbol=claim_topic_by_symbol,
-            _consolidated_claim_keys=(
-                None
-                if consolidated_claim_keys_by_observer is None
-                else consolidated_claim_keys_by_observer.get(agent_id, frozenset())
-            ),
+            _consolidated_claim_keys=frozenset(claim_keys),
         )
         recalls.append(recalled)
         admitted_minds[agent_id] = recalled.next_mind
