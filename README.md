@@ -1501,9 +1501,73 @@ assert len(exact[3].claims) == 1
 assert detected[3].claims == ()
 ```
 
-This path remains deterministic and schema-grounded. Arbitrary natural-language
-grounding—such as asking an LLM to map free prose into declared actions, symbols,
-places, and evidence—is a separate V16 boundary.
+This percept/cognition path remains deterministic. V16 adds a separate provider
+boundary for interpreting natural language without weakening that evidence model.
+
+### Private RAG and grounded language V16
+
+V16 treats an LLM (or any other structured-language provider) as a semantic
+compiler, never as a world transition. A provider may propose bounded FTS5 query
+expansions and candidate claims, but deterministic runtime code chooses the private
+memory rows, validates every ID and enum against a finite vocabulary, and creates
+the accepted content-addressed artifact.
+
+```python
+from narrative_dynamics.abm import (
+    SituatedGroundingProviderIdentity,
+    SituatedGroundingRequest,
+    build_situated_grounding_prompt,
+    compile_situated_semantic_grounding,
+    grounded_claims_to_situated_social_evidence,
+    replay_situated_semantic_grounding,
+)
+
+
+class JsonLanguageProvider:
+    identity = SituatedGroundingProviderIdentity(
+        "my-provider", "1", "my-structured-language-model"
+    )
+
+    def __init__(self, complete_json):
+        self._complete_json = complete_json
+
+    def complete_json(self, *, task, payload):
+        # The injected callable may use a hosted LLM, a local model, or rules.
+        return self._complete_json(task=task, payload=payload)
+
+
+provider = JsonLanguageProvider(application_json_completion)
+request = SituatedGroundingRequest(
+    "interpret-bob-7",
+    "bob",
+    bob_exact_tell_memory_id,
+    "Alice 对重组决定到底是什么意思？",
+    maximum_memories=6,
+)
+prompt = build_situated_grounding_prompt(
+    "office.sqlite3",
+    grounding_model,
+    request,
+    retrieval_planner=provider,
+)
+artifact = compile_situated_semantic_grounding(prompt, provider)
+social_evidence = grounded_claims_to_situated_social_evidence(
+    grounding_model, artifact
+)
+assert replay_situated_semantic_grounding(grounding_model, artifact) is artifact
+```
+
+In the office case, Bob's prompt can contain only Bob's sanitized SQLite rows. An
+exact TELL memory may support a grounded testimony claim; an exact private INSPECT
+memory may support verification. A closed-door `detected` sound has no speaker,
+message, outcome, or details and therefore cannot support message semantics.
+
+The repository intentionally bundles no vendor SDK or network client. Applications
+inject a provider through `complete_json`; accepted artifacts replay with no model
+call. FTS5 retrieval works without an LLM, while optional provider query expansion
+helps with paraphrases and synonyms. V16 does not yet add embeddings/vector search,
+open-world predicates, free-form action creation, or direct model mutation of the
+world or agent state.
 
 ## Verification
 

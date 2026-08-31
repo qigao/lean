@@ -353,6 +353,30 @@ from narrative_dynamics.abm.situated_percept_social_cognition import (
     simulate_situated_percept_social_cognition,
     simulate_situated_percept_social_cognitive_round,
 )
+from narrative_dynamics.abm.situated_grounding_contracts import (
+    SituatedGroundedClaim,
+    SituatedGroundingEvidence,
+    SituatedGroundingEvidenceKind,
+    SituatedGroundingModality,
+    SituatedGroundingPolarity,
+    SituatedGroundingPredicate,
+    SituatedGroundingPrompt,
+    SituatedGroundingProviderIdentity,
+    SituatedGroundingRequest,
+    SituatedGroundingRetrievalPlan,
+    SituatedGroundingTemporalScope,
+    SituatedSemanticGroundingArtifact,
+    SituatedSemanticGroundingModel,
+)
+from narrative_dynamics.abm.situated_grounding import (
+    SituatedStructuredLanguageProvider,
+    build_situated_grounding_prompt,
+    compile_situated_semantic_grounding,
+    grounded_claims_to_situated_social_evidence,
+    parse_situated_grounding_retrieval_plan,
+    replay_situated_semantic_grounding,
+    validate_situated_semantic_grounding_artifact,
+)
 
 
 __all__ = (
@@ -624,4 +648,24 @@ __all__ = (
     "recall_situated_percept_memories_with_social_trust",
     "simulate_situated_percept_social_cognitive_round",
     "simulate_situated_percept_social_cognition",
+    "SituatedGroundingEvidenceKind",
+    "SituatedGroundingPolarity",
+    "SituatedGroundingModality",
+    "SituatedGroundingTemporalScope",
+    "SituatedGroundingPredicate",
+    "SituatedGroundingProviderIdentity",
+    "SituatedSemanticGroundingModel",
+    "SituatedGroundingRequest",
+    "SituatedGroundingRetrievalPlan",
+    "SituatedGroundingEvidence",
+    "SituatedGroundingPrompt",
+    "SituatedGroundedClaim",
+    "SituatedSemanticGroundingArtifact",
+    "SituatedStructuredLanguageProvider",
+    "parse_situated_grounding_retrieval_plan",
+    "build_situated_grounding_prompt",
+    "validate_situated_semantic_grounding_artifact",
+    "compile_situated_semantic_grounding",
+    "replay_situated_semantic_grounding",
+    "grounded_claims_to_situated_social_evidence",
 )

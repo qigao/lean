@@ -4,7 +4,7 @@ import narrative_dynamics.abm as abm
 
 
 class NetworkABMPublicAPITests(unittest.TestCase):
-    def test_public_api_exports_current_v15_surface(self):
+    def test_public_api_exports_current_v16_surface(self):
         self.assertEqual(
             set(abm.__all__),
             {
@@ -276,6 +276,26 @@ class NetworkABMPublicAPITests(unittest.TestCase):
                 "recall_situated_percept_memories_with_social_trust",
                 "simulate_situated_percept_social_cognitive_round",
                 "simulate_situated_percept_social_cognition",
+                "SituatedGroundingEvidenceKind",
+                "SituatedGroundingPolarity",
+                "SituatedGroundingModality",
+                "SituatedGroundingTemporalScope",
+                "SituatedGroundingPredicate",
+                "SituatedGroundingProviderIdentity",
+                "SituatedSemanticGroundingModel",
+                "SituatedGroundingRequest",
+                "SituatedGroundingRetrievalPlan",
+                "SituatedGroundingEvidence",
+                "SituatedGroundingPrompt",
+                "SituatedGroundedClaim",
+                "SituatedSemanticGroundingArtifact",
+                "SituatedStructuredLanguageProvider",
+                "parse_situated_grounding_retrieval_plan",
+                "build_situated_grounding_prompt",
+                "validate_situated_semantic_grounding_artifact",
+                "compile_situated_semantic_grounding",
+                "replay_situated_semantic_grounding",
+                "grounded_claims_to_situated_social_evidence",
             },
         )
         for name in abm.__all__:
