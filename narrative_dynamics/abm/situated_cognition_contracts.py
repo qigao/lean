@@ -388,6 +388,8 @@ class SituatedAgentMindState:
     observed_event_ids: tuple[str, ...] = ()
     selected_action_ids: tuple[str, ...] = ()
     decision_count: int = 0
+    recalled_memory_ids: tuple[str, ...] = ()
+    observation_floor_round: int = 0
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "agent_id", _text(self.agent_id, label="situated mind agent id"))
@@ -395,20 +397,26 @@ class SituatedAgentMindState:
             raise TypeError("situated mind belief must be PlanningBeliefState")
         object.__setattr__(self, "belief", PlanningBeliefState(dict(self.belief.probabilities)))
         object.__setattr__(self, "own_place_id", _text(self.own_place_id, label="situated mind own place id"))
-        for name in ("processed_observation_ids", "observed_event_ids"):
+        for name in ("processed_observation_ids", "observed_event_ids", "recalled_memory_ids"):
             object.__setattr__(self, name, _strings(getattr(self, name), label=f"situated mind {name}"))
+        if set(self.processed_observation_ids) & set(self.recalled_memory_ids):
+            raise ValueError("situated mind direct and recalled observation ids must be disjoint")
         if not isinstance(self.selected_action_ids, tuple) or any(not isinstance(item, str) or not item.strip() for item in self.selected_action_ids):
             raise TypeError("situated mind selected action ids must be a tuple of strings")
         if not isinstance(self.decision_count, int) or isinstance(self.decision_count, bool) or self.decision_count < 0:
             raise ValueError("situated mind decision count must be non-negative")
         if len(self.selected_action_ids) != self.decision_count:
             raise ValueError("situated mind action history must match decision count")
+        if not isinstance(self.observation_floor_round, int) or isinstance(self.observation_floor_round, bool) or self.observation_floor_round < 0:
+            raise ValueError("situated mind observation floor round must be non-negative")
 
     def to_dict(self) -> dict[str, object]:
         return {
             "agent_id": self.agent_id, "belief": self.belief.to_dict(), "own_place_id": self.own_place_id,
             "processed_observation_ids": list(self.processed_observation_ids), "observed_event_ids": list(self.observed_event_ids),
             "selected_action_ids": list(self.selected_action_ids), "decision_count": self.decision_count,
+            "recalled_memory_ids": list(self.recalled_memory_ids),
+            "observation_floor_round": self.observation_floor_round,
         }
 
     @property
@@ -424,6 +432,7 @@ class SituatedCognitiveState:
     parent_state_hash: str | None
     story_hash: str
     minds: tuple[SituatedAgentMindState, ...]
+    checkpoint: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "model_id", _text(self.model_id, label="situated cognitive state model id"))
@@ -433,7 +442,12 @@ class SituatedCognitiveState:
                 raise ValueError(f"situated cognitive state {name} must be a content hash")
         if not isinstance(self.round_index, int) or isinstance(self.round_index, bool) or self.round_index < 0:
             raise ValueError("situated cognitive state round index must be non-negative")
-        if self.round_index == 0:
+        if not isinstance(self.checkpoint, bool):
+            raise TypeError("situated cognitive checkpoint must be boolean")
+        if self.checkpoint:
+            if self.parent_state_hash is not None:
+                raise ValueError("cognitive checkpoint cannot have a parent state hash")
+        elif self.round_index == 0:
             if self.parent_state_hash is not None:
                 raise ValueError("round-zero cognitive state cannot have a parent")
         elif not isinstance(self.parent_state_hash, str) or _HASH.fullmatch(self.parent_state_hash) is None:
@@ -450,6 +464,7 @@ class SituatedCognitiveState:
             "model_id": self.model_id, "model_hash": self.model_hash, "round_index": self.round_index,
             "parent_state_hash": self.parent_state_hash, "story_hash": self.story_hash,
             "minds": [item.to_dict() for item in self.minds],
+            "checkpoint": self.checkpoint,
         }
 
     @property
@@ -489,6 +504,10 @@ def validate_situated_cognitive_state(model: SituatedCognitiveModel, story: Situ
             raise ValueError("situated mind belief must cover exact agent hypotheses")
         if mind.own_place_id not in place_ids:
             raise ValueError("situated mind own place must belong to the world")
+        if mind.observation_floor_round > state.round_index:
+            raise ValueError("situated mind observation floor cannot exceed state round")
+        if state.checkpoint and mind.observation_floor_round != state.round_index:
+            raise ValueError("checkpoint mind observation floor must equal checkpoint round")
         declared_actions = {item.action_id for item in models[mind.agent_id].actions}
         if not set(mind.selected_action_ids).issubset(declared_actions):
             raise ValueError("situated mind action history must use declared actions")
