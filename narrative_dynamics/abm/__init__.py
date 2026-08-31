@@ -140,6 +140,14 @@ from narrative_dynamics.abm.role_metrics import (
     RolePopulationCount,
     measure_role_dynamics,
 )
+from narrative_dynamics.abm.calibration_contracts import (
+    ABMCalibrationCandidate,
+    ABMCalibrationWeights,
+    CalibrationSplit,
+    EmpiricalABMCase,
+    EmpiricalABMDataset,
+    ObservedABMSnapshot,
+)
 
 
 __all__ = (
@@ -242,4 +250,10 @@ __all__ = (
     "RolePopulationCount",
     "RoleDynamicsMetrics",
     "measure_role_dynamics",
+    "CalibrationSplit",
+    "ObservedABMSnapshot",
+    "EmpiricalABMCase",
+    "EmpiricalABMDataset",
+    "ABMCalibrationCandidate",
+    "ABMCalibrationWeights",
 )

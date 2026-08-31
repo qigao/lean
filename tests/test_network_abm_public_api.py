@@ -107,6 +107,12 @@ class NetworkABMPublicAPITests(unittest.TestCase):
                 "RolePopulationCount",
                 "RoleDynamicsMetrics",
                 "measure_role_dynamics",
+                "CalibrationSplit",
+                "ObservedABMSnapshot",
+                "EmpiricalABMCase",
+                "EmpiricalABMDataset",
+                "ABMCalibrationCandidate",
+                "ABMCalibrationWeights",
             },
         )
         for name in abm.__all__:
