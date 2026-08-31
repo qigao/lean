@@ -224,6 +224,8 @@ class SituatedSemanticGroundingModel:
                 raise ValueError("grounding predicate social topic must be declared")
             if not set(predicate.value_ids).issubset(topic.symbol_ids):
                 raise ValueError("grounding predicate value must be a declared topic symbol")
+            if predicate.minimum_evidence_fidelity is not SituatedPerceptFidelity.EXACT:
+                raise ValueError("social grounding predicate requires exact fidelity")
             if SituatedGroundingTemporalScope.PRESENT not in predicate.allowed_temporal_scopes:
                 raise ValueError("social grounding predicate must allow present temporal scope")
         object.__setattr__(self, "predicates", tuple(sorted(self.predicates, key=lambda item: item.predicate_id)))

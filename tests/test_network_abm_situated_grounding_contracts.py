@@ -108,6 +108,18 @@ class SituatedGroundingContractTests(unittest.TestCase):
                     social_subject_id="memo",
                 ),),
             )
+        with self.assertRaisesRegex(ValueError, "exact fidelity"):
+            replace(
+                model,
+                predicates=(SituatedGroundingPredicate(
+                    predicate_id="status",
+                    value_ids=("approved", "denied"),
+                    social_topic_id="restructuring",
+                    subject_ids=("memo",),
+                    minimum_evidence_fidelity=SituatedPerceptFidelity.DETECTED,
+                    social_subject_id="memo",
+                ),),
+            )
 
     def test_evidence_enforces_sanitized_fidelity_and_memory_identity(self):
         evidence = exact_tell_evidence()

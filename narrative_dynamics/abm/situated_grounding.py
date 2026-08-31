@@ -548,6 +548,7 @@ def grounded_claims_to_situated_social_evidence(
             predicate is None
             or predicate.social_topic_id is None
             or claim.subject_id != predicate.social_subject_id
+            or predicate.minimum_evidence_fidelity is not SituatedPerceptFidelity.EXACT
             or claim.polarity is not SituatedGroundingPolarity.AFFIRMED
             or claim.modality is not SituatedGroundingModality.ASSERTED
             or claim.temporal_scope is not SituatedGroundingTemporalScope.PRESENT
@@ -591,7 +592,6 @@ def grounded_claims_to_situated_social_evidence(
             "source_event_id": event_id,
             "source_agent_id": source_agent,
             "topic_id": topic_id,
-            "symbol_id": symbol_id,
         })
         result.append(SituatedSocialEvidence(
             identity,

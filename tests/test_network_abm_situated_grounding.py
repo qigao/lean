@@ -3,7 +3,8 @@ import json
 from tempfile import TemporaryDirectory
 import unittest
 
-from narrative_dynamics.abm.situated import SituatedActionKind
+from narrative_dynamics.abm.situated import ObservationChannel, SituatedActionKind
+from narrative_dynamics.abm.situated_contracts import EvidenceFact
 from narrative_dynamics.abm.situated_grounding import (
     build_situated_grounding_prompt,
     compile_situated_semantic_grounding,
@@ -13,6 +14,8 @@ from narrative_dynamics.abm.situated_grounding import (
 )
 from narrative_dynamics.abm.situated_grounding_contracts import (
     SituatedGroundingModality,
+    SituatedGroundingEvidence,
+    SituatedGroundingEvidenceKind,
     SituatedGroundingPolarity,
     SituatedGroundingPredicate,
     SituatedGroundingProviderIdentity,
@@ -428,6 +431,51 @@ class SituatedSemanticGroundingTests(SituatedPrivateGroundingContextTests):
                 }),
             )
 
+    def test_detected_primary_cannot_bridge_via_secondary_exact_evidence(self):
+        database = f"{self.temporary.name}/mixed-fidelity.sqlite3"
+        perception = perception_model()
+        story = private_story(perception, door_open=False)
+        ingest_situated_percept_story(database, perception, story, "bob")
+        model = grounding_model(perception)
+        memory = next(
+            item
+            for item in list_situated_percept_memories(database, "bob")
+            if item.fidelity is SituatedPerceptFidelity.DETECTED
+        )
+        prompt = build_situated_grounding_prompt(
+            database,
+            model,
+            SituatedGroundingRequest(
+                "mixed-fidelity", "bob", memory.memory_id, "What was said?", 3
+            ),
+        )
+        older_exact = SituatedGroundingEvidence(
+            "older-exact-tell",
+            SituatedGroundingEvidenceKind.PERCEPT,
+            "bob",
+            "older-tell",
+            "sha256:" + "e" * 64,
+            1,
+            (ObservationChannel.AUDITORY,),
+            SituatedPerceptFidelity.EXACT,
+            "round 1; alice; tell; exact message",
+            actor_agent_id="alice",
+            event_kind=SituatedActionKind.TELL,
+            place_id="records",
+            outcome="told",
+            details=(EvidenceFact("message", "The restructuring is approved."),),
+        )
+        prompt = replace(prompt, evidence=prompt.evidence + (older_exact,))
+        response = self._claim_payload(
+            prompt.primary_evidence_id,
+            evidence_ids=[prompt.primary_evidence_id, older_exact.evidence_id],
+        )
+
+        with self.assertRaisesRegex(ValueError, "fidelity"):
+            compile_situated_semantic_grounding(
+                prompt, FixtureProvider({"claims": [response]})
+            )
+
     def test_declared_partial_predicate_can_ground_detected_sound_but_not_v14(self):
         database = f"{self.temporary.name}/partial-grounding.sqlite3"
         perception = perception_model()
@@ -543,6 +591,28 @@ class SituatedSemanticGroundingTests(SituatedPrivateGroundingContextTests):
         )
         with self.assertRaisesRegex(ValueError, "conflicting"):
             grounded_claims_to_situated_social_evidence(self.model, conflicting)
+
+        approved = compile_situated_semantic_grounding(
+            prompt,
+            FixtureProvider({"claims": [self._claim_payload(
+                prompt.primary_evidence_id, value_id="approved"
+            )]}),
+        )
+        denied = compile_situated_semantic_grounding(
+            prompt,
+            FixtureProvider({"claims": [self._claim_payload(
+                prompt.primary_evidence_id, value_id="denied"
+            )]}),
+        )
+        self.assertEqual(
+            grounded_claims_to_situated_social_evidence(
+                self.model, approved
+            )[0].evidence_id,
+            grounded_claims_to_situated_social_evidence(
+                self.model, denied
+            )[0].evidence_id,
+            "one underlying event/topic has one first-accepted V14 identity",
+        )
 
     def test_unsupported_future_claim_does_not_enter_timeless_v14(self):
         prompt = self._prompt()
