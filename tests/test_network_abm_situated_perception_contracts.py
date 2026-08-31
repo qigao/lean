@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import unittest
+from dataclasses import fields
 from types import MappingProxyType
 
 from narrative_dynamics.abm.situated import SituatedActionKind, ObservationChannel
@@ -174,6 +175,31 @@ class SituatedPerceptionModelContractTests(unittest.TestCase):
 
 
 class SituatedPerceptionReachAndPerceptContractTests(unittest.TestCase):
+    def test_self_channel_requires_exact_fidelity_and_actor_recipient_identity(self) -> None:
+        with self.assertRaises((ValueError, TypeError)):
+            SituatedPercept("self-detected", 1, "alice", "event", HASH_C, (ObservationChannel.SELF,), SituatedPerceptFidelity.DETECTED)
+        with self.assertRaises((ValueError, TypeError)):
+            SituatedPercept("self-identified", 1, "alice", "event", HASH_C, (ObservationChannel.SELF,), SituatedPerceptFidelity.IDENTIFIED, "alice", SituatedActionKind.WAIT, "lobby")
+        with self.assertRaises((ValueError, TypeError)):
+            SituatedPercept("self-other", 1, "alice", "event", HASH_C, (ObservationChannel.SELF,), SituatedPerceptFidelity.EXACT, "bob", SituatedActionKind.WAIT, "lobby", "waited")
+        valid = SituatedPercept("self-exact", 1, "alice", "event", HASH_C, (ObservationChannel.SELF,), SituatedPerceptFidelity.EXACT, "alice", SituatedActionKind.WAIT, "lobby", "waited")
+        self.assertEqual(valid.agent_id, valid.actor_agent_id)
+
+    def test_inspection_channel_requires_exact_actor_private_fidelity(self) -> None:
+        with self.assertRaises((ValueError, TypeError)):
+            SituatedPercept("inspection-detected", 1, "alice", "event", HASH_C, (ObservationChannel.INSPECTION,), SituatedPerceptFidelity.DETECTED)
+        with self.assertRaises((ValueError, TypeError)):
+            SituatedPercept("inspection-identified", 1, "alice", "event", HASH_C, (ObservationChannel.INSPECTION,), SituatedPerceptFidelity.IDENTIFIED, "alice", SituatedActionKind.INSPECT, "records")
+        with self.assertRaises((ValueError, TypeError)):
+            SituatedPercept("inspection-other", 1, "alice", "event", HASH_C, (ObservationChannel.INSPECTION,), SituatedPerceptFidelity.EXACT, "bob", SituatedActionKind.INSPECT, "records", "inspected")
+        valid = SituatedPercept("inspection-exact", 1, "alice", "event", HASH_C, (ObservationChannel.INSPECTION,), SituatedPerceptFidelity.EXACT, "alice", SituatedActionKind.INSPECT, "records", "inspected")
+        self.assertEqual(valid.agent_id, valid.actor_agent_id)
+
+    def test_percept_shape_has_no_world_event_field(self) -> None:
+        field_names = {item.name for item in fields(SituatedPercept)}
+        self.assertNotIn("world_event", field_names)
+        self.assertNotIn("event", field_names)
+
     def test_reach_freezes_sorted_finite_cost_mappings_and_interactions(self) -> None:
         reach = SituatedPerceptionReach(
             HASH_A, HASH_B, "lobby",

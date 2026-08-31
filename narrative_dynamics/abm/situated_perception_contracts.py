@@ -322,6 +322,13 @@ class SituatedPercept:
             if any(item is None for item in identified) or self.outcome is None:
                 raise ValueError("exact percept requires actor, kind, place, and outcome")
 
+        for private_channel in (ObservationChannel.SELF, ObservationChannel.INSPECTION):
+            if private_channel in self.channels:
+                if self.fidelity is not SituatedPerceptFidelity.EXACT:
+                    raise ValueError(f"{private_channel.value} percepts require exact fidelity")
+                if self.agent_id != self.actor_agent_id:
+                    raise ValueError(f"{private_channel.value} percepts must be actor-private")
+
     def to_dict(self) -> dict[str, object]:
         return {
             "percept_id": self.percept_id,
