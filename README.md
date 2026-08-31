@@ -524,6 +524,161 @@ assert metrics.transition_count == 1
 assert source_count == 2
 ```
 
+### Empirical calibration V8
+
+A frozen empirical dataset separates training cases from untouched holdout
+cases. Calibration exhaustively replays every declared candidate, minimizes
+weighted trajectory error on training cases only, and retains per-case snapshot
+hashes and holdout loss for audit.
+
+```python
+from narrative_dynamics.abm import (
+    ABMCalibrationCandidate,
+    ABMCalibrationWeights,
+    AutonomousNetworkModel,
+    CalibrationSplit,
+    DynamicRoleModel,
+    EdgeSelector,
+    EmpiricalABMCase,
+    EmpiricalABMDataset,
+    EvolvingNetworkModel,
+    LifecycleEventKind,
+    NetworkABMModel,
+    NetworkAgentSpec,
+    PopulationLifecycleEvent,
+    RoleDecisionPolicy,
+    RoleTransitionRule,
+    SocialEdge,
+    SocialNetwork,
+    TruthObservation,
+    apply_calibration_candidate,
+    calibrate_dynamic_role_model,
+    initialize_dynamic_role_population,
+    observe_dynamic_role_state,
+    simulate_dynamic_role_population,
+)
+
+catalog = NetworkABMModel(
+    "calibration-catalog",
+    "1",
+    (
+        NetworkAgentSpec("a", "source", 1.0, 0.5, 0.5),
+        NetworkAgentSpec("b", "relay", 1.0, 0.5, 0.5),
+        NetworkAgentSpec("c", "recipient", 1.0, 0.5, 0.5),
+    ),
+    SocialNetwork(
+        ("a", "b", "c"),
+        (
+            SocialEdge("a", "b", "peer", 1.0, active=True),
+            SocialEdge("b", "c", "peer", 1.0, active=False),
+        ),
+    ),
+)
+evolving = EvolvingNetworkModel(
+    "calibration-evolution",
+    "1",
+    catalog,
+    initial_active_agent_ids=("a", "c"),
+    learning_rate=0.5,
+    initial_trust=0.5,
+    dissolution_similarity=0.2,
+    formation_similarity=0.8,
+)
+autonomy = AutonomousNetworkModel(
+    "calibration-autonomy",
+    "1",
+    evolving,
+    (
+        RoleDecisionPolicy("source", True, 0.5, 0.4, None, 1),
+        RoleDecisionPolicy("relay", True, 0.5, 0.6, 0.2, 2),
+        RoleDecisionPolicy("recipient", False, 0.5, 0.6, 0.2, 1),
+    ),
+)
+base = DynamicRoleModel(
+    "calibration-roles",
+    "1",
+    autonomy,
+    (
+        RoleTransitionRule(
+            "relay",
+            "source",
+            priority=0,
+            minimum_belief=0.5,
+            minimum_rounds_in_role=1,
+            minimum_verification_count=1,
+        ),
+    ),
+)
+truth = ABMCalibrationCandidate(0.5, 0.2, 0.8)
+alternative = ABMCalibrationCandidate(0.2, 0.6, 0.7)
+environment_schedule = ((
+    PopulationLifecycleEvent("b", LifecycleEventKind.ENTER),
+),)
+truth_schedule = ((
+    TruthObservation(EdgeSelector("a", "b", "peer"), 1.0),
+),)
+
+
+def observed_case(case_id, split, beliefs):
+    generating_model = apply_calibration_candidate(base, truth)
+    initial = initialize_dynamic_role_population(
+        generating_model,
+        beliefs=dict(beliefs),
+    )
+    trajectory = simulate_dynamic_role_population(
+        generating_model,
+        initial,
+        environment_event_schedule=environment_schedule,
+        truth_observation_schedule=truth_schedule,
+    )
+    observations = tuple(
+        observe_dynamic_role_state(generating_model, item.next_state)
+        for item in trajectory.rounds
+    )
+    return EmpiricalABMCase(
+        case_id,
+        split,
+        beliefs,
+        environment_schedule,
+        truth_schedule,
+        observations,
+    )
+
+
+dataset = EmpiricalABMDataset(
+    "observed-network",
+    "1",
+    (
+        observed_case(
+            "train",
+            CalibrationSplit.TRAIN,
+            (("a", 1.0), ("c", 0.0)),
+        ),
+        observed_case(
+            "holdout",
+            CalibrationSplit.HOLDOUT,
+            (("a", 0.8), ("c", 0.2)),
+        ),
+    ),
+)
+report = calibrate_dynamic_role_model(
+    base,
+    dataset,
+    candidates=(alternative, truth),
+    weights=ABMCalibrationWeights.uniform(),
+)
+selected = next(
+    item for item in report.candidate_fits if item.candidate == report.selected_candidate
+)
+assert report.selected_candidate == truth
+assert selected.training_loss == 0.0
+assert selected.holdout_loss == 0.0
+assert all(
+    fit.observed_snapshot_hashes == fit.predicted_snapshot_hashes
+    for fit in selected.case_fits
+)
+```
+
 ## Verification
 
 GitHub Actions runs:
