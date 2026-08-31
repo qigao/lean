@@ -70,9 +70,12 @@ class CrossDatasetInferenceTests(unittest.TestCase):
             evidence.pass_status,
             evidence.relative_improvement >= 0.01 and evidence.lower_95 > 0.0,
         )
-        payload = json.dumps(evidence.to_payload(), sort_keys=True).lower()
-        self.assertNotIn("participant", payload)
+        durable = evidence.to_payload()
+        self.assertEqual(durable["participant_count"], 3)
+        payload = json.dumps(durable, sort_keys=True).lower()
+        self.assertNotIn("token", payload)
         self.assertNotIn("blocks", payload)
+        self.assertNotIn("losses", payload)
 
     def test_linear_percentile_interpolation_is_frozen(self) -> None:
         self.assertEqual(_linear_percentile((0.0, 10.0, 20.0, 30.0), 0.25), 7.5)
