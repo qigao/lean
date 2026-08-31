@@ -9,6 +9,8 @@ from narrative_dynamics.cross_dataset_prediction import (
     SealedTransferPredictionArtifact,
     execute_transfer_final_predictions,
 )
+from narrative_dynamics.cross_dataset_capabilities import FinalWorkerProjection
+from narrative_dynamics.cross_dataset_source import CanonicalTransferTrial
 from tests.cross_dataset_transfer_fixtures import (
     digest,
     final_worker_projection,
@@ -156,6 +158,47 @@ class CrossDatasetPredictionTests(unittest.TestCase):
         self.assertEqual(
             artifact.prediction_artifact_identity,
             log.prediction_artifact_identity,
+        )
+
+    def test_private_rows_preserve_participant_grouping_without_evaluator_leakage(self) -> None:
+        rows = tuple(
+            CanonicalTransferTrial(
+                participant_key=participant,
+                trial_id=trial_id,
+                source_stratum="s0",
+                first_stage_action="action_1",
+                transition_common=True,
+                final_state="state_0",
+                second_stage_action="second_0",
+                reward=1,
+                row_commitment=digest(f"{participant}-{trial_id}"),
+            )
+            for participant, trial_id in (("private-p1", 1), ("private-p1", 2), ("private-p2", 1))
+        )
+        projection = FinalWorkerProjection(
+            rows=rows,
+            commitment_hash=digest("grouped-final"),
+        )
+        calls: list[tuple[object, ...]] = []
+        evaluator = recording_evaluator(calls)
+        artifact = execute_transfer_final_predictions(
+            projection=projection,
+            zero_shot=zero_shot_freeze(),
+            refit=refit_freeze(),
+            seeds=(301, 302),
+            evaluator=evaluator,
+            progress=recording_progress(calls),
+            expected_final_commitment_hash=projection.commitment_hash,
+            prediction_artifact_identity=sibling_releases()[0].prediction_artifact_identity,
+        )
+        private_rows = artifact.consume_for_scoring_once()
+        groups_by_case = {
+            row.case_token: row.participant_token for row in private_rows
+        }
+        self.assertEqual(len(groups_by_case), 3)
+        self.assertEqual(len(set(groups_by_case.values())), 2)
+        self.assertTrue(
+            all("participant_token" not in item.__dataclass_fields__ for item in evaluator.inputs)
         )
 
 
