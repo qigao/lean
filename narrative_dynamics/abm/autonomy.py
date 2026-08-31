@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
 from narrative_dynamics.abm.adaptive_contracts import EdgeTrustState
@@ -110,11 +111,40 @@ def _validate_autonomous_model_state(
                 raise ValueError("round-zero autonomy state cannot contain decisions")
 
 
+def _canonical_role_assignment(
+    model: AutonomousNetworkModel,
+    role_by_agent: Mapping[str, str] | None,
+) -> dict[str, str]:
+    profiles = {
+        item.agent_id: item for item in model.evolving_model.base_model.agents
+    }
+    if role_by_agent is None:
+        return {
+            agent_id: profiles[agent_id].role
+            for agent_id in sorted(profiles)
+        }
+    if not isinstance(role_by_agent, Mapping):
+        raise TypeError("autonomy role assignment must be a mapping")
+    if set(role_by_agent) != set(profiles):
+        raise ValueError("autonomy role assignment must cover exact agent catalog")
+    configured_roles = {item.role for item in model.role_policies}
+    if any(
+        not isinstance(role, str) or role not in configured_roles
+        for role in role_by_agent.values()
+    ):
+        raise ValueError("autonomy role assignment must use configured roles")
+    return {
+        agent_id: role_by_agent[agent_id]
+        for agent_id in sorted(profiles)
+    }
+
+
 def _prepare_resources_after_environment(
     model: AutonomousNetworkModel,
     state: AutonomousPopulationState,
     members: tuple[LifecycleMemberState, ...],
     events: tuple[PopulationLifecycleEvent, ...],
+    role_by_agent: Mapping[str, str],
 ) -> tuple[AutonomousAgentState, ...]:
     event_by_id = {item.agent_id: item for item in events}
     member_by_id = {item.agent_id: item for item in members}
@@ -131,7 +161,7 @@ def _prepare_resources_after_environment(
             sharing = False
         elif item is not None and item.kind is LifecycleEventKind.ENTER:
             profile = profiles[prior.agent_id]
-            policy = policies[profile.role]
+            policy = policies[role_by_agent[prior.agent_id]]
             sharing = (
                 policy.sharing_enabled
                 and member.belief >= policy.share_belief_threshold
@@ -211,6 +241,7 @@ def _decide(
     members: tuple[LifecycleMemberState, ...],
     resources: tuple[AutonomousAgentState, ...],
     transmissions: tuple[InformationTransmission, ...],
+    role_by_agent: Mapping[str, str],
 ) -> tuple[AgentActionIntent, ...]:
     profiles = {
         item.agent_id: item for item in model.evolving_model.base_model.agents
@@ -230,7 +261,8 @@ def _decide(
         if member.status is not LifecycleStatus.ACTIVE:
             continue
         profile = profiles[member.agent_id]
-        policy = policies[profile.role]
+        current_role = role_by_agent[member.agent_id]
+        policy = policies[current_role]
         resource = resource_by_id[member.agent_id]
         received = tuple(sorted(incoming[member.agent_id], key=_transmission_identity))
         candidate = min(
@@ -264,7 +296,7 @@ def _decide(
             AgentActionIntent(
                 state.round_index + 1,
                 member.agent_id,
-                profile.role,
+                current_role,
                 member.belief,
                 len(received),
                 (
@@ -450,16 +482,18 @@ class AutonomousTrajectory:
         return stable_content_hash(self.to_dict())
 
 
-def simulate_autonomous_round(
+def _simulate_autonomous_round_with_roles(
     model: AutonomousNetworkModel,
     prior_state: AutonomousPopulationState,
     *,
     environment_events: tuple[PopulationLifecycleEvent, ...] = (),
     truth_observations: tuple[TruthObservation, ...] = (),
+    role_by_agent: Mapping[str, str] | None = None,
 ) -> AutonomousRoundResult:
-    """Run one local autonomous decision round over the evolving network."""
+    """Internal V6 round with an optional exact role assignment for V7."""
 
     _validate_autonomous_model_state(model, prior_state)
+    canonical_roles = _canonical_role_assignment(model, role_by_agent)
     if any(
         isinstance(item, PopulationLifecycleEvent)
         and item.kind is LifecycleEventKind.EXIT
@@ -478,6 +512,7 @@ def simulate_autonomous_round(
         prior_state,
         post_environment_members,
         canonical_events,
+        canonical_roles,
     )
     projection = _active_projection(
         model,
@@ -512,6 +547,7 @@ def simulate_autonomous_round(
         post_propagation_members,
         prepared_resources,
         transmissions,
+        canonical_roles,
     )
     selected = {
         item.verification_edge.identity
@@ -663,6 +699,23 @@ def simulate_autonomous_round(
         autonomous_exits,
         tuple(rewiring_updates),
         next_state,
+    )
+
+
+def simulate_autonomous_round(
+    model: AutonomousNetworkModel,
+    prior_state: AutonomousPopulationState,
+    *,
+    environment_events: tuple[PopulationLifecycleEvent, ...] = (),
+    truth_observations: tuple[TruthObservation, ...] = (),
+) -> AutonomousRoundResult:
+    """Run one local autonomous decision round over the evolving network."""
+
+    return _simulate_autonomous_round_with_roles(
+        model,
+        prior_state,
+        environment_events=environment_events,
+        truth_observations=truth_observations,
     )
 
 

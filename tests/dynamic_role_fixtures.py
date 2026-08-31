@@ -18,7 +18,7 @@ def role_transition_rules(*, reverse: bool = False):
             "relay",
             "source",
             priority=0,
-            minimum_belief=0.7,
+            minimum_belief=0.5,
             minimum_rounds_in_role=1,
             minimum_verification_count=1,
         ),

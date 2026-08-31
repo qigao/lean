@@ -129,6 +129,12 @@ from narrative_dynamics.abm.role_contracts import (
     RoleTransitionRule,
     initialize_dynamic_role_population,
 )
+from narrative_dynamics.abm.roles import (
+    DynamicRoleRoundResult,
+    DynamicRoleTrajectory,
+    simulate_dynamic_role_population,
+    simulate_dynamic_role_round,
+)
 
 
 __all__ = (
@@ -224,4 +230,8 @@ __all__ = (
     "DynamicRoleModel",
     "DynamicRolePopulationState",
     "initialize_dynamic_role_population",
+    "DynamicRoleRoundResult",
+    "DynamicRoleTrajectory",
+    "simulate_dynamic_role_round",
+    "simulate_dynamic_role_population",
 )
