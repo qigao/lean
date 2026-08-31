@@ -1560,7 +1560,18 @@ assert replay_situated_semantic_grounding(grounding_model, artifact) is artifact
 In the office case, Bob's prompt can contain only Bob's sanitized SQLite rows. An
 exact TELL memory may support a grounded testimony claim; an exact private INSPECT
 memory may support verification. A closed-door `detected` sound has no speaker,
-message, outcome, or details and therefore cannot support message semantics.
+message, outcome, or details and therefore cannot support a status/message
+predicate that declares `exact` as its minimum fidelity. It may still support a
+separate declared low-fidelity predicate such as “the observer detected a sound”;
+that qualified result remains in the grounding layer and does not enter V14.
+
+Every accepted claim must cite the request's primary memory. The artifact retains
+the provider identity captured before invocation, schema hash, prompt-template
+hash, private-context hash, raw response hash, validation result, and optional
+retrieval-planner provenance. V14 bridging accepts only present, affirmed,
+asserted claims whose declared social subject/topic matches an exact TELL or
+INSPECT. Repeated equivalent interpretations of one event deduplicate to one
+stable evidence ID; conflicting symbols for the same event/topic fail closed.
 
 The repository intentionally bundles no vendor SDK or network client. Applications
 inject a provider through `complete_json`; accepted artifacts replay with no model

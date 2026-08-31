@@ -97,6 +97,12 @@ class SituatedGroundingPredicate:
     predicate_id: str
     value_ids: tuple[str, ...]
     social_topic_id: str | None = None
+    subject_ids: tuple[str, ...] = ()
+    minimum_evidence_fidelity: SituatedPerceptFidelity = SituatedPerceptFidelity.EXACT
+    allowed_temporal_scopes: tuple[SituatedGroundingTemporalScope, ...] = (
+        SituatedGroundingTemporalScope.PRESENT,
+    )
+    social_subject_id: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "predicate_id", _text(self.predicate_id, label="grounding predicate id"))
@@ -106,12 +112,38 @@ class SituatedGroundingPredicate:
             _strings(self.value_ids, label="grounding predicate value ids", allow_empty=False),
         )
         object.__setattr__(self, "social_topic_id", _optional_text(self.social_topic_id, label="grounding social topic id"))
+        object.__setattr__(
+            self,
+            "subject_ids",
+            _strings(self.subject_ids, label="grounding predicate subject ids", allow_empty=False),
+        )
+        if not isinstance(self.minimum_evidence_fidelity, SituatedPerceptFidelity):
+            raise TypeError("grounding predicate minimum fidelity must be SituatedPerceptFidelity")
+        if not isinstance(self.allowed_temporal_scopes, tuple) or not self.allowed_temporal_scopes or any(
+            not isinstance(item, SituatedGroundingTemporalScope)
+            for item in self.allowed_temporal_scopes
+        ):
+            raise TypeError("grounding predicate temporal scopes must be a non-empty tuple")
+        object.__setattr__(
+            self,
+            "allowed_temporal_scopes",
+            tuple(sorted(set(self.allowed_temporal_scopes), key=lambda item: item.value)),
+        )
+        object.__setattr__(self, "social_subject_id", _optional_text(self.social_subject_id, label="grounding social subject id"))
+        if (self.social_topic_id is None) != (self.social_subject_id is None):
+            raise ValueError("grounding predicate social topic and subject must be paired")
+        if self.social_subject_id is not None and self.social_subject_id not in self.subject_ids:
+            raise ValueError("grounding social subject must be allowed by its predicate")
 
     def to_dict(self) -> dict[str, object]:
         return {
             "predicate_id": self.predicate_id,
             "value_ids": list(self.value_ids),
             "social_topic_id": self.social_topic_id,
+            "subject_ids": list(self.subject_ids),
+            "minimum_evidence_fidelity": self.minimum_evidence_fidelity.value,
+            "allowed_temporal_scopes": [item.value for item in self.allowed_temporal_scopes],
+            "social_subject_id": self.social_subject_id,
         }
 
     @property
@@ -183,6 +215,8 @@ class SituatedSemanticGroundingModel:
             raise ValueError("semantic grounding predicate ids must be unique")
         topics = {item.topic_id: item for item in self.social_memory_model.topics}
         for predicate in self.predicates:
+            if not set(predicate.subject_ids).issubset(subjects):
+                raise ValueError("grounding predicate subject must belong to the model vocabulary")
             if predicate.social_topic_id is None:
                 continue
             topic = topics.get(predicate.social_topic_id)
@@ -190,6 +224,8 @@ class SituatedSemanticGroundingModel:
                 raise ValueError("grounding predicate social topic must be declared")
             if not set(predicate.value_ids).issubset(topic.symbol_ids):
                 raise ValueError("grounding predicate value must be a declared topic symbol")
+            if SituatedGroundingTemporalScope.PRESENT not in predicate.allowed_temporal_scopes:
+                raise ValueError("social grounding predicate must allow present temporal scope")
         object.__setattr__(self, "predicates", tuple(sorted(self.predicates, key=lambda item: item.predicate_id)))
         object.__setattr__(self, "maximum_evidence_items", _positive(self.maximum_evidence_items, label="maximum grounding evidence items"))
         object.__setattr__(self, "maximum_claims", _positive(self.maximum_claims, label="maximum grounded claims"))
@@ -374,6 +410,64 @@ class SituatedGroundingEvidence:
         return stable_content_hash(self.to_dict())
 
 
+def _semantic_output_schema() -> dict[str, object]:
+    return {
+        "claims": [{
+            "subject_id": "allowed predicate subject id",
+            "predicate_id": "allowed predicate id",
+            "value_id": "allowed value id for predicate",
+            "polarity": [item.value for item in SituatedGroundingPolarity],
+            "modality": [item.value for item in SituatedGroundingModality],
+            "temporal_scope": [item.value for item in SituatedGroundingTemporalScope],
+            "source_agent_id": "allowed agent id or null",
+            "confidence": "number in [0, 1]",
+            "evidence_ids": ["authorized evidence id including primary"],
+        }],
+    }
+
+
+def _semantic_schema_hash() -> str:
+    return stable_content_hash({
+        "schema_version": "situated-semantic-grounding-v1",
+        "output_schema": _semantic_output_schema(),
+    })
+
+
+def _semantic_prompt_template_hash() -> str:
+    return stable_content_hash({
+        "task": "situated_semantic_grounding_v1",
+        "schema_version": "situated-semantic-grounding-v1",
+        "payload_fields": [
+            "allowed_predicates",
+            "allowed_subject_ids",
+            "claim_budget",
+            "evidence",
+            "evidence_budget",
+            "interpretation_question",
+            "observer_agent_id",
+            "output_schema",
+            "primary_evidence_id",
+            "request_id",
+            "schema_version",
+        ],
+        "output_schema": _semantic_output_schema(),
+    })
+
+
+def _private_context_hash(
+    observer_agent_id: str,
+    primary_evidence_id: str,
+    evidence: tuple[SituatedGroundingEvidence, ...],
+) -> str:
+    return stable_content_hash({
+        "observer_agent_id": observer_agent_id,
+        "primary_evidence_id": primary_evidence_id,
+        "evidence": [
+            item.to_dict() for item in sorted(evidence, key=lambda item: item.evidence_id)
+        ],
+    })
+
+
 @dataclass(frozen=True)
 class SituatedGroundingPrompt:
     model: SituatedSemanticGroundingModel
@@ -381,6 +475,8 @@ class SituatedGroundingPrompt:
     retrieval_plan: SituatedGroundingRetrievalPlan
     primary_evidence_id: str
     evidence: tuple[SituatedGroundingEvidence, ...]
+    retrieval_provider: SituatedGroundingProviderIdentity | None = None
+    retrieval_response_hash: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.model, SituatedSemanticGroundingModel):
@@ -410,6 +506,34 @@ class SituatedGroundingPrompt:
             raise ValueError("grounding prompt primary evidence must bind the request memory")
         if any(item.agent_id != self.request.agent_id for item in self.evidence):
             raise ValueError("grounding prompt evidence must be private to the requester")
+        if self.retrieval_provider is not None and not isinstance(
+            self.retrieval_provider, SituatedGroundingProviderIdentity
+        ):
+            raise TypeError("grounding prompt retrieval provider must be a provider identity")
+        if (self.retrieval_provider is None) != (self.retrieval_response_hash is None):
+            raise ValueError("grounding prompt retrieval provider and response hash must be paired")
+        if self.retrieval_response_hash is not None:
+            object.__setattr__(
+                self,
+                "retrieval_response_hash",
+                _hash(self.retrieval_response_hash, label="grounding retrieval response hash"),
+            )
+
+    @property
+    def schema_hash(self) -> str:
+        return _semantic_schema_hash()
+
+    @property
+    def prompt_template_hash(self) -> str:
+        return _semantic_prompt_template_hash()
+
+    @property
+    def private_context_hash(self) -> str:
+        return _private_context_hash(
+            self.request.agent_id,
+            self.primary_evidence_id,
+            self.evidence,
+        )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -419,6 +543,13 @@ class SituatedGroundingPrompt:
             "retrieval_plan": self.retrieval_plan.to_dict(),
             "primary_evidence_id": self.primary_evidence_id,
             "evidence": [item.to_dict() for item in self.evidence],
+            "schema_hash": self.schema_hash,
+            "prompt_template_hash": self.prompt_template_hash,
+            "private_context_hash": self.private_context_hash,
+            "retrieval_provider": (
+                None if self.retrieval_provider is None else self.retrieval_provider.to_dict()
+            ),
+            "retrieval_response_hash": self.retrieval_response_hash,
         }
 
     def to_provider_payload(self) -> dict[str, object]:
@@ -433,19 +564,7 @@ class SituatedGroundingPrompt:
             "allowed_subject_ids": list(self.model.subject_ids),
             "allowed_predicates": [item.to_dict() for item in self.model.predicates],
             "evidence": [item.to_dict() for item in self.evidence],
-            "output_schema": {
-                "claims": [{
-                    "subject_id": "allowed subject id",
-                    "predicate_id": "allowed predicate id",
-                    "value_id": "allowed value id for predicate",
-                    "polarity": [item.value for item in SituatedGroundingPolarity],
-                    "modality": [item.value for item in SituatedGroundingModality],
-                    "temporal_scope": [item.value for item in SituatedGroundingTemporalScope],
-                    "source_agent_id": "allowed agent id or null",
-                    "confidence": "number in [0, 1]",
-                    "evidence_ids": ["authorized evidence id"],
-                }],
-            },
+            "output_schema": _semantic_output_schema(),
         }
 
     @property
@@ -507,21 +626,34 @@ class SituatedSemanticGroundingArtifact:
     model_hash: str
     request_id: str
     observer_agent_id: str
+    primary_evidence_id: str
     provider: SituatedGroundingProviderIdentity
     prompt_hash: str
+    schema_hash: str
+    prompt_template_hash: str
+    private_context_hash: str
     provider_response_hash: str
+    validation_result: str
     evidence: tuple[SituatedGroundingEvidence, ...]
     claims: tuple[SituatedGroundedClaim, ...]
+    retrieval_provider: SituatedGroundingProviderIdentity | None = None
+    retrieval_response_hash: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "model_id", _text(self.model_id, label="grounding artifact model id"))
         object.__setattr__(self, "model_hash", _hash(self.model_hash, label="grounding artifact model hash"))
         object.__setattr__(self, "request_id", _text(self.request_id, label="grounding artifact request id"))
         object.__setattr__(self, "observer_agent_id", _text(self.observer_agent_id, label="grounding artifact observer agent id"))
+        object.__setattr__(self, "primary_evidence_id", _text(self.primary_evidence_id, label="grounding artifact primary evidence id"))
         if not isinstance(self.provider, SituatedGroundingProviderIdentity):
             raise TypeError("grounding artifact requires provider identity")
         object.__setattr__(self, "prompt_hash", _hash(self.prompt_hash, label="grounding artifact prompt hash"))
+        object.__setattr__(self, "schema_hash", _hash(self.schema_hash, label="grounding artifact schema hash"))
+        object.__setattr__(self, "prompt_template_hash", _hash(self.prompt_template_hash, label="grounding artifact prompt template hash"))
+        object.__setattr__(self, "private_context_hash", _hash(self.private_context_hash, label="grounding artifact private context hash"))
         object.__setattr__(self, "provider_response_hash", _hash(self.provider_response_hash, label="grounding provider response hash"))
+        if self.validation_result != "accepted":
+            raise ValueError("grounding artifact validation result must be accepted")
         if not isinstance(self.evidence, tuple) or any(not isinstance(item, SituatedGroundingEvidence) for item in self.evidence):
             raise TypeError("grounding artifact evidence must be a tuple")
         evidence_ids = tuple(item.evidence_id for item in self.evidence)
@@ -530,15 +662,39 @@ class SituatedSemanticGroundingArtifact:
         if any(item.agent_id != self.observer_agent_id for item in self.evidence):
             raise ValueError("grounding artifact evidence must belong to its observer")
         object.__setattr__(self, "evidence", tuple(sorted(self.evidence, key=lambda item: item.evidence_id)))
+        if self.primary_evidence_id not in evidence_ids:
+            raise ValueError("grounding artifact must retain its primary evidence")
+        if self.schema_hash != _semantic_schema_hash():
+            raise ValueError("grounding artifact schema hash does not match V16")
+        if self.prompt_template_hash != _semantic_prompt_template_hash():
+            raise ValueError("grounding artifact prompt template hash does not match V16")
+        if self.private_context_hash != _private_context_hash(
+            self.observer_agent_id, self.primary_evidence_id, self.evidence
+        ):
+            raise ValueError("grounding artifact private context hash does not match evidence")
         if not isinstance(self.claims, tuple) or any(not isinstance(item, SituatedGroundedClaim) for item in self.claims):
             raise TypeError("grounding artifact claims must be a tuple")
         available = set(evidence_ids)
         if any(not set(item.evidence_ids).issubset(available) for item in self.claims):
             raise ValueError("grounded claim evidence must belong to the artifact")
+        if any(self.primary_evidence_id not in item.evidence_ids for item in self.claims):
+            raise ValueError("grounded claim must cite the primary evidence")
         claim_hashes = tuple(item.content_hash for item in self.claims)
         if len(set(claim_hashes)) != len(claim_hashes):
             raise ValueError("grounding artifact claims must be unique")
         object.__setattr__(self, "claims", tuple(sorted(self.claims, key=lambda item: item.content_hash)))
+        if self.retrieval_provider is not None and not isinstance(
+            self.retrieval_provider, SituatedGroundingProviderIdentity
+        ):
+            raise TypeError("grounding artifact retrieval provider must be a provider identity")
+        if (self.retrieval_provider is None) != (self.retrieval_response_hash is None):
+            raise ValueError("grounding artifact retrieval provider and response hash must be paired")
+        if self.retrieval_response_hash is not None:
+            object.__setattr__(
+                self,
+                "retrieval_response_hash",
+                _hash(self.retrieval_response_hash, label="grounding artifact retrieval response hash"),
+            )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -546,9 +702,18 @@ class SituatedSemanticGroundingArtifact:
             "model_hash": self.model_hash,
             "request_id": self.request_id,
             "observer_agent_id": self.observer_agent_id,
+            "primary_evidence_id": self.primary_evidence_id,
             "provider": self.provider.to_dict(),
             "prompt_hash": self.prompt_hash,
+            "schema_hash": self.schema_hash,
+            "prompt_template_hash": self.prompt_template_hash,
+            "private_context_hash": self.private_context_hash,
             "provider_response_hash": self.provider_response_hash,
+            "validation_result": self.validation_result,
+            "retrieval_provider": (
+                None if self.retrieval_provider is None else self.retrieval_provider.to_dict()
+            ),
+            "retrieval_response_hash": self.retrieval_response_hash,
             "evidence": [item.to_dict() for item in self.evidence],
             "claims": [item.to_dict() for item in self.claims],
         }

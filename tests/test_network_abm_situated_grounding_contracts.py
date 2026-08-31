@@ -11,6 +11,9 @@ from narrative_dynamics.abm.situated_grounding_contracts import (
     SituatedGroundingPolarity,
     SituatedGroundingPredicate,
     SituatedGroundingProviderIdentity,
+    SituatedGroundingPrompt,
+    SituatedGroundingRequest,
+    SituatedGroundingRetrievalPlan,
     SituatedGroundingTemporalScope,
     SituatedSemanticGroundingArtifact,
     SituatedSemanticGroundingModel,
@@ -34,9 +37,11 @@ def grounding_model() -> SituatedSemanticGroundingModel:
         ("alice", "bob", "memo"),
         (
             SituatedGroundingPredicate(
-                "restructuring-status",
-                ("approved", "denied"),
+                predicate_id="restructuring-status",
+                value_ids=("approved", "denied"),
                 social_topic_id="restructuring",
+                subject_ids=("memo",),
+                social_subject_id="memo",
             ),
         ),
         maximum_evidence_items=8,
@@ -90,12 +95,18 @@ class SituatedGroundingContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "social topic"):
             replace(
                 model,
-                predicates=(SituatedGroundingPredicate("status", ("approved",), "missing"),),
+                predicates=(SituatedGroundingPredicate(
+                    "status", ("approved",), "missing", ("memo",),
+                    social_subject_id="memo",
+                ),),
             )
         with self.assertRaisesRegex(ValueError, "topic symbol"):
             replace(
                 model,
-                predicates=(SituatedGroundingPredicate("status", ("approved", "invented"), "restructuring"),),
+                predicates=(SituatedGroundingPredicate(
+                    "status", ("approved", "invented"), "restructuring", ("memo",),
+                    social_subject_id="memo",
+                ),),
             )
 
     def test_evidence_enforces_sanitized_fidelity_and_memory_identity(self):
@@ -120,16 +131,30 @@ class SituatedGroundingContractTests(unittest.TestCase):
         evidence = exact_tell_evidence()
         accepted = claim()
         provider = SituatedGroundingProviderIdentity("test-provider", "1", "fixture-model")
-        artifact = SituatedSemanticGroundingArtifact(
-            model.model_id,
-            model.content_hash,
-            "request-1",
-            "bob",
-            provider,
-            "sha256:" + "2" * 64,
-            "sha256:" + "3" * 64,
+        prompt = SituatedGroundingPrompt(
+            model,
+            SituatedGroundingRequest(
+                "request-1", "bob", evidence.evidence_id, "What was said?", 1
+            ),
+            SituatedGroundingRetrievalPlan(("said",)),
+            evidence.evidence_id,
             (evidence,),
-            (accepted,),
+        )
+        artifact = SituatedSemanticGroundingArtifact(
+            model_id=model.model_id,
+            model_hash=model.content_hash,
+            request_id="request-1",
+            observer_agent_id="bob",
+            primary_evidence_id=evidence.evidence_id,
+            provider=provider,
+            prompt_hash=prompt.content_hash,
+            schema_hash=prompt.schema_hash,
+            prompt_template_hash=prompt.prompt_template_hash,
+            private_context_hash=prompt.private_context_hash,
+            provider_response_hash="sha256:" + "3" * 64,
+            validation_result="accepted",
+            evidence=(evidence,),
+            claims=(accepted,),
         )
         self.assertTrue(artifact.content_hash.startswith("sha256:"))
         self.assertEqual(artifact.claims[0].evidence_ids, (evidence.evidence_id,))
@@ -146,9 +171,11 @@ class SituatedGroundingContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "provider id"):
             SituatedGroundingProviderIdentity("", "1", "model")
         with self.assertRaisesRegex(ValueError, "unique"):
-            SituatedGroundingPredicate("status", ("approved", "approved"))
+            SituatedGroundingPredicate(
+                "status", ("approved", "approved"), subject_ids=("memo",)
+            )
         with self.assertRaisesRegex(ValueError, "at least one"):
-            SituatedGroundingPredicate("status", ())
+            SituatedGroundingPredicate("status", (), subject_ids=("memo",))
 
 
 if __name__ == "__main__":

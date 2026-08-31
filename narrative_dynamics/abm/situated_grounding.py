@@ -89,13 +89,20 @@ def _provider_response(
     task: str,
     payload: Mapping[str, object],
 ) -> str:
-    identity = getattr(provider, "identity", None)
-    if not isinstance(identity, SituatedGroundingProviderIdentity):
-        raise TypeError("structured language provider requires a grounding provider identity")
+    identity = _provider_identity(provider)
     complete = getattr(provider, "complete_json", None)
     if not callable(complete):
         raise TypeError("structured language provider requires complete_json")
     return complete(task=task, payload=payload)
+
+
+def _provider_identity(
+    provider: SituatedStructuredLanguageProvider,
+) -> SituatedGroundingProviderIdentity:
+    identity = getattr(provider, "identity", None)
+    if not isinstance(identity, SituatedGroundingProviderIdentity):
+        raise TypeError("structured language provider requires a grounding provider identity")
+    return identity
 
 
 _RETRIEVAL_KEYS = frozenset({
@@ -266,15 +273,20 @@ def build_situated_grounding_prompt(
 
     if retrieval_planner is None:
         plan = SituatedGroundingRetrievalPlan((request.retrieval_query,))
+        retrieval_provider = None
+        retrieval_response_hash = None
     else:
+        retrieval_provider = _provider_identity(retrieval_planner)
         response = _provider_response(
             retrieval_planner,
             task="situated_memory_retrieval_plan_v1",
             payload=_retrieval_planner_payload(model, request),
         )
         plan = parse_situated_grounding_retrieval_plan(model, request, response)
+        retrieval_response_hash = stable_content_hash({"provider_response": response})
 
     memories = {primary.memory_id: primary}
+    lexical_ranks: dict[str, float | None] = {primary.memory_id: None}
     for term in plan.terms:
         hits = search_situated_percept_memories(
             database_path,
@@ -295,10 +307,20 @@ def build_situated_grounding_prompt(
         for hit in hits:
             _validate_memory_binding(model, hit.memory)
             memories.setdefault(hit.memory.memory_id, hit.memory)
+            prior_rank = lexical_ranks.get(hit.memory.memory_id)
+            if prior_rank is None or (
+                hit.lexical_rank is not None and hit.lexical_rank < prior_rank
+            ):
+                lexical_ranks[hit.memory.memory_id] = hit.lexical_rank
 
     other = sorted(
         (item for key, item in memories.items() if key != primary.memory_id),
-        key=lambda item: (-item.salience, -item.round_index, item.memory_id),
+        key=lambda item: (
+            float("inf") if lexical_ranks.get(item.memory_id) is None else lexical_ranks[item.memory_id],
+            -item.salience,
+            -item.round_index,
+            item.memory_id,
+        ),
     )
     selected = (primary,) + tuple(other[: request.maximum_memories - 1])
     return SituatedGroundingPrompt(
@@ -307,6 +329,8 @@ def build_situated_grounding_prompt(
         plan,
         primary.memory_id,
         tuple(_memory_evidence(item) for item in selected),
+        retrieval_provider,
+        retrieval_response_hash,
     )
 
 
@@ -365,8 +389,12 @@ def _validate_claim(
     predicate = model.predicate(claim.predicate_id)
     if predicate is None:
         raise ValueError("grounded claim predicate is outside the finite vocabulary")
+    if claim.subject_id not in predicate.subject_ids:
+        raise ValueError("grounded claim subject is outside its predicate vocabulary")
     if claim.value_id not in predicate.value_ids:
         raise ValueError("grounded claim value is outside its predicate vocabulary")
+    if claim.temporal_scope not in predicate.allowed_temporal_scopes:
+        raise ValueError("grounded claim temporal scope is unsupported by its predicate")
     world_agents = {
         item.agent_id
         for item in model.percept_memory_model.cognitive_model.world_model.agents
@@ -379,17 +407,21 @@ def _validate_claim(
         raise ValueError("grounded claim evidence is not privately available") from error
     if any(item.agent_id != observer_agent_id for item in cited):
         raise ValueError("grounded claim evidence is not private to the observer")
-    if any(item.fidelity is not SituatedPerceptFidelity.EXACT for item in cited):
-        raise ValueError("grounded semantic claims require exact evidence")
+    fidelity_rank = {
+        SituatedPerceptFidelity.DETECTED: 0,
+        SituatedPerceptFidelity.IDENTIFIED: 1,
+        SituatedPerceptFidelity.EXACT: 2,
+    }
+    if any(
+        fidelity_rank[item.fidelity]
+        < fidelity_rank[predicate.minimum_evidence_fidelity]
+        for item in cited
+    ):
+        raise ValueError("grounded claim evidence fidelity is below its predicate requirement")
     if claim.source_agent_id is not None and not any(
         item.actor_agent_id == claim.source_agent_id for item in cited
     ):
         raise ValueError("grounded claim source is unsupported by cited evidence")
-    for item in cited:
-        if item.event_kind is SituatedActionKind.TELL and not any(
-            detail.name == "message" for detail in item.details
-        ):
-            raise ValueError("exact tell grounding requires disclosed message evidence")
 
 
 def validate_situated_semantic_grounding_artifact(
@@ -427,6 +459,7 @@ def compile_situated_semantic_grounding(
 
     if not isinstance(prompt, SituatedGroundingPrompt):
         raise TypeError("semantic grounding compilation requires a grounding prompt")
+    provider_identity = _provider_identity(provider)
     response = _provider_response(
         provider,
         task="situated_semantic_grounding_v1",
@@ -446,11 +479,18 @@ def compile_situated_semantic_grounding(
         prompt.model.content_hash,
         prompt.request.request_id,
         prompt.request.agent_id,
-        provider.identity,
+        prompt.primary_evidence_id,
+        provider_identity,
         prompt.content_hash,
+        prompt.schema_hash,
+        prompt.prompt_template_hash,
+        prompt.private_context_hash,
         stable_content_hash({"provider_response": response}),
+        "accepted",
         prompt.evidence,
         claims,
+        prompt.retrieval_provider,
+        prompt.retrieval_response_hash,
     )
     validate_situated_semantic_grounding_artifact(prompt.model, artifact)
     return artifact
@@ -498,14 +538,19 @@ def grounded_claims_to_situated_social_evidence(
 
     validate_situated_semantic_grounding_artifact(model, artifact)
     evidence_by_id = {item.evidence_id: item for item in artifact.evidence}
-    result = []
+    candidates: dict[
+        tuple[str, SituatedSocialEvidenceKind, str, str | None, str],
+        tuple[str, SituatedGroundingEvidence],
+    ] = {}
     for claim in artifact.claims:
         predicate = model.predicate(claim.predicate_id)
         if (
             predicate is None
             or predicate.social_topic_id is None
+            or claim.subject_id != predicate.social_subject_id
             or claim.polarity is not SituatedGroundingPolarity.AFFIRMED
             or claim.modality is not SituatedGroundingModality.ASSERTED
+            or claim.temporal_scope is not SituatedGroundingTemporalScope.PRESENT
         ):
             continue
         for evidence_id in claim.evidence_ids:
@@ -517,23 +562,48 @@ def grounded_claims_to_situated_social_evidence(
             )
             if kind is None:
                 continue
-            identity = stable_content_hash({
-                "artifact_hash": artifact.content_hash,
-                "claim_hash": claim.content_hash,
-                "evidence_id": source.evidence_id,
-                "social_kind": kind.value,
-            })
-            result.append(SituatedSocialEvidence(
-                identity,
-                kind,
+            key = (
                 artifact.observer_agent_id,
-                predicate.social_topic_id,
-                claim.value_id,
-                source.round_index,
+                kind,
                 source.source_event_id,
                 claim.source_agent_id,
-                source.memory_id,
-            ))
+                predicate.social_topic_id,
+            )
+            prior = candidates.get(key)
+            if prior is not None and prior[0] != claim.value_id:
+                raise ValueError("conflicting grounded claims share one social evidence event")
+            candidates[key] = (claim.value_id, source)
+    result = []
+    for key, (symbol_id, source) in sorted(
+        candidates.items(),
+        key=lambda item: (
+            item[0][2],
+            item[0][0],
+            item[0][1].value,
+            "" if item[0][3] is None else item[0][3],
+            item[0][4],
+        ),
+    ):
+        observer, kind, event_id, source_agent, topic_id = key
+        identity = stable_content_hash({
+            "observer_agent_id": observer,
+            "kind": kind.value,
+            "source_event_id": event_id,
+            "source_agent_id": source_agent,
+            "topic_id": topic_id,
+            "symbol_id": symbol_id,
+        })
+        result.append(SituatedSocialEvidence(
+            identity,
+            kind,
+            observer,
+            topic_id,
+            symbol_id,
+            source.round_index,
+            event_id,
+            source_agent,
+            source.memory_id,
+        ))
     return tuple(sorted(result, key=lambda item: (item.round_index, item.evidence_id)))
 
 
