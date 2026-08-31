@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 import hashlib
+import json
+from pathlib import Path
 
 from narrative_dynamics.cross_dataset_search import (
     DatasetCandidateCatalog,
     DatasetCatalogEntry,
     DatasetSearchProtocol,
+)
+from narrative_dynamics.cross_dataset_source import (
+    DatasetSourceFile,
+    DatasetSourceManifest,
+    SemanticPipelineResult,
+    SemanticRelabeling,
+    SemanticStageReceipt,
 )
 
 
@@ -133,3 +142,177 @@ def incomplete_catalog(
         entries=entries,
         candidate_model_executions=0,
     )
+
+
+def source_file(
+    path: str,
+    payload: bytes,
+    purpose: str,
+) -> DatasetSourceFile:
+    return DatasetSourceFile(
+        path=path,
+        locator=f"https://example.invalid/files/{path}",
+        byte_size=len(payload),
+        sha256="sha256:" + hashlib.sha256(payload).hexdigest(),
+        purpose=purpose,
+    )
+
+
+def source_manifest(
+    *,
+    files: tuple[DatasetSourceFile, ...] | None = None,
+) -> DatasetSourceManifest:
+    selected_files = (
+        (
+            source_file("behavior.csv", b"participant,trial,choice\np1,1,0\n", "behavioral_rows"),
+            source_file("README.txt", b"synthetic source\n", "source_readme"),
+        )
+        if files is None
+        else files
+    )
+    return DatasetSourceManifest(
+        selected_catalog_entry_hash=eligible_entry("source").content_hash,
+        name="Synthetic two-stage source",
+        version="release-source",
+        study_reference="10.0000/example.source",
+        public_locator="https://example.invalid/source",
+        release_date="2020-01-02",
+        license_name="Synthetic Test License",
+        license_reference="https://example.invalid/source/license",
+        files=selected_files,
+    )
+
+
+def synthetic_source_tree(root: Path) -> tuple[Path, DatasetSourceManifest]:
+    payloads = {
+        "behavior.csv": b"participant,trial,choice\np1,1,0\n",
+        "README.txt": b"synthetic source\n",
+    }
+    for relative, payload in payloads.items():
+        (root / relative).write_bytes(payload)
+    manifest = source_manifest(
+        files=tuple(
+            source_file(
+                relative,
+                payload,
+                "behavioral_rows" if relative.endswith(".csv") else "source_readme",
+            )
+            for relative, payload in sorted(payloads.items())
+        )
+    )
+    return root, manifest
+
+
+def synthetic_rows() -> tuple[dict[str, object], ...]:
+    return (
+        {
+            "participant": "private-p1",
+            "trial": 1,
+            "history_action": "action_0",
+            "first_stage_action": "action_1",
+            "final_state": "state_1",
+            "second_stage_action": "second_0",
+            "reward": 1,
+        },
+        {
+            "participant": "private-p1",
+            "trial": 2,
+            "history_action": "action_1",
+            "first_stage_action": "action_0",
+            "final_state": "state_0",
+            "second_stage_action": "second_1",
+            "reward": 0,
+        },
+    )
+
+
+def five_coherent_relabelings() -> tuple[SemanticRelabeling, ...]:
+    coordinates = (
+        ("first_stage_action", "action_0", "action_1"),
+        ("history_action", "action_0", "action_1"),
+        ("final_state", "state_0", "state_1"),
+        ("second_stage_action", "second_0", "second_1"),
+        ("transition_label", "common", "rare"),
+    )
+    return tuple(
+        SemanticRelabeling(
+            name=f"swap_{coordinate}",
+            forward_map=((f"{coordinate}:{left}", f"{coordinate}:{right}"),
+                         (f"{coordinate}:{right}", f"{coordinate}:{left}")),
+            inverse_map=((f"{coordinate}:{left}", f"{coordinate}:{right}"),
+                         (f"{coordinate}:{right}", f"{coordinate}:{left}")),
+        )
+        for coordinate, left, right in coordinates
+    )
+
+
+class RecordingSemanticPipeline:
+    def __init__(self, *, drift_on: str | None = None, omit_report: bool = False) -> None:
+        self.calls: tuple[str, ...] = ()
+        self._drift_on = drift_on
+        self._omit_report = omit_report
+
+    def run(
+        self,
+        rows: tuple[dict[str, object], ...],
+        relabeling: SemanticRelabeling,
+    ) -> SemanticPipelineResult:
+        del rows
+        stages = (
+            "parse",
+            "transform",
+            "scenario",
+            "predict",
+            "score",
+            "report",
+        )
+        if self._omit_report:
+            stages = stages[:-1]
+        self.calls += stages
+        identity = digest("semantic-reference")
+        inverse_identity = (
+            digest("semantic-drift")
+            if relabeling.name == self._drift_on
+            else identity
+        )
+        return SemanticPipelineResult(
+            identity=identity,
+            inverse_mapped_identity=inverse_identity,
+            stage_receipts=tuple(
+                SemanticStageReceipt(stage=stage, receipt_hash=digest(f"{relabeling.name}-{stage}"))
+                for stage in stages
+            ),
+        )
+
+    def scenario_hash(self, row: dict[str, object]) -> str:
+        prechoice = {
+            key: row[key]
+            for key in (
+                "participant",
+                "trial",
+                "history_action",
+            )
+        }
+        return "sha256:" + hashlib.sha256(
+            json.dumps(prechoice, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+
+
+def recording_semantic_pipeline(
+    *,
+    drift_on: str | None = None,
+    omit_report: bool = False,
+) -> RecordingSemanticPipeline:
+    return RecordingSemanticPipeline(drift_on=drift_on, omit_report=omit_report)
+
+
+def same_prechoice_different_postchoice_rows() -> tuple[dict[str, object], dict[str, object]]:
+    original = dict(synthetic_rows()[0])
+    mutated = {
+        **original,
+        "first_stage_action": "action_0",
+        "final_state": "state_0",
+        "second_stage_action": "second_1",
+        "reward": 0,
+    }
+    return original, mutated
