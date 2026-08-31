@@ -128,7 +128,7 @@ def standard_situated_percept_memory_policy() -> SituatedPerceptMemoryPolicy:
             SituatedPerceptMemoryFidelityPolicy(
                 SituatedPerceptFidelity.EXACT,
                 1.0,
-                0.8,
+                1.0,
             ),
         ),
     )
