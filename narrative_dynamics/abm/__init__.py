@@ -121,6 +121,14 @@ from narrative_dynamics.abm.autonomy_metrics import (
     AgentAutonomyMetrics,
     measure_agent_autonomy,
 )
+from narrative_dynamics.abm.role_contracts import (
+    DynamicRoleAgentState,
+    DynamicRoleModel,
+    DynamicRolePopulationState,
+    RoleTransitionRecord,
+    RoleTransitionRule,
+    initialize_dynamic_role_population,
+)
 
 
 __all__ = (
@@ -210,4 +218,10 @@ __all__ = (
     "simulate_autonomous_population",
     "AgentAutonomyMetrics",
     "measure_agent_autonomy",
+    "RoleTransitionRule",
+    "RoleTransitionRecord",
+    "DynamicRoleAgentState",
+    "DynamicRoleModel",
+    "DynamicRolePopulationState",
+    "initialize_dynamic_role_population",
 )
