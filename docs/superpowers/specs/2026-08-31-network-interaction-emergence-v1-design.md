@@ -104,4 +104,3 @@ Consensus and polarization describe distribution shape; informed rate prevents a
 - multiple information topics and contradiction resolution;
 - degree-preserving and complete-mixing null networks;
 - adapter from narrative testimony/evidence ledgers into ABM transmissions.
-
