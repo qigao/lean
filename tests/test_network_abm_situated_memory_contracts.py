@@ -135,6 +135,8 @@ class SituatedMemoryQueryTests(unittest.TestCase):
             SituatedMemoryQuery("alice", limit=0)
         with self.assertRaisesRegex(ValueError, "minimum confidence must be between zero and one"):
             SituatedMemoryQuery("alice", min_confidence=1.1)
+        with self.assertRaisesRegex(ValueError, "query text cannot contain NUL"):
+            SituatedMemoryQuery("alice", text="unsafe\x00query")
 
 
 if __name__ == "__main__":

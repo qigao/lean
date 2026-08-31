@@ -82,10 +82,13 @@ FTS5 or the trigram tokenizer.
 - a validated result limit.
 
 Text is treated as literal user text, not raw FTS query syntax. Queries of at least
-three characters use trigram FTS5 and BM25 ordering. One- or two-character queries
-fall back to a parameterized `LIKE` scan because trigram indexes cannot match them.
-Stable tie-breaking is salience descending, round descending, then memory ID.
-Structured-only queries do not touch FTS5.
+three characters use trigram FTS5 for candidate matching, then receive a
+lower-is-better agent-local literal-occurrence score computed from the authoritative
+summary. The score and ordering never depend on another agent's FTS corpus. One- or
+two-character queries fall back to a parameterized `LIKE` scan because trigram
+indexes cannot match them. Stable tie-breaking is salience descending, round
+descending, then memory ID. Structured-only queries do not touch FTS5. NUL is
+rejected before it reaches the FTS query grammar.
 
 ## Determinism
 

@@ -38,6 +38,8 @@ class SituatedMemoryConflictError(ValueError):
 
 
 _SCHEMA = """
+BEGIN IMMEDIATE;
+
 CREATE TABLE IF NOT EXISTS memory_metadata (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -45,7 +47,7 @@ CREATE TABLE IF NOT EXISTS memory_metadata (
 
 CREATE TABLE IF NOT EXISTS memory_records (
     rowid INTEGER PRIMARY KEY,
-    memory_id TEXT NOT NULL UNIQUE,
+    memory_id TEXT NOT NULL,
     source_hash TEXT NOT NULL,
     agent_id TEXT NOT NULL,
     observation_id TEXT NOT NULL,
@@ -104,6 +106,10 @@ CREATE TRIGGER IF NOT EXISTS memory_records_au AFTER UPDATE ON memory_records BE
     INSERT INTO memory_fts(rowid, summary, actor_agent_id, place_id, outcome, details_text)
     VALUES (new.rowid, new.summary, new.actor_agent_id, new.place_id, new.outcome, new.details_text);
 END;
+
+INSERT OR IGNORE INTO memory_metadata(key, value) VALUES ('schema_version', '1');
+
+COMMIT;
 """
 
 
@@ -224,18 +230,18 @@ def initialize_situated_memory(database_path: str | Path) -> SituatedMemoryIndex
 
     try:
         with _transaction(database_path) as connection:
-            connection.executescript(_SCHEMA)
-            existing = connection.execute(
-                "SELECT value FROM memory_metadata WHERE key = 'schema_version'"
+            metadata_exists = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'memory_metadata'"
             ).fetchone()
-            if existing is not None and existing["value"] != _SCHEMA_VERSION:
-                raise SituatedMemoryStorageError(
-                    f"unsupported situated memory schema version {existing['value']}"
-                )
-            connection.execute(
-                "INSERT OR IGNORE INTO memory_metadata(key, value) VALUES ('schema_version', ?)",
-                (_SCHEMA_VERSION,),
-            )
+            if metadata_exists is not None:
+                existing = connection.execute(
+                    "SELECT value FROM memory_metadata WHERE key = 'schema_version'"
+                ).fetchone()
+                if existing is not None and existing["value"] != _SCHEMA_VERSION:
+                    raise SituatedMemoryStorageError(
+                        f"unsupported situated memory schema version {existing['value']}"
+                    )
+            connection.executescript(_SCHEMA)
             count = connection.execute("SELECT COUNT(*) AS count FROM memory_records").fetchone()["count"]
         return SituatedMemoryIndexReport(count)
     except sqlite3.Error as error:
@@ -268,13 +274,13 @@ def ingest_situated_memory(
         with _transaction(database_path) as connection:
             for memory in sorted(memories, key=lambda item: (item.round_index, item.sequence, item.memory_id)):
                 stored = connection.execute(
-                    "SELECT source_hash FROM memory_records WHERE memory_id = ?",
-                    (memory.memory_id,),
+                    "SELECT source_hash FROM memory_records WHERE agent_id = ? AND observation_id = ?",
+                    (agent_id, memory.observation_id),
                 ).fetchone()
                 if stored is not None:
                     if stored["source_hash"] != _source_hash(memory):
                         raise SituatedMemoryConflictError(
-                            f"memory {memory.memory_id} already exists with different content"
+                            f"memory {memory.memory_id} already exists for agent {agent_id} with different content"
                         )
                     existing += 1
                     continue
@@ -377,6 +383,14 @@ def list_situated_memories(
     return tuple(_row_to_memory(row) for row in rows)
 
 
+def _private_literal_rank(summary: str, text: str) -> float:
+    """Return a lower-is-better score independent of every other agent's corpus."""
+
+    folded_summary = summary.casefold()
+    occurrence_count = folded_summary.count(text.casefold())
+    return -float(occurrence_count) / max(len(folded_summary), 1)
+
+
 def search_situated_memories(
     database_path: str | Path,
     query: SituatedMemoryQuery,
@@ -390,7 +404,7 @@ def search_situated_memories(
     text_uses_fts = query.text is not None and len(query.text) >= 3
     if text_uses_fts:
         select = (
-            "SELECT m.*, bm25(memory_fts) AS lexical_rank "
+            "SELECT m.*, NULL AS lexical_rank "
             "FROM memory_fts JOIN memory_records AS m ON m.rowid = memory_fts.rowid"
         )
         clauses = ["memory_fts MATCH ?", "m.agent_id = ?"]
@@ -434,24 +448,26 @@ def search_situated_memories(
     clauses.append("m.confidence >= ?")
     parameters.append(query.min_confidence)
 
-    if text_uses_fts:
-        ordering = "lexical_rank ASC, m.salience DESC, m.round_index DESC, m.memory_id ASC"
-    else:
-        ordering = "m.salience DESC, m.round_index DESC, m.memory_id ASC"
-    statement = select + " WHERE " + " AND ".join(clauses) + " ORDER BY " + ordering + " LIMIT ?"
-    parameters.append(query.limit)
+    statement = select + " WHERE " + " AND ".join(clauses)
     try:
         with _transaction(database_path) as connection:
             rows = connection.execute(statement, tuple(parameters)).fetchall()
     except sqlite3.Error as error:
         raise SituatedMemoryStorageError("failed to search situated memories") from error
-    return tuple(
+    hits = [
         SituatedMemorySearchHit(
             _row_to_memory(row),
-            None if row["lexical_rank"] is None else float(row["lexical_rank"]),
+            _private_literal_rank(row["summary"], query.text) if text_uses_fts else None,
         )
         for row in rows
-    )
+    ]
+    hits.sort(key=lambda item: (
+        item.lexical_rank if item.lexical_rank is not None else 0.0,
+        -item.memory.salience,
+        -item.memory.round_index,
+        item.memory.memory_id,
+    ))
+    return tuple(hits[:query.limit])
 
 
 def set_situated_memory_active(

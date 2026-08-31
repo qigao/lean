@@ -98,6 +98,24 @@ class SituatedMemoryStorageTests(SituatedMemoryDatabaseTestCase):
         self.assertEqual(version, "1")
         self.assertTrue({"memory_records", "memory_fts", "memory_records_ai"}.issubset(objects))
 
+    def test_incompatible_schema_is_rejected_before_database_modification(self):
+        with closing(sqlite3.connect(self.database_path)) as connection:
+            connection.execute("CREATE TABLE memory_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            connection.execute("INSERT INTO memory_metadata VALUES ('schema_version', '999')")
+            connection.commit()
+
+        with self.assertRaisesRegex(RuntimeError, "unsupported situated memory schema version 999"):
+            initialize_situated_memory(self.database_path)
+
+        with closing(sqlite3.connect(self.database_path)) as connection:
+            objects = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'"
+                )
+            }
+        self.assertEqual(objects, {"memory_metadata"})
+
     def test_ingestion_persists_complete_records_and_is_idempotent(self):
         memories = (
             record("alice", "obs-a", "event-a"),
@@ -145,6 +163,24 @@ class SituatedMemoryStorageTests(SituatedMemoryDatabaseTestCase):
                 (replace(original, summary="changed historical content"),),
             )
 
+    def test_agents_can_independently_use_the_same_observation_id(self):
+        alice = record("alice", "shared-observation", "event-a")
+        bob = record(
+            "bob",
+            "shared-observation",
+            "event-b",
+            actor_agent_id="bob",
+            channel=ObservationChannel.SELF,
+        )
+
+        alice_report = ingest_situated_memory(self.database_path, "alice", (alice,))
+        bob_report = ingest_situated_memory(self.database_path, "bob", (bob,))
+
+        self.assertEqual(alice_report.inserted_count, 1)
+        self.assertEqual(bob_report.inserted_count, 1)
+        self.assertEqual(list_situated_memories(self.database_path, "alice"), (alice,))
+        self.assertEqual(list_situated_memories(self.database_path, "bob"), (bob,))
+
 
 class SituatedMemoryRetrievalTests(SituatedMemoryDatabaseTestCase):
     def setUp(self):
@@ -189,6 +225,15 @@ class SituatedMemoryRetrievalTests(SituatedMemoryDatabaseTestCase):
         short = search_situated_memories(
             self.database_path, SituatedMemoryQuery("alice", text="批")
         )
+        two_characters = search_situated_memories(
+            self.database_path, SituatedMemoryQuery("alice", text="重组")
+        )
+        three_characters = search_situated_memories(
+            self.database_path, SituatedMemoryQuery("alice", text="重组消")
+        )
+        three_ascii_characters = search_situated_memories(
+            self.database_path, SituatedMemoryQuery("alice", text="str")
+        )
         hostile_literal = search_situated_memories(
             self.database_path, SituatedMemoryQuery("alice", text='" OR *')
         )
@@ -197,9 +242,38 @@ class SituatedMemoryRetrievalTests(SituatedMemoryDatabaseTestCase):
         self.assertEqual({item.memory.memory_id for item in alice}, {"alice-inspect", "alice-tell"})
         self.assertEqual(tuple(item.memory.memory_id for item in bob), ("bob-heard",))
         self.assertEqual({item.memory.memory_id for item in short}, {"alice-inspect", "alice-tell"})
+        self.assertEqual({item.memory.memory_id for item in two_characters}, {"alice-inspect", "alice-tell"})
+        self.assertEqual({item.memory.memory_id for item in three_characters}, {"alice-inspect", "alice-tell"})
+        self.assertEqual({item.memory.memory_id for item in three_ascii_characters}, {"alice-inspect", "alice-tell"})
         self.assertEqual(hostile_literal, ())
         self.assertTrue(all(item.lexical_rank is not None for item in alice + bob))
-        self.assertTrue(all(item.lexical_rank is None for item in short))
+        self.assertTrue(all(item.lexical_rank is None for item in short + two_characters))
+        self.assertTrue(all(item.lexical_rank is not None for item in three_characters + three_ascii_characters))
+
+    def test_other_agents_memories_cannot_change_private_rank_or_order(self):
+        query = SituatedMemoryQuery("alice", text="restructuring")
+        before = tuple(
+            (item.memory.memory_id, item.lexical_rank)
+            for item in search_situated_memories(self.database_path, query)
+        )
+        bob_only = tuple(
+            replace(
+                self.bob_telling,
+                memory_id=f"bob-private-{index}",
+                observation_id=f"bob-private-{index}",
+                event_id=f"bob-event-{index}",
+                summary=("restructuring " * (index + 1)).strip(),
+            )
+            for index in range(20)
+        )
+
+        ingest_situated_memory(self.database_path, "bob", bob_only)
+        after = tuple(
+            (item.memory.memory_id, item.lexical_rank)
+            for item in search_situated_memories(self.database_path, query)
+        )
+
+        self.assertEqual(after, before)
 
     def test_structured_filters_are_combined_deterministically(self):
         hits = search_situated_memories(

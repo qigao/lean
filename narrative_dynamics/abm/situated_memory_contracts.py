@@ -237,6 +237,8 @@ class SituatedMemoryQuery:
         if self.text is not None:
             if not isinstance(self.text, str) or not self.text.strip():
                 raise ValueError("situated memory query text must be non-empty")
+            if "\x00" in self.text:
+                raise ValueError("situated memory query text cannot contain NUL")
         object.__setattr__(self, "actor_agent_id", _optional_text(self.actor_agent_id, label="situated memory query actor id"))
         object.__setattr__(self, "place_id", _optional_text(self.place_id, label="situated memory query place id"))
         if not isinstance(self.event_kinds, tuple) or any(not isinstance(item, SituatedActionKind) for item in self.event_kinds):

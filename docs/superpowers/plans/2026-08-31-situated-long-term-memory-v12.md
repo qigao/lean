@@ -116,7 +116,9 @@
 
   Join FTS rows to authoritative records with `agent_id` as a mandatory SQL filter.
   Quote text as a literal phrase, use a parameterized `LIKE` fallback below three
-  characters, and apply stable ordering by BM25, salience, round, and memory ID.
+  characters, and rank FTS candidates with an agent-local literal-occurrence score
+  that cannot change with another agent's corpus. Apply stable tie-breaking by
+  salience, round, and memory ID.
   Activation must update exactly one row owned by the caller. Rebuild with the FTS5
   external-content `rebuild` command and report indexed authoritative row count.
 
