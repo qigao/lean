@@ -100,7 +100,12 @@ def _projection_world() -> SituatedWorldModel:
     )
 
 
-def _projection_model(*, initially_open: bool = True, edge_order_reversed: bool = False) -> SituatedPerceptionModel:
+def _projection_model(
+    *,
+    initially_open: bool = True,
+    edge_order_reversed: bool = False,
+    include_inspection_signal: bool = False,
+) -> SituatedPerceptionModel:
     edges = (
         SituatedPerceptionEdge("corridor-meeting-visual-open", SituatedPerceptionLayer.VISIBILITY, "corridor", "meeting", 1.0, SituatedEdgeActivation.PASSAGE_OPEN, "meeting-door"),
         SituatedPerceptionEdge("corridor-meeting-audio-open", SituatedPerceptionLayer.AUDITORY, "corridor", "meeting", 5.0, SituatedEdgeActivation.PASSAGE_OPEN, "meeting-door"),
@@ -119,6 +124,9 @@ def _projection_model(*, initially_open: bool = True, edge_order_reversed: bool 
             SituatedEventSignalProfile(SituatedActionKind.TAKE, True),
             SituatedEventSignalProfile(SituatedActionKind.DROP, True),
             SituatedEventSignalProfile(SituatedActionKind.TELL, True, 60.0),
+        ) + (
+            (SituatedEventSignalProfile(SituatedActionKind.INSPECT, True, 60.0),)
+            if include_inspection_signal else ()
         ),
     )
 
@@ -260,6 +268,24 @@ class SituatedInteractionQueryTests(unittest.TestCase):
 
 
 class SituatedPerceptProjectionTests(unittest.TestCase):
+    def test_declared_reachable_inspection_signal_stays_actor_private(self) -> None:
+        model = _projection_model(include_inspection_signal=True)
+        state = _projection_state(model)
+        round_result = resolve_situated_round(
+            model.world_model,
+            state,
+            (_action("alice-inspect", "alice", SituatedActionKind.INSPECT, "missing"),),
+        )
+        event = _event_for(round_result, "alice")
+
+        projection = project_situated_percepts(model, round_result)
+
+        percepts = tuple(item for item in projection.percepts if item.source_event_id == event.event_id)
+        self.assertEqual(len(percepts), 1)
+        self.assertEqual(percepts[0].agent_id, "alice")
+        self.assertEqual(percepts[0].channels, (ObservationChannel.INSPECTION,))
+        self.assertEqual(percepts[0].fidelity, SituatedPerceptFidelity.EXACT)
+
     def test_inspection_is_exact_and_private_even_when_a_visual_path_exists(self) -> None:
         model = _projection_model()
         state = _projection_state(model)

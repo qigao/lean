@@ -184,6 +184,8 @@ def project_situated_percepts(
             outcome=event.outcome,
             details=event.details,
         ))
+        if event.kind is SituatedActionKind.INSPECT:
+            continue
         signal = signals.get(event.kind)
         if signal is None:
             continue
