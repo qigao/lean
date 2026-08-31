@@ -28,6 +28,18 @@ from narrative_dynamics.cross_dataset_capabilities import (
     FinalUnlockGrant,
     provision_transfer_capabilities,
 )
+from narrative_dynamics.cross_dataset_candidates import (
+    GridCandidateEvaluation,
+    INTENTIONAL_GRID,
+    PLANNING_GRID,
+    REACTIVE_GRID,
+    TransferFamily,
+)
+from narrative_dynamics.studies.feher_hare_measurement_validity_v1 import (
+    FEHER_HARE_R3_LOCK_COMMIT,
+    FeherHareMeasurementAnchor,
+    FeherHareMeasurementCandidateRow,
+)
 
 
 def digest(label: str) -> str:
@@ -393,3 +405,104 @@ def prepared_transfer():
     )
     backend.bind_unlock_policy(prepared.final_vault_handle, final_unlock_grant())
     return prepared, backend
+
+
+def r3_anchor() -> FeherHareMeasurementAnchor:
+    candidates = (
+        FeherHareMeasurementCandidateRow(
+            family="reactive",
+            parameters=(("beta", 0.5),),
+            training_manifest_hash=digest("r3-reactive-training"),
+            selection_manifest_hash=digest("r3-reactive-selection"),
+            candidate_hash="sha256:42a84ef10c207159ff98397fe2bd86594df6c8be0f41b98e876f7ae33cba9456",
+        ),
+        FeherHareMeasurementCandidateRow(
+            family="intentional",
+            parameters=(("beta", 2.0), ("memory_decay", 0.5)),
+            training_manifest_hash=digest("r3-intentional-training"),
+            selection_manifest_hash=digest("r3-intentional-selection"),
+            candidate_hash="sha256:68a01b5496e20095c1a603b30f1384bbe6a3ea22aac8cf74b7b97463c4935839",
+        ),
+        FeherHareMeasurementCandidateRow(
+            family="planning",
+            parameters=(("beta", 4.0), ("memory_decay", 0.75)),
+            training_manifest_hash=digest("r3-planning-training"),
+            selection_manifest_hash=digest("r3-planning-selection"),
+            candidate_hash="sha256:c0ed956c1b285153075e5a22e7fb51f6d53dcf8ad326cce82e39e0221c2e877c",
+        ),
+    )
+    return FeherHareMeasurementAnchor(
+        lock_commit=FEHER_HARE_R3_LOCK_COMMIT,
+        scientific_repository_revision="d01232979cdfc9d902daab5f9e3e937079b56f69",
+        upstream_revision="4567763780a2c596fd6510af720ec468a8214a8f",
+        source_manifest_hash=digest("r3-source-manifest"),
+        source_snapshot_hash=digest("r3-source-snapshot"),
+        transform_hash=digest("r3-transform"),
+        participant_assignment_hash=digest("r3-participant-assignment"),
+        dataset_hash=digest("r3-dataset"),
+        target_spec_hash=digest("r3-target-spec"),
+        train_partition_hash=digest("r3-train-partition"),
+        selection_partition_hash=digest("r3-selection-partition"),
+        excluded_final_partition_hash=digest("r3-final-partition"),
+        excluded_final_target_hash=digest("r3-final-target"),
+        train_selection_freeze_hash=digest("r3-freeze"),
+        internal_lock_bundle_hash=digest("r3-lock-bundle"),
+        candidate_rows=candidates,
+    )
+
+
+def new_source_lineage() -> dict[str, str]:
+    prepared, _backend = prepared_transfer()
+    return {
+        "source_identity_hash": prepared.source_identity_hash,
+        "split_manifest_hash": prepared.split_manifest.content_hash,
+        "train_projection_hash": prepared.train.projection_hash,
+        "selection_projection_hash": prepared.selection_validation.projection_hash,
+    }
+
+
+def builder_identities() -> tuple[tuple[str, str], ...]:
+    return tuple(
+        (family.value, digest(f"{family.value}-builder"))
+        for family in TransferFamily
+    )
+
+
+def complete_36_point_evaluations(
+    *,
+    with_tie: bool = False,
+) -> tuple[GridCandidateEvaluation, ...]:
+    prepared, _backend = prepared_transfer()
+    builders = dict(builder_identities())
+    grids = (
+        (TransferFamily.REACTIVE, REACTIVE_GRID),
+        (TransferFamily.INTENTIONAL, INTENTIONAL_GRID),
+        (TransferFamily.PLANNING, PLANNING_GRID),
+    )
+    rows: list[GridCandidateEvaluation] = []
+    for family, grid in grids:
+        for index, parameters in enumerate(grid):
+            loss = 0.1 + index / 1000.0
+            if with_tie and index in {0, 1}:
+                loss = 0.1
+            rows.append(
+                GridCandidateEvaluation(
+                    family=family,
+                    parameters=parameters,
+                    train_projection_hash=prepared.train.projection_hash,
+                    selection_projection_hash=prepared.selection_validation.projection_hash,
+                    target_spec_hash=digest("transfer-target-spec"),
+                    split_manifest_hash=prepared.split_manifest.content_hash,
+                    train_seeds=(101, 102),
+                    selection_seeds=(201, 202),
+                    score="BRIER",
+                    brier_loss_identity=digest("brier"),
+                    builder_identity=builders[family.value],
+                    simulation_identity=digest("simulation"),
+                    selection_brier_loss=loss,
+                    evaluation_receipt_hash=digest(
+                        f"evaluation-{family.value}-{parameters!r}"
+                    ),
+                )
+            )
+    return tuple(rows)
