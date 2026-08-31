@@ -47,6 +47,15 @@ from narrative_dynamics.abm.adaptive_metrics import (
     AdaptiveTrustMetrics,
     measure_adaptive_trust,
 )
+from narrative_dynamics.abm.lifecycle_contracts import (
+    LifecycleEventKind,
+    LifecycleMemberState,
+    LifecycleStatus,
+    PopulationLifecycleEvent,
+    PopulationLifecycleModel,
+    PopulationLifecycleState,
+    initialize_lifecycle_population,
+)
 
 
 __all__ = (
@@ -86,4 +95,11 @@ __all__ = (
     "simulate_adaptive_population",
     "AdaptiveTrustMetrics",
     "measure_adaptive_trust",
+    "LifecycleStatus",
+    "LifecycleEventKind",
+    "PopulationLifecycleEvent",
+    "PopulationLifecycleModel",
+    "LifecycleMemberState",
+    "PopulationLifecycleState",
+    "initialize_lifecycle_population",
 )
