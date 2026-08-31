@@ -16,6 +16,37 @@ from narrative_dynamics.cross_dataset_source import DatasetSourceManifest
 _DESIGN_BASE = "0378a40e934b3b241d6883df709aa056caec5f69"
 _APPROVED_BASE = "c979eafe650a506bf30f78ab5b35078742b54087"
 _ROOT = Path(__file__).resolve().parents[1]
+_EXPECTED_PHASE_A_PATHS = (
+    "docs/superpowers/plans/2026-08-30-narrative-cross-dataset-transfer-v1-governance-phase-a.md",
+    "narrative_dynamics/__init__.py",
+    "narrative_dynamics/cross_dataset_authorization.py",
+    "narrative_dynamics/cross_dataset_candidates.py",
+    "narrative_dynamics/cross_dataset_capabilities.py",
+    "narrative_dynamics/cross_dataset_inference.py",
+    "narrative_dynamics/cross_dataset_ledger.py",
+    "narrative_dynamics/cross_dataset_prediction.py",
+    "narrative_dynamics/cross_dataset_privacy.py",
+    "narrative_dynamics/cross_dataset_release.py",
+    "narrative_dynamics/cross_dataset_reporting.py",
+    "narrative_dynamics/cross_dataset_search.py",
+    "narrative_dynamics/cross_dataset_source.py",
+    "narrative_dynamics/studies/cross_dataset_transfer_locked_final.py",
+    "tests/cross_dataset_transfer_fixtures.py",
+    "tests/test_cross_dataset_authorization.py",
+    "tests/test_cross_dataset_candidates.py",
+    "tests/test_cross_dataset_capabilities.py",
+    "tests/test_cross_dataset_ci_boundary.py",
+    "tests/test_cross_dataset_inference.py",
+    "tests/test_cross_dataset_ledger.py",
+    "tests/test_cross_dataset_locked_final.py",
+    "tests/test_cross_dataset_prediction.py",
+    "tests/test_cross_dataset_privacy.py",
+    "tests/test_cross_dataset_public_api.py",
+    "tests/test_cross_dataset_release.py",
+    "tests/test_cross_dataset_reporting.py",
+    "tests/test_cross_dataset_search.py",
+    "tests/test_cross_dataset_source.py",
+)
 
 
 def _git(*arguments: str) -> str:
@@ -41,6 +72,13 @@ def _phase_a_paths() -> tuple[str, ...]:
 
 
 class CrossDatasetCiBoundaryTests(unittest.TestCase):
+    def test_phase_a_paths_survive_shallow_checkout(self) -> None:
+        with patch(
+            f"{__name__}._git_revision_available",
+            return_value=False,
+        ):
+            self.assertEqual(_phase_a_paths(), _EXPECTED_PHASE_A_PATHS)
+
     def test_phase_a_has_no_real_source_or_network_workflow(self) -> None:
         forbidden_patterns = (
             "osf.io/",
