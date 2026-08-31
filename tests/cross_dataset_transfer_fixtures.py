@@ -35,6 +35,7 @@ from narrative_dynamics.cross_dataset_candidates import (
     REACTIVE_GRID,
     TransferFamily,
 )
+from narrative_dynamics.cross_dataset_inference import _ParticipantLossBlock
 from narrative_dynamics.studies.feher_hare_measurement_validity_v1 import (
     FEHER_HARE_R3_LOCK_COMMIT,
     FeherHareMeasurementAnchor,
@@ -506,3 +507,61 @@ def complete_36_point_evaluations(
                 )
             )
     return tuple(rows)
+
+
+def train_projection(
+    actions: tuple[str, ...] = ("action_1", "action_1", "action_0"),
+):
+    if len(actions) != 3:
+        raise ValueError("synthetic TRAIN fixture requires exactly three actions")
+    participants = synthetic_stratified_participants((5,))
+    secret = RestrictedStudySecret.from_bytes(bytes(range(32)))
+    role_index, split_manifest = assign_participant_roles(
+        namespace="cross-dataset-transfer-v1-inference-fixture",
+        source_snapshot_hash=digest("inference-snapshot"),
+        participants=participants,
+        secret=secret,
+        transform_attestation_hash=digest("inference-transform"),
+    )
+    action_iter = iter(actions)
+    trials = tuple(
+        CanonicalTransferTrial(
+            participant_key=participant.participant_id,
+            trial_id=1,
+            source_stratum=participant.source_stratum,
+            first_stage_action=(
+                next(action_iter)
+                if role_index.role_for(
+                    participant.participant_id,
+                    participant.source_stratum,
+                ).value
+                == "TRAIN"
+                else "action_0"
+            ),
+            transition_common=True,
+            final_state="state_0",
+            second_stage_action="second_0",
+            reward=0,
+            row_commitment=digest(f"inference-{participant.participant_id}"),
+        )
+        for participant in participants
+    )
+    prepared, _backend = provision_transfer_capabilities(
+        source_identity_hash=digest("inference-source"),
+        trials=trials,
+        role_index=role_index,
+        split_manifest=split_manifest,
+    )
+    return prepared.train
+
+
+def participant_blocks(
+    means: tuple[float, ...],
+) -> tuple[_ParticipantLossBlock, ...]:
+    return tuple(
+        _ParticipantLossBlock(
+            token=digest(f"private-loss-token-{index}"),
+            losses=(value,),
+        )
+        for index, value in enumerate(means)
+    )
