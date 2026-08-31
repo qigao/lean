@@ -12,6 +12,7 @@ from narrative_dynamics.cross_dataset_search import (
     DatasetSearchProtocol,
 )
 from narrative_dynamics.cross_dataset_source import (
+    CanonicalTransferTrial,
     DatasetSourceFile,
     DatasetSourceManifest,
     SemanticPipelineResult,
@@ -22,6 +23,10 @@ from narrative_dynamics.cross_dataset_privacy import (
     PrivateParticipant,
     RestrictedStudySecret,
     assign_participant_roles,
+)
+from narrative_dynamics.cross_dataset_capabilities import (
+    FinalUnlockGrant,
+    provision_transfer_capabilities,
 )
 
 
@@ -345,3 +350,46 @@ def assigned_split():
         secret=secret,
         transform_attestation_hash=digest("transform-attestation"),
     )
+
+
+def synthetic_transfer_trials() -> tuple[CanonicalTransferTrial, ...]:
+    return tuple(
+        CanonicalTransferTrial(
+            participant_key=participant.participant_id,
+            trial_id=1,
+            source_stratum=participant.source_stratum,
+            first_stage_action="action_0" if index % 2 == 0 else "action_1",
+            transition_common=index % 3 != 0,
+            final_state="state_0" if index % 2 == 0 else "state_1",
+            second_stage_action="second_0" if index % 2 == 0 else "second_1",
+            reward=index % 2,
+            row_commitment=digest(f"transfer-row-{index}"),
+        )
+        for index, participant in enumerate(synthetic_stratified_participants())
+    )
+
+
+def final_unlock_grant(**overrides: object) -> FinalUnlockGrant:
+    values: dict[str, object] = {
+        "scientific_revision": "a" * 40,
+        "ledger_head_hash": digest("ledger-head"),
+        "preflight_hash": digest("preflight"),
+        "authorization_receipt_hash": digest("authorization"),
+        "brier_release_hash": digest("brier-release"),
+        "log_release_hash": digest("log-release"),
+        "lock_commit": "b" * 40,
+    }
+    values.update(overrides)
+    return FinalUnlockGrant(**values)
+
+
+def prepared_transfer():
+    private_index, public_manifest = assigned_split()
+    prepared, backend = provision_transfer_capabilities(
+        source_identity_hash=digest("source-identity"),
+        trials=synthetic_transfer_trials(),
+        role_index=private_index,
+        split_manifest=public_manifest,
+    )
+    backend.bind_unlock_policy(prepared.final_vault_handle, final_unlock_grant())
+    return prepared, backend
