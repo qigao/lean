@@ -17,6 +17,17 @@ from narrative_dynamics.abm.simulation import (
     simulate_round,
 )
 from narrative_dynamics.abm.metrics import EmergenceMetrics, measure_emergence
+from narrative_dynamics.abm.interventions import (
+    AppliedIntervention,
+    BeliefSeed,
+    EdgeInfluenceChange,
+    EdgeSelector,
+    InterventionComparison,
+    NetworkIntervention,
+    apply_intervention,
+    compare_intervention,
+    no_propagation_intervention,
+)
 
 
 __all__ = (
@@ -34,4 +45,13 @@ __all__ = (
     "simulate_population",
     "EmergenceMetrics",
     "measure_emergence",
+    "EdgeSelector",
+    "EdgeInfluenceChange",
+    "BeliefSeed",
+    "NetworkIntervention",
+    "AppliedIntervention",
+    "InterventionComparison",
+    "apply_intervention",
+    "compare_intervention",
+    "no_propagation_intervention",
 )
