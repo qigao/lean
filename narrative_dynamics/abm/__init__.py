@@ -56,6 +56,13 @@ from narrative_dynamics.abm.lifecycle_contracts import (
     PopulationLifecycleState,
     initialize_lifecycle_population,
 )
+from narrative_dynamics.abm.lifecycle import (
+    LifecycleRoundResult,
+    LifecycleTrajectory,
+    active_population_view,
+    simulate_lifecycle_population,
+    simulate_lifecycle_round,
+)
 
 
 __all__ = (
@@ -102,4 +109,9 @@ __all__ = (
     "LifecycleMemberState",
     "PopulationLifecycleState",
     "initialize_lifecycle_population",
+    "LifecycleRoundResult",
+    "LifecycleTrajectory",
+    "active_population_view",
+    "simulate_lifecycle_round",
+    "simulate_lifecycle_population",
 )
