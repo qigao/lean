@@ -90,7 +90,7 @@ class CrossDatasetCapabilityTests(unittest.TestCase):
     def test_every_unlock_identity_drift_fails_before_open(self) -> None:
         mutations = {
             "scientific_revision": "c" * 40,
-            "ledger_head_hash": digest("wrong-ledger"),
+            "ledger_head_hash": "e" * 40,
             "preflight_hash": digest("wrong-preflight"),
             "authorization_receipt_hash": digest("wrong-authorization"),
             "brier_release_hash": digest("wrong-brier"),

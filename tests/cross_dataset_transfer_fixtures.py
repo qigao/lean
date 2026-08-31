@@ -410,7 +410,7 @@ def synthetic_transfer_trials() -> tuple[CanonicalTransferTrial, ...]:
 def final_unlock_grant(**overrides: object) -> FinalUnlockGrant:
     values: dict[str, object] = {
         "scientific_revision": "a" * 40,
-        "ledger_head_hash": digest("ledger-head"),
+        "ledger_head_hash": "c" * 40,
         "preflight_hash": digest("preflight"),
         "authorization_receipt_hash": digest("authorization"),
         "brier_release_hash": digest("brier-release"),
