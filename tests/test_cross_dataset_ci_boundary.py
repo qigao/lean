@@ -97,14 +97,26 @@ class CrossDatasetCiBoundaryTests(unittest.TestCase):
         def blocked(*_args, **_kwargs):
             raise AssertionError("import attempted network access")
 
-        for name in tuple(sys.modules):
-            if name.startswith("narrative_dynamics.cross_dataset_"):
+        prefix = "narrative_dynamics.cross_dataset_"
+        preserved_modules = {
+            name: module
+            for name, module in sys.modules.items()
+            if name.startswith(prefix)
+        }
+        try:
+            for name in preserved_modules:
                 sys.modules.pop(name)
-        with patch.object(socket, "create_connection", blocked), patch.object(
-            urllib.request,
-            "urlopen",
-            blocked,
-        ):
+            with patch.object(socket, "create_connection", blocked), patch.object(
+                urllib.request,
+                "urlopen",
+                blocked,
+            ):
+                importlib.reload(narrative_dynamics)
+        finally:
+            for name in tuple(sys.modules):
+                if name.startswith(prefix):
+                    sys.modules.pop(name)
+            sys.modules.update(preserved_modules)
             importlib.reload(narrative_dynamics)
 
     def test_z_root_import_preserves_loaded_transfer_module_identities(self) -> None:
