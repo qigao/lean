@@ -107,7 +107,7 @@ class CrossDatasetAuthorizationTests(unittest.TestCase):
                 "surrounding": f"prefix\n{body}",
                 "reordered": "\n".join((lines[0], lines[2], lines[1], *lines[3:])),
                 "missing": "\n".join(lines[:-1]),
-                "duplicate": "\n".join(lines + (lines[-1],)),
+                "duplicate": "\n".join(lines + [lines[-1]]),
                 "crlf": body.replace("\n", "\r\n"),
             }
             return authorization_comment(preflight, body=mutations[variant])
