@@ -76,6 +76,7 @@ class CrossDatasetPrivacyTests(unittest.TestCase):
         self.assertTrue(manifest.key_commitment.startswith("sha256:"))
         self.assertFalse(hasattr(manifest, "participant_commitments"))
         self.assertFalse(hasattr(private_index, "to_payload"))
+        self.assertFalse(hasattr(private_index, "private_assignments"))
 
     def test_secret_close_zeroizes_and_blocks_reuse(self) -> None:
         secret = RestrictedStudySecret.from_bytes(bytes(range(32)))
