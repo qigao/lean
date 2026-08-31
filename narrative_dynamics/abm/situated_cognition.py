@@ -97,6 +97,8 @@ class SituatedCognitiveDecision:
     selected_action_id: str
     selected_goal_contributions: Mapping[str, float]
     intent: SituatedActionIntent
+    recalled_memory_ids: tuple[str, ...] = ()
+    recalled_symbol_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.round_index, int) or isinstance(self.round_index, bool) or self.round_index <= 0:
@@ -121,6 +123,14 @@ class SituatedCognitiveDecision:
             raise ValueError("situated decision selected action must be lexical MAP")
         if self.intent.agent_id != self.agent_id:
             raise ValueError("situated decision intent must belong to its agent")
+        for name in ("recalled_memory_ids", "recalled_symbol_ids"):
+            items = getattr(self, name)
+            if not isinstance(items, tuple) or any(
+                not isinstance(item, str) or not item.strip() for item in items
+            ):
+                raise TypeError(f"situated decision {name.replace('_', ' ')} must be a tuple of strings")
+            if len(set(items)) != len(items):
+                raise ValueError(f"situated decision {name.replace('_', ' ')} must be unique")
         object.__setattr__(self, "action_values", values)
         object.__setattr__(self, "action_policy", policy)
         object.__setattr__(self, "selected_goal_contributions", _freeze_float_map(self.selected_goal_contributions, label="situated decision goal contributions"))
@@ -133,6 +143,8 @@ class SituatedCognitiveDecision:
             "feasible_action_ids": list(self.feasible_action_ids), "action_values": dict(self.action_values),
             "action_policy": dict(self.action_policy), "selected_action_id": self.selected_action_id,
             "selected_goal_contributions": dict(self.selected_goal_contributions), "intent": self.intent.to_dict(),
+            "recalled_memory_ids": list(self.recalled_memory_ids),
+            "recalled_symbol_ids": list(self.recalled_symbol_ids),
         }
 
     @property
@@ -189,6 +201,8 @@ class SituatedDecisionExplanation:
     expected_value: float
     goal_contributions: Mapping[str, float]
     admitted_evidence_ids: tuple[str, ...]
+    recalled_memory_ids: tuple[str, ...] = ()
+    recalled_symbol_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         for name in ("hypothesis_probability", "action_probability"):
@@ -206,6 +220,8 @@ class SituatedDecisionExplanation:
             "action_probability": self.action_probability, "expected_value": self.expected_value,
             "goal_contributions": dict(self.goal_contributions),
             "admitted_evidence_ids": list(self.admitted_evidence_ids),
+            "recalled_memory_ids": list(self.recalled_memory_ids),
+            "recalled_symbol_ids": list(self.recalled_symbol_ids),
         }
 
     @property
@@ -418,6 +434,8 @@ def decide_situated_action(
     round_index: int,
     prior_belief: PlanningBeliefState | None = None,
     admissions: tuple[SituatedBeliefAdmission, ...] = (),
+    recalled_memory_ids: tuple[str, ...] = (),
+    recalled_symbol_ids: tuple[str, ...] = (),
 ) -> SituatedCognitiveDecision:
     if model.agent_id != mind.agent_id:
         raise ValueError("situated decision model and mind agent must match")
@@ -452,6 +470,7 @@ def decide_situated_action(
         tuple(item.observation_id for item in admissions), tuple(item.symbol_id for item in admissions),
         feasible_ids, values, policy, selected_id,
         _goal_contributions(model, mind.belief, selected_id), intent,
+        recalled_memory_ids, recalled_symbol_ids,
     )
 
 
@@ -475,6 +494,28 @@ def simulate_situated_cognitive_round(
             round_index=next_round, prior_belief=admission.prior_mind.belief,
             admissions=admission.admissions,
         ))
+    return _advance_situated_cognitive_round(
+        model,
+        story,
+        state,
+        tuple(decisions),
+        admitted_minds,
+    )
+
+
+def _advance_situated_cognitive_round(
+    model: SituatedCognitiveModel,
+    story: SituatedStory,
+    state: SituatedCognitiveState,
+    decisions: tuple[SituatedCognitiveDecision, ...],
+    admitted_minds: Mapping[str, SituatedAgentMindState],
+) -> SituatedCognitiveRoundResult:
+    """Synchronously commit already-computed private cognitive decisions."""
+
+    model_by_id = {item.agent_id: item for item in model.agents}
+    if set(admitted_minds) != set(model_by_id):
+        raise ValueError("cognitive commit minds must cover exact agent roster")
+    next_round = state.round_index + 1
     next_story = advance_situated_story(model.world_model, story, tuple(item.intent for item in decisions))
     latest = next_story.rounds[-1]
     event_by_actor = {item.actor_agent_id: item for item in latest.events}
@@ -528,6 +569,8 @@ def explain_situated_decision(
         expected_value=decision.action_values[decision.selected_action_id],
         goal_contributions=decision.selected_goal_contributions,
         admitted_evidence_ids=decision.admitted_observation_ids,
+        recalled_memory_ids=decision.recalled_memory_ids,
+        recalled_symbol_ids=decision.recalled_symbol_ids,
     )
 
 

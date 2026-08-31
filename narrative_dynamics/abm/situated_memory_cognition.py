@@ -9,12 +9,23 @@ from pathlib import Path
 from narrative_dynamics.contracts import stable_content_hash
 from narrative_dynamics.narrative.runtime_planning import PlanningBeliefState
 from narrative_dynamics.abm.situated import SituatedObservation, SituatedWorldEvent
-from narrative_dynamics.abm.situated_cognition import match_situated_observation_rule
+from narrative_dynamics.abm.situated_cognition import (
+    SituatedCognitiveRoundResult,
+    _advance_situated_cognitive_round,
+    admit_situated_observations,
+    decide_situated_action,
+    match_situated_observation_rule,
+)
 from narrative_dynamics.abm.situated_cognition_contracts import (
     SituatedAgentCognitiveModel,
     SituatedAgentMindState,
+    SituatedCognitiveState,
+    validate_situated_cognitive_state,
 )
-from narrative_dynamics.abm.situated_memory import search_situated_memories
+from narrative_dynamics.abm.situated_memory import (
+    ingest_situated_story,
+    search_situated_memories,
+)
 from narrative_dynamics.abm.situated_memory_cognition_contracts import (
     SituatedMemoryCognitiveModel,
 )
@@ -22,7 +33,11 @@ from narrative_dynamics.abm.situated_memory_contracts import (
     SituatedMemoryQuery,
     SituatedMemoryRecord,
 )
-from narrative_dynamics.abm.situated_story import SituatedPerspectiveEvent
+from narrative_dynamics.abm.situated_story import (
+    SituatedPerspectiveEvent,
+    SituatedStory,
+    perspective_timeline,
+)
 
 
 @dataclass(frozen=True)
@@ -107,6 +122,100 @@ class SituatedMemoryRecallResult:
             "prior_mind_hash": self.prior_mind.content_hash,
             "admissions": [item.to_dict() for item in self.admissions],
             "next_mind": self.next_mind.to_dict(),
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_dict())
+
+
+@dataclass(frozen=True)
+class SituatedMemoryCognitiveRoundResult:
+    model_id: str
+    model_hash: str
+    cognitive_round: SituatedCognitiveRoundResult
+    recalls: tuple[SituatedMemoryRecallResult, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.model_id, str) or not self.model_id.strip():
+            raise ValueError("memory cognitive round model id must be non-empty")
+        if not isinstance(self.model_hash, str) or not self.model_hash.startswith("sha256:"):
+            raise ValueError("memory cognitive round model hash must be a content hash")
+        if not isinstance(self.cognitive_round, SituatedCognitiveRoundResult):
+            raise TypeError("memory cognitive round requires a cognitive round")
+        if not isinstance(self.recalls, tuple) or any(
+            not isinstance(item, SituatedMemoryRecallResult) for item in self.recalls
+        ):
+            raise TypeError("memory cognitive round recalls must be a tuple")
+        agents = tuple(item.prior_mind.agent_id for item in self.recalls)
+        expected = tuple(item.agent_id for item in self.cognitive_round.decisions)
+        if set(agents) != set(expected) or len(agents) != len(set(agents)):
+            raise ValueError("memory cognitive round recalls must cover exact decision roster")
+        object.__setattr__(self, "recalls", tuple(sorted(self.recalls, key=lambda item: item.prior_mind.agent_id)))
+
+    @property
+    def prior_state(self) -> SituatedCognitiveState:
+        return self.cognitive_round.prior_state
+
+    @property
+    def decisions(self):
+        return self.cognitive_round.decisions
+
+    @property
+    def next_story(self) -> SituatedStory:
+        return self.cognitive_round.next_story
+
+    @property
+    def next_state(self) -> SituatedCognitiveState:
+        return self.cognitive_round.next_state
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "model_id": self.model_id,
+            "model_hash": self.model_hash,
+            "cognitive_round": self.cognitive_round.to_dict(),
+            "recalls": [item.to_dict() for item in self.recalls],
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_dict())
+
+
+@dataclass(frozen=True)
+class SituatedMemoryCognitiveTrajectory:
+    model_id: str
+    model_hash: str
+    initial_story: SituatedStory
+    initial_state: SituatedCognitiveState
+    rounds: tuple[SituatedMemoryCognitiveRoundResult, ...]
+    final_story: SituatedStory
+    final_state: SituatedCognitiveState
+
+    def __post_init__(self) -> None:
+        if not self.rounds:
+            raise ValueError("memory cognitive trajectory requires at least one round")
+        story = self.initial_story
+        state = self.initial_state
+        for item in self.rounds:
+            if item.model_id != self.model_id or item.model_hash != self.model_hash:
+                raise ValueError("memory cognitive trajectory rounds must bind the exact model")
+            if item.cognitive_round.prior_story_hash != story.content_hash or item.prior_state != state:
+                raise ValueError("memory cognitive trajectory rounds must form one exact chain")
+            story = item.next_story
+            state = item.next_state
+        if story != self.final_story or state != self.final_state:
+            raise ValueError("memory cognitive trajectory final values must equal the round chain")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "model_id": self.model_id,
+            "model_hash": self.model_hash,
+            "initial_story_hash": self.initial_story.content_hash,
+            "initial_state": self.initial_state.to_dict(),
+            "rounds": [item.to_dict() for item in self.rounds],
+            "final_story_hash": self.final_story.content_hash,
+            "final_state": self.final_state.to_dict(),
         }
 
     @property
@@ -278,8 +387,120 @@ def recall_situated_memories(
     return SituatedMemoryRecallResult(mind, tuple(admissions), next_mind)
 
 
+def simulate_situated_memory_cognitive_round(
+    database_path: str | Path,
+    model: SituatedMemoryCognitiveModel,
+    story: SituatedStory,
+    state: SituatedCognitiveState,
+) -> SituatedMemoryCognitiveRoundResult:
+    """Advance one synchronous round after direct admission and private recall."""
+
+    if not isinstance(model, SituatedMemoryCognitiveModel):
+        raise TypeError("memory cognitive simulation requires a SituatedMemoryCognitiveModel")
+    cognition = model.cognitive_model
+    validate_situated_cognitive_state(cognition, story, state)
+    model_by_id = {item.agent_id: item for item in cognition.agents}
+    mind_by_id = {item.agent_id: item for item in state.minds}
+    next_round = state.round_index + 1
+
+    for agent_id in sorted(model_by_id):
+        ingest_situated_story(database_path, story, agent_id, model.memory_policy)
+
+    admitted_minds = {}
+    decisions = []
+    recalls = []
+    for agent_id in sorted(model_by_id):
+        private = perspective_timeline(story, agent_id)
+        direct_perspective = tuple(
+            item
+            for item in private
+            if item.event.round_index > mind_by_id[agent_id].observation_floor_round
+        )
+        direct = admit_situated_observations(
+            model_by_id[agent_id],
+            mind_by_id[agent_id],
+            direct_perspective,
+        )
+        recalled = recall_situated_memories(
+            database_path,
+            model,
+            model_by_id[agent_id],
+            direct.next_mind,
+            round_index=state.round_index,
+        )
+        recalls.append(recalled)
+        admitted_minds[agent_id] = recalled.next_mind
+        decisions.append(decide_situated_action(
+            model_by_id[agent_id],
+            recalled.next_mind,
+            private,
+            round_index=next_round,
+            prior_belief=direct.prior_mind.belief,
+            admissions=direct.admissions,
+            recalled_memory_ids=tuple(item.memory_id for item in recalled.admissions),
+            recalled_symbol_ids=tuple(
+                item.symbol_id for item in recalled.admissions if item.symbol_id is not None
+            ),
+        ))
+
+    cognitive_round = _advance_situated_cognitive_round(
+        cognition,
+        story,
+        state,
+        tuple(decisions),
+        admitted_minds,
+    )
+    return SituatedMemoryCognitiveRoundResult(
+        model.model_id,
+        model.content_hash,
+        cognitive_round,
+        tuple(recalls),
+    )
+
+
+def simulate_situated_memory_cognition(
+    database_path: str | Path,
+    model: SituatedMemoryCognitiveModel,
+    initial_story: SituatedStory,
+    initial_state: SituatedCognitiveState,
+    *,
+    round_count: int,
+) -> SituatedMemoryCognitiveTrajectory:
+    """Run a deterministic memory-augmented trajectory over one private database."""
+
+    if not isinstance(round_count, int) or isinstance(round_count, bool) or round_count <= 0:
+        raise ValueError("memory cognitive simulation requires a positive round count")
+    validate_situated_cognitive_state(model.cognitive_model, initial_story, initial_state)
+    story = initial_story
+    state = initial_state
+    rounds = []
+    for _ in range(round_count):
+        result = simulate_situated_memory_cognitive_round(
+            database_path,
+            model,
+            story,
+            state,
+        )
+        rounds.append(result)
+        story = result.next_story
+        state = result.next_state
+    return SituatedMemoryCognitiveTrajectory(
+        model.model_id,
+        model.content_hash,
+        initial_story,
+        initial_state,
+        tuple(rounds),
+        story,
+        state,
+    )
+
+
 __all__ = (
     "SituatedMemoryRecallAdmission",
     "SituatedMemoryRecallResult",
+    "SituatedMemoryCognitiveRoundResult",
+    "SituatedMemoryCognitiveTrajectory",
     "recall_situated_memories",
+    "simulate_situated_memory_cognitive_round",
+    "simulate_situated_memory_cognition",
 )
