@@ -1250,8 +1250,63 @@ assert len(recalled_alice.recalled_memory_ids) == 1
 
 The checkpoint prevents old story observations from being magically replayed. Exact
 agent/world/round filters prevent privacy and future leaks, and recalled IDs prevent
-repeated Bayesian reinforcement. V14—not V13—owns consolidation, contradiction and
-source-trust handling, relationship learning, and forgetting.
+repeated Bayesian reinforcement.
+
+### Social memory revision V14
+
+V14 gives recalled testimony a social lifecycle. Repetition consolidates into one
+claim, a source's opposite claim supersedes but does not erase its history, later
+private evidence confirms or contradicts active claims, and only the observer's
+directed trust/affinity toward that source changes.
+
+```python
+from narrative_dynamics.abm import (
+    SituatedSocialEvidence,
+    SituatedSocialEvidenceKind,
+    advance_situated_social_memory,
+    initialize_situated_social_memory,
+)
+from tests.test_network_abm_situated_social_memory import cognitive_checkpoint
+from tests.test_network_abm_situated_social_memory_contracts import social_model
+
+model = social_model()
+cognition = cognitive_checkpoint(model, 3)
+social = initialize_situated_social_memory(model, cognition)
+evidence = (
+    SituatedSocialEvidence(
+        "heard-1", SituatedSocialEvidenceKind.TESTIMONY,
+        "bob", "restructuring", "approved", 1, "tell-1",
+        source_agent_id="alice", memory_id="heard-1",
+    ),
+    SituatedSocialEvidence(
+        "heard-2", SituatedSocialEvidenceKind.TESTIMONY,
+        "bob", "restructuring", "approved", 2, "tell-2",
+        source_agent_id="alice", memory_id="heard-2",
+    ),
+    SituatedSocialEvidence(
+        "inspected", SituatedSocialEvidenceKind.VERIFICATION,
+        "bob", "restructuring", "approved", 3, "inspect-1",
+    ),
+)
+updated = advance_situated_social_memory(
+    model, cognition, social, cognition, evidence
+).next_state
+claim = updated.claims[0]
+bob_to_alice = next(
+    item for item in updated.relationships
+    if item.observer_agent_id == "bob" and item.source_agent_id == "alice"
+)
+assert claim.support_count == 2
+assert claim.status.value == "confirmed"
+assert bob_to_alice.trust == 0.6
+assert bob_to_alice.affinity == 0.1
+```
+
+The symbol vocabulary and contradiction groups are declared rather than inferred
+from arbitrary prose. Unresolved claims expire by deterministic age/capacity rules;
+forgetting changes only the V14 index and never deletes SQLite history. Learned trust
+tempers later recalled external testimony, while direct inspection keeps its full
+V13 evidence weight.
 
 ## Verification
 

@@ -225,12 +225,15 @@ def advance_situated_social_memory(
         (item.observer_agent_id, item.source_agent_id): item
         for item in state.relationships
     }
-    for item in admitted:
-        if item.kind is SituatedSocialEvidenceKind.TESTIMONY:
-            _consolidate_testimony(claims, item)
-    for item in admitted:
-        if item.kind is SituatedSocialEvidenceKind.VERIFICATION:
-            _apply_verification(model, claims, relationships, item)
+    evidence_rounds = sorted({item.round_index for item in admitted})
+    for evidence_round in evidence_rounds:
+        same_round = tuple(item for item in admitted if item.round_index == evidence_round)
+        for item in same_round:
+            if item.kind is SituatedSocialEvidenceKind.TESTIMONY:
+                _consolidate_testimony(claims, item)
+        for item in same_round:
+            if item.kind is SituatedSocialEvidenceKind.VERIFICATION:
+                _apply_verification(model, claims, relationships, item)
     _forget_claims(model, claims, round_index=next_cognitive_state.round_index)
     processed.update(item.evidence_id for item in admitted)
 

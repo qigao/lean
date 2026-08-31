@@ -61,6 +61,7 @@ class SituatedMemoryRecallAdmission:
     prior_belief: PlanningBeliefState
     posterior_belief: PlanningBeliefState
     source_trust: float = 1.0
+    consolidated: bool = False
 
     def __post_init__(self) -> None:
         for name in ("agent_id", "cue_id", "memory_id", "event_id"):
@@ -87,6 +88,10 @@ class SituatedMemoryRecallAdmission:
             raise TypeError("situated recall lexical rank must be numeric")
         if not isinstance(self.prior_belief, PlanningBeliefState) or not isinstance(self.posterior_belief, PlanningBeliefState):
             raise TypeError("situated recall admission requires planning beliefs")
+        if not isinstance(self.consolidated, bool):
+            raise TypeError("situated recall consolidated flag must be boolean")
+        if self.consolidated and self.prior_belief != self.posterior_belief:
+            raise ValueError("consolidated recall cannot update belief again")
 
     def to_dict(self) -> dict[str, object]:
         payload = {
@@ -106,6 +111,8 @@ class SituatedMemoryRecallAdmission:
         }
         if self.source_trust != 1.0:
             payload["source_trust"] = self.source_trust
+        if self.consolidated:
+            payload["consolidated"] = True
         return payload
 
     @property
@@ -296,6 +303,8 @@ def recall_situated_memories(
     story: SituatedStory,
     state: SituatedCognitiveState,
     _source_trust_by_source: Mapping[str, float] | None = None,
+    _claim_topic_by_symbol: Mapping[str, str] | None = None,
+    _consolidated_claim_keys: frozenset[tuple[str, str, str]] | None = None,
 ) -> SituatedMemoryRecallResult:
     """Recall relevant private memories once and temper their Bayesian evidence."""
 
@@ -322,6 +331,8 @@ def recall_situated_memories(
         raise ValueError("situated recall mind must belong to the current cognitive state")
     round_index = state.round_index
     source_trust_by_source = {} if _source_trust_by_source is None else dict(_source_trust_by_source)
+    claim_topic_by_symbol = {} if _claim_topic_by_symbol is None else dict(_claim_topic_by_symbol)
+    consolidated_claim_keys = set(() if _consolidated_claim_keys is None else _consolidated_claim_keys)
     agent_ids = {item.agent_id for item in model.cognitive_model.agents}
     for source_id, trust in source_trust_by_source.items():
         if source_id not in agent_ids:
@@ -382,9 +393,27 @@ def recall_situated_memories(
             else 1.0
         )
         weight = memory.confidence * memory.salience * source_trust
+        claim_key = None
+        if (
+            rule is not None
+            and memory.kind is SituatedActionKind.TELL
+            and memory.actor_agent_id != mind.agent_id
+            and rule.symbol_id in claim_topic_by_symbol
+        ):
+            claim_key = (
+                memory.actor_agent_id,
+                claim_topic_by_symbol[rule.symbol_id],
+                rule.symbol_id,
+            )
+        consolidated = claim_key is not None and claim_key in consolidated_claim_keys
         if rule is None:
             posterior = prior
             rule_id = symbol_id = likelihood_action_id = None
+        elif consolidated:
+            posterior = prior
+            rule_id = rule.rule_id
+            symbol_id = rule.symbol_id
+            likelihood_action_id = rule.likelihood_action_id
         else:
             posterior = _posterior_from_memory(
                 agent_model,
@@ -396,6 +425,8 @@ def recall_situated_memories(
             rule_id = rule.rule_id
             symbol_id = rule.symbol_id
             likelihood_action_id = rule.likelihood_action_id
+            if claim_key is not None:
+                consolidated_claim_keys.add(claim_key)
         admissions.append(SituatedMemoryRecallAdmission(
             mind.agent_id,
             cue.cue_id,
@@ -411,6 +442,7 @@ def recall_situated_memories(
             prior,
             posterior,
             source_trust,
+            consolidated,
         ))
         belief = posterior
         recalled.add(memory.memory_id)
@@ -449,6 +481,8 @@ def _simulate_situated_memory_cognitive_round(
     state: SituatedCognitiveState,
     *,
     source_trust_by_observer: Mapping[str, Mapping[str, float]] | None,
+    claim_topic_by_symbol: Mapping[str, str] | None = None,
+    consolidated_claim_keys_by_observer: Mapping[str, frozenset[tuple[str, str, str]]] | None = None,
 ) -> SituatedMemoryCognitiveRoundResult:
     """Internal V13 round hook used by V14 directed source trust."""
 
@@ -490,6 +524,12 @@ def _simulate_situated_memory_cognitive_round(
                 if source_trust_by_observer is None
                 else source_trust_by_observer.get(agent_id, {})
             ),
+            _claim_topic_by_symbol=claim_topic_by_symbol,
+            _consolidated_claim_keys=(
+                None
+                if consolidated_claim_keys_by_observer is None
+                else consolidated_claim_keys_by_observer.get(agent_id, frozenset())
+            ),
         )
         recalls.append(recalled)
         admitted_minds[agent_id] = recalled.next_mind
@@ -501,9 +541,10 @@ def _simulate_situated_memory_cognitive_round(
             prior_belief=direct.prior_mind.belief,
             admissions=direct.admissions,
             recalled_memory_ids=tuple(item.memory_id for item in recalled.admissions),
-            recalled_symbol_ids=tuple(
-                item.symbol_id for item in recalled.admissions if item.symbol_id is not None
-            ),
+            recalled_symbol_ids=tuple(dict.fromkeys(
+                item.symbol_id for item in recalled.admissions
+                if item.symbol_id is not None and not item.consolidated
+            )),
         ))
 
     cognitive_round = _advance_situated_cognitive_round(

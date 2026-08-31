@@ -24,6 +24,7 @@ from narrative_dynamics.abm.situated_social_memory import (
     advance_situated_social_memory,
 )
 from narrative_dynamics.abm.situated_social_memory_contracts import (
+    SituatedClaimStatus,
     SituatedSocialEvidence,
     SituatedSocialEvidenceKind,
     SituatedSocialMemoryModel,
@@ -145,6 +146,28 @@ def _trust_by_observer(
     return result
 
 
+def _topic_by_symbol(model: SituatedSocialMemoryModel) -> dict[str, str]:
+    return {
+        symbol_id: topic.topic_id
+        for topic in model.topics
+        for symbol_id in topic.symbol_ids
+    }
+
+
+def _active_claim_keys_by_observer(
+    state: SituatedSocialMemoryState,
+) -> dict[str, frozenset[tuple[str, str, str]]]:
+    result: dict[str, set[tuple[str, str, str]]] = {}
+    for claim in state.claims:
+        if claim.status is SituatedClaimStatus.ACTIVE:
+            result.setdefault(claim.observer_agent_id, set()).add((
+                claim.source_agent_id,
+                claim.topic_id,
+                claim.symbol_id,
+            ))
+    return {key: frozenset(value) for key, value in result.items()}
+
+
 def recall_situated_memories_with_social_trust(
     database_path: str | Path,
     model: SituatedSocialMemoryModel,
@@ -159,6 +182,7 @@ def recall_situated_memories_with_social_trust(
 
     validate_situated_social_memory_state(model, cognitive_state, social_state)
     trust = _trust_by_observer(social_state).get(mind.agent_id, {})
+    claim_keys = _active_claim_keys_by_observer(social_state).get(mind.agent_id, frozenset())
     return recall_situated_memories(
         database_path,
         model.memory_cognitive_model,
@@ -167,6 +191,8 @@ def recall_situated_memories_with_social_trust(
         story=story,
         state=cognitive_state,
         _source_trust_by_source=trust,
+        _claim_topic_by_symbol=_topic_by_symbol(model),
+        _consolidated_claim_keys=claim_keys,
     )
 
 
@@ -253,6 +279,8 @@ def simulate_situated_social_cognitive_round(
         story,
         cognitive_state,
         source_trust_by_observer=_trust_by_observer(social_state),
+        claim_topic_by_symbol=_topic_by_symbol(model),
+        consolidated_claim_keys_by_observer=_active_claim_keys_by_observer(social_state),
     )
     evidence = _social_evidence(model, story, cognitive_round)
     social_update = advance_situated_social_memory(

@@ -64,6 +64,25 @@ def relationship(state, observer, source):
 
 
 class SituatedSocialMemoryRuntimeTests(unittest.TestCase):
+    def test_earlier_verification_cannot_validate_later_testimony(self):
+        model = social_model()
+        cognition = cognitive_checkpoint(model, 2)
+        initial = initialize_situated_social_memory(model, cognition)
+
+        result = advance_situated_social_memory(
+            model,
+            cognition,
+            initial,
+            cognition,
+            (
+                verification("early-inspection", "approved", 1),
+                testimony("later-claim", "approved", 2),
+            ),
+        )
+
+        self.assertEqual(result.next_state.claims[0].status, SituatedClaimStatus.ACTIVE)
+        self.assertEqual(relationship(result.next_state, "bob", "alice").trust, 0.5)
+
     def test_repeated_testimony_consolidates_and_opposite_testimony_supersedes(self):
         model = social_model()
         cognition = cognitive_checkpoint(model, 3)

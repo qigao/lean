@@ -2,7 +2,11 @@ from dataclasses import replace
 from tempfile import TemporaryDirectory
 import unittest
 
-from narrative_dynamics.abm.situated import ObservationChannel, SituatedActionKind
+from narrative_dynamics.abm.situated import (
+    ObservationChannel,
+    SituatedActionIntent,
+    SituatedActionKind,
+)
 from narrative_dynamics.abm.situated_memory import ingest_situated_story
 from narrative_dynamics.abm.situated_memory_cognition_contracts import (
     SituatedMemoryRecallCue,
@@ -17,6 +21,7 @@ from narrative_dynamics.abm.situated_social_memory_contracts import (
     SituatedClaimStatus,
     initialize_situated_social_memory,
 )
+from narrative_dynamics.abm.situated_story import advance_situated_story
 from tests.test_network_abm_situated_memory_cognition import (
     agent_model,
     inspection_and_move_story,
@@ -51,6 +56,49 @@ def social_relationship(state, observer, source):
 
 
 class SituatedSocialCognitionTests(unittest.TestCase):
+    def test_repeated_same_source_claim_updates_belief_only_once(self):
+        cognition, story, inspection = inspection_and_move_story()
+        story = with_telling(cognition, story, inspection)
+        story = advance_situated_story(cognition.world_model, story, (
+            SituatedActionIntent(
+                "tell-again",
+                "alice",
+                SituatedActionKind.TELL,
+                message="The restructuring is approved.",
+                source_event_ids=(inspection.event_id,),
+            ),
+        ))
+        cue = SituatedMemoryRecallCue(
+            "heard-restructuring",
+            "The restructuring is approved.",
+            event_kinds=(SituatedActionKind.TELL,),
+            channels=(ObservationChannel.AUDITORY,),
+        )
+        memory_model = recall_model({"bob": (cue,)})
+        model = replace(social_model(), memory_cognitive_model=memory_model)
+        cognitive_state = initialize_situated_memory_cognition(memory_model, story)
+        social_state = initialize_situated_social_memory(model, cognitive_state)
+
+        with TemporaryDirectory() as directory:
+            result = simulate_situated_social_cognitive_round(
+                f"{directory}/memory.sqlite3",
+                model,
+                story,
+                cognitive_state,
+                social_state,
+            )
+
+        bob_recall = next(
+            item for item in result.recalls if item.prior_mind.agent_id == "bob"
+        )
+        self.assertEqual(len(bob_recall.admissions), 2)
+        self.assertEqual(sum(item.consolidated for item in bob_recall.admissions), 1)
+        self.assertAlmostEqual(
+            bob_recall.next_mind.belief.probabilities["approved"],
+            0.560431654676259,
+        )
+        self.assertEqual(result.next_social_state.claims[0].support_count, 2)
+
     def test_half_trusted_auditory_memory_has_literal_tempered_weight(self):
         model, story, cognitive_state, social_state = testimony_social_case()
         with TemporaryDirectory() as directory:

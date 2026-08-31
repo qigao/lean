@@ -267,6 +267,30 @@ from narrative_dynamics.abm.situated_memory_cognition import (
     simulate_situated_memory_cognition,
     simulate_situated_memory_cognitive_round,
 )
+from narrative_dynamics.abm.situated_social_memory_contracts import (
+    SituatedClaimStatus,
+    SituatedClaimTopic,
+    SituatedConsolidatedClaim,
+    SituatedSocialEvidence,
+    SituatedSocialEvidenceKind,
+    SituatedSocialMemoryModel,
+    SituatedSocialMemoryPolicy,
+    SituatedSocialMemoryState,
+    SituatedSourceRelationship,
+    initialize_situated_social_memory,
+    validate_situated_social_memory_state,
+)
+from narrative_dynamics.abm.situated_social_memory import (
+    SituatedSocialMemoryUpdate,
+    advance_situated_social_memory,
+)
+from narrative_dynamics.abm.situated_social_cognition import (
+    SituatedSocialCognitiveRoundResult,
+    SituatedSocialCognitiveTrajectory,
+    recall_situated_memories_with_social_trust,
+    simulate_situated_social_cognition,
+    simulate_situated_social_cognitive_round,
+)
 
 
 __all__ = (
@@ -472,4 +496,22 @@ __all__ = (
     "recall_situated_memories",
     "simulate_situated_memory_cognitive_round",
     "simulate_situated_memory_cognition",
+    "SituatedClaimStatus",
+    "SituatedSocialEvidenceKind",
+    "SituatedClaimTopic",
+    "SituatedSocialMemoryPolicy",
+    "SituatedSocialMemoryModel",
+    "SituatedSourceRelationship",
+    "SituatedConsolidatedClaim",
+    "SituatedSocialEvidence",
+    "SituatedSocialMemoryState",
+    "validate_situated_social_memory_state",
+    "initialize_situated_social_memory",
+    "SituatedSocialMemoryUpdate",
+    "advance_situated_social_memory",
+    "SituatedSocialCognitiveRoundResult",
+    "SituatedSocialCognitiveTrajectory",
+    "recall_situated_memories_with_social_trust",
+    "simulate_situated_social_cognitive_round",
+    "simulate_situated_social_cognition",
 )
