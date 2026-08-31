@@ -1030,11 +1030,10 @@ assert can_situated_agents_interact(
 ) is False
 ```
 
-This is query-only: V15 does not replace V10-V14 observation, cognition, or memory
-admission. See the [perceptual-environment architecture
-spec](docs/superpowers/specs/2026-08-31-simulated-story-production-architecture-design.md);
-the next boundary is a separately reviewed percept-to-cognition/memory integration
-plan.
+The base V15 projection remains query-only and preserves every V10-V14 API. The
+explicit V15.1 entry points below integrate those percepts with cognition and memory
+without silently changing legacy behavior. See the [perceptual-environment
+architecture spec](docs/superpowers/specs/2026-08-31-simulated-story-production-architecture-design.md).
 
 ### Situated cognitive agents V11
 
@@ -1422,6 +1421,89 @@ from arbitrary prose. Unresolved claims expire by deterministic age/capacity rul
 forgetting changes only the V14 index and never deletes SQLite history. Learned trust
 tempers later recalled external testimony, while direct inspection keeps its full
 V13 evidence weight.
+
+### Percept-driven cognition, memory, and social evidence V15.1
+
+V15.1 makes each agent's sanitized percept the evidence boundary for cognition and
+long-term memory. The same objective office event can therefore produce different
+private histories: an open door gives Bob exact testimony, while a closed door gives
+him only an unidentified sound. SQLite stores only what Bob actually perceived.
+
+```python
+from tempfile import TemporaryDirectory
+
+from narrative_dynamics.abm import (
+    ObservationChannel,
+    SituatedActionKind,
+    SituatedMemoryRecallCue,
+    SituatedPerceptMemoryQuery,
+    initialize_situated_percept_memory_cognition,
+    initialize_situated_social_memory,
+    search_situated_percept_memories,
+    simulate_situated_percept_social_cognitive_round,
+)
+from tests.test_network_abm_situated_percept_cognition import SECRET
+from tests.test_network_abm_situated_percept_memory_cognition import (
+    mind,
+    recall_model,
+)
+from tests.test_network_abm_situated_percept_social_cognition import (
+    bound_social_model,
+    tell_checkpoint,
+)
+
+
+def run_branch(database, door_open):
+    perception, cognition, story = tell_checkpoint(door_open=door_open)
+    cue = SituatedMemoryRecallCue(
+        "heard-tell",
+        SECRET if door_open else "detected",
+        event_kinds=(SituatedActionKind.TELL,) if door_open else (),
+        channels=(ObservationChannel.AUDITORY,),
+    )
+    memory_model = recall_model(
+        {"bob": (cue,)}, cognition=cognition, perception=perception
+    )
+    social_model = bound_social_model(memory_model)
+    cognitive_state = initialize_situated_percept_memory_cognition(
+        memory_model, story
+    )
+    social_state = initialize_situated_social_memory(
+        social_model, cognitive_state
+    )
+    result = simulate_situated_percept_social_cognitive_round(
+        database,
+        memory_model,
+        social_model,
+        story,
+        cognitive_state,
+        social_state,
+    )
+    secret_hits = search_situated_percept_memories(
+        database,
+        SituatedPerceptMemoryQuery("bob", text=SECRET),
+    )
+    bob = mind(result.next_cognitive_state, "bob")
+    objective_tell = story.rounds[0].events[0]
+    return objective_tell, bob, secret_hits, result.next_social_state
+
+
+with TemporaryDirectory() as temporary:
+    exact = run_branch(f"{temporary}/open.sqlite3", True)
+    detected = run_branch(f"{temporary}/closed.sqlite3", False)
+
+assert exact[0] == detected[0]  # One objective TELL under the same world rules.
+assert exact[1].belief.probabilities["approved"] > 0.5
+assert detected[1].belief.probabilities["approved"] == 0.5
+assert len(exact[2]) == 1
+assert detected[2] == ()       # The closed-door row contains no secret text.
+assert len(exact[3].claims) == 1
+assert detected[3].claims == ()
+```
+
+This path remains deterministic and schema-grounded. Arbitrary natural-language
+grounding—such as asking an LLM to map free prose into declared actions, symbols,
+places, and evidence—is a separate V16 boundary.
 
 ## Verification
 

@@ -475,21 +475,25 @@ def _solve_values(model: SituatedAgentCognitiveModel, root: PlanningBeliefState,
     return solve(0, root, root_actions)[0]
 
 
-def _source_event_id(action: SituatedActionSpec, mind: SituatedAgentMindState, perspective: tuple[SituatedPerspectiveEvent, ...]) -> str | None:
+def _source_event_id_from_candidates(
+    action: SituatedActionSpec,
+    mind: SituatedAgentMindState,
+    candidates: tuple[tuple[str, SituatedActionKind], ...],
+) -> str | None:
     if not action.source_event_kinds:
         return None
     allowed = set(action.source_event_kinds)
     observed = set(mind.observed_event_ids)
-    for item in reversed(perspective):
-        if item.event.event_id in observed and item.event.kind in allowed:
-            return item.event.event_id
+    for event_id, kind in reversed(candidates):
+        if event_id in observed and kind in allowed:
+            return event_id
     return None
 
 
-def decide_situated_action(
+def _decide_situated_action(
     model: SituatedAgentCognitiveModel,
     mind: SituatedAgentMindState,
-    perspective: tuple[SituatedPerspectiveEvent, ...],
+    source_event_candidates: tuple[tuple[str, SituatedActionKind], ...],
     *,
     round_index: int,
     prior_belief: PlanningBeliefState | None = None,
@@ -499,7 +503,14 @@ def decide_situated_action(
 ) -> SituatedCognitiveDecision:
     if model.agent_id != mind.agent_id:
         raise ValueError("situated decision model and mind agent must match")
-    source_by_action = {item.action_id: _source_event_id(item, mind, perspective) for item in model.actions}
+    source_by_action = {
+        item.action_id: _source_event_id_from_candidates(
+            item,
+            mind,
+            source_event_candidates,
+        )
+        for item in model.actions
+    }
     prior_selected = set(mind.selected_action_ids)
     feasible_specs = tuple(
         item for item in model.actions
@@ -531,6 +542,29 @@ def decide_situated_action(
         feasible_ids, values, policy, selected_id,
         _goal_contributions(model, mind.belief, selected_id), intent,
         recalled_memory_ids, recalled_symbol_ids,
+    )
+
+
+def decide_situated_action(
+    model: SituatedAgentCognitiveModel,
+    mind: SituatedAgentMindState,
+    perspective: tuple[SituatedPerspectiveEvent, ...],
+    *,
+    round_index: int,
+    prior_belief: PlanningBeliefState | None = None,
+    admissions: tuple[SituatedBeliefAdmission, ...] = (),
+    recalled_memory_ids: tuple[str, ...] = (),
+    recalled_symbol_ids: tuple[str, ...] = (),
+) -> SituatedCognitiveDecision:
+    return _decide_situated_action(
+        model,
+        mind,
+        tuple((item.event.event_id, item.event.kind) for item in perspective),
+        round_index=round_index,
+        prior_belief=prior_belief,
+        admissions=admissions,
+        recalled_memory_ids=recalled_memory_ids,
+        recalled_symbol_ids=recalled_symbol_ids,
     )
 
 
