@@ -28,6 +28,25 @@ from narrative_dynamics.abm.interventions import (
     compare_intervention,
     no_propagation_intervention,
 )
+from narrative_dynamics.abm.adaptive_contracts import (
+    AdaptivePopulationState,
+    AdaptiveTrustModel,
+    EdgeTrustState,
+    TruthFeedback,
+    initialize_adaptive_population,
+)
+from narrative_dynamics.abm.learning import (
+    AdaptiveRoundResult,
+    AdaptiveTrajectory,
+    EdgeTrustUpdate,
+    population_view,
+    simulate_adaptive_population,
+    simulate_adaptive_round,
+)
+from narrative_dynamics.abm.adaptive_metrics import (
+    AdaptiveTrustMetrics,
+    measure_adaptive_trust,
+)
 
 
 __all__ = (
@@ -54,4 +73,17 @@ __all__ = (
     "apply_intervention",
     "compare_intervention",
     "no_propagation_intervention",
+    "AdaptiveTrustModel",
+    "EdgeTrustState",
+    "AdaptivePopulationState",
+    "TruthFeedback",
+    "initialize_adaptive_population",
+    "EdgeTrustUpdate",
+    "AdaptiveRoundResult",
+    "AdaptiveTrajectory",
+    "population_view",
+    "simulate_adaptive_round",
+    "simulate_adaptive_population",
+    "AdaptiveTrustMetrics",
+    "measure_adaptive_trust",
 )

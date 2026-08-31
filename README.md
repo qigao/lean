@@ -79,6 +79,60 @@ V1 deliberately keeps identities, roles, and the population roster fixed. It
 models information-driven behavioral change; population lifecycle, network
 rewiring, learned parameters, and stochastic contact remain later phases.
 
+### Adaptive source trust V2
+
+Agents can also learn which neighboring sources are reliable. Current trust
+scales edge influence; truth feedback updates trust after propagation, so the
+new value affects the following round only.
+
+```python
+from narrative_dynamics.abm import (
+    AdaptiveTrustModel,
+    EdgeSelector,
+    NetworkABMModel,
+    NetworkAgentSpec,
+    SocialEdge,
+    SocialNetwork,
+    TruthFeedback,
+    initialize_adaptive_population,
+    measure_adaptive_trust,
+    simulate_adaptive_round,
+)
+
+agents = (
+    NetworkAgentSpec("accurate", "source", 1.0, 0.5, 0.5),
+    NetworkAgentSpec("inaccurate", "source", 1.0, 0.5, 0.0),
+    NetworkAgentSpec("target", "recipient", 1.0, 0.5, 0.5),
+)
+base = NetworkABMModel(
+    "two-sources",
+    "1",
+    agents,
+    SocialNetwork(
+        ("accurate", "inaccurate", "target"),
+        (
+            SocialEdge("accurate", "target", "report", 1.0),
+            SocialEdge("inaccurate", "target", "report", 1.0),
+        ),
+    ),
+)
+adaptive = AdaptiveTrustModel("adaptive-sources", "1", base, 0.5, 0.5)
+state = initialize_adaptive_population(
+    adaptive,
+    beliefs={"accurate": 1.0, "inaccurate": 0.0},
+)
+feedback = (
+    TruthFeedback(EdgeSelector("accurate", "target", "report"), 1.0),
+    TruthFeedback(EdgeSelector("inaccurate", "target", "report"), 1.0),
+)
+learned = simulate_adaptive_round(adaptive, state, feedback=feedback)
+assert measure_adaptive_trust(adaptive, learned.next_state).max_trust == 0.75
+
+next_round = simulate_adaptive_round(adaptive, learned.next_state)
+target = next(item for item in next_round.next_state.agents if item.agent_id == "target")
+assert target.belief == 0.75
+```
+
 ## Verification
 
 GitHub Actions runs:
