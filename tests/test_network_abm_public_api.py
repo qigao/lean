@@ -1,10 +1,14 @@
 import unittest
 
 import narrative_dynamics.abm as abm
+from narrative_dynamics.abm.situated_projection import (
+    project_situated_narrative as source_project_situated_narrative,
+)
+from narrative_dynamics.abm import situated_projection_contracts as projection_contracts
 
 
 class NetworkABMPublicAPITests(unittest.TestCase):
-    def test_public_api_exports_current_v16_surface(self):
+    def test_public_api_exports_current_v17_surface(self):
         self.assertEqual(
             set(abm.__all__),
             {
@@ -296,10 +300,28 @@ class NetworkABMPublicAPITests(unittest.TestCase):
                 "compile_situated_semantic_grounding",
                 "replay_situated_semantic_grounding",
                 "grounded_claims_to_situated_social_evidence",
+                "NarrativeAuthority",
+                "NarrativeTemporalOrder",
+                "NarrativeBeatKind",
+                "NarrativeEntitlementScope",
+                "NarrativeSupportRef",
+                "NarrativeFact",
+                "NarrativeEntitlement",
+                "NarrativeProjectionPolicy",
+                "NarrativeBeat",
+                "NarrativeScene",
+                "NarrativeCut",
+                "NarrativeProjection",
+                "project_situated_narrative",
             },
         )
         for name in abm.__all__:
             self.assertTrue(hasattr(abm, name), name)
+
+    def test_v17_exports_are_the_source_definitions(self):
+        for name in projection_contracts.__all__:
+            self.assertIs(getattr(abm, name), getattr(projection_contracts, name))
+        self.assertIs(abm.project_situated_narrative, source_project_situated_narrative)
 
 
 if __name__ == "__main__":

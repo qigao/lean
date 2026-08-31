@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 
 import pytest
@@ -23,6 +24,16 @@ from narrative_dynamics.abm.situated_perception_contracts import (
     SituatedPerceptionLayer,
     SituatedPerceptionModel,
 )
+from narrative_dynamics.abm.situated_cognition_contracts import SituatedObservationRule
+from narrative_dynamics.abm.situated_memory_cognition_contracts import (
+    SituatedMemoryRecallCue,
+)
+from narrative_dynamics.abm.situated_percept_memory_cognition import (
+    initialize_situated_percept_memory_cognition,
+)
+from narrative_dynamics.abm.situated_percept_social_cognition import (
+    simulate_situated_percept_social_cognition,
+)
 from narrative_dynamics.abm.situated_projection import project_situated_narrative
 from narrative_dynamics.abm.situated_projection_contracts import (
     NarrativeAuthority,
@@ -33,11 +44,27 @@ from narrative_dynamics.abm.situated_projection_contracts import (
 )
 from narrative_dynamics.abm.situated_story import (
     advance_situated_story,
+    initialize_situated_story,
     objective_timeline,
     replay_situated_story,
     SituatedStory,
 )
+from narrative_dynamics.abm.situated_social_memory_contracts import (
+    SituatedClaimStatus,
+    initialize_situated_social_memory,
+)
+from tests.situated_cognition_fixtures import cognitive_office_model
 from tests.situated_fixtures import office_model
+from tests.test_network_abm_situated_percept_cognition import (
+    initial_state as percept_initial_state,
+    perception_model as cognitive_perception_model,
+)
+from tests.test_network_abm_situated_percept_memory_cognition import (
+    recall_model,
+)
+from tests.test_network_abm_situated_percept_social_cognition import (
+    bound_social_model,
+)
 
 
 def _perception_model() -> SituatedPerceptionModel:
@@ -270,6 +297,334 @@ def limited_policy(agent_id: str, **kwargs) -> NarrativeProjectionPolicy:
         pov_agent_ids=(agent_id,),
         **kwargs,
     )
+
+
+@pytest.fixture
+def trajectory(tmp_path):
+    perception = cognitive_perception_model()
+    cognition = cognitive_office_model()
+    bob = next(item for item in cognition.agents if item.agent_id == "bob")
+    bob = replace(
+        bob,
+        observation_rules=bob.observation_rules
+        + (
+            SituatedObservationRule(
+                "tell-denied",
+                "denied",
+                "tell",
+                SituatedActionKind.TELL,
+                "told",
+                "message",
+                "The restructuring is denied.",
+            ),
+        ),
+    )
+    cognition = replace(
+        cognition,
+        agents=tuple(
+            bob if item.agent_id == "bob" else item for item in cognition.agents
+        ),
+    )
+    story = initialize_situated_story(
+        cognition.world_model,
+        percept_initial_state(perception, door_open=True),
+        perception_model=perception,
+    )
+    story = advance_situated_story(
+        cognition.world_model,
+        story,
+        (
+            SituatedActionIntent(
+                "alice-inspect",
+                "alice",
+                SituatedActionKind.INSPECT,
+                "memo",
+            ),
+        ),
+    )
+    alice_inspection = story.rounds[-1].events[0]
+    story = advance_situated_story(
+        cognition.world_model,
+        story,
+        (
+            SituatedActionIntent(
+                "alice-move",
+                "alice",
+                SituatedActionKind.MOVE,
+                "records-open",
+            ),
+        ),
+    )
+    story = advance_situated_story(
+        cognition.world_model,
+        story,
+        (
+            SituatedActionIntent(
+                "alice-denied",
+                "alice",
+                SituatedActionKind.TELL,
+                message="The restructuring is denied.",
+                source_event_ids=(alice_inspection.event_id,),
+            ),
+        ),
+    )
+    story = advance_situated_story(
+        cognition.world_model,
+        story,
+        (
+            SituatedActionIntent(
+                "bob-move",
+                "bob",
+                SituatedActionKind.MOVE,
+                "open-records",
+            ),
+        ),
+    )
+    story = advance_situated_story(
+        cognition.world_model,
+        story,
+        (
+            SituatedActionIntent(
+                "bob-inspect",
+                "bob",
+                SituatedActionKind.INSPECT,
+                "memo",
+            ),
+        ),
+    )
+    cues = (
+        SituatedMemoryRecallCue(
+            "tell",
+            "restructuring",
+            event_kinds=(SituatedActionKind.TELL,),
+        ),
+        SituatedMemoryRecallCue(
+            "inspect",
+            "restructuring",
+            event_kinds=(SituatedActionKind.INSPECT,),
+        ),
+    )
+    memory_model = recall_model(
+        {"bob": cues}, cognition=cognition, perception=perception
+    )
+    social_model = bound_social_model(memory_model)
+    cognitive_state = initialize_situated_percept_memory_cognition(
+        memory_model, story
+    )
+    social_state = initialize_situated_social_memory(
+        social_model, cognitive_state
+    )
+    return simulate_situated_percept_social_cognition(
+        tmp_path / "projection.sqlite3",
+        memory_model,
+        social_model,
+        story,
+        cognitive_state,
+        social_state,
+        round_count=2,
+    )
+
+
+def _private_beat_kinds():
+    return {
+        NarrativeBeatKind.BELIEF_SHIFT,
+        NarrativeBeatKind.ACTION_REVERSAL,
+        NarrativeBeatKind.MEMORY_RECALL,
+        NarrativeBeatKind.CLAIM_REVISION,
+        NarrativeBeatKind.RELATIONSHIP_CHANGE,
+    }
+
+
+def test_projection_emits_supported_private_cognitive_and_social_changes(trajectory):
+    projection = project_situated_narrative(
+        trajectory.final_story,
+        limited_policy("bob"),
+        trajectory=trajectory,
+    )
+    kinds = {beat.kind for beat in projection.beats}
+    assert NarrativeBeatKind.BELIEF_SHIFT in kinds
+    assert NarrativeBeatKind.MEMORY_RECALL in kinds
+    assert NarrativeBeatKind.CLAIM_REVISION in kinds
+    assert NarrativeBeatKind.RELATIONSHIP_CHANGE in kinds
+    assert projection.trajectory_hash == trajectory.content_hash
+    assert all(
+        item.owner_agent_id == "bob" for item in projection.cut.entitlements
+    )
+
+
+def test_include_flags_remove_private_internal_categories(trajectory):
+    policy = replace(
+        limited_policy("bob"),
+        include_beliefs=False,
+        include_memories=False,
+        include_claim_revisions=False,
+        include_relationship_changes=False,
+    )
+    projection = project_situated_narrative(
+        trajectory.final_story, policy, trajectory=trajectory
+    )
+    assert not (
+        {
+            NarrativeBeatKind.BELIEF_SHIFT,
+            NarrativeBeatKind.MEMORY_RECALL,
+            NarrativeBeatKind.CLAIM_REVISION,
+            NarrativeBeatKind.RELATIONSHIP_CHANGE,
+        }
+        & {beat.kind for beat in projection.beats}
+    )
+
+
+def test_trajectory_private_state_obeys_limited_and_objective_authority(trajectory):
+    bob = project_situated_narrative(
+        trajectory.final_story, limited_policy("bob"), trajectory=trajectory
+    )
+    private_ids = {
+        entitlement.entitlement_id
+        for entitlement in bob.cut.entitlements
+        if entitlement.scope is NarrativeEntitlementScope.PRIVATE
+    }
+    private_beats = [beat for beat in bob.beats if beat.kind in _private_beat_kinds()]
+    assert private_beats
+    assert all(beat.active_pov_agent_id == "bob" for beat in private_beats)
+    assert all(set(beat.entitlement_ids) <= private_ids for beat in private_beats)
+
+    objective = project_situated_narrative(
+        trajectory.final_story, objective_policy(), trajectory=trajectory
+    )
+    objective_private = [
+        item
+        for item in objective.cut.entitlements
+        if item.scope is NarrativeEntitlementScope.PRIVATE
+    ]
+    assert {item.owner_agent_id for item in objective_private} == {"bob"}
+    assert all(item.owner_agent_id is not None for item in objective_private)
+
+
+def test_trajectory_must_end_at_the_projected_story(trajectory):
+    with pytest.raises(ValueError, match="final story"):
+        project_situated_narrative(
+            objective_office_story(), objective_policy(), trajectory=trajectory
+        )
+
+
+def test_trajectory_salience_and_support_are_exact_source_artifacts(trajectory):
+    projection = project_situated_narrative(
+        trajectory.final_story, objective_policy(), trajectory=trajectory
+    )
+    by_kind = {
+        kind: [beat for beat in projection.beats if beat.kind is kind]
+        for kind in _private_beat_kinds()
+    }
+
+    changed_decisions = [
+        decision
+        for round_result in trajectory.rounds
+        for decision in round_result.decisions
+        if decision.prior_belief != decision.posterior_belief
+    ]
+    expected_beliefs = {
+        decision.content_hash: 0.5
+        * sum(
+            abs(
+                decision.posterior_belief.probabilities[key]
+                - decision.prior_belief.probabilities[key]
+            )
+            for key in decision.prior_belief.probabilities
+        )
+        for decision in changed_decisions
+    }
+    assert {
+        beat.supporting_artifacts[0].artifact_hash: beat.salience
+        for beat in by_kind[NarrativeBeatKind.BELIEF_SHIFT]
+    } == expected_beliefs
+
+    admissions = [
+        admission
+        for round_result in trajectory.rounds
+        for recall in round_result.recalls
+        for admission in recall.admissions
+        if not admission.consolidated
+    ]
+    assert {
+        beat.supporting_artifacts[0].artifact_hash: beat.salience
+        for beat in by_kind[NarrativeBeatKind.MEMORY_RECALL]
+    } == {
+        admission.content_hash: admission.evidence_weight
+        for admission in admissions
+    }
+
+    expected_relationships = {}
+    expected_claims = {}
+    for round_result in trajectory.rounds:
+        prior_relationships = {
+            (item.observer_agent_id, item.source_agent_id): item
+            for item in round_result.social_update.prior_state.relationships
+        }
+        for item in round_result.social_update.next_state.relationships:
+            prior = prior_relationships[(item.observer_agent_id, item.source_agent_id)]
+            if item != prior:
+                expected_relationships[item.content_hash] = (
+                    abs(item.trust - prior.trust)
+                    + abs(item.affinity - prior.affinity)
+                )
+        prior_claims = {
+            item.claim_id: item
+            for item in round_result.social_update.prior_state.claims
+        }
+        for item in round_result.social_update.next_state.claims:
+            if item != prior_claims.get(item.claim_id):
+                expected_claims[item.content_hash] = 1.0
+
+    assert {
+        beat.supporting_artifacts[0].artifact_hash: beat.salience
+        for beat in by_kind[NarrativeBeatKind.RELATIONSHIP_CHANGE]
+    } == expected_relationships
+    claim_beats = {
+        beat.supporting_artifacts[0].artifact_hash: beat.salience
+        for beat in by_kind[NarrativeBeatKind.CLAIM_REVISION]
+    }
+    assert claim_beats == expected_claims
+    terminal_hashes = {
+        claim.content_hash
+        for round_result in trajectory.rounds
+        for claim in round_result.social_update.next_state.claims
+        if claim.status
+        in {
+            SituatedClaimStatus.SUPERSEDED,
+            SituatedClaimStatus.CONFIRMED,
+            SituatedClaimStatus.CONTRADICTED,
+            SituatedClaimStatus.FORGOTTEN,
+        }
+    }
+    assert terminal_hashes
+    assert all(claim_beats[item] == 1.0 for item in terminal_hashes)
+
+    serialized = json.dumps(projection.to_dict(), sort_keys=True)
+    assert "sqlite" not in serialized.lower()
+
+
+def test_action_reversal_requires_a_changed_prior_projected_decision(trajectory):
+    projection = project_situated_narrative(
+        trajectory.final_story, objective_policy(), trajectory=trajectory
+    )
+    previous = {}
+    expected_hashes = set()
+    first_round_hashes = set()
+    for round_result in trajectory.rounds:
+        for decision in round_result.decisions:
+            prior = previous.get(decision.agent_id)
+            if prior is None:
+                first_round_hashes.add(decision.content_hash)
+            elif prior != decision.selected_action_id:
+                expected_hashes.add(decision.content_hash)
+            previous[decision.agent_id] = decision.selected_action_id
+    reversal_hashes = {
+        beat.supporting_artifacts[0].artifact_hash
+        for beat in projection.beats
+        if beat.kind is NarrativeBeatKind.ACTION_REVERSAL
+    }
+    assert reversal_hashes == expected_hashes
+    assert reversal_hashes.isdisjoint(first_round_hashes)
 
 
 def test_objective_projection_cites_exact_world_events():
