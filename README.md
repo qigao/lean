@@ -1150,9 +1150,108 @@ with TemporaryDirectory() as temporary:
     assert dana == ()     # Dana observed neither event.
 ```
 
-V12 deliberately does not feed retrieved rows back into cognition. V13 will add
-agent-private RAG so an early memory can influence a later belief and POMDP choice;
-V14 will add consolidation, contradiction handling, and relationship learning.
+### Memory-augmented situated cognition V13
+
+V13 closes that loop without introducing a shared chat context. Each embodied agent
+restarts from the same physical-story checkpoint, searches only its own SQLite/FTS5
+records, and admits an eligible memory once before choosing its next POMDP action.
+This executable comparison uses the repository's deterministic office fixture:
+
+```python
+from tempfile import TemporaryDirectory
+
+from narrative_dynamics.abm import (
+    ObservationChannel,
+    SituatedActionIntent,
+    SituatedActionKind,
+    SituatedAgentRecallPolicy,
+    SituatedMemoryCognitiveModel,
+    SituatedMemoryRecallCue,
+    advance_situated_story,
+    initialize_situated_memory_cognition,
+    initialize_situated_story,
+    initialize_situated_world,
+    simulate_situated_memory_cognitive_round,
+    standard_situated_memory_policy,
+)
+from tests.situated_cognition_fixtures import cognitive_office_model
+
+cognition = cognitive_office_model()
+history = initialize_situated_story(
+    cognition.world_model, initialize_situated_world(cognition.world_model)
+)
+history = advance_situated_story(cognition.world_model, history, (
+    SituatedActionIntent(
+        "historical-inspect", "alice", SituatedActionKind.INSPECT, "memo"
+    ),
+))
+inspection = next(
+    event for event in history.rounds[-1].events
+    if event.actor_agent_id == "alice"
+)
+history = advance_situated_story(cognition.world_model, history, (
+    SituatedActionIntent(
+        "historical-move", "alice", SituatedActionKind.MOVE, "records-open"
+    ),
+))
+cue = SituatedMemoryRecallCue(
+    "restructuring",
+    "restructuring",
+    required_place_ids=("open",),
+    event_kinds=(SituatedActionKind.INSPECT,),
+    channels=(ObservationChannel.INSPECTION,),
+)
+
+
+def memory_model(enable_recall):
+    return SituatedMemoryCognitiveModel(
+        "office-memory-cognition",
+        "1",
+        cognition,
+        standard_situated_memory_policy(),
+        tuple(
+            SituatedAgentRecallPolicy(
+                agent.agent_id,
+                (cue,) if enable_recall and agent.agent_id == "alice" else (),
+            )
+            for agent in cognition.agents
+        ),
+    )
+
+
+control_model = memory_model(False)
+recall_model = memory_model(True)
+control_state = initialize_situated_memory_cognition(control_model, history)
+recall_state = initialize_situated_memory_cognition(recall_model, history)
+
+with TemporaryDirectory() as temporary:
+    control = simulate_situated_memory_cognitive_round(
+        f"{temporary}/control.sqlite3",
+        control_model,
+        history,
+        control_state,
+    )
+    recalled = simulate_situated_memory_cognitive_round(
+        f"{temporary}/recall.sqlite3",
+        recall_model,
+        history,
+        recall_state,
+    )
+
+control_alice = next(item for item in control.decisions if item.agent_id == "alice")
+recalled_alice = next(item for item in recalled.decisions if item.agent_id == "alice")
+assert control_alice.posterior_belief.probabilities["approved"] == 0.5
+assert control_alice.selected_action_id == "wait"
+assert recalled_alice.posterior_belief.probabilities["approved"] == 0.9
+assert recalled_alice.selected_action_id == "tell"
+assert recalled_alice.intent.source_event_ids == (inspection.event_id,)
+assert len(recalled_alice.recalled_memory_ids) == 1
+```
+
+The checkpoint prevents old story observations from being magically replayed. Exact
+agent/world/round filters prevent privacy and future leaks, and recalled IDs prevent
+repeated Bayesian reinforcement. V14—not V13—owns consolidation, contradiction and
+source-trust handling, relationship learning, and forgetting.
 
 ## Verification
 

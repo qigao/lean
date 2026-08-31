@@ -252,6 +252,21 @@ from narrative_dynamics.abm.situated_memory import (
     search_situated_memories,
     set_situated_memory_active,
 )
+from narrative_dynamics.abm.situated_memory_cognition_contracts import (
+    SituatedAgentRecallPolicy,
+    SituatedMemoryCognitiveModel,
+    SituatedMemoryRecallCue,
+    initialize_situated_memory_cognition,
+)
+from narrative_dynamics.abm.situated_memory_cognition import (
+    SituatedMemoryCognitiveRoundResult,
+    SituatedMemoryCognitiveTrajectory,
+    SituatedMemoryRecallAdmission,
+    SituatedMemoryRecallResult,
+    recall_situated_memories,
+    simulate_situated_memory_cognition,
+    simulate_situated_memory_cognitive_round,
+)
 
 
 __all__ = (
@@ -446,4 +461,15 @@ __all__ = (
     "search_situated_memories",
     "set_situated_memory_active",
     "rebuild_situated_memory_index",
+    "SituatedMemoryRecallCue",
+    "SituatedAgentRecallPolicy",
+    "SituatedMemoryCognitiveModel",
+    "initialize_situated_memory_cognition",
+    "SituatedMemoryRecallAdmission",
+    "SituatedMemoryRecallResult",
+    "SituatedMemoryCognitiveRoundResult",
+    "SituatedMemoryCognitiveTrajectory",
+    "recall_situated_memories",
+    "simulate_situated_memory_cognitive_round",
+    "simulate_situated_memory_cognition",
 )

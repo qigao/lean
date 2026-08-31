@@ -4,7 +4,7 @@ import narrative_dynamics.abm as abm
 
 
 class NetworkABMPublicAPITests(unittest.TestCase):
-    def test_public_api_exports_current_v12_surface(self):
+    def test_public_api_exports_current_v13_surface(self):
         self.assertEqual(
             set(abm.__all__),
             {
@@ -199,6 +199,17 @@ class NetworkABMPublicAPITests(unittest.TestCase):
                 "search_situated_memories",
                 "set_situated_memory_active",
                 "rebuild_situated_memory_index",
+                "SituatedMemoryRecallCue",
+                "SituatedAgentRecallPolicy",
+                "SituatedMemoryCognitiveModel",
+                "initialize_situated_memory_cognition",
+                "SituatedMemoryRecallAdmission",
+                "SituatedMemoryRecallResult",
+                "SituatedMemoryCognitiveRoundResult",
+                "SituatedMemoryCognitiveTrajectory",
+                "recall_situated_memories",
+                "simulate_situated_memory_cognitive_round",
+                "simulate_situated_memory_cognition",
             },
         )
         for name in abm.__all__:
