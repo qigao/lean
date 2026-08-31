@@ -16,6 +16,7 @@ from narrative_dynamics.abm.simulation import (
     simulate_population,
     simulate_round,
 )
+from narrative_dynamics.abm.metrics import EmergenceMetrics, measure_emergence
 
 
 __all__ = (
@@ -31,4 +32,6 @@ __all__ = (
     "PopulationTrajectory",
     "simulate_round",
     "simulate_population",
+    "EmergenceMetrics",
+    "measure_emergence",
 )
