@@ -124,6 +124,65 @@ def detected_story():
     )
 
 
+def _append_single_alice_tell(
+    story: SituatedStory,
+    action_id: str,
+    *,
+    source_event_ids: tuple[str, ...] = (),
+) -> tuple[SituatedStory, str]:
+    world = story.perception_model.world_model
+    resolved = resolve_situated_round(
+        world,
+        story.current_state,
+        (
+            SituatedActionIntent(
+                action_id,
+                "alice",
+                SituatedActionKind.TELL,
+                message="status update",
+                source_event_ids=source_event_ids,
+            ),
+        ),
+    )
+    event = next(item for item in resolved.events if item.actor_agent_id == "alice")
+    accepted = SituatedRoundResult(
+        resolved.prior_state,
+        tuple(item for item in resolved.intents if item.agent_id == "alice"),
+        (event,),
+        tuple(item for item in resolved.observations if item.event_id == event.event_id),
+        resolved.next_state,
+    )
+    return (
+        SituatedStory(
+            story.model_id,
+            story.model_hash,
+            story.initial_state,
+            story.rounds + (accepted,),
+            story.perception_model,
+        ),
+        event.event_id,
+    )
+
+
+def detected_causal_story():
+    perception = _perception_model()
+    world = perception.world_model
+    story = SituatedStory(
+        world.model_id,
+        world.content_hash,
+        initialize_situated_world(world),
+        perception_model=perception,
+    )
+    story, first_id = _append_single_alice_tell(story, "alice-first")
+    story, cause_id = _append_single_alice_tell(story, "alice-cause")
+    story, payoff_id = _append_single_alice_tell(
+        story,
+        "alice-payoff",
+        source_event_ids=(cause_id,),
+    )
+    return story, (first_id, cause_id, payoff_id)
+
+
 def causal_story(*, private: bool = False):
     perception = _perception_model() if private else None
     world = perception.world_model if perception is not None else office_model()
@@ -256,6 +315,9 @@ def test_detected_percept_exposes_signal_without_actor_kind_or_outcome():
     assert "actor_agent_id" not in facts
     assert "kind" not in facts
     assert "outcome" not in facts
+    assert tuple(item.kind for item in projection.beats) == (
+        NarrativeBeatKind.INFORMATION,
+    )
 
 
 def test_unknown_limited_pov_agent_is_rejected():
@@ -388,6 +450,45 @@ def test_limited_causal_selection_never_names_an_unperceived_cause():
     projected_ids = {item.beat_id for item in projection.beats}
     assert all(set(item.cause_beat_ids) <= projected_ids for item in projection.beats)
     assert all(not item.cause_beat_ids for item in projection.beats)
+
+
+def test_private_perceived_endpoints_do_not_authorize_objective_causal_edges():
+    story, (first_id, cause_id, payoff_id) = detected_causal_story()
+    complete = project_situated_narrative(story, limited_policy("bob"))
+    assert {item.source_event_id for item in complete.beats} == {
+        first_id,
+        cause_id,
+        payoff_id,
+    }
+    assert all(not item.cause_beat_ids for item in complete.beats)
+    assert all(item.kind is not NarrativeBeatKind.CAUSAL_PAYOFF for item in complete.beats)
+
+    sparse = project_situated_narrative(
+        story,
+        limited_policy(
+            "bob",
+            salience_weights={
+                NarrativeBeatKind.PHYSICAL: 0.0,
+                NarrativeBeatKind.INFORMATION: 0.0,
+            },
+            minimum_salience=1.0,
+            required_causal_coverage=1.0,
+        ),
+    )
+    assert tuple(item.source_event_id for item in sparse.beats) == (
+        first_id,
+        payoff_id,
+    )
+    assert cause_id not in {item.source_event_id for item in sparse.beats}
+
+
+def test_chronological_projection_never_reorders_a_nonadjacent_cause_pair():
+    story, _ = causal_story()
+    projection = project_situated_narrative(story, objective_policy())
+    emitted_positions = [
+        (item.round_index, item.sequence) for item in projection.beats
+    ]
+    assert emitted_positions == sorted(emitted_positions)
 
 
 def test_authored_event_order_reverses_presentation_without_rewriting_time():

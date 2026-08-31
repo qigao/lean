@@ -173,11 +173,6 @@ def _private_candidates(
         raise ValueError("narrative POV agent must belong to the situated story")
 
     candidates = []
-    # Causal selection reads only the accepted event graph. No world-event field is
-    # copied into a private fact, support reference, beat place, actor, kind, or outcome.
-    cause_ids_by_event = {
-        event.event_id: event.cause_event_ids for event in objective_timeline(story)
-    }
     for agent_id in policy.pov_agent_ids:
         per_round_sequence: dict[int, int] = {}
         for percept in perceptual_timeline(model, story, agent_id):
@@ -199,7 +194,7 @@ def _private_candidates(
                     agent_id,
                     tuple(disclosed_agents),
                     NarrativeBeatKind.INFORMATION
-                    if percept.kind in _INFORMATION_ACTIONS
+                    if percept.kind is None or percept.kind in _INFORMATION_ACTIONS
                     else NarrativeBeatKind.PHYSICAL,
                     support,
                     _entitlement(
@@ -209,7 +204,7 @@ def _private_candidates(
                         facts=facts,
                         support=support,
                     ),
-                    cause_ids_by_event[percept.source_event_id],
+                    (),
                 )
             )
     return tuple(
@@ -406,24 +401,6 @@ def _make_beats(
     return tuple(beats)
 
 
-def _keep_causal_pairs_adjacent(
-    beats: tuple[NarrativeBeat, ...], policy: NarrativeProjectionPolicy
-) -> tuple[NarrativeBeat, ...]:
-    if policy.temporal_order is NarrativeTemporalOrder.AUTHORED:
-        return beats
-    ordered = list(beats)
-    for payoff in tuple(beats):
-        if not payoff.cause_beat_ids:
-            continue
-        causes = [item for item in ordered if item.beat_id in payoff.cause_beat_ids]
-        if not causes:
-            continue
-        ordered = [item for item in ordered if item not in causes]
-        payoff_index = ordered.index(payoff)
-        ordered[payoff_index:payoff_index] = causes
-    return tuple(ordered)
-
-
 def _scene(
     scene_beats: tuple[NarrativeBeat, ...],
 ) -> NarrativeScene:
@@ -490,7 +467,7 @@ def project_situated_narrative(
     )
     selected = _select_candidates(candidates, policy)
     ordered = _order_candidates(story, selected, policy)
-    beats = _keep_causal_pairs_adjacent(_make_beats(ordered, policy), policy)
+    beats = _make_beats(ordered, policy)
     scenes = _group_scenes(beats, policy)
     entitlement_ids = {
         entitlement_id for beat in beats for entitlement_id in beat.entitlement_ids
