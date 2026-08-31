@@ -63,6 +63,10 @@ from narrative_dynamics.abm.lifecycle import (
     simulate_lifecycle_population,
     simulate_lifecycle_round,
 )
+from narrative_dynamics.abm.lifecycle_metrics import (
+    PopulationLifecycleMetrics,
+    measure_population_lifecycle,
+)
 
 
 __all__ = (
@@ -114,4 +118,6 @@ __all__ = (
     "active_population_view",
     "simulate_lifecycle_round",
     "simulate_lifecycle_population",
+    "PopulationLifecycleMetrics",
+    "measure_population_lifecycle",
 )

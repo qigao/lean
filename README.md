@@ -133,6 +133,55 @@ target = next(item for item in next_round.next_state.agents if item.agent_id == 
 assert target.belief == 0.75
 ```
 
+### Population lifecycle V3
+
+The effective agent set can now change at round boundaries. Entry, exit, and
+death apply before information propagation; only active agents and the edges
+between them participate in that round. The complete identity catalog remains
+fixed so every lifecycle transition and state hash stays auditable.
+
+```python
+from narrative_dynamics.abm import (
+    LifecycleEventKind,
+    NetworkABMModel,
+    NetworkAgentSpec,
+    PopulationLifecycleEvent,
+    PopulationLifecycleModel,
+    SocialEdge,
+    SocialNetwork,
+    initialize_lifecycle_population,
+    measure_population_lifecycle,
+    simulate_lifecycle_round,
+)
+
+catalog = NetworkABMModel(
+    "line-catalog",
+    "1",
+    (
+        NetworkAgentSpec("a", "source", 1.0, 0.5, 0.5),
+        NetworkAgentSpec("b", "entrant", 1.0, 0.5, 0.5),
+    ),
+    SocialNetwork(("a", "b"), (SocialEdge("a", "b", "peer", 1.0),)),
+)
+lifecycle = PopulationLifecycleModel(
+    "changing-population",
+    "1",
+    catalog,
+    initial_active_agent_ids=("a",),
+)
+state = initialize_lifecycle_population(lifecycle, beliefs={"a": 1.0})
+entered = simulate_lifecycle_round(
+    lifecycle,
+    state,
+    events=(PopulationLifecycleEvent("b", LifecycleEventKind.ENTER),),
+)
+b = next(item for item in entered.next_state.members if item.agent_id == "b")
+metrics = measure_population_lifecycle(lifecycle, entered.next_state)
+assert b.belief == 1.0
+assert metrics.active_population == 2
+assert metrics.cumulative_entries == 2
+```
+
 ## Verification
 
 GitHub Actions runs:

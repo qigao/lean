@@ -4,7 +4,7 @@ import narrative_dynamics.abm as abm
 
 
 class NetworkABMPublicAPITests(unittest.TestCase):
-    def test_public_api_exports_complete_v2_surface(self):
+    def test_public_api_exports_complete_v3_surface(self):
         self.assertEqual(
             set(abm.__all__),
             {
@@ -44,6 +44,20 @@ class NetworkABMPublicAPITests(unittest.TestCase):
                 "simulate_adaptive_population",
                 "AdaptiveTrustMetrics",
                 "measure_adaptive_trust",
+                "LifecycleStatus",
+                "LifecycleEventKind",
+                "PopulationLifecycleEvent",
+                "PopulationLifecycleModel",
+                "LifecycleMemberState",
+                "PopulationLifecycleState",
+                "initialize_lifecycle_population",
+                "LifecycleRoundResult",
+                "LifecycleTrajectory",
+                "active_population_view",
+                "simulate_lifecycle_round",
+                "simulate_lifecycle_population",
+                "PopulationLifecycleMetrics",
+                "measure_population_lifecycle",
             },
         )
         for name in abm.__all__:
