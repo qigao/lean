@@ -78,6 +78,7 @@ class TransferRunProgress:
 @dataclass(frozen=True, repr=False)
 class _PrivateCasePrediction:
     case_token: str = field(repr=False)
+    participant_token: str = field(repr=False)
     source_stratum: str
     target_action: str = field(repr=False)
     path: str
@@ -264,11 +265,25 @@ def execute_transfer_final_predictions(
         )
         for case in cases
     )
+    participant_tokens = tuple(
+        stable_content_hash(
+            {
+                "domain": "ephemeral-transfer-participant-v1",
+                "participant_key": case.participant_key,
+            }
+        )
+        for case in cases
+    )
     if len(case_tokens) != len(set(case_tokens)):
         raise ValueError("FINAL cases are not unique")
 
     private_rows: list[_PrivateCasePrediction] = []
-    for case, case_token in zip(cases, case_tokens, strict=True):
+    for case, case_token, participant_token in zip(
+        cases,
+        case_tokens,
+        participant_tokens,
+        strict=True,
+    ):
         model_input = TransferModelInput(
             case_token=case_token,
             trial_id=case.trial_id,
@@ -289,6 +304,7 @@ def execute_transfer_final_predictions(
                 )
                 private_row = _PrivateCasePrediction(
                     case_token=case_token,
+                    participant_token=participant_token,
                     source_stratum=case.source_stratum,
                     target_action=case.first_stage_action,
                     path=candidate.path,
