@@ -148,6 +148,14 @@ from narrative_dynamics.abm.calibration_contracts import (
     EmpiricalABMDataset,
     ObservedABMSnapshot,
 )
+from narrative_dynamics.abm.calibration import (
+    ABMCaseCalibrationFit,
+    ABMCandidateCalibrationFit,
+    EmpiricalABMCalibrationReport,
+    apply_calibration_candidate,
+    calibrate_dynamic_role_model,
+    observe_dynamic_role_state,
+)
 
 
 __all__ = (
@@ -256,4 +264,10 @@ __all__ = (
     "EmpiricalABMDataset",
     "ABMCalibrationCandidate",
     "ABMCalibrationWeights",
+    "observe_dynamic_role_state",
+    "apply_calibration_candidate",
+    "ABMCaseCalibrationFit",
+    "ABMCandidateCalibrationFit",
+    "EmpiricalABMCalibrationReport",
+    "calibrate_dynamic_role_model",
 )

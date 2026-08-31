@@ -113,6 +113,12 @@ class NetworkABMPublicAPITests(unittest.TestCase):
                 "EmpiricalABMDataset",
                 "ABMCalibrationCandidate",
                 "ABMCalibrationWeights",
+                "observe_dynamic_role_state",
+                "apply_calibration_candidate",
+                "ABMCaseCalibrationFit",
+                "ABMCandidateCalibrationFit",
+                "EmpiricalABMCalibrationReport",
+                "calibrate_dynamic_role_model",
             },
         )
         for name in abm.__all__:
