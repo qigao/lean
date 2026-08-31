@@ -119,6 +119,13 @@ class NetworkABMPublicAPITests(unittest.TestCase):
                 "ABMCandidateCalibrationFit",
                 "EmpiricalABMCalibrationReport",
                 "calibrate_dynamic_role_model",
+                "ExperimentObjective",
+                "ABMExperimentArm",
+                "ABMExperimentProtocol",
+                "ABMExperimentCaseResult",
+                "ABMExperimentArmResult",
+                "CalibratedABMExperimentReport",
+                "run_calibrated_abm_experiment",
             },
         )
         for name in abm.__all__:

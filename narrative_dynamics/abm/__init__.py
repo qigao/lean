@@ -156,6 +156,15 @@ from narrative_dynamics.abm.calibration import (
     calibrate_dynamic_role_model,
     observe_dynamic_role_state,
 )
+from narrative_dynamics.abm.experiments import (
+    ABMExperimentArm,
+    ABMExperimentArmResult,
+    ABMExperimentCaseResult,
+    ABMExperimentProtocol,
+    CalibratedABMExperimentReport,
+    ExperimentObjective,
+    run_calibrated_abm_experiment,
+)
 
 
 __all__ = (
@@ -270,4 +279,11 @@ __all__ = (
     "ABMCandidateCalibrationFit",
     "EmpiricalABMCalibrationReport",
     "calibrate_dynamic_role_model",
+    "ExperimentObjective",
+    "ABMExperimentArm",
+    "ABMExperimentProtocol",
+    "ABMExperimentCaseResult",
+    "ABMExperimentArmResult",
+    "CalibratedABMExperimentReport",
+    "run_calibrated_abm_experiment",
 )
