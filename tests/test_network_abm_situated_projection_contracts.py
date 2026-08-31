@@ -35,20 +35,32 @@ def entitlement(entitlement_id: str = "entitlement-1") -> NarrativeEntitlement:
     )
 
 
-def beat(beat_id: str = "beat-1", *, entitlement_id: str = "entitlement-1") -> NarrativeBeat:
-    return NarrativeBeat(
+def beat(
+    beat_id: str = "beat-1",
+    *,
+    entitlement_id: str = "entitlement-1",
+    round_index: int = 1,
+    sequence: int = 1,
+    place_id: str = "office",
+    active_pov_agent_id: str | None = None,
+    source_event_id: str | None = None,
+) -> NarrativeBeat:
+    args = (
         beat_id,
         NarrativeBeatKind.PHYSICAL,
-        1,
-        1,
-        "office",
-        None,
+        round_index,
+        sequence,
+        place_id,
+        active_pov_agent_id,
         ("alice",),
         1.0,
         (NarrativeSupportRef("world_event", "event-1", HASH_A),),
         (entitlement_id,),
         (),
     )
+    if source_event_id is None:
+        return NarrativeBeat(*args)
+    return NarrativeBeat(*args, source_event_id=source_event_id)
 
 
 def scene(scene_id: str = "scene-1", beat_ids: tuple[str, ...] = ("beat-1",)) -> NarrativeScene:
@@ -215,6 +227,76 @@ class NarrativeProjectionContractTests(unittest.TestCase):
                 HASH_A, None, POLICY, two_beats, two_scenes,
                 NarrativeCut("cut-1", ("scene-1",), (valid_entitlement,)),
             )
+
+    def test_multi_pov_active_beat_cannot_cite_another_agents_private_entitlement(self):
+        multi_policy = NarrativeProjectionPolicy(
+            "shared", "1.0", NarrativeAuthority.MULTI_POV, pov_agent_ids=("alice", "bob"),
+        )
+        alice_entitlement = NarrativeEntitlement(
+            "alice-private", NarrativeEntitlementScope.PRIVATE, "alice", 1,
+            (NarrativeFact("secret", "memo"),),
+            (NarrativeSupportRef("percept", "alice-1", HASH_A),),
+        )
+        bob_beat = NarrativeBeat(
+            "beat-1", NarrativeBeatKind.INFORMATION, 1, 1, "office", "bob", ("bob",),
+            1.0, (NarrativeSupportRef("percept", "alice-1", HASH_A),), ("alice-private",), (),
+        )
+        bob_scene = NarrativeScene("scene-1", ("beat-1",), 1, 1, "office", "bob")
+        with self.assertRaisesRegex(ValueError, "active POV"):
+            NarrativeProjection(
+                HASH_A, None, multi_policy, (bob_beat,), (bob_scene,),
+                NarrativeCut("cut-1", ("scene-1",), (alice_entitlement,)),
+            )
+
+    def test_authored_policy_requires_every_beat_to_bind_a_source_event(self):
+        authored_policy = NarrativeProjectionPolicy(
+            "flashback", "1.0", NarrativeAuthority.OBJECTIVE,
+            temporal_order=NarrativeTemporalOrder.AUTHORED,
+            authored_event_order=("event-1",),
+        )
+        with self.assertRaisesRegex(ValueError, "source event"):
+            NarrativeProjection(
+                HASH_A, None, authored_policy, (beat(),), (scene(),),
+                NarrativeCut("cut-1", ("scene-1",), (entitlement(),)),
+            )
+        with self.assertRaisesRegex(ValueError, "source event"):
+            NarrativeProjection(
+                HASH_A, None, authored_policy,
+                (beat(source_event_id="unlisted-event"),), (scene(),),
+                NarrativeCut("cut-1", ("scene-1",), (entitlement(),)),
+            )
+
+    def test_authored_order_binds_explicit_source_events_without_rewriting_beat_time(self):
+        authored_policy = NarrativeProjectionPolicy(
+            "flashback", "1.0", NarrativeAuthority.OBJECTIVE,
+            temporal_order=NarrativeTemporalOrder.AUTHORED,
+            authored_event_order=("event-2", "event-1"),
+        )
+        first = beat("beat-1", source_event_id="event-1", round_index=1, sequence=3)
+        second = beat("beat-2", source_event_id="event-2", round_index=2, sequence=4)
+        projection = NarrativeProjection(
+            HASH_A, None, authored_policy, (first, second),
+            (
+                scene("scene-1", ("beat-1",)),
+                NarrativeScene("scene-2", ("beat-2",), 2, 2, "office", None),
+            ),
+            NarrativeCut("cut-1", ("scene-2", "scene-1"), (entitlement(),)),
+        )
+        self.assertEqual((1, 3), (projection.beats[0].round_index, projection.beats[0].sequence))
+        self.assertEqual((2, 4), (projection.beats[1].round_index, projection.beats[1].sequence))
+        self.assertEqual(("event-1", "event-2"), tuple(beat.source_event_id for beat in projection.beats))
+
+    def test_scene_metadata_must_match_all_member_beats(self):
+        selected_beat = beat(active_pov_agent_id="bob")
+        valid_cut = NarrativeCut("cut-1", ("scene-1",), (entitlement(),))
+        invalid_scenes = (
+            NarrativeScene("scene-1", ("beat-1",), 0, 1, "office", "bob"),
+            NarrativeScene("scene-1", ("beat-1",), 1, 1, "corridor", "bob"),
+            NarrativeScene("scene-1", ("beat-1",), 1, 1, "office", "alice"),
+        )
+        for inconsistent_scene in invalid_scenes:
+            with self.subTest(scene=inconsistent_scene), self.assertRaisesRegex(ValueError, "scene.*match"):
+                NarrativeProjection(HASH_A, None, POLICY, (selected_beat,), (inconsistent_scene,), valid_cut)
 
 
 if __name__ == "__main__":

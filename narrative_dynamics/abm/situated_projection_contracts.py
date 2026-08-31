@@ -286,6 +286,7 @@ class NarrativeBeat:
     supporting_artifacts: tuple[NarrativeSupportRef, ...]
     entitlement_ids: tuple[str, ...]
     cause_beat_ids: tuple[str, ...]
+    source_event_id: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "beat_id", _text(self.beat_id, label="narrative beat id"))
@@ -320,6 +321,11 @@ class NarrativeBeat:
         if self.beat_id in cause_beat_ids:
             raise ValueError("narrative beat cannot cite itself as a cause")
         object.__setattr__(self, "cause_beat_ids", tuple(sorted(cause_beat_ids)))
+        object.__setattr__(
+            self,
+            "source_event_id",
+            _optional_text(self.source_event_id, label="narrative beat source event id"),
+        )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -334,6 +340,7 @@ class NarrativeBeat:
             "supporting_artifacts": [item.to_dict() for item in self.supporting_artifacts],
             "entitlement_ids": list(self.entitlement_ids),
             "cause_beat_ids": list(self.cause_beat_ids),
+            "source_event_id": self.source_event_id,
         }
 
     @property
@@ -440,6 +447,12 @@ class NarrativeProjection:
             raise TypeError("narrative projection cut must be NarrativeCut")
         beat_map = {item.beat_id: item for item in self.beats}
         entitlement_map = {item.entitlement_id: item for item in self.cut.entitlements}
+        if self.policy.temporal_order is NarrativeTemporalOrder.AUTHORED:
+            source_event_ids = tuple(item.source_event_id for item in self.beats)
+            if any(item is None for item in source_event_ids):
+                raise ValueError("authored narrative projections require every beat to bind a source event")
+            if set(source_event_ids) != set(self.policy.authored_event_order):
+                raise ValueError("authored narrative projection source events must exactly match authored event order")
         for item in self.beats:
             missing_causes = set(item.cause_beat_ids).difference(beat_map)
             if missing_causes:
@@ -463,6 +476,15 @@ class NarrativeProjection:
                 scene_membership[beat_id] += 1
         if any(count != 1 for count in scene_membership.values()):
             raise ValueError("every narrative beat must occur in exactly one scene")
+        for scene in self.scenes:
+            scene_beats = tuple(beat_map[beat_id] for beat_id in scene.beat_ids)
+            if (
+                scene.start_round_index != min(item.round_index for item in scene_beats)
+                or scene.end_round_index != max(item.round_index for item in scene_beats)
+                or any(item.place_id != scene.place_id for item in scene_beats)
+                or any(item.active_pov_agent_id != scene.active_pov_agent_id for item in scene_beats)
+            ):
+                raise ValueError("narrative scene metadata must match its member beats")
         scene_map = {item.scene_id: item for item in self.scenes}
         missing_cut_scenes = set(self.cut.scene_ids).difference(scene_map)
         if missing_cut_scenes:
@@ -482,10 +504,15 @@ class NarrativeProjection:
             if entitlement.scope is not NarrativeEntitlementScope.PRIVATE or entitlement.owner_agent_id not in authorized:
                 raise ValueError("limited and multi-POV cuts require private entitlements owned by authorized POV agents")
         for beat in self.beats:
-            if beat.active_pov_agent_id is not None and beat.active_pov_agent_id not in authorized:
+            if beat.active_pov_agent_id is None or beat.active_pov_agent_id not in authorized:
                 raise ValueError("narrative beat active POV agent must be authorized by the policy")
+            if any(
+                entitlement_map[entitlement_id].owner_agent_id != beat.active_pov_agent_id
+                for entitlement_id in beat.entitlement_ids
+            ):
+                raise ValueError("narrative beat active POV cannot cite another agent's private entitlement")
         for scene in self.scenes:
-            if scene.active_pov_agent_id is not None and scene.active_pov_agent_id not in authorized:
+            if scene.active_pov_agent_id is None or scene.active_pov_agent_id not in authorized:
                 raise ValueError("narrative scene active POV agent must be authorized by the policy")
 
     def to_dict(self) -> dict[str, object]:
