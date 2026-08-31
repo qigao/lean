@@ -42,6 +42,11 @@ from narrative_dynamics.cross_dataset_ledger import (
     TransferAttemptEvent,
     TransferAttemptEventType,
 )
+from narrative_dynamics.cross_dataset_release import (
+    TransferScore,
+    TransferScoreRelease,
+    build_transfer_protocol,
+)
 from narrative_dynamics.studies.feher_hare_measurement_validity_v1 import (
     FEHER_HARE_R3_LOCK_COMMIT,
     FeherHareMeasurementAnchor,
@@ -574,6 +579,7 @@ def participant_blocks(
 
 
 def local_git_attempt_store(root: Path) -> GitTransferAttemptStore:
+    root.mkdir(parents=True, exist_ok=True)
     remote = root / "attempt-ledger.git"
     if not remote.exists():
         subprocess.run(
@@ -629,4 +635,39 @@ def failure_event(*, parent: str) -> TransferAttemptEvent:
         TransferAttemptEventType.REVISION_REQUIRED,
         parent=parent,
         failure_class="SCHEMA",
+    )
+
+
+def sibling_releases() -> tuple[TransferScoreRelease, TransferScoreRelease]:
+    shared: dict[str, object] = {
+        "scientific_revision": "a" * 40,
+        "source_identity_hash": digest("release-source"),
+        "transform_identity_hash": digest("release-transform"),
+        "split_manifest_hash": digest("release-split"),
+        "candidate_hashes": tuple(
+            digest(f"release-candidate-{index}") for index in range(6)
+        ),
+        "baseline_hash": digest("release-baseline"),
+        "final_commitment_hash": digest("release-final-commitment"),
+        "prediction_artifact_identity": digest("prediction-artifact-schema"),
+    }
+    brier_protocol = build_transfer_protocol(
+        score=TransferScore.BRIER,
+        score_identity=digest("brier-score"),
+        **shared,
+    )
+    log_protocol = build_transfer_protocol(
+        score=TransferScore.LOG,
+        score_identity=digest("log-score"),
+        **shared,
+    )
+    return (
+        TransferScoreRelease.create(
+            brier_protocol,
+            release_receipt_hash=digest("brier-release-receipt"),
+        ),
+        TransferScoreRelease.create(
+            log_protocol,
+            release_receipt_hash=digest("log-release-receipt"),
+        ),
     )
