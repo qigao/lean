@@ -215,6 +215,90 @@ class SituatedSemanticGroundingModel:
 
 
 @dataclass(frozen=True)
+class SituatedGroundingRequest:
+    request_id: str
+    agent_id: str
+    primary_memory_id: str
+    retrieval_query: str
+    maximum_memories: int = 8
+
+    def __post_init__(self) -> None:
+        for name in ("request_id", "agent_id", "primary_memory_id", "retrieval_query"):
+            object.__setattr__(self, name, _text(getattr(self, name), label=f"grounding request {name.replace('_', ' ')}"))
+        if len(self.retrieval_query) > 4096:
+            raise ValueError("grounding request retrieval query is too long")
+        object.__setattr__(self, "maximum_memories", _positive(self.maximum_memories, label="grounding request maximum memories"))
+        if self.maximum_memories > 100:
+            raise ValueError("grounding request maximum memories cannot exceed 100")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "request_id": self.request_id,
+            "agent_id": self.agent_id,
+            "primary_memory_id": self.primary_memory_id,
+            "retrieval_query": self.retrieval_query,
+            "maximum_memories": self.maximum_memories,
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_dict())
+
+
+@dataclass(frozen=True)
+class SituatedGroundingRetrievalPlan:
+    terms: tuple[str, ...]
+    actor_agent_id: str | None = None
+    place_id: str | None = None
+    fidelities: tuple[SituatedPerceptFidelity, ...] = ()
+    event_kinds: tuple[SituatedActionKind, ...] = ()
+    channels: tuple[ObservationChannel, ...] = ()
+    min_round: int | None = None
+    max_round: int | None = None
+
+    def __post_init__(self) -> None:
+        terms = _strings(self.terms, label="grounding retrieval terms", allow_empty=False)
+        if len(terms) > 4:
+            raise ValueError("grounding retrieval plan allows at most four terms")
+        if any(len(item) > 512 for item in terms):
+            raise ValueError("grounding retrieval term is too long")
+        object.__setattr__(self, "terms", terms)
+        object.__setattr__(self, "actor_agent_id", _optional_text(self.actor_agent_id, label="grounding retrieval actor agent id"))
+        object.__setattr__(self, "place_id", _optional_text(self.place_id, label="grounding retrieval place id"))
+        for name, expected in (
+            ("fidelities", SituatedPerceptFidelity),
+            ("event_kinds", SituatedActionKind),
+            ("channels", ObservationChannel),
+        ):
+            values = getattr(self, name)
+            if not isinstance(values, tuple) or any(not isinstance(item, expected) for item in values):
+                raise TypeError(f"grounding retrieval {name.replace('_', ' ')} has invalid values")
+            object.__setattr__(self, name, tuple(sorted(set(values), key=lambda item: item.value)))
+        for name in ("min_round", "max_round"):
+            value = getattr(self, name)
+            if value is not None:
+                object.__setattr__(self, name, _positive(value, label=f"grounding retrieval {name.replace('_', ' ')}"))
+        if self.min_round is not None and self.max_round is not None and self.min_round > self.max_round:
+            raise ValueError("grounding retrieval minimum round cannot exceed maximum round")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "terms": list(self.terms),
+            "actor_agent_id": self.actor_agent_id,
+            "place_id": self.place_id,
+            "fidelities": [item.value for item in self.fidelities],
+            "event_kinds": [item.value for item in self.event_kinds],
+            "channels": [item.value for item in self.channels],
+            "min_round": self.min_round,
+            "max_round": self.max_round,
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_dict())
+
+
+@dataclass(frozen=True)
 class SituatedGroundingEvidence:
     evidence_id: str
     evidence_kind: SituatedGroundingEvidenceKind
@@ -283,6 +367,85 @@ class SituatedGroundingEvidence:
             "outcome": self.outcome,
             "details": [item.to_dict() for item in self.details],
             "memory_id": self.memory_id,
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_dict())
+
+
+@dataclass(frozen=True)
+class SituatedGroundingPrompt:
+    model: SituatedSemanticGroundingModel
+    request: SituatedGroundingRequest
+    retrieval_plan: SituatedGroundingRetrievalPlan
+    primary_evidence_id: str
+    evidence: tuple[SituatedGroundingEvidence, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.model, SituatedSemanticGroundingModel):
+            raise TypeError("grounding prompt requires a semantic grounding model")
+        if not isinstance(self.request, SituatedGroundingRequest):
+            raise TypeError("grounding prompt requires a grounding request")
+        if not isinstance(self.retrieval_plan, SituatedGroundingRetrievalPlan):
+            raise TypeError("grounding prompt requires a retrieval plan")
+        object.__setattr__(self, "primary_evidence_id", _text(self.primary_evidence_id, label="grounding prompt primary evidence id"))
+        world_agents = {item.agent_id for item in self.model.percept_memory_model.cognitive_model.world_model.agents}
+        if self.request.agent_id not in world_agents:
+            raise ValueError("grounding prompt requester must be a world agent")
+        if self.request.maximum_memories > self.model.maximum_evidence_items:
+            raise ValueError("grounding request exceeds model evidence budget")
+        if not isinstance(self.evidence, tuple) or not self.evidence or any(
+            not isinstance(item, SituatedGroundingEvidence) for item in self.evidence
+        ):
+            raise TypeError("grounding prompt evidence must be a non-empty tuple")
+        if len(self.evidence) > self.request.maximum_memories:
+            raise ValueError("grounding prompt exceeds request evidence budget")
+        ids = tuple(item.evidence_id for item in self.evidence)
+        if len(set(ids)) != len(ids):
+            raise ValueError("grounding prompt evidence ids must be unique")
+        if self.primary_evidence_id not in ids:
+            raise ValueError("grounding prompt must contain its primary evidence")
+        if self.request.primary_memory_id != self.primary_evidence_id:
+            raise ValueError("grounding prompt primary evidence must bind the request memory")
+        if any(item.agent_id != self.request.agent_id for item in self.evidence):
+            raise ValueError("grounding prompt evidence must be private to the requester")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "model_id": self.model.model_id,
+            "model_hash": self.model.content_hash,
+            "request": self.request.to_dict(),
+            "retrieval_plan": self.retrieval_plan.to_dict(),
+            "primary_evidence_id": self.primary_evidence_id,
+            "evidence": [item.to_dict() for item in self.evidence],
+        }
+
+    def to_provider_payload(self) -> dict[str, object]:
+        return {
+            "schema_version": "situated-semantic-grounding-v1",
+            "request_id": self.request.request_id,
+            "observer_agent_id": self.request.agent_id,
+            "interpretation_question": self.request.retrieval_query,
+            "primary_evidence_id": self.primary_evidence_id,
+            "evidence_budget": self.model.maximum_evidence_items,
+            "claim_budget": self.model.maximum_claims,
+            "allowed_subject_ids": list(self.model.subject_ids),
+            "allowed_predicates": [item.to_dict() for item in self.model.predicates],
+            "evidence": [item.to_dict() for item in self.evidence],
+            "output_schema": {
+                "claims": [{
+                    "subject_id": "allowed subject id",
+                    "predicate_id": "allowed predicate id",
+                    "value_id": "allowed value id for predicate",
+                    "polarity": [item.value for item in SituatedGroundingPolarity],
+                    "modality": [item.value for item in SituatedGroundingModality],
+                    "temporal_scope": [item.value for item in SituatedGroundingTemporalScope],
+                    "source_agent_id": "allowed agent id or null",
+                    "confidence": "number in [0, 1]",
+                    "evidence_ids": ["authorized evidence id"],
+                }],
+            },
         }
 
     @property
@@ -403,7 +566,10 @@ __all__ = (
     "SituatedGroundingPredicate",
     "SituatedGroundingProviderIdentity",
     "SituatedSemanticGroundingModel",
+    "SituatedGroundingRequest",
+    "SituatedGroundingRetrievalPlan",
     "SituatedGroundingEvidence",
+    "SituatedGroundingPrompt",
     "SituatedGroundedClaim",
     "SituatedSemanticGroundingArtifact",
 )
