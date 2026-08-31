@@ -54,6 +54,20 @@ For one observer/source/topic:
   creates a new active claim, preserving both records;
 - duplicate evidence IDs are ignored through the processed-evidence ledger.
 
+The one-count rule applies both to observations admitted directly in the current
+round and to testimony restored from SQLite. A repeated source/topic/symbol may add
+claim support and audit provenance, but it does not apply the same Bayesian evidence
+to the observer's belief twice. One-count is scoped to an active revision: an
+opposite symbol replaces the active source/topic symbol, so a later return to the
+original symbol begins a new revision and may update belief again. Likewise,
+testimony arriving after a claim is confirmed, contradicted, or forgotten opens a
+new active revision instead of mutating the terminal claim.
+
+Evidence is interpreted at its event round, including when it arrives in a later
+transition. Backdated testimony cannot supersede a newer claim, and backdated
+verification cannot resolve a claim that did not yet exist. A late same-symbol item
+also cannot merge across an intervening opposite-symbol revision.
+
 This is explicit categorical revision, not unrestricted natural-language
 contradiction detection.
 
@@ -98,6 +112,9 @@ posterior(h) proportional to prior(h) * tempered(h)
 
 Inspection, self, visual, and other non-testimony memories retain their V13 weight.
 Trust learned after a round affects later recall, never the already-completed decision.
+SQLite may contain records from divergent simulations that share a world model. V14
+therefore admits a recalled row only when its observation ID and event hash exactly
+match the current story branch's private perspective for that observer.
 
 ## Round integration
 
@@ -109,6 +126,10 @@ One V14 round:
 4. consolidates testimony, resolves verification, learns relationships, and forgets
    over-bound unresolved claims;
 5. commits a parent-linked V14 state bound to the V13 next cognitive state.
+
+The next cognitive state must be either unchanged or the exact one-round child of
+the prior cognitive state; unrelated same-round states and skipped descendants are
+rejected.
 
 The physical story continues to resolve synchronously through V10. Database paths do
 not enter content hashes. Equal inputs replay exactly.
@@ -133,4 +154,3 @@ not enter content hashes. Equal inputs replay exactly.
 - relationship-dependent physical permissions or topology rewiring;
 - stochastic forgetting, emotion, and personality learning;
 - cross-world autobiographical identity.
-

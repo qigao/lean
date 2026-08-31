@@ -168,6 +168,22 @@ def _active_claim_keys_by_observer(
     return {key: frozenset(value) for key, value in result.items()}
 
 
+def _observation_hashes_by_observer(
+    story: SituatedStory,
+) -> dict[str, dict[str, str]]:
+    agent_ids = {
+        item.agent_id
+        for item in story.current_state.agents
+    }
+    return {
+        agent_id: {
+            item.observation.observation_id: item.observation.event_hash
+            for item in perspective_timeline(story, agent_id)
+        }
+        for agent_id in agent_ids
+    }
+
+
 def recall_situated_memories_with_social_trust(
     database_path: str | Path,
     model: SituatedSocialMemoryModel,
@@ -193,6 +209,10 @@ def recall_situated_memories_with_social_trust(
         _source_trust_by_source=trust,
         _claim_topic_by_symbol=_topic_by_symbol(model),
         _consolidated_claim_keys=claim_keys,
+        _allowed_observation_hashes={
+            item.observation.observation_id: item.observation.event_hash
+            for item in perspective_timeline(story, mind.agent_id)
+        },
     )
 
 
@@ -281,6 +301,7 @@ def simulate_situated_social_cognitive_round(
         source_trust_by_observer=_trust_by_observer(social_state),
         claim_topic_by_symbol=_topic_by_symbol(model),
         consolidated_claim_keys_by_observer=_active_claim_keys_by_observer(social_state),
+        allowed_observation_hashes_by_observer=_observation_hashes_by_observer(story),
     )
     evidence = _social_evidence(model, story, cognitive_round)
     social_update = advance_situated_social_memory(

@@ -233,6 +233,7 @@ class SituatedMemoryQuery:
     limit: int = 20
     story_model_hash: str | None = None
     excluded_memory_ids: tuple[str, ...] = ()
+    included_memory_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "agent_id", _text(self.agent_id, label="situated memory query agent id"))
@@ -275,6 +276,15 @@ class SituatedMemoryQuery:
         if len(set(excluded)) != len(excluded):
             raise ValueError("situated memory query excluded ids must be unique")
         object.__setattr__(self, "excluded_memory_ids", tuple(sorted(excluded)))
+        if not isinstance(self.included_memory_ids, tuple):
+            raise TypeError("situated memory query included ids must be a tuple")
+        included = tuple(
+            _text(item, label="situated memory query included id")
+            for item in self.included_memory_ids
+        )
+        if len(set(included)) != len(included):
+            raise ValueError("situated memory query included ids must be unique")
+        object.__setattr__(self, "included_memory_ids", tuple(sorted(included)))
 
 
 @dataclass(frozen=True)

@@ -305,6 +305,7 @@ def recall_situated_memories(
     _source_trust_by_source: Mapping[str, float] | None = None,
     _claim_topic_by_symbol: Mapping[str, str] | None = None,
     _consolidated_claim_keys: frozenset[tuple[str, str, str]] | None = None,
+    _allowed_observation_hashes: Mapping[str, str] | None = None,
 ) -> SituatedMemoryRecallResult:
     """Recall relevant private memories once and temper their Bayesian evidence."""
 
@@ -333,6 +334,18 @@ def recall_situated_memories(
     source_trust_by_source = {} if _source_trust_by_source is None else dict(_source_trust_by_source)
     claim_topic_by_symbol = {} if _claim_topic_by_symbol is None else dict(_claim_topic_by_symbol)
     consolidated_claim_keys = set(() if _consolidated_claim_keys is None else _consolidated_claim_keys)
+    active_claim_symbols = {}
+    for source_id, topic_id, symbol_id in consolidated_claim_keys:
+        scope = (source_id, topic_id)
+        existing = active_claim_symbols.get(scope)
+        if existing is not None and existing != symbol_id:
+            raise ValueError("situated recall claim scope has multiple active symbols")
+        active_claim_symbols[scope] = symbol_id
+    allowed_observation_hashes = (
+        None
+        if _allowed_observation_hashes is None
+        else dict(_allowed_observation_hashes)
+    )
     agent_ids = {item.agent_id for item in model.cognitive_model.agents}
     for source_id, trust in source_trust_by_source.items():
         if source_id not in agent_ids:
@@ -341,7 +354,7 @@ def recall_situated_memories(
             raise ValueError("situated recall source trust must be in [0, 1]")
 
     policy = next(item for item in model.agents if item.agent_id == mind.agent_id)
-    if round_index == 0 or not policy.cues:
+    if round_index == 0 or not policy.cues or allowed_observation_hashes == {}:
         return SituatedMemoryRecallResult(mind, (), mind)
 
     excluded_observations = set(mind.processed_observation_ids)
@@ -363,6 +376,11 @@ def recall_situated_memories(
             excluded_memory_ids=tuple(
                 excluded_observations | recalled | seen_observations
             ),
+            included_memory_ids=(
+                ()
+                if allowed_observation_hashes is None
+                else tuple(allowed_observation_hashes)
+            ),
         )
         for hit in search_situated_memories(database_path, query):
             memory = hit.memory
@@ -370,6 +388,11 @@ def recall_situated_memories(
                 memory.observation_id in excluded_observations
                 or memory.memory_id in recalled
                 or memory.observation_id in seen_observations
+                or (
+                    allowed_observation_hashes is not None
+                    and allowed_observation_hashes.get(memory.observation_id)
+                    != memory.event_hash
+                )
             ):
                 continue
             seen_observations.add(memory.observation_id)
@@ -378,6 +401,13 @@ def recall_situated_memories(
                 break
         if len(candidates) >= policy.max_memories_per_round:
             break
+
+    if claim_topic_by_symbol:
+        candidates.sort(key=lambda item: (
+            item[1].memory.round_index,
+            item[1].memory.sequence,
+            item[1].memory.memory_id,
+        ))
 
     belief = mind.belief
     observed = set(mind.observed_event_ids)
@@ -393,19 +423,21 @@ def recall_situated_memories(
             else 1.0
         )
         weight = memory.confidence * memory.salience * source_trust
-        claim_key = None
+        claim_scope = None
         if (
             rule is not None
             and memory.kind is SituatedActionKind.TELL
             and memory.actor_agent_id != mind.agent_id
             and rule.symbol_id in claim_topic_by_symbol
         ):
-            claim_key = (
+            claim_scope = (
                 memory.actor_agent_id,
                 claim_topic_by_symbol[rule.symbol_id],
-                rule.symbol_id,
             )
-        consolidated = claim_key is not None and claim_key in consolidated_claim_keys
+        consolidated = (
+            claim_scope is not None
+            and active_claim_symbols.get(claim_scope) == rule.symbol_id
+        )
         if rule is None:
             posterior = prior
             rule_id = symbol_id = likelihood_action_id = None
@@ -425,8 +457,8 @@ def recall_situated_memories(
             rule_id = rule.rule_id
             symbol_id = rule.symbol_id
             likelihood_action_id = rule.likelihood_action_id
-            if claim_key is not None:
-                consolidated_claim_keys.add(claim_key)
+            if claim_scope is not None:
+                active_claim_symbols[claim_scope] = rule.symbol_id
         admissions.append(SituatedMemoryRecallAdmission(
             mind.agent_id,
             cue.cue_id,
@@ -483,6 +515,7 @@ def _simulate_situated_memory_cognitive_round(
     source_trust_by_observer: Mapping[str, Mapping[str, float]] | None,
     claim_topic_by_symbol: Mapping[str, str] | None = None,
     consolidated_claim_keys_by_observer: Mapping[str, frozenset[tuple[str, str, str]]] | None = None,
+    allowed_observation_hashes_by_observer: Mapping[str, Mapping[str, str]] | None = None,
 ) -> SituatedMemoryCognitiveRoundResult:
     """Internal V13 round hook used by V14 directed source trust."""
 
@@ -507,11 +540,39 @@ def _simulate_situated_memory_cognitive_round(
             for item in private
             if item.event.round_index > mind_by_id[agent_id].observation_floor_round
         )
+        claim_keys = set(
+            ()
+            if consolidated_claim_keys_by_observer is None
+            else consolidated_claim_keys_by_observer.get(agent_id, frozenset())
+        )
         direct = admit_situated_observations(
             model_by_id[agent_id],
             mind_by_id[agent_id],
             direct_perspective,
+            _claim_topic_by_symbol=claim_topic_by_symbol,
+            _consolidated_claim_keys=frozenset(claim_keys),
         )
+        direct_by_observation = {
+            item.observation.observation_id: item
+            for item in direct_perspective
+        }
+        for admission in direct.admissions:
+            item = direct_by_observation[admission.observation_id]
+            if (
+                item.event.kind is SituatedActionKind.TELL
+                and item.event.actor_agent_id != agent_id
+                and claim_topic_by_symbol is not None
+                and admission.symbol_id in claim_topic_by_symbol
+            ):
+                scope = (item.event.actor_agent_id, claim_topic_by_symbol[admission.symbol_id])
+                claim_keys = {
+                    key for key in claim_keys if key[:2] != scope
+                }
+                claim_keys.add((
+                    item.event.actor_agent_id,
+                    claim_topic_by_symbol[admission.symbol_id],
+                    admission.symbol_id,
+                ))
         recalled = recall_situated_memories(
             database_path,
             model,
@@ -525,10 +586,11 @@ def _simulate_situated_memory_cognitive_round(
                 else source_trust_by_observer.get(agent_id, {})
             ),
             _claim_topic_by_symbol=claim_topic_by_symbol,
-            _consolidated_claim_keys=(
+            _consolidated_claim_keys=frozenset(claim_keys),
+            _allowed_observation_hashes=(
                 None
-                if consolidated_claim_keys_by_observer is None
-                else consolidated_claim_keys_by_observer.get(agent_id, frozenset())
+                if allowed_observation_hashes_by_observer is None
+                else allowed_observation_hashes_by_observer.get(agent_id, {})
             ),
         )
         recalls.append(recalled)

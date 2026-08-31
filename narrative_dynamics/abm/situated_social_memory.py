@@ -47,16 +47,19 @@ class SituatedSocialMemoryUpdate:
         return stable_content_hash(self.to_dict())
 
 
-def _validate_evidence(
+def _canonical_evidence(
     model: SituatedSocialMemoryModel,
     next_cognitive_state: SituatedCognitiveState,
     evidence: tuple[SituatedSocialEvidence, ...],
-) -> None:
+) -> tuple[SituatedSocialEvidence, ...]:
     if not isinstance(evidence, tuple) or any(not isinstance(item, SituatedSocialEvidence) for item in evidence):
         raise TypeError("situated social evidence must be a tuple")
-    identities = tuple(item.evidence_id for item in evidence)
-    if len(set(identities)) != len(identities):
-        raise ValueError("situated social evidence ids must be unique per transition")
+    by_id = {}
+    for item in evidence:
+        existing = by_id.get(item.evidence_id)
+        if existing is not None and existing != item:
+            raise ValueError("situated social evidence id has conflicting payloads")
+        by_id[item.evidence_id] = item
     agent_ids = {item.agent_id for item in model.memory_cognitive_model.cognitive_model.agents}
     topic_by_id = {item.topic_id: item for item in model.topics}
     for item in evidence:
@@ -69,6 +72,7 @@ def _validate_evidence(
             raise ValueError("situated social evidence must use a declared topic symbol")
         if item.round_index > next_cognitive_state.round_index:
             raise ValueError("situated social evidence cannot come from a future round")
+    return tuple(sorted(by_id.values(), key=lambda item: (item.round_index, item.evidence_id)))
 
 
 def _claim_id(item: SituatedSocialEvidence) -> str:
@@ -84,27 +88,68 @@ def _consolidate_testimony(
     claims: list[SituatedConsolidatedClaim],
     item: SituatedSocialEvidence,
 ) -> None:
-    active = [
+    related = [
         claim
         for claim in claims
-        if claim.status is SituatedClaimStatus.ACTIVE
-        and claim.observer_agent_id == item.observer_agent_id
+        if claim.observer_agent_id == item.observer_agent_id
         and claim.source_agent_id == item.source_agent_id
         and claim.topic_id == item.topic_id
     ]
-    same = next((claim for claim in active if claim.symbol_id == item.symbol_id), None)
+    active = [
+        claim
+        for claim in related
+        if claim.status is SituatedClaimStatus.ACTIVE
+    ]
+    merge_candidates = []
+    for claim in related:
+        if (
+            claim.symbol_id != item.symbol_id
+            or claim.status not in {
+                SituatedClaimStatus.ACTIVE,
+                SituatedClaimStatus.SUPERSEDED,
+            }
+        ):
+            continue
+        interval_start = min(item.round_index, claim.first_round)
+        interval_end = max(item.round_index, claim.last_round)
+        crosses_revision = any(
+            other.symbol_id != item.symbol_id
+            and interval_start < other.first_round <= interval_end
+            for other in related
+        )
+        if not crosses_revision:
+            distance = min(
+                abs(item.round_index - claim.first_round),
+                abs(item.round_index - claim.last_round),
+            )
+            merge_candidates.append((distance, claim.first_round, claim.claim_id, claim))
+    same = None if not merge_candidates else min(merge_candidates)[-1]
     if same is not None:
         claims[claims.index(same)] = replace(
             same,
-            event_ids=same.event_ids + (item.event_id,),
-            memory_ids=same.memory_ids + (() if item.memory_id is None else (item.memory_id,)),
+            event_ids=tuple(sorted(same.event_ids + (item.event_id,))),
+            memory_ids=tuple(sorted(
+                same.memory_ids + (() if item.memory_id is None else (item.memory_id,))
+            )),
+            first_round=min(same.first_round, item.round_index),
             last_round=max(same.last_round, item.round_index),
             support_count=same.support_count + 1,
         )
         return
+    if related and item.round_index < max(claim.last_round for claim in related):
+        claims.append(_new_claim(item, status=SituatedClaimStatus.SUPERSEDED))
+        return
     for claim in active:
         claims[claims.index(claim)] = replace(claim, status=SituatedClaimStatus.SUPERSEDED)
-    claims.append(SituatedConsolidatedClaim(
+    claims.append(_new_claim(item, status=SituatedClaimStatus.ACTIVE))
+
+
+def _new_claim(
+    item: SituatedSocialEvidence,
+    *,
+    status: SituatedClaimStatus,
+) -> SituatedConsolidatedClaim:
+    return SituatedConsolidatedClaim(
         _claim_id(item),
         item.observer_agent_id,
         item.source_agent_id or "",
@@ -115,8 +160,8 @@ def _consolidate_testimony(
         item.round_index,
         item.round_index,
         1,
-        SituatedClaimStatus.ACTIVE,
-    ))
+        status,
+    )
 
 
 def _learn_relationship(
@@ -153,6 +198,7 @@ def _apply_verification(
         if claim.status is SituatedClaimStatus.ACTIVE
         and claim.observer_agent_id == item.observer_agent_id
         and claim.topic_id == item.topic_id
+        and claim.first_round <= item.round_index
     ]
     for claim in eligible:
         confirmed = claim.symbol_id == item.symbol_id
@@ -208,13 +254,21 @@ def advance_situated_social_memory(
         or next_cognitive_state.model_hash != cognition.content_hash
     ):
         raise ValueError("situated social transition must bind the exact next cognition")
-    if next_cognitive_state.round_index < prior_cognitive_state.round_index:
-        raise ValueError("situated social transition cannot move backward")
-    _validate_evidence(model, next_cognitive_state, evidence)
+    same_cognition = next_cognitive_state == prior_cognitive_state
+    exact_cognitive_child = (
+        next_cognitive_state.round_index == prior_cognitive_state.round_index + 1
+        and next_cognitive_state.parent_state_hash
+        == prior_cognitive_state.content_hash
+    )
+    if not same_cognition and not exact_cognitive_child:
+        raise ValueError(
+            "situated social transition requires the same cognition or its exact cognitive child"
+        )
+    canonical_evidence = _canonical_evidence(model, next_cognitive_state, evidence)
 
     processed = set(state.processed_evidence_ids)
     admitted = tuple(sorted(
-        (item for item in evidence if item.evidence_id not in processed),
+        (item for item in canonical_evidence if item.evidence_id not in processed),
         key=lambda item: (item.round_index, item.evidence_id),
     ))
     if not admitted and next_cognitive_state == prior_cognitive_state:

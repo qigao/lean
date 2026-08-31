@@ -6,12 +6,20 @@ from narrative_dynamics.abm.situated import (
     ObservationChannel,
     SituatedActionIntent,
     SituatedActionKind,
+    SituatedWorldEvent,
 )
-from narrative_dynamics.abm.situated_memory import ingest_situated_story
+from narrative_dynamics.abm.situated_memory import (
+    ingest_situated_memory,
+    ingest_situated_story,
+    list_situated_memories,
+)
+from narrative_dynamics.abm.situated_cognition import admit_situated_observations
 from narrative_dynamics.abm.situated_memory_cognition_contracts import (
     SituatedMemoryRecallCue,
     initialize_situated_memory_cognition,
 )
+from narrative_dynamics.abm.situated_memory_cognition import recall_situated_memories
+from narrative_dynamics.abm.situated_cognition_contracts import SituatedObservationRule
 from narrative_dynamics.abm.situated_social_cognition import (
     recall_situated_memories_with_social_trust,
     simulate_situated_social_cognition,
@@ -21,7 +29,7 @@ from narrative_dynamics.abm.situated_social_memory_contracts import (
     SituatedClaimStatus,
     initialize_situated_social_memory,
 )
-from narrative_dynamics.abm.situated_story import advance_situated_story
+from narrative_dynamics.abm.situated_story import advance_situated_story, perspective_timeline
 from tests.test_network_abm_situated_memory_cognition import (
     agent_model,
     inspection_and_move_story,
@@ -55,7 +63,246 @@ def social_relationship(state, observer, source):
     )
 
 
+def with_denied_tell_rule(model):
+    return replace(
+        model,
+        observation_rules=model.observation_rules + (
+            SituatedObservationRule(
+                "tell-denied",
+                "denied",
+                "tell",
+                SituatedActionKind.TELL,
+                "told",
+                "message",
+                "The restructuring is denied.",
+            ),
+        ),
+    )
+
+
 class SituatedSocialCognitionTests(unittest.TestCase):
+    def test_repeated_direct_testimony_updates_belief_only_once(self):
+        cognition, story, inspection = inspection_and_move_story()
+        story = with_telling(cognition, story, inspection)
+        story = advance_situated_story(cognition.world_model, story, (
+            SituatedActionIntent(
+                "tell-direct-again",
+                "alice",
+                SituatedActionKind.TELL,
+                message="The restructuring is approved.",
+                source_event_ids=(inspection.event_id,),
+            ),
+        ))
+        memory_model = recall_model({})
+        cognitive_state = initialize_situated_memory_cognition(memory_model, story)
+        bob = replace(
+            mind(cognitive_state, "bob"),
+            observation_floor_round=0,
+        )
+        direct_testimony = tuple(
+            item
+            for item in perspective_timeline(story, "bob")
+            if item.event.kind is SituatedActionKind.TELL
+        )
+
+        result = admit_situated_observations(
+            agent_model(memory_model, "bob"),
+            bob,
+            direct_testimony,
+            _claim_topic_by_symbol={"approved": "restructuring"},
+            _consolidated_claim_keys=frozenset(),
+        )
+
+        self.assertEqual(len(result.admissions), 2)
+        self.assertEqual(sum(item.consolidated for item in result.admissions), 1)
+        self.assertAlmostEqual(
+            result.next_mind.belief.probabilities["approved"],
+            0.9,
+        )
+        cross_round = admit_situated_observations(
+            agent_model(memory_model, "bob"),
+            bob,
+            (direct_testimony[-1],),
+            _claim_topic_by_symbol={"approved": "restructuring"},
+            _consolidated_claim_keys=frozenset({(
+                "alice", "restructuring", "approved",
+            )}),
+        )
+        self.assertTrue(cross_round.admissions[0].consolidated)
+        self.assertEqual(cross_round.next_mind.belief, bob.belief)
+
+    def test_direct_testimony_reversal_opens_a_new_claim_revision(self):
+        cognition, story, inspection = inspection_and_move_story()
+        story = with_telling(cognition, story, inspection)
+        story = advance_situated_story(cognition.world_model, story, (
+            SituatedActionIntent(
+                "tell-denied",
+                "alice",
+                SituatedActionKind.TELL,
+                message="The restructuring is denied.",
+                source_event_ids=(inspection.event_id,),
+            ),
+        ))
+        story = advance_situated_story(cognition.world_model, story, (
+            SituatedActionIntent(
+                "tell-approved-again",
+                "alice",
+                SituatedActionKind.TELL,
+                message="The restructuring is approved.",
+                source_event_ids=(inspection.event_id,),
+            ),
+        ))
+        memory_model = recall_model({})
+        cognitive_state = initialize_situated_memory_cognition(memory_model, story)
+        bob = replace(mind(cognitive_state, "bob"), observation_floor_round=0)
+        direct_testimony = tuple(
+            item
+            for item in perspective_timeline(story, "bob")
+            if item.event.kind is SituatedActionKind.TELL
+        )
+
+        bob_model = with_denied_tell_rule(agent_model(memory_model, "bob"))
+        result = admit_situated_observations(
+            bob_model,
+            bob,
+            direct_testimony,
+            _claim_topic_by_symbol={
+                "approved": "restructuring",
+                "denied": "restructuring",
+            },
+            _consolidated_claim_keys=frozenset(),
+        )
+
+        self.assertEqual(
+            [item.consolidated for item in result.admissions],
+            [False, False, False],
+        )
+        self.assertAlmostEqual(
+            result.next_mind.belief.probabilities["approved"],
+            0.9,
+        )
+
+    def test_recalled_testimony_reversal_opens_a_new_claim_revision(self):
+        cognition, story, inspection = inspection_and_move_story()
+        story = with_telling(cognition, story, inspection)
+        story = advance_situated_story(cognition.world_model, story, (
+            SituatedActionIntent(
+                "tell-recalled-denied",
+                "alice",
+                SituatedActionKind.TELL,
+                message="The restructuring is denied.",
+                source_event_ids=(inspection.event_id,),
+            ),
+        ))
+        story = advance_situated_story(cognition.world_model, story, (
+            SituatedActionIntent(
+                "tell-recalled-approved",
+                "alice",
+                SituatedActionKind.TELL,
+                message="The restructuring is approved.",
+                source_event_ids=(inspection.event_id,),
+            ),
+        ))
+        cue = SituatedMemoryRecallCue(
+            "restructuring-testimony",
+            "restructuring",
+            event_kinds=(SituatedActionKind.TELL,),
+            channels=(ObservationChannel.AUDITORY,),
+        )
+        memory_model = recall_model({"bob": (cue,)})
+        bob_model = with_denied_tell_rule(agent_model(memory_model, "bob"))
+        memory_model = replace(
+            memory_model,
+            cognitive_model=replace(
+                memory_model.cognitive_model,
+                agents=tuple(
+                    bob_model if item.agent_id == "bob" else item
+                    for item in memory_model.cognitive_model.agents
+                ),
+            ),
+        )
+        cognitive_state = initialize_situated_memory_cognition(memory_model, story)
+
+        with TemporaryDirectory() as directory:
+            database = f"{directory}/memory.sqlite3"
+            ingest_situated_story(
+                database,
+                story,
+                "bob",
+                memory_model.memory_policy,
+            )
+            result = recall_situated_memories(
+                database,
+                memory_model,
+                bob_model,
+                mind(cognitive_state, "bob"),
+                story=story,
+                state=cognitive_state,
+                _claim_topic_by_symbol={
+                    "approved": "restructuring",
+                    "denied": "restructuring",
+                },
+                _consolidated_claim_keys=frozenset(),
+            )
+
+        self.assertEqual(len(result.admissions), 3)
+        self.assertEqual(
+            [item.consolidated for item in result.admissions],
+            [False, False, False],
+        )
+
+    def test_social_recall_ignores_memory_from_a_divergent_story_branch(self):
+        model, story, cognitive_state, social_state = testimony_social_case()
+        with TemporaryDirectory() as directory:
+            database = f"{directory}/memory.sqlite3"
+            ingest_situated_story(
+                database,
+                story,
+                "bob",
+                model.memory_cognitive_model.memory_policy,
+            )
+            original = next(
+                item
+                for item in list_situated_memories(database, "bob")
+                if item.kind is SituatedActionKind.TELL
+            )
+            alternate_event = SituatedWorldEvent(
+                "branch-only-event",
+                original.round_index,
+                original.sequence,
+                "branch-only-tell",
+                original.kind,
+                original.actor_agent_id,
+                original.place_id,
+                original.target_id,
+                original.success,
+                original.outcome,
+                original.details,
+                original.cause_event_ids,
+            )
+            alternate = replace(
+                original,
+                memory_id="branch-only-observation",
+                observation_id="branch-only-observation",
+                event_id=alternate_event.event_id,
+                event_hash=alternate_event.content_hash,
+                action_id=alternate_event.action_id,
+            )
+            ingest_situated_memory(database, "bob", (alternate,))
+
+            result = recall_situated_memories_with_social_trust(
+                database,
+                model,
+                agent_model(model.memory_cognitive_model, "bob"),
+                mind(cognitive_state, "bob"),
+                story=story,
+                cognitive_state=cognitive_state,
+                social_state=social_state,
+            )
+
+        self.assertEqual(len(result.admissions), 1)
+        self.assertNotEqual(result.admissions[0].memory_id, alternate.memory_id)
+
     def test_repeated_same_source_claim_updates_belief_only_once(self):
         cognition, story, inspection = inspection_and_move_story()
         story = with_telling(cognition, story, inspection)

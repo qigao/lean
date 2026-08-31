@@ -458,6 +458,7 @@ def search_situated_memories(
     except sqlite3.Error as error:
         raise SituatedMemoryStorageError("failed to search situated memories") from error
     excluded = set(query.excluded_memory_ids)
+    included = set(query.included_memory_ids)
     hits = [
         SituatedMemorySearchHit(
             _row_to_memory(row),
@@ -465,6 +466,7 @@ def search_situated_memories(
         )
         for row in rows
         if row["memory_id"] not in excluded
+        and (not included or row["memory_id"] in included)
     ]
     hits.sort(key=lambda item: (
         item.lexical_rank if item.lexical_rank is not None else 0.0,

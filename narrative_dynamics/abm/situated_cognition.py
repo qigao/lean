@@ -52,13 +52,23 @@ class SituatedBeliefAdmission:
     likelihood_action_id: str
     prior_belief: PlanningBeliefState
     posterior_belief: PlanningBeliefState
+    consolidated: bool = False
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.consolidated, bool):
+            raise TypeError("situated belief admission consolidated must be boolean")
+        if self.consolidated and self.prior_belief != self.posterior_belief:
+            raise ValueError("consolidated situated belief admission cannot change belief")
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        result = {
             "observation_id": self.observation_id, "event_id": self.event_id,
             "symbol_id": self.symbol_id, "likelihood_action_id": self.likelihood_action_id,
             "prior_belief": self.prior_belief.to_dict(), "posterior_belief": self.posterior_belief.to_dict(),
         }
+        if self.consolidated:
+            result["consolidated"] = True
+        return result
 
     @property
     def content_hash(self) -> str:
@@ -307,6 +317,9 @@ def admit_situated_observations(
     model: SituatedAgentCognitiveModel,
     mind: SituatedAgentMindState,
     perspective: tuple[SituatedPerspectiveEvent, ...],
+    *,
+    _claim_topic_by_symbol: Mapping[str, str] | None = None,
+    _consolidated_claim_keys: frozenset[tuple[str, str, str]] | None = None,
 ) -> SituatedBeliefAdmissionResult:
     if model.agent_id != mind.agent_id:
         raise ValueError("belief admission model and mind agent must match")
@@ -317,6 +330,17 @@ def admit_situated_observations(
     processed = set(mind.processed_observation_ids)
     observed = set(mind.observed_event_ids)
     belief = mind.belief
+    claim_topic_by_symbol = {} if _claim_topic_by_symbol is None else dict(_claim_topic_by_symbol)
+    consolidated_claim_keys = set(
+        () if _consolidated_claim_keys is None else _consolidated_claim_keys
+    )
+    active_claim_symbols = {}
+    for source_id, topic_id, symbol_id in consolidated_claim_keys:
+        scope = (source_id, topic_id)
+        existing = active_claim_symbols.get(scope)
+        if existing is not None and existing != symbol_id:
+            raise ValueError("situated direct admission claim scope has multiple active symbols")
+        active_claim_symbols[scope] = symbol_id
     likelihoods = {(item.action_id, item.hypothesis_id, item.symbol_id): item.probability for item in model.likelihoods}
     admissions = []
     new_items = [
@@ -331,6 +355,31 @@ def admit_situated_observations(
         rule = match_situated_observation_rule(model, item)
         if rule is None:
             continue
+        claim_scope = None
+        if (
+            item.event.kind is SituatedActionKind.TELL
+            and item.event.actor_agent_id != mind.agent_id
+            and rule.symbol_id in claim_topic_by_symbol
+        ):
+            claim_scope = (
+                item.event.actor_agent_id,
+                claim_topic_by_symbol[rule.symbol_id],
+            )
+        consolidated = (
+            claim_scope is not None
+            and active_claim_symbols.get(claim_scope) == rule.symbol_id
+        )
+        if consolidated:
+            admissions.append(SituatedBeliefAdmission(
+                item.observation.observation_id,
+                item.event.event_id,
+                rule.symbol_id,
+                rule.likelihood_action_id,
+                belief,
+                belief,
+                True,
+            ))
+            continue
         masses = {
             hypothesis_id: probability * likelihoods[(rule.likelihood_action_id, hypothesis_id, rule.symbol_id)]
             for hypothesis_id, probability in belief.probabilities.items()
@@ -344,6 +393,8 @@ def admit_situated_observations(
             rule.likelihood_action_id, belief, posterior,
         ))
         belief = posterior
+        if claim_scope is not None:
+            active_claim_symbols[claim_scope] = rule.symbol_id
     next_mind = replace(
         mind,
         belief=belief,
