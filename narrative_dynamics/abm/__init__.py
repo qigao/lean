@@ -330,6 +330,7 @@ from narrative_dynamics.abm.situated_percept_memory_contracts import (
 from narrative_dynamics.abm.situated_percept_memory import (
     SituatedPerceptMemoryConflictError,
     SituatedPerceptMemoryStorageError,
+    hash_situated_percept_memory_store,
     ingest_situated_percept_story,
     initialize_situated_percept_memory,
     list_situated_percept_memories,
@@ -393,6 +394,53 @@ from narrative_dynamics.abm.situated_projection_contracts import (
     NarrativeTemporalOrder,
 )
 from narrative_dynamics.abm.situated_projection import project_situated_narrative
+from narrative_dynamics.abm.situated_realization_contracts import (
+    NarrativePassage,
+    NarrativeRealizationArtifact,
+    NarrativeRealizationAssurance,
+    NarrativeRealizationFormat,
+    NarrativeRealizationPolicy,
+    NarrativeRealizationPrompt,
+    NarrativeRealizationProviderIdentity,
+    NarrativeRealizationRequest,
+    NarrativeRealizedScene,
+    NarrativeSceneRealizationPrompt,
+)
+from narrative_dynamics.abm.situated_realization import (
+    build_narrative_realization_prompt,
+    compile_narrative_realization,
+    realize_narrative_exact_facts,
+    render_narrative_realization_text,
+    replay_narrative_realization,
+)
+from narrative_dynamics.abm.situated_network_contracts import (
+    SituatedNetworkAccessEdge,
+    SituatedNetworkAgentNode,
+    SituatedNetworkEmergenceMetrics,
+    SituatedNetworkRelationshipEdge,
+    SituatedNetworkRoundResult,
+    SituatedNetworkRuntimeModel,
+    SituatedNetworkRuntimeState,
+    SituatedNetworkSnapshot,
+    SituatedNetworkTrajectory,
+    SituatedNetworkTransmission,
+)
+from narrative_dynamics.abm.situated_network import (
+    initialize_situated_network_runtime,
+    measure_situated_network_emergence,
+    project_situated_network_snapshot,
+    simulate_situated_network_round,
+    simulate_situated_network_runtime,
+)
+from narrative_dynamics.abm.situated_spatial_map_contracts import (
+    SpatialPassage,
+    SpatialPlace,
+    SituatedSpatialMap,
+)
+from narrative_dynamics.abm.situated_spatial_map import (
+    auto_layout_situated_spatial_map,
+    load_tiled_situated_spatial_map,
+)
 
 
 __all__ = (
@@ -647,6 +695,7 @@ __all__ = (
     "SituatedPerceptMemoryStorageError",
     "SituatedPerceptMemoryConflictError",
     "initialize_situated_percept_memory",
+    "hash_situated_percept_memory_store",
     "ingest_situated_percept_story",
     "list_situated_percept_memories",
     "search_situated_percept_memories",
@@ -698,4 +747,39 @@ __all__ = (
     "NarrativeCut",
     "NarrativeProjection",
     "project_situated_narrative",
+    "NarrativeRealizationFormat",
+    "NarrativeRealizationAssurance",
+    "NarrativeRealizationProviderIdentity",
+    "NarrativeRealizationPolicy",
+    "NarrativeRealizationRequest",
+    "NarrativeSceneRealizationPrompt",
+    "NarrativeRealizationPrompt",
+    "NarrativePassage",
+    "NarrativeRealizedScene",
+    "NarrativeRealizationArtifact",
+    "build_narrative_realization_prompt",
+    "compile_narrative_realization",
+    "realize_narrative_exact_facts",
+    "replay_narrative_realization",
+    "render_narrative_realization_text",
+    "SituatedNetworkRuntimeModel",
+    "SituatedNetworkAgentNode",
+    "SituatedNetworkRelationshipEdge",
+    "SituatedNetworkAccessEdge",
+    "SituatedNetworkTransmission",
+    "SituatedNetworkSnapshot",
+    "SituatedNetworkEmergenceMetrics",
+    "SituatedNetworkRuntimeState",
+    "SituatedNetworkRoundResult",
+    "SituatedNetworkTrajectory",
+    "project_situated_network_snapshot",
+    "measure_situated_network_emergence",
+    "initialize_situated_network_runtime",
+    "simulate_situated_network_round",
+    "simulate_situated_network_runtime",
+    "SpatialPlace",
+    "SpatialPassage",
+    "SituatedSpatialMap",
+    "load_tiled_situated_spatial_map",
+    "auto_layout_situated_spatial_map",
 )

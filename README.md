@@ -1599,6 +1599,399 @@ retains normal known-place grouping. The result is a content-addressed
 truth-and-entitlement packet for V18: it is not generated prose, and it does not
 mutate the world or any agent state.
 
+### V18 entitlement-bound narrative realization
+
+V18 turns a V17 projection into replayable prose or screenplay passages without
+changing the projected truth. The provider sees one scene-local packet per call:
+the scene's canonical beats, only their exact entitlement closure, the selected
+`prose` or `screenplay` policy, and bounded response instructions. It receives no
+automatic cross-scene transcript or hidden global context.
+
+Any application can supply the small provider protocol directly:
+
+```python
+from narrative_dynamics.abm import (
+    NarrativeRealizationFormat,
+    NarrativeRealizationPolicy,
+    NarrativeRealizationProviderIdentity,
+    NarrativeRealizationRequest,
+    build_narrative_realization_prompt,
+    compile_narrative_realization,
+    replay_narrative_realization,
+)
+
+
+class JsonNarrativeProvider:
+    identity = NarrativeRealizationProviderIdentity(
+        "my-provider", "1", "my-json-model"
+    )
+
+    def complete_json(self, *, task, payload):
+        return application_json_completion(task=task, payload=payload)
+
+
+provider = JsonNarrativeProvider()
+realization_policy = NarrativeRealizationPolicy(
+    "screenplay-en",
+    "1",
+    NarrativeRealizationFormat.SCREENPLAY,  # PROSE is also supported.
+    "en",
+    tone_tags=("restrained",),
+)
+realization_request = NarrativeRealizationRequest(
+    "render-42", projection.content_hash
+)
+prompt = build_narrative_realization_prompt(
+    projection, realization_policy, realization_request, provider
+)
+artifact = compile_narrative_realization(prompt, provider)
+assert artifact.assurance.value == "citation_bound"
+assert replay_narrative_realization(projection, artifact) is artifact
+```
+
+`citation_bound` means deterministic validation proved scene and beat coverage,
+ordering, size limits, provider identity, and exact entitlement citations. It does
+not claim that arbitrary natural-language prose is formally entailed. Provider
+wording remains presentation-only and cannot become V17 evidence or mutate the
+simulation. In both assurance modes, `accepted` means structurally accepted
+presentation, not independently authoritative truth. Any authoritative consumer
+must call `replay_narrative_realization` with the exact V17 projection first.
+
+For literal output with stronger, honest assurance, use the provider-free
+fallback. It emits one passage per beat containing only sorted entitlement
+`<JSON string>=<JSON string>` facts; beat IDs and beat kinds remain passage
+metadata. The canonical text `[]` denotes an entitlement with zero facts and does
+not introduce a fact.
+
+```python
+from narrative_dynamics.abm import realize_narrative_exact_facts
+
+exact_artifact = realize_narrative_exact_facts(
+    projection, realization_policy, realization_request
+)
+assert exact_artifact.assurance.value == "exact_facts"
+assert replay_narrative_realization(projection, exact_artifact) is exact_artifact
+```
+
+An optional OpenAI adapter is isolated in the integrations package:
+
+```python
+from narrative_dynamics.integrations import OpenAINarrativeProvider
+
+openai_provider = OpenAINarrativeProvider.from_env(".env")
+openai_prompt = build_narrative_realization_prompt(
+    projection, realization_policy, realization_request, openai_provider
+)
+openai_artifact = compile_narrative_realization(openai_prompt, openai_provider)
+```
+
+The dotenv path, `OPENAI_API_KEY`, and optional `OPENAI_BASE_URL` are
+construction-only configuration: they never enter provider identity, prompts,
+artifacts, hashes, representations, or errors. The adapter reads `OPENAI_MODEL`
+and optional `OPENAI_PROVIDER` for its public identity and imports the OpenAI and
+dotenv packages only when constructing the optional integration. Adapter identity
+version `2` authenticates its effective message semantics: a fixed instruction to
+return exactly one JSON object matching the supplied response schema, followed by
+the exact scene task/payload JSON. Importing `narrative_dynamics.abm` remains
+provider-neutral.
+
+### V19 atomic situated-network runtime
+
+V19 unifies observation and orchestration for the existing situated office model.
+One atomic call advances the V15.1 percept/social/cognitive round exactly once, then
+binds its returned story, cognitive state, and social state to one privacy-preserving
+multiplex-network snapshot and one emergence-metric record. Snapshot transmissions
+identify events, agents, fidelity, and disclosed channels only when that observer's
+sanitized V15 percept explicitly discloses `kind=TELL` and a distinct non-null actor.
+They never copy private message payloads or recover identity from an anonymous sound.
+
+```python
+from dataclasses import replace
+from tempfile import TemporaryDirectory
+
+from narrative_dynamics.abm import (
+    EmbodiedAgentSpec,
+    PassageSpec,
+    PassageState,
+    PlaceSpec,
+    SituatedActionIntent,
+    SituatedActionKind,
+    SituatedActionSpec,
+    SituatedAgentCognitiveModel,
+    SituatedAgentPerceptionProfile,
+    SituatedAgentRecallPolicy,
+    SituatedClaimTopic,
+    SituatedCognitiveModel,
+    SituatedEdgeActivation,
+    SituatedEventSignalProfile,
+    SituatedGoalReward,
+    SituatedGoalSpec,
+    SituatedHypothesis,
+    SituatedMemoryCognitiveModel,
+    SituatedNetworkRuntimeModel,
+    SituatedObservationLikelihood,
+    SituatedObservationSymbol,
+    SituatedPerceptFidelity,
+    SituatedPerceptMemoryCognitiveModel,
+    SituatedPerceptionEdge,
+    SituatedPerceptionLayer,
+    SituatedPerceptionModel,
+    SituatedSocialMemoryModel,
+    SituatedSocialMemoryPolicy,
+    SituatedWorldModel,
+    advance_situated_story,
+    hash_situated_percept_memory_store,
+    initialize_situated_network_runtime,
+    initialize_situated_percept_memory_cognition,
+    initialize_situated_social_memory,
+    initialize_situated_story,
+    initialize_situated_world,
+    project_situated_network_snapshot,
+    project_situated_percepts,
+    simulate_situated_network_round,
+    standard_situated_memory_policy,
+    standard_situated_percept_memory_policy,
+)
+from narrative_dynamics.narrative.runtime_planning import PlanningBeliefState
+
+
+office = SituatedWorldModel(
+    "v19-office",
+    "1",
+    (PlaceSpec("corridor", "Corridor"), PlaceSpec("meeting", "Meeting room")),
+    (PassageSpec("door", "corridor", "meeting", initially_open=False),),
+    (
+        EmbodiedAgentSpec("alice", "analyst", "corridor"),
+        EmbodiedAgentSpec("bob", "manager", "meeting"),
+    ),
+)
+perception = SituatedPerceptionModel(
+    "v19-office-perception",
+    "1",
+    office,
+    (
+        SituatedPerceptionEdge(
+            "audio-open", SituatedPerceptionLayer.AUDITORY,
+            "corridor", "meeting", 5.0,
+            SituatedEdgeActivation.PASSAGE_OPEN, "door",
+        ),
+        SituatedPerceptionEdge(
+            "audio-closed", SituatedPerceptionLayer.AUDITORY,
+            "corridor", "meeting", 25.0,
+            SituatedEdgeActivation.PASSAGE_CLOSED, "door",
+        ),
+    ),
+    (
+        SituatedAgentPerceptionProfile("alice", 1.0, 20.0, 45.0),
+        SituatedAgentPerceptionProfile("bob", 1.0, 20.0, 45.0),
+    ),
+    (SituatedEventSignalProfile(SituatedActionKind.TELL, False, 60.0),),
+)
+
+
+def cognitive_agent(agent_id):
+    hypotheses = (
+        SituatedHypothesis("approved", "The proposal is approved"),
+        SituatedHypothesis("denied", "The proposal is denied"),
+    )
+    symbols = (
+        SituatedObservationSymbol("approved", "Approval evidence"),
+        SituatedObservationSymbol("denied", "Denial evidence"),
+    )
+    return SituatedAgentCognitiveModel(
+        agent_id,
+        hypotheses,
+        PlanningBeliefState({"approved": 0.5, "denied": 0.5}),
+        symbols,
+        (),
+        tuple(
+            SituatedObservationLikelihood(
+                "wait", hypothesis.hypothesis_id, symbol.symbol_id, 0.5
+            )
+            for hypothesis in hypotheses
+            for symbol in symbols
+        ),
+        (SituatedActionSpec("wait", SituatedActionKind.WAIT),),
+        (("wait",),),
+        (),
+        (SituatedGoalSpec("idle", "Wait deterministically", 1.0),),
+        tuple(
+            SituatedGoalReward("idle", hypothesis.hypothesis_id, "wait", 0.0)
+            for hypothesis in hypotheses
+        ),
+        0.0,
+        1.0,
+    )
+
+
+cognition = SituatedCognitiveModel(
+    "v19-office-cognition",
+    "1",
+    office,
+    tuple(cognitive_agent(agent.agent_id) for agent in office.agents),
+)
+recall_policies = tuple(
+    SituatedAgentRecallPolicy(agent.agent_id) for agent in office.agents
+)
+percept_memory = SituatedPerceptMemoryCognitiveModel(
+    "v19-office-percept-memory",
+    "1",
+    perception,
+    cognition,
+    standard_situated_percept_memory_policy(),
+    recall_policies,
+)
+social_memory = SituatedSocialMemoryModel(
+    "v19-office-social",
+    "1",
+    SituatedMemoryCognitiveModel(
+        "v19-office-memory",
+        "1",
+        cognition,
+        standard_situated_memory_policy(),
+        recall_policies,
+    ),
+    (SituatedClaimTopic("decision", ("approved", "denied")),),
+    SituatedSocialMemoryPolicy(),
+)
+network = SituatedNetworkRuntimeModel(
+    "v19-office-network",
+    "1",
+    percept_memory,
+    social_memory,
+    "approved",
+    0.7,
+    0.5,
+)
+
+
+def tell_checkpoint(door_open):
+    world_state = initialize_situated_world(office)
+    if door_open:
+        world_state = replace(
+            world_state,
+            passages=(PassageState("door", True),),
+        )
+    story = initialize_situated_story(
+        office, world_state, perception_model=perception
+    )
+    story = advance_situated_story(
+        office,
+        story,
+        (SituatedActionIntent(
+            "alice-tell",
+            "alice",
+            SituatedActionKind.TELL,
+            message="The proposal is approved.",
+        ),),
+    )
+    cognitive_state = initialize_situated_percept_memory_cognition(
+        percept_memory, story
+    )
+    social_state = initialize_situated_social_memory(
+        social_memory, cognitive_state
+    )
+    return story, cognitive_state, social_state
+
+
+closed_story, closed_cognition, closed_social = tell_checkpoint(False)
+closed_percepts = project_situated_percepts(
+    perception, closed_story.rounds[-1]
+)
+bob_closed = next(
+    item for item in closed_percepts.percepts if item.agent_id == "bob"
+)
+closed_snapshot = project_situated_network_snapshot(
+    network, closed_story, closed_cognition, closed_social
+)
+assert bob_closed.fidelity is SituatedPerceptFidelity.DETECTED
+assert bob_closed.actor_agent_id is None and bob_closed.kind is None
+assert closed_snapshot.transmissions == ()
+assert closed_snapshot.latest_tell_event_count == 1
+
+open_story, open_cognition, open_social = tell_checkpoint(True)
+open_snapshot = project_situated_network_snapshot(
+    network, open_story, open_cognition, open_social
+)
+assert len(open_snapshot.transmissions) == 1
+assert open_snapshot.transmissions[0].source_agent_id == "alice"
+assert open_snapshot.transmissions[0].fidelity is SituatedPerceptFidelity.EXACT
+
+with TemporaryDirectory() as temporary:
+    database = f"{temporary}/office.sqlite3"
+    runtime = initialize_situated_network_runtime(
+        database, network, open_story, open_cognition, open_social
+    )
+    round_result = simulate_situated_network_round(database, network, runtime)
+    assert round_result.next_state.parent_state_hash == runtime.content_hash
+    assert (
+        round_result.next_state.memory_store_hash
+        == hash_situated_percept_memory_store(database)
+    )
+```
+
+In the office case, each runtime state presents agent nodes alongside directed social
+relationship edges, situated visual/auditory access edges, sanitized latest-round
+transmissions, and aggregate adoption, trust, claim, and reach measures. A successful
+objective TELL still increments the payload-free `latest_tell_event_count` when a
+closed door leaves Bob with only an anonymous DETECTED percept, but that percept does
+not increment any V19 source-labelled transmission bucket. The exact story prefix,
+cognitive/social parent hashes, logical SQLite memory hash, and outer V19 parent make
+the resulting trajectory replay-auditable without merging these projections back
+into older network models.
+
+V19 hashes canonical logical memory rows and metadata, including activation state;
+database paths, row IDs, FTS/index state, and raw SQLite bytes stay outside the
+contract. A round runs V15.1 against a staged database and publishes it only after
+the complete result validates, so Python transition/validation errors leave the
+original logical store unchanged. SQLite publication and caller-managed durable
+persistence of the returned state are not one cross-resource transaction: a process
+crash after publication but before the caller persists that state leaves the prior
+state stale, requiring recovery from a matching subsystem/store checkpoint. The
+runtime therefore requires a file-backed database.
+
+V19 unifies observability and orchestration, but it does not yet implement physical
+lifecycle or V1-V9 rewiring feedback; both remain future work. Physical map geometry
+and Blender visualization remain presentation/integration layers rather than part of
+the atomic runtime, and a production authoring UI remains future work.
+
+### V20 Blender graybox replay export
+
+V20 turns a completed situated-network trajectory into one editable Blender file.
+The `.blend` contains the spatial map, labeled graybox places and passages, independent
+stick-figure agents, movement and door keyframes, objective event timeline markers,
+belief/claim custom properties, an overview camera, and replay provenance hashes.
+
+```python
+from narrative_dynamics.abm import load_tiled_situated_spatial_map
+from narrative_dynamics.integrations import export_situated_network_blend
+
+# `network` and `trajectory` are the V19 model and completed trajectory above.
+world = network.percept_memory_model.cognitive_model.world_model
+spatial_map = load_tiled_situated_spatial_map(
+    "office.tmj",
+    world,
+    meters_per_pixel=0.05,
+)
+report = export_situated_network_blend(
+    r"C:\Program Files\Blender Foundation\Blender 5.1\blender.exe",
+    "office-replay.blend",
+    network,
+    trajectory,
+    spatial_map,
+)
+print(report.replay_hash)
+```
+
+The Tiled map must be orthogonal JSON. Plain rectangle objects classified as `place`
+or `passage` use their object `name` as the matching world place/passage ID; the map
+must cover every world place and passage exactly once. Group and object-layer pixel
+offsets are inherited. Omitting `spatial_map` selects a deterministic grid layout, so
+physical coordinates are optional. The exporter runs
+Blender headlessly, stages the result, validates its `.blend` header, and atomically
+replaces the requested output only after success. It exports no message payloads,
+private details, database paths, renderer output, video, player, or Blender add-on.
+
 ## Verification
 
 GitHub Actions runs:

@@ -5,10 +5,16 @@ from narrative_dynamics.abm.situated_projection import (
     project_situated_narrative as source_project_situated_narrative,
 )
 from narrative_dynamics.abm import situated_projection_contracts as projection_contracts
+from narrative_dynamics.abm import situated_realization as realization
+from narrative_dynamics.abm import situated_realization_contracts as realization_contracts
+from narrative_dynamics.abm import situated_network as situated_network
+from narrative_dynamics.abm import situated_network_contracts as network_contracts
+from narrative_dynamics.abm import situated_spatial_map as spatial_map
+from narrative_dynamics.abm import situated_spatial_map_contracts as spatial_contracts
 
 
 class NetworkABMPublicAPITests(unittest.TestCase):
-    def test_public_api_exports_current_v17_surface(self):
+    def test_public_api_exports_current_v19_surface(self):
         self.assertEqual(
             set(abm.__all__),
             {
@@ -314,6 +320,42 @@ class NetworkABMPublicAPITests(unittest.TestCase):
                 "NarrativeCut",
                 "NarrativeProjection",
                 "project_situated_narrative",
+                "NarrativeRealizationFormat",
+                "NarrativeRealizationAssurance",
+                "NarrativeRealizationProviderIdentity",
+                "NarrativeRealizationPolicy",
+                "NarrativeRealizationRequest",
+                "NarrativeSceneRealizationPrompt",
+                "NarrativeRealizationPrompt",
+                "NarrativePassage",
+                "NarrativeRealizedScene",
+                "NarrativeRealizationArtifact",
+                "build_narrative_realization_prompt",
+                "compile_narrative_realization",
+                "realize_narrative_exact_facts",
+                "replay_narrative_realization",
+                "render_narrative_realization_text",
+                "SituatedNetworkRuntimeModel",
+                "SituatedNetworkAgentNode",
+                "SituatedNetworkRelationshipEdge",
+                "SituatedNetworkAccessEdge",
+                "SituatedNetworkTransmission",
+                "SituatedNetworkSnapshot",
+                "SituatedNetworkEmergenceMetrics",
+                "SituatedNetworkRuntimeState",
+                "SituatedNetworkRoundResult",
+                "SituatedNetworkTrajectory",
+                "hash_situated_percept_memory_store",
+                "project_situated_network_snapshot",
+                "measure_situated_network_emergence",
+                "initialize_situated_network_runtime",
+                "simulate_situated_network_round",
+                "simulate_situated_network_runtime",
+                "SpatialPlace",
+                "SpatialPassage",
+                "SituatedSpatialMap",
+                "load_tiled_situated_spatial_map",
+                "auto_layout_situated_spatial_map",
             },
         )
         for name in abm.__all__:
@@ -323,6 +365,43 @@ class NetworkABMPublicAPITests(unittest.TestCase):
         for name in projection_contracts.__all__:
             self.assertIs(getattr(abm, name), getattr(projection_contracts, name))
         self.assertIs(abm.project_situated_narrative, source_project_situated_narrative)
+
+    def test_v18_exports_are_the_source_definitions(self):
+        contract_names = (
+            "NarrativeRealizationFormat",
+            "NarrativeRealizationAssurance",
+            "NarrativeRealizationProviderIdentity",
+            "NarrativeRealizationPolicy",
+            "NarrativeRealizationRequest",
+            "NarrativeSceneRealizationPrompt",
+            "NarrativeRealizationPrompt",
+            "NarrativePassage",
+            "NarrativeRealizedScene",
+            "NarrativeRealizationArtifact",
+        )
+        function_names = (
+            "build_narrative_realization_prompt",
+            "compile_narrative_realization",
+            "realize_narrative_exact_facts",
+            "replay_narrative_realization",
+            "render_narrative_realization_text",
+        )
+        for name in contract_names:
+            self.assertIs(getattr(abm, name), getattr(realization_contracts, name))
+        for name in function_names:
+            self.assertIs(getattr(abm, name), getattr(realization, name))
+
+    def test_v19_exports_are_the_source_definitions(self):
+        for name in network_contracts.__all__:
+            self.assertIs(getattr(abm, name), getattr(network_contracts, name))
+        for name in situated_network.__all__:
+            self.assertIs(getattr(abm, name), getattr(situated_network, name))
+
+    def test_v20_spatial_exports_are_the_source_definitions(self):
+        for name in spatial_contracts.__all__:
+            self.assertIs(getattr(abm, name), getattr(spatial_contracts, name))
+        for name in spatial_map.__all__:
+            self.assertIs(getattr(abm, name), getattr(spatial_map, name))
 
 
 if __name__ == "__main__":
