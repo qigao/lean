@@ -97,6 +97,15 @@ class NarrativeBeatPhase(str, Enum):
     SOCIAL = "social"
 
 
+_NARRATIVE_PHASE_ORDER = {
+    NarrativeBeatPhase.MEMORY_RECALL: 0,
+    NarrativeBeatPhase.BELIEF: 1,
+    NarrativeBeatPhase.DECISION: 2,
+    NarrativeBeatPhase.WORLD: 3,
+    NarrativeBeatPhase.SOCIAL: 4,
+}
+
+
 class NarrativeEntitlementScope(str, Enum):
     OBJECTIVE = "objective"
     PRIVATE = "private"
@@ -225,8 +234,6 @@ class NarrativeProjectionPolicy:
             raise ValueError("objective narrative policy rejects POV agents")
         if self.authority is NarrativeAuthority.AGENT_LIMITED and len(pov_agent_ids) != 1:
             raise ValueError("limited narrative policy requires exactly one POV agent")
-        if self.authority is NarrativeAuthority.MULTI_POV and len(pov_agent_ids) < 2:
-            raise ValueError("multi-POV narrative policy requires at least two unique POV agents")
         object.__setattr__(self, "pov_agent_ids", tuple(sorted(pov_agent_ids)))
         authored_event_order = _tuple_of_text(self.authored_event_order, label="narrative policy authored event order")
         if len(set(authored_event_order)) != len(authored_event_order):
@@ -287,7 +294,7 @@ class NarrativeBeat:
     kind: NarrativeBeatKind
     round_index: int
     sequence: int
-    place_id: str
+    place_id: str | None
     active_pov_agent_id: str | None
     agent_ids: tuple[str, ...]
     salience: float
@@ -303,7 +310,11 @@ class NarrativeBeat:
             raise TypeError("narrative beat kind must be NarrativeBeatKind")
         object.__setattr__(self, "round_index", _nonnegative_integer(self.round_index, label="narrative beat round index"))
         object.__setattr__(self, "sequence", _nonnegative_integer(self.sequence, label="narrative beat sequence"))
-        object.__setattr__(self, "place_id", _text(self.place_id, label="narrative beat place id"))
+        object.__setattr__(
+            self,
+            "place_id",
+            _optional_text(self.place_id, label="narrative beat place id"),
+        )
         object.__setattr__(self, "active_pov_agent_id", _optional_text(self.active_pov_agent_id, label="narrative beat active POV agent id"))
         agent_ids = _tuple_of_text(self.agent_ids, label="narrative beat agent ids")
         if len(set(agent_ids)) != len(agent_ids):
@@ -366,7 +377,7 @@ class NarrativeScene:
     beat_ids: tuple[str, ...]
     start_round_index: int
     end_round_index: int
-    place_id: str
+    place_id: str | None
     active_pov_agent_id: str | None
 
     def __post_init__(self) -> None:
@@ -381,7 +392,11 @@ class NarrativeScene:
         object.__setattr__(self, "end_round_index", _nonnegative_integer(self.end_round_index, label="narrative scene end round index"))
         if self.end_round_index < self.start_round_index:
             raise ValueError("narrative scene end round index cannot precede start round index")
-        object.__setattr__(self, "place_id", _text(self.place_id, label="narrative scene place id"))
+        object.__setattr__(
+            self,
+            "place_id",
+            _optional_text(self.place_id, label="narrative scene place id"),
+        )
         object.__setattr__(self, "active_pov_agent_id", _optional_text(self.active_pov_agent_id, label="narrative scene active POV agent id"))
 
     def to_dict(self) -> dict[str, object]:
@@ -500,6 +515,34 @@ class NarrativeProjection:
             cut_membership[scene_id] += 1
         if any(count != 1 for count in cut_membership.values()):
             raise ValueError("every narrative scene must occur in exactly one cut")
+        if scene_ids != self.cut.scene_ids:
+            raise ValueError(
+                "narrative projection scene catalog must follow cut presentation order"
+            )
+        presentation_beat_ids = tuple(
+            beat_id
+            for scene in self.scenes
+            for beat_id in scene.beat_ids
+        )
+        if beat_ids != presentation_beat_ids:
+            raise ValueError(
+                "narrative projection beat catalog must follow cut presentation order"
+            )
+        if self.policy.temporal_order is NarrativeTemporalOrder.CHRONOLOGICAL:
+            chronological = tuple(sorted(
+                self.beats,
+                key=lambda item: (
+                    item.round_index,
+                    _NARRATIVE_PHASE_ORDER[item.phase],
+                    item.sequence,
+                    item.active_pov_agent_id or "",
+                    item.beat_id,
+                ),
+            ))
+            if self.beats != chronological:
+                raise ValueError(
+                    "chronological narrative projection beats must follow chronological order"
+                )
         if self.policy.temporal_order is NarrativeTemporalOrder.AUTHORED:
             presentation_beats = tuple(
                 beat_map[beat_id]
@@ -525,6 +568,17 @@ class NarrativeProjection:
         self._validate_authority(entitlement_map)
 
     def _validate_authority(self, entitlement_map: Mapping[str, NarrativeEntitlement]) -> None:
+        for beat in self.beats:
+            if any(
+                entitlement_map[entitlement_id].scope
+                is NarrativeEntitlementScope.PRIVATE
+                and entitlement_map[entitlement_id].owner_agent_id
+                != beat.active_pov_agent_id
+                for entitlement_id in beat.entitlement_ids
+            ):
+                raise ValueError(
+                    "narrative beat active POV must own every cited private entitlement"
+                )
         if self.policy.authority is NarrativeAuthority.OBJECTIVE:
             return
         authorized = set(self.policy.pov_agent_ids)

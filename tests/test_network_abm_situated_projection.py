@@ -251,14 +251,19 @@ def causal_story(*, private: bool = False):
     return story, inspect.event_id
 
 
-def one_place_story(round_count: int = 4, *, two_agents: bool = False):
-    agents = (EmbodiedAgentSpec("alice", "staff", "office"),)
+def one_place_story(
+    round_count: int = 4,
+    *,
+    two_agents: bool = False,
+    place_id: str = "office",
+):
+    agents = (EmbodiedAgentSpec("alice", "staff", place_id),)
     if two_agents:
-        agents += (EmbodiedAgentSpec("bob", "staff", "office"),)
+        agents += (EmbodiedAgentSpec("bob", "staff", place_id),)
     world = SituatedWorldModel(
         "one-place",
         "1.0",
-        (PlaceSpec("office", "Office"),),
+        (PlaceSpec(place_id, "Office"),),
         (),
         agents,
     )
@@ -729,7 +734,11 @@ def test_trajectory_salience_and_support_are_exact_source_artifacts(trajectory):
         if not admission.consolidated
     ]
     assert {
-        beat.supporting_artifacts[0].artifact_hash: beat.salience
+        next(
+            support.artifact_hash
+            for support in beat.supporting_artifacts
+            if support.artifact_kind == "memory_recall_admission"
+        ): beat.salience
         for beat in by_kind[NarrativeBeatKind.MEMORY_RECALL]
     } == {
         admission.content_hash: admission.evidence_weight
@@ -794,6 +803,219 @@ def test_trajectory_salience_and_support_are_exact_source_artifacts(trajectory):
     assert "sqlite" not in serialized.lower()
 
 
+def test_internal_places_and_metadata_cite_complete_trajectory_provenance(trajectory):
+    projection = project_situated_narrative(
+        trajectory.final_story, objective_policy(), trajectory=trajectory
+    )
+    decisions = {}
+    previous_decisions = {}
+    recalls = {}
+    next_minds = {}
+    for round_result in trajectory.rounds:
+        prior_state = round_result.cognitive_round.cognitive_round.prior_state
+        prior_minds = {mind.agent_id: mind for mind in prior_state.minds}
+        events = {
+            event.action_id: event
+            for event in round_result.next_story.rounds[-1].events
+        }
+        for decision in round_result.decisions:
+            decisions[decision.content_hash] = (
+                decision,
+                prior_minds[decision.agent_id],
+                prior_state.round_index,
+                events[decision.intent.action_id],
+                previous_decisions.get(decision.agent_id),
+            )
+            previous_decisions[decision.agent_id] = decision
+        for recall in round_result.recalls:
+            for admission in recall.admissions:
+                if not admission.consolidated:
+                    recalls[admission.content_hash] = (
+                        recall,
+                        round_result.next_cognitive_state.round_index,
+                    )
+        for mind in round_result.next_cognitive_state.minds:
+            next_minds[(round_result.next_cognitive_state.round_index, mind.agent_id)] = mind
+
+    for beat in projection.beats:
+        support_triples = {
+            (support.artifact_kind, support.artifact_id, support.artifact_hash)
+            for support in beat.supporting_artifacts
+        }
+        if beat.phase in {NarrativeBeatPhase.BELIEF, NarrativeBeatPhase.DECISION}:
+            current_hash = next(
+                support.artifact_hash
+                for support in beat.supporting_artifacts
+                if support.artifact_kind == "cognitive_decision"
+                and support.artifact_hash in decisions
+                and decisions[support.artifact_hash][0].round_index == beat.round_index
+            )
+            decision, prior_mind, prior_round, event, prior_decision = decisions[
+                current_hash
+            ]
+            assert beat.place_id == prior_mind.own_place_id
+            assert (
+                "cognitive_mind_state",
+                f"{decision.agent_id}:{prior_round}:prior",
+                prior_mind.content_hash,
+            ) in support_triples
+            assert (
+                "world_event",
+                event.event_id,
+                event.content_hash,
+            ) in support_triples
+            if beat.phase is NarrativeBeatPhase.DECISION:
+                assert prior_decision is not None
+                assert (
+                    "cognitive_decision",
+                    f"{prior_decision.agent_id}:{prior_decision.round_index}",
+                    prior_decision.content_hash,
+                ) in support_triples
+        elif beat.phase is NarrativeBeatPhase.MEMORY_RECALL:
+            admission_hash = next(
+                support.artifact_hash
+                for support in beat.supporting_artifacts
+                if support.artifact_kind == "memory_recall_admission"
+            )
+            recall, round_index = recalls[admission_hash]
+            assert beat.place_id == recall.prior_mind.own_place_id
+            assert (
+                "cognitive_mind_state",
+                f"{recall.prior_mind.agent_id}:{round_index}:recall-prior",
+                recall.prior_mind.content_hash,
+            ) in support_triples
+        elif beat.phase is NarrativeBeatPhase.SOCIAL:
+            next_mind = next_minds[(beat.round_index, beat.active_pov_agent_id)]
+            assert beat.place_id == next_mind.own_place_id
+            assert (
+                "cognitive_mind_state",
+                f"{next_mind.agent_id}:{beat.round_index}:next",
+                next_mind.content_hash,
+            ) in support_triples
+
+
+def test_limited_decision_metadata_comes_only_from_exact_self_percepts(trajectory):
+    projection = project_situated_narrative(
+        trajectory.final_story,
+        limited_policy("bob"),
+        trajectory=trajectory,
+    )
+    bob_decisions = {
+        decision.content_hash: decision
+        for round_result in trajectory.rounds
+        for decision in round_result.decisions
+        if decision.agent_id == "bob"
+    }
+    exact_self_percepts = {
+        (percept.round_index, percept.kind): percept
+        for percept in perceptual_timeline(
+            trajectory.final_story.perception_model,
+            trajectory.final_story,
+            "bob",
+        )
+        if percept.agent_id == "bob"
+        and percept.actor_agent_id == "bob"
+        and percept.fidelity.value == "exact"
+    }
+    decision_beats = [
+        beat
+        for beat in projection.beats
+        if beat.phase in {NarrativeBeatPhase.BELIEF, NarrativeBeatPhase.DECISION}
+    ]
+    assert decision_beats
+    for beat in decision_beats:
+        support_by_hash = {
+            support.artifact_hash: support for support in beat.supporting_artifacts
+        }
+        decision = next(
+            decision
+            for content_hash, decision in bob_decisions.items()
+            if content_hash in support_by_hash
+            and decision.round_index == beat.round_index
+        )
+        percept = exact_self_percepts[(decision.round_index, decision.intent.kind)]
+        assert beat.source_event_id == percept.source_event_id
+        assert beat.round_index == percept.round_index
+        assert (
+            "percept",
+            percept.percept_id,
+            percept.content_hash,
+        ) in {
+            (support.artifact_kind, support.artifact_id, support.artifact_hash)
+            for support in beat.supporting_artifacts
+        }
+        assert all(
+            support.artifact_kind != "world_event"
+            for support in beat.supporting_artifacts
+        )
+
+    by_round = {}
+    for beat in decision_beats:
+        by_round.setdefault(beat.round_index, []).append(beat)
+    assert all(
+        [beat.sequence for beat in beats] == list(range(1, len(beats) + 1))
+        for beats in by_round.values()
+    )
+
+
+def test_limited_decision_without_exact_self_percept_stays_event_unbound(trajectory):
+    first_round = trajectory.rounds[0]
+    memory_round = first_round.cognitive_round
+    percept_round = memory_round.percept_cognitive_round
+    cognitive_round = percept_round.cognitive_round
+    bob_decision = next(
+        decision for decision in cognitive_round.decisions if decision.agent_id == "bob"
+    )
+    forged_decision = replace(
+        bob_decision,
+        intent=replace(
+            bob_decision.intent,
+            kind=SituatedActionKind.WAIT,
+            target_id=None,
+        ),
+    )
+    forged_cognitive_round = replace(
+        cognitive_round,
+        decisions=tuple(
+            forged_decision if decision.agent_id == "bob" else decision
+            for decision in cognitive_round.decisions
+        ),
+    )
+    forged_percept_round = replace(
+        percept_round, cognitive_round=forged_cognitive_round
+    )
+    forged_memory_round = replace(
+        memory_round, percept_cognitive_round=forged_percept_round
+    )
+    forged_first_round = replace(
+        first_round, cognitive_round=forged_memory_round
+    )
+    forged_trajectory = replace(
+        trajectory,
+        rounds=(forged_first_round,) + trajectory.rounds[1:],
+    )
+
+    projection = project_situated_narrative(
+        forged_trajectory.final_story,
+        limited_policy("bob"),
+        trajectory=forged_trajectory,
+    )
+    beat = next(
+        beat
+        for beat in projection.beats
+        if any(
+            support.artifact_kind == "cognitive_decision"
+            and support.artifact_hash == forged_decision.content_hash
+            for support in beat.supporting_artifacts
+        )
+    )
+    assert beat.source_event_id is None
+    assert all(
+        support.artifact_kind not in {"world_event", "percept"}
+        for support in beat.supporting_artifacts
+    )
+
+
 def test_action_reversal_requires_a_changed_prior_projected_decision(trajectory):
     projection = project_situated_narrative(
         trajectory.final_story, objective_policy(), trajectory=trajectory
@@ -810,7 +1032,12 @@ def test_action_reversal_requires_a_changed_prior_projected_decision(trajectory)
                 expected_hashes.add(decision.content_hash)
             previous[decision.agent_id] = decision.selected_action_id
     reversal_hashes = {
-        beat.supporting_artifacts[0].artifact_hash
+        next(
+            support.artifact_hash
+            for support in beat.supporting_artifacts
+            if support.artifact_kind == "cognitive_decision"
+            and support.artifact_id.endswith(f":{beat.round_index}")
+        )
         for beat in projection.beats
         if beat.kind is NarrativeBeatKind.ACTION_REVERSAL
     }
@@ -1242,6 +1469,34 @@ def test_detected_percept_exposes_signal_without_actor_kind_or_outcome():
     assert tuple(item.kind for item in projection.beats) == (
         NarrativeBeatKind.INFORMATION,
     )
+    assert projection.beats[0].place_id is None
+    assert projection.scenes[0].place_id is None
+
+
+def test_unknown_location_beats_each_start_their_own_scene():
+    story = detected_story()
+    story, _ = _append_single_alice_tell(story, "alice-tells-again")
+    projection = project_situated_narrative(story, limited_policy("bob"))
+    assert len(projection.beats) == 2
+    assert all(beat.place_id is None for beat in projection.beats)
+    assert len(projection.scenes) == 2
+    assert all(scene.place_id is None for scene in projection.scenes)
+    assert all(len(scene.beat_ids) == 1 for scene in projection.scenes)
+    assert '"place_id": null' in json.dumps(projection.to_dict(), sort_keys=True)
+    assert projection.content_hash == project_situated_narrative(
+        story, limited_policy("bob")
+    ).content_hash
+
+
+def test_known_world_place_named_undisclosed_preserves_normal_grouping():
+    projection = project_situated_narrative(
+        one_place_story(round_count=2, place_id="undisclosed"),
+        objective_policy(),
+    )
+    assert {beat.place_id for beat in projection.beats} == {"undisclosed"}
+    assert len(projection.scenes) == 1
+    assert projection.scenes[0].place_id == "undisclosed"
+    assert len(projection.scenes[0].beat_ids) == 2
 
 
 def test_unknown_limited_pov_agent_is_rejected():
@@ -1332,6 +1587,119 @@ def test_omission_gap_forces_supported_anchors_between_first_and_last_events():
     assert all(right - left <= 2 for left, right in zip(anchored_positions, anchored_positions[1:]))
 
 
+def test_internal_candidates_are_not_boundary_or_event_gap_anchors(trajectory):
+    projection = project_situated_narrative(
+        trajectory.final_story,
+        limited_policy(
+            "bob",
+            salience_weights={kind: 0.0 for kind in NarrativeBeatKind},
+            minimum_salience=1.0,
+            maximum_event_omission_gap=2,
+            required_causal_coverage=0.0,
+        ),
+        trajectory=trajectory,
+    )
+    assert all(beat.phase is NarrativeBeatPhase.WORLD for beat in projection.beats)
+
+    percepts = perceptual_timeline(
+        trajectory.final_story.perception_model,
+        trajectory.final_story,
+        "bob",
+    )
+    position_by_event = {
+        percept.source_event_id: index for index, percept in enumerate(percepts)
+    }
+    selected_positions = [
+        position_by_event[beat.source_event_id] for beat in projection.beats
+    ]
+    assert selected_positions[0] == 0
+    assert selected_positions[-1] == len(percepts) - 1
+    assert all(
+        right - left <= 2
+        for left, right in zip(selected_positions, selected_positions[1:])
+    )
+
+
+def test_selection_does_not_conflate_support_versions_with_same_artifact_id():
+    from narrative_dynamics.abm.situated_projection import (
+        _Candidate,
+        _candidate_beat_id,
+        _select_candidates,
+    )
+    from narrative_dynamics.abm.situated_projection_contracts import (
+        NarrativeEntitlement,
+        NarrativeSupportRef,
+    )
+
+    def candidate(artifact_hash: str, sequence: int, magnitude: float):
+        support = NarrativeSupportRef(
+            "cognitive_decision", "alice:1", artifact_hash
+        )
+        entitlement = NarrativeEntitlement(
+            f"entitlement-{sequence}",
+            NarrativeEntitlementScope.PRIVATE,
+            "alice",
+            1,
+            (),
+            (support,),
+        )
+        return _Candidate(
+            None,
+            1,
+            sequence,
+            "office",
+            "alice",
+            ("alice",),
+            NarrativeBeatKind.BELIEF_SHIFT,
+            support,
+            entitlement,
+            (),
+            magnitude=magnitude,
+            phase=NarrativeBeatPhase.BELIEF,
+        )
+
+    selected_version = candidate("sha256:" + "a" * 64, 1, 1.0)
+    omitted_version = candidate("sha256:" + "b" * 64, 2, 0.0)
+    selected = _select_candidates(
+        (selected_version, omitted_version),
+        limited_policy(
+            "alice",
+            minimum_salience=0.5,
+            required_causal_coverage=0.0,
+        ),
+    )
+    assert selected == (selected_version,)
+    same_support_at_another_sequence = replace(selected_version, sequence=2)
+    assert _candidate_beat_id(selected_version) != _candidate_beat_id(
+        same_support_at_another_sequence
+    )
+
+
+def test_causal_payoff_weight_controls_selection_kind_and_salience():
+    story, (_, _, payoff_id) = detected_causal_story()
+    story, last_id = _append_single_alice_tell(story, "alice-last")
+    projection = project_situated_narrative(
+        story,
+        objective_policy(
+            salience_weights={
+                NarrativeBeatKind.INFORMATION: 0.0,
+                NarrativeBeatKind.CAUSAL_PAYOFF: 1.0,
+            },
+            minimum_salience=1.0,
+            required_causal_coverage=0.0,
+        ),
+    )
+    by_event = {beat.source_event_id: beat for beat in projection.beats}
+    assert set(by_event) == {
+        objective_timeline(story)[0].event_id,
+        payoff_id,
+        last_id,
+    }
+    assert by_event[payoff_id].kind is NarrativeBeatKind.CAUSAL_PAYOFF
+    assert by_event[payoff_id].salience == 1.0
+    assert by_event[payoff_id].cause_beat_ids == ()
+
+
 def test_required_causal_coverage_selects_authorized_causes_and_marks_payoff():
     story, inspect_id = causal_story()
     timeline = objective_timeline(story)
@@ -1404,6 +1772,29 @@ def test_private_perceived_endpoints_do_not_authorize_objective_causal_edges():
         payoff_id,
     )
     assert cause_id not in {item.source_event_id for item in sparse.beats}
+
+
+def test_multi_pov_perceived_endpoints_do_not_disclose_objective_causal_edges():
+    story, _ = detected_causal_story()
+    projection = project_situated_narrative(
+        story,
+        NarrativeProjectionPolicy(
+            "alice-and-bob",
+            "1.0",
+            NarrativeAuthority.MULTI_POV,
+            pov_agent_ids=("alice", "bob"),
+            required_causal_coverage=1.0,
+        ),
+    )
+    assert {beat.active_pov_agent_id for beat in projection.beats} == {
+        "alice",
+        "bob",
+    }
+    assert all(not beat.cause_beat_ids for beat in projection.beats)
+    assert all(
+        beat.kind is not NarrativeBeatKind.CAUSAL_PAYOFF
+        for beat in projection.beats
+    )
 
 
 def test_chronological_projection_never_reorders_a_nonadjacent_cause_pair():

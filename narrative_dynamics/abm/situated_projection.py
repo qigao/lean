@@ -8,7 +8,10 @@ import math
 from narrative_dynamics.contracts import stable_content_hash
 from narrative_dynamics.abm.situated import SituatedActionKind, SituatedWorldEvent
 from narrative_dynamics.abm.situated_percept_cognition import perceptual_timeline
-from narrative_dynamics.abm.situated_perception_contracts import SituatedPercept
+from narrative_dynamics.abm.situated_perception_contracts import (
+    SituatedPercept,
+    SituatedPerceptFidelity,
+)
 from narrative_dynamics.abm.situated_percept_social_cognition import (
     SituatedPerceptSocialCognitiveTrajectory,
 )
@@ -35,7 +38,6 @@ from narrative_dynamics.abm.situated_story import SituatedStory, objective_timel
 
 
 _INFORMATION_ACTIONS = {SituatedActionKind.INSPECT, SituatedActionKind.TELL}
-_UNDISCLOSED_PLACE = "undisclosed"
 _PHASE_ORDER = {
     NarrativeBeatPhase.MEMORY_RECALL: 0,
     NarrativeBeatPhase.BELIEF: 1,
@@ -109,7 +111,7 @@ class _Candidate:
     source_event_id: str | None
     round_index: int
     sequence: int
-    place_id: str
+    place_id: str | None
     active_pov_agent_id: str | None
     agent_ids: tuple[str, ...]
     base_kind: NarrativeBeatKind
@@ -119,6 +121,7 @@ class _Candidate:
     magnitude: float = 1.0
     phase: NarrativeBeatPhase = NarrativeBeatPhase.WORLD
     additional_supports: tuple[NarrativeSupportRef, ...] = ()
+    event_origin: bool = False
 
 
 def _entitlement(
@@ -176,6 +179,7 @@ def _objective_candidates(story: SituatedStory) -> tuple[_Candidate, ...]:
                     support=support,
                 ),
                 event.cause_event_ids,
+                event_origin=True,
             )
         )
     return tuple(candidates)
@@ -210,7 +214,7 @@ def _private_candidates(
                     percept.source_event_id,
                     percept.round_index,
                     sequence,
-                    percept.place_id or _UNDISCLOSED_PLACE,
+                    percept.place_id,
                     agent_id,
                     tuple(disclosed_agents),
                     NarrativeBeatKind.INFORMATION
@@ -225,6 +229,7 @@ def _private_candidates(
                         support=support,
                     ),
                     (),
+                    event_origin=True,
                 )
             )
     return tuple(
@@ -249,7 +254,7 @@ def _private_artifact_candidate(
     source_event_id: str | None,
     round_index: int,
     sequence: int,
-    place_id: str,
+    place_id: str | None,
     owner_agent_id: str,
     agent_ids: tuple[str, ...],
     kind: NarrativeBeatKind,
@@ -449,6 +454,30 @@ def _belief_facts(decision) -> tuple[tuple[str, object], ...]:
     return tuple(facts)
 
 
+def _mind_support(mind, artifact_id: str) -> NarrativeSupportRef:
+    return NarrativeSupportRef(
+        "cognitive_mind_state",
+        artifact_id,
+        mind.content_hash,
+    )
+
+
+def _exact_self_percept(
+    percepts: tuple[SituatedPercept, ...],
+    decision,
+) -> SituatedPercept | None:
+    matches = tuple(
+        percept
+        for percept in percepts
+        if percept.round_index == decision.round_index
+        and percept.agent_id == decision.agent_id
+        and percept.actor_agent_id == decision.agent_id
+        and percept.kind is decision.intent.kind
+        and percept.fidelity is SituatedPerceptFidelity.EXACT
+    )
+    return matches[0] if len(matches) == 1 else None
+
+
 def _trajectory_candidates(
     story: SituatedStory,
     policy: NarrativeProjectionPolicy,
@@ -459,37 +488,81 @@ def _trajectory_candidates(
         if policy.authority is NarrativeAuthority.OBJECTIVE
         else set(policy.pov_agent_ids)
     )
-    event_by_id = {item.event_id: item for item in objective_timeline(story)}
+    story_event_ids = {item.event_id for item in objective_timeline(story)}
+    private_percepts = (
+        {}
+        if policy.authority is NarrativeAuthority.OBJECTIVE
+        else {
+            owner: perceptual_timeline(story.perception_model, story, owner)
+            for owner in authorized
+        }
+    )
     candidates: list[_Candidate] = []
-    previous_actions: dict[str, str] = {}
+    previous_decisions = {}
 
     for round_result in trajectory.rounds:
-        decision_events = {
-            event.action_id: event
-            for event in round_result.next_story.rounds[-1].events
+        prior_state = round_result.cognitive_round.cognitive_round.prior_state
+        prior_minds = {item.agent_id: item for item in prior_state.minds}
+        next_minds = {
+            item.agent_id: item for item in round_result.next_cognitive_state.minds
         }
-        places = {
-            item.agent_id: item.own_place_id
-            for item in round_result.cognitive_round.cognitive_round.prior_state.minds
-        }
-        next_places = {
-            item.agent_id: item.own_place_id
-            for item in round_result.next_cognitive_state.minds
-        }
+        decision_events = (
+            {
+                event.action_id: event
+                for event in round_result.next_story.rounds[-1].events
+            }
+            if policy.authority is NarrativeAuthority.OBJECTIVE
+            else {}
+        )
         sequence = 0
 
         for decision in round_result.decisions:
-            event = decision_events.get(decision.intent.action_id)
-            if event is None:
-                raise ValueError(
-                    "trajectory decision must resolve to an accepted story event"
-                )
             owner = decision.agent_id
-            prior_action = previous_actions.get(owner)
-            previous_actions[owner] = decision.selected_action_id
+            prior_decision = previous_decisions.get(owner)
+            previous_decisions[owner] = decision
             if owner not in authorized:
                 continue
             sequence += 1
+            prior_mind = prior_minds[owner]
+            metadata_supports = (
+                _mind_support(
+                    prior_mind,
+                    f"{owner}:{prior_state.round_index}:prior",
+                ),
+            )
+            if policy.authority is NarrativeAuthority.OBJECTIVE:
+                event = decision_events.get(decision.intent.action_id)
+                if event is None:
+                    raise ValueError(
+                        "trajectory decision must resolve to an accepted story event"
+                    )
+                source_event_id = event.event_id
+                beat_round_index = decision.round_index
+                beat_sequence = event.sequence
+                metadata_supports += (
+                    NarrativeSupportRef(
+                        "world_event", event.event_id, event.content_hash
+                    ),
+                )
+            else:
+                percept = _exact_self_percept(
+                    private_percepts.get(owner, ()), decision
+                )
+                source_event_id = (
+                    None if percept is None else percept.source_event_id
+                )
+                beat_round_index = (
+                    decision.round_index
+                    if percept is None
+                    else percept.round_index
+                )
+                beat_sequence = sequence
+                if percept is not None:
+                    metadata_supports += (
+                        NarrativeSupportRef(
+                            "percept", percept.percept_id, percept.content_hash
+                        ),
+                    )
             if policy.include_beliefs and decision.prior_belief != decision.posterior_belief:
                 magnitude = 0.5 * math.fsum(
                     abs(
@@ -499,10 +572,10 @@ def _trajectory_candidates(
                     for key in decision.prior_belief.probabilities
                 )
                 candidates.append(_private_artifact_candidate(
-                    source_event_id=event.event_id,
-                    round_index=decision.round_index,
-                    sequence=event.sequence,
-                    place_id=places[owner],
+                    source_event_id=source_event_id,
+                    round_index=beat_round_index,
+                    sequence=beat_sequence,
+                    place_id=prior_mind.own_place_id,
                     owner_agent_id=owner,
                     agent_ids=(owner,),
                     kind=NarrativeBeatKind.BELIEF_SHIFT,
@@ -512,14 +585,25 @@ def _trajectory_candidates(
                     facts=_belief_facts(decision),
                     magnitude=magnitude,
                     phase=NarrativeBeatPhase.BELIEF,
+                    additional_supports=metadata_supports,
                 ))
-            if prior_action is not None and prior_action != decision.selected_action_id:
+            if (
+                prior_decision is not None
+                and prior_decision.selected_action_id != decision.selected_action_id
+            ):
                 sequence += 1
+                reversal_supports = metadata_supports + (
+                    NarrativeSupportRef(
+                        "cognitive_decision",
+                        f"{prior_decision.agent_id}:{prior_decision.round_index}",
+                        prior_decision.content_hash,
+                    ),
+                )
                 candidates.append(_private_artifact_candidate(
-                    source_event_id=event.event_id,
-                    round_index=decision.round_index,
-                    sequence=event.sequence,
-                    place_id=places[owner],
+                    source_event_id=source_event_id,
+                    round_index=beat_round_index,
+                    sequence=(event.sequence if policy.authority is NarrativeAuthority.OBJECTIVE else sequence),
+                    place_id=prior_mind.own_place_id,
                     owner_agent_id=owner,
                     agent_ids=(owner,),
                     kind=NarrativeBeatKind.ACTION_REVERSAL,
@@ -529,11 +613,15 @@ def _trajectory_candidates(
                     facts=(
                         ("decision.agent_id", owner),
                         ("decision.round_index", decision.round_index),
-                        ("decision.prior_selected_action_id", prior_action),
+                        (
+                            "decision.prior_selected_action_id",
+                            prior_decision.selected_action_id,
+                        ),
                         ("decision.selected_action_id", decision.selected_action_id),
                     ),
                     magnitude=1.0,
                     phase=NarrativeBeatPhase.DECISION,
+                    additional_supports=reversal_supports,
                 ))
 
         if policy.include_memories:
@@ -544,15 +632,15 @@ def _trajectory_candidates(
                 for admission in recall.admissions:
                     if admission.consolidated:
                         continue
-                    event = event_by_id.get(admission.event_id)
-                    if event is None:
+                    if admission.event_id not in story_event_ids:
                         raise ValueError(
                             "trajectory recall must resolve to an accepted story event"
                         )
                     sequence += 1
+                    round_index = round_result.next_cognitive_state.round_index
                     candidates.append(_private_artifact_candidate(
                         source_event_id=admission.event_id,
-                        round_index=round_result.next_cognitive_state.round_index,
+                        round_index=round_index,
                         sequence=sequence,
                         place_id=recall.prior_mind.own_place_id,
                         owner_agent_id=owner,
@@ -573,11 +661,17 @@ def _trajectory_candidates(
                         ),
                         magnitude=admission.evidence_weight,
                         phase=NarrativeBeatPhase.MEMORY_RECALL,
+                        additional_supports=(
+                            _mind_support(
+                                recall.prior_mind,
+                                f"{owner}:{round_index}:recall-prior",
+                            ),
+                        ),
                     ))
 
         social_update = round_result.social_update
         for item in social_update.admitted_evidence:
-            if item.event_id not in event_by_id:
+            if item.event_id not in story_event_ids:
                 raise ValueError(
                     "trajectory social evidence event must belong to the accepted story"
                 )
@@ -604,12 +698,20 @@ def _trajectory_candidates(
                         trigger.content_hash,
                     ),
                 ))
+                next_mind = next_minds[claim.observer_agent_id]
+                additional_supports += (
+                    _mind_support(
+                        next_mind,
+                        f"{claim.observer_agent_id}:"
+                        f"{social_update.next_state.round_index}:next",
+                    ),
+                )
                 sequence += 1
                 candidates.append(_private_artifact_candidate(
                     source_event_id=None if trigger is None else trigger.event_id,
                     round_index=social_update.next_state.round_index,
                     sequence=sequence,
-                    place_id=next_places[claim.observer_agent_id],
+                    place_id=next_mind.own_place_id,
                     owner_agent_id=claim.observer_agent_id,
                     agent_ids=(claim.observer_agent_id, claim.source_agent_id),
                     kind=NarrativeBeatKind.CLAIM_REVISION,
@@ -656,6 +758,13 @@ def _trajectory_candidates(
                         trigger.content_hash,
                     ),
                 ))
+                next_mind = next_minds[owner]
+                additional_supports += (
+                    _mind_support(
+                        next_mind,
+                        f"{owner}:{social_update.next_state.round_index}:next",
+                    ),
+                )
                 sequence += 1
                 trust_delta = relationship.trust - prior.trust
                 affinity_delta = relationship.affinity - prior.affinity
@@ -663,7 +772,7 @@ def _trajectory_candidates(
                     source_event_id=None if trigger is None else trigger.event_id,
                     round_index=social_update.next_state.round_index,
                     sequence=sequence,
-                    place_id=next_places[owner],
+                    place_id=next_mind.own_place_id,
                     owner_agent_id=owner,
                     agent_ids=(owner, relationship.source_agent_id),
                     kind=NarrativeBeatKind.RELATIONSHIP_CHANGE,
@@ -693,26 +802,36 @@ def _trajectory_candidates(
 
 def _candidate_key(
     candidate: _Candidate,
-) -> tuple[str | None, str | None, str, str, str]:
+) -> tuple[object, ...]:
     return (
         candidate.source_event_id,
+        candidate.round_index,
+        candidate.sequence,
+        candidate.place_id,
         candidate.active_pov_agent_id,
+        candidate.agent_ids,
         candidate.base_kind.value,
-        candidate.support.artifact_kind,
-        candidate.support.artifact_id,
+        (
+            candidate.support.artifact_kind,
+            candidate.support.artifact_id,
+            candidate.support.artifact_hash,
+        ),
+        tuple(
+            (support.artifact_kind, support.artifact_id, support.artifact_hash)
+            for support in candidate.additional_supports
+        ),
+        candidate.entitlement.content_hash,
+        candidate.direct_cause_event_ids,
+        repr(candidate.magnitude),
+        candidate.phase.value,
+        candidate.event_origin,
     )
 
 
 def _candidate_beat_id(candidate: _Candidate) -> str:
     return _stable_id(
         "beat",
-        {
-            "source_event_id": candidate.source_event_id,
-            "active_pov_agent_id": candidate.active_pov_agent_id,
-            "kind": candidate.base_kind.value,
-            "phase": candidate.phase.value,
-            "support": candidate.support.to_dict(),
-        },
+        {"candidate_identity": _candidate_key(candidate)},
     )
 
 
@@ -720,22 +839,18 @@ def _beat(
     candidate: _Candidate,
     policy: NarrativeProjectionPolicy,
     cause_beat_ids: tuple[str, ...],
+    effective_kind: NarrativeBeatKind,
 ) -> NarrativeBeat:
     beat_id = _candidate_beat_id(candidate)
-    kind = (
-        NarrativeBeatKind.CAUSAL_PAYOFF
-        if cause_beat_ids
-        else candidate.base_kind
-    )
     return NarrativeBeat(
         beat_id,
-        kind,
+        effective_kind,
         candidate.round_index,
         candidate.sequence,
         candidate.place_id,
         candidate.active_pov_agent_id,
         candidate.agent_ids,
-        policy.weight_for(candidate.base_kind) * candidate.magnitude,
+        policy.weight_for(effective_kind) * candidate.magnitude,
         (candidate.support,) + candidate.additional_supports,
         (candidate.entitlement.entitlement_id,),
         cause_beat_ids,
@@ -772,28 +887,49 @@ def _authorized_causes(
     return tuple(sorted(causes, key=_chronological_key))
 
 
+def _effective_kind(
+    candidate: _Candidate,
+) -> NarrativeBeatKind:
+    if candidate.direct_cause_event_ids:
+        return NarrativeBeatKind.CAUSAL_PAYOFF
+    return candidate.base_kind
+
+
 def _select_candidates(
     candidates: tuple[_Candidate, ...], policy: NarrativeProjectionPolicy
 ) -> tuple[_Candidate, ...]:
     if not candidates:
         return ()
+    by_lane_and_event: dict[
+        tuple[str | None, str | None], tuple[_Candidate, ...]
+    ] = {}
+    for candidate in candidates:
+        key = (_lane(candidate), candidate.source_event_id)
+        by_lane_and_event[key] = by_lane_and_event.get(key, ()) + (candidate,)
+
     by_lane: dict[str | None, list[_Candidate]] = {}
     for candidate in candidates:
         by_lane.setdefault(_lane(candidate), []).append(candidate)
-    selected: set[tuple[str | None, str | None, str, str, str]] = set()
+    selected: set[tuple[object, ...]] = set()
     for lane_candidates in by_lane.values():
         ordered = sorted(lane_candidates, key=_chronological_key)
         for candidate in ordered:
-            score = policy.weight_for(candidate.base_kind) * candidate.magnitude
+            score = (
+                policy.weight_for(_effective_kind(candidate))
+                * candidate.magnitude
+            )
             if score >= policy.minimum_salience:
                 selected.add(_candidate_key(candidate))
-        selected.add(_candidate_key(ordered[0]))
-        selected.add(_candidate_key(ordered[-1]))
+        event_candidates = [item for item in ordered if item.event_origin]
+        if not event_candidates:
+            continue
+        selected.add(_candidate_key(event_candidates[0]))
+        selected.add(_candidate_key(event_candidates[-1]))
         maximum_gap = policy.maximum_event_omission_gap
         if maximum_gap:
             selected_positions = [
                 index
-                for index, candidate in enumerate(ordered)
+                for index, candidate in enumerate(event_candidates)
                 if _candidate_key(candidate) in selected
             ]
             anchors: list[int] = [selected_positions[0]]
@@ -801,16 +937,9 @@ def _select_candidates(
                 left = anchors[-1]
                 while right - left > maximum_gap:
                     left += maximum_gap
-                    selected.add(_candidate_key(ordered[left]))
+                    selected.add(_candidate_key(event_candidates[left]))
                     anchors.append(left)
                 anchors.append(right)
-
-    by_lane_and_event: dict[
-        tuple[str | None, str | None], tuple[_Candidate, ...]
-    ] = {}
-    for candidate in candidates:
-        key = (_lane(candidate), candidate.source_event_id)
-        by_lane_and_event[key] = by_lane_and_event.get(key, ()) + (candidate,)
     changed = True
     while changed:
         changed = False
@@ -878,16 +1007,18 @@ def _make_beats(
     selected_keys = {_candidate_key(item) for item in candidates}
     beats = []
     for candidate in candidates:
-        causes = tuple(
+        authorized_causes = _authorized_causes(candidate, by_lane_and_event)
+        selected_causes = tuple(
             cause
-            for cause in _authorized_causes(candidate, by_lane_and_event)
+            for cause in authorized_causes
             if _candidate_key(cause) in selected_keys
         )
         beats.append(
             _beat(
                 candidate,
                 policy,
-                tuple(_candidate_beat_id(item) for item in causes),
+                tuple(_candidate_beat_id(item) for item in selected_causes),
+                _effective_kind(candidate),
             )
         )
     return tuple(beats)
@@ -925,7 +1056,9 @@ def _group_scenes(
         current = groups[-1]
         previous = current[-1]
         continues = (
-            beat.place_id == previous.place_id
+            beat.place_id is not None
+            and previous.place_id is not None
+            and beat.place_id == previous.place_id
             and beat.active_pov_agent_id == previous.active_pov_agent_id
             and abs(beat.round_index - previous.round_index) <= policy.scene_round_gap
             and len(current) < policy.maximum_scene_beats

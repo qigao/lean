@@ -1591,7 +1591,11 @@ record private and owner-tagged.
 
 Chronological projection preserves accepted event time. Authored order can present
 flashbacks, while each beat retains its original round and sequence instead of
-rewriting history to place causes beside effects. The result is a content-addressed
+rewriting history to place causes beside effects. A cut's scene IDs and each
+scene's beat IDs define the one canonical presentation order; the top-level scene
+and beat tuples follow that same order. An undisclosed percept location is `None`
+and starts its own scene, while an actual world place whose ID is `undisclosed`
+retains normal known-place grouping. The result is a content-addressed
 truth-and-entitlement packet for V18: it is not generated prose, and it does not
 mutate the world or any agent state.
 
