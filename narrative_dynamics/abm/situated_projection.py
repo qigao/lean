@@ -889,8 +889,10 @@ def _authorized_causes(
 
 def _effective_kind(
     candidate: _Candidate,
+    *,
+    has_selected_cause: bool,
 ) -> NarrativeBeatKind:
-    if candidate.direct_cause_event_ids:
+    if has_selected_cause:
         return NarrativeBeatKind.CAUSAL_PAYOFF
     return candidate.base_kind
 
@@ -911,15 +913,23 @@ def _select_candidates(
     for candidate in candidates:
         by_lane.setdefault(_lane(candidate), []).append(candidate)
     selected: set[tuple[object, ...]] = set()
+    payoff_selected: set[tuple[object, ...]] = set()
     for lane_candidates in by_lane.values():
         ordered = sorted(lane_candidates, key=_chronological_key)
         for candidate in ordered:
-            score = (
-                policy.weight_for(_effective_kind(candidate))
+            base_score = policy.weight_for(candidate.base_kind) * candidate.magnitude
+            authorized_causes = _authorized_causes(candidate, by_lane_and_event)
+            payoff_score = (
+                policy.weight_for(NarrativeBeatKind.CAUSAL_PAYOFF)
                 * candidate.magnitude
+                if authorized_causes
+                else -1.0
             )
-            if score >= policy.minimum_salience:
-                selected.add(_candidate_key(candidate))
+            key = _candidate_key(candidate)
+            if max(base_score, payoff_score) >= policy.minimum_salience:
+                selected.add(key)
+            if payoff_score >= policy.minimum_salience:
+                payoff_selected.add(key)
         event_candidates = [item for item in ordered if item.event_origin]
         if not event_candidates:
             continue
@@ -950,6 +960,8 @@ def _select_candidates(
         for candidate in selected_candidates:
             causes = _authorized_causes(candidate, by_lane_and_event)
             required = math.ceil(len(causes) * policy.required_causal_coverage)
+            if _candidate_key(candidate) in payoff_selected and causes:
+                required = max(required, 1)
             for cause in causes[:required]:
                 key = _candidate_key(cause)
                 if key not in selected:
@@ -1018,7 +1030,10 @@ def _make_beats(
                 candidate,
                 policy,
                 tuple(_candidate_beat_id(item) for item in selected_causes),
-                _effective_kind(candidate),
+                _effective_kind(
+                    candidate,
+                    has_selected_cause=bool(selected_causes),
+                ),
             )
         )
     return tuple(beats)

@@ -1676,7 +1676,7 @@ def test_selection_does_not_conflate_support_versions_with_same_artifact_id():
 
 
 def test_causal_payoff_weight_controls_selection_kind_and_salience():
-    story, (_, _, payoff_id) = detected_causal_story()
+    story, (_, cause_id, payoff_id) = detected_causal_story()
     story, last_id = _append_single_alice_tell(story, "alice-last")
     projection = project_situated_narrative(
         story,
@@ -1692,10 +1692,77 @@ def test_causal_payoff_weight_controls_selection_kind_and_salience():
     by_event = {beat.source_event_id: beat for beat in projection.beats}
     assert set(by_event) == {
         objective_timeline(story)[0].event_id,
+        cause_id,
         payoff_id,
         last_id,
     }
     assert by_event[payoff_id].kind is NarrativeBeatKind.CAUSAL_PAYOFF
+    assert by_event[payoff_id].salience == 1.0
+    assert by_event[payoff_id].cause_beat_ids == (by_event[cause_id].beat_id,)
+
+
+def test_cause_free_selected_event_keeps_its_underlying_kind_and_weight():
+    world = office_model()
+    story = SituatedStory(
+        world.model_id,
+        world.content_hash,
+        initialize_situated_world(world),
+    )
+    story = advance_situated_story(
+        world,
+        story,
+        (SituatedActionIntent("first", "alice", SituatedActionKind.WAIT),),
+    )
+    story = advance_situated_story(
+        world,
+        story,
+        (SituatedActionIntent(
+            "cause", "alice", SituatedActionKind.TAKE, target_id="memo"
+        ),),
+    )
+    cause_id = next(
+        event.event_id
+        for event in story.rounds[-1].events
+        if event.actor_agent_id == "alice"
+    )
+    story = advance_situated_story(
+        world,
+        story,
+        (SituatedActionIntent(
+            "payoff",
+            "alice",
+            SituatedActionKind.TELL,
+            message="status update",
+            source_event_ids=(cause_id,),
+        ),),
+    )
+    payoff_id = next(
+        event.event_id
+        for event in story.rounds[-1].events
+        if event.actor_agent_id == "alice"
+    )
+    story = advance_situated_story(
+        world,
+        story,
+        (SituatedActionIntent("last", "alice", SituatedActionKind.WAIT),),
+    )
+
+    projection = project_situated_narrative(
+        story,
+        objective_policy(
+            salience_weights={
+                NarrativeBeatKind.PHYSICAL: 0.0,
+                NarrativeBeatKind.INFORMATION: 1.0,
+                NarrativeBeatKind.CAUSAL_PAYOFF: 0.0,
+            },
+            minimum_salience=1.0,
+            required_causal_coverage=0.0,
+        ),
+    )
+
+    by_event = {beat.source_event_id: beat for beat in projection.beats}
+    assert cause_id not in by_event
+    assert by_event[payoff_id].kind is NarrativeBeatKind.INFORMATION
     assert by_event[payoff_id].salience == 1.0
     assert by_event[payoff_id].cause_beat_ids == ()
 
