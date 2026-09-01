@@ -90,7 +90,9 @@ def test_closed_door_projects_detected_tell_without_secret_payload(self):
     )
     bob = next(item for item in snapshot.transmissions if item.observer_agent_id == "bob")
     self.assertIs(bob.fidelity, SituatedPerceptFidelity.DETECTED)
-    self.assertNotIn("message", snapshot.to_dict())
+    serialized = json.dumps(snapshot.to_dict(), sort_keys=True)
+    self.assertNotIn(SECRET, serialized)
+    self.assertNotIn('"message"', serialized)
 
 def test_open_door_projects_exact_tell_and_hand_checked_metrics(self):
     snapshot = project_situated_network_snapshot(
@@ -102,7 +104,7 @@ def test_open_door_projects_exact_tell_and_hand_checked_metrics(self):
     self.assertEqual(metrics.exact_transmission_count, 1)
 ```
 
-These tests catch leaking the TELL message into the network layer, losing sanitized fidelity, and miscounting actual latest-round reach.
+These tests catch leaking the TELL message anywhere in the nested network artifact, losing sanitized fidelity, including the actor's self percept as a transmission, and miscounting actual latest-round reach.
 
 - [ ] **Step 2: Run focused tests and verify RED**
 

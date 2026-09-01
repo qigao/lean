@@ -29,7 +29,7 @@ Each immutable `SituatedNetworkSnapshot` binds the exact story, cognitive state,
 - `SituatedNetworkAgentNode`: agent ID, declared role, current physical place, tracked private belief probability, and active claim count;
 - `SituatedNetworkRelationshipEdge`: information source to observer, current trust and affinity, confirmation/contradiction counts, and an active classification derived from the model threshold;
 - `SituatedNetworkAccessEdge`: ordered source/observer pair with optional visual cost, optional auditory loss, and direct interaction reach derived from the current V15 graph and world state;
-- `SituatedNetworkTransmission`: a latest-round successful TELL event's source, observer, sanitized fidelity, and disclosed channels, without message text or hidden event details.
+- `SituatedNetworkTransmission`: a latest-round successful TELL event's source, distinct non-source observer, sanitized fidelity, and disclosed channels, without message text or hidden event details. The actor's mandatory self percept is not a network transmission.
 
 Relationship direction is stored as `source_agent_id -> observer_agent_id`, matching information flow while retaining V14's meaning that trust belongs to the observer. Access edges are derived for every distinct ordered agent pair. Transmission records are derived only from sanitized V15 percepts and therefore cannot widen observer knowledge.
 
