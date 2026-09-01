@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import copy
-from dataclasses import fields
+from dataclasses import fields, replace
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -52,25 +52,25 @@ class SimulationOutputJournalTests(unittest.TestCase):
         )
         database = cls.root / "memory.sqlite3"
         initial = initialize_compiled_scenario(database, cls.scenario)
-        first_round = simulate_situated_network_round(
+        cls.first_round = simulate_situated_network_round(
             database,
             cls.scenario.runtime_model,
             initial,
         )
         cls.first_batch = project_simulation_output(
             cls.scenario,
-            first_round,
+            cls.first_round,
             stream_id="law-firm-run",
             first_sequence=41,
         )
-        second_round = simulate_situated_network_round(
+        cls.second_round = simulate_situated_network_round(
             database,
             cls.scenario.runtime_model,
-            first_round.next_state,
+            cls.first_round.next_state,
         )
         cls.second_batch = project_simulation_output(
             cls.scenario,
-            second_round,
+            cls.second_round,
             stream_id="law-firm-run",
             first_sequence=cls.first_batch.last_sequence + 1,
         )
@@ -212,6 +212,75 @@ class SimulationOutputJournalTests(unittest.TestCase):
             view.last_sequence - view.first_sequence + 1,
             len(view.records),
         )
+
+    def test_private_only_projected_batches_replay_empty_public_views_with_continuity(
+        self,
+    ) -> None:
+        private_scenario = replace(
+            self.scenario,
+            run_policy=replace(
+                self.scenario.run_policy,
+                allowed_output_kinds=(
+                    SimulationOutputKind.PERCEPT_PRIVATE.value,
+                    SimulationOutputKind.AGENT_DECISION.value,
+                    SimulationOutputKind.MEMORY_UPDATE.value,
+                    SimulationOutputKind.SOCIAL_UPDATE.value,
+                ),
+            ),
+        )
+        first_batch = project_simulation_output(
+            private_scenario,
+            self.first_round,
+            stream_id="law-firm-private-only",
+            first_sequence=301,
+        )
+        second_batch = project_simulation_output(
+            private_scenario,
+            self.second_round,
+            stream_id="law-firm-private-only",
+            first_sequence=first_batch.last_sequence + 1,
+        )
+        self.assertTrue(all(
+            record.audience is SimulationOutputAudience.AGENT
+            for batch in (first_batch, second_batch)
+            for record in batch.records
+        ))
+
+        write_public_simulation_journal(self.path, first_batch)
+        written = write_public_simulation_journal(self.path, second_batch)
+        replayed = replay_public_simulation_journal(self.path)
+
+        # Requiring a retained public record would lose private-only source continuity.
+        self.assertEqual(replayed, written)
+        self.assertEqual(len(replayed.batches), 2)
+        for view, source in zip(
+            replayed.batches,
+            (first_batch, second_batch),
+            strict=True,
+        ):
+            self.assertEqual(view.records, ())
+            self.assertEqual(view.first_sequence, source.first_sequence)
+            self.assertEqual(view.last_sequence, source.last_sequence)
+            self.assertEqual(view.source_batch_hash, source.content_hash)
+            self.assertEqual(view.prior_state_hash, source.prior_state_hash)
+            self.assertEqual(view.next_state_hash, source.next_state_hash)
+        self.assertEqual(
+            replayed.batches[1].first_sequence,
+            replayed.batches[0].last_sequence + 1,
+        )
+        self.assertEqual(
+            replayed.batches[1].prior_state_hash,
+            replayed.batches[0].next_state_hash,
+        )
+
+        text = self.path.read_text(encoding="utf-8")
+        documents = self._documents()
+        self.assertTrue(all(document["records"] == [] for document in documents[1:]))
+        for batch in (first_batch, second_batch):
+            for record in batch.records:
+                self.assertNotIn(record.content_hash, text)
+                self.assertNotIn(record.payload.content_hash, text)
+                self.assertNotIn(record.kind.value, text)
 
     def test_write_revalidates_selected_records_before_any_serialization(self) -> None:
         private_index = next(

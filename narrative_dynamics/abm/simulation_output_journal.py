@@ -184,8 +184,6 @@ class SimulationPublicJournal:
                 raise ValueError("public journal output stream continuity")
             if batch.scenario_hash != self.scenario_hash:
                 raise ValueError("public journal output scenario continuity")
-            if not batch.records:
-                raise ValueError("public journal batch requires public output")
             if any(
                 record.audience is not SimulationOutputAudience.PUBLIC
                 for record in batch.records
