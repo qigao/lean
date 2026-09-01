@@ -7,6 +7,7 @@ from narrative_dynamics.abm.simulation_output_contracts import (
     SimulationAudienceCapability,
     SimulationBlenderDeltaPayload,
     SimulationCommandResultPayload,
+    SimulationNetworkMetricsPayload,
     SimulationOutputAudience,
     SimulationOutputBatch,
     SimulationOutputKind,
@@ -14,6 +15,9 @@ from narrative_dynamics.abm.simulation_output_contracts import (
     SimulationOutputView,
     SimulationPrivatePerceptPayload,
     SimulationStateDeltaPayload,
+)
+from narrative_dynamics.abm.situated_network_contracts import (
+    SituatedNetworkEmergenceMetrics,
 )
 from narrative_dynamics.abm.situated_perception_contracts import (
     ObservationChannel,
@@ -66,6 +70,25 @@ class SimulationOutputContractsTests(unittest.TestCase):
             records[0].sequence,
             records[-1].sequence,
             records,
+        )
+
+    def _private_record(self) -> SimulationOutputRecord:
+        return SimulationOutputRecord(
+            "stream-1", SCENARIO_HASH, 1, 1, STATE_HASH,
+            SimulationOutputKind.PERCEPT_PRIVATE,
+            SimulationOutputAudience.AGENT,
+            "alice",
+            (),
+            SimulationPrivatePerceptPayload(self.percept),
+        )
+
+    @staticmethod
+    def _metrics(round_index: int = 1) -> SituatedNetworkEmergenceMetrics:
+        return SituatedNetworkEmergenceMetrics(
+            "sha256:" + "7" * 64,
+            round_index,
+            2, 2, 1, 0.5, 0.6, 0.04, 1, 0.6, 1,
+            1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0,
         )
 
     def test_payloads_are_frozen_hashable_and_canonical(self):
@@ -150,6 +173,44 @@ class SimulationOutputContractsTests(unittest.TestCase):
                 SimulationCommandResultPayload("command-1", True, "accepted"),
             )
 
+    def test_record_rejects_percept_from_another_round(self):
+        payload = SimulationPrivatePerceptPayload(replace(self.percept, round_index=2))
+        # Mutation caught: a record can relabel a percept from another accepted round.
+        with self.assertRaisesRegex(ValueError, "round"):
+            SimulationOutputRecord(
+                "stream-1", SCENARIO_HASH, 1, 1, STATE_HASH,
+                SimulationOutputKind.PERCEPT_PRIVATE,
+                SimulationOutputAudience.AGENT,
+                "alice",
+                (),
+                payload,
+            )
+
+    def test_record_rejects_metrics_from_another_round(self):
+        # Mutation caught: a record can relabel metrics from another accepted round.
+        with self.assertRaisesRegex(ValueError, "round"):
+            SimulationOutputRecord(
+                "stream-1", SCENARIO_HASH, 1, 1, STATE_HASH,
+                SimulationOutputKind.NETWORK_METRICS,
+                SimulationOutputAudience.PUBLIC,
+                None,
+                (),
+                SimulationNetworkMetricsPayload(self._metrics(round_index=2)),
+            )
+
+    def test_record_requires_metrics_snapshot_source_hash(self):
+        metrics = self._metrics()
+        # Mutation caught: metrics can claim an unrecorded nested snapshot identity.
+        with self.assertRaisesRegex(ValueError, "snapshot"):
+            SimulationOutputRecord(
+                "stream-1", SCENARIO_HASH, 1, 1, STATE_HASH,
+                SimulationOutputKind.NETWORK_METRICS,
+                SimulationOutputAudience.PUBLIC,
+                None,
+                (),
+                SimulationNetworkMetricsPayload(metrics),
+            )
+
     def test_batch_rejects_duplicate_sequences(self):
         first = self._public_record(1)
         duplicate = replace(
@@ -224,6 +285,21 @@ class SimulationOutputContractsTests(unittest.TestCase):
         object.__setattr__(record, "kind", SimulationOutputKind.STATE_DELTA)
         # Mutation caught: a batch trusts a corrupted record's mismatched kind and payload.
         with self.assertRaisesRegex(ValueError, "kind"):
+            self._batch((record,))
+
+    def test_batch_rejects_corrupted_private_audience(self):
+        record = self._private_record()
+        object.__setattr__(record, "audience", SimulationOutputAudience.PUBLIC)
+        object.__setattr__(record, "owner_agent_id", None)
+        # Mutation caught: a corrupted private payload can cross into a public view.
+        with self.assertRaisesRegex(ValueError, "audience"):
+            self._batch((record,))
+
+    def test_batch_rejects_corrupted_private_owner(self):
+        record = self._private_record()
+        object.__setattr__(record, "owner_agent_id", "bob")
+        # Mutation caught: a corrupted private payload can be reassigned to another Agent.
+        with self.assertRaisesRegex(ValueError, "owner"):
             self._batch((record,))
 
     def test_audience_views_filter_ownership_and_retain_source_gaps(self):

@@ -481,6 +481,50 @@ def _payload_identity(payload: SimulationOutputPayload) -> str:
     return payload.content_hash
 
 
+def _payload_round_index(payload: SimulationOutputPayload) -> int | None:
+    if isinstance(payload, SimulationPrivatePerceptPayload):
+        return payload.percept.round_index
+    if isinstance(payload, SimulationAgentDecisionPayload):
+        return payload.decision.round_index
+    if isinstance(payload, SimulationNetworkMetricsPayload):
+        return payload.metrics.round_index
+    return None
+
+
+def _validate_record_payload_binding(
+    *,
+    kind: SimulationOutputKind,
+    audience: SimulationOutputAudience,
+    owner_agent_id: str | None,
+    round_index: int,
+    source_artifact_hashes: tuple[str, ...],
+    payload: SimulationOutputPayload,
+    label: str,
+) -> None:
+    if type(payload) not in _PAYLOAD_KIND:
+        raise TypeError(f"{label} payload must be a typed simulation output payload")
+    if _PAYLOAD_KIND[type(payload)] is not kind:
+        raise ValueError(f"{label} kind must match payload kind")
+    owner_getter = _PRIVATE_OWNER_ATTRIBUTE.get(type(payload))
+    if owner_getter is not None:
+        if audience is not SimulationOutputAudience.AGENT:
+            raise ValueError(f"{label} private payload audience must be agent")
+        if owner_agent_id != owner_getter(payload):
+            raise ValueError(f"{label} private payload owner must match its Agent")
+    elif audience is SimulationOutputAudience.AGENT:
+        raise ValueError(f"{label} agent audience payload must name a matching owner")
+    elif owner_agent_id is not None:
+        raise ValueError(f"{label} non-agent audience must not name an owner")
+    payload_round_index = _payload_round_index(payload)
+    if payload_round_index is not None and payload_round_index != round_index:
+        raise ValueError(f"{label} payload must bind the exact record round")
+    if (
+        isinstance(payload, SimulationNetworkMetricsPayload)
+        and payload.metrics.snapshot_hash not in source_artifact_hashes
+    ):
+        raise ValueError(f"{label} metrics must bind its snapshot source hash")
+
+
 @dataclass(frozen=True)
 class SimulationOutputRecord:
     stream_id: str
@@ -510,20 +554,15 @@ class SimulationOutputRecord:
         for value in sources:
             _hash(value, label="output record source artifact hash")
         object.__setattr__(self, "source_artifact_hashes", sources)
-        if type(self.payload) not in _PAYLOAD_KIND:
-            raise TypeError("output record payload must be a typed simulation output payload")
-        if _PAYLOAD_KIND[type(self.payload)] is not self.kind:
-            raise ValueError("output record kind must match payload kind")
-        owner_getter = _PRIVATE_OWNER_ATTRIBUTE.get(type(self.payload))
-        if owner_getter is not None:
-            if self.audience is not SimulationOutputAudience.AGENT:
-                raise ValueError("private output payload audience must be agent")
-            if self.owner_agent_id != owner_getter(self.payload):
-                raise ValueError("private output payload owner must match its Agent")
-        elif self.audience is SimulationOutputAudience.AGENT:
-            raise ValueError("agent audience payload must name a matching owner")
-        elif self.owner_agent_id is not None:
-            raise ValueError("non-agent output audience must not name an owner")
+        _validate_record_payload_binding(
+            kind=self.kind,
+            audience=self.audience,
+            owner_agent_id=self.owner_agent_id,
+            round_index=self.round_index,
+            source_artifact_hashes=self.source_artifact_hashes,
+            payload=self.payload,
+            label="output record",
+        )
         if self.schema != SIMULATION_OUTPUT_RECORD_SCHEMA:
             raise ValueError("output record schema must match the supported schema")
 
@@ -582,12 +621,16 @@ class SimulationOutputBatch:
             not isinstance(record, SimulationOutputRecord) for record in self.records
         ):
             raise ValueError("output batch requires a non-empty tuple of records")
-        if any(
-            type(record.payload) not in _PAYLOAD_KIND
-            or _PAYLOAD_KIND[type(record.payload)] is not record.kind
-            for record in self.records
-        ):
-            raise ValueError("output batch record kind must match its payload kind")
+        for record in self.records:
+            _validate_record_payload_binding(
+                kind=record.kind,
+                audience=record.audience,
+                owner_agent_id=record.owner_agent_id,
+                round_index=record.round_index,
+                source_artifact_hashes=record.source_artifact_hashes,
+                payload=record.payload,
+                label="output batch record",
+            )
         expected_sequences = tuple(range(self.first_sequence, self.last_sequence + 1))
         actual_sequences = tuple(record.sequence for record in self.records)
         if actual_sequences != expected_sequences:
