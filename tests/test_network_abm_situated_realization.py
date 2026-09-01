@@ -6,6 +6,7 @@ import json
 import pytest
 
 from narrative_dynamics.abm.situated_projection import project_situated_narrative
+from narrative_dynamics.abm.situated_projection_contracts import NarrativeFact
 from narrative_dynamics.abm.situated_realization import (
     build_narrative_realization_prompt,
     compile_narrative_realization,
@@ -123,7 +124,11 @@ def test_exact_fact_realization_is_provider_free_and_emits_one_literal_passage_p
         (beat.beat_id,) for beat in projection.beats
     )
     assert tuple(passage.text for passage in passages) == (
-        "actor_agent_id=alice\nkind=wait\noutcome=waited\nplace_id=office\nsuccess=true",
+        '"actor_agent_id"="alice"\n'
+        '"kind"="wait"\n'
+        '"outcome"="waited"\n'
+        '"place_id"="office"\n'
+        '"success"="true"',
     ) * 4
     assert all(beat.beat_id not in passage.text for beat, passage in zip(projection.beats, passages))
     assert all(beat.kind.value not in passage.text for beat, passage in zip(projection.beats, passages))
@@ -157,6 +162,60 @@ def test_exact_fact_realization_is_byte_equivalent_and_replays_only_its_projecti
     )
     with pytest.raises(ValueError, match="replay projection hash"):
         replay_narrative_realization(other_projection, left)
+
+
+def test_exact_fact_replay_rejects_a_recomputed_foreign_provider_identity():
+    projection = single_scene_projection()
+    realization_policy = policy()
+    realization_request = request(projection)
+    artifact = realize_narrative_exact_facts(
+        projection, realization_policy, realization_request
+    )
+    foreign_provider = RecordingProvider(valid_one_passage_per_scene_response)
+    foreign_prompt = build_narrative_realization_prompt(
+        projection,
+        realization_policy,
+        realization_request,
+        foreign_provider,
+    )
+    forged = replace(
+        artifact,
+        provider=foreign_provider.identity,
+        prompt_hash=foreign_prompt.content_hash,
+    )
+
+    with pytest.raises(ValueError, match="exact-fact.*provider identity"):
+        replay_narrative_realization(projection, forged)
+
+
+def test_exact_fact_text_canonically_encodes_newline_equal_and_backslash():
+    projection = project_situated_narrative(
+        one_place_story(round_count=1), objective_policy()
+    )
+    source_entitlement = projection.cut.entitlements[0]
+    encoded_entitlement = replace(
+        source_entitlement,
+        facts=(
+            NarrativeFact("path\\name", "back\\slash=value"),
+            NarrativeFact("alpha=key", "line1\nforged=x"),
+        ),
+    )
+    encoded_projection = replace(
+        projection,
+        cut=replace(projection.cut, entitlements=(encoded_entitlement,)),
+    )
+
+    artifact = realize_narrative_exact_facts(
+        encoded_projection,
+        policy(),
+        request(encoded_projection),
+    )
+
+    assert artifact.scenes[0].passages[0].text == (
+        '"alpha=key"="line1\\nforged=x"\n'
+        '"path\\\\name"="back\\\\slash=value"'
+    )
+    assert len(artifact.scenes[0].passages[0].text.splitlines()) == 2
 
 
 def test_limited_realization_never_sends_hidden_private_facts():

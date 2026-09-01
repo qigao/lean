@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from typing import Callable
 
@@ -320,7 +321,11 @@ def _exact_fact_text(
         for entitlement_id in beat_entitlement_ids
         for fact in entitlement_by_id[entitlement_id].facts
     )
-    return "\n".join(f"{key}={value}" for key, value in facts)
+    return "\n".join(
+        f"{json.dumps(key, ensure_ascii=False)}="
+        f"{json.dumps(value, ensure_ascii=False)}"
+        for key, value in facts
+    )
 
 
 def realize_narrative_exact_facts(
@@ -443,6 +448,13 @@ def replay_narrative_realization(
         NarrativeRealizationAssurance.EXACT_FACTS,
     ):
         raise ValueError("narrative realization replay requires a supported assurance")
+    if (
+        artifact.assurance is NarrativeRealizationAssurance.EXACT_FACTS
+        and artifact.provider != _EXACT_FACTS_PROVIDER
+    ):
+        raise ValueError(
+            "exact-fact realization replay requires the built-in provider identity"
+        )
 
     request = NarrativeRealizationRequest(
         artifact.request_id,
