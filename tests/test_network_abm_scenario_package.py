@@ -248,6 +248,31 @@ class ScenarioPackageLoadingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "file"):
             load_situated_scenario_package(root)
 
+    def test_loader_rejects_directory_document_path_without_local_path(self):
+        from narrative_dynamics.abm.scenario_package import load_situated_scenario_package
+
+        root = write_minimal_package(self.root / "directory-document")
+        (root / "not-a-document").mkdir()
+        replace_manifest_path(root, "physical.world", "not-a-document")
+
+        with self.assertRaisesRegex(ValueError, "file") as error:
+            load_situated_scenario_package(root)
+        self.assertNotIn(str(root), str(error.exception))
+        self.assertNotIn("not-a-document", str(error.exception))
+
+    def test_loader_rejects_directory_manifest_without_local_path(self):
+        from narrative_dynamics.abm.scenario_package import load_situated_scenario_package
+
+        root = write_minimal_package(self.root / "directory-manifest")
+        manifest_path = root / "scenario-package.json"
+        manifest_path.unlink()
+        manifest_path.mkdir()
+
+        with self.assertRaisesRegex(ValueError, "manifest") as error:
+            load_situated_scenario_package(root)
+        self.assertNotIn(str(root), str(error.exception))
+        self.assertNotIn("scenario-package.json", str(error.exception))
+
     def test_loader_rejects_wrong_document_schema(self):
         from narrative_dynamics.abm.scenario_package import load_situated_scenario_package
 

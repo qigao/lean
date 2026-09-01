@@ -43,18 +43,20 @@ def _resolve_document(root: Path, relative_path: str) -> Path:
         raise ValueError("scenario document path must stay under the package root")
     try:
         resolved = (root / relative).resolve(strict=True)
-    except FileNotFoundError as error:
-        raise ValueError("scenario document file is missing") from error
+    except OSError as error:
+        raise ValueError("scenario document file is unavailable") from error
     if not resolved.is_relative_to(root.resolve(strict=True)):
         raise ValueError("scenario document path must stay under the package root")
+    if not resolved.is_file():
+        raise ValueError("scenario document file must be a regular file")
     return resolved
 
 
 def _read_json(path: Path, *, size_limit: int, label: str) -> Mapping[str, object]:
     try:
         data = path.read_bytes()
-    except FileNotFoundError as error:
-        raise ValueError(f"scenario {label} file is missing") from error
+    except OSError as error:
+        raise ValueError(f"scenario {label} file is unavailable") from error
     if len(data) > size_limit:
         raise ValueError(f"scenario {label} file exceeds the permitted size")
     try:
@@ -82,10 +84,12 @@ def _require_exact_keys(value: Mapping[str, object], keys: set[str], *, label: s
 def _load_manifest(root: Path) -> ScenarioPackageManifest:
     try:
         manifest_path = (root / _MANIFEST_NAME).resolve(strict=True)
-    except FileNotFoundError as error:
-        raise ValueError("scenario package manifest file is missing") from error
+    except OSError as error:
+        raise ValueError("scenario package manifest file is unavailable") from error
     if not manifest_path.is_relative_to(root.resolve(strict=True)):
         raise ValueError("scenario package manifest path must stay under the package root")
+    if not manifest_path.is_file():
+        raise ValueError("scenario package manifest must be a regular file")
     value = _read_json(manifest_path, size_limit=_JSON_DOCUMENT_LIMIT, label="package manifest")
     _require_exact_keys(value, {"schema", "scenario_id", "version", "documents"}, label="package manifest")
     if value["schema"] != SCENARIO_PACKAGE_SCHEMA:
@@ -132,8 +136,8 @@ def load_situated_scenario_package(root: Path) -> ScenarioPackageSource:
     package_root = Path(root)
     try:
         package_root = package_root.resolve(strict=True)
-    except FileNotFoundError as error:
-        raise ValueError("scenario package root is missing") from error
+    except OSError as error:
+        raise ValueError("scenario package root is unavailable") from error
     if not package_root.is_dir():
         raise ValueError("scenario package root must be a directory")
     manifest = _load_manifest(package_root)
