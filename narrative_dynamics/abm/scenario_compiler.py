@@ -266,33 +266,53 @@ def _semantic_path_matches(
     )
 
 
+def _pointer_token(value: str) -> str:
+    return value.replace("~", "~0").replace("/", "~1")
+
+
 def _semantic_source_value(
     value: object,
     *,
-    role: ScenarioDocumentRole,
+    document: ScenarioSourceDocument,
     path: tuple[str, ...] = (),
 ) -> object:
     """Normalize unordered authored arrays while retaining true sequence semantics."""
 
+    role = document.role
     if isinstance(value, Mapping):
         return {
-            key: _semantic_source_value(item, role=role, path=path + (key,))
+            key: _semantic_source_value(
+                item,
+                document=document,
+                path=path + (key,),
+            )
             for key, item in value.items()
         }
     if isinstance(value, tuple):
         normalized = tuple(
-            _semantic_source_value(item, role=role, path=path + ("*",))
-            for item in value
+            _semantic_source_value(
+                item,
+                document=document,
+                path=path + (str(index),),
+            )
+            for index, item in enumerate(value)
         )
         ordered_paths = _SEMANTICALLY_ORDERED_ARRAY_PATHS.get(role, frozenset())
-        if path in ordered_paths:
+        if any(_semantic_path_matches(path, item) for item in ordered_paths):
             return normalized
         return tuple(sorted(normalized, key=stable_content_hash))
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         integer_paths = _SEMANTIC_INTEGER_PATHS.get(role, frozenset())
         if any(_semantic_path_matches(path, item) for item in integer_paths):
             return value
-        result = float(value)
+        try:
+            result = float(value)
+        except (OverflowError, ValueError):
+            pointer = "".join(f"/{_pointer_token(item)}" for item in path)
+            raise _error(document, pointer, "invalid_value") from None
+        if not math.isfinite(result):
+            pointer = "".join(f"/{_pointer_token(item)}" for item in path)
+            raise _error(document, pointer, "invalid_value")
         if result == 0.0:
             result = 0.0
         return result
@@ -305,7 +325,7 @@ def _semantic_document_hash(document: ScenarioSourceDocument) -> str:
             "role": document.role.value,
             "logical_id": document.logical_id,
             "schema": document.schema,
-            "value": _semantic_source_value(document.value, role=document.role),
+            "value": _semantic_source_value(document.value, document=document),
         }
     )
 
@@ -384,7 +404,7 @@ def _number(document: ScenarioSourceDocument, value: object, pointer: str) -> fl
         raise _error(document, pointer, "invalid_value") from None
     if not math.isfinite(result):
         raise _error(document, pointer, "invalid_value")
-    return result
+    return 0.0 if result == 0.0 else result
 
 
 def _integer(document: ScenarioSourceDocument, value: object, pointer: str) -> int:
@@ -435,10 +455,6 @@ def _construct(document: ScenarioSourceDocument, pointer: str, factory):
         raise
     except (ArithmeticError, RecursionError, TypeError, ValueError):
         raise _error(document, pointer, "contract_violation") from None
-
-
-def _pointer_token(value: str) -> str:
-    return value.replace("~", "~0").replace("/", "~1")
 
 
 _AGENT_KEYS = {
@@ -2268,10 +2284,20 @@ def _compile_predicate(
             raise _error(document, f"{pointer}/subject_id", "unknown_reference")
         if object_id not in agent_ids:
             raise _error(document, f"{pointer}/object_id", "unknown_reference")
+    predicate_value = item["value"]
+    if kind in {
+        ScenarioPredicateKind.BELIEF_AT_LEAST,
+        ScenarioPredicateKind.RELATIONSHIP_AT_LEAST,
+    }:
+        predicate_value = _number(
+            document,
+            predicate_value,
+            f"{pointer}/value",
+        )
     return _construct(
         document,
         pointer,
-        lambda: ScenarioPredicate(kind, subject_id, object_id, item["value"]),
+        lambda: ScenarioPredicate(kind, subject_id, object_id, predicate_value),
     )
 
 

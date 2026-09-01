@@ -60,6 +60,20 @@ def _raw_sha256(data: bytes) -> str:
     return f"sha256:{hashlib.sha256(data).hexdigest()}"
 
 
+def _read_bytes(path: Path, *, size_limit: int, label: str) -> bytes:
+    data: bytes | None = None
+    try:
+        with path.open("rb") as stream:
+            data = stream.read(size_limit + 1)
+    except OSError:
+        pass
+    if data is None:
+        raise ValueError(f"scenario {label} file is unavailable")
+    if len(data) > size_limit:
+        raise ValueError(f"scenario {label} file exceeds the permitted size")
+    return data
+
+
 def _resolve_document(root: Path, document_path: str) -> Path:
     relative = Path(document_path)
     if relative.is_absolute() or ".." in relative.parts:
@@ -84,15 +98,7 @@ def _read_json(
     size_limit: int,
     label: str,
 ) -> tuple[Mapping[str, object], str]:
-    data: bytes | None = None
-    try:
-        data = path.read_bytes()
-    except OSError:
-        pass
-    if data is None:
-        raise ValueError(f"scenario {label} file is unavailable")
-    if len(data) > size_limit:
-        raise ValueError(f"scenario {label} file exceeds the permitted size")
+    data = _read_bytes(path, size_limit=size_limit, label=label)
     text: str | None = None
     try:
         text = data.decode("utf-8")

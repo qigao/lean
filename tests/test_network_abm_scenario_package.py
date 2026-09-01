@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 
 PACKAGE_SCHEMA = "narrative-dynamics.scenario-package/v1"
@@ -285,6 +286,44 @@ class ScenarioPackageLoadingTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "size"):
             load_situated_scenario_package(root)
+
+    def test_loader_bounds_oversized_document_read_to_limit_plus_one(self):
+        from narrative_dynamics.abm.scenario_package import load_situated_scenario_package
+
+        root = write_minimal_package(self.root / "bounded-oversized")
+        target = root / locator_for(root, "physical.world")["path"]
+        target.write_bytes(b" " * (1024 * 1024 + 4096))
+        requested_sizes: list[int] = []
+        original_open = Path.open
+
+        class GuardedReader:
+            def __init__(self, stream) -> None:
+                self.stream = stream
+
+            def __enter__(self):
+                self.stream.__enter__()
+                return self
+
+            def __exit__(self, *args):
+                return self.stream.__exit__(*args)
+
+            def read(self, size: int = -1) -> bytes:
+                if size < 0 or size > 1024 * 1024 + 1:
+                    raise AssertionError("scenario loader attempted an unbounded read")
+                requested_sizes.append(size)
+                return self.stream.read(size)
+
+        def guarded_open(path: Path, *args, **kwargs):
+            stream = original_open(path, *args, **kwargs)
+            if path == target:
+                return GuardedReader(stream)
+            return stream
+
+        with mock.patch.object(Path, "open", guarded_open):
+            with self.assertRaisesRegex(ValueError, "size"):
+                load_situated_scenario_package(root)
+
+        self.assertEqual(requested_sizes, [1024 * 1024 + 1])
 
     def test_loader_rejects_oversized_tiled_map(self):
         from narrative_dynamics.abm.scenario_package import load_situated_scenario_package

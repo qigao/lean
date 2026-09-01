@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import replace
 from pathlib import Path
 import sqlite3
@@ -1262,6 +1263,107 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
             compiled["integer"].raw_source_document_hashes,
             sources["integer"].raw_document_hashes,
         )
+
+    def test_compiled_identity_normalizes_signed_zero_in_social_and_runtime_fields(self) -> None:
+        positive_root = write_law_firm_package(self.root / "signed-zero-positive")
+        negative_root = write_law_firm_package(self.root / "signed-zero-negative")
+        for root, zero in ((positive_root, 0.0), (negative_root, -0.0)):
+            relationships_path = root / "social/relationships.json"
+            mutate_json(relationships_path, "/relationships/0/strength", zero)
+            mutate_json(relationships_path, "/runtime_seeds/0/affinity", zero)
+            refresh_manifest_hash(root, "social.relationships", "relationships")
+            mutate_json(root / "run.json", "/runtime_model/adoption_threshold", zero)
+            refresh_manifest_hash(root, "run", "run")
+
+        positive = compile_situated_scenario_package(
+            load_situated_scenario_package(positive_root)
+        )
+        negative = compile_situated_scenario_package(
+            load_situated_scenario_package(negative_root)
+        )
+
+        relationship = next(
+            item
+            for item in negative.social_world.relationships
+            if item.relationship_type == "supervises"
+            and item.source_agent_id == "alice"
+            and item.target_agent_id == "bob"
+        )
+        seed = next(
+            item
+            for item in negative.social_world.relationship_seeds
+            if item.observer_agent_id == "alice" and item.source_agent_id == "bob"
+        )
+        self.assertEqual(math.copysign(1.0, relationship.strength), 1.0)
+        self.assertEqual(math.copysign(1.0, seed.affinity), 1.0)
+        self.assertEqual(
+            math.copysign(1.0, negative.runtime_model.adoption_threshold),
+            1.0,
+        )
+        self.assertEqual(positive.package_hash, negative.package_hash)
+        self.assertEqual(positive.content_hash, negative.content_hash)
+        self.assertEqual(positive, negative)
+        self.assertNotEqual(positive.raw_manifest_hash, negative.raw_manifest_hash)
+
+    def test_compiled_identity_normalizes_signed_zero_in_numeric_predicates(self) -> None:
+        positive_root = write_law_firm_package(self.root / "predicate-zero-positive")
+        negative_root = write_law_firm_package(self.root / "predicate-zero-negative")
+        for root, zero in ((positive_root, 0.0), (negative_root, -0.0)):
+            outline_path = root / "story/outline.json"
+            mutate_json(outline_path, "/scenes/1/exit_predicates/0/value", zero)
+            mutate_json(
+                outline_path,
+                "/terminal_predicates/0",
+                {
+                    "kind": "relationship_at_least",
+                    "subject_id": "alice",
+                    "object_id": "bob",
+                    "value": zero,
+                },
+            )
+            refresh_manifest_hash(root, "story.outline", "outline")
+
+        positive = compile_situated_scenario_package(
+            load_situated_scenario_package(positive_root)
+        )
+        negative = compile_situated_scenario_package(
+            load_situated_scenario_package(negative_root)
+        )
+
+        belief_predicate = next(
+            item
+            for scene in negative.story_plan.scenes
+            for item in scene.exit_predicates
+            if item.kind.value == "belief_at_least"
+        )
+        numeric_predicates = (belief_predicate, negative.story_plan.terminal_predicates[0])
+        self.assertTrue(
+            all(math.copysign(1.0, item.value) == 1.0 for item in numeric_predicates)
+        )
+        self.assertEqual(positive.package_hash, negative.package_hash)
+        self.assertEqual(positive.content_hash, negative.content_hash)
+        self.assertEqual(positive, negative)
+        self.assertNotEqual(positive.raw_manifest_hash, negative.raw_manifest_hash)
+
+    def test_compiler_sanitizes_unrepresentable_tiled_metadata_number(self) -> None:
+        root = write_law_firm_package(self.root / "tiled-metadata-overflow")
+        map_path = root / "physical/map.tmj"
+        unsafe_value = int("9" * 1000)
+        mutate_json(map_path, "/nextlayerid", unsafe_value)
+        refresh_manifest_hash(root, "physical.map", "map")
+
+        source = load_situated_scenario_package(root)
+        with self.assertRaises(ScenarioCompilationError) as raised:
+            compile_situated_scenario_package(source)
+
+        self.assertEqual(raised.exception.document_role, "physical.map")
+        self.assertEqual(raised.exception.json_pointer, "/nextlayerid")
+        self.assertEqual(raised.exception.code, "invalid_value")
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertNotIsInstance(raised.exception, OverflowError)
+        self.assertNotIn(str(root), str(raised.exception))
+        self.assertNotIn(str(map_path), str(raised.exception))
+        self.assertNotIn(str(unsafe_value), str(raised.exception))
 
     def test_compiled_identity_normalizes_large_integer_float_runtime_equivalents(self):
         integer_root = write_law_firm_package(self.root / "large-integer")
