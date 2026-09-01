@@ -1,0 +1,406 @@
+from __future__ import annotations
+
+from copy import copy
+from dataclasses import fields
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import unittest
+from unittest.mock import patch
+
+from narrative_dynamics.contracts import stable_content_hash
+from narrative_dynamics.abm.scenario_compiler import (
+    compile_situated_scenario_package,
+    initialize_compiled_scenario,
+)
+from narrative_dynamics.abm.scenario_package import load_situated_scenario_package
+from narrative_dynamics.abm.simulation_output import project_simulation_output
+from narrative_dynamics.abm.simulation_output_contracts import (
+    SIMULATION_OUTPUT_VIEW_SCHEMA,
+    SimulationNetworkMetricsPayload,
+    SimulationOutputAudience,
+    SimulationOutputKind,
+)
+from narrative_dynamics.abm.simulation_output_journal import (
+    SIMULATION_PUBLIC_JOURNAL_BATCH_SCHEMA,
+    SIMULATION_PUBLIC_JOURNAL_SCHEMA,
+    replay_public_simulation_journal,
+    write_public_simulation_journal,
+)
+from narrative_dynamics.abm.situated_network import simulate_situated_network_round
+from tests.scenario_package_fixtures import (
+    mutate_json,
+    refresh_manifest_hash,
+    write_law_firm_package,
+)
+
+
+class SimulationOutputJournalTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.temporary = TemporaryDirectory()
+        cls.root = Path(cls.temporary.name)
+        package_root = write_law_firm_package(cls.root / "scenario")
+        mutate_json(
+            package_root / "run.json",
+            "/allowed_output_kinds",
+            [kind.value for kind in SimulationOutputKind],
+        )
+        refresh_manifest_hash(package_root, "run", "run")
+        cls.scenario = compile_situated_scenario_package(
+            load_situated_scenario_package(package_root)
+        )
+        database = cls.root / "memory.sqlite3"
+        initial = initialize_compiled_scenario(database, cls.scenario)
+        first_round = simulate_situated_network_round(
+            database,
+            cls.scenario.runtime_model,
+            initial,
+        )
+        cls.first_batch = project_simulation_output(
+            cls.scenario,
+            first_round,
+            stream_id="law-firm-run",
+            first_sequence=41,
+        )
+        second_round = simulate_situated_network_round(
+            database,
+            cls.scenario.runtime_model,
+            first_round.next_state,
+        )
+        cls.second_batch = project_simulation_output(
+            cls.scenario,
+            second_round,
+            stream_id="law-firm-run",
+            first_sequence=cls.first_batch.last_sequence + 1,
+        )
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.temporary.cleanup()
+
+    def setUp(self) -> None:
+        self.case = TemporaryDirectory(dir=self.root)
+        self.path = Path(self.case.name) / "law-firm.jsonl"
+
+    def tearDown(self) -> None:
+        self.case.cleanup()
+
+    def _write_two_batches(self) -> None:
+        write_public_simulation_journal(self.path, self.first_batch)
+        write_public_simulation_journal(self.path, self.second_batch)
+
+    def _documents(self) -> list[dict[str, object]]:
+        return [
+            json.loads(line)
+            for line in self.path.read_text(encoding="utf-8").splitlines()
+        ]
+
+    def _store_documents(self, documents: list[dict[str, object]]) -> None:
+        text = "".join(
+            json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n"
+            for document in documents
+        )
+        self.path.write_text(text, encoding="utf-8", newline="")
+
+    @staticmethod
+    def _refresh_record_hashes(batch: dict[str, object]) -> None:
+        records = batch["records"]
+        assert isinstance(records, list)
+        for record in records:
+            assert isinstance(record, dict)
+            record_body = {
+                key: value for key, value in record.items() if key != "record_hash"
+            }
+            record["record_hash"] = stable_content_hash(record_body)
+
+    @classmethod
+    def _refresh_integrity(cls, documents: list[dict[str, object]]) -> None:
+        for batch in documents[1:]:
+            cls._refresh_record_hashes(batch)
+            records = batch["records"]
+            assert isinstance(records, list)
+            view_body = {
+                "schema": SIMULATION_OUTPUT_VIEW_SCHEMA,
+                "stream_id": batch["stream_id"],
+                "scenario_hash": batch["scenario_hash"],
+                "prior_state_hash": batch["prior_state_hash"],
+                "next_state_hash": batch["next_state_hash"],
+                "round_result_hash": batch["round_result_hash"],
+                "first_sequence": batch["first_sequence"],
+                "last_sequence": batch["last_sequence"],
+                "record_hashes": [record["record_hash"] for record in records],
+                "source_batch_hash": batch["source_batch_hash"],
+                "checkpoint": batch["checkpoint"],
+            }
+            batch["view_hash"] = stable_content_hash(view_body)
+        header = documents[0]
+        header_body = {
+            "schema": header["schema"],
+            "stream_id": header["stream_id"],
+            "scenario_hash": header["scenario_hash"],
+            "parent_journal_hash": header["parent_journal_hash"],
+            "view_hashes": [batch["view_hash"] for batch in documents[1:]],
+        }
+        header["content_hash"] = stable_content_hash(header_body)
+
+    def _assert_sanitized_failure(self, action) -> None:
+        private_value = "private-payload-do-not-expose"
+        with self.assertRaises((TypeError, ValueError)) as raised:
+            action()
+        message = str(raised.exception)
+        self.assertNotIn(private_value, message)
+        self.assertNotIn(str(self.path.parent), message)
+
+    def test_two_real_batches_append_atomically_and_replay_exact_public_views(self) -> None:
+        first = write_public_simulation_journal(self.path, self.first_batch)
+        second = write_public_simulation_journal(self.path, self.second_batch)
+        replayed = replay_public_simulation_journal(self.path)
+
+        # Replacing instead of appending, or decoding to dictionaries, breaks equality.
+        self.assertEqual(replayed, second)
+        self.assertNotEqual(first.content_hash, second.content_hash)
+        self.assertEqual(len(replayed.batches), 2)
+        self.assertTrue(all(
+            record.audience is SimulationOutputAudience.PUBLIC
+            for view in replayed.batches
+            for record in view.records
+        ))
+        original_public = tuple(
+            record
+            for batch in (self.first_batch, self.second_batch)
+            for record in batch.records
+            if record.audience is SimulationOutputAudience.PUBLIC
+        )
+        replayed_records = tuple(
+            record for view in replayed.batches for record in view.records
+        )
+        self.assertEqual(replayed_records, original_public)
+        self.assertEqual(
+            tuple(type(record.payload) for record in replayed_records),
+            tuple(type(record.payload) for record in original_public),
+        )
+        text = self.path.read_text(encoding="utf-8")
+        self.assertNotIn("percept.private", text)
+        self.assertNotIn("agent.decision", text)
+        self.assertNotIn('"audience":"agent"', text)
+        self.assertTrue(text.endswith("\n"))
+        documents = self._documents()
+        self.assertEqual(documents[0]["schema"], SIMULATION_PUBLIC_JOURNAL_SCHEMA)
+        self.assertTrue(all(
+            document["schema"] == SIMULATION_PUBLIC_JOURNAL_BATCH_SCHEMA
+            for document in documents[1:]
+        ))
+
+    def test_filtered_views_keep_global_source_sequence_gaps_and_batch_identity(self) -> None:
+        journal = write_public_simulation_journal(self.path, self.first_batch)
+        view = journal.batches[0]
+
+        # Renumbering public records would erase their global source identities.
+        self.assertEqual(view.first_sequence, self.first_batch.first_sequence)
+        self.assertEqual(view.last_sequence, self.first_batch.last_sequence)
+        self.assertEqual(view.source_batch_hash, self.first_batch.content_hash)
+        self.assertEqual(
+            tuple(record.sequence for record in view.records),
+            tuple(
+                record.sequence
+                for record in self.first_batch.records
+                if record.audience is SimulationOutputAudience.PUBLIC
+            ),
+        )
+        self.assertGreater(
+            view.last_sequence - view.first_sequence + 1,
+            len(view.records),
+        )
+
+    def test_write_revalidates_selected_records_before_any_serialization(self) -> None:
+        private_index = next(
+            index
+            for index, record in enumerate(self.first_batch.records)
+            if record.audience is SimulationOutputAudience.AGENT
+        )
+        corrupted_record = copy(self.first_batch.records[private_index])
+        object.__setattr__(
+            corrupted_record,
+            "audience",
+            SimulationOutputAudience.PUBLIC,
+        )
+        object.__setattr__(corrupted_record, "owner_agent_id", None)
+        records = list(self.first_batch.records)
+        records[private_index] = corrupted_record
+        corrupted_batch = copy(self.first_batch)
+        object.__setattr__(corrupted_batch, "records", tuple(records))
+
+        # Trusting only the mutated audience would serialize the private payload.
+        with self.assertRaises((TypeError, ValueError)):
+            write_public_simulation_journal(self.path, corrupted_batch)
+        self.assertFalse(self.path.exists())
+
+    def test_replay_rejects_tampered_payload_hash(self) -> None:
+        self._write_two_batches()
+        documents = self._documents()
+        documents[1]["records"][0]["payload_hash"] = "sha256:" + "0" * 64
+        self._store_documents(documents)
+        self._assert_sanitized_failure(
+            lambda: replay_public_simulation_journal(self.path)
+        )
+
+    def test_replay_rejects_tampered_record_hash(self) -> None:
+        self._write_two_batches()
+        documents = self._documents()
+        documents[1]["records"][0]["record_hash"] = "sha256:" + "0" * 64
+        self._store_documents(documents)
+        self._assert_sanitized_failure(
+            lambda: replay_public_simulation_journal(self.path)
+        )
+
+    def test_replay_rejects_tampered_view_hash(self) -> None:
+        self._write_two_batches()
+        documents = self._documents()
+        documents[1]["view_hash"] = "sha256:" + "0" * 64
+        self._store_documents(documents)
+        self._assert_sanitized_failure(
+            lambda: replay_public_simulation_journal(self.path)
+        )
+
+    def test_replay_rejects_tampered_source_batch_hash(self) -> None:
+        self._write_two_batches()
+        documents = self._documents()
+        documents[1]["source_batch_hash"] = "sha256:" + "0" * 64
+        self._store_documents(documents)
+        self._assert_sanitized_failure(
+            lambda: replay_public_simulation_journal(self.path)
+        )
+
+    def test_replay_rejects_tampered_header_hash(self) -> None:
+        self._write_two_batches()
+        documents = self._documents()
+        documents[0]["content_hash"] = "sha256:" + "0" * 64
+        self._store_documents(documents)
+        self._assert_sanitized_failure(
+            lambda: replay_public_simulation_journal(self.path)
+        )
+
+    def test_replay_rejects_source_sequence_regression_even_with_fresh_hashes(self) -> None:
+        self._write_two_batches()
+        documents = self._documents()
+        documents[2]["first_sequence"] -= 1
+        self._refresh_integrity(documents)
+        self._store_documents(documents)
+        self._assert_sanitized_failure(
+            lambda: replay_public_simulation_journal(self.path)
+        )
+
+    def test_replay_rejects_state_chain_break_even_with_fresh_hashes(self) -> None:
+        self._write_two_batches()
+        documents = self._documents()
+        documents[2]["prior_state_hash"] = "sha256:" + "1" * 64
+        self._refresh_integrity(documents)
+        self._store_documents(documents)
+        self._assert_sanitized_failure(
+            lambda: replay_public_simulation_journal(self.path)
+        )
+
+    def test_replay_rejects_scenario_break_even_with_fresh_hashes(self) -> None:
+        self._write_two_batches()
+        documents = self._documents()
+        documents[2]["scenario_hash"] = "sha256:" + "2" * 64
+        for record in documents[2]["records"]:
+            record["scenario_hash"] = documents[2]["scenario_hash"]
+        self._refresh_integrity(documents)
+        self._store_documents(documents)
+        self._assert_sanitized_failure(
+            lambda: replay_public_simulation_journal(self.path)
+        )
+
+    def test_replay_rejects_stream_break_even_with_fresh_hashes(self) -> None:
+        self._write_two_batches()
+        documents = self._documents()
+        documents[2]["stream_id"] = "foreign-stream"
+        for record in documents[2]["records"]:
+            record["stream_id"] = documents[2]["stream_id"]
+        self._refresh_integrity(documents)
+        self._store_documents(documents)
+        self._assert_sanitized_failure(
+            lambda: replay_public_simulation_journal(self.path)
+        )
+
+    def test_replay_rejects_invalid_utf8_without_exposing_path(self) -> None:
+        self.path.write_bytes(b'{"schema":"private-payload-do-not-expose"}\xff\n')
+        self._assert_sanitized_failure(
+            lambda: replay_public_simulation_journal(self.path)
+        )
+
+    def test_replay_sanitizes_missing_file_errors_that_contain_local_paths(self) -> None:
+        # Letting the filesystem exception escape would disclose the absolute path.
+        self._assert_sanitized_failure(
+            lambda: replay_public_simulation_journal(self.path)
+        )
+
+    def test_replay_rejects_duplicate_json_keys_without_exposing_value(self) -> None:
+        self.path.write_text(
+            '{"schema":"private-payload-do-not-expose",'
+            '"schema":"private-payload-do-not-expose"}\n',
+            encoding="utf-8",
+        )
+        self._assert_sanitized_failure(
+            lambda: replay_public_simulation_journal(self.path)
+        )
+
+    def test_replay_rejects_nonfinite_json_constants_without_exposing_value(self) -> None:
+        self.path.write_text(
+            '{"schema":"private-payload-do-not-expose","value":NaN}\n',
+            encoding="utf-8",
+        )
+        self._assert_sanitized_failure(
+            lambda: replay_public_simulation_journal(self.path)
+        )
+
+    def test_replay_rejects_truncated_final_line(self) -> None:
+        self._write_two_batches()
+        self.path.write_bytes(self.path.read_bytes()[:-1])
+        self._assert_sanitized_failure(
+            lambda: replay_public_simulation_journal(self.path)
+        )
+
+    def test_failed_atomic_replace_preserves_previous_bytes_and_cleans_stage(self) -> None:
+        write_public_simulation_journal(self.path, self.first_batch)
+        previous = self.path.read_bytes()
+        entries = set(self.path.parent.iterdir())
+
+        # os.replace is the external atomic-publication boundary; file assertions stay real.
+        with patch(
+            "narrative_dynamics.abm.simulation_output_journal.os.replace",
+            side_effect=OSError("publish failed"),
+        ):
+            with self.assertRaises(OSError):
+                write_public_simulation_journal(self.path, self.second_batch)
+
+        self.assertEqual(self.path.read_bytes(), previous)
+        self.assertEqual(set(self.path.parent.iterdir()), entries)
+
+    def test_replay_reconstructs_network_metrics_as_the_exact_typed_contract(self) -> None:
+        journal = write_public_simulation_journal(self.path, self.first_batch)
+        replayed = replay_public_simulation_journal(self.path)
+        expected = next(
+            record.payload
+            for record in journal.batches[0].records
+            if record.kind is SimulationOutputKind.NETWORK_METRICS
+        )
+        actual = next(
+            record.payload
+            for record in replayed.batches[0].records
+            if record.kind is SimulationOutputKind.NETWORK_METRICS
+        )
+
+        # A generic mapping or partial metrics decoder loses the typed payload contract.
+        self.assertIsInstance(actual, SimulationNetworkMetricsPayload)
+        self.assertEqual(actual, expected)
+        self.assertEqual(
+            set(actual.metrics.to_dict()),
+            {field.name for field in fields(actual.metrics)},
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
