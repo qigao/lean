@@ -735,6 +735,87 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
                 any("percept_memory" in name for _, name, _, _ in after[0])
             )
 
+    def test_compiled_initial_state_rejects_spoofed_canonical_ddl_without_mutation(
+        self,
+    ) -> None:
+        compiled = self.compile_public_fixture("spoofed-canonical-schema")
+
+        def snapshot(database_path: Path):
+            connection = sqlite3.connect(database_path)
+            try:
+                schema = tuple(
+                    connection.execute(
+                        "SELECT type, name, tbl_name, sql FROM sqlite_master "
+                        "ORDER BY type, name"
+                    ).fetchall()
+                )
+                metadata = tuple(
+                    connection.execute(
+                        "SELECT * FROM percept_memory_metadata ORDER BY key"
+                    ).fetchall()
+                )
+                record_count = connection.execute(
+                    "SELECT COUNT(*) FROM percept_memory_records"
+                ).fetchone()[0]
+            finally:
+                connection.close()
+            return schema, metadata, record_count
+
+        spoof_scripts = {
+            "index": """
+                DROP INDEX percept_memory_records_agent_round;
+                CREATE INDEX percept_memory_records_agent_round
+                ON percept_memory_records(agent_id);
+            """,
+            "trigger": """
+                DROP TRIGGER percept_memory_records_ai;
+                CREATE TRIGGER percept_memory_records_ai
+                AFTER INSERT ON percept_memory_records BEGIN
+                    SELECT 1;
+                END;
+            """,
+            "table": """
+                DROP TABLE percept_memory_metadata;
+                CREATE TABLE percept_memory_metadata (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    foreign_marker TEXT
+                );
+                INSERT INTO percept_memory_metadata(key, value)
+                VALUES ('schema_version', '1');
+            """,
+        }
+
+        with TemporaryDirectory() as temporary:
+            canonical_path = Path(temporary) / "canonical.sqlite3"
+            initialize_situated_percept_memory(canonical_path)
+            initialized = scenario_compiler.initialize_compiled_scenario(
+                canonical_path,
+                compiled,
+            )
+            self.assertEqual(initialized.story, compiled.initial_story)
+
+            for object_type, spoof_script in spoof_scripts.items():
+                with self.subTest(object_type=object_type):
+                    database_path = Path(temporary) / f"spoofed-{object_type}.sqlite3"
+                    initialize_situated_percept_memory(database_path)
+                    connection = sqlite3.connect(database_path)
+                    try:
+                        connection.executescript(spoof_script)
+                        connection.commit()
+                    finally:
+                        connection.close()
+                    before = snapshot(database_path)
+
+                    with self.assertRaisesRegex(ValueError, "noncanonical") as raised:
+                        scenario_compiler.initialize_compiled_scenario(
+                            database_path,
+                            compiled,
+                        )
+
+                    self.assertEqual(snapshot(database_path), before)
+                    self.assertNotIn(str(database_path), str(raised.exception))
+
     def test_compiled_initial_state_requires_one_authored_relationship_per_pair(self) -> None:
         compiled = self.compile_public_fixture("duplicate-authored-pair")
         social_world = replace(

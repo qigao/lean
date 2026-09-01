@@ -86,6 +86,7 @@ from narrative_dynamics.abm.situated_network_contracts import (
     SituatedNetworkRuntimeState,
 )
 from narrative_dynamics.abm.situated_percept_memory import (
+    _SCHEMA as _PERCEPT_MEMORY_SCHEMA,
     hash_situated_percept_memory_store,
     initialize_situated_percept_memory,
 )
@@ -128,21 +129,6 @@ _CANONICAL_EMPTY_PERCEPT_MEMORY_STORE_HASH = stable_content_hash(
         "store": "situated-percept-memory",
         "metadata": [{"key": "schema_version", "value": "1"}],
         "records": [],
-    }
-)
-_CANONICAL_PERCEPT_MEMORY_SCHEMA_OBJECTS = frozenset(
-    {
-        ("index", "percept_memory_records_agent_round", "percept_memory_records"),
-        ("table", "percept_memory_fts", "percept_memory_fts"),
-        ("table", "percept_memory_fts_config", "percept_memory_fts_config"),
-        ("table", "percept_memory_fts_data", "percept_memory_fts_data"),
-        ("table", "percept_memory_fts_docsize", "percept_memory_fts_docsize"),
-        ("table", "percept_memory_fts_idx", "percept_memory_fts_idx"),
-        ("table", "percept_memory_metadata", "percept_memory_metadata"),
-        ("table", "percept_memory_records", "percept_memory_records"),
-        ("trigger", "percept_memory_records_ad", "percept_memory_records"),
-        ("trigger", "percept_memory_records_ai", "percept_memory_records"),
-        ("trigger", "percept_memory_records_au", "percept_memory_records"),
     }
 )
 
@@ -2842,15 +2828,10 @@ def _preflight_compiled_scenario_database(database_path: str | Path) -> None:
             uri=True,
         )
         connection.execute("PRAGMA query_only = ON")
-        schema_objects = frozenset(
-            connection.execute(
-                "SELECT type, name, tbl_name FROM sqlite_master "
-                "WHERE name NOT LIKE 'sqlite_%'"
-            ).fetchall()
-        )
+        schema_objects = _sqlite_schema_snapshot(connection)
         if not schema_objects:
             return
-        if schema_objects != _CANONICAL_PERCEPT_MEMORY_SCHEMA_OBJECTS:
+        if schema_objects != _canonical_percept_memory_schema_snapshot():
             raise ValueError(
                 "compiled scenario initialization rejected a noncanonical database schema"
             )
@@ -2875,6 +2856,34 @@ def _preflight_compiled_scenario_database(database_path: str | Path) -> None:
     finally:
         if connection is not None:
             connection.close()
+
+
+def _canonicalize_sqlite_schema_sql(sql: str | None) -> str | None:
+    if sql is None:
+        return None
+    return sql.replace("\r\n", "\n").strip()
+
+
+def _sqlite_schema_snapshot(
+    connection: sqlite3.Connection,
+) -> tuple[tuple[str, str, str, str | None], ...]:
+    return tuple(
+        (object_type, name, table_name, _canonicalize_sqlite_schema_sql(sql))
+        for object_type, name, table_name, sql in connection.execute(
+            "SELECT type, name, tbl_name, sql FROM sqlite_master "
+            "WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name"
+        ).fetchall()
+    )
+
+
+def _canonical_percept_memory_schema_snapshot(
+) -> tuple[tuple[str, str, str, str | None], ...]:
+    connection = sqlite3.connect(":memory:")
+    try:
+        connection.executescript(_PERCEPT_MEMORY_SCHEMA)
+        return _sqlite_schema_snapshot(connection)
+    finally:
+        connection.close()
 
 
 __all__ = (
