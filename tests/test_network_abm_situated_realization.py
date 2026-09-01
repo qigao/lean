@@ -431,6 +431,56 @@ def test_compile_rejects_provider_identity_mutation_during_a_scene_call():
         compile_narrative_realization(prompt, provider)
 
 
+def test_compile_rejects_in_place_identity_mutation_without_rewriting_prompt_provenance():
+    projection = single_scene_projection()
+
+    class InPlaceDriftingProvider(RecordingProvider):
+        def complete_json(self, *, task, payload):
+            response = super().complete_json(task=task, payload=payload)
+            object.__setattr__(
+                self.identity,
+                "provider_id",
+                "changed-provider",
+            )
+            return response
+
+    provider = InPlaceDriftingProvider(valid_one_passage_per_scene_response)
+    prompt = build_narrative_realization_prompt(
+        projection, policy(), request(projection), provider
+    )
+    prompt_hash_before_call = prompt.content_hash
+
+    with pytest.raises(ValueError, match="identity changed"):
+        compile_narrative_realization(prompt, provider)
+
+    assert prompt.provider == NarrativeRealizationProviderIdentity(
+        "recording-provider", "1.0", "test-model"
+    )
+    assert prompt.provider is not provider.identity
+    assert prompt.content_hash == prompt_hash_before_call
+
+
+def test_artifact_retains_pre_invocation_identity_snapshot_from_structural_prompt():
+    projection = single_scene_projection()
+    provider = RecordingProvider(valid_one_passage_per_scene_response)
+    prompt = build_narrative_realization_prompt(
+        projection, policy(), request(projection), provider
+    )
+    structural_prompt = replace(prompt, provider=provider.identity)
+    prompt_hash_before_call = structural_prompt.content_hash
+
+    artifact = compile_narrative_realization(structural_prompt, provider)
+    artifact_hash_before_mutation = artifact.content_hash
+    object.__setattr__(provider.identity, "provider_id", "changed-provider")
+
+    assert artifact.provider == NarrativeRealizationProviderIdentity(
+        "recording-provider", "1.0", "test-model"
+    )
+    assert artifact.provider is not provider.identity
+    assert artifact.prompt_hash == prompt_hash_before_call
+    assert artifact.content_hash == artifact_hash_before_mutation
+
+
 def test_artifact_records_citation_bound_provenance_and_replays_without_provider():
     projection = single_scene_projection()
     response = {

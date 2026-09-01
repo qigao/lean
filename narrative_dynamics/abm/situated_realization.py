@@ -45,7 +45,12 @@ def _provider_protocol(
         )
     if not callable(completion):
         raise TypeError("narrative realization provider must expose complete_json")
-    return identity, completion
+    identity_snapshot = NarrativeRealizationProviderIdentity(
+        identity.provider_id,
+        identity.version,
+        identity.model_name,
+    )
+    return identity_snapshot, completion
 
 
 def build_narrative_realization_prompt(
@@ -213,21 +218,29 @@ def compile_narrative_realization(
     provider_identity, _ = _provider_protocol(provider)
     if provider_identity != prompt.provider:
         raise ValueError("narrative realization provider identity must match the prompt")
+    provider_identity_hash = provider_identity.content_hash
+    bound_prompt = NarrativeRealizationPrompt(
+        prompt.request,
+        prompt.policy,
+        provider_identity,
+        prompt.projection_hash,
+        prompt.scenes,
+    )
 
     all_prompt_beat_ids = frozenset(
-        beat.beat_id for scene in prompt.scenes for beat in scene.beats
+        beat.beat_id for scene in bound_prompt.scenes for beat in scene.beats
     )
     realized_scenes = []
-    for scene_prompt in prompt.scenes:
+    for scene_prompt in bound_prompt.scenes:
         current_identity, current_completion = _provider_protocol(provider)
-        if current_identity != provider_identity:
+        if current_identity.content_hash != provider_identity_hash:
             raise ValueError("narrative realization provider identity changed during compilation")
         response = current_completion(
             task=_TASK,
-            payload=_scene_payload(scene_prompt, prompt.policy),
+            payload=_scene_payload(scene_prompt, bound_prompt.policy),
         )
         current_identity, _ = _provider_protocol(provider)
-        if current_identity != provider_identity:
+        if current_identity.content_hash != provider_identity_hash:
             raise ValueError("narrative realization provider identity changed during compilation")
 
         beat_by_id = {beat.beat_id: beat for beat in scene_prompt.beats}
@@ -235,7 +248,7 @@ def compile_narrative_realization(
         for beat_ids, text in _validated_response_passages(
             response,
             scene_prompt,
-            prompt.policy,
+            bound_prompt.policy,
             all_prompt_beat_ids,
         ):
             entitlement_ids = tuple(
@@ -282,13 +295,13 @@ def compile_narrative_realization(
         )
 
     return NarrativeRealizationArtifact(
-        prompt.request.request_id,
-        prompt.projection_hash,
-        prompt.policy,
-        prompt.provider,
-        prompt.content_hash,
-        prompt.schema_hash,
-        prompt.prompt_template_hash,
+        bound_prompt.request.request_id,
+        bound_prompt.projection_hash,
+        bound_prompt.policy,
+        bound_prompt.provider,
+        bound_prompt.content_hash,
+        bound_prompt.schema_hash,
+        bound_prompt.prompt_template_hash,
         NarrativeRealizationAssurance.CITATION_BOUND,
         "accepted",
         tuple(realized_scenes),
