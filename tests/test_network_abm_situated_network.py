@@ -177,7 +177,7 @@ class SituatedNetworkRuntimeTests(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
-    def test_atomic_round_keeps_story_cognition_social_snapshot_and_metrics_synchronized(self):
+    def test_atomic_round_retains_transition_evidence_with_synchronized_state(self):
         model, story, cognitive_state, social_state = initial_runtime_case()
         initial = initialize_situated_network_runtime(
             self.database, model, story, cognitive_state, social_state
@@ -192,6 +192,20 @@ class SituatedNetworkRuntimeTests(unittest.TestCase):
 
         self.assertEqual(simulated.call_count, 1)
         self.assertEqual(result.prior_state, initial)
+        self.assertIsNotNone(result.transition)
+        self.assertEqual(result.transition.next_story, result.next_state.story)
+        self.assertEqual(
+            result.transition.next_cognitive_state,
+            result.next_state.cognitive_state,
+        )
+        self.assertEqual(
+            result.transition.next_social_state,
+            result.next_state.social_state,
+        )
+        self.assertEqual(
+            result.to_dict()["transition_hash"],
+            result.transition.content_hash,
+        )
         self.assertEqual(result.next_state.round_index, initial.round_index + 1)
         self.assertEqual(result.next_state.parent_state_hash, initial.content_hash)
         self.assertEqual(

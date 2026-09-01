@@ -2066,6 +2066,47 @@ projection. Those are the separate V21.2 phase; LLM/retrieval and production ass
 adapters remain later V21 phases. A run policy may reserve output kinds or a Blender
 mode for those future consumers, but V21.1 does not silently stub or execute them.
 
+### V21.2 typed simulation output and public journal
+
+V21.2 projects an accepted situated-network round into one deterministic typed batch.
+Every record retains the exact stream, scenario, round, state, sequence, payload, and
+source-artifact identities. Audience capabilities filter typed views before any
+serialization; retained records keep their global source sequences (including gaps)
+and the source batch hash.
+
+```python
+from narrative_dynamics.abm import (
+    SimulationAudienceCapability,
+    SimulationOutputAudience,
+    filter_simulation_output,
+    project_simulation_output,
+    replay_public_simulation_journal,
+    write_public_simulation_journal,
+)
+
+batch = project_simulation_output(
+    scenario,
+    round_result,
+    stream_id="law-firm-run",
+)
+public_view = filter_simulation_output(
+    batch,
+    SimulationAudienceCapability(SimulationOutputAudience.PUBLIC),
+)
+journal = write_public_simulation_journal("law-firm.jsonl", batch)
+assert replay_public_simulation_journal("law-firm.jsonl") == journal
+```
+
+The JSONL journal contains public records only. It strictly reconstructs typed
+payloads and verifies payload, record, view, and journal hashes during replay. Each
+append stages the complete replacement beside the destination, flushes and fsyncs it,
+then publishes it with an atomic replace, so a failed publication preserves the prior
+journal. Replay is local and deterministic: it performs no Agent or provider call.
+
+JSON-RPC/H2/WSS, the Web editor, the synchronous bus, coordinator, commands, live
+Blender, and remote Agents remain later phases. V21.2 does not import or fabricate
+those systems, and an output policy containing only unsupported kinds fails closed.
+
 ## Verification
 
 GitHub Actions runs:

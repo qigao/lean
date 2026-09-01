@@ -18,10 +18,13 @@ from narrative_dynamics.abm import situated_network_contracts as network_contrac
 from narrative_dynamics.abm import situated_spatial_map as spatial_map
 from narrative_dynamics.abm import situated_spatial_map_contracts as spatial_contracts
 from narrative_dynamics.abm import situated_percept_memory as percept_memory
+from narrative_dynamics.abm import simulation_output
+from narrative_dynamics.abm import simulation_output_contracts as output_contracts
+from narrative_dynamics.abm import simulation_output_journal
 
 
 class NetworkABMPublicAPITests(unittest.TestCase):
-    def test_public_api_exports_current_v21_1_surface(self):
+    def test_public_api_exports_current_v21_2_surface(self):
         self.assertEqual(
             set(abm.__all__),
             {
@@ -397,6 +400,36 @@ class NetworkABMPublicAPITests(unittest.TestCase):
                 "load_situated_scenario_package",
                 "compile_situated_scenario_package",
                 "initialize_compiled_scenario",
+                "SIMULATION_OUTPUT_RECORD_SCHEMA",
+                "SIMULATION_OUTPUT_BATCH_SCHEMA",
+                "SIMULATION_OUTPUT_VIEW_SCHEMA",
+                "SimulationOutputAudience",
+                "SimulationOutputKind",
+                "SimulationStateDeltaPayload",
+                "SimulationObjectiveEventPayload",
+                "SimulationPrivatePerceptPayload",
+                "SimulationAgentDecisionPayload",
+                "SimulationMemoryUpdatePayload",
+                "SimulationSocialUpdatePayload",
+                "SimulationNetworkMetricsPayload",
+                "SimulationStoryProgressPayload",
+                "SimulationNarrativeScenePayload",
+                "SimulationBlenderDeltaPayload",
+                "SimulationCommandResultPayload",
+                "SimulationDiagnosticPayload",
+                "SimulationOutputPayload",
+                "SimulationOutputRecord",
+                "SimulationOutputBatch",
+                "SimulationAudienceCapability",
+                "SimulationOutputView",
+                "output_record_sort_key",
+                "project_simulation_output",
+                "filter_simulation_output",
+                "SIMULATION_PUBLIC_JOURNAL_SCHEMA",
+                "SIMULATION_PUBLIC_JOURNAL_BATCH_SCHEMA",
+                "SimulationPublicJournal",
+                "write_public_simulation_journal",
+                "replay_public_simulation_journal",
             },
         )
         for name in abm.__all__:
@@ -467,6 +500,14 @@ class NetworkABMPublicAPITests(unittest.TestCase):
             abm.situated_percept_memory_schema_snapshot,
             percept_memory.situated_percept_memory_schema_snapshot,
         )
+
+    def test_v21_2_exports_are_the_source_definitions(self):
+        for name in output_contracts.__all__:
+            self.assertIs(getattr(abm, name), getattr(output_contracts, name))
+        for name in simulation_output.__all__:
+            self.assertIs(getattr(abm, name), getattr(simulation_output, name))
+        for name in simulation_output_journal.__all__:
+            self.assertIs(getattr(abm, name), getattr(simulation_output_journal, name))
 
     def test_committed_law_firm_package_loads_and_compiles_without_a_generator(self):
         root = Path(__file__).resolve().parents[1] / "examples" / "law_firm_scenario"
