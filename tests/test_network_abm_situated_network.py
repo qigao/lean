@@ -83,8 +83,25 @@ def runtime_model():
     )
 
 
-def tell_case(*, door_open: bool):
+def tell_case(*, door_open: bool, auditory_intensity: float = 60.0):
     model = runtime_model()
+    if auditory_intensity != 60.0:
+        perception = replace(
+            model.percept_memory_model.perception_model,
+            signal_profiles=tuple(
+                replace(item, auditory_intensity=auditory_intensity)
+                if item.kind is SituatedActionKind.TELL
+                else item
+                for item in model.percept_memory_model.perception_model.signal_profiles
+            ),
+        )
+        model = replace(
+            model,
+            percept_memory_model=replace(
+                model.percept_memory_model,
+                perception_model=perception,
+            ),
+        )
     story = initialize_situated_story(
         model.percept_memory_model.cognitive_model.world_model,
         initial_state(model.percept_memory_model.perception_model, door_open=door_open),
@@ -127,6 +144,21 @@ class SituatedNetworkProjectionTests(unittest.TestCase):
         self.assertEqual(metrics.population_size, 2)
         self.assertEqual(metrics.latest_tell_event_count, 1)
         self.assertEqual(metrics.exact_transmission_count, 1)
+
+    def test_no_observer_tell_counts_event_without_transmission(self):
+        runtime_model, story, cognitive_state, social_state = tell_case(
+            door_open=True, auditory_intensity=10.0
+        )
+
+        snapshot = project_situated_network_snapshot(
+            runtime_model, story, cognitive_state, social_state
+        )
+        metrics = measure_situated_network_emergence(runtime_model, snapshot, social_state)
+
+        self.assertEqual(snapshot.transmissions, ())
+        self.assertEqual(metrics.latest_tell_event_count, 1)
+        self.assertEqual(metrics.transmission_count, 0)
+        self.assertEqual(metrics.reached_observer_count, 0)
 
     def test_snapshot_projects_all_directed_access_and_excludes_actor_self_percept(self):
         runtime_model, story, cognitive_state, social_state = tell_case(door_open=True)
@@ -179,6 +211,52 @@ class SituatedNetworkProjectionTests(unittest.TestCase):
             ),
             (0, 0, 0, 0, 0, 0),
         )
+
+    def test_co_located_agents_have_direct_access_edges_and_metric_pairs(self):
+        network_model = runtime_model()
+        world_state = initial_state(
+            network_model.percept_memory_model.perception_model, door_open=True
+        )
+        co_located = replace(
+            world_state,
+            agents=tuple(
+                replace(item, place_id="records") if item.agent_id == "bob" else item
+                for item in world_state.agents
+            ),
+        )
+        story = initialize_situated_story(
+            network_model.percept_memory_model.cognitive_model.world_model,
+            co_located,
+            perception_model=network_model.percept_memory_model.perception_model,
+        )
+        cognitive_state = initialize_situated_percept_memory_cognition(
+            network_model.percept_memory_model, story
+        )
+        social_state = initialize_situated_social_memory(
+            network_model.social_memory_model, cognitive_state
+        )
+
+        snapshot = project_situated_network_snapshot(
+            network_model, story, cognitive_state, social_state
+        )
+        metrics = measure_situated_network_emergence(
+            network_model, snapshot, social_state
+        )
+
+        self.assertTrue(all(item.direct_interaction for item in snapshot.access_edges))
+        self.assertEqual(metrics.direct_interaction_pair_count, 2)
+
+    def test_all_inactive_relationships_keep_all_edge_mean_trust(self):
+        runtime_model, story, cognitive_state, social_state = tell_case(door_open=True)
+        runtime_model = replace(runtime_model, relationship_trust_threshold=0.9)
+
+        snapshot = project_situated_network_snapshot(
+            runtime_model, story, cognitive_state, social_state
+        )
+        metrics = measure_situated_network_emergence(runtime_model, snapshot, social_state)
+
+        self.assertEqual(metrics.active_relationship_edge_count, 0)
+        self.assertEqual(metrics.mean_relationship_trust, 0.5)
 
     def test_projection_rejects_cognitive_state_not_bound_to_story(self):
         runtime_model, story, cognitive_state, social_state = tell_case(door_open=True)

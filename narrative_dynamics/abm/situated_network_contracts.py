@@ -284,6 +284,7 @@ class SituatedNetworkSnapshot:
     relationship_edges: tuple[SituatedNetworkRelationshipEdge, ...]
     access_edges: tuple[SituatedNetworkAccessEdge, ...]
     transmissions: tuple[SituatedNetworkTransmission, ...]
+    latest_tell_event_count: int = 0
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "model_id", _text(self.model_id, label="network snapshot model id"))
@@ -303,6 +304,20 @@ class SituatedNetworkSnapshot:
             if len(set(identities)) != len(identities):
                 raise ValueError(f"network snapshot {unique_label} must be unique")
             object.__setattr__(self, name, tuple(sorted(values, key=identity)))
+        object.__setattr__(
+            self,
+            "latest_tell_event_count",
+            _nonnegative_integer(
+                self.latest_tell_event_count,
+                label="network snapshot latest tell event count",
+            ),
+        )
+        if self.latest_tell_event_count < len({item.event_id for item in self.transmissions}):
+            raise ValueError(
+                "network snapshot latest tell event count must cover transmitted events"
+            )
+        if self.round_index == 0 and self.latest_tell_event_count != 0:
+            raise ValueError("network snapshot round zero latest tell event count must be zero")
         node_ids = {item.agent_id for item in self.nodes}
         if any(
             item.source_agent_id not in node_ids or item.observer_agent_id not in node_ids
@@ -323,6 +338,7 @@ class SituatedNetworkSnapshot:
             "relationship_edges": [item.to_dict() for item in self.relationship_edges],
             "access_edges": [item.to_dict() for item in self.access_edges],
             "transmissions": [item.to_dict() for item in self.transmissions],
+            "latest_tell_event_count": self.latest_tell_event_count,
         }
 
     @property
@@ -376,8 +392,6 @@ class SituatedNetworkEmergenceMetrics:
         object.__setattr__(self, "tracked_belief_mean", _unit(self.tracked_belief_mean, label="network metrics tracked belief mean"))
         object.__setattr__(self, "tracked_belief_variance", _finite(self.tracked_belief_variance, label="network metrics tracked belief variance", minimum=0.0))
         object.__setattr__(self, "mean_relationship_trust", _unit(self.mean_relationship_trust, label="network metrics mean relationship trust"))
-        if self.active_relationship_edge_count == 0 and self.mean_relationship_trust != 0.0:
-            raise ValueError("network metrics empty relationship mean trust must be zero")
         if self.direct_interaction_pair_count > self.population_size * (self.population_size - 1):
             raise ValueError("network metrics direct interaction pairs exceed ordered population pairs")
         if self.reached_observer_count > self.transmission_count:

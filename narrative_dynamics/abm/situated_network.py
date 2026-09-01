@@ -17,6 +17,7 @@ from narrative_dynamics.abm.situated_network_contracts import (
     SituatedNetworkTransmission,
 )
 from narrative_dynamics.abm.situated_perception import (
+    can_situated_agents_interact,
     derive_situated_perception_reach,
     project_situated_percepts,
 )
@@ -131,7 +132,9 @@ def _access_edges(
             observer_agent_id,
             reaches[source_agent_id].visual_costs.get(observer.place_id),
             reaches[source_agent_id].auditory_losses.get(observer.place_id),
-            observer.place_id in reaches[source_agent_id].interaction_place_ids,
+            can_situated_agents_interact(
+                perception, state, source_agent_id, observer_agent_id
+            ),
         )
         for source_agent_id in bodies
         for observer_agent_id, observer in bodies.items()
@@ -171,6 +174,15 @@ def _latest_tell_transmissions(
     )
 
 
+def _latest_successful_tell_event_count(story: SituatedStory) -> int:
+    if not story.rounds:
+        return 0
+    return sum(
+        item.kind is SituatedActionKind.TELL and item.success
+        for item in story.rounds[-1].events
+    )
+
+
 def project_situated_network_snapshot(
     model: SituatedNetworkRuntimeModel,
     story: SituatedStory,
@@ -180,6 +192,7 @@ def project_situated_network_snapshot(
     """Project the current V15/V14 state without exposing event payloads."""
 
     _validate_projection_inputs(model, story, cognitive_state, social_state)
+    transmissions = _latest_tell_transmissions(model, story)
     return SituatedNetworkSnapshot(
         model.model_id,
         model.content_hash,
@@ -190,7 +203,8 @@ def project_situated_network_snapshot(
         _network_nodes(model, story, cognitive_state, social_state),
         _relationship_edges(model, social_state),
         _access_edges(model, story),
-        _latest_tell_transmissions(model, story),
+        transmissions,
+        _latest_successful_tell_event_count(story),
     )
 
 
@@ -243,9 +257,6 @@ def measure_situated_network_emergence(
         fidelity: sum(item.fidelity is fidelity for item in transmissions)
         for fidelity in SituatedPerceptFidelity
     }
-    latest_tell_event_count = 0 if snapshot.round_index == 0 else len({
-        item.event_id for item in transmissions
-    })
     return SituatedNetworkEmergenceMetrics(
         snapshot.content_hash,
         snapshot.round_index,
@@ -263,7 +274,7 @@ def measure_situated_network_emergence(
             else 0.0
         ),
         sum(item.direct_interaction for item in snapshot.access_edges),
-        latest_tell_event_count,
+        snapshot.latest_tell_event_count,
         len(transmissions),
         len({item.observer_agent_id for item in transmissions}),
         fidelity_counts[SituatedPerceptFidelity.EXACT],

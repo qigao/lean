@@ -80,12 +80,13 @@ def snapshot_fixture(*, access_edges=None, round_index: int = 1):
             SituatedNetworkRelationshipEdge("alice", "bob", 0.6, 0.1, 1, 0, True),
         ),
         access_edges,
-        (
+        () if round_index == 0 else (
             SituatedNetworkTransmission(
                 "tell-1", "alice", "bob", SituatedPerceptFidelity.DETECTED,
                 (ObservationChannel.AUDITORY,),
             ),
         ),
+        0 if round_index == 0 else 1,
     )
 
 
@@ -131,6 +132,30 @@ class SituatedNetworkContractTests(unittest.TestCase):
         self.assertEqual(snapshot.content_hash, snapshot_fixture().content_hash)
         with self.assertRaisesRegex(ValueError, "transmission identities must be unique"):
             replace(snapshot, transmissions=snapshot.transmissions * 2)
+
+    def test_snapshot_counts_latest_tell_events_without_private_payloads(self):
+        snapshot = snapshot_fixture()
+
+        self.assertEqual(snapshot.latest_tell_event_count, 1)
+        with self.assertRaisesRegex(ValueError, "latest tell event count"):
+            replace(snapshot, latest_tell_event_count=0)
+        with self.assertRaisesRegex(ValueError, "round zero"):
+            replace(
+                snapshot_fixture(round_index=0),
+                transmissions=(),
+                latest_tell_event_count=1,
+            )
+
+    def test_metrics_allow_all_inactive_edges_to_have_all_edge_mean_trust(self):
+        snapshot = snapshot_fixture()
+
+        inactive = replace(
+            metrics_fixture(snapshot),
+            active_relationship_edge_count=0,
+            mean_relationship_trust=0.6,
+        )
+
+        self.assertEqual(inactive.mean_relationship_trust, 0.6)
 
     def test_node_edges_and_transmissions_reject_invalid_private_or_physical_projection(self):
         with self.assertRaisesRegex(ValueError, "probability"):
