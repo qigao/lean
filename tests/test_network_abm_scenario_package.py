@@ -23,6 +23,13 @@ def _raw_hash(path: Path) -> str:
     return f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
 
 
+def nested_json(depth: int) -> object:
+    value: object = None
+    for _ in range(depth):
+        value = [value]
+    return value
+
+
 def write_minimal_package(root: Path, *, reverse: bool = False) -> Path:
     root.mkdir(parents=True)
     documents = [
@@ -433,6 +440,39 @@ class ScenarioPackageLoadingTests(unittest.TestCase):
 
         self.assertIsNone(raised.exception.__cause__)
         self.assertNotIn(str(missing), str(raised.exception))
+
+    def test_source_document_rejects_excessive_nesting_without_recursion_leak(self):
+        from narrative_dynamics.abm.scenario_package_contracts import (
+            ScenarioDocumentRole,
+            ScenarioSourceDocument,
+        )
+
+        with self.assertRaisesRegex(ValueError, "nesting") as raised:
+            ScenarioSourceDocument(
+                ScenarioDocumentRole.RUN,
+                "run",
+                DOCUMENT_SCHEMA,
+                {"nested": nested_json(700)},
+                "sha256:" + "0" * 64,
+            )
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertNotIsInstance(raised.exception, RecursionError)
+
+    def test_loader_rejects_post_parse_excessive_nesting_without_source_leak(self):
+        from narrative_dynamics.abm.scenario_package import (
+            load_situated_scenario_package,
+        )
+
+        root = write_minimal_package(self.root / "deep-freeze")
+        run_path = root / locator_for(root, "run")["path"]
+        run_document = json.loads(run_path.read_text(encoding="utf-8"))
+        run_document["value"]["nested"] = nested_json(700)
+        _write_json(run_path, run_document)
+        refresh_locator_hash(root, "run")
+        with self.assertRaisesRegex(ValueError, "nesting") as raised:
+            load_situated_scenario_package(root)
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertNotIn(str(root), str(raised.exception))
 
     def test_source_documents_are_recursively_immutable(self):
         from narrative_dynamics.abm.scenario_package import load_situated_scenario_package

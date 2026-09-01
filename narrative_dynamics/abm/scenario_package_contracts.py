@@ -42,6 +42,7 @@ from narrative_dynamics.contracts import stable_content_hash
 SCENARIO_PACKAGE_SCHEMA = "narrative-dynamics.scenario-package/v1"
 SCENARIO_DOCUMENT_SCHEMA = "narrative-dynamics.scenario-document/v1"
 _CONTENT_HASH = re.compile(r"^sha256:[0-9a-f]{64}$")
+_SCENARIO_JSON_MAX_DEPTH = 128
 
 
 class ScenarioDocumentRole(str, Enum):
@@ -93,7 +94,14 @@ def _content_hash(value: object, *, label: str) -> str:
     return value
 
 
-def _freeze_json_value(value: object, *, label: str) -> object:
+def _freeze_json_value(
+    value: object,
+    *,
+    label: str,
+    depth: int = 0,
+) -> object:
+    if depth > _SCENARIO_JSON_MAX_DEPTH:
+        raise ValueError("scenario source JSON exceeds maximum nesting depth")
     if value is None or isinstance(value, (bool, int, str)):
         return value
     if isinstance(value, float):
@@ -105,11 +113,19 @@ def _freeze_json_value(value: object, *, label: str) -> object:
         for key, item in value.items():
             if not isinstance(key, str) or not key:
                 raise ValueError(f"{label} keys must be non-empty strings")
-            frozen[key] = _freeze_json_value(item, label=f"{label}.{key}")
+            frozen[key] = _freeze_json_value(
+                item,
+                label=f"{label}.{key}",
+                depth=depth + 1,
+            )
         return MappingProxyType(frozen)
     if isinstance(value, (list, tuple)):
         return tuple(
-            _freeze_json_value(item, label=f"{label}[{index}]")
+            _freeze_json_value(
+                item,
+                label=f"{label}[{index}]",
+                depth=depth + 1,
+            )
             for index, item in enumerate(value)
         )
     raise TypeError(f"{label} must contain JSON values")
@@ -118,7 +134,10 @@ def _freeze_json_value(value: object, *, label: str) -> object:
 def _freeze_json_mapping(value: Mapping[str, object], *, label: str) -> Mapping[str, object]:
     if not isinstance(value, Mapping):
         raise TypeError(f"{label} must be a JSON object")
-    frozen = _freeze_json_value(value, label=label)
+    try:
+        frozen = _freeze_json_value(value, label=label)
+    except RecursionError:
+        raise ValueError("scenario source JSON exceeds maximum nesting depth") from None
     assert isinstance(frozen, Mapping)
     return frozen
 
