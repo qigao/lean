@@ -585,13 +585,16 @@ the root in artifacts/errors. Public methods:
 create(checkpoint, source_database_path) -> ScenarioCheckpoint
 load(checkpoint_hash) -> ScenarioCheckpoint
 restore(checkpoint_hash, target_database_path) -> None
+discard(checkpoint_hash) -> None
 ```
 
 Use a path-safe encoded filename derived from the checkpoint content hash, not the
 human checkpoint ID. Validate the source logical memory hash before backup. Write via
 same-directory stage, flush/fsync, `os.replace`, cleanup in `finally`, then validate the
 published snapshot hash. Restore requires a missing target, writes through a
-same-directory stage, validates, and atomically replaces.
+same-directory stage, validates, and atomically replaces. `discard` resolves only the
+store-owned hash filename, removes its metadata and snapshot, and is idempotent for an
+unknown hash.
 
 - [ ] **Step 5: Integrate manual/automatic checkpoint and idempotent fork**
 
@@ -613,6 +616,12 @@ checkpoint. Restore first; verify the child store hash; construct the child inte
 without calling the empty-database initializer; initialize a fresh local state store
 with the exact checkpoint state; begin paused with sequence one and incremented epoch.
 Cache exact fork request/capability to child/result only after full success.
+
+Automatic checkpoint preparation occurs after projection/output-limit validation but
+before state-store compare-and-swap. If checkpoint creation fails, restore the pre-step
+SQLite backup and expose no step result. If compare-and-swap fails after checkpoint
+creation, call `discard`, restore SQLite, and expose neither state nor checkpoint. Add
+a regression for both failure paths.
 
 - [ ] **Step 6: Export and document the complete V21.3 flow**
 

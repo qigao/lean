@@ -159,15 +159,16 @@ For one accepted `step`:
 5. when allowlisted, prepend one public `command.result` record and canonically
    resequence the complete batch;
 6. enforce `maximum_output_records`;
-7. compare-and-swap the exact next runtime state;
-8. append command and output history and advance the global sequence;
-9. create an automatic checkpoint when the resulting round is divisible by
-   `checkpoint_interval`;
+7. when the resulting round is divisible by `checkpoint_interval`, atomically create
+   the checkpoint snapshot and mark the batch as a checkpoint batch;
+8. compare-and-swap the exact next runtime state;
+9. append command, output, and checkpoint history and advance the global sequence;
 10. publish the immutable batch synchronously.
 
-If steps 3–7 fail, the backup restores the prior SQLite store and no coordinator state,
-sequence, command result, output history, or checkpoint becomes visible. Publication
-failures in step 10 are reported but do not roll back steps 7–9.
+If steps 3–8 fail, the backup restores the prior SQLite store and no coordinator state,
+sequence, command result, output history, or checkpoint remains visible. A checkpoint
+created before a later compare-and-swap failure is discarded. Publication failures in
+step 10 are reported but do not roll back steps 7–9.
 
 ## Checkpoint and fork
 
@@ -179,6 +180,8 @@ Its content hash excludes its file location.
 same-directory stage, flush/fsync, and `os.replace`. It keeps typed artifact metadata
 for the active process and restores by checkpoint hash. Duplicate checkpoint IDs are
 idempotent only for the same artifact; conflicting reuse is rejected.
+`discard(checkpoint_hash)` removes only an exact store-owned artifact and is used to
+roll back an automatic checkpoint if the following state compare-and-swap fails.
 
 `ScenarioForkRequest` binds source run/scenario/epoch/checkpoint plus child run and
 stream identities. `ScenarioForkResult` binds the child initial state, epoch, and
