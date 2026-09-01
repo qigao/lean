@@ -212,6 +212,7 @@ class SituatedNetworkContractTests(unittest.TestCase):
         state = SituatedNetworkRuntimeState(
             "office-network", model.content_hash, 0, None,
             story, cognitive_state, social_state, snapshot, metrics,
+            checkpoint=True,
         )
         with TemporaryDirectory() as temporary:
             advanced = simulate_situated_percept_social_cognitive_round(

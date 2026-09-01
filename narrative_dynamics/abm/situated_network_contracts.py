@@ -418,16 +418,21 @@ class SituatedNetworkRuntimeState:
     social_state: SituatedSocialMemoryState
     snapshot: SituatedNetworkSnapshot
     metrics: SituatedNetworkEmergenceMetrics
+    checkpoint: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "model_id", _text(self.model_id, label="network runtime state model id"))
         object.__setattr__(self, "model_hash", _hash(self.model_hash, label="network runtime state model hash"))
         object.__setattr__(self, "round_index", _nonnegative_integer(self.round_index, label="network runtime state round index"))
+        if not isinstance(self.checkpoint, bool):
+            raise TypeError("network runtime state checkpoint must be boolean")
         if self.parent_state_hash is not None:
             object.__setattr__(self, "parent_state_hash", _hash(self.parent_state_hash, label="network runtime state parent hash"))
-        if self.round_index == 0 and self.parent_state_hash is not None:
+        if self.checkpoint and self.parent_state_hash is not None:
+            raise ValueError("network runtime state checkpoint must not have a parent hash")
+        if not self.checkpoint and self.round_index == 0 and self.parent_state_hash is not None:
             raise ValueError("network runtime state initial round must not have a parent hash")
-        if self.round_index != 0 and self.parent_state_hash is None:
+        if not self.checkpoint and self.round_index != 0 and self.parent_state_hash is None:
             raise ValueError("network runtime state non-initial rounds require an exact parent hash")
         if not isinstance(self.story, SituatedStory) or not isinstance(self.cognitive_state, SituatedCognitiveState) or not isinstance(self.social_state, SituatedSocialMemoryState):
             raise TypeError("network runtime state requires exact story, cognitive state, and social state")
@@ -445,6 +450,13 @@ class SituatedNetworkRuntimeState:
             raise ValueError("network runtime state cognitive state must bind exact story")
         if self.social_state.cognitive_state_hash != self.cognitive_state.content_hash:
             raise ValueError("network runtime state social state must bind exact cognitive state")
+        if (
+            self.checkpoint != self.cognitive_state.checkpoint
+            or self.checkpoint != self.social_state.checkpoint
+        ):
+            raise ValueError(
+                "network runtime state checkpoint must bind exact cognitive and social checkpoints"
+            )
         if self.snapshot.model_id != self.model_id or self.snapshot.model_hash != self.model_hash:
             raise ValueError("network runtime state snapshot must bind the exact model")
         if (
@@ -467,6 +479,7 @@ class SituatedNetworkRuntimeState:
             "social_state_hash": self.social_state.content_hash,
             "snapshot": self.snapshot.to_dict(),
             "metrics": self.metrics.to_dict(),
+            "checkpoint": self.checkpoint,
         }
 
     @property

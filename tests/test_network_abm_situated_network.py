@@ -185,6 +185,84 @@ class SituatedNetworkRuntimeTests(unittest.TestCase):
             result.next_state.snapshot.content_hash,
         )
 
+    def test_initialization_accepts_an_exact_nonzero_checkpoint_root(self):
+        model, story, cognitive_state, social_state = tell_case(door_open=True)
+
+        initial = initialize_situated_network_runtime(
+            model, story, cognitive_state, social_state
+        )
+
+        self.assertEqual(initial.round_index, 1)
+        self.assertIsNone(initial.parent_state_hash)
+        self.assertTrue(initial.checkpoint)
+        self.assertIs(initial.to_dict()["checkpoint"], True)
+
+    def test_nonzero_parentless_noncheckpoint_state_is_rejected(self):
+        model, story, cognitive_state, social_state = initial_runtime_case()
+        initial = initialize_situated_network_runtime(
+            model, story, cognitive_state, social_state
+        )
+        result = simulate_situated_network_round(self.database, model, initial)
+
+        with self.assertRaisesRegex(ValueError, "exact parent"):
+            replace(
+                result.next_state,
+                parent_state_hash=None,
+                checkpoint=False,
+            )
+
+    def test_checkpoint_marker_requires_exact_cognitive_and_social_checkpoints(self):
+        model, story, cognitive_state, social_state = initial_runtime_case()
+        initial = initialize_situated_network_runtime(
+            model, story, cognitive_state, social_state
+        )
+        result = simulate_situated_network_round(self.database, model, initial)
+
+        with self.assertRaisesRegex(ValueError, "cognitive and social checkpoints"):
+            replace(
+                result.next_state,
+                parent_state_hash=None,
+                checkpoint=True,
+            )
+
+    def test_round_rejects_snapshot_that_disagrees_with_authoritative_cognition(self):
+        model, story, cognitive_state, social_state = initial_runtime_case()
+        initial = initialize_situated_network_runtime(
+            model, story, cognitive_state, social_state
+        )
+        forged_snapshot = replace(
+            initial.snapshot,
+            nodes=tuple(
+                replace(item, tracked_belief_probability=0.9)
+                if item.agent_id == "alice"
+                else item
+                for item in initial.snapshot.nodes
+            ),
+        )
+        forged_metrics = measure_situated_network_emergence(
+            model, forged_snapshot, social_state
+        )
+        forged_state = replace(
+            initial, snapshot=forged_snapshot, metrics=forged_metrics
+        )
+
+        with self.assertRaisesRegex(ValueError, "authoritative snapshot"):
+            simulate_situated_network_round(self.database, model, forged_state)
+
+    def test_round_rejects_metrics_that_disagree_with_authoritative_measurement(self):
+        model, story, cognitive_state, social_state = initial_runtime_case()
+        initial = initialize_situated_network_runtime(
+            model, story, cognitive_state, social_state
+        )
+        forged_metrics = replace(
+            initial.metrics,
+            active_relationship_edge_count=0,
+        )
+        forged_state = replace(initial, metrics=forged_metrics)
+
+        with self.assertRaisesRegex(ValueError, "authoritative metrics"):
+            simulate_situated_network_round(self.database, model, forged_state)
+
     def test_runtime_returns_the_exact_parent_linked_state_chain(self):
         model, story, cognitive_state, social_state = initial_runtime_case()
         initial = initialize_situated_network_runtime(

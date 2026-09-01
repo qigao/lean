@@ -318,6 +318,7 @@ def initialize_situated_network_runtime(
         social_state,
         snapshot,
         metrics,
+        checkpoint=True,
     )
 
 
@@ -341,6 +342,20 @@ def _validate_runtime_state(
         state.cognitive_state,
         state.social_state,
     )
+    authoritative_snapshot = project_situated_network_snapshot(
+        model, state.story, state.cognitive_state, state.social_state
+    )
+    if state.snapshot != authoritative_snapshot:
+        raise ValueError(
+            "situated network state must contain the authoritative snapshot"
+        )
+    authoritative_metrics = measure_situated_network_emergence(
+        model, authoritative_snapshot, state.social_state
+    )
+    if state.metrics != authoritative_metrics:
+        raise ValueError(
+            "situated network state must contain the authoritative metrics"
+        )
 
 
 def simulate_situated_network_round(
@@ -378,6 +393,7 @@ def simulate_situated_network_round(
         advanced.next_social_state,
         snapshot,
         metrics,
+        checkpoint=False,
     )
     return SituatedNetworkRoundResult(
         model.model_id, model.content_hash, state, next_state
