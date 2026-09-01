@@ -2,94 +2,104 @@
 
 ## Goal
 
-Turn an audited simulation trajectory into a driveable Blender graybox replay: simple map geometry, stick-figure agents, event and relationship overlays, editable narrative captions, timeline scrubbing, cameras, and deterministic still/video/scene export.
+Export one V19 situated-network trajectory, its physical map, and its interaction timeline from Python into one editable `.blend` file. Narrative Dynamics owns deterministic scene compilation and provenance; Blender owns viewing, manual editing, materials, cameras, rendering, and every downstream media export.
 
-## Architectural boundary
+## Product boundary
 
-The simulator remains authoritative. It exports a versioned, content-addressed `SceneReplayBundle` JSON; an optional Blender adapter consumes that bundle and creates `.blend` scene data. Blender never decides actions, perception, beliefs, memory, causality, or canonical event order, and generated keyframes never feed evidence back into the simulation.
-
-The pipeline is:
+The only required user-facing artifact is `.blend`.
 
 ```text
-World/map + agents + V19 trajectory + optional V18 narrative
-                         |
-                         v
-              SceneReplayBundle JSON
-                 /               \
-        text/editor tools      Blender importer
-                                  |
-                       graybox viewport / .blend
-                         /        |        \
-                      MP4       PNG       glTF
+Situated world + spatial map + V19 trajectory
+                    |
+                    v
+       Python replay compiler (sanitized JSON in a temporary file)
+                    |
+                    v
+          Blender headless Python (`bpy`)
+                    |
+                    v
+                 scene.blend
 ```
 
-## Replay bundle
+The temporary JSON packet is an internal process boundary, not a second user workflow. It is deleted after export. The simulator never imports `bpy`; the optional adapter launches an explicit Blender executable in background/factory-startup mode.
 
-The bundle contains only portable, deterministic data:
+## Spatial map
 
-- `manifest`: schema version, source model/state/trajectory hashes, coordinate system, units, frames per round, and bundle hash;
-- `world`: places as polygons or boxes, passages as portals, optional terrain/props, and stable material tags;
-- `actors`: agent ID, role, color tag, initial pose, and optional display label;
-- `timeline`: round/frame mapping plus typed movement, action, interaction, perception, claim, belief, and relationship-overlay cues;
-- `narrative_tracks`: scene/beat IDs and editable presentation text bound to source event IDs;
-- `camera_cues`: optional authored shots; absent cues use deterministic overview and follow cameras;
-- `assets`: optional relative references with hashes, never arbitrary executable scripts.
+`SituatedSpatialMap` is a content-addressed geometry companion to one exact `SituatedWorldModel`. It does not replace the discrete world graph or change physical transition semantics.
 
-Canonical simulation facts and editable presentation are separate layers. Editing a caption, shot, pacing multiplier, color, or actor display name creates a presentation override document and a new preview hash; it does not change the source trajectory hash or claim that the edited prose is new evidence.
+- Every `SpatialPlace` binds one exact `place_id` to an axis-aligned floor rectangle in metres plus a display height.
+- Every `SpatialPassage` binds one exact `passage_id` to an axis-aligned portal rectangle in metres plus a door height.
+- A spatial map covers every world place and passage exactly once and rejects extras, omissions, duplicate IDs, non-finite coordinates, and non-positive dimensions.
+- Paths, source JSON byte order, Tiled object IDs, layer ordering, and pixel units do not enter the canonical map hash.
+- When no authored geometry is supplied, `auto_layout_situated_spatial_map` assigns lexicographically sorted places to a deterministic square grid and places each passage at the midpoint of its endpoint centres.
 
-## Map and coordinates
+V20 initially imports orthogonal Tiled JSON object layers. Rectangle objects whose `class` or legacy `type` is `place` or `passage` use their non-empty `name` as the corresponding simulation ID. Tiled's pixel coordinates are converted to metres and its downward Y axis is inverted for Blender's Z-up world. Tile layers, image layers, rotated objects, polygons, ellipses, points, and arbitrary embedded scripts/assets are ignored or rejected rather than guessed.
 
-V19.1 map import compiles IndoorGML/IMDF, Tiled JSON, GeoJSON, or selected IFC geometry into the internal world graph and optional spatial layout. V20 consumes that canonical result.
+## Replay packet
 
-Coordinates are optional for an initial preview. If a world has no geometry, the exporter applies one deterministic graph layout and emits simple room boxes and portal locations. Imported or authored coordinates always take precedence. Blender uses metres, Z-up, and an explicit source-to-Blender transform in the manifest.
+`compile_situated_blend_replay` validates an exact runtime model/trajectory/map chain and produces a canonical JSON object with:
 
-## Graybox representation
+- schema ID and packet hash;
+- exact runtime model, trajectory, world model, and spatial-map hashes;
+- frames per round and first/last frame;
+- map rectangles and passage endpoint metadata;
+- actors with stable IDs, roles, deterministic colors, and per-round positions;
+- passage open/closed state per round;
+- objective event markers with IDs, hashes, kind, actor, target, success, outcome, and frame;
+- sanitized V19 transmissions with observer, source, fidelity, and channels;
+- declared V19 node belief probability and active-claim count per actor state.
 
-- Places: low-poly floor slabs and translucent wall volumes.
-- Passages: colored door/portal objects whose open/closed state is keyframed.
-- Agents: procedural stick figures built from primitives, one collection per agent, with stable colors and nameplates.
-- Movement: linear or eased path keyframes between portal waypoints; simultaneous actions share a frame interval.
-- Actions: small icons/markers and short pose clips for tell, inspect, take, drop, open, close, and wait.
-- Perception: optional transient cones/arcs/lines derived only from sanitized access/transmission projections.
-- Cognition/social overlays: optional HUD panels and edges showing declared scalar belief/trust metrics, never hidden private payloads.
+The packet never includes TELL message text, event details, memory rows, prompts, LLM output, private evidence, or database paths. Movement is reconstructed only from validated world states; the Blender adapter may interpolate between state positions but cannot invent a new destination or event.
 
-## Viewer and driving controls
+## Generated `.blend`
 
-The generated `.blend` scene provides timeline scrubbing and playback without an add-on. An optional Blender add-on supplies:
+The headless Blender script creates:
 
-- load/reload bundle;
-- play, pause, next/previous round and next event;
-- select/follow an agent and switch overview/first-person/follow cameras;
-- toggle map, labels, perception, relationships, beliefs, and captions;
-- change pacing and presentation overrides;
-- jump from an object or caption to its source event ID/hash;
-- export `.blend`, PNG frame sequences, MP4 through Blender/FFmpeg, and glTF for browser viewing.
+- `ND_Map`: gray floor boxes for places and door/portal boxes for passages;
+- `ND_Agents`: one procedural stick figure per agent, parented to an animated root object;
+- `ND_Labels`: place and agent text labels;
+- timeline markers for every objective event;
+- keyframes for actor root locations and passage open/closed rotation;
+- stable scene frame range and linear actor location interpolation;
+- custom properties on the scene and generated objects containing source IDs and hashes;
+- one neutral world, sun light, and overview camera so the file opens in a useful state.
 
-“Driveable” in V20 means navigating cameras and replay time. Interactive counterfactual control—choosing an agent action and resuming simulation—is a later bridge that must submit a typed intervention to the simulator and receive a new branch/trajectory rather than mutate Blender keyframes.
+The script saves an uncompressed file with `bpy.ops.wm.save_as_mainfile`, preserving the stable `BLENDER` header used at the publication boundary. The output path must have a `.blend` suffix. Existing output is replaced only after Blender exits successfully and the staged file has that header; a failed process leaves the prior output untouched.
 
-## Determinism and provenance
+## Python API
 
-- Identical source bundle plus presentation overrides produces stable object names, collections, frame allocation, transforms, colors, and camera defaults.
-- Every generated object stores source IDs/hashes as custom properties.
-- Unknown cue kinds fail validation; missing optional geometry falls back deterministically.
-- Export supports headless operation: `blender -b -P import_replay.py -- bundle.json --output preview.blend`.
-- `bpy`, Blender, FFmpeg, and rendering dependencies stay outside `narrative_dynamics.abm`.
+Core ABM exports:
 
-## Delivery slices
+- `SpatialPlace`
+- `SpatialPassage`
+- `SituatedSpatialMap`
+- `load_tiled_situated_spatial_map(path, world_model, *, meters_per_pixel)`
+- `auto_layout_situated_spatial_map(world_model, *, room_size, gap)`
 
-1. V19.1: canonical world-map JSON and import adapters, including deterministic no-coordinate layout.
-2. V20.0: `SceneReplayBundle` contracts/exporter and JSON validation with no Blender dependency.
-3. V20.1: Blender Python importer producing rooms, portals, stick figures, labels, keyframes, and `.blend` output.
-4. V20.2: playback controls, overlays, cameras, presentation overrides, and MP4/PNG/glTF export.
-5. Later: typed counterfactual intervention bridge that forks a new simulation trajectory.
+Optional integration exports:
 
-## Acceptance scenario
+- `compile_situated_blend_replay(model, trajectory, spatial_map, *, frames_per_round) -> dict[str, object]`
+- `export_situated_network_blend(blender_executable, output_path, model, trajectory, spatial_map=None, *, frames_per_round=24) -> BlenderExportReport`
+- `BlenderExportReport`
 
-An office case imports or auto-lays out a corridor and meeting room separated by a door. Alice tells a fact, Bob receives either an anonymous sound through a closed door or an exact transmission through an open door, both agents continue acting across rounds, and trust/belief overlays evolve. A user can scrub rounds, follow Alice or Bob, edit the caption without altering the canonical event, inspect every preview element's source hash, save `.blend`, and render a short MP4.
+If `spatial_map` is omitted, the export uses deterministic auto-layout. The Blender executable is always explicit; the adapter never scans environment variables or silently downloads Blender.
+
+## Atomicity and errors
+
+- Validate all Python inputs and compile the complete packet before launching Blender.
+- Write the packet and staged `.blend` under one temporary directory.
+- Run with Blender's `--python-exit-code` so scene-script exceptions become nonzero process exits. Capture bounded Blender stdout/stderr and raise one redacted `BlenderExportError` on missing executables, timeouts, nonzero exit, missing staged output, or invalid output header.
+- Publish with an atomic same-filesystem `os.replace` only after successful validation.
+- Never include TELL messages, API keys, temporary packet contents, or environment values in representations or error messages.
+
+## Verification
+
+Pure Python tests cover map validation, path-independent Tiled import, deterministic auto-layout, exact replay frames, movement, door states, sanitized transmission export, and secret absence. A subprocess protocol test verifies staging/publication/failure behavior. The explicit Blender 5.1 path supplied for this workspace runs a real smoke test that opens the generated file through Blender and inspects expected collections, keyframes, and source properties before completion is claimed.
 
 ## Non-goals
 
-- No photorealism, rigid-body gameplay, motion capture, facial animation, or procedural storytelling inside Blender.
-- No direct reading of private messages or evidence beyond the selected projection entitlement.
-- No Blender dependency in the deterministic simulation core.
-- No promise that edited presentation text is canonical simulation truth.
+- No PNG, MP4, glTF, FBX, or render export.
+- No custom Blender add-on, playback UI, game controls, or bidirectional live link.
+- No counterfactual action selection inside Blender.
+- No photorealism, collision simulation, motion capture, facial animation, or asset marketplace integration.
+- No change to V10-V19 simulation, perception, cognition, memory, social, or narrative authority.

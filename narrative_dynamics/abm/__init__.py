@@ -432,6 +432,15 @@ from narrative_dynamics.abm.situated_network import (
     simulate_situated_network_round,
     simulate_situated_network_runtime,
 )
+from narrative_dynamics.abm.situated_spatial_map_contracts import (
+    SpatialPassage,
+    SpatialPlace,
+    SituatedSpatialMap,
+)
+from narrative_dynamics.abm.situated_spatial_map import (
+    auto_layout_situated_spatial_map,
+    load_tiled_situated_spatial_map,
+)
 
 
 __all__ = (
@@ -768,4 +777,9 @@ __all__ = (
     "initialize_situated_network_runtime",
     "simulate_situated_network_round",
     "simulate_situated_network_runtime",
+    "SpatialPlace",
+    "SpatialPassage",
+    "SituatedSpatialMap",
+    "load_tiled_situated_spatial_map",
+    "auto_layout_situated_spatial_map",
 )

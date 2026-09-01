@@ -1951,8 +1951,45 @@ state stale, requiring recovery from a matching subsystem/store checkpoint. The
 runtime therefore requires a file-backed database.
 
 V19 unifies observability and orchestration, but it does not yet implement physical
-lifecycle or V1-V9 rewiring feedback; both remain future work. Map import is deferred
-to V19.1. V20 authoring/visualization and a production UI also remain separate work.
+lifecycle or V1-V9 rewiring feedback; both remain future work. Physical map geometry
+and Blender visualization remain presentation/integration layers rather than part of
+the atomic runtime, and a production authoring UI remains future work.
+
+### V20 Blender graybox replay export
+
+V20 turns a completed situated-network trajectory into one editable Blender file.
+The `.blend` contains the spatial map, labeled graybox places and passages, independent
+stick-figure agents, movement and door keyframes, objective event timeline markers,
+belief/claim custom properties, an overview camera, and replay provenance hashes.
+
+```python
+from narrative_dynamics.abm import load_tiled_situated_spatial_map
+from narrative_dynamics.integrations import export_situated_network_blend
+
+# `network` and `trajectory` are the V19 model and completed trajectory above.
+world = network.percept_memory_model.cognitive_model.world_model
+spatial_map = load_tiled_situated_spatial_map(
+    "office.tmj",
+    world,
+    meters_per_pixel=0.05,
+)
+report = export_situated_network_blend(
+    r"C:\Program Files\Blender Foundation\Blender 5.1\blender.exe",
+    "office-replay.blend",
+    network,
+    trajectory,
+    spatial_map,
+)
+print(report.replay_hash)
+```
+
+The Tiled map must be orthogonal JSON. Plain rectangle objects classified as `place`
+or `passage` use their object `name` as the matching world place/passage ID; the map
+must cover every world place and passage exactly once. Omitting `spatial_map` selects
+a deterministic grid layout, so physical coordinates are optional. The exporter runs
+Blender headlessly, stages the result, validates its `.blend` header, and atomically
+replaces the requested output only after success. It exports no message payloads,
+private details, database paths, renderer output, video, player, or Blender add-on.
 
 ## Verification
 

@@ -2,6 +2,14 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+import json
+import math
+import os
+from pathlib import Path
+import subprocess
+from tempfile import TemporaryDirectory
+
 from narrative_dynamics.contracts import stable_content_hash
 from narrative_dynamics.abm.situated_network_contracts import (
     SituatedNetworkRuntimeModel,
@@ -9,6 +17,9 @@ from narrative_dynamics.abm.situated_network_contracts import (
 )
 from narrative_dynamics.abm.situated_spatial_map_contracts import (
     SituatedSpatialMap,
+)
+from narrative_dynamics.abm.situated_spatial_map import (
+    auto_layout_situated_spatial_map,
 )
 
 
@@ -21,6 +32,44 @@ _COLORS = (
     (0.95, 0.72, 0.22, 1.0),
     (0.25, 0.78, 0.78, 1.0),
 )
+
+
+class BlenderExportError(RuntimeError):
+    """Raised when Blender cannot publish one validated replay scene."""
+
+
+@dataclass(frozen=True)
+class BlenderExportReport:
+    output_path: str
+    runtime_model_hash: str
+    trajectory_hash: str
+    spatial_map_hash: str
+    replay_hash: str
+    first_frame: int
+    last_frame: int
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.output_path, str) or not self.output_path.strip():
+            raise ValueError("Blender export report output path must be non-empty")
+        for name in (
+            "runtime_model_hash",
+            "trajectory_hash",
+            "spatial_map_hash",
+            "replay_hash",
+        ):
+            value = getattr(self, name)
+            if (
+                not isinstance(value, str)
+                or not value.startswith("sha256:")
+                or len(value) != 71
+            ):
+                raise ValueError(f"Blender export report {name.replace('_', ' ')} must be a content hash")
+        for name in ("first_frame", "last_frame"):
+            value = getattr(self, name)
+            if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                raise ValueError(f"Blender export report {name.replace('_', ' ')} must be positive")
+        if self.last_frame < self.first_frame:
+            raise ValueError("Blender export report frame range must be ordered")
 
 
 def _positive_integer(value: object, *, label: str) -> int:
@@ -194,4 +243,135 @@ def compile_situated_blend_replay(
     return packet
 
 
-__all__ = ("compile_situated_blend_replay",)
+def _path(value: str | os.PathLike[str], *, label: str) -> Path:
+    try:
+        path = Path(value)
+    except TypeError:
+        raise TypeError(f"{label} must be a filesystem path") from None
+    if not str(path).strip():
+        raise ValueError(f"{label} must be non-empty")
+    return path
+
+
+def _timeout(value: object) -> float:
+    if (
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+        or not math.isfinite(value)
+        or value <= 0.0
+    ):
+        raise ValueError("Blender export timeout must be a positive finite number")
+    return float(value)
+
+
+def export_situated_network_blend(
+    blender_executable: str | os.PathLike[str],
+    output_path: str | os.PathLike[str],
+    model: SituatedNetworkRuntimeModel,
+    trajectory: SituatedNetworkTrajectory,
+    spatial_map: SituatedSpatialMap | None = None,
+    *,
+    frames_per_round: int = 24,
+    timeout_seconds: float = 120.0,
+) -> BlenderExportReport:
+    """Run Blender headlessly and atomically publish one `.blend` replay."""
+
+    output = _path(output_path, label="Blender output path").resolve()
+    if output.suffix.lower() != ".blend":
+        raise ValueError("Blender output path must use the .blend suffix")
+    executable = _path(
+        blender_executable,
+        label="Blender executable path",
+    ).resolve()
+    if not executable.is_file():
+        raise BlenderExportError("Blender export executable is unavailable")
+    timeout = _timeout(timeout_seconds)
+    selected_map = (
+        auto_layout_situated_spatial_map(
+            model.percept_memory_model.cognitive_model.world_model
+        )
+        if spatial_map is None
+        else spatial_map
+    )
+    packet = compile_situated_blend_replay(
+        model,
+        trajectory,
+        selected_map,
+        frames_per_round=frames_per_round,
+    )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    builder = Path(__file__).with_name("blender_scene_builder.py").resolve()
+    if not builder.is_file():
+        raise BlenderExportError("Blender export scene builder is unavailable")
+
+    try:
+        with TemporaryDirectory(
+            prefix=".nd-blender-",
+            dir=output.parent,
+        ) as temporary:
+            root = Path(temporary)
+            packet_path = root / "replay.json"
+            staged_path = root / "scene.blend"
+            log_path = root / "blender.log"
+            packet_path.write_text(
+                json.dumps(
+                    packet,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                encoding="utf-8",
+            )
+            command = (
+                str(executable),
+                "--background",
+                "--factory-startup",
+                "--python-exit-code",
+                "21",
+                "--python",
+                str(builder),
+                "--",
+                "--input",
+                str(packet_path),
+                "--output",
+                str(staged_path),
+            )
+            with log_path.open("wb") as log:
+                completed = subprocess.run(
+                    command,
+                    stdin=subprocess.DEVNULL,
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                    timeout=timeout,
+                )
+            if completed.returncode != 0:
+                raise BlenderExportError("Blender export process failed")
+            if not staged_path.is_file():
+                raise BlenderExportError("Blender export did not produce a scene")
+            with staged_path.open("rb") as stream:
+                if stream.read(7) != b"BLENDER":
+                    raise BlenderExportError("Blender export produced an invalid scene")
+            os.replace(staged_path, output)
+    except BlenderExportError:
+        raise
+    except (OSError, subprocess.SubprocessError):
+        raise BlenderExportError("Blender export process failed") from None
+
+    return BlenderExportReport(
+        str(output),
+        model.content_hash,
+        trajectory.content_hash,
+        selected_map.content_hash,
+        packet["content_hash"],
+        packet["first_frame"],
+        packet["last_frame"],
+    )
+
+
+__all__ = (
+    "BlenderExportError",
+    "BlenderExportReport",
+    "compile_situated_blend_replay",
+    "export_situated_network_blend",
+)
