@@ -2010,9 +2010,10 @@ scenario = compile_situated_scenario_package(source)
 state = initialize_compiled_scenario("law-firm-memory.sqlite3", scenario)
 ```
 
-The package directory and manifest form a tree of ownership: one
-`scenario-package.json` declares each JSON/Tiled document, its role, logical ID,
-relative path, and integrity hash. The document contents form graphs. Places connect
+The package directory and manifest form a tree of ownership: `scenario.json`
+declares each document's role, relative `path`, and raw-byte `sha256`; `run.json`
+contains run policy, agent logical IDs come from their agent documents, and singleton
+roles are their logical identities. The document contents form graphs. Places connect
 through directed passages and perception edges; institutions use an acyclic parent
 forest; social relationships are directed; story scenes use an acyclic dependency
 graph; and grants connect agents, roles, institutions, or the public to catalog
@@ -2022,9 +2023,11 @@ scene order within an act, and action-schedule horizons retain sequence semantic
 unordered catalogs and graph members are canonicalized for compiled identity.
 
 Physical input defines the world roster, perception graph, authoritative round-zero
-agent/object/passage state, and either explicit spatial geometry or the declared
-`physical.map=auto_grid` fallback. Social input separately defines institutions,
-memberships, every directed agent relationship, and supported enforceable norms.
+agent/object/passage state, and either a real Tiled `map.tmj` or the declared
+`physical.map=auto_grid` fallback, both compiled by the public V20 spatial authority.
+Social input separately defines institutions, memberships, multiplex directed typed
+relationships, one unambiguous trust/affinity runtime seed per directed agent pair,
+and supported enforceable norms.
 The compiler requires exact fixed-roster and cross-document coverage and constructs
 the existing public V10-V20 world, cognition, perception, memory, social-memory,
 network-runtime, story, and spatial-map values. The compiled scenario binds the
@@ -2035,20 +2038,26 @@ Story mode is `authored`, `hybrid`, or `sandbox`, and must match the run policy.
 Authored mode assigns every round to an active scene contract; hybrid mode keeps
 agents autonomous while permitting only declared typed interventions; sandbox mode
 supplies initial conditions and terminal limits without steering actions. These
-modes are input policy only in V21.1. Knowledge and asset catalogs
-carry content hashes, metadata, and access grants, but V21.1 never fetches their
-URIs, builds a retrieval index, calls an LLM, or loads an asset. Catalog metadata is
-therefore an authorization and identity boundary, not an execution hook.
+modes are input policy only in V21.1. Knowledge and asset catalogs carry content
+hashes, metadata, typed per-resource entitlements, and access grants. Every catalog
+or direct agent grant must be covered by an agent, role, institution, or public
+entitlement. V21.1 never fetches their URIs, builds a retrieval index, calls an LLM,
+or loads an asset. Catalog metadata is therefore an authorization and identity
+boundary, not an execution hook. The committed acceptance package has three legal
+professionals, one client, and a private contract-scan resource.
 
 Loading is deliberately inert: it reads only UTF-8 JSON documents named by the
 manifest, enforces size limits and exact schemas, recomputes every declared content
-hash, and rejects absolute paths, parent traversal, symlink escape, duplicate keys,
-non-finite numbers, and undeclared source dependencies. Raw manifest hashes remain
-loader integrity evidence. Compilation uses schema-semantic package/document
+hash, and rejects absolute paths, parent traversal, symlink escape, duplicate paths
+or file identities, duplicate keys, non-finite numbers, and undeclared source
+dependencies. Public raw manifest/document hashes remain provenance evidence but are
+excluded from equality and semantic identity. Compilation uses schema-semantic package/document
 identity, so moving the package or reordering semantically unordered input does not
 change the compiled hash. Compilation fails closed with `ScenarioCompilationError`;
-its stable document role, logical ID, JSON pointer, and code identify malformed or
-unresolved input without exposing machine-local paths or source values.
+its stable document role (and logical ID for agent documents), RFC 6901 JSON pointer,
+and code identify malformed or unresolved input without exposing machine-local paths
+or source values. The planned deterministic `ScenarioCompilationReport` is explicitly
+deferred beyond V21.1; this release exposes only the sanitized exception boundary.
 
 V21.1 stops after safe load, semantic compilation, and exact runtime-state
 initialization. It does not advance the scenario through a new V21 coordinator and

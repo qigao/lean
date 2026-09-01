@@ -143,8 +143,9 @@ hashes, not machine-local paths.
 ### Source and compiled boundaries
 
 `ScenarioPackageSource` is the immutable result of safely loading source documents.
-It preserves the package ID/version, canonical document values, document identities,
-and package hash. It contains no open file handles and no source root path.
+It preserves the package ID/version, canonical document values and identities, plus
+separate raw-byte manifest/document hashes as provenance excluded from semantic
+identity and equality. It contains no open file handles and no source root path.
 
 `CompiledSituatedScenario` is the only value accepted by the V21 coordinator. It
 binds:
@@ -269,8 +270,10 @@ Compilation is fail-closed and staged:
 7. reconstruct and validate the complete initial subsystem state;
 8. derive the authoritative V19 snapshot/metrics and compare them;
 9. construct `CompiledSituatedScenario` and its content hash;
-10. emit a deterministic `ScenarioCompilationReport` containing warnings and
-   errors by logical document role and JSON pointer, never by secret value.
+10. after V21.1, emit a deterministic `ScenarioCompilationReport` containing
+   warnings and errors by logical document role and JSON pointer, never by secret
+   value. V21.1 deliberately stops at the sanitized exception boundary and does not
+   expose this report yet.
 
 No SQLite database, Blender process, provider call, network access, or output
 publication occurs before compilation succeeds.

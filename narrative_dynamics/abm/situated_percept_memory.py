@@ -136,6 +136,29 @@ VALUES ('schema_version', '1');
 COMMIT;
 """
 
+
+def situated_percept_memory_schema_snapshot(
+) -> tuple[tuple[str, str, str, str | None], ...]:
+    """Return the canonical public SQLite schema fingerprint for this store."""
+
+    connection = sqlite3.connect(":memory:")
+    try:
+        connection.executescript(_SCHEMA)
+        return tuple(
+            (
+                object_type,
+                name,
+                table_name,
+                None if sql is None else sql.replace("\r\n", "\n").strip(),
+            )
+            for object_type, name, table_name, sql in connection.execute(
+                "SELECT type, name, tbl_name, sql FROM sqlite_master "
+                "WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name"
+            ).fetchall()
+        )
+    finally:
+        connection.close()
+
 _INSERT = """
 INSERT INTO percept_memory_records (
     memory_id, source_hash, agent_id, percept_id, perception_model_id,
@@ -640,6 +663,7 @@ def rebuild_situated_percept_memory_index(
 __all__ = (
     "SituatedPerceptMemoryStorageError",
     "SituatedPerceptMemoryConflictError",
+    "situated_percept_memory_schema_snapshot",
     "initialize_situated_percept_memory",
     "hash_situated_percept_memory_store",
     "ingest_situated_percept_story",

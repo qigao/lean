@@ -17,6 +17,7 @@ from narrative_dynamics.abm import situated_network as situated_network
 from narrative_dynamics.abm import situated_network_contracts as network_contracts
 from narrative_dynamics.abm import situated_spatial_map as spatial_map
 from narrative_dynamics.abm import situated_spatial_map_contracts as spatial_contracts
+from narrative_dynamics.abm import situated_percept_memory as percept_memory
 
 
 class NetworkABMPublicAPITests(unittest.TestCase):
@@ -280,6 +281,7 @@ class NetworkABMPublicAPITests(unittest.TestCase):
                 "search_situated_percept_memories",
                 "set_situated_percept_memory_active",
                 "rebuild_situated_percept_memory_index",
+                "situated_percept_memory_schema_snapshot",
                 "SituatedPerceptMemoryCognitiveModel",
                 "SituatedPerceptMemoryCognitiveRoundResult",
                 "SituatedPerceptMemoryCognitiveTrajectory",
@@ -361,6 +363,7 @@ class NetworkABMPublicAPITests(unittest.TestCase):
                 "SpatialPassage",
                 "SituatedSpatialMap",
                 "load_tiled_situated_spatial_map",
+                "compile_tiled_situated_spatial_map",
                 "auto_layout_situated_spatial_map",
                 "ScenarioDocumentRole",
                 "ScenarioDocumentLocator",
@@ -372,6 +375,7 @@ class NetworkABMPublicAPITests(unittest.TestCase):
                 "ScenarioInstitution",
                 "ScenarioMembership",
                 "ScenarioRelationship",
+                "ScenarioRelationshipSeed",
                 "ScenarioNormEffect",
                 "ScenarioNorm",
                 "ScenarioSocialWorld",
@@ -382,6 +386,7 @@ class NetworkABMPublicAPITests(unittest.TestCase):
                 "ScenarioStoryAct",
                 "ScenarioStoryPlan",
                 "ScenarioResourceKind",
+                "ScenarioResourceEntitlement",
                 "ScenarioKnowledgeResource",
                 "ScenarioKnowledgeCatalog",
                 "ScenarioAssetResource",
@@ -458,13 +463,17 @@ class NetworkABMPublicAPITests(unittest.TestCase):
         )
         for name in scenario_compiler.__all__:
             self.assertIs(getattr(abm, name), getattr(scenario_compiler, name))
+        self.assertIs(
+            abm.situated_percept_memory_schema_snapshot,
+            percept_memory.situated_percept_memory_schema_snapshot,
+        )
 
     def test_committed_law_firm_package_loads_and_compiles_without_a_generator(self):
         root = Path(__file__).resolve().parents[1] / "examples" / "law_firm_scenario"
         manifest = json.loads(
-            (root / "scenario-package.json").read_text(encoding="utf-8")
+            (root / "scenario.json").read_text(encoding="utf-8")
         )
-        declared_files = {item["relative_path"] for item in manifest["documents"]}
+        declared_files = {item["path"] for item in manifest["documents"]}
         committed_documents = {
             path.relative_to(root).as_posix()
             for path in root.rglob("*")
@@ -472,16 +481,26 @@ class NetworkABMPublicAPITests(unittest.TestCase):
         }
         self.assertEqual(
             committed_documents,
-            declared_files | {"scenario-package.json"},
+            declared_files | {"scenario.json"},
         )
+        self.assertIn("physical/map.tmj", declared_files)
+        self.assertIn("run.json", declared_files)
 
         source = abm.load_situated_scenario_package(root)
         scenario = abm.compile_situated_scenario_package(source)
 
         self.assertEqual(source.scenario_id, "law-firm-case")
         self.assertEqual(scenario.scenario_id, "law-firm-case")
-        self.assertEqual(len(source.documents), 16)
+        self.assertEqual(len(source.documents), 17)
         self.assertEqual(scenario.runtime_model.model_id, "law-firm-network")
+        self.assertEqual(
+            {agent_id for agent_id, role in scenario.agent_body_roles if role != "client"},
+            {"alice", "bob", "carol"},
+        )
+        self.assertIn(
+            "contract-scan",
+            {item.resource_id for item in scenario.knowledge_catalog.resources},
+        )
 
 
 if __name__ == "__main__":

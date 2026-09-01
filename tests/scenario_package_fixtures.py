@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 import hashlib
 import json
 from pathlib import Path
@@ -15,38 +14,8 @@ RESOURCE_HASH = "sha256:" + "a" * 64
 PREVIEW_HASH = "sha256:" + "b" * 64
 
 
-def _canonical_hash_value(value: object) -> object:
-    if value is None:
-        return ("null",)
-    if isinstance(value, bool):
-        return ("bool", value)
-    if isinstance(value, int):
-        return ("int", str(value))
-    if isinstance(value, float):
-        return ("float", value.hex())
-    if isinstance(value, str):
-        return ("str", value)
-    if isinstance(value, Mapping):
-        return (
-            "mapping",
-            tuple(
-                (key, _canonical_hash_value(value[key]))
-                for key in sorted(value)
-            ),
-        )
-    if isinstance(value, (list, tuple)):
-        return ("sequence", tuple(_canonical_hash_value(item) for item in value))
-    raise TypeError("test canonical hash accepts JSON values only")
-
-
-def _canonical_content_hash(value: object) -> str:
-    encoded = json.dumps(
-        _canonical_hash_value(value),
-        ensure_ascii=False,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8")
-    return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+def _raw_content_hash(path: Path) -> str:
+    return f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
 
 
 def _write_json(path: Path, value: object) -> None:
@@ -359,6 +328,7 @@ def write_law_firm_package(root: Path) -> Path:
                 "agents": [
                     {"agent_id": "alice", "place_id": "meeting"},
                     {"agent_id": "bob", "place_id": "lobby"},
+                    {"agent_id": "carol", "place_id": "meeting"},
                     {"agent_id": "client", "place_id": "lobby"},
                 ],
                 "objects": [
@@ -377,35 +347,31 @@ def write_law_firm_package(root: Path) -> Path:
         (
             "physical.map",
             "map",
-            "physical/map.json",
+            "physical/map.tmj",
             {
-                "map_id": "law-firm-map",
-                "version": "1",
-                "places": [
-                    {"place_id": "lobby", "center_x": 0, "center_y": 0, "width": 4, "depth": 4, "height": 2.8},
-                    {"place_id": "meeting", "center_x": 5, "center_y": 0, "width": 5, "depth": 4, "height": 2.8},
-                    {"place_id": "archive", "center_x": 11, "center_y": 0, "width": 4, "depth": 3, "height": 2.8},
-                ],
-                "passages": [
+                "type": "map",
+                "orientation": "orthogonal",
+                "width": 40,
+                "height": 20,
+                "tilewidth": 10,
+                "tileheight": 10,
+                "layers": [
                     {
-                        "passage_id": "lobby-meeting",
-                        "source_place_id": "lobby",
-                        "target_place_id": "meeting",
-                        "center_x": 2.25,
-                        "center_y": 0,
-                        "width": 0.5,
-                        "depth": 1.2,
-                        "height": 2.1,
+                        "type": "objectgroup",
+                        "name": "places",
+                        "objects": [
+                            {"id": 1, "name": "lobby", "class": "place", "x": -40, "y": -40, "width": 80, "height": 80},
+                            {"id": 2, "name": "meeting", "class": "place", "x": 50, "y": -40, "width": 100, "height": 80},
+                            {"id": 3, "name": "archive", "class": "place", "x": 180, "y": -30, "width": 80, "height": 60},
+                        ],
                     },
                     {
-                        "passage_id": "meeting-archive",
-                        "source_place_id": "meeting",
-                        "target_place_id": "archive",
-                        "center_x": 8,
-                        "center_y": 0,
-                        "width": 0.5,
-                        "depth": 1.2,
-                        "height": 2.1,
+                        "type": "objectgroup",
+                        "name": "passages",
+                        "objects": [
+                            {"id": 4, "name": "lobby-meeting", "class": "passage", "x": 40, "y": -12, "width": 10, "height": 24},
+                            {"id": 5, "name": "meeting-archive", "class": "passage", "x": 155, "y": -12, "width": 10, "height": 24},
+                        ],
                     },
                 ],
             },
@@ -422,6 +388,7 @@ def write_law_firm_package(root: Path) -> Path:
                 "memberships": [
                     {"agent_id": "alice", "institution_id": "firm", "role_id": "partner"},
                     {"agent_id": "bob", "institution_id": "legal-team", "role_id": "lawyer"},
+                    {"agent_id": "carol", "institution_id": "legal-team", "role_id": "lawyer"},
                     {"agent_id": "client", "institution_id": "firm", "role_id": "client"},
                 ],
             },
@@ -436,11 +403,32 @@ def write_law_firm_package(root: Path) -> Path:
                 "memory_cognitive_model_id": "law-firm-memory-cognition",
                 "relationships": [
                     {"source_agent_id": "alice", "target_agent_id": "bob", "relationship_type": "supervises", "strength": 0.8},
+                    {"source_agent_id": "alice", "target_agent_id": "bob", "relationship_type": "mentors", "strength": 0.7},
+                    {"source_agent_id": "alice", "target_agent_id": "carol", "relationship_type": "supervises", "strength": 0.75},
                     {"source_agent_id": "alice", "target_agent_id": "client", "relationship_type": "represents", "strength": 0.9},
                     {"source_agent_id": "bob", "target_agent_id": "alice", "relationship_type": "reports_to", "strength": 0.9},
+                    {"source_agent_id": "bob", "target_agent_id": "carol", "relationship_type": "collaborates", "strength": 0.7},
                     {"source_agent_id": "bob", "target_agent_id": "client", "relationship_type": "advises", "strength": 0.6},
+                    {"source_agent_id": "carol", "target_agent_id": "alice", "relationship_type": "reports_to", "strength": 0.8},
+                    {"source_agent_id": "carol", "target_agent_id": "bob", "relationship_type": "collaborates", "strength": 0.7},
+                    {"source_agent_id": "carol", "target_agent_id": "client", "relationship_type": "advises", "strength": 0.65},
                     {"source_agent_id": "client", "target_agent_id": "alice", "relationship_type": "trusts", "strength": 0.7},
                     {"source_agent_id": "client", "target_agent_id": "bob", "relationship_type": "depends_on", "strength": 0.5},
+                    {"source_agent_id": "client", "target_agent_id": "carol", "relationship_type": "trusts", "strength": 0.6},
+                ],
+                "runtime_seeds": [
+                    {"observer_agent_id": "alice", "source_agent_id": "bob", "trust": 0.5, "affinity": 0.8},
+                    {"observer_agent_id": "alice", "source_agent_id": "carol", "trust": 0.55, "affinity": 0.75},
+                    {"observer_agent_id": "alice", "source_agent_id": "client", "trust": 0.5, "affinity": 0.9},
+                    {"observer_agent_id": "bob", "source_agent_id": "alice", "trust": 0.5, "affinity": 0.9},
+                    {"observer_agent_id": "bob", "source_agent_id": "carol", "trust": 0.5, "affinity": 0.7},
+                    {"observer_agent_id": "bob", "source_agent_id": "client", "trust": 0.5, "affinity": 0.6},
+                    {"observer_agent_id": "carol", "source_agent_id": "alice", "trust": 0.55, "affinity": 0.8},
+                    {"observer_agent_id": "carol", "source_agent_id": "bob", "trust": 0.5, "affinity": 0.7},
+                    {"observer_agent_id": "carol", "source_agent_id": "client", "trust": 0.5, "affinity": 0.65},
+                    {"observer_agent_id": "client", "source_agent_id": "alice", "trust": 0.5, "affinity": 0.7},
+                    {"observer_agent_id": "client", "source_agent_id": "bob", "trust": 0.5, "affinity": 0.5},
+                    {"observer_agent_id": "client", "source_agent_id": "carol", "trust": 0.5, "affinity": 0.6},
                 ],
                 "policy": {
                     "initial_source_trust": 0.5,
@@ -484,8 +472,9 @@ def write_law_firm_package(root: Path) -> Path:
                 ]
             },
         ),
-        ("agent", "alice", "agents/alice.json", _agent_value("alice", "partner", "meeting", ("case-file-brief",))),
-        ("agent", "bob", "agents/bob.json", _agent_value("bob", "lawyer", "lobby", ("case-file-brief",))),
+        ("agent", "alice", "agents/alice.json", _agent_value("alice", "partner", "meeting", ("case-file-brief", "contract-scan"))),
+        ("agent", "bob", "agents/bob.json", _agent_value("bob", "lawyer", "lobby", ("case-file-brief", "contract-scan"))),
+        ("agent", "carol", "agents/carol.json", _agent_value("carol", "lawyer", "meeting", ("case-file-brief", "contract-scan"))),
         ("agent", "client", "agents/client.json", _agent_value("client", "client", "lobby", ("client-guide",))),
         (
             "story.outline",
@@ -500,7 +489,7 @@ def write_law_firm_package(root: Path) -> Path:
                     {
                         "scene_id": "discover",
                         "place_ids": ["archive"],
-                        "participant_agent_ids": ["alice", "bob"],
+                        "participant_agent_ids": ["alice", "bob", "carol"],
                         "preconditions": [
                             {"kind": "object_at", "subject_id": "case-file", "object_id": "archive", "value": None}
                         ],
@@ -514,7 +503,7 @@ def write_law_firm_package(root: Path) -> Path:
                     {
                         "scene_id": "confront",
                         "place_ids": ["meeting"],
-                        "participant_agent_ids": ["alice", "bob", "client"],
+                        "participant_agent_ids": ["alice", "bob", "carol", "client"],
                         "preconditions": [
                             {"kind": "agent_holds", "subject_id": "alice", "object_id": "case-file", "value": None}
                         ],
@@ -541,7 +530,7 @@ def write_law_firm_package(root: Path) -> Path:
             "story.interventions",
             "interventions",
             "story/interventions.json",
-            {"intervention_kinds": ["move_object", "open_passage"]},
+            {"intervention_kinds": ["move_object", "open_passage", "pause_clock"]},
         ),
         (
             "knowledge.catalog",
@@ -559,6 +548,9 @@ def write_law_firm_package(root: Path) -> Path:
                         "version": "2026-09-01",
                         "authority": "official",
                         "license_tag": "CC-BY-4.0",
+                        "entitlements": [
+                            {"subject_scope": "public", "subject_id": None}
+                        ],
                         "concept_ids": ["law", "evidence"],
                         "index_id": "index-statute",
                     },
@@ -572,6 +564,10 @@ def write_law_firm_package(root: Path) -> Path:
                         "version": "1",
                         "authority": "firm",
                         "license_tag": "private",
+                        "entitlements": [
+                            {"subject_scope": "role", "subject_id": "lawyer"},
+                            {"subject_scope": "role", "subject_id": "partner"},
+                        ],
                         "concept_ids": ["case-file"],
                         "index_id": "index-case-file",
                     },
@@ -585,8 +581,28 @@ def write_law_firm_package(root: Path) -> Path:
                         "version": "1",
                         "authority": "firm",
                         "license_tag": "client",
+                        "entitlements": [
+                            {"subject_scope": "role", "subject_id": "client"}
+                        ],
                         "concept_ids": ["procedure"],
                         "index_id": None,
+                    },
+                    {
+                        "resource_id": "contract-scan",
+                        "kind": "image",
+                        "content_hash": RESOURCE_HASH,
+                        "uri": "https://example.test/private/contract-scan.tiff",
+                        "media_type": "image/tiff",
+                        "language": "en",
+                        "version": "1",
+                        "authority": "firm",
+                        "license_tag": "private",
+                        "entitlements": [
+                            {"subject_scope": "role", "subject_id": "lawyer"},
+                            {"subject_scope": "role", "subject_id": "partner"},
+                        ],
+                        "concept_ids": ["contract", "evidence"],
+                        "index_id": "index-contract-scan",
                     },
                 ]
             },
@@ -598,9 +614,9 @@ def write_law_firm_package(root: Path) -> Path:
             {
                 "grants": [
                     {"subject_scope": "public", "subject_id": None, "resource_ids": ["statute"]},
-                    {"subject_scope": "agent", "subject_id": "alice", "resource_ids": ["case-file-brief"]},
-                    {"subject_scope": "agent", "subject_id": "bob", "resource_ids": ["case-file-brief"]},
-                    {"subject_scope": "agent", "subject_id": "client", "resource_ids": ["client-guide"]},
+                    {"subject_scope": "role", "subject_id": "partner", "resource_ids": ["case-file-brief", "contract-scan"]},
+                    {"subject_scope": "role", "subject_id": "lawyer", "resource_ids": ["case-file-brief", "contract-scan"]},
+                    {"subject_scope": "role", "subject_id": "client", "resource_ids": ["client-guide"]},
                 ]
             },
         ),
@@ -618,6 +634,9 @@ def write_law_firm_package(root: Path) -> Path:
                         "media_type": "model/gltf-binary",
                         "authority": "official",
                         "license_tag": "CC-BY-4.0",
+                        "entitlements": [
+                            {"subject_scope": "public", "subject_id": None}
+                        ],
                         "dimensions": [2.0, 0.6, 2.2],
                         "unit": "m",
                         "format": "glb",
@@ -661,18 +680,17 @@ def write_law_firm_package(root: Path) -> Path:
 
     locators: list[dict[str, object]] = []
     for role, logical_id, relative_path, value in documents:
-        document = _document(value)
-        _write_json(root / relative_path, document)
+        authored = value if role == "physical.map" else _document(value)
+        _write_json(root / relative_path, authored)
         locators.append(
             {
                 "role": role,
-                "logical_id": logical_id,
-                "relative_path": relative_path,
-                "expected_hash": _canonical_content_hash(document),
+                "path": relative_path,
+                "sha256": _raw_content_hash(root / relative_path),
             }
         )
     _write_json(
-        root / "scenario-package.json",
+        root / "scenario.json",
         {
             "schema": SCENARIO_PACKAGE_SCHEMA,
             "scenario_id": "law-firm-case",
@@ -685,7 +703,7 @@ def write_law_firm_package(root: Path) -> Path:
 
 def mutate_json(path: Path, json_pointer: str, replacement: object) -> None:
     document = json.loads(Path(path).read_text(encoding="utf-8"))
-    current: object = document["value"]
+    current: object = document if Path(path).suffix.casefold() == ".tmj" else document["value"]
     tokens = [token.replace("~1", "/").replace("~0", "~") for token in json_pointer.split("/")[1:]]
     for token in tokens[:-1]:
         current = current[int(token)] if isinstance(current, list) else current[token]  # type: ignore[index]
@@ -699,13 +717,19 @@ def mutate_json(path: Path, json_pointer: str, replacement: object) -> None:
 
 def refresh_manifest_hash(root: Path, role: str, logical_id: str) -> None:
     root = Path(root)
-    manifest_path = root / "scenario-package.json"
+    manifest_path = root / "scenario.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    locator = next(
-        item
-        for item in manifest["documents"]
-        if item["role"] == role and item["logical_id"] == logical_id
-    )
-    document = json.loads((root / locator["relative_path"]).read_text(encoding="utf-8"))
-    locator["expected_hash"] = _canonical_content_hash(document)
+    candidates = [item for item in manifest["documents"] if item["role"] == role]
+    if role == "agent":
+        locator = next(
+            item
+            for item in candidates
+            if json.loads((root / item["path"]).read_text(encoding="utf-8"))["value"]["agent_id"]
+            == logical_id
+        )
+    else:
+        if len(candidates) != 1:
+            raise AssertionError("test fixture singleton role is ambiguous")
+        locator = candidates[0]
+    locator["sha256"] = _raw_content_hash(root / locator["path"])
     _write_json(manifest_path, manifest)

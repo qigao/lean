@@ -1,26 +1,92 @@
 {
-  "schema": "narrative-dynamics.scenario-document/v1",
-  "value": {
-    "allowed_output_kinds": [
-      "network.metrics",
-      "story.progress"
-    ],
-    "blender_mode": "final_blend",
-    "checkpoint_interval": 3,
-    "deterministic_seed": 7,
-    "fallbacks": {},
-    "maximum_output_records": 100,
-    "maximum_resource_bytes": 4096,
-    "maximum_rounds": 12,
-    "mode": "hybrid",
-    "public_journal": true,
-    "runtime_model": {
-      "adoption_threshold": 0.7,
-      "model_id": "law-firm-network",
-      "percept_memory_model_id": "law-firm-percept-memory-cognition",
-      "relationship_trust_threshold": 0.5,
-      "tracked_hypothesis_id": "file-found",
-      "version": "1"
+  "documents": [
+    {
+      "path": "physical/world.json",
+      "role": "physical.world",
+      "sha256": "sha256:b68e2bedcdc4d0db6332bbba8293859f1b5d423c8deb12a29611f00da7ed9f44"
+    },
+    {
+      "path": "physical/perception.json",
+      "role": "physical.perception",
+      "sha256": "sha256:1e87461d2bc68a0846a887071e56db05dc912387ae920407068772ec3e636cef"
+    },
+    {
+      "path": "physical/initial-state.json",
+      "role": "physical.initial_state",
+      "sha256": "sha256:067d3891885bc02221c06e5a296adbdbeeebae756b1fcfb31fd5d04103a50aa1"
+    },
+    {
+      "path": "physical/map.tmj",
+      "role": "physical.map",
+      "sha256": "sha256:e282650a5b54e87143667151a63dc99f5e8626f64f694f595f39db93dfddca53"
+    },
+    {
+      "path": "social/institutions.json",
+      "role": "social.institutions",
+      "sha256": "sha256:95b2e10a92c52d4ecfde4c5eb36396ff06fc8f4c6b5500954a5b73ca6a2de5d0"
+    },
+    {
+      "path": "social/relationships.json",
+      "role": "social.relationships",
+      "sha256": "sha256:449d2a573ccb867df97300423fc65dd302d2e27e30bd0e35c7fb12469e8d259b"
+    },
+    {
+      "path": "social/norms.json",
+      "role": "social.norms",
+      "sha256": "sha256:3fbc793a0fbfb3ec0733b7c02d0d89df07a28174edbbe2b6b31cddf11b495485"
+    },
+    {
+      "path": "agents/alice.json",
+      "role": "agent",
+      "sha256": "sha256:a6ed788032c2bf4c9e3e1e23cbcf3f4c0a6e844dda1c703e574d913d4a82872a"
+    },
+    {
+      "path": "agents/bob.json",
+      "role": "agent",
+      "sha256": "sha256:ad723d36c388e66a3489cd9c5406c23ddc68db055cd88a7806a50f156996f1b0"
+    },
+    {
+      "path": "agents/carol.json",
+      "role": "agent",
+      "sha256": "sha256:8e2d457d0bd685e118fe1e467b5687c7624b0ce93fa357d7dd23856aaaa0a1d7"
+    },
+    {
+      "path": "agents/client.json",
+      "role": "agent",
+      "sha256": "sha256:fc29f677430ac0e95a76c01cab27831ec4cbf7e80a083b1c61474583ac48bdb6"
+    },
+    {
+      "path": "story/outline.json",
+      "role": "story.outline",
+      "sha256": "sha256:e8dfe2dd005e5a952d00c7cff59ac9c7c1b7aa3f6ad23293de6aa5a1b80a6897"
+    },
+    {
+      "path": "story/interventions.json",
+      "role": "story.interventions",
+      "sha256": "sha256:0daabd20574e9b9693763cf465620b10aebaf3325046a3ea60f2d29344f33479"
+    },
+    {
+      "path": "knowledge/catalog.json",
+      "role": "knowledge.catalog",
+      "sha256": "sha256:706392378ade778a1416e4548cc68951a51c0ef08b1a413789f7f286ec385793"
+    },
+    {
+      "path": "knowledge/access.json",
+      "role": "knowledge.access",
+      "sha256": "sha256:f36ae5c57a76455342c46fb0620bde41ef571b85ce5abfdf7192dee81304cb10"
+    },
+    {
+      "path": "assets/catalog.json",
+      "role": "asset.catalog",
+      "sha256": "sha256:a4d0d5b9dbe146a51836d50a1ba5c6076bce336c4e5a76aa1b41bc75feb074a0"
+    },
+    {
+      "path": "run.json",
+      "role": "run",
+      "sha256": "sha256:ea3eab6150d30dc1343a3d116770086ab05300d56d8a5da629eaa4e0f215bad5"
     }
-  }
+  ],
+  "scenario_id": "law-firm-case",
+  "schema": "narrative-dynamics.scenario-package/v1",
+  "version": "1"
 }

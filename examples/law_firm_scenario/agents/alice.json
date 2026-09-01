@@ -310,7 +310,8 @@
       "transitions": []
     },
     "knowledge_grants": [
-      "case-file-brief"
+      "case-file-brief",
+      "contract-scan"
     ],
     "memory": {
       "channel_policy": {

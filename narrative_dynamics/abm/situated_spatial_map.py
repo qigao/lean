@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import json
 import math
 from pathlib import Path
@@ -15,24 +16,27 @@ from narrative_dynamics.abm.situated_spatial_map_contracts import (
 
 
 def _positive(value: object, *, label: str) -> float:
-    if (
-        not isinstance(value, (int, float))
-        or isinstance(value, bool)
-        or not math.isfinite(value)
-        or value <= 0.0
-    ):
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
         raise ValueError(f"{label} must be a positive finite number")
-    return float(value)
+    try:
+        result = float(value)
+    except OverflowError:
+        raise ValueError(f"{label} must be a positive finite number") from None
+    if not math.isfinite(result) or result <= 0.0:
+        raise ValueError(f"{label} must be a positive finite number")
+    return result
 
 
 def _number(value: object, *, label: str) -> float:
-    if (
-        not isinstance(value, (int, float))
-        or isinstance(value, bool)
-        or not math.isfinite(value)
-    ):
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
         raise ValueError(f"{label} must be a finite number")
-    return float(value)
+    try:
+        result = float(value)
+    except OverflowError:
+        raise ValueError(f"{label} must be a finite number") from None
+    if not math.isfinite(result):
+        raise ValueError(f"{label} must be a finite number")
+    return result
 
 
 def _object_layers(
@@ -40,12 +44,12 @@ def _object_layers(
     *,
     parent_offset_x: float = 0.0,
     parent_offset_y: float = 0.0,
-) -> tuple[tuple[dict[str, object], float, float], ...]:
-    if not isinstance(layers, list):
+) -> tuple[tuple[Mapping[str, object], float, float], ...]:
+    if not isinstance(layers, (list, tuple)):
         raise ValueError("Tiled map layers must be an array")
-    found: list[tuple[dict[str, object], float, float]] = []
+    found: list[tuple[Mapping[str, object], float, float]] = []
     for layer in layers:
-        if not isinstance(layer, dict):
+        if not isinstance(layer, Mapping):
             raise ValueError("Tiled map layers must contain objects")
         for axis in ("x", "y"):
             if _number(
@@ -78,15 +82,15 @@ def _object_layers(
 
 
 def _classified_rectangles(
-    document: dict[str, object],
-) -> tuple[tuple[dict[str, object], float, float], ...]:
-    selected: list[tuple[dict[str, object], float, float]] = []
+    document: Mapping[str, object],
+) -> tuple[tuple[Mapping[str, object], float, float], ...]:
+    selected: list[tuple[Mapping[str, object], float, float]] = []
     for layer, offset_x, offset_y in _object_layers(document.get("layers")):
         objects = layer.get("objects")
-        if not isinstance(objects, list):
+        if not isinstance(objects, (list, tuple)):
             raise ValueError("Tiled object layer objects must be an array")
         for item in objects:
-            if not isinstance(item, dict):
+            if not isinstance(item, Mapping):
                 raise ValueError("Tiled object layer must contain objects")
             classification = item.get("class") or item.get("type")
             if classification not in {"place", "passage"}:
@@ -102,22 +106,18 @@ def _classified_rectangles(
     return tuple(selected)
 
 
-def load_tiled_situated_spatial_map(
-    path: str | Path,
+def compile_tiled_situated_spatial_map(
+    decoded: Mapping[str, object],
     world_model: SituatedWorldModel,
     *,
     meters_per_pixel: float = 0.05,
 ) -> SituatedSpatialMap:
-    """Compile strict Tiled rectangle objects into one path-independent map."""
+    """Compile one already-decoded Tiled map through the V20 geometry authority."""
 
     if not isinstance(world_model, SituatedWorldModel):
         raise TypeError("Tiled spatial import requires a SituatedWorldModel")
     scale = _positive(meters_per_pixel, label="Tiled meters per pixel")
-    try:
-        decoded = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, TypeError, ValueError):
-        raise ValueError("Tiled spatial map could not be decoded") from None
-    if not isinstance(decoded, dict):
+    if not isinstance(decoded, Mapping):
         raise ValueError("Tiled spatial map root must be an object")
     if decoded.get("orientation") != "orthogonal":
         raise ValueError("Tiled spatial map must use orthogonal orientation")
@@ -172,6 +172,25 @@ def load_tiled_situated_spatial_map(
     )
 
 
+def load_tiled_situated_spatial_map(
+    path: str | Path,
+    world_model: SituatedWorldModel,
+    *,
+    meters_per_pixel: float = 0.05,
+) -> SituatedSpatialMap:
+    """Decode a Tiled file, then delegate to the decoded-data compiler."""
+
+    try:
+        decoded = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError):
+        raise ValueError("Tiled spatial map could not be decoded") from None
+    return compile_tiled_situated_spatial_map(
+        decoded,
+        world_model,
+        meters_per_pixel=meters_per_pixel,
+    )
+
+
 def auto_layout_situated_spatial_map(
     world_model: SituatedWorldModel,
     *,
@@ -223,6 +242,7 @@ def auto_layout_situated_spatial_map(
 
 
 __all__ = (
+    "compile_tiled_situated_spatial_map",
     "load_tiled_situated_spatial_map",
     "auto_layout_situated_spatial_map",
 )

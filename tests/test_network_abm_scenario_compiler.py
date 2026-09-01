@@ -13,7 +13,9 @@ from narrative_dynamics.abm.scenario_authoring_contracts import (
     ScenarioAssetCatalog,
     ScenarioExecutionMode,
     ScenarioKnowledgeCatalog,
+    ScenarioMembership,
     ScenarioRelationship,
+    ScenarioRelationshipSeed,
     ScenarioRunPolicy,
     ScenarioSocialWorld,
     ScenarioStoryPlan,
@@ -94,6 +96,10 @@ from narrative_dynamics.abm.situated_spatial_map_contracts import (
     SpatialPassage,
     SpatialPlace,
 )
+from narrative_dynamics.abm.situated_spatial_map import (
+    auto_layout_situated_spatial_map,
+    compile_tiled_situated_spatial_map,
+)
 from narrative_dynamics.abm.situated_story import advance_situated_story
 from narrative_dynamics.narrative.runtime_planning import PlanningBeliefState
 from tests.scenario_package_fixtures import (
@@ -104,7 +110,8 @@ from tests.scenario_package_fixtures import (
 
 
 def _value(path: Path) -> dict[str, object]:
-    return json.loads(path.read_text(encoding="utf-8"))["value"]
+    document = json.loads(path.read_text(encoding="utf-8"))
+    return document if path.suffix.casefold() == ".tmj" else document["value"]
 
 
 def _expected_world_model() -> SituatedWorldModel:
@@ -123,6 +130,7 @@ def _expected_world_model() -> SituatedWorldModel:
         (
             EmbodiedAgentSpec("alice", "partner", "meeting", 1),
             EmbodiedAgentSpec("bob", "lawyer", "lobby", 1),
+            EmbodiedAgentSpec("carol", "lawyer", "meeting", 1),
             EmbodiedAgentSpec("client", "client", "lobby", 1),
         ),
         (
@@ -265,7 +273,7 @@ def _expected_runtime_and_spatial_models() -> tuple[
         "law-firm-case-cognition",
         "1",
         world,
-        tuple(_expected_cognitive_agent(agent_id) for agent_id in ("alice", "bob", "client")),
+        tuple(_expected_cognitive_agent(agent_id) for agent_id in ("alice", "bob", "carol", "client")),
     )
     perception = SituatedPerceptionModel(
         "law-firm-perception",
@@ -300,7 +308,7 @@ def _expected_runtime_and_spatial_models() -> tuple[
         ),
         tuple(
             SituatedAgentPerceptionProfile(agent_id, 5.0, 10.0, 30.0)
-            for agent_id in ("alice", "bob", "client")
+            for agent_id in ("alice", "bob", "carol", "client")
         ),
         (
             SituatedEventSignalProfile(SituatedActionKind.WAIT, False, None),
@@ -321,7 +329,7 @@ def _expected_runtime_and_spatial_models() -> tuple[
     )
     recall_policies = tuple(
         SituatedAgentRecallPolicy(agent_id, (recall_cue,), 4)
-        for agent_id in ("alice", "bob", "client")
+        for agent_id in ("alice", "bob", "carol", "client")
     )
     percept_memory_policy = SituatedPerceptMemoryPolicy(
         "law-firm-percept-memory",
@@ -374,7 +382,7 @@ def _expected_runtime_and_spatial_models() -> tuple[
         0.5,
     )
     spatial = SituatedSpatialMap(
-        "law-firm-map",
+        "law-firm-world:tiled",
         "1",
         world,
         (
@@ -383,8 +391,8 @@ def _expected_runtime_and_spatial_models() -> tuple[
             SpatialPlace("archive", 11.0, 0.0, 4.0, 3.0, 2.8),
         ),
         (
-            SpatialPassage("lobby-meeting", "lobby", "meeting", 2.25, 0.0, 0.5, 1.2, 2.1),
-            SpatialPassage("meeting-archive", "meeting", "archive", 8.0, 0.0, 0.5, 1.2, 2.1),
+            SpatialPassage("lobby-meeting", "lobby", "meeting", 2.25, 0.0, 0.5, 24 * 0.05, 2.1),
+            SpatialPassage("meeting-archive", "meeting", "archive", 8.0, 0.0, 0.5, 24 * 0.05, 2.1),
         ),
     )
     return runtime, spatial
@@ -413,16 +421,17 @@ def _seeded_social_checkpoint(compiled, cognitive_state):
         compiled.runtime_model.social_memory_model,
         cognitive_state,
     )
-    affinities = {
-        (item.source_agent_id, item.target_agent_id): item.strength
-        for item in compiled.social_world.relationships
+    seeds = {
+        (item.observer_agent_id, item.source_agent_id): item
+        for item in compiled.social_world.relationship_seeds
     }
     return replace(
         base,
         relationships=tuple(
             replace(
                 item,
-                affinity=affinities[(item.observer_agent_id, item.source_agent_id)],
+                trust=seeds[(item.observer_agent_id, item.source_agent_id)].trust,
+                affinity=seeds[(item.observer_agent_id, item.source_agent_id)].affinity,
             )
             for item in base.relationships
         ),
@@ -452,7 +461,7 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
     def test_compiled_initial_state_binds_every_subsystem_and_database(self) -> None:
         root = write_law_firm_package(self.root / "explicit-initial-state")
         path = root / "physical/initial-state.json"
-        mutate_json(path, "/agents/2/place_id", "meeting")
+        mutate_json(path, "/agents/3/place_id", "meeting")
         mutate_json(path, "/objects/0/place_id", None)
         mutate_json(path, "/objects/0/holder_agent_id", "bob")
         mutate_json(path, "/passages/1/open", True)
@@ -470,6 +479,7 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
             (
                 AgentBodyState("alice", "meeting"),
                 AgentBodyState("bob", "lobby"),
+                AgentBodyState("carol", "meeting"),
                 AgentBodyState("client", "meeting"),
             ),
             (WorldObjectState("case-file", None, "bob"),),
@@ -480,11 +490,17 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
         )
         expected_relationships = (
             SituatedSourceRelationship("alice", "bob", 0.5, 0.8, 0, 0),
+            SituatedSourceRelationship("alice", "carol", 0.55, 0.75, 0, 0),
             SituatedSourceRelationship("alice", "client", 0.5, 0.9, 0, 0),
             SituatedSourceRelationship("bob", "alice", 0.5, 0.9, 0, 0),
+            SituatedSourceRelationship("bob", "carol", 0.5, 0.7, 0, 0),
             SituatedSourceRelationship("bob", "client", 0.5, 0.6, 0, 0),
+            SituatedSourceRelationship("carol", "alice", 0.55, 0.8, 0, 0),
+            SituatedSourceRelationship("carol", "bob", 0.5, 0.7, 0, 0),
+            SituatedSourceRelationship("carol", "client", 0.5, 0.65, 0, 0),
             SituatedSourceRelationship("client", "alice", 0.5, 0.7, 0, 0),
             SituatedSourceRelationship("client", "bob", 0.5, 0.5, 0, 0),
+            SituatedSourceRelationship("client", "carol", 0.5, 0.6, 0, 0),
         )
 
         self.assertIsInstance(
@@ -498,7 +514,7 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
         )
         self.assertEqual(
             {mind.agent_id: mind.own_place_id for mind in compiled.initial_cognitive_state.minds},
-            {"alice": "meeting", "bob": "lobby", "client": "meeting"},
+            {"alice": "meeting", "bob": "lobby", "carol": "meeting", "client": "meeting"},
         )
         self.assertTrue(compiled.initial_cognitive_state.checkpoint)
         self.assertEqual(
@@ -679,6 +695,40 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
                 connection.close()
             self.assertEqual(foreign_metadata, ("other-scenario",))
 
+    def test_compiled_initial_state_rejects_existing_schema_empty_database_without_mutation(self) -> None:
+        compiled = self.compile_public_fixture("schema-empty-database")
+
+        with TemporaryDirectory() as temporary:
+            database_path = Path(temporary) / "precreated.sqlite3"
+            connection = sqlite3.connect(database_path)
+            try:
+                connection.execute("PRAGMA application_id = 424242")
+                connection.execute("PRAGMA user_version = 17")
+                connection.commit()
+            finally:
+                connection.close()
+
+            def pragmas() -> tuple[int, int, tuple[tuple[str], ...]]:
+                check = sqlite3.connect(database_path)
+                try:
+                    return (
+                        check.execute("PRAGMA application_id").fetchone()[0],
+                        check.execute("PRAGMA user_version").fetchone()[0],
+                        tuple(check.execute(
+                            "SELECT name FROM sqlite_master ORDER BY name"
+                        ).fetchall()),
+                    )
+                finally:
+                    check.close()
+
+            before = pragmas()
+            with self.assertRaisesRegex(ValueError, "noncanonical"):
+                scenario_compiler.initialize_compiled_scenario(
+                    database_path,
+                    compiled,
+                )
+            self.assertEqual(pragmas(), before)
+
     def test_compiled_initial_state_rejects_foreign_schema_without_mutation(self) -> None:
         compiled = self.compile_public_fixture("foreign-database-schema")
 
@@ -816,18 +866,24 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
                     self.assertEqual(snapshot(database_path), before)
                     self.assertNotIn(str(database_path), str(raised.exception))
 
-    def test_compiled_initial_state_requires_one_authored_relationship_per_pair(self) -> None:
-        compiled = self.compile_public_fixture("duplicate-authored-pair")
-        social_world = replace(
-            compiled.social_world,
-            relationships=compiled.social_world.relationships
-            + (ScenarioRelationship("alice", "bob", "mentors", 0.1),),
-            registered_relationship_types=compiled.social_world.registered_relationship_types
-            + ("mentors",),
+    def test_compiled_social_world_retains_multiplex_edges_and_one_runtime_seed(self) -> None:
+        compiled = self.compile_public_fixture("multiplex-authored-pair")
+        alice_to_bob = tuple(
+            item
+            for item in compiled.social_world.relationships
+            if (item.source_agent_id, item.target_agent_id) == ("alice", "bob")
+        )
+        seeds = tuple(
+            item
+            for item in compiled.social_world.relationship_seeds
+            if (item.observer_agent_id, item.source_agent_id) == ("alice", "bob")
         )
 
-        with self.assertRaisesRegex(ValueError, "one authored relationship"):
-            replace(compiled, social_world=social_world)
+        self.assertEqual(
+            {item.relationship_type for item in alice_to_bob},
+            {"mentors", "supervises"},
+        )
+        self.assertEqual(seeds, (ScenarioRelationshipSeed("alice", "bob", 0.5, 0.8),))
 
     def test_compiled_initial_state_rejects_empty_source_document_identities(self) -> None:
         compiled = self.compile_public_fixture("empty-source-identities")
@@ -874,14 +930,14 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
     def test_complete_compilation_is_path_and_unordered_input_independent(self) -> None:
         first_root = write_law_firm_package(self.root / "canonical")
         second_root = write_law_firm_package(self.root / "reversed")
-        manifest_path = second_root / "scenario-package.json"
+        manifest_path = second_root / "scenario.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         for locator in manifest["documents"]:
-            path = second_root / locator["relative_path"]
+            path = second_root / locator["path"]
             authored = _reverse_mapping_order(
                 json.loads(path.read_text(encoding="utf-8"))
             )
-            value = authored["value"]
+            value = authored if path.suffix.casefold() == ".tmj" else authored["value"]
             if locator["role"] == "social.relationships":
                 value["relationships"] = list(reversed(value["relationships"]))
             elif locator["role"] == "knowledge.catalog":
@@ -892,7 +948,8 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
                 value["resources"] = list(reversed(value["resources"]))
                 value["grants"] = list(reversed(value["grants"]))
             _write_authored_json(path, authored)
-            refresh_manifest_hash(second_root, locator["role"], locator["logical_id"])
+            logical_id = value["agent_id"] if locator["role"] == "agent" else locator["role"]
+            refresh_manifest_hash(second_root, locator["role"], logical_id)
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         manifest["documents"] = list(reversed(manifest["documents"]))
         _write_authored_json(manifest_path, manifest)
@@ -926,6 +983,121 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "mode"):
             replace(compiled, run_policy=mismatched_policy)
+
+    def test_compiled_contract_rejects_forged_story_place(self) -> None:
+        compiled = self.compile_public_fixture("forged-story-place")
+        first_scene, *remaining = compiled.story_plan.scenes
+        forged_plan = replace(
+            compiled.story_plan,
+            scenes=(replace(first_scene, place_ids=("unknown-place",)), *remaining),
+        )
+
+        with self.assertRaisesRegex(ValueError, "story.*place"):
+            replace(compiled, story_plan=forged_plan)
+
+    def test_compiled_contract_rejects_forged_membership_and_action_catalog(self) -> None:
+        compiled = self.compile_public_fixture("forged-social-authority")
+        forged_membership = replace(
+            compiled.social_world,
+            memberships=compiled.social_world.memberships
+            + (ScenarioMembership("unknown-agent", "firm", "lawyer"),),
+        )
+        with self.assertRaisesRegex(ValueError, "membership.*agent"):
+            replace(compiled, social_world=forged_membership)
+
+        forged_actions = replace(
+            compiled.social_world,
+            registered_action_ids=compiled.social_world.registered_action_ids
+            + ("forged-action",),
+        )
+        with self.assertRaisesRegex(ValueError, "action catalog"):
+            replace(compiled, social_world=forged_actions)
+
+        forged_roles = tuple(
+            (agent_id, "client" if agent_id == "alice" else role_id)
+            for agent_id, role_id in compiled.agent_body_roles
+        )
+        with self.assertRaisesRegex(ValueError, "body role"):
+            replace(compiled, agent_body_roles=forged_roles)
+
+    def test_compiled_contract_revalidates_resource_relation_and_grant_authority(self) -> None:
+        compiled = self.compile_public_fixture("forged-catalog-authority")
+
+        with self.assertRaisesRegex(ValueError, "resource catalog"):
+            replace(
+                compiled,
+                social_world=replace(
+                    compiled.social_world,
+                    registered_resource_ids=(
+                        *compiled.social_world.registered_resource_ids,
+                        "forged-resource",
+                    ),
+                ),
+            )
+        with self.assertRaisesRegex(ValueError, "relationship catalog"):
+            replace(
+                compiled,
+                social_world=replace(
+                    compiled.social_world,
+                    registered_relationship_types=(
+                        *compiled.social_world.registered_relationship_types,
+                        "forged-relation",
+                    ),
+                ),
+            )
+
+        public_grant, *remaining_grants = compiled.knowledge_catalog.grants
+        forged_grant = replace(
+            public_grant,
+            subject_scope="agent",
+            subject_id="unknown-agent",
+        )
+        with self.assertRaisesRegex(ValueError, "grant subject"):
+            replace(
+                compiled,
+                knowledge_catalog=replace(
+                    compiled.knowledge_catalog,
+                    grants=(forged_grant, *remaining_grants),
+                ),
+            )
+
+        direct = dict(compiled.agent_knowledge_grants)
+        direct["client"] = (*direct["client"], "case-file-brief")
+        with self.assertRaisesRegex(ValueError, "direct knowledge grant.*entitled"):
+            replace(compiled, agent_knowledge_grants=tuple(direct.items()))
+
+        first_norm, *remaining_norms = compiled.social_world.norms
+        forged_norm = replace(first_norm, resource_id="statute")
+        with self.assertRaisesRegex(ValueError, "norm.*tagged union"):
+            replace(
+                compiled,
+                social_world=replace(
+                    compiled.social_world,
+                    norms=(forged_norm, *remaining_norms),
+                ),
+            )
+
+    def test_compiled_contract_retains_agent_local_knowledge_grants(self) -> None:
+        compiled = self.compile_public_fixture("agent-knowledge-grants")
+        grants = dict(compiled.agent_knowledge_grants)
+
+        self.assertEqual(
+            grants["carol"],
+            ("case-file-brief", "contract-scan"),
+        )
+
+    def test_compiled_contract_retains_complete_intervention_registry_in_identity(self) -> None:
+        compiled = self.compile_public_fixture("intervention-registry")
+
+        self.assertEqual(
+            compiled.intervention_kinds,
+            ("move_object", "open_passage", "pause_clock"),
+        )
+        expanded = replace(
+            compiled,
+            intervention_kinds=compiled.intervention_kinds + ("unused-test-kind",),
+        )
+        self.assertNotEqual(expanded.content_hash, compiled.content_hash)
 
     def test_compiled_contract_canonicalizes_source_document_identities(self) -> None:
         compiled = self.compile_public_fixture("source-order-contract")
@@ -970,12 +1142,50 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
         self.assertIsInstance(compiled.run_policy, ScenarioRunPolicy)
         self.assertIs(compiled.story_plan.mode, ScenarioExecutionMode.HYBRID)
         self.assertIs(compiled.run_policy.mode, compiled.story_plan.mode)
-        self.assertEqual(len(compiled.source_document_hashes), 16)
+        self.assertEqual(len(compiled.source_document_hashes), 17)
         self.assertEqual(
             compiled.source_document_hashes,
             tuple(sorted(compiled.source_document_hashes)),
         )
         self.assertRegex(compiled.content_hash, r"^sha256:[0-9a-f]{64}$")
+
+    def test_real_tmj_package_uses_the_public_v20_decoded_adapter(self) -> None:
+        root = write_law_firm_package(self.root / "real-tmj")
+        source = load_situated_scenario_package(root)
+        world = scenario_compiler._compile_world(source)
+        spatial_map = scenario_compiler._compile_spatial_map(source, world)
+        map_document = next(
+            item for item in source.documents if item.role.value == "physical.map"
+        )
+
+        self.assertEqual(map_document.value["orientation"], "orthogonal")
+        self.assertEqual(
+            spatial_map,
+            compile_tiled_situated_spatial_map(map_document.value, world),
+        )
+
+    def test_missing_map_fallback_reuses_public_v20_auto_layout(self) -> None:
+        root = write_law_firm_package(self.root / "auto-layout")
+        manifest_path = root / "scenario.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["documents"] = [
+            item for item in manifest["documents"]
+            if item["role"] != "physical.map"
+        ]
+        _write_authored_json(manifest_path, manifest)
+        run_path = root / "run.json"
+        fallbacks = dict(_value(run_path)["fallbacks"])
+        fallbacks["physical.map"] = "auto_grid"
+        mutate_json(run_path, "/fallbacks", fallbacks)
+        refresh_manifest_hash(root, "run", "run")
+
+        source = load_situated_scenario_package(root)
+        world = scenario_compiler._compile_world(source)
+
+        self.assertEqual(
+            scenario_compiler._compile_spatial_map(source, world),
+            auto_layout_situated_spatial_map(world),
+        )
 
     def test_compilation_is_path_independent_and_preserves_authored_scene_order(self) -> None:
         first = self.compile_fixture("first")
@@ -986,6 +1196,70 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
         self.assertEqual(
             first.story_plan.acts[0].scene_ids,
             ("discover", "confront"),
+        )
+
+    def test_compiled_identity_normalizes_equivalent_numeric_scalars_and_preserves_raw_provenance(self) -> None:
+        roots = {
+            "float": write_law_firm_package(self.root / "numeric-float"),
+            "integer": write_law_firm_package(self.root / "numeric-integer"),
+            "negative-zero": write_law_firm_package(self.root / "numeric-negative-zero"),
+            "whitespace": write_law_firm_package(self.root / "numeric-whitespace"),
+        }
+        mutate_json(
+            roots["integer"] / "physical/perception.json",
+            "/edges/2/cost",
+            0,
+        )
+        refresh_manifest_hash(roots["integer"], "physical.perception", "perception")
+        mutate_json(
+            roots["negative-zero"] / "physical/perception.json",
+            "/edges/2/cost",
+            -0.0,
+        )
+        refresh_manifest_hash(
+            roots["negative-zero"],
+            "physical.perception",
+            "perception",
+        )
+        whitespace_path = roots["whitespace"] / "physical/perception.json"
+        whitespace_value = json.loads(whitespace_path.read_text(encoding="utf-8"))
+        whitespace_path.write_text(
+            json.dumps(whitespace_value, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        refresh_manifest_hash(
+            roots["whitespace"],
+            "physical.perception",
+            "perception",
+        )
+
+        sources = {
+            name: load_situated_scenario_package(root)
+            for name, root in roots.items()
+        }
+        compiled = {
+            name: scenario_compiler.compile_situated_scenario_package(source)
+            for name, source in sources.items()
+        }
+
+        self.assertEqual(compiled["float"], compiled["integer"])
+        self.assertEqual(compiled["float"], compiled["negative-zero"])
+        self.assertEqual(compiled["float"], compiled["whitespace"])
+        self.assertEqual(
+            {item.package_hash for item in compiled.values()},
+            {compiled["float"].package_hash},
+        )
+        self.assertNotEqual(
+            compiled["float"].raw_manifest_hash,
+            compiled["integer"].raw_manifest_hash,
+        )
+        self.assertEqual(
+            compiled["integer"].raw_manifest_hash,
+            sources["integer"].raw_manifest_hash,
+        )
+        self.assertEqual(
+            compiled["integer"].raw_source_document_hashes,
+            sources["integer"].raw_document_hashes,
         )
 
     def test_compiled_identity_ignores_all_semantically_unordered_source_order(self) -> None:
@@ -1000,7 +1274,7 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
         ):
             with self.subTest(ordering=ordering):
                 root = write_law_firm_package(self.root / ordering)
-                manifest_path = root / "scenario-package.json"
+                manifest_path = root / "scenario.json"
                 if ordering == "json-object":
                     path = root / "social/relationships.json"
                     authored = json.loads(path.read_text(encoding="utf-8"))
@@ -1041,7 +1315,10 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
                 )
                 self.assertEqual(candidate.runtime_model, baseline.runtime_model)
                 self.assertEqual(candidate.social_world, baseline.social_world)
-                self.assertEqual(candidate.relationship_seeds, baseline.relationship_seeds)
+                self.assertEqual(
+                    candidate.social_world.relationship_seeds,
+                    baseline.social_world.relationship_seeds,
+                )
                 self.assertEqual(candidate.source_document_hashes, baseline.source_document_hashes)
                 self.assertEqual(candidate.package_hash, baseline.package_hash)
                 self.assertEqual(candidate.content_hash, baseline.content_hash)
@@ -1155,6 +1432,59 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
         self.assertEqual(raised.exception.json_pointer, "/edges/0/cost")
         self.assertEqual(raised.exception.code, "invalid_type")
 
+    def test_huge_numeric_field_is_sanitized_at_the_nearest_pointer(self) -> None:
+        root = write_law_firm_package(self.root / "huge-number")
+        huge = int("9" * 1000)
+        mutate_json(root / "physical/perception.json", "/edges/0/cost", huge)
+        refresh_manifest_hash(root, "physical.perception", "perception")
+
+        with self.assertRaises(ScenarioCompilationError) as raised:
+            scenario_compiler.compile_situated_scenario_package(
+                load_situated_scenario_package(root)
+            )
+
+        self.assertEqual(raised.exception.document_role, "physical.perception")
+        self.assertEqual(raised.exception.json_pointer, "/edges/0/cost")
+        self.assertEqual(raised.exception.code, "invalid_value")
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertNotIn(str(root), str(raised.exception))
+        self.assertNotIn(str(huge), str(raised.exception))
+
+    def test_dynamic_json_pointer_tokens_are_rfc6901_escaped(self) -> None:
+        root = write_law_firm_package(self.root / "escaped-pointer")
+        path = root / "agents/alice.json"
+        prior = dict(_value(path)["cognition"]["prior_belief"])  # type: ignore[index]
+        prior["unsafe~/id"] = True
+        mutate_json(path, "/cognition/prior_belief", prior)
+        refresh_manifest_hash(root, "agent", "alice")
+
+        with self.assertRaises(ScenarioCompilationError) as raised:
+            scenario_compiler.compile_situated_scenario_package(
+                load_situated_scenario_package(root)
+            )
+
+        self.assertEqual(
+            raised.exception.json_pointer,
+            "/cognition/prior_belief/unsafe~0~1id",
+        )
+        self.assertEqual(raised.exception.code, "invalid_type")
+
+    def test_unknown_fallback_key_pointer_is_rfc6901_escaped(self) -> None:
+        root = write_law_firm_package(self.root / "escaped-fallback")
+        path = root / "run.json"
+        fallbacks = dict(_value(path)["fallbacks"])
+        fallbacks["unsafe~/key"] = "none"
+        mutate_json(path, "/fallbacks", fallbacks)
+        refresh_manifest_hash(root, "run", "run")
+
+        with self.assertRaises(ScenarioCompilationError) as raised:
+            scenario_compiler.compile_situated_scenario_package(
+                load_situated_scenario_package(root)
+            )
+
+        self.assertEqual(raised.exception.json_pointer, "/fallbacks/unsafe~0~1key")
+        self.assertEqual(raised.exception.code, "unsupported_shape")
+
     def test_exact_document_and_nested_object_keys_are_required(self) -> None:
         root = write_law_firm_package(self.root / "extra-key")
         action = _value(root / "agents/bob.json")["cognition"]["actions"][0]  # type: ignore[index]
@@ -1175,21 +1505,56 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, "unsupported_shape")
         self.assertNotIn("callable", str(raised.exception))
 
+    def test_private_case_file_entitlement_rejects_matching_client_grant_surfaces(self) -> None:
+        root = write_law_firm_package(self.root / "client-private-brief")
+        access_path = root / "knowledge/access.json"
+        client_grant = dict(_value(access_path)["grants"][3])  # type: ignore[index]
+        client_grant["resource_ids"] = ["client-guide", "case-file-brief"]
+        mutate_json(access_path, "/grants/3", client_grant)
+        refresh_manifest_hash(root, "knowledge.access", "access")
+        mutate_json(
+            root / "agents/client.json",
+            "/knowledge_grants",
+            ["client-guide", "case-file-brief"],
+        )
+        refresh_manifest_hash(root, "agent", "client")
+
+        with self.assertRaises(ScenarioCompilationError) as raised:
+            scenario_compiler.compile_situated_scenario_package(
+                load_situated_scenario_package(root)
+            )
+
+        self.assertEqual(raised.exception.document_role, "knowledge.access")
+        self.assertEqual(raised.exception.json_pointer, "/grants/3/resource_ids/1")
+        self.assertEqual(raised.exception.code, "grant_not_entitled")
+
+    def test_tiled_unknown_world_id_is_sanitized_at_the_map_boundary(self) -> None:
+        root = write_law_firm_package(self.root / "unknown-tiled-place")
+        mutate_json(
+            root / "physical/map.tmj",
+            "/layers/0/objects/0/name",
+            "missing-place",
+        )
+        refresh_manifest_hash(root, "physical.map", "map")
+
+        with self.assertRaises(ScenarioCompilationError) as raised:
+            scenario_compiler.compile_situated_scenario_package(
+                load_situated_scenario_package(root)
+            )
+
+        self.assertEqual(raised.exception.document_role, "physical.map")
+        self.assertEqual(raised.exception.json_pointer, "")
+        self.assertEqual(raised.exception.code, "contract_violation")
+        self.assertNotIn("missing-place", str(raised.exception))
+
     def test_fixed_rosters_cover_relationships_knowledge_and_initial_state(self) -> None:
         corruptions = (
             (
-                "relationships",
+                "runtime-seeds",
                 "social/relationships.json",
                 "social.relationships",
                 "relationships",
-                "/relationships",
-            ),
-            (
-                "knowledge",
-                "knowledge/access.json",
-                "knowledge.access",
-                "access",
-                "/grants",
+                "/runtime_seeds",
             ),
             (
                 "initial-state",
@@ -1314,17 +1679,9 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
                 "grant-subject",
                 "knowledge/access.json",
                 "/grants/1/subject_id",
-                "missing-agent",
+                "missing-role",
                 "knowledge.access",
                 "access",
-            ),
-            (
-                "map-place",
-                "physical/map.json",
-                "/places/0/place_id",
-                "missing-place",
-                "physical.map",
-                "map",
             ),
             (
                 "norm-target-scope",
@@ -1388,7 +1745,7 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
         root = write_law_firm_package(self.root / "shared-relationship-type")
         mutate_json(
             root / "social/relationships.json",
-            "/relationships/1/relationship_type",
+            "/relationships/4/relationship_type",
             "supervises",
         )
         refresh_manifest_hash(root, "social.relationships", "relationships")
@@ -1399,17 +1756,23 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
 
         self.assertEqual(compiled.social_world.registered_relationship_types.count("supervises"), 1)
 
-    def test_signed_relationship_strength_seeds_affinity_not_bounded_trust(self) -> None:
+    def test_signed_runtime_seed_affinity_is_independent_from_typed_edges(self) -> None:
         root = write_law_firm_package(self.root / "negative-affinity")
-        mutate_json(root / "social/relationships.json", "/relationships/1/strength", -0.4)
+        mutate_json(root / "social/relationships.json", "/runtime_seeds/2/affinity", -0.4)
         refresh_manifest_hash(root, "social.relationships", "relationships")
 
-        compiled = _compile_situated_scenario_components(
-            load_situated_scenario_package(root)
+        source = load_situated_scenario_package(root)
+        world = scenario_compiler._compile_world(source)
+        cognition = scenario_compiler._compile_cognition(source, world)
+        social_memory = scenario_compiler._compile_social_memory(source, cognition)
+        seeds = scenario_compiler._compile_relationship_seeds(
+            source,
+            world,
+            social_memory,
         )
         seed = next(
             item
-            for item in compiled.relationship_seeds
+            for item in seeds
             if item.observer_agent_id == "alice" and item.source_agent_id == "client"
         )
 

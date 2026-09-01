@@ -25,6 +25,11 @@
         "role_id": "lawyer"
       },
       {
+        "agent_id": "carol",
+        "institution_id": "legal-team",
+        "role_id": "lawyer"
+      },
+      {
         "agent_id": "client",
         "institution_id": "firm",
         "role_id": "client"

@@ -3,7 +3,8 @@
   "value": {
     "intervention_kinds": [
       "move_object",
-      "open_passage"
+      "open_passage",
+      "pause_clock"
     ]
   }
 }

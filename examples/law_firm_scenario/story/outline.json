@@ -45,7 +45,8 @@
         "maximum_rounds": 4,
         "participant_agent_ids": [
           "alice",
-          "bob"
+          "bob",
+          "carol"
         ],
         "place_ids": [
           "archive"
@@ -79,6 +80,7 @@
         "participant_agent_ids": [
           "alice",
           "bob",
+          "carol",
           "client"
         ],
         "place_ids": [

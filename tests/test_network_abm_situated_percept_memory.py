@@ -20,6 +20,7 @@ from narrative_dynamics.abm.situated_percept_memory import (
     rebuild_situated_percept_memory_index,
     search_situated_percept_memories,
     set_situated_percept_memory_active,
+    situated_percept_memory_schema_snapshot,
 )
 from narrative_dynamics.abm.situated_percept_memory_contracts import (
     SituatedPerceptMemoryFidelityPolicy,
@@ -72,6 +73,28 @@ def exact_record(**changes) -> SituatedPerceptMemoryRecord:
 
 
 class SituatedPerceptMemoryContractTests(unittest.TestCase):
+    def test_public_schema_snapshot_is_stable_and_complete(self) -> None:
+        snapshot = situated_percept_memory_schema_snapshot()
+
+        self.assertIsInstance(snapshot, tuple)
+        self.assertEqual(
+            {item[1] for item in snapshot},
+            {
+                "percept_memory_fts",
+                "percept_memory_fts_config",
+                "percept_memory_fts_data",
+                "percept_memory_fts_docsize",
+                "percept_memory_fts_idx",
+                "percept_memory_metadata",
+                "percept_memory_records",
+                "percept_memory_records_ad",
+                "percept_memory_records_ai",
+                "percept_memory_records_au",
+                "percept_memory_records_agent_round",
+            },
+        )
+        self.assertEqual(snapshot, situated_percept_memory_schema_snapshot())
+
     def test_policy_requires_exactly_one_entry_per_fidelity(self) -> None:
         policy = standard_situated_percept_memory_policy()
 

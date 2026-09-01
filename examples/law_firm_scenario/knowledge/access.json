@@ -11,24 +11,26 @@
       },
       {
         "resource_ids": [
-          "case-file-brief"
+          "case-file-brief",
+          "contract-scan"
         ],
-        "subject_id": "alice",
-        "subject_scope": "agent"
+        "subject_id": "partner",
+        "subject_scope": "role"
       },
       {
         "resource_ids": [
-          "case-file-brief"
+          "case-file-brief",
+          "contract-scan"
         ],
-        "subject_id": "bob",
-        "subject_scope": "agent"
+        "subject_id": "lawyer",
+        "subject_scope": "role"
       },
       {
         "resource_ids": [
           "client-guide"
         ],
         "subject_id": "client",
-        "subject_scope": "agent"
+        "subject_scope": "role"
       }
     ]
   }

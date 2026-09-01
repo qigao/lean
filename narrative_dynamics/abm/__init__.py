@@ -337,6 +337,7 @@ from narrative_dynamics.abm.situated_percept_memory import (
     rebuild_situated_percept_memory_index,
     search_situated_percept_memories,
     set_situated_percept_memory_active,
+    situated_percept_memory_schema_snapshot,
 )
 from narrative_dynamics.abm.situated_percept_memory_cognition import (
     SituatedPerceptMemoryCognitiveModel,
@@ -439,6 +440,7 @@ from narrative_dynamics.abm.situated_spatial_map_contracts import (
 )
 from narrative_dynamics.abm.situated_spatial_map import (
     auto_layout_situated_spatial_map,
+    compile_tiled_situated_spatial_map,
     load_tiled_situated_spatial_map,
 )
 from narrative_dynamics.abm.scenario_package_contracts import (
@@ -462,6 +464,8 @@ from narrative_dynamics.abm.scenario_authoring_contracts import (
     ScenarioPredicate,
     ScenarioPredicateKind,
     ScenarioRelationship,
+    ScenarioRelationshipSeed,
+    ScenarioResourceEntitlement,
     ScenarioResourceGrant,
     ScenarioResourceKind,
     ScenarioRunPolicy,
@@ -737,6 +741,7 @@ __all__ = (
     "search_situated_percept_memories",
     "set_situated_percept_memory_active",
     "rebuild_situated_percept_memory_index",
+    "situated_percept_memory_schema_snapshot",
     "SituatedPerceptMemoryCognitiveModel",
     "SituatedPerceptMemoryCognitiveRoundResult",
     "SituatedPerceptMemoryCognitiveTrajectory",
@@ -817,6 +822,7 @@ __all__ = (
     "SpatialPassage",
     "SituatedSpatialMap",
     "load_tiled_situated_spatial_map",
+    "compile_tiled_situated_spatial_map",
     "auto_layout_situated_spatial_map",
     "ScenarioDocumentRole",
     "ScenarioDocumentLocator",
@@ -828,6 +834,7 @@ __all__ = (
     "ScenarioInstitution",
     "ScenarioMembership",
     "ScenarioRelationship",
+    "ScenarioRelationshipSeed",
     "ScenarioNormEffect",
     "ScenarioNorm",
     "ScenarioSocialWorld",
@@ -838,6 +845,7 @@ __all__ = (
     "ScenarioStoryAct",
     "ScenarioStoryPlan",
     "ScenarioResourceKind",
+    "ScenarioResourceEntitlement",
     "ScenarioKnowledgeResource",
     "ScenarioKnowledgeCatalog",
     "ScenarioAssetResource",

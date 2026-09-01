@@ -16,6 +16,8 @@ from narrative_dynamics.abm.scenario_authoring_contracts import (
     ScenarioPredicate,
     ScenarioPredicateKind,
     ScenarioRelationship,
+    ScenarioRelationshipSeed,
+    ScenarioResourceEntitlement,
     ScenarioResourceGrant,
     ScenarioResourceKind,
     ScenarioRunPolicy,
@@ -54,6 +56,7 @@ def knowledge(resource_id: str = "statute") -> ScenarioKnowledgeResource:
         "2026-09-01",
         "official",
         "CC-BY-4.0",
+        (ScenarioResourceEntitlement("public", None),),
         ("law", "evidence"),
         "index-statute",
     )
@@ -109,6 +112,24 @@ class ScenarioAuthoringContractTests(unittest.TestCase):
                 ), (),
             )
 
+    def test_multiplex_relationships_are_independent_from_exact_runtime_seeds(self):
+        seed = ScenarioRelationshipSeed("alice", "bob", 0.4, -0.2)
+        world = ScenarioSocialWorld(
+            (),
+            (),
+            (
+                ScenarioRelationship("alice", "bob", "trusts", 0.7),
+                ScenarioRelationship("alice", "bob", "supervises", 0.9),
+            ),
+            (),
+            relationship_seeds=(seed,),
+        )
+
+        self.assertEqual(len(world.relationships), 2)
+        self.assertEqual(world.relationship_seeds, (seed,))
+        with self.assertRaisesRegex(ValueError, "relationship seed.*unique"):
+            ScenarioSocialWorld((), (), (), (), relationship_seeds=(seed, seed))
+
     def test_social_world_rejects_duplicate_memberships_and_nonfinite_or_out_of_range_strengths(self):
         membership = ScenarioMembership("alice", "firm", "lawyer")
         with self.assertRaisesRegex(ValueError, "membership.*unique"):
@@ -148,6 +169,17 @@ class ScenarioAuthoringContractTests(unittest.TestCase):
             ScenarioPredicate(
                 ScenarioPredicateKind.CLAIM_STATUS, "alice", "case-file", "invented",
             )
+
+    def test_belief_thresholds_are_probabilities(self):
+        for value in (-0.01, 1.01):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, "belief_at_least.*range"):
+                    ScenarioPredicate(
+                        ScenarioPredicateKind.BELIEF_AT_LEAST,
+                        "alice",
+                        "file-found",
+                        value,
+                    )
 
     def test_story_values_canonicalize_unordered_scene_scopes_and_plan_values(self):
         first_scene = ScenarioSceneContract(
@@ -214,15 +246,42 @@ class ScenarioAuthoringContractTests(unittest.TestCase):
         assets = ScenarioAssetCatalog((
             ScenarioAssetResource("office", ScenarioResourceKind.MODEL_3D, HASH,
                                   "https://example.test/office.glb", "model/gltf-binary",
-                                  "official", "CC-BY-4.0", (4.0, 3.0, 2.5), "m", "glb"),
+                                  "official", "CC-BY-4.0",
+                                  (ScenarioResourceEntitlement("public", None),),
+                                  (4.0, 3.0, 2.5), "m", "glb"),
         ), ())
         self.assertEqual(assets.resources[0].resource_id, "office")
+
+    def test_resource_entitlements_are_canonical_and_cover_catalog_grants(self):
+        entitlements = (
+            ScenarioResourceEntitlement("agent", "alice"),
+            ScenarioResourceEntitlement("role", "lawyer"),
+        )
+        resource = ScenarioKnowledgeResource(
+            "case-file",
+            ScenarioResourceKind.DOCUMENT,
+            HASH,
+            "https://example.test/case-file.pdf",
+            "application/pdf",
+            "en",
+            "1",
+            "firm",
+            "private",
+            tuple(reversed(entitlements)),
+        )
+        self.assertEqual(resource.entitlements, entitlements)
+        with self.assertRaisesRegex(ValueError, "entitlement"):
+            ScenarioKnowledgeCatalog(
+                (resource,),
+                (ScenarioResourceGrant("agent", "client", ("case-file",)),),
+            )
 
     def test_asset_resources_retain_required_authority_metadata(self):
         asset = ScenarioAssetResource(
             "office", ScenarioResourceKind.MODEL_3D, HASH,
             "https://example.test/office.glb", "model/gltf-binary",
             authority="official", license_tag="CC-BY-4.0",
+            entitlements=(ScenarioResourceEntitlement("public", None),),
         )
         self.assertEqual(asset.authority, "official")
 
@@ -245,11 +304,13 @@ class ScenarioAuthoringContractTests(unittest.TestCase):
             ScenarioKnowledgeResource(
                 "statute", ScenarioResourceKind.DOCUMENT, "bad", "https://example.test/x",
                 "application/pdf", "en", "1", "official", "CC-BY-4.0",
+                (ScenarioResourceEntitlement("public", None),),
             )
         with self.assertRaisesRegex(ValueError, "URI"):
             ScenarioAssetResource(
                 "office", ScenarioResourceKind.MODEL_3D, HASH, "x" * 2049,
-                "model/gltf-binary", "official", "CC-BY-4.0", (), "m", "glb",
+                "model/gltf-binary", "official", "CC-BY-4.0",
+                (ScenarioResourceEntitlement("public", None),), (), "m", "glb",
             )
 
     def test_run_policy_validates_its_own_mode_and_limits(self):

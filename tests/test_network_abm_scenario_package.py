@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import tempfile
 import unittest
-
-from narrative_dynamics.contracts import stable_content_hash
 
 
 PACKAGE_SCHEMA = "narrative-dynamics.scenario-package/v1"
@@ -20,6 +19,10 @@ def _write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, sort_keys=True), encoding="utf-8")
 
 
+def _raw_hash(path: Path) -> str:
+    return f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
+
+
 def write_minimal_package(root: Path, *, reverse: bool = False) -> Path:
     root.mkdir(parents=True)
     documents = [
@@ -27,7 +30,7 @@ def write_minimal_package(root: Path, *, reverse: bool = False) -> Path:
         ("physical.perception", "perception", {"name": "perception"}),
         ("physical.initial_state", "initial-state", {"name": "initial"}),
         ("social.relationships", "relationships", {"name": "relationships"}),
-        ("agent", "ada", {"name": "Ada"}),
+        ("agent", "ada", {"agent_id": "ada", "name": "Ada"}),
         ("story.outline", "outline", {"name": "outline"}),
         ("knowledge.catalog", "catalog", {"name": "catalog"}),
         ("knowledge.access", "access", {"name": "access"}),
@@ -46,22 +49,21 @@ def write_minimal_package(root: Path, *, reverse: bool = False) -> Path:
         ),
     ]
     manifest_documents: list[dict[str, str]] = []
-    for index, (role, logical_id, value) in enumerate(documents):
-        relative_path = f"document-{index}.json"
+    for index, (role, _logical_id, value) in enumerate(documents):
+        relative_path = "run.json" if role == "run" else f"document-{index}.json"
         document = _document(value)
         _write_json(root / relative_path, document)
         manifest_documents.append(
             {
                 "role": role,
-                "logical_id": logical_id,
-                "relative_path": relative_path,
-                "expected_hash": stable_content_hash(document),
+                "path": relative_path,
+                "sha256": _raw_hash(root / relative_path),
             }
         )
     if reverse:
         manifest_documents.reverse()
     _write_json(
-        root / "scenario-package.json",
+        root / "scenario.json",
         {
             "schema": PACKAGE_SCHEMA,
             "scenario_id": "demo",
@@ -73,25 +75,32 @@ def write_minimal_package(root: Path, *, reverse: bool = False) -> Path:
 
 
 def replace_manifest_path(root: Path, role: str, relative_path: str) -> None:
-    manifest_path = root / "scenario-package.json"
+    manifest_path = root / "scenario.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     for locator in manifest["documents"]:
         if locator["role"] == role:
-            locator["relative_path"] = relative_path
+            locator["path"] = relative_path
             break
     _write_json(manifest_path, manifest)
 
 
 def manifest(root: Path) -> dict[str, object]:
-    return json.loads((root / "scenario-package.json").read_text(encoding="utf-8"))
+    return json.loads((root / "scenario.json").read_text(encoding="utf-8"))
 
 
 def write_manifest(root: Path, value: dict[str, object]) -> None:
-    _write_json(root / "scenario-package.json", value)
+    _write_json(root / "scenario.json", value)
 
 
 def locator_for(root: Path, role: str) -> dict[str, str]:
     return next(item for item in manifest(root)["documents"] if item["role"] == role)
+
+
+def refresh_locator_hash(root: Path, role: str) -> None:
+    value = manifest(root)
+    locator = next(item for item in value["documents"] if item["role"] == role)
+    locator["sha256"] = _raw_hash(root / locator["path"])
+    write_manifest(root, value)
 
 
 class ScenarioPackageLoadingTests(unittest.TestCase):
@@ -113,6 +122,19 @@ class ScenarioPackageLoadingTests(unittest.TestCase):
             load_situated_scenario_package(second),
         )
 
+    def test_canonical_manifest_uses_scenario_run_path_and_sha256_keys(self):
+        root = write_minimal_package(self.root / "canonical-layout")
+        value = manifest(root)
+
+        self.assertTrue((root / "scenario.json").is_file())
+        self.assertFalse((root / "scenario-package.json").exists())
+        self.assertEqual(locator_for(root, "run")["path"], "run.json")
+        self.assertTrue((root / "run.json").is_file())
+        self.assertTrue(all(
+            set(locator) == {"role", "path", "sha256"}
+            for locator in value["documents"]
+        ))
+
     def test_loader_rejects_parent_escape_before_reading_document(self):
         from narrative_dynamics.abm.scenario_package import load_situated_scenario_package
 
@@ -128,7 +150,10 @@ class ScenarioPackageLoadingTests(unittest.TestCase):
         root = write_minimal_package(self.root / "duplicate-role")
         value = manifest(root)
         duplicate = dict(locator_for(root, "physical.world"))
-        duplicate["logical_id"] = "another-world"
+        duplicate["path"] = "another-world.json"
+        (root / "another-world.json").write_bytes(
+            (root / locator_for(root, "physical.world")["path"]).read_bytes()
+        )
         value["documents"].append(duplicate)
         write_manifest(root, value)
 
@@ -140,10 +165,45 @@ class ScenarioPackageLoadingTests(unittest.TestCase):
 
         root = write_minimal_package(self.root / "duplicate-agent")
         value = manifest(root)
-        value["documents"].append(dict(locator_for(root, "agent")))
+        duplicate = dict(locator_for(root, "agent"))
+        duplicate["path"] = "duplicate-agent.json"
+        (root / duplicate["path"]).write_bytes(
+            (root / locator_for(root, "agent")["path"]).read_bytes()
+        )
+        duplicate["sha256"] = _raw_hash(root / duplicate["path"])
+        value["documents"].append(duplicate)
         write_manifest(root, value)
 
         with self.assertRaisesRegex(ValueError, "unique"):
+            load_situated_scenario_package(root)
+
+    def test_loader_rejects_duplicate_manifest_paths(self):
+        from narrative_dynamics.abm.scenario_package import load_situated_scenario_package
+
+        root = write_minimal_package(self.root / "duplicate-path")
+        value = manifest(root)
+        value["documents"].append(dict(locator_for(root, "agent")))
+        write_manifest(root, value)
+
+        with self.assertRaisesRegex(ValueError, "path.*unique"):
+            load_situated_scenario_package(root)
+
+    def test_loader_rejects_distinct_locators_resolving_to_the_same_file(self):
+        from narrative_dynamics.abm.scenario_package import load_situated_scenario_package
+
+        root = write_minimal_package(self.root / "same-file")
+        world = locator_for(root, "physical.world")
+        value = manifest(root)
+        value["documents"].append(
+            {
+                "role": "agent",
+                "path": f"./{world['path']}",
+                "sha256": world["sha256"],
+            }
+        )
+        write_manifest(root, value)
+
+        with self.assertRaisesRegex(ValueError, "same file"):
             load_situated_scenario_package(root)
 
     def test_loader_rejects_duplicate_document_json_keys(self):
@@ -151,7 +211,7 @@ class ScenarioPackageLoadingTests(unittest.TestCase):
 
         root = write_minimal_package(self.root / "duplicate-json")
         locator = locator_for(root, "physical.world")
-        (root / locator["relative_path"]).write_text(
+        (root / locator["path"]).write_text(
             '{"schema":"narrative-dynamics.scenario-document/v1",'
             '"value":{"name":"world","name":"duplicate"}}',
             encoding="utf-8",
@@ -190,7 +250,7 @@ class ScenarioPackageLoadingTests(unittest.TestCase):
 
         root = write_minimal_package(self.root / "invalid-utf8")
         locator = locator_for(root, "physical.world")
-        (root / locator["relative_path"]).write_bytes(b"\xff")
+        (root / locator["path"]).write_bytes(b"\xff")
 
         with self.assertRaisesRegex(ValueError, "UTF-8"):
             load_situated_scenario_package(root)
@@ -200,13 +260,13 @@ class ScenarioPackageLoadingTests(unittest.TestCase):
 
         root = write_minimal_package(self.root / "non-finite")
         locator = locator_for(root, "physical.world")
-        (root / locator["relative_path"]).write_text(
+        (root / locator["path"]).write_text(
             '{"schema":"narrative-dynamics.scenario-document/v1",'
             '"value":{"temperature":NaN}}',
             encoding="utf-8",
         )
 
-        with self.assertRaisesRegex(ValueError, "constant"):
+        with self.assertRaisesRegex(ValueError, "finite"):
             load_situated_scenario_package(root)
 
     def test_loader_rejects_oversized_document(self):
@@ -214,7 +274,7 @@ class ScenarioPackageLoadingTests(unittest.TestCase):
 
         root = write_minimal_package(self.root / "oversized")
         locator = locator_for(root, "physical.world")
-        (root / locator["relative_path"]).write_bytes(b" " * (1024 * 1024 + 1))
+        (root / locator["path"]).write_bytes(b" " * (1024 * 1024 + 1))
 
         with self.assertRaisesRegex(ValueError, "size"):
             load_situated_scenario_package(root)
@@ -224,14 +284,13 @@ class ScenarioPackageLoadingTests(unittest.TestCase):
 
         root = write_minimal_package(self.root / "oversized-map")
         value = manifest(root)
-        map_path = root / "map.json"
+        map_path = root / "map.tmj"
         map_path.write_bytes(b" " * (16 * 1024 * 1024 + 1))
         value["documents"].append(
             {
                 "role": "physical.map",
-                "logical_id": "map",
-                "relative_path": "map.json",
-                "expected_hash": "sha256:" + "0" * 64,
+                "path": "map.tmj",
+                "sha256": "sha256:" + "0" * 64,
             }
         )
         write_manifest(root, value)
@@ -243,7 +302,7 @@ class ScenarioPackageLoadingTests(unittest.TestCase):
         from narrative_dynamics.abm.scenario_package import load_situated_scenario_package
 
         root = write_minimal_package(self.root / "missing")
-        (root / locator_for(root, "physical.world")["relative_path"]).unlink()
+        (root / locator_for(root, "physical.world")["path"]).unlink()
 
         with self.assertRaisesRegex(ValueError, "file"):
             load_situated_scenario_package(root)
@@ -264,21 +323,21 @@ class ScenarioPackageLoadingTests(unittest.TestCase):
         from narrative_dynamics.abm.scenario_package import load_situated_scenario_package
 
         root = write_minimal_package(self.root / "directory-manifest")
-        manifest_path = root / "scenario-package.json"
+        manifest_path = root / "scenario.json"
         manifest_path.unlink()
         manifest_path.mkdir()
 
         with self.assertRaisesRegex(ValueError, "manifest") as error:
             load_situated_scenario_package(root)
         self.assertNotIn(str(root), str(error.exception))
-        self.assertNotIn("scenario-package.json", str(error.exception))
+        self.assertNotIn("scenario.json", str(error.exception))
 
     def test_loader_rejects_wrong_document_schema(self):
         from narrative_dynamics.abm.scenario_package import load_situated_scenario_package
 
         root = write_minimal_package(self.root / "wrong-schema")
         locator = locator_for(root, "physical.world")
-        _write_json(root / locator["relative_path"], {"schema": "wrong", "value": {}})
+        _write_json(root / locator["path"], {"schema": "wrong", "value": {}})
 
         with self.assertRaisesRegex(ValueError, "schema"):
             load_situated_scenario_package(root)
@@ -289,7 +348,7 @@ class ScenarioPackageLoadingTests(unittest.TestCase):
         root = write_minimal_package(self.root / "wrong-hash")
         value = manifest(root)
         locator = next(item for item in value["documents"] if item["role"] == "physical.world")
-        locator["expected_hash"] = "sha256:" + "0" * 64
+        locator["sha256"] = "sha256:" + "0" * 64
         write_manifest(root, value)
 
         with self.assertRaisesRegex(ValueError, "hash"):
@@ -307,15 +366,83 @@ class ScenarioPackageLoadingTests(unittest.TestCase):
             load_situated_scenario_package(second),
         )
 
+    def test_raw_source_provenance_changes_without_changing_source_equality(self):
+        from narrative_dynamics.abm.scenario_package import load_situated_scenario_package
+
+        first = write_minimal_package(self.root / "compact")
+        second = write_minimal_package(self.root / "whitespace")
+        world_path = second / locator_for(second, "physical.world")["path"]
+        decoded = json.loads(world_path.read_text(encoding="utf-8"))
+        world_path.write_text(json.dumps(decoded, indent=4) + "\n", encoding="utf-8")
+        refresh_locator_hash(second, "physical.world")
+
+        first_source = load_situated_scenario_package(first)
+        second_source = load_situated_scenario_package(second)
+        self.assertEqual(first_source, second_source)
+        self.assertNotEqual(
+            first_source.raw_manifest_hash,
+            second_source.raw_manifest_hash,
+        )
+        self.assertNotEqual(
+            first_source.raw_document_hashes,
+            second_source.raw_document_hashes,
+        )
+
+    def test_loader_sanitizes_parser_limits_and_nonfinite_spellings(self):
+        from narrative_dynamics.abm.scenario_package import load_situated_scenario_package
+
+        cases = {
+            "deep": (
+                '{"schema":"narrative-dynamics.scenario-document/v1",'
+                '"value":{"nested":' + "[" * 1200 + "0" + "]" * 1200 + "}}"
+            ),
+            "overflow-exponent": (
+                '{"schema":"narrative-dynamics.scenario-document/v1",'
+                '"value":{"number":1e999}}'
+            ),
+            "nan": (
+                '{"schema":"narrative-dynamics.scenario-document/v1",'
+                '"value":{"number":NaN}}'
+            ),
+            "infinity": (
+                '{"schema":"narrative-dynamics.scenario-document/v1",'
+                '"value":{"number":Infinity}}'
+            ),
+            "negative-infinity": (
+                '{"schema":"narrative-dynamics.scenario-document/v1",'
+                '"value":{"number":-Infinity}}'
+            ),
+        }
+        for name, text in cases.items():
+            with self.subTest(name=name):
+                root = write_minimal_package(self.root / name)
+                path = root / locator_for(root, "physical.world")["path"]
+                path.write_text(text, encoding="utf-8")
+                with self.assertRaises(ValueError) as raised:
+                    load_situated_scenario_package(root)
+                self.assertIsNone(raised.exception.__cause__)
+                self.assertNotIn(str(root), str(raised.exception))
+                self.assertNotIn(text, str(raised.exception))
+
+    def test_loader_sanitizes_missing_root_failure_cause(self):
+        from narrative_dynamics.abm.scenario_package import load_situated_scenario_package
+
+        missing = self.root / "secret-missing-root"
+        with self.assertRaisesRegex(ValueError, "root") as raised:
+            load_situated_scenario_package(missing)
+
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertNotIn(str(missing), str(raised.exception))
+
     def test_source_documents_are_recursively_immutable(self):
         from narrative_dynamics.abm.scenario_package import load_situated_scenario_package
 
         root = write_minimal_package(self.root / "frozen")
         locator = locator_for(root, "physical.world")
         document = _document({"nested": {"items": ["one"]}})
-        _write_json(root / locator["relative_path"], document)
+        _write_json(root / locator["path"], document)
         value = manifest(root)
-        next(item for item in value["documents"] if item["role"] == "physical.world")["expected_hash"] = stable_content_hash(document)
+        next(item for item in value["documents"] if item["role"] == "physical.world")["sha256"] = _raw_hash(root / locator["path"])
         write_manifest(root, value)
 
         source = load_situated_scenario_package(root)
@@ -330,9 +457,9 @@ class ScenarioPackageLoadingTests(unittest.TestCase):
         root = write_minimal_package(self.root / "no-fallbacks")
         locator = locator_for(root, "run")
         document = _document({"fallbacks": {}})
-        _write_json(root / locator["relative_path"], document)
+        _write_json(root / locator["path"], document)
         value = manifest(root)
-        next(item for item in value["documents"] if item["role"] == "run")["expected_hash"] = stable_content_hash(document)
+        next(item for item in value["documents"] if item["role"] == "run")["sha256"] = _raw_hash(root / locator["path"])
         write_manifest(root, value)
 
         with self.assertRaisesRegex(ValueError, "fallback"):
@@ -346,7 +473,7 @@ class ScenarioPackageLoadingTests(unittest.TestCase):
                 scenario_id="demo",
                 version="1.0",
                 documents=(),
-                manifest_hash="sha256:" + "0" * 64,
+                raw_manifest_hash="sha256:" + "0" * 64,
             )
 
     def test_source_contract_requires_fallbacks_for_missing_optional_documents(self):
@@ -367,6 +494,7 @@ class ScenarioPackageLoadingTests(unittest.TestCase):
                 value={"fallbacks": {}}
                 if document.role is ScenarioDocumentRole.RUN
                 else document.value,
+                raw_content_hash=document.raw_content_hash,
             )
             for document in loaded.documents
         )
@@ -376,5 +504,5 @@ class ScenarioPackageLoadingTests(unittest.TestCase):
                 scenario_id=loaded.scenario_id,
                 version=loaded.version,
                 documents=documents,
-                manifest_hash=loaded.manifest_hash,
+                raw_manifest_hash=loaded.raw_manifest_hash,
             )

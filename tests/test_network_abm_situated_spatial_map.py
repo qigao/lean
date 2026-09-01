@@ -11,6 +11,7 @@ from narrative_dynamics.abm.situated_contracts import (
 )
 from narrative_dynamics.abm.situated_spatial_map import (
     auto_layout_situated_spatial_map,
+    compile_tiled_situated_spatial_map,
     load_tiled_situated_spatial_map,
 )
 from narrative_dynamics.abm.situated_spatial_map_contracts import (
@@ -145,6 +146,23 @@ class SituatedSpatialMapTests(unittest.TestCase):
         self.assertEqual(
             {item.passage_id for item in spatial.passages},
             {"door"},
+        )
+
+    def test_decoded_tiled_boundary_is_the_file_adapter_authority(self):
+        decoded = tiled_document()
+        path = self.write_map("same-office.tmj", decoded)
+
+        self.assertEqual(
+            compile_tiled_situated_spatial_map(
+                decoded,
+                self.world,
+                meters_per_pixel=0.1,
+            ),
+            load_tiled_situated_spatial_map(
+                path,
+                self.world,
+                meters_per_pixel=0.1,
+            ),
         )
 
     def test_tiled_import_hash_ignores_path_layer_order_and_object_ids(self):

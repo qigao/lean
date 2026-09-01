@@ -11,6 +11,10 @@
         "place_id": "lobby"
       },
       {
+        "agent_id": "carol",
+        "place_id": "meeting"
+      },
+      {
         "agent_id": "client",
         "place_id": "lobby"
       }

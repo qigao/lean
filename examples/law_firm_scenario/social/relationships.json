@@ -20,6 +20,18 @@
         "target_agent_id": "bob"
       },
       {
+        "relationship_type": "mentors",
+        "source_agent_id": "alice",
+        "strength": 0.7,
+        "target_agent_id": "bob"
+      },
+      {
+        "relationship_type": "supervises",
+        "source_agent_id": "alice",
+        "strength": 0.75,
+        "target_agent_id": "carol"
+      },
+      {
         "relationship_type": "represents",
         "source_agent_id": "alice",
         "strength": 0.9,
@@ -32,9 +44,33 @@
         "target_agent_id": "alice"
       },
       {
+        "relationship_type": "collaborates",
+        "source_agent_id": "bob",
+        "strength": 0.7,
+        "target_agent_id": "carol"
+      },
+      {
         "relationship_type": "advises",
         "source_agent_id": "bob",
         "strength": 0.6,
+        "target_agent_id": "client"
+      },
+      {
+        "relationship_type": "reports_to",
+        "source_agent_id": "carol",
+        "strength": 0.8,
+        "target_agent_id": "alice"
+      },
+      {
+        "relationship_type": "collaborates",
+        "source_agent_id": "carol",
+        "strength": 0.7,
+        "target_agent_id": "bob"
+      },
+      {
+        "relationship_type": "advises",
+        "source_agent_id": "carol",
+        "strength": 0.65,
         "target_agent_id": "client"
       },
       {
@@ -48,6 +84,86 @@
         "source_agent_id": "client",
         "strength": 0.5,
         "target_agent_id": "bob"
+      },
+      {
+        "relationship_type": "trusts",
+        "source_agent_id": "client",
+        "strength": 0.6,
+        "target_agent_id": "carol"
+      }
+    ],
+    "runtime_seeds": [
+      {
+        "affinity": 0.8,
+        "observer_agent_id": "alice",
+        "source_agent_id": "bob",
+        "trust": 0.5
+      },
+      {
+        "affinity": 0.75,
+        "observer_agent_id": "alice",
+        "source_agent_id": "carol",
+        "trust": 0.55
+      },
+      {
+        "affinity": 0.9,
+        "observer_agent_id": "alice",
+        "source_agent_id": "client",
+        "trust": 0.5
+      },
+      {
+        "affinity": 0.9,
+        "observer_agent_id": "bob",
+        "source_agent_id": "alice",
+        "trust": 0.5
+      },
+      {
+        "affinity": 0.7,
+        "observer_agent_id": "bob",
+        "source_agent_id": "carol",
+        "trust": 0.5
+      },
+      {
+        "affinity": 0.6,
+        "observer_agent_id": "bob",
+        "source_agent_id": "client",
+        "trust": 0.5
+      },
+      {
+        "affinity": 0.8,
+        "observer_agent_id": "carol",
+        "source_agent_id": "alice",
+        "trust": 0.55
+      },
+      {
+        "affinity": 0.7,
+        "observer_agent_id": "carol",
+        "source_agent_id": "bob",
+        "trust": 0.5
+      },
+      {
+        "affinity": 0.65,
+        "observer_agent_id": "carol",
+        "source_agent_id": "client",
+        "trust": 0.5
+      },
+      {
+        "affinity": 0.7,
+        "observer_agent_id": "client",
+        "source_agent_id": "alice",
+        "trust": 0.5
+      },
+      {
+        "affinity": 0.5,
+        "observer_agent_id": "client",
+        "source_agent_id": "bob",
+        "trust": 0.5
+      },
+      {
+        "affinity": 0.6,
+        "observer_agent_id": "client",
+        "source_agent_id": "carol",
+        "trust": 0.5
       }
     ],
     "version": "1"

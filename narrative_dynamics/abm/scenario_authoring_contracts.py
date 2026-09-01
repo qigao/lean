@@ -154,6 +154,39 @@ class ScenarioRelationship:
         object.__setattr__(self, "strength", strength)
 
 
+@dataclass(frozen=True)
+class ScenarioRelationshipSeed:
+    observer_agent_id: str
+    source_agent_id: str
+    trust: float
+    affinity: float
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "observer_agent_id",
+            _text(self.observer_agent_id, "relationship seed observer agent ID"),
+        )
+        object.__setattr__(
+            self,
+            "source_agent_id",
+            _text(self.source_agent_id, "relationship seed source agent ID"),
+        )
+        if self.observer_agent_id == self.source_agent_id:
+            raise ValueError("relationship seed agents must differ")
+        for name, minimum, maximum in (
+            ("trust", 0.0, 1.0),
+            ("affinity", -1.0, 1.0),
+        ):
+            raw = getattr(self, name)
+            if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+                raise ValueError(f"relationship seed {name} is out of range")
+            value = float(raw)
+            if not math.isfinite(value) or not minimum <= value <= maximum:
+                raise ValueError(f"relationship seed {name} is out of range")
+            object.__setattr__(self, name, value)
+
+
 class ScenarioNormEffect(str, Enum):
     ALLOW_ACTION = "allow_action"
     DENY_ACTION = "deny_action"
@@ -211,11 +244,13 @@ class ScenarioSocialWorld:
     registered_action_ids: tuple[str, ...] = ()
     registered_resource_ids: tuple[str, ...] = ()
     registered_relationship_types: tuple[str, ...] = ()
+    relationship_seeds: tuple[ScenarioRelationshipSeed, ...] = ()
 
     def __post_init__(self) -> None:
         institutions = tuple(self.institutions)
         memberships = tuple(self.memberships)
         relationships = tuple(self.relationships)
+        relationship_seeds = tuple(self.relationship_seeds)
         norms = tuple(self.norms)
         if any(not isinstance(value, ScenarioInstitution) for value in institutions):
             raise TypeError("institutions must be ScenarioInstitution values")
@@ -223,6 +258,8 @@ class ScenarioSocialWorld:
             raise TypeError("memberships must be ScenarioMembership values")
         if any(not isinstance(value, ScenarioRelationship) for value in relationships):
             raise TypeError("relationships must be ScenarioRelationship values")
+        if any(not isinstance(value, ScenarioRelationshipSeed) for value in relationship_seeds):
+            raise TypeError("relationship seeds must be ScenarioRelationshipSeed values")
         if any(not isinstance(value, ScenarioNorm) for value in norms):
             raise TypeError("norms must be ScenarioNorm values")
         if len({item.institution_id for item in institutions}) != len(institutions):
@@ -243,6 +280,12 @@ class ScenarioSocialWorld:
         }
         if len(relationship_keys) != len(relationships):
             raise ValueError("relationship edges must be unique")
+        relationship_seed_keys = {
+            (item.observer_agent_id, item.source_agent_id)
+            for item in relationship_seeds
+        }
+        if len(relationship_seed_keys) != len(relationship_seeds):
+            raise ValueError("relationship seed pairs must be unique")
         if len({item.norm_id for item in norms}) != len(norms):
             raise ValueError("norm IDs must be unique")
         action_ids = _identifier_tuple(self.registered_action_ids, "registered action", ordered=False)
@@ -265,6 +308,10 @@ class ScenarioSocialWorld:
         object.__setattr__(self, "registered_action_ids", action_ids)
         object.__setattr__(self, "registered_resource_ids", resource_ids)
         object.__setattr__(self, "registered_relationship_types", relationship_types)
+        object.__setattr__(self, "relationship_seeds", tuple(sorted(
+            relationship_seeds,
+            key=lambda item: (item.observer_agent_id, item.source_agent_id),
+        )))
 
 
 class ScenarioPredicateKind(str, Enum):
@@ -296,7 +343,7 @@ class ScenarioPredicate:
             if self.object_id is not None or not isinstance(self.value, bool):
                 raise ValueError("passage_open predicate value must be boolean")
         elif kind is ScenarioPredicateKind.BELIEF_AT_LEAST:
-            self._numeric_value(-math.inf, math.inf)
+            self._numeric_value(0, 1)
             if self.object_id is None:
                 raise ValueError("belief_at_least predicate requires object ID")
         elif kind is ScenarioPredicateKind.CLAIM_STATUS:
@@ -441,6 +488,40 @@ class ScenarioResourceKind(str, Enum):
     MODEL_3D = "model_3d"
 
 
+@dataclass(frozen=True)
+class ScenarioResourceEntitlement:
+    subject_scope: str
+    subject_id: str | None
+
+    def __post_init__(self) -> None:
+        scope = _text(self.subject_scope, "resource entitlement subject scope")
+        if scope not in {"agent", "role", "institution", "public"}:
+            raise ValueError("resource entitlement subject scope is not supported")
+        subject_id = _optional_text(
+            self.subject_id,
+            "resource entitlement subject ID",
+        )
+        if (scope == "public") != (subject_id is None):
+            raise ValueError(
+                "public resource entitlements have no subject ID and scoped entitlements require one"
+            )
+        object.__setattr__(self, "subject_scope", scope)
+        object.__setattr__(self, "subject_id", subject_id)
+
+
+def _entitlement_tuple(values: object, label: str) -> tuple[ScenarioResourceEntitlement, ...]:
+    try:
+        result = tuple(values)  # type: ignore[arg-type]
+    except TypeError as error:
+        raise TypeError(f"{label} must be a tuple") from error
+    if any(not isinstance(value, ScenarioResourceEntitlement) for value in result):
+        raise TypeError(f"{label} must contain ScenarioResourceEntitlement values")
+    keys = {(item.subject_scope, item.subject_id) for item in result}
+    if len(keys) != len(result):
+        raise ValueError(f"{label} must be unique")
+    return tuple(sorted(result, key=lambda item: (item.subject_scope, item.subject_id or "")))
+
+
 def _predicate_key(predicate: ScenarioPredicate) -> tuple[str, str, str, str, str]:
     return (
         predicate.kind.value,
@@ -472,6 +553,7 @@ class ScenarioKnowledgeResource:
     version: str
     authority: str
     license_tag: str
+    entitlements: tuple[ScenarioResourceEntitlement, ...]
     concept_ids: tuple[str, ...] = ()
     index_id: str | None = None
 
@@ -483,6 +565,8 @@ class ScenarioKnowledgeResource:
         object.__setattr__(self, "version", _text(self.version, "knowledge version"))
         object.__setattr__(self, "authority", _text(self.authority, "knowledge authority"))
         object.__setattr__(self, "license_tag", _text(self.license_tag, "knowledge license tag"))
+        object.__setattr__(self, "entitlements", _entitlement_tuple(
+            self.entitlements, "knowledge resource entitlements"))
         object.__setattr__(self, "concept_ids", _identifier_tuple(self.concept_ids, "knowledge concept"))
         object.__setattr__(self, "index_id", _optional_text(self.index_id, "knowledge index ID"))
 
@@ -496,6 +580,7 @@ class ScenarioAssetResource:
     media_type: str
     authority: str
     license_tag: str
+    entitlements: tuple[ScenarioResourceEntitlement, ...]
     dimensions: tuple[float, ...] = ()
     unit: str | None = None
     format: str | None = None
@@ -510,6 +595,8 @@ class ScenarioAssetResource:
             object.__setattr__(self, field, value)
         object.__setattr__(self, "authority", _text(self.authority, "asset authority"))
         object.__setattr__(self, "license_tag", _text(self.license_tag, "asset license tag"))
+        object.__setattr__(self, "entitlements", _entitlement_tuple(
+            self.entitlements, "asset resource entitlements"))
         try:
             dimensions = tuple(self.dimensions)
         except TypeError as error:
@@ -560,6 +647,16 @@ def _catalog_values(resources: object, grants: object, resource_type: type[objec
     known = set(ids)
     if any(resource_id not in known for grant in grants_tuple for resource_id in grant.resource_ids):
         raise ValueError(f"{label} grants must name known resource IDs")
+    resources_by_id = {item.resource_id: item for item in resources_tuple}  # type: ignore[union-attr]
+    for grant in grants_tuple:
+        subject = (grant.subject_scope, grant.subject_id)
+        for resource_id in grant.resource_ids:
+            entitlements = {
+                (item.subject_scope, item.subject_id)
+                for item in resources_by_id[resource_id].entitlements
+            }
+            if subject not in entitlements and ("public", None) not in entitlements:
+                raise ValueError(f"{label} grant is not covered by a resource entitlement")
     grant_keys = {(grant.subject_scope, grant.subject_id) for grant in grants_tuple}
     if len(grant_keys) != len(grants_tuple):
         raise ValueError(f"{label} grants must be unique")
@@ -629,6 +726,7 @@ __all__ = (
     "ScenarioInstitution",
     "ScenarioMembership",
     "ScenarioRelationship",
+    "ScenarioRelationshipSeed",
     "ScenarioNormEffect",
     "ScenarioNorm",
     "ScenarioSocialWorld",
@@ -639,6 +737,7 @@ __all__ = (
     "ScenarioStoryAct",
     "ScenarioStoryPlan",
     "ScenarioResourceKind",
+    "ScenarioResourceEntitlement",
     "ScenarioKnowledgeResource",
     "ScenarioKnowledgeCatalog",
     "ScenarioAssetResource",

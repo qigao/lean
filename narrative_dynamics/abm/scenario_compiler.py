@@ -1,9 +1,4 @@
-"""Pure compilation of declarative V21 scenario package components.
-
-The public compiled-scenario boundary is intentionally introduced with initial-state
-binding.  This module currently exposes only private compiler seams plus the stable
-diagnostic raised by them.
-"""
+"""Pure compilation and initialization of declarative V21.1 scenario packages."""
 
 from __future__ import annotations
 
@@ -29,6 +24,8 @@ from narrative_dynamics.abm.scenario_authoring_contracts import (
     ScenarioPredicate,
     ScenarioPredicateKind,
     ScenarioRelationship,
+    ScenarioRelationshipSeed,
+    ScenarioResourceEntitlement,
     ScenarioResourceGrant,
     ScenarioResourceKind,
     ScenarioRunPolicy,
@@ -86,9 +83,9 @@ from narrative_dynamics.abm.situated_network_contracts import (
     SituatedNetworkRuntimeState,
 )
 from narrative_dynamics.abm.situated_percept_memory import (
-    _SCHEMA as _PERCEPT_MEMORY_SCHEMA,
     hash_situated_percept_memory_store,
     initialize_situated_percept_memory,
+    situated_percept_memory_schema_snapshot,
 )
 from narrative_dynamics.abm.situated_percept_memory_cognition import (
     SituatedPerceptMemoryCognitiveModel,
@@ -118,8 +115,10 @@ from narrative_dynamics.abm.situated_social_memory_contracts import (
 )
 from narrative_dynamics.abm.situated_spatial_map_contracts import (
     SituatedSpatialMap,
-    SpatialPassage,
-    SpatialPlace,
+)
+from narrative_dynamics.abm.situated_spatial_map import (
+    auto_layout_situated_spatial_map,
+    compile_tiled_situated_spatial_map,
 )
 from narrative_dynamics.abm.situated_story import SituatedStory, initialize_situated_story
 
@@ -158,14 +157,6 @@ class _ValidatedInitialStateSource:
 
 
 @dataclass(frozen=True)
-class _ValidatedRelationshipSeed:
-    observer_agent_id: str
-    source_agent_id: str
-    trust: float
-    affinity: float
-
-
-@dataclass(frozen=True)
 class _CompiledScenarioComponents:
     scenario_id: str
     version: str
@@ -179,8 +170,9 @@ class _CompiledScenarioComponents:
     asset_catalog: ScenarioAssetCatalog
     run_policy: ScenarioRunPolicy
     initial_state_source: _ValidatedInitialStateSource
-    relationship_seeds: tuple[_ValidatedRelationshipSeed, ...]
     intervention_kinds: tuple[str, ...]
+    agent_body_roles: tuple[tuple[str, str], ...]
+    agent_knowledge_grants: tuple[tuple[str, tuple[str, ...]], ...]
 
     @property
     def content_hash(self) -> str:
@@ -260,6 +252,11 @@ def _semantic_source_value(
         if path in ordered_paths:
             return normalized
         return tuple(sorted(normalized, key=stable_content_hash))
+    if isinstance(value, float):
+        if value == 0.0:
+            return 0
+        if value.is_integer():
+            return int(value)
     return value
 
 
@@ -342,7 +339,10 @@ def _boolean(document: ScenarioSourceDocument, value: object, pointer: str) -> b
 def _number(document: ScenarioSourceDocument, value: object, pointer: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise _error(document, pointer, "invalid_type")
-    result = float(value)
+    try:
+        result = float(value)
+    except (OverflowError, ValueError):
+        raise _error(document, pointer, "invalid_value") from None
     if not math.isfinite(result):
         raise _error(document, pointer, "invalid_value")
     return result
@@ -394,8 +394,12 @@ def _construct(document: ScenarioSourceDocument, pointer: str, factory):
         return factory()
     except ScenarioCompilationError:
         raise
-    except (TypeError, ValueError):
+    except (ArithmeticError, RecursionError, TypeError, ValueError):
         raise _error(document, pointer, "contract_violation") from None
+
+
+def _pointer_token(value: str) -> str:
+    return value.replace("~", "~0").replace("/", "~1")
 
 
 _AGENT_KEYS = {
@@ -713,7 +717,7 @@ def _compile_cognitive_agent(
         belief[hypothesis_id] = _number(
             document,
             probability,
-            f"/cognition/prior_belief/{hypothesis_id}",
+            f"/cognition/prior_belief/{_pointer_token(hypothesis_id)}",
         )
     prior_belief = _construct(
         document,
@@ -1136,10 +1140,18 @@ def _run_value(source: ScenarioPackageSource) -> tuple[ScenarioSourceDocument, M
     }
     unknown = sorted(set(fallbacks) - set(supported))
     if unknown:
-        raise _error(document, f"/fallbacks/{unknown[0]}", "unsupported_shape")
+        raise _error(
+            document,
+            f"/fallbacks/{_pointer_token(unknown[0])}",
+            "unsupported_shape",
+        )
     for role, fallback in fallbacks.items():
         if fallback != supported[role]:
-            raise _error(document, f"/fallbacks/{role}", "unsupported_fallback")
+            raise _error(
+                document,
+                f"/fallbacks/{_pointer_token(role)}",
+                "unsupported_fallback",
+            )
     return document, value
 
 
@@ -1244,7 +1256,78 @@ def _social_relationship_value(
         document,
         document.value,
         "",
-        {"model_id", "version", "memory_cognitive_model_id", "relationships", "policy"},
+        {
+            "model_id",
+            "version",
+            "memory_cognitive_model_id",
+            "relationships",
+            "runtime_seeds",
+            "policy",
+        },
+    )
+
+
+def _compile_relationship_seeds(
+    source: ScenarioPackageSource,
+    world: SituatedWorldModel,
+    social_memory: SituatedSocialMemoryModel,
+) -> tuple[ScenarioRelationshipSeed, ...]:
+    if not isinstance(social_memory, SituatedSocialMemoryModel):
+        raise ScenarioCompilationError("social.relationships", "/runtime_seeds", "invalid_type")
+    document, value = _social_relationship_value(source)
+    agent_ids = {item.agent_id for item in world.agents}
+    expected_pairs = {
+        (observer, other)
+        for observer in agent_ids
+        for other in agent_ids
+        if observer != other
+    }
+    seeds: list[ScenarioRelationshipSeed] = []
+    pairs: list[tuple[str, str]] = []
+    for index, raw in enumerate(
+        _array(document, value["runtime_seeds"], "/runtime_seeds")
+    ):
+        pointer = f"/runtime_seeds/{index}"
+        item = _object(
+            document,
+            raw,
+            pointer,
+            {"observer_agent_id", "source_agent_id", "trust", "affinity"},
+        )
+        observer = _text(
+            document,
+            item["observer_agent_id"],
+            f"{pointer}/observer_agent_id",
+        )
+        other = _text(
+            document,
+            item["source_agent_id"],
+            f"{pointer}/source_agent_id",
+        )
+        if observer not in agent_ids:
+            raise _error(document, f"{pointer}/observer_agent_id", "unknown_reference")
+        if other not in agent_ids:
+            raise _error(document, f"{pointer}/source_agent_id", "unknown_reference")
+        pairs.append((observer, other))
+        seeds.append(
+            _construct(
+                document,
+                pointer,
+                lambda observer=observer, other=other, item=item: ScenarioRelationshipSeed(
+                    observer,
+                    other,
+                    _number(document, item["trust"], f"{pointer}/trust"),
+                    _number(document, item["affinity"], f"{pointer}/affinity"),
+                ),
+            )
+        )
+    if set(pairs) != expected_pairs or len(pairs) != len(expected_pairs):
+        raise _error(document, "/runtime_seeds", "roster_mismatch")
+    return tuple(
+        sorted(
+            seeds,
+            key=lambda item: (item.observer_agent_id, item.source_agent_id),
+        )
     )
 
 
@@ -1419,37 +1502,10 @@ def _auto_spatial_map(
     run_document = _singleton(source, ScenarioDocumentRole.RUN)
     if _fallback(source, ScenarioDocumentRole.PHYSICAL_MAP) != "auto_grid":
         raise _error(run_document, "/fallbacks/physical.map", "unsupported_fallback")
-    centers = {
-        place.place_id: (float(index * 6), 0.0)
-        for index, place in enumerate(world.places)
-    }
-    places = tuple(
-        SpatialPlace(place.place_id, centers[place.place_id][0], 0.0, 4.0, 4.0, 2.8)
-        for place in world.places
-    )
-    passages = tuple(
-        SpatialPassage(
-            passage.passage_id,
-            passage.source_place_id,
-            passage.target_place_id,
-            (centers[passage.source_place_id][0] + centers[passage.target_place_id][0]) / 2.0,
-            0.0,
-            0.5,
-            1.2,
-            2.1,
-        )
-        for passage in world.passages
-    )
     return _construct(
         run_document,
         "/fallbacks/physical.map",
-        lambda: SituatedSpatialMap(
-            f"{source.scenario_id}-auto-map",
-            source.version,
-            world,
-            places,
-            passages,
-        ),
+        lambda: auto_layout_situated_spatial_map(world),
     )
 
 
@@ -1460,95 +1516,10 @@ def _compile_spatial_map(
     document = _optional_singleton(source, ScenarioDocumentRole.PHYSICAL_MAP)
     if document is None:
         return _auto_spatial_map(source, world)
-    value = _object(document, document.value, "", {"map_id", "version", "places", "passages"})
-    world_place_ids = {item.place_id for item in world.places}
-    world_passages = {
-        item.passage_id: (item.source_place_id, item.target_place_id)
-        for item in world.passages
-    }
-    places = []
-    for index, raw in enumerate(_array(document, value["places"], "/places")):
-        pointer = f"/places/{index}"
-        item = _object(
-            document,
-            raw,
-            pointer,
-            {"place_id", "center_x", "center_y", "width", "depth", "height"},
-        )
-        place_id = _text(document, item["place_id"], f"{pointer}/place_id")
-        if place_id not in world_place_ids:
-            raise _error(document, f"{pointer}/place_id", "unknown_reference")
-        places.append(
-            _construct(
-                document,
-                pointer,
-                lambda item=item: SpatialPlace(
-                    place_id,
-                    _number(document, item["center_x"], f"{pointer}/center_x"),
-                    _number(document, item["center_y"], f"{pointer}/center_y"),
-                    _number(document, item["width"], f"{pointer}/width"),
-                    _number(document, item["depth"], f"{pointer}/depth"),
-                    _number(document, item["height"], f"{pointer}/height"),
-                ),
-            )
-        )
-    if {item.place_id for item in places} != world_place_ids or len(places) != len(world_place_ids):
-        raise _error(document, "/places", "roster_mismatch")
-    passages = []
-    for index, raw in enumerate(_array(document, value["passages"], "/passages")):
-        pointer = f"/passages/{index}"
-        item = _object(
-            document,
-            raw,
-            pointer,
-            {
-                "passage_id",
-                "source_place_id",
-                "target_place_id",
-                "center_x",
-                "center_y",
-                "width",
-                "depth",
-                "height",
-            },
-        )
-        passage_id = _text(document, item["passage_id"], f"{pointer}/passage_id")
-        source_id = _text(document, item["source_place_id"], f"{pointer}/source_place_id")
-        target_id = _text(document, item["target_place_id"], f"{pointer}/target_place_id")
-        if passage_id not in world_passages:
-            raise _error(document, f"{pointer}/passage_id", "unknown_reference")
-        if source_id != world_passages[passage_id][0]:
-            raise _error(document, f"{pointer}/source_place_id", "identity_mismatch")
-        if target_id != world_passages[passage_id][1]:
-            raise _error(document, f"{pointer}/target_place_id", "identity_mismatch")
-        passages.append(
-            _construct(
-                document,
-                pointer,
-                lambda item=item: SpatialPassage(
-                    passage_id,
-                    source_id,
-                    target_id,
-                    _number(document, item["center_x"], f"{pointer}/center_x"),
-                    _number(document, item["center_y"], f"{pointer}/center_y"),
-                    _number(document, item["width"], f"{pointer}/width"),
-                    _number(document, item["depth"], f"{pointer}/depth"),
-                    _number(document, item["height"], f"{pointer}/height"),
-                ),
-            )
-        )
-    if {item.passage_id for item in passages} != set(world_passages) or len(passages) != len(world_passages):
-        raise _error(document, "/passages", "roster_mismatch")
     return _construct(
         document,
         "",
-        lambda: SituatedSpatialMap(
-            _text(document, value["map_id"], "/map_id"),
-            _text(document, value["version"], "/version"),
-            world,
-            tuple(places),
-            tuple(passages),
-        ),
+        lambda: compile_tiled_situated_spatial_map(document.value, world),
     )
 
 
@@ -1574,6 +1545,113 @@ def _grant(
     )
 
 
+def _entitlement(
+    document: ScenarioSourceDocument,
+    raw: object,
+    pointer: str,
+) -> ScenarioResourceEntitlement:
+    item = _object(
+        document,
+        raw,
+        pointer,
+        {"subject_scope", "subject_id"},
+    )
+    return _construct(
+        document,
+        pointer,
+        lambda: ScenarioResourceEntitlement(
+            _text(document, item["subject_scope"], f"{pointer}/subject_scope"),
+            _optional_text(document, item["subject_id"], f"{pointer}/subject_id"),
+        ),
+    )
+
+
+def _entitlements(
+    document: ScenarioSourceDocument,
+    value: object,
+    pointer: str,
+) -> tuple[ScenarioResourceEntitlement, ...]:
+    return tuple(
+        _entitlement(document, item, f"{pointer}/{index}")
+        for index, item in enumerate(_array(document, value, pointer))
+    )
+
+
+def _resource_grant_is_entitled(
+    resource: ScenarioKnowledgeResource | ScenarioAssetResource,
+    scope: str,
+    subject_id: str | None,
+) -> bool:
+    subjects = {
+        (item.subject_scope, item.subject_id)
+        for item in resource.entitlements
+    }
+    return (scope, subject_id) in subjects or ("public", None) in subjects
+
+
+def _validate_grant_subject_reference(
+    source: ScenarioPackageSource,
+    document: ScenarioSourceDocument,
+    pointer: str,
+    scope: str,
+    subject_id: str | None,
+) -> None:
+    agent_ids = {item.logical_id for item in _agents(source)}
+    institution_ids: set[str] = set()
+    role_ids: set[str] = set()
+    institution_document = _optional_singleton(
+        source,
+        ScenarioDocumentRole.SOCIAL_INSTITUTIONS,
+    )
+    if institution_document is not None:
+        value = _object(
+            institution_document,
+            institution_document.value,
+            "",
+            {"institutions", "memberships"},
+        )
+        for index, raw in enumerate(
+            _array(institution_document, value["institutions"], "/institutions")
+        ):
+            item = _object(
+                institution_document,
+                raw,
+                f"/institutions/{index}",
+                {"institution_id", "institution_kind", "parent_institution_id"},
+            )
+            institution_ids.add(
+                _text(
+                    institution_document,
+                    item["institution_id"],
+                    f"/institutions/{index}/institution_id",
+                )
+            )
+        for index, raw in enumerate(
+            _array(institution_document, value["memberships"], "/memberships")
+        ):
+            item = _object(
+                institution_document,
+                raw,
+                f"/memberships/{index}",
+                {"agent_id", "institution_id", "role_id"},
+            )
+            role_ids.add(
+                _text(
+                    institution_document,
+                    item["role_id"],
+                    f"/memberships/{index}/role_id",
+                )
+            )
+    known = (
+        scope == "public"
+        or (scope == "agent" and subject_id in agent_ids)
+        or (scope == "role" and subject_id in role_ids)
+        or (scope == "institution" and subject_id in institution_ids)
+    )
+    if scope in {"agent", "role", "institution"} and not known:
+        raise _error(document, f"{pointer}/subject_id", "unknown_reference")
+
+
 def _compile_knowledge_catalog(source: ScenarioPackageSource) -> ScenarioKnowledgeCatalog:
     catalog_document = _singleton(source, ScenarioDocumentRole.KNOWLEDGE_CATALOG)
     catalog = _object(catalog_document, catalog_document.value, "", {"resources"})
@@ -1594,6 +1672,7 @@ def _compile_knowledge_catalog(source: ScenarioPackageSource) -> ScenarioKnowled
                 "version",
                 "authority",
                 "license_tag",
+                "entitlements",
                 "concept_ids",
                 "index_id",
             },
@@ -1612,6 +1691,11 @@ def _compile_knowledge_catalog(source: ScenarioPackageSource) -> ScenarioKnowled
                     _text(catalog_document, item["version"], f"{pointer}/version"),
                     _text(catalog_document, item["authority"], f"{pointer}/authority"),
                     _text(catalog_document, item["license_tag"], f"{pointer}/license_tag"),
+                    _entitlements(
+                        catalog_document,
+                        item["entitlements"],
+                        f"{pointer}/entitlements",
+                    ),
                     _texts(catalog_document, item["concept_ids"], f"{pointer}/concept_ids"),
                     _optional_text(catalog_document, item["index_id"], f"{pointer}/index_id"),
                 ),
@@ -1620,6 +1704,7 @@ def _compile_knowledge_catalog(source: ScenarioPackageSource) -> ScenarioKnowled
     access_document = _singleton(source, ScenarioDocumentRole.KNOWLEDGE_ACCESS)
     access = _object(access_document, access_document.value, "", {"grants"})
     known_resource_ids = {item.resource_id for item in resources}
+    resources_by_id = {item.resource_id: item for item in resources}
     grants = []
     for index, raw in enumerate(_array(access_document, access["grants"], "/grants")):
         pointer = f"/grants/{index}"
@@ -1629,6 +1714,19 @@ def _compile_knowledge_catalog(source: ScenarioPackageSource) -> ScenarioKnowled
             pointer,
             {"subject_scope", "subject_id", "resource_ids"},
         )
+        scope = _text(access_document, item["subject_scope"], f"{pointer}/subject_scope")
+        subject_id = _optional_text(
+            access_document,
+            item["subject_id"],
+            f"{pointer}/subject_id",
+        )
+        _validate_grant_subject_reference(
+            source,
+            access_document,
+            pointer,
+            scope,
+            subject_id,
+        )
         for resource_index, resource_id in enumerate(
             _texts(access_document, item["resource_ids"], f"{pointer}/resource_ids")
         ):
@@ -1637,6 +1735,16 @@ def _compile_knowledge_catalog(source: ScenarioPackageSource) -> ScenarioKnowled
                     access_document,
                     f"{pointer}/resource_ids/{resource_index}",
                     "unknown_reference",
+                )
+            if not _resource_grant_is_entitled(
+                resources_by_id[resource_id],
+                scope,
+                subject_id,
+            ):
+                raise _error(
+                    access_document,
+                    f"{pointer}/resource_ids/{resource_index}",
+                    "grant_not_entitled",
                 )
         grants.append(_grant(access_document, raw, pointer))
     return _construct(
@@ -1664,6 +1772,7 @@ def _compile_asset_catalog(source: ScenarioPackageSource) -> ScenarioAssetCatalo
                 "media_type",
                 "authority",
                 "license_tag",
+                "entitlements",
                 "dimensions",
                 "unit",
                 "format",
@@ -1692,6 +1801,11 @@ def _compile_asset_catalog(source: ScenarioPackageSource) -> ScenarioAssetCatalo
                     _text(document, item["media_type"], f"{pointer}/media_type"),
                     _text(document, item["authority"], f"{pointer}/authority"),
                     _text(document, item["license_tag"], f"{pointer}/license_tag"),
+                    _entitlements(
+                        document,
+                        item["entitlements"],
+                        f"{pointer}/entitlements",
+                    ),
                     dimensions,
                     _optional_text(document, item["unit"], f"{pointer}/unit"),
                     _optional_text(document, item["format"], f"{pointer}/format"),
@@ -1707,6 +1821,7 @@ def _compile_asset_catalog(source: ScenarioPackageSource) -> ScenarioAssetCatalo
             )
         )
     known_resource_ids = {item.resource_id for item in resources}
+    resources_by_id = {item.resource_id: item for item in resources}
     grants = []
     for index, raw in enumerate(_array(document, value["grants"], "/grants")):
         pointer = f"/grants/{index}"
@@ -1716,6 +1831,19 @@ def _compile_asset_catalog(source: ScenarioPackageSource) -> ScenarioAssetCatalo
             pointer,
             {"subject_scope", "subject_id", "resource_ids"},
         )
+        scope = _text(document, item["subject_scope"], f"{pointer}/subject_scope")
+        subject_id = _optional_text(
+            document,
+            item["subject_id"],
+            f"{pointer}/subject_id",
+        )
+        _validate_grant_subject_reference(
+            source,
+            document,
+            pointer,
+            scope,
+            subject_id,
+        )
         for resource_index, resource_id in enumerate(
             _texts(document, item["resource_ids"], f"{pointer}/resource_ids")
         ):
@@ -1724,6 +1852,16 @@ def _compile_asset_catalog(source: ScenarioPackageSource) -> ScenarioAssetCatalo
                     document,
                     f"{pointer}/resource_ids/{resource_index}",
                     "unknown_reference",
+                )
+            if not _resource_grant_is_entitled(
+                resources_by_id[resource_id],
+                scope,
+                subject_id,
+            ):
+                raise _error(
+                    document,
+                    f"{pointer}/resource_ids/{resource_index}",
+                    "grant_not_entitled",
                 )
         grants.append(_grant(document, raw, pointer))
     return _construct(
@@ -1852,21 +1990,35 @@ def _compile_social_world(
             pointer,
             {"source_agent_id", "target_agent_id", "relationship_type", "strength"},
         )
+        source_agent_id = _text(
+            relationship_document,
+            item["source_agent_id"],
+            f"{pointer}/source_agent_id",
+        )
+        target_agent_id = _text(
+            relationship_document,
+            item["target_agent_id"],
+            f"{pointer}/target_agent_id",
+        )
+        if source_agent_id not in agent_ids:
+            raise _error(
+                relationship_document,
+                f"{pointer}/source_agent_id",
+                "unknown_reference",
+            )
+        if target_agent_id not in agent_ids:
+            raise _error(
+                relationship_document,
+                f"{pointer}/target_agent_id",
+                "unknown_reference",
+            )
         relationships.append(
             _construct(
                 relationship_document,
                 pointer,
-                lambda item=item: ScenarioRelationship(
-                    _text(
-                        relationship_document,
-                        item["source_agent_id"],
-                        f"{pointer}/source_agent_id",
-                    ),
-                    _text(
-                        relationship_document,
-                        item["target_agent_id"],
-                        f"{pointer}/target_agent_id",
-                    ),
+                lambda item=item, source_agent_id=source_agent_id, target_agent_id=target_agent_id: ScenarioRelationship(
+                    source_agent_id,
+                    target_agent_id,
                     _text(
                         relationship_document,
                         item["relationship_type"],
@@ -2015,6 +2167,11 @@ def _compile_social_world(
             action_ids,
             resource_ids,
             relationship_types,
+            _compile_relationship_seeds(
+                source,
+                world,
+                runtime_model.social_memory_model,
+            ),
         ),
     )
 
@@ -2407,59 +2564,14 @@ def _compile_initial_state_source(
     )
 
 
-def _validate_relationships_and_seeds(
-    source: ScenarioPackageSource,
-    world: SituatedWorldModel,
-    social_memory: SituatedSocialMemoryModel,
-) -> tuple[_ValidatedRelationshipSeed, ...]:
-    document, value = _social_relationship_value(source)
-    agent_ids = {item.agent_id for item in world.agents}
-    expected_pairs = {
-        (observer, other)
-        for observer in agent_ids
-        for other in agent_ids
-        if observer != other
-    }
-    seeds = []
-    pairs = []
-    for index, raw in enumerate(_array(document, value["relationships"], "/relationships")):
-        pointer = f"/relationships/{index}"
-        item = _object(
-            document,
-            raw,
-            pointer,
-            {"source_agent_id", "target_agent_id", "relationship_type", "strength"},
-        )
-        observer = _text(document, item["source_agent_id"], f"{pointer}/source_agent_id")
-        other = _text(document, item["target_agent_id"], f"{pointer}/target_agent_id")
-        if observer not in agent_ids:
-            raise _error(document, f"{pointer}/source_agent_id", "unknown_reference")
-        if other not in agent_ids:
-            raise _error(document, f"{pointer}/target_agent_id", "unknown_reference")
-        affinity = _number(document, item["strength"], f"{pointer}/strength")
-        pairs.append((observer, other))
-        seeds.append(
-            _ValidatedRelationshipSeed(
-                observer,
-                other,
-                social_memory.policy.initial_source_trust,
-                affinity,
-            )
-        )
-    if set(pairs) != expected_pairs or len(pairs) != len(expected_pairs):
-        raise _error(document, "/relationships", "roster_mismatch")
-    return tuple(
-        sorted(seeds, key=lambda item: (item.observer_agent_id, item.source_agent_id))
-    )
-
-
 def _validate_social_references(
     source: ScenarioPackageSource,
     world: SituatedWorldModel,
     social_world: ScenarioSocialWorld,
-) -> None:
+) -> tuple[tuple[str, str], ...]:
     agent_ids = {item.agent_id for item in world.agents}
     institution_ids = {item.institution_id for item in social_world.institutions}
+    body_roles: list[tuple[str, str]] = []
     if social_world.memberships:
         document = _singleton(source, ScenarioDocumentRole.SOCIAL_INSTITUTIONS)
         for index, membership in enumerate(social_world.memberships):
@@ -2487,6 +2599,23 @@ def _validate_social_references(
             body_role = _text(agent_document, body["role"], "/body/role")
             if body_role not in roles_by_agent[agent_document.logical_id]:
                 raise _error(agent_document, "/body/role", "unknown_reference")
+            body_roles.append((agent_document.logical_id, body_role))
+    else:
+        for agent_document in _agents(source):
+            agent_value = _agent_value(agent_document)
+            body = _object(
+                agent_document,
+                agent_value["body"],
+                "/body",
+                {"role", "initial_place", "inventory_capacity"},
+            )
+            body_roles.append(
+                (
+                    agent_document.logical_id,
+                    _text(agent_document, body["role"], "/body/role"),
+                )
+            )
+    return tuple(sorted(body_roles))
 
 
 def _validate_grant_references(
@@ -2495,7 +2624,7 @@ def _validate_grant_references(
     social_world: ScenarioSocialWorld,
     knowledge_catalog: ScenarioKnowledgeCatalog,
     asset_catalog: ScenarioAssetCatalog,
-) -> None:
+) -> tuple[tuple[str, tuple[str, ...]], ...]:
     agent_ids = {item.agent_id for item in world.agents}
     role_ids = {item.role_id for item in social_world.memberships}
     institution_ids = {item.institution_id for item in social_world.institutions}
@@ -2527,13 +2656,17 @@ def _validate_grant_references(
     asset_document = _singleton(source, ScenarioDocumentRole.ASSET_CATALOG)
     validate_authored(knowledge_document, {"grants"})
     validate_authored(asset_document, {"resources", "grants"})
-    direct = {
-        grant.subject_id: grant.resource_ids
-        for grant in knowledge_catalog.grants
-        if grant.subject_scope == "agent"
+    resources_by_id = {
+        resource.resource_id: resource for resource in knowledge_catalog.resources
     }
-    if set(direct) != agent_ids:
-        raise _error(knowledge_document, "/grants", "roster_mismatch")
+    roles_by_agent: dict[str, set[str]] = {agent_id: set() for agent_id in agent_ids}
+    institutions_by_agent: dict[str, set[str]] = {
+        agent_id: set() for agent_id in agent_ids
+    }
+    for membership in social_world.memberships:
+        roles_by_agent[membership.agent_id].add(membership.role_id)
+        institutions_by_agent[membership.agent_id].add(membership.institution_id)
+    retained: list[tuple[str, tuple[str, ...]]] = []
     for agent_document in _agents(source):
         agent_value = _agent_value(agent_document)
         authored = _texts(
@@ -2541,8 +2674,37 @@ def _validate_grant_references(
             agent_value["knowledge_grants"],
             "/knowledge_grants",
         )
-        if tuple(sorted(authored)) != direct[agent_document.logical_id]:
-            raise _error(agent_document, "/knowledge_grants", "roster_mismatch")
+        for index, resource_id in enumerate(authored):
+            if resource_id not in resources_by_id:
+                raise _error(
+                    agent_document,
+                    f"/knowledge_grants/{index}",
+                    "unknown_reference",
+                )
+            entitlements = {
+                (item.subject_scope, item.subject_id)
+                for item in resources_by_id[resource_id].entitlements
+            }
+            authorized = (
+                ("public", None) in entitlements
+                or ("agent", agent_document.logical_id) in entitlements
+                or any(
+                    ("role", role_id) in entitlements
+                    for role_id in roles_by_agent[agent_document.logical_id]
+                )
+                or any(
+                    ("institution", institution_id) in entitlements
+                    for institution_id in institutions_by_agent[agent_document.logical_id]
+                )
+            )
+            if not authorized:
+                raise _error(
+                    agent_document,
+                    f"/knowledge_grants/{index}",
+                    "grant_not_entitled",
+                )
+        retained.append((agent_document.logical_id, tuple(sorted(authored))))
+    return tuple(sorted(retained))
 
 
 def _validate_interventions(
@@ -2638,10 +2800,9 @@ def _compile_situated_scenario_components(
         run_document = _singleton(source, ScenarioDocumentRole.RUN)
         raise _error(run_document, "/mode", "execution_mode_mismatch")
     initial_state_source = _compile_initial_state_source(source, world)
-    relationship_seeds = _validate_relationships_and_seeds(source, world, social_memory)
     intervention_kinds = _compile_intervention_kinds(source)
-    _validate_social_references(source, world, social_world)
-    _validate_grant_references(
+    agent_body_roles = _validate_social_references(source, world, social_world)
+    agent_knowledge_grants = _validate_grant_references(
         source,
         world,
         social_world,
@@ -2664,8 +2825,9 @@ def _compile_situated_scenario_components(
         asset_catalog,
         run_policy,
         initial_state_source,
-        relationship_seeds,
         intervention_kinds,
+        agent_body_roles,
+        agent_knowledge_grants,
     )
 
 
@@ -2729,7 +2891,7 @@ def _compile_initial_states(
                     0,
                     0,
                 )
-                for item in components.relationship_seeds
+                for item in components.social_world.relationship_seeds
             ),
             base_social_state.claims,
             base_social_state.processed_evidence_ids,
@@ -2740,8 +2902,8 @@ def _compile_initial_states(
             cognitive_state,
             social_state,
         )
-    except (TypeError, ValueError) as error:
-        raise _error(document, "", "contract_violation") from error
+    except (ArithmeticError, RecursionError, TypeError, ValueError):
+        raise _error(document, "", "contract_violation") from None
     return story, cognitive_state, social_state
 
 
@@ -2771,9 +2933,14 @@ def compile_situated_scenario_package(
             components.knowledge_catalog,
             components.asset_catalog,
             components.run_policy,
+            components.agent_body_roles,
+            components.agent_knowledge_grants,
+            components.intervention_kinds,
+            source.raw_manifest_hash,
+            source.raw_document_hashes,
         )
-    except (TypeError, ValueError) as error:
-        raise ScenarioCompilationError("package", "", "contract_violation") from error
+    except (ArithmeticError, RecursionError, TypeError, ValueError):
+        raise ScenarioCompilationError("package", "", "contract_violation") from None
 
 
 def initialize_compiled_scenario(
@@ -2830,8 +2997,10 @@ def _preflight_compiled_scenario_database(database_path: str | Path) -> None:
         connection.execute("PRAGMA query_only = ON")
         schema_objects = _sqlite_schema_snapshot(connection)
         if not schema_objects:
-            return
-        if schema_objects != _canonical_percept_memory_schema_snapshot():
+            raise ValueError(
+                "compiled scenario initialization rejected a noncanonical database schema"
+            )
+        if schema_objects != situated_percept_memory_schema_snapshot():
             raise ValueError(
                 "compiled scenario initialization rejected a noncanonical database schema"
             )
@@ -2849,10 +3018,10 @@ def _preflight_compiled_scenario_database(database_path: str | Path) -> None:
             )
     except ValueError:
         raise
-    except (OSError, sqlite3.Error) as error:
+    except (OSError, sqlite3.Error):
         raise ValueError(
             "compiled scenario initialization rejected a noncanonical database schema"
-        ) from error
+        ) from None
     finally:
         if connection is not None:
             connection.close()
@@ -2874,16 +3043,6 @@ def _sqlite_schema_snapshot(
             "WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name"
         ).fetchall()
     )
-
-
-def _canonical_percept_memory_schema_snapshot(
-) -> tuple[tuple[str, str, str, str | None], ...]:
-    connection = sqlite3.connect(":memory:")
-    try:
-        connection.executescript(_PERCEPT_MEMORY_SCHEMA)
-        return _sqlite_schema_snapshot(connection)
-    finally:
-        connection.close()
 
 
 __all__ = (

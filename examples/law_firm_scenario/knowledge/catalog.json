@@ -9,6 +9,12 @@
           "evidence"
         ],
         "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "entitlements": [
+          {
+            "subject_id": null,
+            "subject_scope": "public"
+          }
+        ],
         "index_id": "index-statute",
         "kind": "document",
         "language": "en",
@@ -24,6 +30,16 @@
           "case-file"
         ],
         "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "entitlements": [
+          {
+            "subject_id": "lawyer",
+            "subject_scope": "role"
+          },
+          {
+            "subject_id": "partner",
+            "subject_scope": "role"
+          }
+        ],
         "index_id": "index-case-file",
         "kind": "document",
         "language": "en",
@@ -39,6 +55,12 @@
           "procedure"
         ],
         "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "entitlements": [
+          {
+            "subject_id": "client",
+            "subject_scope": "role"
+          }
+        ],
         "index_id": null,
         "kind": "document",
         "language": "en",
@@ -46,6 +68,32 @@
         "media_type": "application/pdf",
         "resource_id": "client-guide",
         "uri": "https://example.test/client-guide.pdf",
+        "version": "1"
+      },
+      {
+        "authority": "firm",
+        "concept_ids": [
+          "contract",
+          "evidence"
+        ],
+        "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "entitlements": [
+          {
+            "subject_id": "lawyer",
+            "subject_scope": "role"
+          },
+          {
+            "subject_id": "partner",
+            "subject_scope": "role"
+          }
+        ],
+        "index_id": "index-contract-scan",
+        "kind": "image",
+        "language": "en",
+        "license_tag": "private",
+        "media_type": "image/tiff",
+        "resource_id": "contract-scan",
+        "uri": "https://example.test/private/contract-scan.tiff",
         "version": "1"
       }
     ]

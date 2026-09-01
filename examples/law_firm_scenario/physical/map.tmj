@@ -1,0 +1,67 @@
+{
+  "height": 20,
+  "layers": [
+    {
+      "name": "places",
+      "objects": [
+        {
+          "class": "place",
+          "height": 80,
+          "id": 1,
+          "name": "lobby",
+          "width": 80,
+          "x": -40,
+          "y": -40
+        },
+        {
+          "class": "place",
+          "height": 80,
+          "id": 2,
+          "name": "meeting",
+          "width": 100,
+          "x": 50,
+          "y": -40
+        },
+        {
+          "class": "place",
+          "height": 60,
+          "id": 3,
+          "name": "archive",
+          "width": 80,
+          "x": 180,
+          "y": -30
+        }
+      ],
+      "type": "objectgroup"
+    },
+    {
+      "name": "passages",
+      "objects": [
+        {
+          "class": "passage",
+          "height": 24,
+          "id": 4,
+          "name": "lobby-meeting",
+          "width": 10,
+          "x": 40,
+          "y": -12
+        },
+        {
+          "class": "passage",
+          "height": 24,
+          "id": 5,
+          "name": "meeting-archive",
+          "width": 10,
+          "x": 155,
+          "y": -12
+        }
+      ],
+      "type": "objectgroup"
+    }
+  ],
+  "orientation": "orthogonal",
+  "tileheight": 10,
+  "tilewidth": 10,
+  "type": "map",
+  "width": 40
+}

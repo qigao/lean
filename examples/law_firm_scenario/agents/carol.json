@@ -1,29 +1,29 @@
 {
   "schema": "narrative-dynamics.scenario-document/v1",
   "value": {
-    "agent_id": "bob",
+    "agent_id": "carol",
     "body": {
-      "initial_place": "lobby",
+      "initial_place": "meeting",
       "inventory_capacity": 1,
       "role": "lawyer"
     },
     "cognition": {
       "action_schedule": [
         [
-          "bob-inspect-file",
-          "bob-move-archive",
-          "bob-take-file",
-          "bob-tell-status",
-          "bob-wait"
+          "carol-inspect-file",
+          "carol-move-archive",
+          "carol-take-file",
+          "carol-tell-status",
+          "carol-wait"
         ],
         [
-          "bob-tell-status",
-          "bob-wait"
+          "carol-tell-status",
+          "carol-wait"
         ]
       ],
       "actions": [
         {
-          "action_id": "bob-inspect-file",
+          "action_id": "carol-inspect-file",
           "kind": "inspect",
           "message": null,
           "repeatable": false,
@@ -34,7 +34,7 @@
           "target_id": "case-file"
         },
         {
-          "action_id": "bob-move-archive",
+          "action_id": "carol-move-archive",
           "kind": "move",
           "message": null,
           "repeatable": false,
@@ -45,7 +45,7 @@
           "target_id": "meeting-archive"
         },
         {
-          "action_id": "bob-take-file",
+          "action_id": "carol-take-file",
           "kind": "take",
           "message": null,
           "repeatable": false,
@@ -56,7 +56,7 @@
           "target_id": "case-file"
         },
         {
-          "action_id": "bob-tell-status",
+          "action_id": "carol-tell-status",
           "kind": "tell",
           "message": "The case file has been found.",
           "repeatable": false,
@@ -70,7 +70,7 @@
           "target_id": null
         },
         {
-          "action_id": "bob-wait",
+          "action_id": "carol-wait",
           "kind": "wait",
           "message": null,
           "repeatable": true,
@@ -100,121 +100,121 @@
       ],
       "likelihoods": [
         {
-          "action_id": "bob-inspect-file",
+          "action_id": "carol-inspect-file",
           "hypothesis_id": "file-found",
           "probability": 0.8,
           "symbol_id": "evidence-found"
         },
         {
-          "action_id": "bob-inspect-file",
+          "action_id": "carol-inspect-file",
           "hypothesis_id": "file-found",
           "probability": 0.2,
           "symbol_id": "evidence-missing"
         },
         {
-          "action_id": "bob-inspect-file",
+          "action_id": "carol-inspect-file",
           "hypothesis_id": "file-missing",
           "probability": 0.2,
           "symbol_id": "evidence-found"
         },
         {
-          "action_id": "bob-inspect-file",
-          "hypothesis_id": "file-missing",
-          "probability": 0.8,
-          "symbol_id": "evidence-missing"
-        },
-        {
-          "action_id": "bob-move-archive",
-          "hypothesis_id": "file-found",
-          "probability": 0.8,
-          "symbol_id": "evidence-found"
-        },
-        {
-          "action_id": "bob-move-archive",
-          "hypothesis_id": "file-found",
-          "probability": 0.2,
-          "symbol_id": "evidence-missing"
-        },
-        {
-          "action_id": "bob-move-archive",
-          "hypothesis_id": "file-missing",
-          "probability": 0.2,
-          "symbol_id": "evidence-found"
-        },
-        {
-          "action_id": "bob-move-archive",
+          "action_id": "carol-inspect-file",
           "hypothesis_id": "file-missing",
           "probability": 0.8,
           "symbol_id": "evidence-missing"
         },
         {
-          "action_id": "bob-take-file",
+          "action_id": "carol-move-archive",
           "hypothesis_id": "file-found",
           "probability": 0.8,
           "symbol_id": "evidence-found"
         },
         {
-          "action_id": "bob-take-file",
+          "action_id": "carol-move-archive",
           "hypothesis_id": "file-found",
           "probability": 0.2,
           "symbol_id": "evidence-missing"
         },
         {
-          "action_id": "bob-take-file",
+          "action_id": "carol-move-archive",
           "hypothesis_id": "file-missing",
           "probability": 0.2,
           "symbol_id": "evidence-found"
         },
         {
-          "action_id": "bob-take-file",
-          "hypothesis_id": "file-missing",
-          "probability": 0.8,
-          "symbol_id": "evidence-missing"
-        },
-        {
-          "action_id": "bob-tell-status",
-          "hypothesis_id": "file-found",
-          "probability": 0.8,
-          "symbol_id": "evidence-found"
-        },
-        {
-          "action_id": "bob-tell-status",
-          "hypothesis_id": "file-found",
-          "probability": 0.2,
-          "symbol_id": "evidence-missing"
-        },
-        {
-          "action_id": "bob-tell-status",
-          "hypothesis_id": "file-missing",
-          "probability": 0.2,
-          "symbol_id": "evidence-found"
-        },
-        {
-          "action_id": "bob-tell-status",
+          "action_id": "carol-move-archive",
           "hypothesis_id": "file-missing",
           "probability": 0.8,
           "symbol_id": "evidence-missing"
         },
         {
-          "action_id": "bob-wait",
+          "action_id": "carol-take-file",
           "hypothesis_id": "file-found",
           "probability": 0.8,
           "symbol_id": "evidence-found"
         },
         {
-          "action_id": "bob-wait",
+          "action_id": "carol-take-file",
           "hypothesis_id": "file-found",
           "probability": 0.2,
           "symbol_id": "evidence-missing"
         },
         {
-          "action_id": "bob-wait",
+          "action_id": "carol-take-file",
           "hypothesis_id": "file-missing",
           "probability": 0.2,
           "symbol_id": "evidence-found"
         },
         {
-          "action_id": "bob-wait",
+          "action_id": "carol-take-file",
+          "hypothesis_id": "file-missing",
+          "probability": 0.8,
+          "symbol_id": "evidence-missing"
+        },
+        {
+          "action_id": "carol-tell-status",
+          "hypothesis_id": "file-found",
+          "probability": 0.8,
+          "symbol_id": "evidence-found"
+        },
+        {
+          "action_id": "carol-tell-status",
+          "hypothesis_id": "file-found",
+          "probability": 0.2,
+          "symbol_id": "evidence-missing"
+        },
+        {
+          "action_id": "carol-tell-status",
+          "hypothesis_id": "file-missing",
+          "probability": 0.2,
+          "symbol_id": "evidence-found"
+        },
+        {
+          "action_id": "carol-tell-status",
+          "hypothesis_id": "file-missing",
+          "probability": 0.8,
+          "symbol_id": "evidence-missing"
+        },
+        {
+          "action_id": "carol-wait",
+          "hypothesis_id": "file-found",
+          "probability": 0.8,
+          "symbol_id": "evidence-found"
+        },
+        {
+          "action_id": "carol-wait",
+          "hypothesis_id": "file-found",
+          "probability": 0.2,
+          "symbol_id": "evidence-missing"
+        },
+        {
+          "action_id": "carol-wait",
+          "hypothesis_id": "file-missing",
+          "probability": 0.2,
+          "symbol_id": "evidence-found"
+        },
+        {
+          "action_id": "carol-wait",
           "hypothesis_id": "file-missing",
           "probability": 0.8,
           "symbol_id": "evidence-missing"
@@ -225,9 +225,9 @@
           "detail_name": "status",
           "detail_value": "found",
           "event_kind": "inspect",
-          "likelihood_action_id": "bob-inspect-file",
+          "likelihood_action_id": "carol-inspect-file",
           "outcome": "inspected",
-          "rule_id": "bob-inspect-found",
+          "rule_id": "carol-inspect-found",
           "symbol_id": "evidence-found"
         }
       ],
@@ -247,61 +247,61 @@
       },
       "rewards": [
         {
-          "action_id": "bob-inspect-file",
+          "action_id": "carol-inspect-file",
           "goal_id": "resolve-case",
           "hypothesis_id": "file-found",
           "value": 3.0
         },
         {
-          "action_id": "bob-move-archive",
+          "action_id": "carol-move-archive",
           "goal_id": "resolve-case",
           "hypothesis_id": "file-found",
           "value": 1.0
         },
         {
-          "action_id": "bob-take-file",
+          "action_id": "carol-take-file",
           "goal_id": "resolve-case",
           "hypothesis_id": "file-found",
           "value": 2.0
         },
         {
-          "action_id": "bob-tell-status",
+          "action_id": "carol-tell-status",
           "goal_id": "resolve-case",
           "hypothesis_id": "file-found",
           "value": 2.0
         },
         {
-          "action_id": "bob-wait",
+          "action_id": "carol-wait",
           "goal_id": "resolve-case",
           "hypothesis_id": "file-found",
           "value": 0.0
         },
         {
-          "action_id": "bob-inspect-file",
+          "action_id": "carol-inspect-file",
           "goal_id": "resolve-case",
           "hypothesis_id": "file-missing",
           "value": 3.0
         },
         {
-          "action_id": "bob-move-archive",
+          "action_id": "carol-move-archive",
           "goal_id": "resolve-case",
           "hypothesis_id": "file-missing",
           "value": 1.0
         },
         {
-          "action_id": "bob-take-file",
+          "action_id": "carol-take-file",
           "goal_id": "resolve-case",
           "hypothesis_id": "file-missing",
           "value": 2.0
         },
         {
-          "action_id": "bob-tell-status",
+          "action_id": "carol-tell-status",
           "goal_id": "resolve-case",
           "hypothesis_id": "file-missing",
           "value": -2.0
         },
         {
-          "action_id": "bob-wait",
+          "action_id": "carol-wait",
           "goal_id": "resolve-case",
           "hypothesis_id": "file-missing",
           "value": 0.0
