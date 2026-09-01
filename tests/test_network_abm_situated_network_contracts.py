@@ -2,7 +2,11 @@ from dataclasses import replace
 from tempfile import TemporaryDirectory
 import unittest
 
-from narrative_dynamics.abm.situated import ObservationChannel
+from narrative_dynamics.abm.situated import (
+    ObservationChannel,
+    SituatedActionIntent,
+    SituatedActionKind,
+)
 from narrative_dynamics.abm.situated_contracts import initialize_situated_world
 from narrative_dynamics.abm.situated_memory_cognition_contracts import SituatedAgentRecallPolicy
 from narrative_dynamics.abm.situated_percept_memory_cognition import (
@@ -21,7 +25,10 @@ from narrative_dynamics.abm.situated_social_memory_contracts import (
 from narrative_dynamics.abm.situated_percept_social_cognition import (
     simulate_situated_percept_social_cognitive_round,
 )
-from narrative_dynamics.abm.situated_story import initialize_situated_story
+from narrative_dynamics.abm.situated_story import (
+    advance_situated_story,
+    initialize_situated_story,
+)
 from narrative_dynamics.abm.situated_network_contracts import (
     SituatedNetworkAccessEdge,
     SituatedNetworkAgentNode,
@@ -351,6 +358,62 @@ class SituatedNetworkContractTests(unittest.TestCase):
             )
         with self.assertRaisesRegex(ValueError, "exact chain"):
             replace(trajectory, final_state=state)
+
+    def test_transition_evidence_rejects_a_different_prior_branch(self):
+        model, story, cognitive_state, social_state, snapshot, metrics = self._initial_runtime_values()
+        state = SituatedNetworkRuntimeState(
+            "office-network", model.content_hash, 0, None,
+            digest("memory-before"),
+            story, cognitive_state, social_state, snapshot, metrics,
+            checkpoint=True,
+        )
+        with TemporaryDirectory() as temporary:
+            advanced = simulate_situated_percept_social_cognitive_round(
+                f"{temporary}/runtime.sqlite3",
+                model.percept_memory_model,
+                model.social_memory_model,
+                story,
+                cognitive_state,
+                social_state,
+            )
+            alternate_story = advance_situated_story(
+                model.percept_memory_model.cognitive_model.world_model,
+                story,
+                (SituatedActionIntent("alternate-wait", "alice", SituatedActionKind.WAIT),),
+            )
+            alternate_cognitive = initialize_situated_percept_memory_cognition(
+                model.percept_memory_model, alternate_story
+            )
+            alternate_social = initialize_situated_social_memory(
+                model.social_memory_model, alternate_cognitive
+            )
+            alternate = simulate_situated_percept_social_cognitive_round(
+                f"{temporary}/alternate.sqlite3",
+                model.percept_memory_model,
+                model.social_memory_model,
+                alternate_story,
+                alternate_cognitive,
+                alternate_social,
+            )
+        next_snapshot = replace(
+            snapshot,
+            round_index=1,
+            story_hash=advanced.next_story.content_hash,
+            cognitive_state_hash=advanced.next_cognitive_state.content_hash,
+            social_state_hash=advanced.next_social_state.content_hash,
+        )
+        next_state = SituatedNetworkRuntimeState(
+            "office-network", model.content_hash, 1, state.content_hash,
+            digest("memory-after"),
+            advanced.next_story, advanced.next_cognitive_state, advanced.next_social_state,
+            next_snapshot, replace(metrics_fixture(next_snapshot), round_index=1),
+        )
+        result = SituatedNetworkRoundResult(
+            "office-network", model.content_hash, state, next_state
+        )
+
+        with self.assertRaisesRegex(ValueError, "transition"):
+            replace(result, transition=alternate)
 
     @staticmethod
     def _snapshot_for(model, story, cognitive_state, social_state):

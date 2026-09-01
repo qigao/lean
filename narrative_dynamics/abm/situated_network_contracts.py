@@ -12,6 +12,9 @@ from narrative_dynamics.abm.situated_cognition_contracts import SituatedCognitiv
 from narrative_dynamics.abm.situated_percept_memory_cognition import (
     SituatedPerceptMemoryCognitiveModel,
 )
+from narrative_dynamics.abm.situated_percept_social_cognition import (
+    SituatedPerceptSocialCognitiveRoundResult,
+)
 from narrative_dynamics.abm.situated_perception_contracts import SituatedPerceptFidelity
 from narrative_dynamics.abm.situated_social_memory_contracts import (
     SituatedSocialMemoryModel,
@@ -540,6 +543,7 @@ class SituatedNetworkRoundResult:
     model_hash: str
     prior_state: SituatedNetworkRuntimeState
     next_state: SituatedNetworkRuntimeState
+    transition: SituatedPerceptSocialCognitiveRoundResult | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "model_id", _text(self.model_id, label="network round model id"))
@@ -553,6 +557,19 @@ class SituatedNetworkRoundResult:
         if self.next_state.parent_state_hash != self.prior_state.content_hash:
             raise ValueError("network round next state must bind the exact parent")
         _validate_underlying_branch(self.prior_state, self.next_state)
+        if self.transition is not None:
+            if not isinstance(self.transition, SituatedPerceptSocialCognitiveRoundResult):
+                raise TypeError("network round transition must be a percept social cognitive round")
+            if self.transition.cognitive_round.cognitive_round.prior_state != self.prior_state.cognitive_state:
+                raise ValueError("network round transition must bind prior cognitive state")
+            if self.transition.social_update.prior_state != self.prior_state.social_state:
+                raise ValueError("network round transition must bind prior social state")
+            if self.transition.next_story != self.next_state.story:
+                raise ValueError("network round transition must bind next story")
+            if self.transition.next_cognitive_state != self.next_state.cognitive_state:
+                raise ValueError("network round transition must bind next cognitive state")
+            if self.transition.next_social_state != self.next_state.social_state:
+                raise ValueError("network round transition must bind next social state")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -560,6 +577,7 @@ class SituatedNetworkRoundResult:
             "model_hash": self.model_hash,
             "prior_state_hash": self.prior_state.content_hash,
             "next_state_hash": self.next_state.content_hash,
+            "transition_hash": None if self.transition is None else self.transition.content_hash,
         }
 
     @property
