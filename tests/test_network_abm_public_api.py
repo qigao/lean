@@ -5,10 +5,12 @@ from narrative_dynamics.abm.situated_projection import (
     project_situated_narrative as source_project_situated_narrative,
 )
 from narrative_dynamics.abm import situated_projection_contracts as projection_contracts
+from narrative_dynamics.abm import situated_realization as realization
+from narrative_dynamics.abm import situated_realization_contracts as realization_contracts
 
 
 class NetworkABMPublicAPITests(unittest.TestCase):
-    def test_public_api_exports_current_v17_surface(self):
+    def test_public_api_exports_current_v18_surface(self):
         self.assertEqual(
             set(abm.__all__),
             {
@@ -314,6 +316,21 @@ class NetworkABMPublicAPITests(unittest.TestCase):
                 "NarrativeCut",
                 "NarrativeProjection",
                 "project_situated_narrative",
+                "NarrativeRealizationFormat",
+                "NarrativeRealizationAssurance",
+                "NarrativeRealizationProviderIdentity",
+                "NarrativeRealizationPolicy",
+                "NarrativeRealizationRequest",
+                "NarrativeSceneRealizationPrompt",
+                "NarrativeRealizationPrompt",
+                "NarrativePassage",
+                "NarrativeRealizedScene",
+                "NarrativeRealizationArtifact",
+                "build_narrative_realization_prompt",
+                "compile_narrative_realization",
+                "realize_narrative_exact_facts",
+                "replay_narrative_realization",
+                "render_narrative_realization_text",
             },
         )
         for name in abm.__all__:
@@ -323,6 +340,31 @@ class NetworkABMPublicAPITests(unittest.TestCase):
         for name in projection_contracts.__all__:
             self.assertIs(getattr(abm, name), getattr(projection_contracts, name))
         self.assertIs(abm.project_situated_narrative, source_project_situated_narrative)
+
+    def test_v18_exports_are_the_source_definitions(self):
+        contract_names = (
+            "NarrativeRealizationFormat",
+            "NarrativeRealizationAssurance",
+            "NarrativeRealizationProviderIdentity",
+            "NarrativeRealizationPolicy",
+            "NarrativeRealizationRequest",
+            "NarrativeSceneRealizationPrompt",
+            "NarrativeRealizationPrompt",
+            "NarrativePassage",
+            "NarrativeRealizedScene",
+            "NarrativeRealizationArtifact",
+        )
+        function_names = (
+            "build_narrative_realization_prompt",
+            "compile_narrative_realization",
+            "realize_narrative_exact_facts",
+            "replay_narrative_realization",
+            "render_narrative_realization_text",
+        )
+        for name in contract_names:
+            self.assertIs(getattr(abm, name), getattr(realization_contracts, name))
+        for name in function_names:
+            self.assertIs(getattr(abm, name), getattr(realization, name))
 
 
 if __name__ == "__main__":

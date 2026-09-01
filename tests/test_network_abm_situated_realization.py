@@ -9,6 +9,7 @@ from narrative_dynamics.abm.situated_projection import project_situated_narrativ
 from narrative_dynamics.abm.situated_realization import (
     build_narrative_realization_prompt,
     compile_narrative_realization,
+    realize_narrative_exact_facts,
     render_narrative_realization_text,
     replay_narrative_realization,
 )
@@ -94,6 +95,68 @@ def compile_response(response, *, realization_policy=None):
         projection, selected_policy, request(projection), provider
     )
     return compile_narrative_realization(prompt, provider)
+
+
+def test_exact_fact_realization_is_provider_free_and_emits_one_literal_passage_per_beat(
+    monkeypatch,
+):
+    projection = single_scene_projection()
+
+    def reject_provider_use(provider):
+        raise AssertionError("exact-fact realization must not inspect a provider")
+
+    monkeypatch.setattr(
+        "narrative_dynamics.abm.situated_realization._provider_protocol",
+        reject_provider_use,
+    )
+    artifact = realize_narrative_exact_facts(
+        projection, policy(), request(projection)
+    )
+
+    passages = tuple(
+        passage for scene in artifact.scenes for passage in scene.passages
+    )
+    assert tuple(scene.scene_id for scene in artifact.scenes) == tuple(
+        scene.scene_id for scene in projection.scenes
+    )
+    assert tuple(passage.beat_ids for passage in passages) == tuple(
+        (beat.beat_id,) for beat in projection.beats
+    )
+    assert tuple(passage.text for passage in passages) == (
+        "actor_agent_id=alice\nkind=wait\noutcome=waited\nplace_id=office\nsuccess=true",
+    ) * 4
+    assert all(beat.beat_id not in passage.text for beat, passage in zip(projection.beats, passages))
+    assert all(beat.kind.value not in passage.text for beat, passage in zip(projection.beats, passages))
+    assert tuple(passage.entitlement_ids for passage in passages) == tuple(
+        beat.entitlement_ids for beat in projection.beats
+    )
+    assert artifact.assurance is NarrativeRealizationAssurance.EXACT_FACTS
+    assert artifact.provider == NarrativeRealizationProviderIdentity(
+        "narrative-dynamics", "18", "exact-facts"
+    )
+
+
+def test_exact_fact_realization_is_byte_equivalent_and_replays_only_its_projection():
+    projection = single_scene_projection()
+    realization_policy = policy()
+    realization_request = request(projection)
+
+    left = realize_narrative_exact_facts(
+        projection, realization_policy, realization_request
+    )
+    right = realize_narrative_exact_facts(
+        projection, realization_policy, realization_request
+    )
+
+    assert left == right
+    assert left.to_dict() == right.to_dict()
+    assert left.content_hash == right.content_hash
+    assert replay_narrative_realization(projection, left) is left
+    other_projection = project_situated_narrative(
+        one_place_story(round_count=3), objective_policy()
+    )
+    with pytest.raises(ValueError, match="replay projection hash"):
+        replay_narrative_realization(other_projection, left)
 
 
 def test_limited_realization_never_sends_hidden_private_facts():

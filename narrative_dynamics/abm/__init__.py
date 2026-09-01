@@ -393,6 +393,25 @@ from narrative_dynamics.abm.situated_projection_contracts import (
     NarrativeTemporalOrder,
 )
 from narrative_dynamics.abm.situated_projection import project_situated_narrative
+from narrative_dynamics.abm.situated_realization_contracts import (
+    NarrativePassage,
+    NarrativeRealizationArtifact,
+    NarrativeRealizationAssurance,
+    NarrativeRealizationFormat,
+    NarrativeRealizationPolicy,
+    NarrativeRealizationPrompt,
+    NarrativeRealizationProviderIdentity,
+    NarrativeRealizationRequest,
+    NarrativeRealizedScene,
+    NarrativeSceneRealizationPrompt,
+)
+from narrative_dynamics.abm.situated_realization import (
+    build_narrative_realization_prompt,
+    compile_narrative_realization,
+    realize_narrative_exact_facts,
+    render_narrative_realization_text,
+    replay_narrative_realization,
+)
 
 
 __all__ = (
@@ -698,4 +717,19 @@ __all__ = (
     "NarrativeCut",
     "NarrativeProjection",
     "project_situated_narrative",
+    "NarrativeRealizationFormat",
+    "NarrativeRealizationAssurance",
+    "NarrativeRealizationProviderIdentity",
+    "NarrativeRealizationPolicy",
+    "NarrativeRealizationRequest",
+    "NarrativeSceneRealizationPrompt",
+    "NarrativeRealizationPrompt",
+    "NarrativePassage",
+    "NarrativeRealizedScene",
+    "NarrativeRealizationArtifact",
+    "build_narrative_realization_prompt",
+    "compile_narrative_realization",
+    "realize_narrative_exact_facts",
+    "replay_narrative_realization",
+    "render_narrative_realization_text",
 )

@@ -1599,6 +1599,97 @@ retains normal known-place grouping. The result is a content-addressed
 truth-and-entitlement packet for V18: it is not generated prose, and it does not
 mutate the world or any agent state.
 
+### V18 entitlement-bound narrative realization
+
+V18 turns a V17 projection into replayable prose or screenplay passages without
+changing the projected truth. The provider sees one scene-local packet per call:
+the scene's canonical beats, only their exact entitlement closure, the selected
+`prose` or `screenplay` policy, and bounded response instructions. It receives no
+automatic cross-scene transcript or hidden global context.
+
+Any application can supply the small provider protocol directly:
+
+```python
+from narrative_dynamics.abm import (
+    NarrativeRealizationFormat,
+    NarrativeRealizationPolicy,
+    NarrativeRealizationProviderIdentity,
+    NarrativeRealizationRequest,
+    build_narrative_realization_prompt,
+    compile_narrative_realization,
+    replay_narrative_realization,
+)
+
+
+class JsonNarrativeProvider:
+    identity = NarrativeRealizationProviderIdentity(
+        "my-provider", "1", "my-json-model"
+    )
+
+    def complete_json(self, *, task, payload):
+        return application_json_completion(task=task, payload=payload)
+
+
+provider = JsonNarrativeProvider()
+realization_policy = NarrativeRealizationPolicy(
+    "screenplay-en",
+    "1",
+    NarrativeRealizationFormat.SCREENPLAY,  # PROSE is also supported.
+    "en",
+    tone_tags=("restrained",),
+)
+realization_request = NarrativeRealizationRequest(
+    "render-42", projection.content_hash
+)
+prompt = build_narrative_realization_prompt(
+    projection, realization_policy, realization_request, provider
+)
+artifact = compile_narrative_realization(prompt, provider)
+assert artifact.assurance.value == "citation_bound"
+assert replay_narrative_realization(projection, artifact) is artifact
+```
+
+`citation_bound` means deterministic validation proved scene and beat coverage,
+ordering, size limits, provider identity, and exact entitlement citations. It does
+not claim that arbitrary natural-language prose is formally entailed. Provider
+wording remains presentation-only and cannot become V17 evidence or mutate the
+simulation.
+
+For literal output with stronger, honest assurance, use the provider-free
+fallback. It emits one passage per beat containing only sorted entitlement
+`key=value` facts; beat IDs and beat kinds remain passage metadata.
+
+```python
+from narrative_dynamics.abm import realize_narrative_exact_facts
+
+exact_artifact = realize_narrative_exact_facts(
+    projection, realization_policy, realization_request
+)
+assert exact_artifact.assurance.value == "exact_facts"
+assert replay_narrative_realization(projection, exact_artifact) is exact_artifact
+```
+
+An optional OpenAI adapter is isolated in the integrations package:
+
+```python
+from narrative_dynamics.integrations import OpenAINarrativeProvider
+
+openai_provider = OpenAINarrativeProvider.from_env(".env")
+openai_prompt = build_narrative_realization_prompt(
+    projection, realization_policy, realization_request, openai_provider
+)
+openai_artifact = compile_narrative_realization(openai_prompt, openai_provider)
+```
+
+The dotenv path and `OPENAI_API_KEY` are configuration only: they never enter
+provider identity, prompts, artifacts, hashes, representations, or errors. The
+adapter reads `OPENAI_MODEL` and optional `OPENAI_PROVIDER` for its public identity
+and imports the OpenAI and dotenv packages only when constructing the optional
+integration. Importing `narrative_dynamics.abm` remains provider-neutral.
+
+V19 runtime unification and V20 authoring/visualization remain separate phases;
+V18 does not merge older runtimes or add a production UI.
+
 ## Verification
 
 GitHub Actions runs:

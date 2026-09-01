@@ -21,6 +21,9 @@ from narrative_dynamics.abm.situated_realization_contracts import (
 
 
 _TASK = "situated_narrative_scene_realization_v1"
+_EXACT_FACTS_PROVIDER = NarrativeRealizationProviderIdentity(
+    "narrative-dynamics", "18", "exact-facts"
+)
 _RESPONSE_SCHEMA = {
     "type": "object",
     "required": ["passages"],
@@ -308,6 +311,119 @@ def compile_narrative_realization(
     )
 
 
+def _exact_fact_text(
+    beat_entitlement_ids: tuple[str, ...],
+    entitlement_by_id: dict[str, object],
+) -> str:
+    facts = sorted(
+        (fact.key, fact.value)
+        for entitlement_id in beat_entitlement_ids
+        for fact in entitlement_by_id[entitlement_id].facts
+    )
+    return "\n".join(f"{key}={value}" for key, value in facts)
+
+
+def realize_narrative_exact_facts(
+    projection: NarrativeProjection,
+    policy: NarrativeRealizationPolicy,
+    request: NarrativeRealizationRequest,
+) -> NarrativeRealizationArtifact:
+    """Realize each beat solely as sorted literal entitlement facts."""
+
+    if not isinstance(projection, NarrativeProjection):
+        raise TypeError("exact-fact realization requires a NarrativeProjection")
+    if not isinstance(policy, NarrativeRealizationPolicy):
+        raise TypeError("exact-fact realization requires a NarrativeRealizationPolicy")
+    if not isinstance(request, NarrativeRealizationRequest):
+        raise TypeError("exact-fact realization requires a NarrativeRealizationRequest")
+    if request.projection_hash != projection.content_hash:
+        raise ValueError(
+            "exact-fact realization request projection hash must match the supplied projection"
+        )
+
+    prompt = _build_prompt(
+        projection,
+        policy,
+        request,
+        _EXACT_FACTS_PROVIDER,
+    )
+    all_prompt_beat_ids = frozenset(
+        beat.beat_id for scene in prompt.scenes for beat in scene.beats
+    )
+    realized_scenes = []
+    for scene_prompt in prompt.scenes:
+        entitlement_by_id = {
+            entitlement.entitlement_id: entitlement
+            for entitlement in scene_prompt.entitlements
+        }
+        response = {
+            "passages": [
+                {
+                    "beat_ids": [beat.beat_id],
+                    "text": _exact_fact_text(
+                        beat.entitlement_ids,
+                        entitlement_by_id,
+                    ),
+                }
+                for beat in scene_prompt.beats
+            ]
+        }
+        validated = _validated_response_passages(
+            response,
+            scene_prompt,
+            prompt.policy,
+            all_prompt_beat_ids,
+        )
+        beat_by_id = {beat.beat_id: beat for beat in scene_prompt.beats}
+        passages = []
+        for beat_ids, text in validated:
+            entitlement_ids = tuple(
+                sorted(
+                    {
+                        entitlement_id
+                        for beat_id in beat_ids
+                        for entitlement_id in beat_by_id[beat_id].entitlement_ids
+                    }
+                )
+            )
+            passages.append(
+                NarrativePassage(
+                    _passage_id(
+                        scene_prompt.scene.scene_id,
+                        beat_ids,
+                        entitlement_ids,
+                        text,
+                    ),
+                    scene_prompt.scene.scene_id,
+                    beat_ids,
+                    entitlement_ids,
+                    text,
+                )
+            )
+        passages_tuple = tuple(passages)
+        realized_scenes.append(
+            NarrativeRealizedScene(
+                scene_prompt.scene.scene_id,
+                scene_prompt.content_hash,
+                stable_content_hash({"provider_response": response}),
+                passages_tuple,
+            )
+        )
+
+    return NarrativeRealizationArtifact(
+        prompt.request.request_id,
+        prompt.projection_hash,
+        prompt.policy,
+        prompt.provider,
+        prompt.content_hash,
+        prompt.schema_hash,
+        prompt.prompt_template_hash,
+        NarrativeRealizationAssurance.EXACT_FACTS,
+        "accepted",
+        tuple(realized_scenes),
+    )
+
+
 def replay_narrative_realization(
     projection: NarrativeProjection,
     artifact: NarrativeRealizationArtifact,
@@ -322,8 +438,11 @@ def replay_narrative_realization(
         raise ValueError("narrative realization replay requires an accepted artifact")
     if artifact.projection_hash != projection.content_hash:
         raise ValueError("narrative realization replay projection hash mismatch")
-    if artifact.assurance is not NarrativeRealizationAssurance.CITATION_BOUND:
-        raise ValueError("narrative realization replay requires citation-bound assurance")
+    if artifact.assurance not in (
+        NarrativeRealizationAssurance.CITATION_BOUND,
+        NarrativeRealizationAssurance.EXACT_FACTS,
+    ):
+        raise ValueError("narrative realization replay requires a supported assurance")
 
     request = NarrativeRealizationRequest(
         artifact.request_id,
@@ -401,6 +520,23 @@ def replay_narrative_realization(
             )
             if passage.passage_id != expected_passage_id:
                 raise ValueError("narrative realization replay passage id mismatch")
+            if artifact.assurance is NarrativeRealizationAssurance.EXACT_FACTS:
+                if len(beat_ids) != 1:
+                    raise ValueError(
+                        "exact-fact realization replay requires one passage per beat"
+                    )
+                entitlement_by_id = {
+                    entitlement.entitlement_id: entitlement
+                    for entitlement in scene_prompt.entitlements
+                }
+                expected_text = _exact_fact_text(
+                    beat_by_id[beat_ids[0]].entitlement_ids,
+                    entitlement_by_id,
+                )
+                if text != expected_text:
+                    raise ValueError(
+                        "exact-fact realization replay text does not match entitlements"
+                    )
     return artifact
 
 
@@ -421,6 +557,7 @@ def render_narrative_realization_text(
 __all__ = (
     "build_narrative_realization_prompt",
     "compile_narrative_realization",
+    "realize_narrative_exact_facts",
     "replay_narrative_realization",
     "render_narrative_realization_text",
 )
