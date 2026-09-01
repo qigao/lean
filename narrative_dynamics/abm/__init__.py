@@ -330,6 +330,7 @@ from narrative_dynamics.abm.situated_percept_memory_contracts import (
 from narrative_dynamics.abm.situated_percept_memory import (
     SituatedPerceptMemoryConflictError,
     SituatedPerceptMemoryStorageError,
+    hash_situated_percept_memory_store,
     ingest_situated_percept_story,
     initialize_situated_percept_memory,
     list_situated_percept_memories,
@@ -685,6 +686,7 @@ __all__ = (
     "SituatedPerceptMemoryStorageError",
     "SituatedPerceptMemoryConflictError",
     "initialize_situated_percept_memory",
+    "hash_situated_percept_memory_store",
     "ingest_situated_percept_story",
     "list_situated_percept_memories",
     "search_situated_percept_memories",

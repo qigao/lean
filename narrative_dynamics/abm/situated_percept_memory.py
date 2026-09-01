@@ -260,6 +260,43 @@ def _row_to_memory(row: sqlite3.Row) -> SituatedPerceptMemoryRecord:
     return memory
 
 
+def _logical_store_payload(connection: sqlite3.Connection) -> dict[str, object]:
+    metadata = tuple(
+        {"key": row["key"], "value": row["value"]}
+        for row in connection.execute(
+            "SELECT key, value FROM percept_memory_metadata ORDER BY key"
+        ).fetchall()
+    )
+    memories = []
+    for row in connection.execute(
+        "SELECT * FROM percept_memory_records ORDER BY agent_id, memory_id"
+    ).fetchall():
+        memory = _row_to_memory(row)
+        if row["details_text"] != _details_text(memory):
+            raise SituatedPerceptMemoryConflictError(
+                "percept memory row failed derived search-text verification"
+            )
+        memories.append(memory.to_dict())
+    return {
+        "store": "situated-percept-memory",
+        "metadata": list(metadata),
+        "records": memories,
+    }
+
+
+def hash_situated_percept_memory_store(database_path: str | Path) -> str:
+    """Hash canonical logical V15 rows, excluding paths, rowids, FTS, and bytes."""
+
+    initialize_situated_percept_memory(database_path)
+    try:
+        with _transaction(database_path) as connection:
+            return stable_content_hash(_logical_store_payload(connection))
+    except sqlite3.Error as error:
+        raise SituatedPerceptMemoryStorageError(
+            "failed to hash situated percept memory"
+        ) from error
+
+
 def initialize_situated_percept_memory(
     database_path: str | Path,
 ) -> SituatedPerceptMemoryIndexReport:
@@ -596,6 +633,7 @@ __all__ = (
     "SituatedPerceptMemoryStorageError",
     "SituatedPerceptMemoryConflictError",
     "initialize_situated_percept_memory",
+    "hash_situated_percept_memory_store",
     "ingest_situated_percept_story",
     "list_situated_percept_memories",
     "search_situated_percept_memories",

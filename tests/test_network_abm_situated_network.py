@@ -1,5 +1,6 @@
 from dataclasses import replace
 import json
+import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
@@ -12,6 +13,14 @@ from narrative_dynamics.abm.situated_percept_memory_cognition import (
 from narrative_dynamics.abm.situated_percept_memory_contracts import (
     standard_situated_percept_memory_policy,
 )
+from narrative_dynamics.abm import situated_percept_memory
+from narrative_dynamics.abm.situated_percept_memory import (
+    SituatedPerceptMemoryConflictError,
+    ingest_situated_percept_story,
+    list_situated_percept_memories,
+    set_situated_percept_memory_active,
+)
+from narrative_dynamics.abm.situated_perception import project_situated_percepts
 from narrative_dynamics.abm.situated_perception_contracts import SituatedPerceptFidelity
 from narrative_dynamics.abm.situated_memory_cognition_contracts import SituatedAgentRecallPolicy
 from narrative_dynamics.abm.situated_social_memory_contracts import (
@@ -32,6 +41,10 @@ from narrative_dynamics.abm.situated_percept_social_cognition import (
     simulate_situated_percept_social_cognitive_round,
 )
 from narrative_dynamics.abm.situated_network_contracts import SituatedNetworkRuntimeModel
+from narrative_dynamics.abm.situated_network_contracts import (
+    SituatedNetworkRoundResult,
+    SituatedNetworkTrajectory,
+)
 from tests.situated_cognition_fixtures import cognitive_office_model
 from tests.test_network_abm_situated_percept_cognition import (
     SECRET,
@@ -143,6 +156,19 @@ def initial_runtime_case():
     return model, story, cognitive_state, social_state
 
 
+def logical_percept_memory_rows(database):
+    connection = sqlite3.connect(database)
+    try:
+        return tuple(
+            connection.execute(
+                "SELECT * FROM percept_memory_records "
+                "ORDER BY agent_id, memory_id"
+            ).fetchall()
+        )
+    finally:
+        connection.close()
+
+
 class SituatedNetworkRuntimeTests(unittest.TestCase):
     def setUp(self):
         self.temporary = TemporaryDirectory()
@@ -154,7 +180,7 @@ class SituatedNetworkRuntimeTests(unittest.TestCase):
     def test_atomic_round_keeps_story_cognition_social_snapshot_and_metrics_synchronized(self):
         model, story, cognitive_state, social_state = initial_runtime_case()
         initial = initialize_situated_network_runtime(
-            model, story, cognitive_state, social_state
+            self.database, model, story, cognitive_state, social_state
         )
 
         with patch(
@@ -184,12 +210,175 @@ class SituatedNetworkRuntimeTests(unittest.TestCase):
             result.next_state.metrics.snapshot_hash,
             result.next_state.snapshot.content_hash,
         )
+        self.assertEqual(
+            result.next_state.memory_store_hash,
+            situated_percept_memory.hash_situated_percept_memory_store(
+                self.database
+            ),
+        )
+
+    def test_initialization_binds_a_path_independent_logical_memory_checkpoint(self):
+        model, story, cognitive_state, social_state = initial_runtime_case()
+        other_database = f"{self.temporary.name}/other-layout.sqlite3"
+
+        initial = initialize_situated_network_runtime(
+            self.database, model, story, cognitive_state, social_state
+        )
+        other = initialize_situated_network_runtime(
+            other_database, model, story, cognitive_state, social_state
+        )
+
+        self.assertEqual(
+            initial.memory_store_hash,
+            situated_percept_memory.hash_situated_percept_memory_store(
+                self.database
+            ),
+        )
+        self.assertEqual(initial.memory_store_hash, other.memory_store_hash)
+        self.assertEqual(initial.content_hash, other.content_hash)
+
+    def test_logical_memory_hash_ignores_rowids_and_insertion_order(self):
+        model, story, _, _ = tell_case(door_open=True)
+        other_database = f"{self.temporary.name}/reverse.sqlite3"
+
+        for agent_id in ("alice", "bob"):
+            ingest_situated_percept_story(
+                self.database,
+                model.percept_memory_model.perception_model,
+                story,
+                agent_id,
+                model.percept_memory_model.memory_policy,
+            )
+        for agent_id in ("bob", "alice"):
+            ingest_situated_percept_story(
+                other_database,
+                model.percept_memory_model.perception_model,
+                story,
+                agent_id,
+                model.percept_memory_model.memory_policy,
+            )
+
+        self.assertEqual(
+            situated_percept_memory.hash_situated_percept_memory_store(
+                self.database
+            ),
+            situated_percept_memory.hash_situated_percept_memory_store(
+                other_database
+            ),
+        )
+
+    def test_successful_round_publishes_the_exact_next_memory_checkpoint(self):
+        model, story, cognitive_state, social_state = tell_case(door_open=True)
+        initial = initialize_situated_network_runtime(
+            self.database, model, story, cognitive_state, social_state
+        )
+
+        result = simulate_situated_network_round(self.database, model, initial)
+
+        self.assertNotEqual(
+            result.next_state.memory_store_hash,
+            initial.memory_store_hash,
+        )
+        self.assertEqual(
+            result.next_state.memory_store_hash,
+            situated_percept_memory.hash_situated_percept_memory_store(
+                self.database
+            ),
+        )
+
+    def test_external_memory_activation_rejects_the_stale_runtime_state(self):
+        model, story, cognitive_state, social_state = tell_case(door_open=True)
+        initial = initialize_situated_network_runtime(
+            self.database, model, story, cognitive_state, social_state
+        )
+        advanced = simulate_situated_network_round(self.database, model, initial)
+        bob_memory = list_situated_percept_memories(self.database, "bob")[0]
+        set_situated_percept_memory_active(
+            self.database, "bob", bob_memory.memory_id, False
+        )
+
+        with self.assertRaisesRegex(ValueError, "memory store hash"):
+            simulate_situated_network_round(
+                self.database, model, advanced.next_state
+            )
+
+    def test_same_explicit_state_cannot_advance_a_different_store_checkpoint(self):
+        model, story, cognitive_state, social_state = tell_case(door_open=True)
+        other_database = f"{self.temporary.name}/other-checkpoint.sqlite3"
+        initial = initialize_situated_network_runtime(
+            self.database, model, story, cognitive_state, social_state
+        )
+        initialize_situated_network_runtime(
+            other_database, model, story, cognitive_state, social_state
+        )
+        ingest_situated_percept_story(
+            other_database,
+            model.percept_memory_model.perception_model,
+            story,
+            "bob",
+            model.percept_memory_model.memory_policy,
+        )
+
+        with self.assertRaisesRegex(ValueError, "memory store hash"):
+            simulate_situated_network_round(other_database, model, initial)
+
+    def test_mid_round_ingestion_conflict_leaves_original_store_unchanged(self):
+        model, story, cognitive_state, social_state = tell_case(door_open=True)
+        conflicting_policy = replace(
+            model.percept_memory_model.memory_policy,
+            version="conflicting-checkpoint",
+        )
+        ingest_situated_percept_story(
+            self.database,
+            model.percept_memory_model.perception_model,
+            story,
+            "bob",
+            conflicting_policy,
+        )
+        initial = initialize_situated_network_runtime(
+            self.database, model, story, cognitive_state, social_state
+        )
+        before_rows = logical_percept_memory_rows(self.database)
+        before_hash = (
+            situated_percept_memory.hash_situated_percept_memory_store(
+                self.database
+            )
+        )
+        before_alice = list_situated_percept_memories(
+            self.database, "alice", include_inactive=True
+        )
+        before_bob = list_situated_percept_memories(
+            self.database, "bob", include_inactive=True
+        )
+
+        with self.assertRaises(SituatedPerceptMemoryConflictError):
+            simulate_situated_network_round(self.database, model, initial)
+
+        self.assertEqual(logical_percept_memory_rows(self.database), before_rows)
+        self.assertEqual(
+            situated_percept_memory.hash_situated_percept_memory_store(
+                self.database
+            ),
+            before_hash,
+        )
+        self.assertEqual(
+            list_situated_percept_memories(
+                self.database, "alice", include_inactive=True
+            ),
+            before_alice,
+        )
+        self.assertEqual(
+            list_situated_percept_memories(
+                self.database, "bob", include_inactive=True
+            ),
+            before_bob,
+        )
 
     def test_initialization_accepts_an_exact_nonzero_checkpoint_root(self):
         model, story, cognitive_state, social_state = tell_case(door_open=True)
 
         initial = initialize_situated_network_runtime(
-            model, story, cognitive_state, social_state
+            self.database, model, story, cognitive_state, social_state
         )
 
         self.assertEqual(initial.round_index, 1)
@@ -200,7 +389,7 @@ class SituatedNetworkRuntimeTests(unittest.TestCase):
     def test_nonzero_parentless_noncheckpoint_state_is_rejected(self):
         model, story, cognitive_state, social_state = initial_runtime_case()
         initial = initialize_situated_network_runtime(
-            model, story, cognitive_state, social_state
+            self.database, model, story, cognitive_state, social_state
         )
         result = simulate_situated_network_round(self.database, model, initial)
 
@@ -214,7 +403,7 @@ class SituatedNetworkRuntimeTests(unittest.TestCase):
     def test_checkpoint_marker_requires_exact_cognitive_and_social_checkpoints(self):
         model, story, cognitive_state, social_state = initial_runtime_case()
         initial = initialize_situated_network_runtime(
-            model, story, cognitive_state, social_state
+            self.database, model, story, cognitive_state, social_state
         )
         result = simulate_situated_network_round(self.database, model, initial)
 
@@ -228,7 +417,7 @@ class SituatedNetworkRuntimeTests(unittest.TestCase):
     def test_round_rejects_snapshot_that_disagrees_with_authoritative_cognition(self):
         model, story, cognitive_state, social_state = initial_runtime_case()
         initial = initialize_situated_network_runtime(
-            model, story, cognitive_state, social_state
+            self.database, model, story, cognitive_state, social_state
         )
         forged_snapshot = replace(
             initial.snapshot,
@@ -252,7 +441,7 @@ class SituatedNetworkRuntimeTests(unittest.TestCase):
     def test_round_rejects_metrics_that_disagree_with_authoritative_measurement(self):
         model, story, cognitive_state, social_state = initial_runtime_case()
         initial = initialize_situated_network_runtime(
-            model, story, cognitive_state, social_state
+            self.database, model, story, cognitive_state, social_state
         )
         forged_metrics = replace(
             initial.metrics,
@@ -266,7 +455,7 @@ class SituatedNetworkRuntimeTests(unittest.TestCase):
     def test_runtime_returns_the_exact_parent_linked_state_chain(self):
         model, story, cognitive_state, social_state = initial_runtime_case()
         initial = initialize_situated_network_runtime(
-            model, story, cognitive_state, social_state
+            self.database, model, story, cognitive_state, social_state
         )
 
         trajectory = simulate_situated_network_runtime(
@@ -283,7 +472,7 @@ class SituatedNetworkRuntimeTests(unittest.TestCase):
     def test_trajectory_rejects_a_broken_parent_chain(self):
         model, story, cognitive_state, social_state = initial_runtime_case()
         initial = initialize_situated_network_runtime(
-            model, story, cognitive_state, social_state
+            self.database, model, story, cognitive_state, social_state
         )
         valid_trajectory = simulate_situated_network_runtime(
             self.database, model, initial, round_count=1
@@ -296,10 +485,84 @@ class SituatedNetworkRuntimeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "exact chain"):
             replace(valid_trajectory, final_state=unrelated_state)
 
+    def test_round_and_trajectory_reject_a_two_branch_underlying_splice(self):
+        model, _, _, _ = initial_runtime_case()
+
+        def branch(kind, database):
+            story = initialize_situated_story(
+                model.percept_memory_model.cognitive_model.world_model,
+                initial_state(
+                    model.percept_memory_model.perception_model,
+                    door_open=True,
+                ),
+                perception_model=model.percept_memory_model.perception_model,
+            )
+            story = advance_situated_story(
+                model.percept_memory_model.cognitive_model.world_model,
+                story,
+                (
+                    SituatedActionIntent(
+                        f"alice-{kind.value}",
+                        "alice",
+                        kind,
+                        message="branch testimony"
+                        if kind is SituatedActionKind.TELL
+                        else None,
+                    ),
+                ),
+            )
+            cognition = initialize_situated_percept_memory_cognition(
+                model.percept_memory_model, story
+            )
+            social = initialize_situated_social_memory(
+                model.social_memory_model, cognition
+            )
+            checkpoint = initialize_situated_network_runtime(
+                database, model, story, cognition, social
+            )
+            return checkpoint, simulate_situated_network_round(
+                database, model, checkpoint
+            )
+
+        prior_a, _ = branch(
+            SituatedActionKind.WAIT,
+            f"{self.temporary.name}/branch-a.sqlite3",
+        )
+        _, round_b = branch(
+            SituatedActionKind.TELL,
+            f"{self.temporary.name}/branch-b.sqlite3",
+        )
+        spliced_next = replace(
+            round_b.next_state,
+            parent_state_hash=prior_a.content_hash,
+        )
+
+        with self.assertRaisesRegex(ValueError, "underlying branch"):
+            SituatedNetworkRoundResult(
+                model.model_id,
+                model.content_hash,
+                prior_a,
+                spliced_next,
+            )
+
+        forged_round = object.__new__(SituatedNetworkRoundResult)
+        object.__setattr__(forged_round, "model_id", model.model_id)
+        object.__setattr__(forged_round, "model_hash", model.content_hash)
+        object.__setattr__(forged_round, "prior_state", prior_a)
+        object.__setattr__(forged_round, "next_state", spliced_next)
+        with self.assertRaisesRegex(ValueError, "underlying branch"):
+            SituatedNetworkTrajectory(
+                model.model_id,
+                model.content_hash,
+                prior_a,
+                (forged_round,),
+                spliced_next,
+            )
+
     def test_runtime_requires_a_positive_integer_round_count(self):
         model, story, cognitive_state, social_state = initial_runtime_case()
         initial = initialize_situated_network_runtime(
-            model, story, cognitive_state, social_state
+            self.database, model, story, cognitive_state, social_state
         )
 
         for round_count in (0, -1, 1.0, True):
@@ -311,27 +574,72 @@ class SituatedNetworkRuntimeTests(unittest.TestCase):
 
 
 class SituatedNetworkProjectionTests(unittest.TestCase):
-    def test_closed_door_projects_detected_tell_without_secret_payload(self):
+    def test_closed_door_anonymous_detected_percept_is_not_a_v19_transmission(self):
         runtime_model, closed_story, cognitive_state, social_state = tell_case(door_open=False)
+        projection = project_situated_percepts(
+            runtime_model.percept_memory_model.perception_model,
+            closed_story.rounds[-1],
+        )
+        bob_percept = next(
+            item
+            for item in projection.percepts
+            if item.agent_id == "bob"
+        )
 
         snapshot = project_situated_network_snapshot(
             runtime_model, closed_story, cognitive_state, social_state
         )
+        metrics = measure_situated_network_emergence(
+            runtime_model, snapshot, social_state
+        )
 
-        bob = next(item for item in snapshot.transmissions if item.observer_agent_id == "bob")
-        self.assertIs(bob.fidelity, SituatedPerceptFidelity.DETECTED)
+        self.assertIs(bob_percept.fidelity, SituatedPerceptFidelity.DETECTED)
+        self.assertIsNone(bob_percept.actor_agent_id)
+        self.assertIsNone(bob_percept.kind)
+        self.assertEqual(snapshot.transmissions, ())
+        self.assertEqual(metrics.latest_tell_event_count, 1)
+        self.assertEqual(metrics.transmission_count, 0)
+        self.assertEqual(metrics.detected_transmission_count, 0)
         serialized = json.dumps(snapshot.to_dict(), sort_keys=True)
         self.assertNotIn(SECRET, serialized)
         self.assertNotIn('"message"', serialized)
 
-    def test_open_door_projects_exact_tell_and_hand_checked_metrics(self):
+    def test_open_door_transmission_fields_equal_the_disclosing_v15_tell_percept(self):
         runtime_model, open_story, cognitive_state, social_state = tell_case(door_open=True)
+        projection = project_situated_percepts(
+            runtime_model.percept_memory_model.perception_model,
+            open_story.rounds[-1],
+        )
+        bob_percept = next(
+            item
+            for item in projection.percepts
+            if item.agent_id == "bob"
+        )
 
         snapshot = project_situated_network_snapshot(
             runtime_model, open_story, cognitive_state, social_state
         )
         metrics = measure_situated_network_emergence(runtime_model, snapshot, social_state)
+        transmission = snapshot.transmissions[0]
 
+        self.assertIs(bob_percept.kind, SituatedActionKind.TELL)
+        self.assertIsNotNone(bob_percept.actor_agent_id)
+        self.assertEqual(
+            (
+                transmission.event_id,
+                transmission.source_agent_id,
+                transmission.observer_agent_id,
+                transmission.fidelity,
+                transmission.channels,
+            ),
+            (
+                bob_percept.source_event_id,
+                bob_percept.actor_agent_id,
+                bob_percept.agent_id,
+                bob_percept.fidelity,
+                bob_percept.channels,
+            ),
+        )
         self.assertEqual(metrics.population_size, 2)
         self.assertEqual(metrics.latest_tell_event_count, 1)
         self.assertEqual(metrics.exact_transmission_count, 1)

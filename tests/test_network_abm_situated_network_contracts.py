@@ -82,7 +82,7 @@ def snapshot_fixture(*, access_edges=None, round_index: int = 1):
         access_edges,
         () if round_index == 0 else (
             SituatedNetworkTransmission(
-                "tell-1", "alice", "bob", SituatedPerceptFidelity.DETECTED,
+                "tell-1", "alice", "bob", SituatedPerceptFidelity.IDENTIFIED,
                 (ObservationChannel.AUDITORY,),
             ),
         ),
@@ -94,7 +94,7 @@ def metrics_fixture(snapshot):
     return SituatedNetworkEmergenceMetrics(
         snapshot.content_hash, snapshot.round_index,
         2, 2, 1, 0.5, 0.6, 0.04, 1, 0.6, 1,
-        1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0,
+        1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0,
     )
 
 
@@ -180,13 +180,47 @@ class SituatedNetworkContractTests(unittest.TestCase):
                     (channel,),
                 )
 
+    def test_transmission_rejects_detected_fidelity_that_cannot_disclose_a_source(self):
+        with self.assertRaisesRegex(ValueError, "disclosed source"):
+            SituatedNetworkTransmission(
+                "tell-1",
+                "alice",
+                "bob",
+                SituatedPerceptFidelity.DETECTED,
+                (ObservationChannel.AUDITORY,),
+            )
+
     def test_runtime_state_rejects_forged_round_zero_parent(self):
         model, story, cognitive_state, social_state, snapshot, metrics = self._initial_runtime_values()
         with self.assertRaisesRegex(ValueError, "initial round"):
             SituatedNetworkRuntimeState(
                 "office-network", model.content_hash, 0, digest("forged"),
+                digest("memory"),
                 story, cognitive_state, social_state, snapshot, metrics,
             )
+
+    def test_runtime_state_binds_the_logical_memory_store_hash(self):
+        model, story, cognitive_state, social_state, snapshot, metrics = self._initial_runtime_values()
+        state = SituatedNetworkRuntimeState(
+            "office-network",
+            model.content_hash,
+            0,
+            None,
+            digest("memory-a"),
+            story,
+            cognitive_state,
+            social_state,
+            snapshot,
+            metrics,
+            checkpoint=True,
+        )
+
+        self.assertNotEqual(
+            state.content_hash,
+            replace(state, memory_store_hash=digest("memory-b")).content_hash,
+        )
+        with self.assertRaisesRegex(ValueError, "memory store hash"):
+            replace(state, memory_store_hash="not-a-hash")
 
     def test_runtime_state_rejects_cross_subsystem_hash_mismatches(self):
         model, story, cognitive_state, social_state, _, _ = self._initial_runtime_values()
@@ -196,6 +230,7 @@ class SituatedNetworkContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "cognitive state must bind exact story"):
             SituatedNetworkRuntimeState(
                 "office-network", model.content_hash, 0, None,
+                digest("memory"),
                 story, mismatched_cognition, social_state, snapshot, metrics_fixture(snapshot),
             )
 
@@ -204,6 +239,7 @@ class SituatedNetworkContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "social state must bind exact cognitive state"):
             SituatedNetworkRuntimeState(
                 "office-network", model.content_hash, 0, None,
+                digest("memory"),
                 story, cognitive_state, mismatched_social, snapshot, metrics_fixture(snapshot),
             )
 
@@ -211,6 +247,7 @@ class SituatedNetworkContractTests(unittest.TestCase):
         model, story, cognitive_state, social_state, snapshot, metrics = self._initial_runtime_values()
         state = SituatedNetworkRuntimeState(
             "office-network", model.content_hash, 0, None,
+            digest("memory-before"),
             story, cognitive_state, social_state, snapshot, metrics,
             checkpoint=True,
         )
@@ -233,6 +270,7 @@ class SituatedNetworkContractTests(unittest.TestCase):
         next_metrics = replace(metrics_fixture(next_snapshot), round_index=1)
         next_state = SituatedNetworkRuntimeState(
             "office-network", model.content_hash, 1, state.content_hash,
+            digest("memory-after"),
             advanced.next_story, advanced.next_cognitive_state, advanced.next_social_state,
             next_snapshot, next_metrics,
         )
@@ -241,6 +279,71 @@ class SituatedNetworkContractTests(unittest.TestCase):
         self.assertEqual(trajectory.content_hash, SituatedNetworkTrajectory(
             "office-network", model.content_hash, state, (result,), next_state
         ).content_hash)
+
+        wrong_cognition = replace(
+            advanced.next_cognitive_state,
+            parent_state_hash=digest("wrong-cognitive-parent"),
+        )
+        wrong_cognitive_social = replace(
+            advanced.next_social_state,
+            cognitive_state_hash=wrong_cognition.content_hash,
+        )
+        wrong_cognitive_snapshot = replace(
+            next_snapshot,
+            cognitive_state_hash=wrong_cognition.content_hash,
+            social_state_hash=wrong_cognitive_social.content_hash,
+        )
+        wrong_cognitive_next = SituatedNetworkRuntimeState(
+            "office-network",
+            model.content_hash,
+            1,
+            state.content_hash,
+            digest("memory-after"),
+            advanced.next_story,
+            wrong_cognition,
+            wrong_cognitive_social,
+            wrong_cognitive_snapshot,
+            replace(
+                next_metrics,
+                snapshot_hash=wrong_cognitive_snapshot.content_hash,
+            ),
+        )
+        with self.assertRaisesRegex(ValueError, "cognitive state.*underlying branch"):
+            SituatedNetworkRoundResult(
+                "office-network",
+                model.content_hash,
+                state,
+                wrong_cognitive_next,
+            )
+
+        wrong_social = replace(
+            advanced.next_social_state,
+            parent_state_hash=digest("wrong-social-parent"),
+        )
+        wrong_social_snapshot = replace(
+            next_snapshot,
+            social_state_hash=wrong_social.content_hash,
+        )
+        wrong_social_next = SituatedNetworkRuntimeState(
+            "office-network",
+            model.content_hash,
+            1,
+            state.content_hash,
+            digest("memory-after"),
+            advanced.next_story,
+            advanced.next_cognitive_state,
+            wrong_social,
+            wrong_social_snapshot,
+            replace(next_metrics, snapshot_hash=wrong_social_snapshot.content_hash),
+        )
+        with self.assertRaisesRegex(ValueError, "social state.*underlying branch"):
+            SituatedNetworkRoundResult(
+                "office-network",
+                model.content_hash,
+                state,
+                wrong_social_next,
+            )
+
         with self.assertRaisesRegex(ValueError, "exact parent"):
             SituatedNetworkRoundResult(
                 "office-network", model.content_hash, state,

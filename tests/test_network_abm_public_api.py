@@ -343,6 +343,7 @@ class NetworkABMPublicAPITests(unittest.TestCase):
                 "SituatedNetworkRuntimeState",
                 "SituatedNetworkRoundResult",
                 "SituatedNetworkTrajectory",
+                "hash_situated_percept_memory_store",
                 "project_situated_network_snapshot",
                 "measure_situated_network_emergence",
                 "initialize_situated_network_runtime",

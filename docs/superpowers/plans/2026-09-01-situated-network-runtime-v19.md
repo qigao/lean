@@ -4,7 +4,7 @@
 
 **Goal:** Build one deterministic V19 snapshot, metric, and round runtime over the existing physical, perceptual, cognitive, memory, and directed social state.
 
-**Architecture:** Add immutable V19 contracts without changing V10-V18 values, then derive a multiplex graph from exact current state and finally wrap the existing V15.1 social-cognitive transition in a parent-linked runtime. Network projection is read-only: physical events, sanitized percepts, private beliefs, and social trust keep their existing authorities.
+**Architecture:** Add immutable V19 contracts without changing V10-V18 values, derive a multiplex graph only from fields disclosed by exact current sanitized percepts, and wrap the existing V15.1 social-cognitive transition in a parent-linked, database-checkpoint-bound runtime. Every round executes against a staged SQLite clone and publishes only after the complete underlying branch and V19 result validate. Network projection is read-only: physical events, sanitized percepts, private beliefs, and social trust keep their existing authorities.
 
 **Tech Stack:** Python standard library, frozen dataclasses, SQLite/FTS5 through the existing memory runtime, `unittest`, content-addressed `stable_content_hash`.
 
@@ -15,7 +15,10 @@
 - Do not modify V10-V18 contracts, transition semantics, or content hashes.
 - The ABM core remains dependency-free and deterministic.
 - V19 transmission records contain no message, event detail, memory text, prompt, or provider data.
+- V19 transmissions require a sanitized percept that explicitly discloses `kind=TELL` and a distinct non-null actor; anonymous `DETECTED` sounds never become source-labelled transmissions.
 - Every snapshot binds exact story, cognitive, and social hashes at one round.
+- Every runtime state binds a canonical logical V15 percept-memory store hash; paths, SQLite row IDs, derived FTS state, and raw byte layout never enter a contract hash.
+- Every next story is an exact one-round prefix extension, and next cognition/social states bind the exact prior subsystem parent hashes.
 - Physical lifecycle and V1-V9 rewiring remain explicit V19.1 non-goals.
 
 ---
@@ -28,7 +31,7 @@
 
 **Interfaces:**
 - Consumes: `SituatedPerceptMemoryCognitiveModel`, `SituatedSocialMemoryModel`, `SituatedPerceptFidelity`, `ObservationChannel`, and `stable_content_hash`.
-- Produces: `SituatedNetworkRuntimeModel`, `SituatedNetworkAgentNode`, `SituatedNetworkRelationshipEdge`, `SituatedNetworkAccessEdge`, `SituatedNetworkTransmission`, `SituatedNetworkSnapshot`, `SituatedNetworkEmergenceMetrics`, `SituatedNetworkRuntimeState`, `SituatedNetworkRoundResult`, and `SituatedNetworkTrajectory`.
+- Produces: `SituatedNetworkRuntimeModel`, `SituatedNetworkAgentNode`, `SituatedNetworkRelationshipEdge`, `SituatedNetworkAccessEdge`, `SituatedNetworkTransmission`, `SituatedNetworkSnapshot`, `SituatedNetworkEmergenceMetrics`, `SituatedNetworkRuntimeState` with `memory_store_hash`, `SituatedNetworkRoundResult`, and `SituatedNetworkTrajectory`.
 
 - [ ] **Step 1: Write failing contract tests**
 
@@ -56,7 +59,7 @@ Expected: collection fails because `situated_network_contracts` does not exist.
 
 - [ ] **Step 3: Implement minimal immutable contracts**
 
-Implement strict text/hash/probability validation, canonical tuple ordering, unique node/edge/transmission identities, exact round/hash chaining, `to_dict()`, and `content_hash`. `SituatedNetworkRuntimeModel.__post_init__` must verify exact memory/social cognitive binding and require `tracked_hypothesis_id` in every agent's hypothesis set.
+Implement strict text/hash/probability validation, canonical tuple ordering, unique node/edge/transmission identities, exact round/hash chaining, `to_dict()`, and `content_hash`. `SituatedNetworkRuntimeModel.__post_init__` must verify exact memory/social cognitive binding and require `tracked_hypothesis_id` in every agent's hypothesis set. A `SituatedNetworkTransmission` rejects `DETECTED` fidelity because that V15 fidelity cannot disclose an actor. Round and trajectory contracts recheck the exact story prefix plus cognitive/social parent hashes.
 
 - [ ] **Step 4: Run Task 1 tests GREEN**
 
@@ -84,12 +87,12 @@ git commit -m "feat(abm): add situated network runtime contracts"
 - [ ] **Step 1: Write failing projection tests**
 
 ```python
-def test_closed_door_projects_detected_tell_without_secret_payload(self):
+def test_closed_door_anonymous_detected_percept_is_not_a_v19_transmission(self):
     snapshot = project_situated_network_snapshot(
         runtime_model, closed_story, cognitive_state, social_state
     )
-    bob = next(item for item in snapshot.transmissions if item.observer_agent_id == "bob")
-    self.assertIs(bob.fidelity, SituatedPerceptFidelity.DETECTED)
+    self.assertEqual(snapshot.transmissions, ())
+    self.assertEqual(snapshot.latest_tell_event_count, 1)
     serialized = json.dumps(snapshot.to_dict(), sort_keys=True)
     self.assertNotIn(SECRET, serialized)
     self.assertNotIn('"message"', serialized)
@@ -104,7 +107,7 @@ def test_open_door_projects_exact_tell_and_hand_checked_metrics(self):
     self.assertEqual(metrics.exact_transmission_count, 1)
 ```
 
-These tests catch leaking the TELL message anywhere in the nested network artifact, losing sanitized fidelity, including the actor's self percept as a transmission, and miscounting actual latest-round reach.
+These tests compare V19 disclosures to the corresponding V15 percept and catch leaking the TELL message, reconstructing an anonymous DETECTED actor/kind from the objective event, losing sanitized fidelity, including the actor's self percept, and miscounting actual latest-round reach. `latest_tell_event_count` remains an aggregate even when the anonymous sound creates no transmission.
 
 - [ ] **Step 2: Run focused tests and verify RED**
 
@@ -114,7 +117,7 @@ Expected: import failure because the projection functions do not exist.
 
 - [ ] **Step 3: Implement snapshot projection**
 
-Validate exact round/model/hash alignment. Build nodes from the current world bodies and corresponding minds, relationship edges from V14 source relationships, access edges by deriving V15 reach from each source place, and latest-round TELL transmissions only from `project_situated_percepts` over the latest accepted round.
+Validate exact round/model/hash alignment. Build nodes from the current world bodies and corresponding minds, relationship edges from V14 source relationships, access edges by deriving V15 reach from each source place, and latest-round TELL transmissions only from `project_situated_percepts` entries whose sanitized fields explicitly disclose TELL plus a distinct non-null actor.
 
 - [ ] **Step 4: Implement aggregate metrics**
 
@@ -144,14 +147,14 @@ git commit -m "feat(abm): project situated multiplex emergence"
 
 **Interfaces:**
 - Consumes: Task 1 runtime state/round/trajectory contracts; Task 2 projection and metrics; `simulate_situated_percept_social_cognitive_round`.
-- Produces: `initialize_situated_network_runtime`, `simulate_situated_network_round`, and `simulate_situated_network_runtime` as public `narrative_dynamics.abm` APIs.
+- Produces: `hash_situated_percept_memory_store`, `initialize_situated_network_runtime`, `simulate_situated_network_round`, and `simulate_situated_network_runtime` as public `narrative_dynamics.abm` APIs.
 
 - [ ] **Step 1: Write failing atomic-round and chain tests**
 
 ```python
 def test_atomic_round_keeps_story_cognition_social_snapshot_and_metrics_synchronized(self):
     initial = initialize_situated_network_runtime(
-        runtime_model, story, cognitive_state, social_state
+        database, runtime_model, story, cognitive_state, social_state
     )
     result = simulate_situated_network_round(database, runtime_model, initial)
     self.assertEqual(result.next_state.round_index, initial.round_index + 1)
@@ -164,7 +167,7 @@ def test_trajectory_rejects_a_broken_parent_chain(self):
         replace(valid_trajectory, final_state=unrelated_state)
 ```
 
-The tests catch partial commits where one subsystem advances without the others and trajectories that accept unrelated final values.
+The tests catch partial commits where one subsystem advances without the others, two-branch splices hidden behind a valid outer V19 parent hash, stale or substituted memory checkpoints, and trajectories that accept unrelated final values. Additional adversarial tests make Alice ingest successfully on the stage before a conflicting Bob row fails and assert that the original logical rows/hash remain byte-layout-independently unchanged.
 
 - [ ] **Step 2: Run focused tests and verify RED**
 
@@ -174,11 +177,11 @@ Expected: import failure for the runtime functions.
 
 - [ ] **Step 3: Implement initialization, one-round orchestration, and trajectory**
 
-Initialization validates V15.1 and V14 state using their existing validators. A round calls the existing social-cognitive round exactly once, then derives one next snapshot and metric value. Multi-round simulation accepts only a positive integer count and returns the exact parent-linked state chain.
+Initialization accepts the database path first, validates V15.1 and V14 state using their existing validators, and binds `hash_situated_percept_memory_store(database_path)`. A round rejects a stale actual hash, clones the file-backed SQLite database, calls the existing social-cognitive round exactly once on the stage, derives and validates one next snapshot/metric/underlying branch/store hash, rechecks the untouched original hash, and only then publishes through SQLite backup. Multi-round simulation accepts only a positive integer count and returns the exact parent-linked state chain. Python transition/validation exceptions leave the original logical store unchanged; document the crash boundary between SQLite publication and caller-managed durable persistence of the returned state.
 
 - [ ] **Step 4: Export the exact V19 surface and document the office case**
 
-Add the Task 1 contracts and five Task 2-3 functions to `narrative_dynamics.abm.__all__`. README must state that V19 unifies observation/runtime state but does not yet implement physical lifecycle or V1-V9 rewiring feedback.
+Add the Task 1 contracts, canonical memory-store hash helper, and five Task 2-3 functions to `narrative_dynamics.abm.__all__`. README must provide a runnable defined office construction that proves closed-door DETECTED is not a V19 transmission, open-door exact TELL is, and database-bound initialization plus one round synchronize all hashes. It must state that V19 does not yet implement physical lifecycle, V1-V9 rewiring feedback, or map import.
 
 - [ ] **Step 5: Run focused and authoritative regression gates**
 

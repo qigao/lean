@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sqlite3
+from tempfile import TemporaryDirectory
 
 from narrative_dynamics.abm.situated import SituatedActionKind
 from narrative_dynamics.abm.situated_cognition_contracts import (
@@ -21,6 +23,10 @@ from narrative_dynamics.abm.situated_network_contracts import (
     SituatedNetworkTransmission,
     SituatedNetworkTrajectory,
 )
+from narrative_dynamics.abm.situated_percept_memory import (
+    SituatedPerceptMemoryStorageError,
+    hash_situated_percept_memory_store,
+)
 from narrative_dynamics.abm.situated_perception import (
     can_situated_agents_interact,
     derive_situated_perception_reach,
@@ -36,6 +42,42 @@ from narrative_dynamics.abm.situated_social_memory_contracts import (
     validate_situated_social_memory_state,
 )
 from narrative_dynamics.abm.situated_story import SituatedStory
+
+
+def _file_backed_database_path(value: str | Path) -> str:
+    if isinstance(value, Path):
+        path = str(value)
+    elif isinstance(value, str) and value.strip():
+        path = value
+    else:
+        raise ValueError(
+            "situated network memory database path must be non-empty"
+        )
+    folded = path.casefold().replace(" ", "")
+    if path == ":memory:" or (
+        folded.startswith("file:") and "mode=memory" in folded
+    ):
+        raise ValueError(
+            "situated network runtime requires a file-backed memory database"
+        )
+    return path
+
+
+def _backup_sqlite_database(source_path: str, destination_path: str) -> None:
+    source = destination = None
+    try:
+        source = sqlite3.connect(source_path)
+        destination = sqlite3.connect(destination_path)
+        source.backup(destination)
+    except sqlite3.Error as error:
+        raise SituatedPerceptMemoryStorageError(
+            "failed to publish situated network memory checkpoint"
+        ) from error
+    finally:
+        if destination is not None:
+            destination.close()
+        if source is not None:
+            source.close()
 
 
 def _validate_projection_inputs(
@@ -157,8 +199,8 @@ def _latest_tell_transmissions(
     if not story.rounds:
         return ()
     latest_round = story.rounds[-1]
-    tell_events = {
-        item.event_id: item
+    tell_event_ids = {
+        item.event_id
         for item in latest_round.events
         if item.kind is SituatedActionKind.TELL and item.success
     }
@@ -168,16 +210,17 @@ def _latest_tell_transmissions(
     return tuple(
         SituatedNetworkTransmission(
             percept.source_event_id,
-            tell_events[percept.source_event_id].actor_agent_id,
+            percept.actor_agent_id,
             percept.agent_id,
             percept.fidelity,
             percept.channels,
         )
         for percept in projection.percepts
         if (
-            percept.source_event_id in tell_events
-            and percept.agent_id
-            != tell_events[percept.source_event_id].actor_agent_id
+            percept.source_event_id in tell_event_ids
+            and percept.kind is SituatedActionKind.TELL
+            and percept.actor_agent_id is not None
+            and percept.agent_id != percept.actor_agent_id
         )
     )
 
@@ -297,6 +340,7 @@ def measure_situated_network_emergence(
 
 
 def initialize_situated_network_runtime(
+    database_path: str | Path,
     model: SituatedNetworkRuntimeModel,
     story: SituatedStory,
     cognitive_state: SituatedCognitiveState,
@@ -304,6 +348,7 @@ def initialize_situated_network_runtime(
 ) -> SituatedNetworkRuntimeState:
     """Bind one validated V15.1/V14 checkpoint to its V19 observability view."""
 
+    memory_database_path = _file_backed_database_path(database_path)
     snapshot = project_situated_network_snapshot(
         model, story, cognitive_state, social_state
     )
@@ -313,6 +358,7 @@ def initialize_situated_network_runtime(
         model.content_hash,
         story.current_state.round_index,
         None,
+        hash_situated_percept_memory_store(memory_database_path),
         story,
         cognitive_state,
         social_state,
@@ -323,6 +369,7 @@ def initialize_situated_network_runtime(
 
 
 def _validate_runtime_state(
+    database_path: str | Path,
     model: SituatedNetworkRuntimeModel,
     state: SituatedNetworkRuntimeState,
 ) -> None:
@@ -332,6 +379,11 @@ def _validate_runtime_state(
         raise TypeError("situated network simulation requires a runtime state")
     if state.model_id != model.model_id or state.model_hash != model.content_hash:
         raise ValueError("situated network state must bind the exact runtime model")
+    actual_memory_store_hash = hash_situated_percept_memory_store(database_path)
+    if actual_memory_store_hash != state.memory_store_hash:
+        raise ValueError(
+            "situated network state memory store hash is stale"
+        )
     validate_situated_cognitive_state(
         model.percept_memory_model.cognitive_model,
         state.story,
@@ -365,39 +417,57 @@ def simulate_situated_network_round(
 ) -> SituatedNetworkRoundResult:
     """Advance all private state once, then bind one synchronized V19 record."""
 
-    _validate_runtime_state(model, state)
-    advanced = simulate_situated_percept_social_cognitive_round(
-        database_path,
-        model.percept_memory_model,
-        model.social_memory_model,
-        state.story,
-        state.cognitive_state,
-        state.social_state,
-    )
-    snapshot = project_situated_network_snapshot(
-        model,
-        advanced.next_story,
-        advanced.next_cognitive_state,
-        advanced.next_social_state,
-    )
-    metrics = measure_situated_network_emergence(
-        model, snapshot, advanced.next_social_state
-    )
-    next_state = SituatedNetworkRuntimeState(
-        model.model_id,
-        model.content_hash,
-        state.round_index + 1,
-        state.content_hash,
-        advanced.next_story,
-        advanced.next_cognitive_state,
-        advanced.next_social_state,
-        snapshot,
-        metrics,
-        checkpoint=False,
-    )
-    return SituatedNetworkRoundResult(
-        model.model_id, model.content_hash, state, next_state
-    )
+    original_path = _file_backed_database_path(database_path)
+    _validate_runtime_state(original_path, model, state)
+    with TemporaryDirectory(
+        prefix="situated-network-v19-",
+        ignore_cleanup_errors=True,
+    ) as temporary:
+        staged_path = str(Path(temporary) / "memory-stage.sqlite3")
+        _backup_sqlite_database(original_path, staged_path)
+        advanced = simulate_situated_percept_social_cognitive_round(
+            staged_path,
+            model.percept_memory_model,
+            model.social_memory_model,
+            state.story,
+            state.cognitive_state,
+            state.social_state,
+        )
+        snapshot = project_situated_network_snapshot(
+            model,
+            advanced.next_story,
+            advanced.next_cognitive_state,
+            advanced.next_social_state,
+        )
+        metrics = measure_situated_network_emergence(
+            model, snapshot, advanced.next_social_state
+        )
+        next_state = SituatedNetworkRuntimeState(
+            model.model_id,
+            model.content_hash,
+            state.round_index + 1,
+            state.content_hash,
+            hash_situated_percept_memory_store(staged_path),
+            advanced.next_story,
+            advanced.next_cognitive_state,
+            advanced.next_social_state,
+            snapshot,
+            metrics,
+            checkpoint=False,
+        )
+        result = SituatedNetworkRoundResult(
+            model.model_id, model.content_hash, state, next_state
+        )
+        _validate_runtime_state(staged_path, model, next_state)
+        if (
+            hash_situated_percept_memory_store(original_path)
+            != state.memory_store_hash
+        ):
+            raise ValueError(
+                "situated network state memory store hash changed during transition"
+            )
+        _backup_sqlite_database(staged_path, original_path)
+        return result
 
 
 def simulate_situated_network_runtime(
@@ -415,11 +485,12 @@ def simulate_situated_network_runtime(
         or round_count <= 0
     ):
         raise ValueError("situated network simulation requires a positive round count")
-    _validate_runtime_state(model, initial_state)
+    memory_database_path = _file_backed_database_path(database_path)
+    _validate_runtime_state(memory_database_path, model, initial_state)
     state = initial_state
     rounds = []
     for _ in range(round_count):
-        item = simulate_situated_network_round(database_path, model, state)
+        item = simulate_situated_network_round(memory_database_path, model, state)
         rounds.append(item)
         state = item.next_state
     return SituatedNetworkTrajectory(
@@ -432,6 +503,7 @@ def simulate_situated_network_runtime(
 
 
 __all__ = (
+    "hash_situated_percept_memory_store",
     "project_situated_network_snapshot",
     "measure_situated_network_emergence",
     "initialize_situated_network_runtime",

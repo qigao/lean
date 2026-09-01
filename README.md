@@ -1701,39 +1701,254 @@ V19 unifies observation and orchestration for the existing situated office model
 One atomic call advances the V15.1 percept/social/cognitive round exactly once, then
 binds its returned story, cognitive state, and social state to one privacy-preserving
 multiplex-network snapshot and one emergence-metric record. Snapshot transmissions
-identify events, agents, fidelity, and disclosed channels, but never copy private
-message payloads.
+identify events, agents, fidelity, and disclosed channels only when that observer's
+sanitized V15 percept explicitly discloses `kind=TELL` and a distinct non-null actor.
+They never copy private message payloads or recover identity from an anonymous sound.
 
 ```python
+from dataclasses import replace
+from tempfile import TemporaryDirectory
+
 from narrative_dynamics.abm import (
+    EmbodiedAgentSpec,
+    PassageSpec,
+    PassageState,
+    PlaceSpec,
+    SituatedActionIntent,
+    SituatedActionKind,
+    SituatedActionSpec,
+    SituatedAgentCognitiveModel,
+    SituatedAgentPerceptionProfile,
+    SituatedAgentRecallPolicy,
+    SituatedClaimTopic,
+    SituatedCognitiveModel,
+    SituatedEdgeActivation,
+    SituatedEventSignalProfile,
+    SituatedGoalReward,
+    SituatedGoalSpec,
+    SituatedHypothesis,
+    SituatedMemoryCognitiveModel,
+    SituatedNetworkRuntimeModel,
+    SituatedObservationLikelihood,
+    SituatedObservationSymbol,
+    SituatedPerceptFidelity,
+    SituatedPerceptMemoryCognitiveModel,
+    SituatedPerceptionEdge,
+    SituatedPerceptionLayer,
+    SituatedPerceptionModel,
+    SituatedSocialMemoryModel,
+    SituatedSocialMemoryPolicy,
+    SituatedWorldModel,
+    advance_situated_story,
+    hash_situated_percept_memory_store,
     initialize_situated_network_runtime,
-    simulate_situated_network_runtime,
+    initialize_situated_percept_memory_cognition,
+    initialize_situated_social_memory,
+    initialize_situated_story,
+    initialize_situated_world,
+    project_situated_network_snapshot,
+    project_situated_percepts,
+    simulate_situated_network_round,
+    standard_situated_memory_policy,
+    standard_situated_percept_memory_policy,
+)
+from narrative_dynamics.narrative.runtime_planning import PlanningBeliefState
+
+
+office = SituatedWorldModel(
+    "v19-office",
+    "1",
+    (PlaceSpec("corridor", "Corridor"), PlaceSpec("meeting", "Meeting room")),
+    (PassageSpec("door", "corridor", "meeting", initially_open=False),),
+    (
+        EmbodiedAgentSpec("alice", "analyst", "corridor"),
+        EmbodiedAgentSpec("bob", "manager", "meeting"),
+    ),
+)
+perception = SituatedPerceptionModel(
+    "v19-office-perception",
+    "1",
+    office,
+    (
+        SituatedPerceptionEdge(
+            "audio-open", SituatedPerceptionLayer.AUDITORY,
+            "corridor", "meeting", 5.0,
+            SituatedEdgeActivation.PASSAGE_OPEN, "door",
+        ),
+        SituatedPerceptionEdge(
+            "audio-closed", SituatedPerceptionLayer.AUDITORY,
+            "corridor", "meeting", 25.0,
+            SituatedEdgeActivation.PASSAGE_CLOSED, "door",
+        ),
+    ),
+    (
+        SituatedAgentPerceptionProfile("alice", 1.0, 20.0, 45.0),
+        SituatedAgentPerceptionProfile("bob", 1.0, 20.0, 45.0),
+    ),
+    (SituatedEventSignalProfile(SituatedActionKind.TELL, False, 60.0),),
 )
 
-runtime = initialize_situated_network_runtime(
-    office_network_model,
-    office_story,
-    office_cognitive_state,
-    office_social_state,
+
+def cognitive_agent(agent_id):
+    hypotheses = (
+        SituatedHypothesis("approved", "The proposal is approved"),
+        SituatedHypothesis("denied", "The proposal is denied"),
+    )
+    symbols = (
+        SituatedObservationSymbol("approved", "Approval evidence"),
+        SituatedObservationSymbol("denied", "Denial evidence"),
+    )
+    return SituatedAgentCognitiveModel(
+        agent_id,
+        hypotheses,
+        PlanningBeliefState({"approved": 0.5, "denied": 0.5}),
+        symbols,
+        (),
+        tuple(
+            SituatedObservationLikelihood(
+                "wait", hypothesis.hypothesis_id, symbol.symbol_id, 0.5
+            )
+            for hypothesis in hypotheses
+            for symbol in symbols
+        ),
+        (SituatedActionSpec("wait", SituatedActionKind.WAIT),),
+        (("wait",),),
+        (),
+        (SituatedGoalSpec("idle", "Wait deterministically", 1.0),),
+        tuple(
+            SituatedGoalReward("idle", hypothesis.hypothesis_id, "wait", 0.0)
+            for hypothesis in hypotheses
+        ),
+        0.0,
+        1.0,
+    )
+
+
+cognition = SituatedCognitiveModel(
+    "v19-office-cognition",
+    "1",
+    office,
+    tuple(cognitive_agent(agent.agent_id) for agent in office.agents),
 )
-trajectory = simulate_situated_network_runtime(
-    "office.sqlite3",
-    office_network_model,
-    runtime,
-    round_count=3,
+recall_policies = tuple(
+    SituatedAgentRecallPolicy(agent.agent_id) for agent in office.agents
+)
+percept_memory = SituatedPerceptMemoryCognitiveModel(
+    "v19-office-percept-memory",
+    "1",
+    perception,
+    cognition,
+    standard_situated_percept_memory_policy(),
+    recall_policies,
+)
+social_memory = SituatedSocialMemoryModel(
+    "v19-office-social",
+    "1",
+    SituatedMemoryCognitiveModel(
+        "v19-office-memory",
+        "1",
+        cognition,
+        standard_situated_memory_policy(),
+        recall_policies,
+    ),
+    (SituatedClaimTopic("decision", ("approved", "denied")),),
+    SituatedSocialMemoryPolicy(),
+)
+network = SituatedNetworkRuntimeModel(
+    "v19-office-network",
+    "1",
+    percept_memory,
+    social_memory,
+    "approved",
+    0.7,
+    0.5,
 )
 
-for item in trajectory.rounds:
-    assert item.next_state.parent_state_hash == item.prior_state.content_hash
-    assert item.next_state.story.content_hash == item.next_state.snapshot.story_hash
-    assert item.next_state.metrics.snapshot_hash == item.next_state.snapshot.content_hash
+
+def tell_checkpoint(door_open):
+    world_state = initialize_situated_world(office)
+    if door_open:
+        world_state = replace(
+            world_state,
+            passages=(PassageState("door", True),),
+        )
+    story = initialize_situated_story(
+        office, world_state, perception_model=perception
+    )
+    story = advance_situated_story(
+        office,
+        story,
+        (SituatedActionIntent(
+            "alice-tell",
+            "alice",
+            SituatedActionKind.TELL,
+            message="The proposal is approved.",
+        ),),
+    )
+    cognitive_state = initialize_situated_percept_memory_cognition(
+        percept_memory, story
+    )
+    social_state = initialize_situated_social_memory(
+        social_memory, cognitive_state
+    )
+    return story, cognitive_state, social_state
+
+
+closed_story, closed_cognition, closed_social = tell_checkpoint(False)
+closed_percepts = project_situated_percepts(
+    perception, closed_story.rounds[-1]
+)
+bob_closed = next(
+    item for item in closed_percepts.percepts if item.agent_id == "bob"
+)
+closed_snapshot = project_situated_network_snapshot(
+    network, closed_story, closed_cognition, closed_social
+)
+assert bob_closed.fidelity is SituatedPerceptFidelity.DETECTED
+assert bob_closed.actor_agent_id is None and bob_closed.kind is None
+assert closed_snapshot.transmissions == ()
+assert closed_snapshot.latest_tell_event_count == 1
+
+open_story, open_cognition, open_social = tell_checkpoint(True)
+open_snapshot = project_situated_network_snapshot(
+    network, open_story, open_cognition, open_social
+)
+assert len(open_snapshot.transmissions) == 1
+assert open_snapshot.transmissions[0].source_agent_id == "alice"
+assert open_snapshot.transmissions[0].fidelity is SituatedPerceptFidelity.EXACT
+
+with TemporaryDirectory() as temporary:
+    database = f"{temporary}/office.sqlite3"
+    runtime = initialize_situated_network_runtime(
+        database, network, open_story, open_cognition, open_social
+    )
+    round_result = simulate_situated_network_round(database, network, runtime)
+    assert round_result.next_state.parent_state_hash == runtime.content_hash
+    assert (
+        round_result.next_state.memory_store_hash
+        == hash_situated_percept_memory_store(database)
+    )
 ```
 
 In the office case, each runtime state presents agent nodes alongside directed social
 relationship edges, situated visual/auditory access edges, sanitized latest-round
-transmissions, and aggregate adoption, trust, claim, and reach measures. The exact
-parent chain makes the resulting trajectory replay-auditable without merging these
-read-only projections back into older network models.
+transmissions, and aggregate adoption, trust, claim, and reach measures. A successful
+objective TELL still increments the payload-free `latest_tell_event_count` when a
+closed door leaves Bob with only an anonymous DETECTED percept, but that percept does
+not increment any V19 source-labelled transmission bucket. The exact story prefix,
+cognitive/social parent hashes, logical SQLite memory hash, and outer V19 parent make
+the resulting trajectory replay-auditable without merging these projections back
+into older network models.
+
+V19 hashes canonical logical memory rows and metadata, including activation state;
+database paths, row IDs, FTS/index state, and raw SQLite bytes stay outside the
+contract. A round runs V15.1 against a staged database and publishes it only after
+the complete result validates, so Python transition/validation errors leave the
+original logical store unchanged. SQLite publication and caller-managed durable
+persistence of the returned state are not one cross-resource transaction: a process
+crash after publication but before the caller persists that state leaves the prior
+state stale, requiring recovery from a matching subsystem/store checkpoint. The
+runtime therefore requires a file-backed database.
 
 V19 unifies observability and orchestration, but it does not yet implement physical
 lifecycle or V1-V9 rewiring feedback; both remain future work. Map import is deferred

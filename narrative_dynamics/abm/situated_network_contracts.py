@@ -246,6 +246,10 @@ class SituatedNetworkTransmission:
             raise ValueError("network transmission source and observer must be distinct")
         if not isinstance(self.fidelity, SituatedPerceptFidelity):
             raise TypeError("network transmission fidelity must be SituatedPerceptFidelity")
+        if self.fidelity is SituatedPerceptFidelity.DETECTED:
+            raise ValueError(
+                "network transmission requires a disclosed source"
+            )
         if not isinstance(self.channels, tuple) or any(
             not isinstance(item, ObservationChannel) for item in self.channels
         ):
@@ -413,6 +417,7 @@ class SituatedNetworkRuntimeState:
     model_hash: str
     round_index: int
     parent_state_hash: str | None
+    memory_store_hash: str
     story: SituatedStory
     cognitive_state: SituatedCognitiveState
     social_state: SituatedSocialMemoryState
@@ -428,6 +433,14 @@ class SituatedNetworkRuntimeState:
             raise TypeError("network runtime state checkpoint must be boolean")
         if self.parent_state_hash is not None:
             object.__setattr__(self, "parent_state_hash", _hash(self.parent_state_hash, label="network runtime state parent hash"))
+        object.__setattr__(
+            self,
+            "memory_store_hash",
+            _hash(
+                self.memory_store_hash,
+                label="network runtime state memory store hash",
+            ),
+        )
         if self.checkpoint and self.parent_state_hash is not None:
             raise ValueError("network runtime state checkpoint must not have a parent hash")
         if not self.checkpoint and self.round_index == 0 and self.parent_state_hash is not None:
@@ -474,6 +487,7 @@ class SituatedNetworkRuntimeState:
             "model_hash": self.model_hash,
             "round_index": self.round_index,
             "parent_state_hash": self.parent_state_hash,
+            "memory_store_hash": self.memory_store_hash,
             "story_hash": self.story.content_hash,
             "cognitive_state_hash": self.cognitive_state.content_hash,
             "social_state_hash": self.social_state.content_hash,
@@ -485,6 +499,39 @@ class SituatedNetworkRuntimeState:
     @property
     def content_hash(self) -> str:
         return stable_content_hash(self.to_dict())
+
+
+def _validate_underlying_branch(
+    prior_state: SituatedNetworkRuntimeState,
+    next_state: SituatedNetworkRuntimeState,
+) -> None:
+    prior_story = prior_state.story
+    next_story = next_state.story
+    if (
+        next_story.model_id != prior_story.model_id
+        or next_story.model_hash != prior_story.model_hash
+        or next_story.initial_state != prior_story.initial_state
+        or next_story.perception_model != prior_story.perception_model
+        or len(next_story.rounds) != len(prior_story.rounds) + 1
+        or next_story.rounds[:-1] != prior_story.rounds
+    ):
+        raise ValueError(
+            "network round must extend the exact underlying branch"
+        )
+    if (
+        next_state.cognitive_state.parent_state_hash
+        != prior_state.cognitive_state.content_hash
+    ):
+        raise ValueError(
+            "network round cognitive state must extend the exact underlying branch"
+        )
+    if (
+        next_state.social_state.parent_state_hash
+        != prior_state.social_state.content_hash
+    ):
+        raise ValueError(
+            "network round social state must extend the exact underlying branch"
+        )
 
 
 @dataclass(frozen=True)
@@ -505,6 +552,7 @@ class SituatedNetworkRoundResult:
             raise ValueError("network round next state must advance exactly one round")
         if self.next_state.parent_state_hash != self.prior_state.content_hash:
             raise ValueError("network round next state must bind the exact parent")
+        _validate_underlying_branch(self.prior_state, self.next_state)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -542,6 +590,7 @@ class SituatedNetworkTrajectory:
                 raise ValueError("network trajectory rounds must bind the exact model")
             if item.prior_state != state:
                 raise ValueError("network trajectory rounds must form one exact chain")
+            _validate_underlying_branch(item.prior_state, item.next_state)
             state = item.next_state
         if state != self.final_state:
             raise ValueError("network trajectory final state must equal its exact chain")
