@@ -679,6 +679,62 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
                 connection.close()
             self.assertEqual(foreign_metadata, ("other-scenario",))
 
+    def test_compiled_initial_state_rejects_foreign_schema_without_mutation(self) -> None:
+        compiled = self.compile_public_fixture("foreign-database-schema")
+
+        def snapshot(database_path: Path):
+            connection = sqlite3.connect(database_path)
+            try:
+                schema = tuple(
+                    connection.execute(
+                        "SELECT type, name, tbl_name, sql FROM sqlite_master "
+                        "ORDER BY type, name"
+                    ).fetchall()
+                )
+                rows = tuple(
+                    connection.execute(
+                        "SELECT state_id, typeof(payload), payload "
+                        "FROM foreign_state ORDER BY state_id"
+                    ).fetchall()
+                )
+            finally:
+                connection.close()
+            return schema, rows
+
+        with TemporaryDirectory() as temporary:
+            database_path = Path(temporary) / "foreign.sqlite3"
+            connection = sqlite3.connect(database_path)
+            try:
+                connection.execute(
+                    "CREATE TABLE foreign_state ("
+                    "state_id TEXT PRIMARY KEY, payload BLOB NOT NULL)"
+                )
+                connection.execute(
+                    "INSERT INTO foreign_state(state_id, payload) VALUES (?, ?)",
+                    ("foreign-1", sqlite3.Binary(b"\x00foreign-state\xff")),
+                )
+                connection.commit()
+            finally:
+                connection.close()
+            before = snapshot(database_path)
+
+            with self.assertRaisesRegex(ValueError, "noncanonical") as raised:
+                scenario_compiler.initialize_compiled_scenario(
+                    database_path,
+                    compiled,
+                )
+
+            after = snapshot(database_path)
+            self.assertEqual(after, before)
+            self.assertEqual(
+                after[1],
+                (("foreign-1", "blob", b"\x00foreign-state\xff"),),
+            )
+            self.assertNotIn(str(database_path), str(raised.exception))
+            self.assertFalse(
+                any("percept_memory" in name for _, name, _, _ in after[0])
+            )
+
     def test_compiled_initial_state_requires_one_authored_relationship_per_pair(self) -> None:
         compiled = self.compile_public_fixture("duplicate-authored-pair")
         social_world = replace(

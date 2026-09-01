@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from enum import Enum
 import math
 from pathlib import Path
+import sqlite3
 
 from narrative_dynamics.contracts import stable_content_hash
 from narrative_dynamics.narrative.runtime_planning import PlanningBeliefState
@@ -127,6 +128,21 @@ _CANONICAL_EMPTY_PERCEPT_MEMORY_STORE_HASH = stable_content_hash(
         "store": "situated-percept-memory",
         "metadata": [{"key": "schema_version", "value": "1"}],
         "records": [],
+    }
+)
+_CANONICAL_PERCEPT_MEMORY_SCHEMA_OBJECTS = frozenset(
+    {
+        ("index", "percept_memory_records_agent_round", "percept_memory_records"),
+        ("table", "percept_memory_fts", "percept_memory_fts"),
+        ("table", "percept_memory_fts_config", "percept_memory_fts_config"),
+        ("table", "percept_memory_fts_data", "percept_memory_fts_data"),
+        ("table", "percept_memory_fts_docsize", "percept_memory_fts_docsize"),
+        ("table", "percept_memory_fts_idx", "percept_memory_fts_idx"),
+        ("table", "percept_memory_metadata", "percept_memory_metadata"),
+        ("table", "percept_memory_records", "percept_memory_records"),
+        ("trigger", "percept_memory_records_ad", "percept_memory_records"),
+        ("trigger", "percept_memory_records_ai", "percept_memory_records"),
+        ("trigger", "percept_memory_records_au", "percept_memory_records"),
     }
 )
 
@@ -2782,6 +2798,7 @@ def initialize_compiled_scenario(
 
     if not isinstance(scenario, CompiledSituatedScenario):
         raise TypeError("compiled scenario initialization requires CompiledSituatedScenario")
+    _preflight_compiled_scenario_database(database_path)
     index_report = initialize_situated_percept_memory(database_path)
     if index_report.record_count != 0:
         raise ValueError(
@@ -2801,6 +2818,63 @@ def initialize_compiled_scenario(
         scenario.initial_cognitive_state,
         scenario.initial_social_state,
     )
+
+
+def _preflight_compiled_scenario_database(database_path: str | Path) -> None:
+    if isinstance(database_path, Path):
+        path = database_path
+    elif isinstance(database_path, str) and database_path.strip():
+        path = Path(database_path)
+    else:
+        raise ValueError("compiled scenario database path must be non-empty")
+    folded = str(path).casefold().replace(" ", "")
+    if str(path) == ":memory:" or (
+        folded.startswith("file:") and "mode=memory" in folded
+    ):
+        raise ValueError("compiled scenario initialization requires a file-backed database")
+    if not path.exists():
+        return
+
+    connection = None
+    try:
+        connection = sqlite3.connect(
+            path.resolve(strict=True).as_uri() + "?mode=ro",
+            uri=True,
+        )
+        connection.execute("PRAGMA query_only = ON")
+        schema_objects = frozenset(
+            connection.execute(
+                "SELECT type, name, tbl_name FROM sqlite_master "
+                "WHERE name NOT LIKE 'sqlite_%'"
+            ).fetchall()
+        )
+        if not schema_objects:
+            return
+        if schema_objects != _CANONICAL_PERCEPT_MEMORY_SCHEMA_OBJECTS:
+            raise ValueError(
+                "compiled scenario initialization rejected a noncanonical database schema"
+            )
+        metadata = tuple(
+            connection.execute(
+                "SELECT key, value FROM percept_memory_metadata ORDER BY key"
+            ).fetchall()
+        )
+        record_count = connection.execute(
+            "SELECT COUNT(*) FROM percept_memory_records"
+        ).fetchone()[0]
+        if metadata != (("schema_version", "1"),) or record_count != 0:
+            raise ValueError(
+                "compiled scenario initialization requires the canonical empty percept-memory store"
+            )
+    except ValueError:
+        raise
+    except (OSError, sqlite3.Error) as error:
+        raise ValueError(
+            "compiled scenario initialization rejected a noncanonical database schema"
+        ) from error
+    finally:
+        if connection is not None:
+            connection.close()
 
 
 __all__ = (
