@@ -1580,6 +1580,25 @@ helps with paraphrases and synonyms. V16 does not yet add embeddings/vector sear
 open-world predicates, free-form action creation, or direct model mutation of the
 world or agent state.
 
+### V17 deterministic narrative projection
+
+V17 turns accepted world, cognitive, and social history into deterministic beats,
+scenes, and a cut. It supports objective authority, one-agent limited POV, and a
+declared multi-POV cut. Limited POV uses only sanitized percepts and private
+cognitive, memory, claim, and relationship state owned by that POV agent; objective
+projection may carry those private records for multiple owners, but keeps every
+record private and owner-tagged.
+
+Chronological projection preserves accepted event time. Authored order can present
+flashbacks, while each beat retains its original round and sequence instead of
+rewriting history to place causes beside effects. A cut's scene IDs and each
+scene's beat IDs define the one canonical presentation order; the top-level scene
+and beat tuples follow that same order. An undisclosed percept location is `None`
+and starts its own scene, while an actual world place whose ID is `undisclosed`
+retains normal known-place grouping. The result is a content-addressed
+truth-and-entitlement packet for V18: it is not generated prose, and it does not
+mutate the world or any agent state.
+
 ## Verification
 
 GitHub Actions runs:

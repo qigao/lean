@@ -377,6 +377,22 @@ from narrative_dynamics.abm.situated_grounding import (
     replay_situated_semantic_grounding,
     validate_situated_semantic_grounding_artifact,
 )
+from narrative_dynamics.abm.situated_projection_contracts import (
+    NarrativeAuthority,
+    NarrativeBeat,
+    NarrativeBeatKind,
+    NarrativeBeatPhase,
+    NarrativeCut,
+    NarrativeEntitlement,
+    NarrativeEntitlementScope,
+    NarrativeFact,
+    NarrativeProjection,
+    NarrativeProjectionPolicy,
+    NarrativeScene,
+    NarrativeSupportRef,
+    NarrativeTemporalOrder,
+)
+from narrative_dynamics.abm.situated_projection import project_situated_narrative
 
 
 __all__ = (
@@ -668,4 +684,18 @@ __all__ = (
     "compile_situated_semantic_grounding",
     "replay_situated_semantic_grounding",
     "grounded_claims_to_situated_social_evidence",
+    "NarrativeAuthority",
+    "NarrativeTemporalOrder",
+    "NarrativeBeatKind",
+    "NarrativeBeatPhase",
+    "NarrativeEntitlementScope",
+    "NarrativeSupportRef",
+    "NarrativeFact",
+    "NarrativeEntitlement",
+    "NarrativeProjectionPolicy",
+    "NarrativeBeat",
+    "NarrativeScene",
+    "NarrativeCut",
+    "NarrativeProjection",
+    "project_situated_narrative",
 )
