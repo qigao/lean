@@ -159,6 +159,32 @@ class SituatedSpatialMapTests(unittest.TestCase):
         self.assertEqual(first_map.content_hash, second_map.content_hash)
         self.assertEqual(first_map, second_map)
 
+    def test_tiled_import_accumulates_group_and_object_layer_pixel_offsets(self):
+        document = tiled_document()
+        document["layers"][0]["offsetx"] = -10
+        document["layers"][0]["offsety"] = 5
+        document["layers"][1]["offsetx"] = 10
+        document["layers"][1]["offsety"] = 20
+        nested = document["layers"][1]["layers"][0]
+        nested["offsetx"] = 5
+        nested["offsety"] = -5
+        path = self.write_map("offset-office.tmj", document)
+
+        spatial = load_tiled_situated_spatial_map(
+            path,
+            self.world,
+            meters_per_pixel=0.1,
+        )
+
+        meeting = next(
+            item for item in spatial.places if item.place_id == "meeting"
+        )
+        self.assertEqual((meeting.center_x, meeting.center_y), (13.0, -8.5))
+        self.assertEqual(
+            (spatial.passages[0].center_x, spatial.passages[0].center_y),
+            (11.5, -8.5),
+        )
+
     def test_spatial_map_rejects_missing_world_place(self):
         corridor = SpatialPlace("corridor", 0.0, 0.0, 6.0, 6.0, 2.8)
         door = SpatialPassage(

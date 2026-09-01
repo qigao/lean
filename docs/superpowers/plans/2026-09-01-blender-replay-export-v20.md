@@ -166,11 +166,11 @@ Expected: import failure for the export report/function.
 
 - [ ] **Step 3: Implement the standalone `bpy` scene builder**
 
-Parse `--input` and `--output` after Blender's `--`. Reset scene data; create map, agent, label, and event collections; generate gray place/door primitives and procedural stick figures; add actor-location and door-state keyframes; add event timeline markers, source custom properties, overview camera/light, and linear movement interpolation; save with `bpy.ops.wm.save_as_mainfile`.
+Parse `--input` and `--output` after Blender's `--`. Reset scene data; create map, agent, label, and event collections; generate gray place/door primitives and procedural stick figures; add actor-location and door-state keyframes; add event timeline markers, source custom properties, overview camera/light, linear movement interpolation, and constant interpolation for door/discrete state curves; save with `bpy.ops.wm.save_as_mainfile`.
 
 - [ ] **Step 4: Implement guarded subprocess execution and atomic publish**
 
-Validate executable/output/timeout, compile before launch, write a canonical temporary packet, run Blender with `--background --factory-startup --python-exit-code 21 --python ... -- --input ... --output ...`, bound captured output, save uncompressed, require zero exit and `BLENDER` header, then `os.replace` the staged file. Return stable report metadata and redact subprocess details from public errors.
+Validate executable/output/timeout, compile before launch, write a canonical temporary packet, run Blender with `--background --factory-startup --python-exit-code 21 --python ... -- --input ... --output ...`, enforce a one-megabyte combined-output limit, save uncompressed, require zero exit and `BLENDER` header, then `os.replace` the staged file. Return stable report metadata and redact subprocess details from public errors.
 
 - [ ] **Step 5: Export APIs and document the office command**
 
@@ -178,7 +178,7 @@ Export spatial values from `narrative_dynamics.abm`; export Blender values from 
 
 - [ ] **Step 6: Run real Blender smoke verification**
 
-Run the focused Python exporter test with `C:\Program Files\Blender Foundation\Blender 5.1\blender.exe`, then reopen the result headlessly with a verification script that asserts `ND_Map`, `ND_Agents`, agent keyframes, timeline markers, and source custom properties.
+Run the focused Python exporter test with `C:\Program Files\Blender Foundation\Blender 5.1\blender.exe`, then reopen the result headlessly with a verification script that asserts `ND_Map`, `ND_Agents`, exact agent keyframe frames, constant/linear interpolation boundaries, passage animation, timeline markers, and source custom properties.
 
 Expected: both Blender processes exit zero and the real output begins with `BLENDER`.
 

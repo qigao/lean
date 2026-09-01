@@ -1985,8 +1985,9 @@ print(report.replay_hash)
 
 The Tiled map must be orthogonal JSON. Plain rectangle objects classified as `place`
 or `passage` use their object `name` as the matching world place/passage ID; the map
-must cover every world place and passage exactly once. Omitting `spatial_map` selects
-a deterministic grid layout, so physical coordinates are optional. The exporter runs
+must cover every world place and passage exactly once. Group and object-layer pixel
+offsets are inherited. Omitting `spatial_map` selects a deterministic grid layout, so
+physical coordinates are optional. The exporter runs
 Blender headlessly, stages the result, validates its `.blend` header, and atomically
 replaces the requested output only after success. It exports no message payloads,
 private details, database paths, renderer output, video, player, or Blender add-on.

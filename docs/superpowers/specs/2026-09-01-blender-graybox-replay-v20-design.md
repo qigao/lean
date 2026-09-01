@@ -33,7 +33,7 @@ The temporary JSON packet is an internal process boundary, not a second user wor
 - Paths, source JSON byte order, Tiled object IDs, layer ordering, and pixel units do not enter the canonical map hash.
 - When no authored geometry is supplied, `auto_layout_situated_spatial_map` assigns lexicographically sorted places to a deterministic square grid and places each passage at the midpoint of its endpoint centres.
 
-V20 initially imports orthogonal Tiled JSON object layers. Rectangle objects whose `class` or legacy `type` is `place` or `passage` use their non-empty `name` as the corresponding simulation ID. Tiled's pixel coordinates are converted to metres and its downward Y axis is inverted for Blender's Z-up world. Tile layers, image layers, rotated objects, polygons, ellipses, points, and arbitrary embedded scripts/assets are ignored or rejected rather than guessed.
+V20 initially imports orthogonal Tiled JSON object layers. Rectangle objects whose `class` or legacy `type` is `place` or `passage` use their non-empty `name` as the corresponding simulation ID. Tiled's pixel coordinates plus inherited group/object-layer pixel offsets are converted to metres and its downward Y axis is inverted for Blender's Z-up world. Nonzero tile-coordinate layer offsets, tile layers, image layers, rotated objects, polygons, ellipses, points, and arbitrary embedded scripts/assets are ignored or rejected rather than guessed.
 
 ## Replay packet
 
@@ -49,7 +49,7 @@ V20 initially imports orthogonal Tiled JSON object layers. Rectangle objects who
 - sanitized V19 transmissions with observer, source, fidelity, and channels;
 - declared V19 node belief probability and active-claim count per actor state.
 
-The packet never includes TELL message text, event details, memory rows, prompts, LLM output, private evidence, or database paths. Movement is reconstructed only from validated world states; the Blender adapter may interpolate between state positions but cannot invent a new destination or event.
+The packet never includes TELL message text, event details, memory rows, prompts, LLM output, private evidence, or database paths. Every runtime state's network snapshot and emergence metrics are recomputed and compared with the stored values. Movement is reconstructed directly from those validated story world states; the Blender adapter may interpolate between state positions but cannot invent a new destination or event.
 
 ## Generated `.blend`
 
@@ -60,7 +60,7 @@ The headless Blender script creates:
 - `ND_Labels`: place and agent text labels;
 - timeline markers for every objective event;
 - keyframes for actor root locations and passage open/closed rotation;
-- stable scene frame range and linear actor location interpolation;
+- stable scene frame range, linear actor location interpolation, and constant interpolation for passage and discrete cognitive/social state curves;
 - custom properties on the scene and generated objects containing source IDs and hashes;
 - one neutral world, sun light, and overview camera so the file opens in a useful state.
 
@@ -88,13 +88,13 @@ If `spatial_map` is omitted, the export uses deterministic auto-layout. The Blen
 
 - Validate all Python inputs and compile the complete packet before launching Blender.
 - Write the packet and staged `.blend` under one temporary directory.
-- Run with Blender's `--python-exit-code` so scene-script exceptions become nonzero process exits. Capture bounded Blender stdout/stderr and raise one redacted `BlenderExportError` on missing executables, timeouts, nonzero exit, missing staged output, or invalid output header.
+- Run with Blender's `--python-exit-code` so scene-script exceptions become nonzero process exits. Consume combined Blender stdout/stderr with a one-megabyte hard limit and raise one redacted `BlenderExportError` on missing executables, timeouts, excessive output, nonzero exit, missing staged output, or invalid output header.
 - Publish with an atomic same-filesystem `os.replace` only after successful validation.
 - Never include TELL messages, API keys, temporary packet contents, or environment values in representations or error messages.
 
 ## Verification
 
-Pure Python tests cover map validation, path-independent Tiled import, deterministic auto-layout, exact replay frames, movement, door states, sanitized transmission export, and secret absence. A subprocess protocol test verifies staging/publication/failure behavior. The explicit Blender 5.1 path supplied for this workspace runs a real smoke test that opens the generated file through Blender and inspects expected collections, keyframes, and source properties before completion is claimed.
+Pure Python tests cover map validation, inherited Tiled offsets, path-independent import, deterministic auto-layout, exact replay frames, authority rejection, movement, door states, sanitized transmission export, and secret absence. Subprocess protocol tests verify staging, bounded output, publication, and failure behavior. The explicit Blender 5.1 path supplied for this workspace runs a real smoke test that opens the generated file through Blender and inspects expected collections, exact keyframe frames, interpolation modes, and source properties before completion is claimed.
 
 ## Non-goals
 

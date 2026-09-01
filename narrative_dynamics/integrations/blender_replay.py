@@ -9,11 +9,16 @@ import os
 from pathlib import Path
 import subprocess
 from tempfile import TemporaryDirectory
+from threading import Event, Thread
 
 from narrative_dynamics.contracts import stable_content_hash
 from narrative_dynamics.abm.situated_network_contracts import (
     SituatedNetworkRuntimeModel,
     SituatedNetworkTrajectory,
+)
+from narrative_dynamics.abm.situated_network import (
+    measure_situated_network_emergence,
+    project_situated_network_snapshot,
 )
 from narrative_dynamics.abm.situated_spatial_map_contracts import (
     SituatedSpatialMap,
@@ -24,6 +29,7 @@ from narrative_dynamics.abm.situated_spatial_map import (
 
 
 _SCHEMA = "narrative-dynamics.situated-blend-replay/v1"
+_BLENDER_OUTPUT_LIMIT_BYTES = 1024 * 1024
 _COLORS = (
     (0.22, 0.55, 0.95, 1.0),
     (0.95, 0.42, 0.28, 1.0),
@@ -86,8 +92,8 @@ def _runtime_states(trajectory: SituatedNetworkTrajectory) -> tuple[object, ...]
 
 def _state_positions(state: object, centers: dict[str, tuple[float, float]]) -> dict[str, list[float]]:
     by_place: dict[str, list[str]] = {}
-    for node in state.snapshot.nodes:
-        by_place.setdefault(node.place_id, []).append(node.agent_id)
+    for body in state.story.current_state.agents:
+        by_place.setdefault(body.place_id, []).append(body.agent_id)
     positions: dict[str, list[float]] = {}
     for place_id, agent_ids in sorted(by_place.items()):
         ordered = sorted(agent_ids)
@@ -121,6 +127,28 @@ def compile_situated_blend_replay(
         raise ValueError("Blender replay spatial map must bind the exact world model")
 
     states = _runtime_states(trajectory)
+    authoritative_snapshots = []
+    for state in states:
+        snapshot = project_situated_network_snapshot(
+            model,
+            state.story,
+            state.cognitive_state,
+            state.social_state,
+        )
+        if state.snapshot != snapshot:
+            raise ValueError(
+                "Blender replay state must contain the authoritative snapshot"
+            )
+        metrics = measure_situated_network_emergence(
+            model,
+            snapshot,
+            state.social_state,
+        )
+        if state.metrics != metrics:
+            raise ValueError(
+                "Blender replay state must contain the authoritative metrics"
+            )
+        authoritative_snapshots.append(snapshot)
     frame_by_position = tuple(1 + index * step for index in range(len(states)))
     centers = {
         item.place_id: (item.center_x, item.center_y)
@@ -131,8 +159,13 @@ def compile_situated_blend_replay(
     actors = []
     for color_index, agent_id in enumerate(sorted(agent_specs)):
         actor_states = []
-        for state, frame, state_positions in zip(states, frame_by_position, positions):
-            node = next(item for item in state.snapshot.nodes if item.agent_id == agent_id)
+        for state, snapshot, frame, state_positions in zip(
+            states,
+            authoritative_snapshots,
+            frame_by_position,
+            positions,
+        ):
+            node = next(item for item in snapshot.nodes if item.agent_id == agent_id)
             actor_states.append(
                 {
                     "round_index": state.round_index,
@@ -264,6 +297,59 @@ def _timeout(value: object) -> float:
     return float(value)
 
 
+def _run_blender(command: tuple[str, ...], timeout: float) -> int:
+    process = subprocess.Popen(
+        command,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    if process.stdout is None:
+        process.kill()
+        process.wait()
+        raise BlenderExportError("Blender export process failed")
+    exceeded = Event()
+    read_failed = Event()
+
+    def consume_output() -> None:
+        consumed = 0
+        try:
+            while True:
+                chunk = process.stdout.read(64 * 1024)
+                if not chunk:
+                    return
+                consumed += len(chunk)
+                if consumed > _BLENDER_OUTPUT_LIMIT_BYTES:
+                    exceeded.set()
+                    if process.poll() is None:
+                        process.kill()
+                    return
+        except OSError:
+            read_failed.set()
+            if process.poll() is None:
+                process.kill()
+
+    reader = Thread(target=consume_output, name="blender-output", daemon=True)
+    reader.start()
+    try:
+        return_code = process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+        process.stdout.close()
+        reader.join(timeout=1.0)
+        raise BlenderExportError("Blender export process failed") from None
+    reader.join(timeout=1.0)
+    if reader.is_alive():
+        process.stdout.close()
+        reader.join(timeout=1.0)
+    else:
+        process.stdout.close()
+    if exceeded.is_set() or read_failed.is_set() or reader.is_alive():
+        raise BlenderExportError("Blender export process failed")
+    return return_code
+
+
 def export_situated_network_blend(
     blender_executable: str | os.PathLike[str],
     output_path: str | os.PathLike[str],
@@ -312,7 +398,6 @@ def export_situated_network_blend(
             root = Path(temporary)
             packet_path = root / "replay.json"
             staged_path = root / "scene.blend"
-            log_path = root / "blender.log"
             packet_path.write_text(
                 json.dumps(
                     packet,
@@ -336,16 +421,7 @@ def export_situated_network_blend(
                 "--output",
                 str(staged_path),
             )
-            with log_path.open("wb") as log:
-                completed = subprocess.run(
-                    command,
-                    stdin=subprocess.DEVNULL,
-                    stdout=log,
-                    stderr=subprocess.STDOUT,
-                    check=False,
-                    timeout=timeout,
-                )
-            if completed.returncode != 0:
+            if _run_blender(command, timeout) != 0:
                 raise BlenderExportError("Blender export process failed")
             if not staged_path.is_file():
                 raise BlenderExportError("Blender export did not produce a scene")

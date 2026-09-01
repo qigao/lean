@@ -91,6 +91,14 @@ def _animation_curves(obj):
     return tuple(curves)
 
 
+def _set_curve_interpolation(obj, data_path: str, interpolation: str) -> None:
+    for curve in _animation_curves(obj):
+        if curve.data_path != data_path:
+            continue
+        for keyframe in curve.keyframe_points:
+            keyframe.interpolation = interpolation
+
+
 def _stick_figure(bpy, collection, actor, material):
     root = bpy.data.objects.new(f"Agent::{actor['agent_id']}", None)
     root.empty_display_type = "PLAIN_AXES"
@@ -166,6 +174,7 @@ def build_scene(packet: dict[str, object], output_path: Path) -> None:
         for state in passage["states"]:
             door.rotation_euler[2] = math.pi / 2.0 if state["open"] else 0.0
             door.keyframe_insert(data_path="rotation_euler", index=2, frame=state["frame"])
+        _set_curve_interpolation(door, "rotation_euler", "CONSTANT")
 
     for actor in packet["actors"]:
         material = _material(bpy, f"AgentMaterial::{actor['agent_id']}", actor["color"])
@@ -188,17 +197,23 @@ def build_scene(packet: dict[str, object], output_path: Path) -> None:
             root.keyframe_insert(data_path="location", frame=state["frame"])
             root.keyframe_insert(data_path='["nd_belief_probability"]', frame=state["frame"])
             root.keyframe_insert(data_path='["nd_active_claim_count"]', frame=state["frame"])
+        _set_curve_interpolation(root, "location", "LINEAR")
+        _set_curve_interpolation(
+            root,
+            '["nd_belief_probability"]',
+            "CONSTANT",
+        )
+        _set_curve_interpolation(
+            root,
+            '["nd_active_claim_count"]',
+            "CONSTANT",
+        )
 
     for event in packet["events"]:
         scene.timeline_markers.new(
             f"{event['kind']}::{event['actor_agent_id']}::{event['event_id']}",
             frame=event["frame"],
         )
-
-    for obj in bpy.data.objects:
-        for curve in _animation_curves(obj):
-            for keyframe in curve.keyframe_points:
-                keyframe.interpolation = "LINEAR"
 
     scene.frame_start = packet["first_frame"]
     scene.frame_end = packet["last_frame"]

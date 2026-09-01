@@ -35,24 +35,53 @@ def _number(value: object, *, label: str) -> float:
     return float(value)
 
 
-def _object_layers(layers: object) -> tuple[dict[str, object], ...]:
+def _object_layers(
+    layers: object,
+    *,
+    parent_offset_x: float = 0.0,
+    parent_offset_y: float = 0.0,
+) -> tuple[tuple[dict[str, object], float, float], ...]:
     if not isinstance(layers, list):
         raise ValueError("Tiled map layers must be an array")
-    found: list[dict[str, object]] = []
+    found: list[tuple[dict[str, object], float, float]] = []
     for layer in layers:
         if not isinstance(layer, dict):
             raise ValueError("Tiled map layers must contain objects")
+        for axis in ("x", "y"):
+            if _number(
+                layer.get(axis, 0.0),
+                label=f"Tiled layer {axis} offset",
+            ) != 0.0:
+                raise ValueError(
+                    "Tiled spatial layers do not support tile-coordinate offsets"
+                )
+        offset_x = parent_offset_x + _number(
+            layer.get("offsetx", 0.0),
+            label="Tiled layer pixel x offset",
+        )
+        offset_y = parent_offset_y + _number(
+            layer.get("offsety", 0.0),
+            label="Tiled layer pixel y offset",
+        )
         layer_type = layer.get("type")
         if layer_type == "objectgroup":
-            found.append(layer)
+            found.append((layer, offset_x, offset_y))
         elif layer_type == "group":
-            found.extend(_object_layers(layer.get("layers")))
+            found.extend(
+                _object_layers(
+                    layer.get("layers"),
+                    parent_offset_x=offset_x,
+                    parent_offset_y=offset_y,
+                )
+            )
     return tuple(found)
 
 
-def _classified_rectangles(document: dict[str, object]) -> tuple[dict[str, object], ...]:
-    selected: list[dict[str, object]] = []
-    for layer in _object_layers(document.get("layers")):
+def _classified_rectangles(
+    document: dict[str, object],
+) -> tuple[tuple[dict[str, object], float, float], ...]:
+    selected: list[tuple[dict[str, object], float, float]] = []
+    for layer, offset_x, offset_y in _object_layers(document.get("layers")):
         objects = layer.get("objects")
         if not isinstance(objects, list):
             raise ValueError("Tiled object layer objects must be an array")
@@ -69,7 +98,7 @@ def _classified_rectangles(document: dict[str, object]) -> tuple[dict[str, objec
                 for key in ("polygon", "polyline", "ellipse", "point", "gid")
             ):
                 raise ValueError("Tiled spatial objects must be plain rectangles")
-            selected.append(item)
+            selected.append((item, offset_x, offset_y))
     return tuple(selected)
 
 
@@ -96,13 +125,13 @@ def load_tiled_situated_spatial_map(
     world_passages = {item.passage_id: item for item in world_model.passages}
     places: list[SpatialPlace] = []
     passages: list[SpatialPassage] = []
-    for item in _classified_rectangles(decoded):
+    for item, offset_x, offset_y in _classified_rectangles(decoded):
         classification = item.get("class") or item.get("type")
         identity = item.get("name")
         if not isinstance(identity, str) or not identity.strip():
             raise ValueError("Tiled spatial object name must be a non-empty world id")
-        x = _number(item.get("x"), label="Tiled object x")
-        y = _number(item.get("y"), label="Tiled object y")
+        x = _number(item.get("x"), label="Tiled object x") + offset_x
+        y = _number(item.get("y"), label="Tiled object y") + offset_y
         width = _positive(item.get("width"), label="Tiled object width")
         depth = _positive(item.get("height"), label="Tiled object height")
         center_x = (x + width / 2.0) * scale

@@ -1,5 +1,6 @@
 import json
 import os
+from dataclasses import replace
 from pathlib import Path
 import shlex
 import subprocess
@@ -35,6 +36,8 @@ def write_fake_blender(root: Path, *, mode: str = "success") -> Path:
         "success": "",
         "fail": "--fake-fail",
         "invalid": "--fake-invalid",
+        "noisy": "--fake-noisy",
+        "missing": "--fake-missing",
     }[mode]
     if os.name == "nt":
         path = root / f"fake-blender-{mode}.cmd"
@@ -174,6 +177,58 @@ class BlenderReplayCompilationTests(unittest.TestCase):
                 unrelated,
             )
 
+    def test_replay_rejects_snapshot_positions_that_contradict_story(self):
+        states = [self.trajectory.initial_state] + [
+            item.next_state for item in self.trajectory.rounds
+        ]
+        first = states[0]
+        place_ids = [item.place_id for item in self.world.places]
+        forged_nodes = tuple(
+            replace(
+                node,
+                place_id=next(
+                    place_id for place_id in place_ids if place_id != node.place_id
+                ),
+            )
+            for node in first.snapshot.nodes
+        )
+        forged_snapshot = replace(first.snapshot, nodes=forged_nodes)
+        forged_metrics = replace(
+            first.metrics,
+            snapshot_hash=forged_snapshot.content_hash,
+        )
+        forged_states = [
+            replace(first, snapshot=forged_snapshot, metrics=forged_metrics)
+        ]
+        for state in states[1:]:
+            forged_states.append(
+                replace(
+                    state,
+                    parent_state_hash=forged_states[-1].content_hash,
+                )
+            )
+        forged_rounds = tuple(
+            replace(
+                item,
+                prior_state=forged_states[index],
+                next_state=forged_states[index + 1],
+            )
+            for index, item in enumerate(self.trajectory.rounds)
+        )
+        forged = replace(
+            self.trajectory,
+            initial_state=forged_states[0],
+            rounds=forged_rounds,
+            final_state=forged_states[-1],
+        )
+
+        with self.assertRaisesRegex(ValueError, "authoritative snapshot"):
+            compile_situated_blend_replay(
+                self.model,
+                forged,
+                self.spatial,
+            )
+
     def test_export_stages_packet_and_atomically_publishes_blend(self):
         output = self.root / "office.blend"
 
@@ -213,6 +268,36 @@ class BlenderReplayCompilationTests(unittest.TestCase):
         with self.assertRaises(BlenderExportError):
             export_situated_network_blend(
                 write_fake_blender(self.root, mode="invalid"),
+                output,
+                self.model,
+                self.trajectory,
+                self.spatial,
+            )
+
+        self.assertEqual(output.read_bytes(), b"BLENDER-PRIOR")
+
+    def test_excessive_blender_output_preserves_existing_output(self):
+        output = self.root / "office.blend"
+        output.write_bytes(b"BLENDER-PRIOR")
+
+        with self.assertRaises(BlenderExportError):
+            export_situated_network_blend(
+                write_fake_blender(self.root, mode="noisy"),
+                output,
+                self.model,
+                self.trajectory,
+                self.spatial,
+            )
+
+        self.assertEqual(output.read_bytes(), b"BLENDER-PRIOR")
+
+    def test_missing_blender_output_preserves_existing_output(self):
+        output = self.root / "office.blend"
+        output.write_bytes(b"BLENDER-PRIOR")
+
+        with self.assertRaises(BlenderExportError):
+            export_situated_network_blend(
+                write_fake_blender(self.root, mode="missing"),
                 output,
                 self.model,
                 self.trajectory,
