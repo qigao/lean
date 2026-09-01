@@ -23,6 +23,7 @@ from narrative_dynamics.abm.scenario_authoring_contracts import (
 from narrative_dynamics.abm.scenario_compiler import (
     ScenarioCompilationError,
     _compile_situated_scenario_components,
+    compile_situated_scenario_package,
 )
 from narrative_dynamics.abm.scenario_package import load_situated_scenario_package
 from narrative_dynamics.abm.situated import (
@@ -1261,6 +1262,50 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
             compiled["integer"].raw_source_document_hashes,
             sources["integer"].raw_document_hashes,
         )
+
+    def test_compiled_identity_normalizes_large_integer_float_runtime_equivalents(self):
+        integer_root = write_law_firm_package(self.root / "large-integer")
+        float_root = write_law_firm_package(self.root / "large-float")
+        mutate_json(
+            integer_root / "physical/map.tmj",
+            "/layers/0/objects/0/x",
+            9007199254740993,
+        )
+        mutate_json(
+            float_root / "physical/map.tmj",
+            "/layers/0/objects/0/x",
+            9007199254740993.0,
+        )
+        refresh_manifest_hash(integer_root, "physical.map", "map")
+        refresh_manifest_hash(float_root, "physical.map", "map")
+
+        integer = compile_situated_scenario_package(
+            load_situated_scenario_package(integer_root)
+        )
+        floating = compile_situated_scenario_package(
+            load_situated_scenario_package(float_root)
+        )
+
+        self.assertEqual(integer.spatial_map, floating.spatial_map)
+        self.assertEqual(integer.package_hash, floating.package_hash)
+        self.assertEqual(integer.content_hash, floating.content_hash)
+        self.assertEqual(integer, floating)
+        self.assertNotEqual(integer.raw_manifest_hash, floating.raw_manifest_hash)
+
+    def test_compiled_identity_keeps_large_integer_only_values_distinct(self):
+        first_root = write_law_firm_package(self.root / "integer-only-first")
+        second_root = write_law_firm_package(self.root / "integer-only-second")
+        mutate_json(first_root / "run.json", "/maximum_rounds", 9007199254740992)
+        mutate_json(second_root / "run.json", "/maximum_rounds", 9007199254740993)
+        refresh_manifest_hash(first_root, "run", "run")
+        refresh_manifest_hash(second_root, "run", "run")
+
+        first = compile_situated_scenario_package(load_situated_scenario_package(first_root))
+        second = compile_situated_scenario_package(load_situated_scenario_package(second_root))
+
+        self.assertNotEqual(first.run_policy.maximum_rounds, second.run_policy.maximum_rounds)
+        self.assertNotEqual(first.package_hash, second.package_hash)
+        self.assertNotEqual(first.content_hash, second.content_hash)
 
     def test_compiled_identity_ignores_all_semantically_unordered_source_order(self) -> None:
         baseline = self.compile_fixture("canonical-order")

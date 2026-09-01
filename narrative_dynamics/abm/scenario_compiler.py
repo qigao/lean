@@ -230,6 +230,42 @@ _SEMANTICALLY_ORDERED_ARRAY_PATHS: Mapping[
 }
 
 
+_SEMANTIC_INTEGER_PATHS = {
+    ScenarioDocumentRole.AGENT: frozenset({
+        ("body", "inventory_capacity"),
+        ("memory", "recall", "cues", "*", "limit"),
+        ("memory", "recall", "max_memories_per_round"),
+    }),
+    ScenarioDocumentRole.SOCIAL_RELATIONSHIPS: frozenset({
+        ("policy", "max_unresolved_age_rounds"),
+        ("policy", "max_active_claims"),
+    }),
+    ScenarioDocumentRole.SOCIAL_NORMS: frozenset({
+        ("norms", "*", "priority"),
+    }),
+    ScenarioDocumentRole.STORY_OUTLINE: frozenset({
+        ("scenes", "*", "maximum_rounds"),
+    }),
+    ScenarioDocumentRole.RUN: frozenset({
+        ("deterministic_seed",),
+        ("maximum_rounds",),
+        ("checkpoint_interval",),
+        ("maximum_output_records",),
+        ("maximum_resource_bytes",),
+    }),
+}
+
+
+def _semantic_path_matches(
+    path: tuple[str, ...],
+    pattern: tuple[str, ...],
+) -> bool:
+    return len(path) == len(pattern) and all(
+        expected == "*" or expected == actual
+        for actual, expected in zip(path, pattern)
+    )
+
+
 def _semantic_source_value(
     value: object,
     *,
@@ -252,11 +288,14 @@ def _semantic_source_value(
         if path in ordered_paths:
             return normalized
         return tuple(sorted(normalized, key=stable_content_hash))
-    if isinstance(value, float):
-        if value == 0.0:
-            return 0
-        if value.is_integer():
-            return int(value)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        integer_paths = _SEMANTIC_INTEGER_PATHS.get(role, frozenset())
+        if any(_semantic_path_matches(path, item) for item in integer_paths):
+            return value
+        result = float(value)
+        if result == 0.0:
+            result = 0.0
+        return result
     return value
 
 
