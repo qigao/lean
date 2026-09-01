@@ -11,11 +11,27 @@ from enum import Enum
 import math
 import re
 
+from narrative_dynamics.abm.situated_social_memory_contracts import SituatedClaimStatus
+
 
 _CONTENT_HASH = re.compile(r"^sha256:[0-9a-f]{64}$")
 _MAX_URI_LENGTH = 2048
 _MAX_METADATA_LENGTH = 256
 _MAX_DESCRIPTIVE_TEXT_LENGTH = 2048
+_OUTPUT_KINDS = frozenset({
+    "state.delta",
+    "event.objective",
+    "percept.private",
+    "agent.decision",
+    "memory.update",
+    "social.update",
+    "network.metrics",
+    "story.progress",
+    "narrative.scene",
+    "blender.delta",
+    "command.result",
+    "diagnostic",
+})
 
 
 def _text(value: object, label: str, *, maximum: int = _MAX_METADATA_LENGTH) -> str:
@@ -31,6 +47,8 @@ def _optional_text(value: object, label: str, *, maximum: int = _MAX_METADATA_LE
 
 
 def _identifier_tuple(values: object, label: str, *, ordered: bool = False) -> tuple[str, ...]:
+    if isinstance(values, (str, bytes)):
+        raise TypeError(f"{label} must be a tuple of IDs")
     try:
         result = tuple(values)  # type: ignore[arg-type]
     except TypeError as error:
@@ -282,8 +300,10 @@ class ScenarioPredicate:
             if self.object_id is None:
                 raise ValueError("belief_at_least predicate requires object ID")
         elif kind is ScenarioPredicateKind.CLAIM_STATUS:
-            if self.object_id is None or not isinstance(self.value, str) or not self.value.strip():
+            if self.object_id is None:
                 raise ValueError("claim_status predicate requires object ID and status value")
+            object.__setattr__(self, "value", _as_enum(
+                self.value, SituatedClaimStatus, "claim_status predicate status"))
         elif kind is ScenarioPredicateKind.RELATIONSHIP_AT_LEAST:
             if self.object_id is None:
                 raise ValueError("relationship_at_least predicate requires object ID")
@@ -325,9 +345,9 @@ class ScenarioSceneContract:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "scene_id", _text(self.scene_id, "scene ID"))
-        object.__setattr__(self, "place_ids", _identifier_tuple(self.place_ids, "scene place", ordered=True))
+        object.__setattr__(self, "place_ids", _identifier_tuple(self.place_ids, "scene place"))
         object.__setattr__(self, "participant_agent_ids", _identifier_tuple(
-            self.participant_agent_ids, "scene participant agent", ordered=True))
+            self.participant_agent_ids, "scene participant agent"))
         preconditions = tuple(self.preconditions)
         exit_predicates = tuple(self.exit_predicates)
         if any(not isinstance(value, ScenarioPredicate) for value in preconditions + exit_predicates):
@@ -335,9 +355,9 @@ class ScenarioSceneContract:
         object.__setattr__(self, "preconditions", preconditions)
         object.__setattr__(self, "exit_predicates", exit_predicates)
         object.__setattr__(self, "allowed_intervention_kinds", _identifier_tuple(
-            self.allowed_intervention_kinds, "scene intervention kind", ordered=True))
+            self.allowed_intervention_kinds, "scene intervention kind"))
         object.__setattr__(self, "desired_outcome_ids", _identifier_tuple(
-            self.desired_outcome_ids, "scene desired outcome", ordered=True))
+            self.desired_outcome_ids, "scene desired outcome"))
         object.__setattr__(self, "maximum_rounds", _positive_int(self.maximum_rounds, "scene maximum rounds"))
 
 
@@ -405,11 +425,11 @@ class ScenarioStoryPlan:
         if self.mode is ScenarioExecutionMode.AUTHORED and not scenes:
             raise ValueError("authored story plan requires a scene")
         object.__setattr__(self, "acts", acts)
-        object.__setattr__(self, "scenes", scenes)
+        object.__setattr__(self, "scenes", tuple(sorted(scenes, key=lambda item: item.scene_id)))
         object.__setattr__(self, "dependencies", tuple(sorted(dependencies, key=lambda item: (
             item.predecessor_scene_id, item.successor_scene_id))))
-        object.__setattr__(self, "continuity_predicates", continuity)
-        object.__setattr__(self, "terminal_predicates", terminal)
+        object.__setattr__(self, "continuity_predicates", tuple(sorted(continuity, key=_predicate_key)))
+        object.__setattr__(self, "terminal_predicates", tuple(sorted(terminal, key=_predicate_key)))
 
 
 class ScenarioResourceKind(str, Enum):
@@ -419,6 +439,16 @@ class ScenarioResourceKind(str, Enum):
     AUDIO = "audio"
     VIDEO = "video"
     MODEL_3D = "model_3d"
+
+
+def _predicate_key(predicate: ScenarioPredicate) -> tuple[str, str, str, str, str]:
+    return (
+        predicate.kind.value,
+        predicate.subject_id,
+        predicate.object_id or "",
+        type(predicate.value).__name__,
+        repr(predicate.value),
+    )
 
 
 def _resource_values(resource_id: object, kind: object, content_hash: object, uri: object, media_type: object) -> tuple[str, ScenarioResourceKind, str, str, str]:
@@ -464,6 +494,7 @@ class ScenarioAssetResource:
     content_hash: str
     uri: str
     media_type: str
+    authority: str
     license_tag: str
     dimensions: tuple[float, ...] = ()
     unit: str | None = None
@@ -477,6 +508,7 @@ class ScenarioAssetResource:
         values = _resource_values(self.resource_id, self.kind, self.content_hash, self.uri, self.media_type)
         for field, value in zip(("resource_id", "kind", "content_hash", "uri", "media_type"), values):
             object.__setattr__(self, field, value)
+        object.__setattr__(self, "authority", _text(self.authority, "asset authority"))
         object.__setattr__(self, "license_tag", _text(self.license_tag, "asset license tag"))
         try:
             dimensions = tuple(self.dimensions)
@@ -528,7 +560,7 @@ def _catalog_values(resources: object, grants: object, resource_type: type[objec
     known = set(ids)
     if any(resource_id not in known for grant in grants_tuple for resource_id in grant.resource_ids):
         raise ValueError(f"{label} grants must name known resource IDs")
-    grant_keys = {(grant.subject_scope, grant.subject_id, grant.resource_ids) for grant in grants_tuple}
+    grant_keys = {(grant.subject_scope, grant.subject_id) for grant in grants_tuple}
     if len(grant_keys) != len(grants_tuple):
         raise ValueError(f"{label} grants must be unique")
     return tuple(sorted(resources_tuple, key=lambda item: item.resource_id)), tuple(sorted(
@@ -578,6 +610,8 @@ class ScenarioRunPolicy:
         output_kinds = _identifier_tuple(self.allowed_output_kinds, "allowed output kind")
         if not output_kinds:
             raise ValueError("allowed output kinds must not be empty")
+        if any(kind not in _OUTPUT_KINDS for kind in output_kinds):
+            raise ValueError("allowed output kind is not supported")
         object.__setattr__(self, "allowed_output_kinds", output_kinds)
         if not isinstance(self.public_journal, bool):
             raise ValueError("public journal policy must be boolean")

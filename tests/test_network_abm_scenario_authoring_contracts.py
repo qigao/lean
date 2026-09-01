@@ -143,6 +143,36 @@ class ScenarioAuthoringContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "maximum rounds"):
             ScenarioSceneContract("scene", (), (), (), (), (), (), 0)
 
+    def test_claim_status_predicates_use_the_runtime_status_vocabulary(self):
+        with self.assertRaisesRegex(ValueError, "claim_status.*status"):
+            ScenarioPredicate(
+                ScenarioPredicateKind.CLAIM_STATUS, "alice", "case-file", "invented",
+            )
+
+    def test_story_values_canonicalize_unordered_scene_scopes_and_plan_values(self):
+        first_scene = ScenarioSceneContract(
+            "a", ("office", "archive"), ("bob", "alice"), (), (),
+            ("prompt", "camera"), ("win", "learn"), 3,
+        )
+        canonical_scene = ScenarioSceneContract(
+            "a", ("archive", "office"), ("alice", "bob"), (), (),
+            ("camera", "prompt"), ("learn", "win"), 3,
+        )
+        self.assertEqual(first_scene, canonical_scene)
+        agent_at = ScenarioPredicate(ScenarioPredicateKind.AGENT_AT, "alice", "office", None)
+        passage_open = ScenarioPredicate(ScenarioPredicateKind.PASSAGE_OPEN, "door", None, True)
+        first = ScenarioStoryPlan(
+            "plan", "1", ScenarioExecutionMode.HYBRID,
+            (ScenarioStoryAct("act", ("a", "b")),),
+            (scene("b"), scene("a")), (), (passage_open, agent_at), (agent_at, passage_open),
+        )
+        second = ScenarioStoryPlan(
+            "plan", "1", ScenarioExecutionMode.HYBRID,
+            (ScenarioStoryAct("act", ("a", "b")),),
+            (scene("a"), scene("b")), (), (agent_at, passage_open), (passage_open, agent_at),
+        )
+        self.assertEqual(first, second)
+
     def test_story_plan_rejects_duplicate_scene_membership_and_missing_dependency_endpoint(self):
         with self.assertRaisesRegex(ValueError, "scene.*act"):
             ScenarioStoryPlan(
@@ -173,9 +203,31 @@ class ScenarioAuthoringContractTests(unittest.TestCase):
         assets = ScenarioAssetCatalog((
             ScenarioAssetResource("office", ScenarioResourceKind.MODEL_3D, HASH,
                                   "https://example.test/office.glb", "model/gltf-binary",
-                                  "CC-BY-4.0", (4.0, 3.0, 2.5), "m", "glb"),
+                                  "official", "CC-BY-4.0", (4.0, 3.0, 2.5), "m", "glb"),
         ), ())
         self.assertEqual(assets.resources[0].resource_id, "office")
+
+    def test_asset_resources_retain_required_authority_metadata(self):
+        asset = ScenarioAssetResource(
+            "office", ScenarioResourceKind.MODEL_3D, HASH,
+            "https://example.test/office.glb", "model/gltf-binary",
+            authority="official", license_tag="CC-BY-4.0",
+        )
+        self.assertEqual(asset.authority, "official")
+
+    def test_catalog_rejects_multiple_grants_for_the_same_subject(self):
+        with self.assertRaisesRegex(ValueError, "grant.*unique"):
+            ScenarioKnowledgeCatalog(
+                (knowledge("case-file"), knowledge("statute")),
+                (
+                    ScenarioResourceGrant("agent", "alice", ("case-file",)),
+                    ScenarioResourceGrant("agent", "alice", ("statute",)),
+                ),
+            )
+
+    def test_resource_grants_reject_a_bare_string_instead_of_a_resource_tuple(self):
+        with self.assertRaisesRegex(TypeError, "tuple"):
+            ScenarioResourceGrant("public", None, "statute")
 
     def test_resources_reject_invalid_hash_and_unbounded_metadata(self):
         with self.assertRaisesRegex(ValueError, "content hash"):
@@ -186,21 +238,23 @@ class ScenarioAuthoringContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "URI"):
             ScenarioAssetResource(
                 "office", ScenarioResourceKind.MODEL_3D, HASH, "x" * 2049,
-                "model/gltf-binary", "CC-BY-4.0", (), "m", "glb",
+                "model/gltf-binary", "official", "CC-BY-4.0", (), "m", "glb",
             )
 
     def test_run_policy_validates_its_own_mode_and_limits(self):
         policy = ScenarioRunPolicy(
             ScenarioExecutionMode.HYBRID, 12, 3, 100,
-            ("journal", "metrics"), True, "final_blend", 7, 4096,
+            ("network.metrics",), True, "final_blend", 7, 4096,
         )
-        self.assertEqual(policy.allowed_output_kinds, ("journal", "metrics"))
+        self.assertEqual(policy.allowed_output_kinds, ("network.metrics",))
         with self.assertRaisesRegex(ValueError, "execution mode"):
-            ScenarioRunPolicy("freeform", 12, 3, 100, ("journal",), False, "none")
+            ScenarioRunPolicy("freeform", 12, 3, 100, ("network.metrics",), False, "none")
         with self.assertRaisesRegex(ValueError, "maximum output"):
-            ScenarioRunPolicy(ScenarioExecutionMode.SANDBOX, 12, 3, 0, ("journal",), False, "none")
+            ScenarioRunPolicy(ScenarioExecutionMode.SANDBOX, 12, 3, 0, ("network.metrics",), False, "none")
         with self.assertRaisesRegex(ValueError, "Blender"):
-            ScenarioRunPolicy(ScenarioExecutionMode.SANDBOX, 12, 3, 1, ("journal",), False, "render")
+            ScenarioRunPolicy(ScenarioExecutionMode.SANDBOX, 12, 3, 1, ("network.metrics",), False, "render")
+        with self.assertRaisesRegex(ValueError, "output kind"):
+            ScenarioRunPolicy(ScenarioExecutionMode.SANDBOX, 12, 3, 1, ("metrics",), False, "none")
 
 
 if __name__ == "__main__":
