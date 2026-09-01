@@ -1653,11 +1653,15 @@ assert replay_narrative_realization(projection, artifact) is artifact
 ordering, size limits, provider identity, and exact entitlement citations. It does
 not claim that arbitrary natural-language prose is formally entailed. Provider
 wording remains presentation-only and cannot become V17 evidence or mutate the
-simulation.
+simulation. In both assurance modes, `accepted` means structurally accepted
+presentation, not independently authoritative truth. Any authoritative consumer
+must call `replay_narrative_realization` with the exact V17 projection first.
 
 For literal output with stronger, honest assurance, use the provider-free
 fallback. It emits one passage per beat containing only sorted entitlement
-`key=value` facts; beat IDs and beat kinds remain passage metadata.
+`<JSON string>=<JSON string>` facts; beat IDs and beat kinds remain passage
+metadata. The canonical text `[]` denotes an entitlement with zero facts and does
+not introduce a fact.
 
 ```python
 from narrative_dynamics.abm import realize_narrative_exact_facts
@@ -1681,11 +1685,15 @@ openai_prompt = build_narrative_realization_prompt(
 openai_artifact = compile_narrative_realization(openai_prompt, openai_provider)
 ```
 
-The dotenv path and `OPENAI_API_KEY` are configuration only: they never enter
-provider identity, prompts, artifacts, hashes, representations, or errors. The
-adapter reads `OPENAI_MODEL` and optional `OPENAI_PROVIDER` for its public identity
-and imports the OpenAI and dotenv packages only when constructing the optional
-integration. Importing `narrative_dynamics.abm` remains provider-neutral.
+The dotenv path, `OPENAI_API_KEY`, and optional `OPENAI_BASE_URL` are
+construction-only configuration: they never enter provider identity, prompts,
+artifacts, hashes, representations, or errors. The adapter reads `OPENAI_MODEL`
+and optional `OPENAI_PROVIDER` for its public identity and imports the OpenAI and
+dotenv packages only when constructing the optional integration. Adapter identity
+version `2` authenticates its effective message semantics: a fixed instruction to
+return exactly one JSON object matching the supplied response schema, followed by
+the exact scene task/payload JSON. Importing `narrative_dynamics.abm` remains
+provider-neutral.
 
 V19 runtime unification and V20 authoring/visualization remain separate phases;
 V18 does not merge older runtimes or add a production UI.

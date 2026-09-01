@@ -188,6 +188,39 @@ def test_exact_fact_replay_rejects_a_recomputed_foreign_provider_identity():
         replay_narrative_realization(projection, forged)
 
 
+def test_mutating_one_exact_fact_artifact_identity_cannot_poison_later_realization():
+    projection = single_scene_projection()
+    realization_policy = policy()
+    realization_request = request(projection)
+    first = realize_narrative_exact_facts(
+        projection, realization_policy, realization_request
+    )
+    original_identity = (
+        first.provider.provider_id,
+        first.provider.version,
+        first.provider.model_name,
+    )
+
+    try:
+        object.__setattr__(first.provider, "provider_id", "poisoned-provider")
+        second = realize_narrative_exact_facts(
+            projection, realization_policy, realization_request
+        )
+
+        assert second.provider == NarrativeRealizationProviderIdentity(
+            "narrative-dynamics", "18", "exact-facts"
+        )
+        assert second.provider is not first.provider
+        assert replay_narrative_realization(projection, second) is second
+        with pytest.raises(ValueError, match="exact-fact.*provider identity"):
+            replay_narrative_realization(projection, first)
+    finally:
+        for field, value in zip(
+            ("provider_id", "version", "model_name"), original_identity
+        ):
+            object.__setattr__(first.provider, field, value)
+
+
 def test_exact_fact_text_canonically_encodes_newline_equal_and_backslash():
     projection = project_situated_narrative(
         one_place_story(round_count=1), objective_policy()
@@ -216,6 +249,31 @@ def test_exact_fact_text_canonically_encodes_newline_equal_and_backslash():
         '"path\\\\name"="back\\\\slash=value"'
     )
     assert len(artifact.scenes[0].passages[0].text.splitlines()) == 2
+
+
+def test_exact_fact_realization_encodes_and_replays_a_factless_entitlement():
+    projection = project_situated_narrative(
+        one_place_story(round_count=1), objective_policy()
+    )
+    source_entitlement = projection.cut.entitlements[0]
+    factless_projection = replace(
+        projection,
+        cut=replace(
+            projection.cut,
+            entitlements=(replace(source_entitlement, facts=()),),
+        ),
+    )
+
+    artifact = realize_narrative_exact_facts(
+        factless_projection,
+        policy(),
+        request(factless_projection),
+    )
+
+    assert len(artifact.scenes) == 1
+    assert len(artifact.scenes[0].passages) == 1
+    assert artifact.scenes[0].passages[0].text == "[]"
+    assert replay_narrative_realization(factless_projection, artifact) is artifact
 
 
 def test_limited_realization_never_sends_hidden_private_facts():
@@ -284,6 +342,27 @@ def test_scene_packet_contains_only_prompt_policy_schema_and_limits():
         "maximum_passages": 3,
         "maximum_passage_characters": 123,
     }
+
+
+def test_provider_task_and_schema_are_exact_defensive_prompt_provenance():
+    projection = single_scene_projection()
+    provider = RecordingProvider(valid_one_passage_per_scene_response)
+    prompt = build_narrative_realization_prompt(
+        projection, policy(), request(projection), provider
+    )
+    external_schema = prompt.response_schema
+    external_template = prompt.prompt_template
+    external_schema["required"].append("forged-field")
+    external_template["task"] = "forged-task"
+
+    compile_narrative_realization(prompt, provider)
+
+    assert provider.tasks == [prompt.task]
+    assert provider.payloads[0]["response_schema"] == prompt.response_schema
+    assert stable_content_hash(provider.payloads[0]["response_schema"]) == (
+        prompt.schema_hash
+    )
+    assert stable_content_hash(prompt.prompt_template) == prompt.prompt_template_hash
 
 
 def test_compile_derives_passage_id_from_accepted_runtime_fields():

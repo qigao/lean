@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -68,7 +69,12 @@ class InjectedSDKClient:
 def test_from_env_rejects_missing_required_configuration_without_echoing_values(
     monkeypatch, environment, missing_name, sensitive_value
 ):
-    for name in ("OPENAI_API_KEY", "OPENAI_MODEL", "OPENAI_PROVIDER"):
+    for name in (
+        "OPENAI_API_KEY",
+        "OPENAI_MODEL",
+        "OPENAI_PROVIDER",
+        "OPENAI_BASE_URL",
+    ):
         monkeypatch.delenv(name, raising=False)
     for name, value in environment.items():
         monkeypatch.setenv(name, value)
@@ -84,14 +90,21 @@ def test_explicit_dotenv_path_and_secret_are_configuration_only(
     tmp_path, monkeypatch
 ):
     secret = "sk-artifact-must-not-contain-this"
+    base_url = "https://private-compatible-endpoint.invalid/v1"
     env_file = tmp_path / "private-provider-configuration.env"
     env_file.write_text(
         "OPENAI_API_KEY=" + secret + "\n"
         "OPENAI_MODEL=gpt-test-model\n"
-        "OPENAI_PROVIDER=private-openai-gateway\n",
+        "OPENAI_PROVIDER=private-openai-gateway\n"
+        "OPENAI_BASE_URL=" + base_url + "\n",
         encoding="utf-8",
     )
-    for name in ("OPENAI_API_KEY", "OPENAI_MODEL", "OPENAI_PROVIDER"):
+    for name in (
+        "OPENAI_API_KEY",
+        "OPENAI_MODEL",
+        "OPENAI_PROVIDER",
+        "OPENAI_BASE_URL",
+    ):
         monkeypatch.delenv(name, raising=False)
     projection = single_scene_projection()
     response = {
@@ -112,9 +125,9 @@ def test_explicit_dotenv_path_and_secret_are_configuration_only(
     serialized = json.dumps(artifact.to_dict(), sort_keys=True)
 
     assert provider.identity == NarrativeRealizationProviderIdentity(
-        "private-openai-gateway", "1", "gpt-test-model"
+        "private-openai-gateway", "2", "gpt-test-model"
     )
-    for value in (secret, str(env_file), env_file.name):
+    for value in (secret, base_url, str(env_file), env_file.name):
         assert value not in repr(provider)
         assert value not in json.dumps(provider.identity.to_dict(), sort_keys=True)
         assert value not in serialized
@@ -137,12 +150,82 @@ def test_complete_json_sends_exact_task_and_payload_and_decodes_one_object():
     sdk_request = client.chat.completions.request
     assert sdk_request["model"] == "gpt-test-model"
     assert sdk_request["response_format"] == {"type": "json_object"}
-    assert sdk_request["messages"][0]["role"] == "user"
-    assert json.loads(sdk_request["messages"][0]["content"]) == {
+    assert sdk_request["messages"] == [
+        {
+            "role": "system",
+            "content": (
+                "Return exactly one JSON object matching the supplied response schema."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                '{"payload":{"limits":{"maximum":2},"scene":'
+                '{"scene_id":"scene-1"}},"task":"task-1"}'
+            ),
+        },
+    ]
+    assert json.loads(sdk_request["messages"][1]["content"]) == {
         "task": "task-1",
         "payload": payload,
     }
+    assert provider.identity.version == "2"
     assert "sk-never-serialize" not in json.dumps(sdk_request, sort_keys=True)
+
+
+def test_from_env_forwards_base_url_only_to_lazy_sdk_construction(
+    monkeypatch,
+):
+    secret = "sk-private-construction"
+    base_url = "https://private-compatible-endpoint.invalid/v1"
+    captured = {}
+
+    def openai_factory(**kwargs):
+        captured.update(kwargs)
+        return InjectedSDKClient("{}")
+
+    monkeypatch.setitem(
+        sys.modules,
+        "openai",
+        SimpleNamespace(OpenAI=openai_factory),
+    )
+    monkeypatch.setenv("OPENAI_API_KEY", secret)
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-test-model")
+    monkeypatch.setenv("OPENAI_PROVIDER", "private-openai-gateway")
+    monkeypatch.setenv("OPENAI_BASE_URL", base_url)
+
+    provider = OpenAINarrativeProvider.from_env()
+
+    assert captured == {"api_key": secret, "base_url": base_url}
+    assert provider.identity == NarrativeRealizationProviderIdentity(
+        "private-openai-gateway", "2", "gpt-test-model"
+    )
+    assert base_url not in repr(provider)
+    assert base_url not in json.dumps(provider.identity.to_dict(), sort_keys=True)
+
+
+def test_base_url_is_removed_from_lazy_sdk_construction_errors(monkeypatch):
+    base_url = "https://private-failing-endpoint.invalid/v1"
+    captured = {}
+
+    def failing_openai_factory(**kwargs):
+        captured.update(kwargs)
+        raise RuntimeError("failed at " + kwargs["base_url"])
+
+    monkeypatch.setitem(
+        sys.modules,
+        "openai",
+        SimpleNamespace(OpenAI=failing_openai_factory),
+    )
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-private-construction")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-test-model")
+    monkeypatch.setenv("OPENAI_BASE_URL", base_url)
+
+    with pytest.raises(RuntimeError) as caught:
+        OpenAINarrativeProvider.from_env()
+
+    assert captured["base_url"] == base_url
+    assert base_url not in str(caught.value)
 
 
 @pytest.mark.parametrize("content", ("[]", '"text"', "null", "not-json"))

@@ -11,6 +11,12 @@ from narrative_dynamics.abm.situated_realization_contracts import (
 )
 
 
+_JSON_OBJECT_INSTRUCTION = (
+    "Return exactly one JSON object matching the supplied response schema."
+)
+_PROVIDER_VERSION = "2"
+
+
 class OpenAINarrativeProvider:
     """Decode OpenAI JSON-object responses through the core provider protocol."""
 
@@ -22,6 +28,7 @@ class OpenAINarrativeProvider:
         api_key: str,
         model: str,
         provider_id: str = "openai",
+        base_url: str | None = None,
         client: object | None = None,
     ) -> None:
         if not isinstance(api_key, str) or not api_key.strip():
@@ -30,19 +37,30 @@ class OpenAINarrativeProvider:
             raise ValueError("OpenAI narrative provider requires OPENAI_MODEL")
         if not isinstance(provider_id, str) or not provider_id.strip():
             raise ValueError("OpenAI narrative provider requires OPENAI_PROVIDER")
+        if base_url is not None and (
+            not isinstance(base_url, str) or not base_url.strip()
+        ):
+            raise ValueError("OpenAI narrative provider OPENAI_BASE_URL must be non-empty")
         self.identity = NarrativeRealizationProviderIdentity(
             provider_id,
-            "1",
+            _PROVIDER_VERSION,
             model,
         )
-        self._client = client if client is not None else self._new_client(api_key)
+        self._client = (
+            client
+            if client is not None
+            else self._new_client(api_key, base_url=base_url)
+        )
 
     @staticmethod
-    def _new_client(api_key: str) -> object:
+    def _new_client(api_key: str, *, base_url: str | None) -> object:
         try:
             from openai import OpenAI
 
-            return OpenAI(api_key=api_key)
+            client_options = {"api_key": api_key}
+            if base_url is not None:
+                client_options["base_url"] = base_url
+            return OpenAI(**client_options)
         except Exception:
             raise RuntimeError(
                 "OpenAI narrative provider client construction failed"
@@ -70,6 +88,7 @@ class OpenAINarrativeProvider:
         api_key = os.environ.get("OPENAI_API_KEY")
         model = os.environ.get("OPENAI_MODEL")
         provider_id = os.environ.get("OPENAI_PROVIDER", "openai")
+        base_url = os.environ.get("OPENAI_BASE_URL") or None
         if not api_key:
             raise ValueError("OpenAI narrative provider requires OPENAI_API_KEY")
         if not model:
@@ -78,6 +97,7 @@ class OpenAINarrativeProvider:
             api_key=api_key,
             model=model,
             provider_id=provider_id,
+            base_url=base_url,
             client=client,
         )
 
@@ -98,7 +118,10 @@ class OpenAINarrativeProvider:
             response = self._client.chat.completions.create(
                 model=self.identity.model_name,
                 response_format={"type": "json_object"},
-                messages=[{"role": "user", "content": request_json}],
+                messages=[
+                    {"role": "system", "content": _JSON_OBJECT_INSTRUCTION},
+                    {"role": "user", "content": request_json},
+                ],
             )
             content = response.choices[0].message.content
         except Exception:

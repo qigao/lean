@@ -473,3 +473,36 @@ def test_contract_hashes_are_stable_under_equivalent_construction(projection, pr
     assert left_prompt.content_hash == right_prompt.content_hash
     assert left_prompt.schema_hash == right_prompt.schema_hash
     assert left_prompt.prompt_template_hash == right_prompt.prompt_template_hash
+
+
+def test_prompt_exposes_defensive_authenticated_task_and_schema_provenance(
+    projection, policy, provider
+):
+    prompt = _prompt(projection, policy, provider)
+
+    schema = prompt.response_schema
+    template = prompt.prompt_template
+
+    assert prompt.task == "situated_narrative_scene_realization_v1"
+    assert template == {
+        "task": "situated_narrative_scene_realization_v1",
+        "context": "single_scene_exact_entitlement_closure",
+    }
+    assert schema == {
+        "type": "object",
+        "required": ["passages"],
+        "additional_properties": False,
+        "passage": {
+            "type": "object",
+            "required": ["beat_ids", "text"],
+            "additional_properties": False,
+        },
+    }
+    assert stable_content_hash(template) == prompt.prompt_template_hash
+    assert stable_content_hash(schema) == prompt.schema_hash
+
+    template["task"] = "forged-task"
+    schema["required"].append("forged-field")
+    assert prompt.task == "situated_narrative_scene_realization_v1"
+    assert prompt.prompt_template["task"] == "situated_narrative_scene_realization_v1"
+    assert prompt.response_schema["required"] == ["passages"]

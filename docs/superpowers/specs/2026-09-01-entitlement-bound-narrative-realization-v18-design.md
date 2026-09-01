@@ -10,7 +10,14 @@ V17 remains the only source of narrative truth. V18 realizes an accepted cut; it
 
 An injected language provider may choose wording and group adjacent beats into passages. Deterministic runtime code chooses the context exposed to each call, derives every entitlement citation, validates scene and beat coverage, bounds output size, captures provider identity and response hashes, and constructs the accepted artifact.
 
-Structural acceptance is not a formal natural-language entailment proof. A citation-bound provider passage proves which facts the provider was allowed to see, not that every phrase is semantically entailed. V18 therefore reports `citation_bound` assurance honestly. A provider-free exact-fact renderer reports `exact_facts` assurance because its text is assembled only from literal entitlement key/value pairs.
+Structural acceptance is not a formal natural-language entailment proof. The
+artifact value `accepted` means only that the presentation passed V18 structural
+validation. An authoritative consumer must replay it against the exact V17
+projection before use. A citation-bound provider passage proves which facts the
+provider was allowed to see, not that every phrase is semantically entailed. V18
+therefore reports `citation_bound` assurance honestly. A provider-free exact-fact
+renderer reports `exact_facts` assurance because its text is assembled only from
+canonical encoded entitlement key/value data.
 
 ## Non-Goals
 
@@ -31,7 +38,7 @@ Structural acceptance is not a formal natural-language entailment proof. A citat
 - `NarrativeRealizationPolicy(policy_id, version, format, language, tone_tags=(), maximum_passages_per_scene=8, maximum_passage_characters=4096)`.
 - `NarrativeRealizationRequest(request_id, projection_hash)`.
 - `NarrativeSceneRealizationPrompt(scene, beats, entitlements)` containing exactly one V17 scene and only the entitlements referenced by its beats.
-- `NarrativeRealizationPrompt(request, policy, provider, projection_hash, scenes)` containing canonical scene prompts and fixed schema/template hashes.
+- `NarrativeRealizationPrompt(request, policy, provider, projection_hash, scenes)` containing canonical scene prompts, fixed schema/template hashes, and defensive `response_schema` and `prompt_template` views whose authenticated task is exposed as `task`.
 - `NarrativePassage(passage_id, scene_id, beat_ids, entitlement_ids, text)`.
 - `NarrativeRealizedScene(scene_id, scene_prompt_hash, provider_response_hash, passages)`.
 - `NarrativeRealizationArtifact(request_id, projection_hash, policy, provider, prompt_hash, schema_hash, prompt_template_hash, assurance, validation_result, scenes)`.
@@ -51,7 +58,10 @@ def complete_json(self, *, task: str, payload: dict[str, object]) -> object:
     ...
 ```
 
-The task is `situated_narrative_scene_realization_v1`. The provider is called once per scene. A payload contains:
+The task is `situated_narrative_scene_realization_v1`. Its value and the response
+schema come from the same canonical prompt provenance used to compute the fixed
+template/schema hashes; every consumer receives a defensive copy. The provider is
+called once per scene. A payload contains:
 
 - structured style policy;
 - scene ID, place, active POV, and round bounds;
@@ -89,11 +99,22 @@ The provider does not submit entitlement IDs. Runtime derives a passage's entitl
 
 The compiler derives entitlement citations and passage IDs, hashes the raw provider response, retains no hidden provider state, and returns an artifact with `citation_bound` assurance and validation result `accepted`.
 
-`realize_narrative_exact_facts(projection, policy, request)` is provider-free. It emits one passage per beat whose text is a deterministic serialization of only that beat's exact entitlement `key=value` facts, and returns `exact_facts` assurance under a fixed built-in provider identity. Beat IDs and kinds remain passage metadata and are not inserted into exact-fact text.
+`realize_narrative_exact_facts(projection, policy, request)` is provider-free. It
+emits one passage per beat. A non-empty fact collection is sorted by raw key/value
+and serialized as one `<JSON string>=<JSON string>` pair per physical line, so all
+valid key/value strings are reversible and unambiguous. A zero-fact collection is
+serialized as `[]`; this denotes the empty collection and introduces no fact. The
+artifact receives a fresh fixed built-in provider identity and `exact_facts`
+assurance. Beat IDs and kinds remain passage metadata and are not inserted into
+exact-fact text.
 
 ## Replay and Rendering
 
-`replay_narrative_realization(projection, artifact)` performs no provider call. It requires the exact projection hash, reconstructs scene/beat/entitlement closure, verifies canonical coverage and derived passage IDs, then returns the same artifact.
+`replay_narrative_realization(projection, artifact)` performs no provider call. It
+requires the exact projection hash, reconstructs scene/beat/entitlement closure,
+verifies canonical coverage and derived passage IDs, then returns the same
+artifact. Exact-fact replay additionally requires a fresh canonical built-in
+identity value and reconstructs the canonical fact or empty-collection text.
 
 `render_narrative_realization_text(artifact)` joins accepted passage text in canonical scene/passage order. It is a convenience view and never becomes a world fact.
 
@@ -103,6 +124,8 @@ The compiler derives entitlement citations and passage IDs, hashes the raw provi
 - Limited and multi-POV realization inherits V17's sanitized, owner-private entitlement boundary.
 - Cross-scene context is never sent automatically, even when the same provider instance handles every scene.
 - Provider identity is captured before invocation and must remain stable.
+- Each exact-fact artifact owns a fresh provider identity value; mutating one
+  artifact cannot alter later realization or replay authority.
 - Schema hash, prompt-template hash, prompt hash, per-scene context hash, raw-response hash, projection hash, and policy remain in the artifact.
 - Repeated exact-fact realization is byte-equivalent and content-address stable.
 - Provider prose is presentation data, never admissible evidence for later world or cognitive transitions.
@@ -111,4 +134,15 @@ The compiler derives entitlement citations and passage IDs, hashes the raw provi
 
 All V18 contracts and functions are exported from `narrative_dynamics.abm`. README documentation shows an injected JSON provider, exact-fact fallback, replay, and the explicit distinction between citation-bound prose and formally exact fact rendering.
 
-An optional `narrative_dynamics.integrations.openai_narrative` module supplies `OpenAINarrativeProvider`. `from_env(env_file=None)` may load an explicitly named dotenv file and reads `OPENAI_API_KEY`, `OPENAI_MODEL`, and optional `OPENAI_PROVIDER`; the path and API key remain private process configuration and never enter provider identity, prompts, artifacts, hashes, logs, or exceptions. The OpenAI SDK is imported lazily so importing `narrative_dynamics` or `narrative_dynamics.abm` remains dependency-free. The adapter uses JSON-object output and returns the decoded object through the same `complete_json` protocol as any other provider.
+An optional `narrative_dynamics.integrations.openai_narrative` module supplies
+`OpenAINarrativeProvider`. `from_env(env_file=None)` may load an explicitly named
+dotenv file and reads `OPENAI_API_KEY`, `OPENAI_MODEL`, optional
+`OPENAI_PROVIDER`, and optional `OPENAI_BASE_URL`. The path, key, and base URL are
+construction-only configuration and never enter provider identity, prompts,
+artifacts, hashes, representations, logs, or exceptions. The OpenAI SDK is
+imported lazily so importing `narrative_dynamics` or
+`narrative_dynamics.abm` remains dependency-free. Adapter identity version `2`
+binds the request semantics: JSON-object response mode plus the fixed instruction
+`Return exactly one JSON object matching the supplied response schema.` followed
+by the exact serialized `{task,payload}` user message. The adapter returns the
+decoded object through the same `complete_json` protocol as any other provider.

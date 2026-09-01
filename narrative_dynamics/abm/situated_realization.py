@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from copy import deepcopy
 from typing import Callable
 
 from narrative_dynamics.contracts import stable_content_hash
@@ -21,20 +20,15 @@ from narrative_dynamics.abm.situated_realization_contracts import (
 )
 
 
-_TASK = "situated_narrative_scene_realization_v1"
-_EXACT_FACTS_PROVIDER = NarrativeRealizationProviderIdentity(
-    "narrative-dynamics", "18", "exact-facts"
+_EXACT_FACTS_PROVIDER_FIELDS = (
+    "narrative-dynamics",
+    "18",
+    "exact-facts",
 )
-_RESPONSE_SCHEMA = {
-    "type": "object",
-    "required": ["passages"],
-    "additional_properties": False,
-    "passage": {
-        "type": "object",
-        "required": ["beat_ids", "text"],
-        "additional_properties": False,
-    },
-}
+
+
+def _exact_facts_provider_identity() -> NarrativeRealizationProviderIdentity:
+    return NarrativeRealizationProviderIdentity(*_EXACT_FACTS_PROVIDER_FIELDS)
 
 
 def _provider_protocol(
@@ -119,14 +113,14 @@ def _build_prompt(
 
 def _scene_payload(
     scene_prompt: NarrativeSceneRealizationPrompt,
-    policy: NarrativeRealizationPolicy,
+    prompt: NarrativeRealizationPrompt,
 ) -> dict[str, object]:
     payload = scene_prompt.to_dict()
-    payload["policy"] = policy.to_dict()
-    payload["response_schema"] = deepcopy(_RESPONSE_SCHEMA)
+    payload["policy"] = prompt.policy.to_dict()
+    payload["response_schema"] = prompt.response_schema
     payload["limits"] = {
-        "maximum_passages": policy.maximum_passages_per_scene,
-        "maximum_passage_characters": policy.maximum_passage_characters,
+        "maximum_passages": prompt.policy.maximum_passages_per_scene,
+        "maximum_passage_characters": prompt.policy.maximum_passage_characters,
     }
     return payload
 
@@ -240,8 +234,8 @@ def compile_narrative_realization(
         if current_identity.content_hash != provider_identity_hash:
             raise ValueError("narrative realization provider identity changed during compilation")
         response = current_completion(
-            task=_TASK,
-            payload=_scene_payload(scene_prompt, bound_prompt.policy),
+            task=bound_prompt.task,
+            payload=_scene_payload(scene_prompt, bound_prompt),
         )
         current_identity, _ = _provider_protocol(provider)
         if current_identity.content_hash != provider_identity_hash:
@@ -321,6 +315,8 @@ def _exact_fact_text(
         for entitlement_id in beat_entitlement_ids
         for fact in entitlement_by_id[entitlement_id].facts
     )
+    if not facts:
+        return "[]"
     return "\n".join(
         f"{json.dumps(key, ensure_ascii=False)}="
         f"{json.dumps(value, ensure_ascii=False)}"
@@ -350,7 +346,7 @@ def realize_narrative_exact_facts(
         projection,
         policy,
         request,
-        _EXACT_FACTS_PROVIDER,
+        _exact_facts_provider_identity(),
     )
     all_prompt_beat_ids = frozenset(
         beat.beat_id for scene in prompt.scenes for beat in scene.beats
@@ -450,7 +446,7 @@ def replay_narrative_realization(
         raise ValueError("narrative realization replay requires a supported assurance")
     if (
         artifact.assurance is NarrativeRealizationAssurance.EXACT_FACTS
-        and artifact.provider != _EXACT_FACTS_PROVIDER
+        and artifact.provider != _exact_facts_provider_identity()
     ):
         raise ValueError(
             "exact-fact realization replay requires the built-in provider identity"

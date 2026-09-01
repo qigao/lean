@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
 import re
@@ -300,8 +301,20 @@ class NarrativeRealizationPrompt:
         return _SCHEMA_HASH
 
     @property
+    def response_schema(self) -> dict[str, object]:
+        return deepcopy(_RESPONSE_SCHEMA)
+
+    @property
     def prompt_template_hash(self) -> str:
         return _PROMPT_TEMPLATE_HASH
+
+    @property
+    def prompt_template(self) -> dict[str, object]:
+        return deepcopy(_PROMPT_TEMPLATE)
+
+    @property
+    def task(self) -> str:
+        return _PROMPT_TEMPLATE["task"]
 
     def to_dict(self) -> dict[str, object]:
         return {

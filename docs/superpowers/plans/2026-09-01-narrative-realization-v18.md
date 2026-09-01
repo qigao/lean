@@ -17,7 +17,7 @@
 - Provider responses can group adjacent beats and supply text, but cannot submit entitlement IDs or change beat order.
 - Provider prose has `citation_bound`, not formally entailed, assurance; provider-free literal output has `exact_facts` assurance.
 - No vendor SDK is imported by the ABM core; the optional OpenAI integration imports its SDK lazily. No network client, local path, secret, hidden chat history, or raw world/trajectory object enters a realization artifact.
-- Every accepted artifact is content-addressed, replayable without a provider, and presentation-only.
+- Every structurally accepted artifact is content-addressed, replayable without a provider, and presentation-only; authoritative consumers replay it against the exact V17 projection.
 - All pre-existing V10-V17 deterministic behavior remains compatible.
 
 ---
@@ -247,7 +247,7 @@ Assert that provider-free realization:
 
 - calls no external object;
 - emits one passage per beat in canonical scene order;
-- serializes only literal `key=value` facts from the beat's exact entitlements;
+- serializes only canonical JSON-string `key=value` facts from the beat's exact entitlements, using `[]` for an empty fact collection;
 - cites the exact derived entitlement IDs;
 - reports `EXACT_FACTS` assurance and the fixed built-in provider identity;
 - repeats byte-equivalently with an equal content hash;
@@ -259,7 +259,11 @@ Expected: `realize_narrative_exact_facts` is missing.
 
 - [ ] **Step 3: Implement the deterministic fallback**
 
-Build accepted passages directly from scene prompts. Use a stable, language-neutral literal form containing only sorted exact entitlement `key=value` facts; beat ID and kind remain passage metadata rather than output text. Reuse the same artifact validation and replay path with `EXACT_FACTS` assurance.
+Build accepted passages directly from scene prompts. Use sorted
+`<JSON string>=<JSON string>` pairs and the canonical zero-fact collection `[]`;
+beat ID and kind remain passage metadata rather than output text. Give every
+artifact a fresh canonical identity and reuse the same artifact validation and
+replay path with `EXACT_FACTS` assurance.
 
 - [ ] **Step 4: Run exact-fact tests and verify GREEN**
 
@@ -274,7 +278,7 @@ Extend `tests/test_network_abm_public_api.py` to import every V18 contract/funct
 Add tests that fail before the integration exists and assert observable boundary behavior:
 
 - `from_env` rejects missing `OPENAI_API_KEY` or `OPENAI_MODEL` without echoing any configured secret;
-- an explicitly supplied dotenv path is configuration only and never appears in provider identity or serialized realization artifacts;
+- an explicitly supplied dotenv path and optional `OPENAI_BASE_URL` are construction-only configuration and never appear in provider identity or serialized realization artifacts;
 - `complete_json` returns the decoded JSON object from a narrowly injected fake SDK client while sending the exact task and payload as JSON;
 - malformed non-object JSON is rejected;
 - importing `narrative_dynamics.abm` does not import `openai`.
@@ -283,7 +287,15 @@ The fake replaces only the external SDK request. Assertions target the real adap
 
 - [ ] **Step 7: Implement the optional OpenAI adapter**
 
-Create `narrative_dynamics.integrations.openai_narrative.OpenAINarrativeProvider`. Import `openai` and `python-dotenv` only inside construction paths that need them. `from_env(env_file=None)` reads `OPENAI_API_KEY`, `OPENAI_MODEL`, and optional `OPENAI_PROVIDER`; never include the key or dotenv path in identity, payload, exception text, repr, or hashes. Use JSON-object response mode and decode exactly one object. Permit SDK-client injection so the external request boundary is testable without a network call.
+Create `narrative_dynamics.integrations.openai_narrative.OpenAINarrativeProvider`.
+Import `openai` and `python-dotenv` only inside construction paths that need them.
+`from_env(env_file=None)` reads `OPENAI_API_KEY`, `OPENAI_MODEL`, optional
+`OPENAI_PROVIDER`, and optional `OPENAI_BASE_URL`; never include the key, dotenv
+path, or base URL in identity, payload, exception text, repr, artifacts, or
+hashes. Use adapter identity version `2`, JSON-object response mode, the fixed
+instruction `Return exactly one JSON object matching the supplied response
+schema.`, and decode exactly one object. Permit SDK-client injection so the
+external request boundary is testable without a network call.
 
 - [ ] **Step 8: Export and document V18**
 
@@ -301,7 +313,14 @@ python -m compileall -q narrative_dynamics
 git diff --check
 ```
 
-When `C:\projects\lean\.env` contains the required OpenAI variables, run one real scene-level realization smoke test. Print only provider identity, artifact hash, scene count, passage count, and assurance; never print the API key, dotenv path, prompt payload, raw response, or accepted prose. A live-provider failure is reported separately from deterministic regression tests. Record the known repository-wide pytest collection issue separately; do not modify unrelated legacy tests in V18.
+When the project dotenv contains the required OpenAI variables, run one real
+scene-level realization smoke test. Respect its model and optional compatible
+endpoint without override. Print only provider identity, artifact hash, scene
+count, passage count, assurance, or sanitized exception type/status/code; never
+print the API key, base URL, dotenv path, prompt payload, raw response, or accepted
+prose. A live-provider failure is reported separately from deterministic
+regression tests. Record the known repository-wide pytest collection issue
+separately; do not modify unrelated legacy tests in V18.
 
 - [ ] **Step 10: Commit Task 3**
 
@@ -317,3 +336,169 @@ git commit -m "feat(abm): expose entitlement-bound narrative realization"
 - Placeholder scan: no placeholder markers or unspecified behavior remain.
 - Type consistency: Task 2 consumes the exact Task 1 contract names; Task 3 adds one function without renaming prior interfaces.
 - Mutation check: tests fail for global-context leakage, unauthorized entitlement widening, provider identity drift, malformed schema, beat omission/reorder, invalid provenance hashes, and accidental provider use by replay/exact-fact fallback.
+
+## Final Review Fix Wave
+
+This wave executes inline in the existing V18 worktree and produces one cohesive
+commit. It does not dispatch subagents.
+
+### Task 4: Canonical provenance source and exact-fact isolation
+
+**Files:**
+- Modify: `narrative_dynamics/abm/situated_realization_contracts.py`
+- Modify: `narrative_dynamics/abm/situated_realization.py`
+- Modify: `tests/test_network_abm_situated_realization_contracts.py`
+- Modify: `tests/test_network_abm_situated_realization.py`
+
+**Interfaces:**
+- Consumes: `NarrativeRealizationPrompt`, `NarrativeProjection`, and the existing
+  provider-neutral realization/replay entry points.
+- Produces: defensive `response_schema` and `prompt_template` prompt properties,
+  an authenticated `task` property, fresh built-in exact-fact identities, and
+  canonical `[]` output for an empty entitlement fact collection.
+
+- [ ] **Step 1: Write failing public-behavior tests**
+
+Add regressions which mutate one returned exact-fact provider identity and prove
+that a later realization still uses a fresh
+`NarrativeRealizationProviderIdentity("narrative-dynamics", "18", "exact-facts")`;
+replace a real projected entitlement's facts with `()` and require one replayable
+passage whose text is exactly `[]`; and require provider task/schema packets to
+equal defensive prompt provenance whose stable hashes equal `prompt_template_hash`
+and `schema_hash`.
+
+- [ ] **Step 2: Run the focused tests and verify RED**
+
+```powershell
+python -m pytest tests/test_network_abm_situated_realization_contracts.py tests/test_network_abm_situated_realization.py -q -k "provenance or exact_fact"
+```
+
+Expected failures: a mutated artifact poisons the module singleton, factless text
+violates the non-empty passage contract, and prompt provenance properties are
+absent.
+
+- [ ] **Step 3: Implement the minimal canonical sources**
+
+Keep canonical exact-provider fields as scalar strings and construct a new
+identity for each artifact and replay comparison. In contracts, retain one schema
+and prompt-template value and expose only deep copies through prompt properties;
+derive hashes and task from those values. Runtime payload construction consumes
+the prompt properties. Return `[]` when the sorted fact-pair collection is empty.
+
+- [ ] **Step 4: Run the focused tests and verify GREEN**
+
+Use the Step 2 command and require zero failures.
+
+### Task 5: OpenAI instruction, identity version, and optional base URL
+
+**Files:**
+- Modify: `narrative_dynamics/integrations/openai_narrative.py`
+- Modify: `tests/test_openai_narrative_provider.py`
+
+**Interfaces:**
+- Consumes: `OpenAINarrativeProvider.from_env(env_file=None)` and injected SDK
+  clients.
+- Produces: adapter identity version `2`, the fixed instruction
+  `Return exactly one JSON object matching the supplied response schema.`, and
+  optional `OPENAI_BASE_URL` SDK construction without storing the URL.
+
+- [ ] **Step 1: Write failing adapter tests**
+
+Require the effective messages to be exactly a fixed system instruction followed
+by the existing exact serialized `{task,payload}` user object. Require identity
+version `2`. Patch only the lazy SDK constructor and require it to receive both
+`api_key` and `base_url`; verify the URL is absent from identity, representation,
+errors, payloads, and serialized artifacts.
+
+- [ ] **Step 2: Run adapter tests and verify RED**
+
+```powershell
+python -m pytest tests/test_openai_narrative_provider.py -q
+```
+
+Expected failures: no system instruction, identity version remains `1`, and
+`OPENAI_BASE_URL` is not forwarded.
+
+- [ ] **Step 3: Implement the minimal adapter change**
+
+Read optional `OPENAI_BASE_URL`, pass it directly to lazy `OpenAI(...)`
+construction, and never assign it to provider state. Prepend the exact fixed
+system message while preserving the compact sorted user JSON. Change the adapter
+identity version to `2` so the effective request semantics are authenticated.
+
+- [ ] **Step 4: Run adapter tests and verify GREEN**
+
+Use the Step 2 command and require zero failures.
+
+### Task 6: Design and user documentation
+
+**Files:**
+- Modify: `docs/superpowers/specs/2026-09-01-entitlement-bound-narrative-realization-v18-design.md`
+- Modify: `docs/superpowers/plans/2026-09-01-narrative-realization-v18.md`
+- Modify: `README.md`
+
+**Interfaces:**
+- Documents: canonical JSON-string fact pairs, factless `[]`, fresh exact-fact
+  identity isolation, centralized prompt provenance, adapter version `2`, fixed
+  JSON instruction, optional private `OPENAI_BASE_URL`, and replay obligations.
+
+- [ ] **Step 1: Update the documents**
+
+State that `accepted` means structurally accepted presentation only and any
+authoritative consumer must replay the artifact against the exact V17 projection.
+State that `[]` is the empty fact collection and does not assert a fact. State
+that the base URL, like the key and dotenv location, is construction-only secret
+configuration and never enters identity or provenance.
+
+- [ ] **Step 2: Review documentation against runtime names**
+
+Confirm all environment variable names, adapter version, exact instruction, and
+assurance values match production and tests exactly.
+
+### Task 7: Deterministic verification, one live call, and cohesive commit
+
+**Files:**
+- Create ignored report: `.superpowers/sdd/2026-09-01-narrative-realization-v18/final-fix-report.md`
+- Stage only files actually changed by Tasks 4-6.
+
+- [ ] **Step 1: Run deterministic verification**
+
+```powershell
+python -m pytest tests/test_network_abm_situated_realization_contracts.py tests/test_network_abm_situated_realization.py tests/test_network_abm_situated_projection_contracts.py tests/test_network_abm_situated_projection.py tests/test_network_abm_public_api.py tests/test_openai_narrative_provider.py -q
+python -m unittest discover -s tests -p "test_network_abm*.py"
+python -m compileall -q narrative_dynamics
+git diff --check
+```
+
+- [ ] **Step 2: Run exactly one live single-scene smoke**
+
+Use the updated project dotenv configuration without overriding its model. Print
+only provider identity, artifact hash, scene count, passage count, assurance, or
+sanitized exception type/status/code. Never print credentials, base URL, dotenv
+location, prompt, prose, or raw response.
+
+- [ ] **Step 3: Write the final fix report**
+
+Record every RED/GREEN command, deterministic result, the single live result,
+changed files, self-review, and remaining concerns in the required ignored report.
+
+- [ ] **Step 4: Stage exact files, check the cached diff, and commit once**
+
+```powershell
+git diff --cached --check
+git commit -m "fix(abm): finalize narrative realization boundaries"
+```
+
+### Final Wave Self-Review
+
+- Spec coverage: all six final-review findings map to Tasks 4-6 and observable
+  behavior except human documentation, which is reviewed against exact runtime
+  names.
+- Placeholder scan: the wave contains no unspecified implementation or test
+  behavior.
+- Type consistency: no existing public contract or runtime entry point is renamed;
+  prompt provenance is added as defensive read-only properties.
+- Mutation check: tests fail if exact identity is shared, foreign identity is
+  accepted, factless output is empty, runtime task/schema drift from prompt
+  provenance, JSON instruction is absent, adapter version remains stale, or the
+  base URL is ignored or retained.
