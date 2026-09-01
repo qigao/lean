@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+import hashlib
 import json
 from pathlib import Path
 
-from narrative_dynamics.contracts import stable_content_hash
 from narrative_dynamics.abm.scenario_package_contracts import (
     SCENARIO_DOCUMENT_SCHEMA,
     SCENARIO_PACKAGE_SCHEMA,
@@ -12,6 +13,40 @@ from narrative_dynamics.abm.scenario_package_contracts import (
 
 RESOURCE_HASH = "sha256:" + "a" * 64
 PREVIEW_HASH = "sha256:" + "b" * 64
+
+
+def _canonical_hash_value(value: object) -> object:
+    if value is None:
+        return ("null",)
+    if isinstance(value, bool):
+        return ("bool", value)
+    if isinstance(value, int):
+        return ("int", str(value))
+    if isinstance(value, float):
+        return ("float", value.hex())
+    if isinstance(value, str):
+        return ("str", value)
+    if isinstance(value, Mapping):
+        return (
+            "mapping",
+            tuple(
+                (key, _canonical_hash_value(value[key]))
+                for key in sorted(value)
+            ),
+        )
+    if isinstance(value, (list, tuple)):
+        return ("sequence", tuple(_canonical_hash_value(item) for item in value))
+    raise TypeError("test canonical hash accepts JSON values only")
+
+
+def _canonical_content_hash(value: object) -> str:
+    encoded = json.dumps(
+        _canonical_hash_value(value),
+        ensure_ascii=False,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
 
 def _write_json(path: Path, value: object) -> None:
@@ -633,7 +668,7 @@ def write_law_firm_package(root: Path) -> Path:
                 "role": role,
                 "logical_id": logical_id,
                 "relative_path": relative_path,
-                "expected_hash": stable_content_hash(document),
+                "expected_hash": _canonical_content_hash(document),
             }
         )
     _write_json(
@@ -672,5 +707,5 @@ def refresh_manifest_hash(root: Path, role: str, logical_id: str) -> None:
         if item["role"] == role and item["logical_id"] == logical_id
     )
     document = json.loads((root / locator["relative_path"]).read_text(encoding="utf-8"))
-    locator["expected_hash"] = stable_content_hash(document)
+    locator["expected_hash"] = _canonical_content_hash(document)
     _write_json(manifest_path, manifest)

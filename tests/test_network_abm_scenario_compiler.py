@@ -18,8 +18,63 @@ from narrative_dynamics.abm.scenario_compiler import (
     _compile_situated_scenario_components,
 )
 from narrative_dynamics.abm.scenario_package import load_situated_scenario_package
+from narrative_dynamics.abm.situated import ObservationChannel, SituatedActionKind
+from narrative_dynamics.abm.situated_cognition_contracts import (
+    SituatedActionSpec,
+    SituatedAgentCognitiveModel,
+    SituatedCognitiveModel,
+    SituatedGoalReward,
+    SituatedGoalSpec,
+    SituatedHypothesis,
+    SituatedObservationLikelihood,
+    SituatedObservationRule,
+    SituatedObservationSymbol,
+)
+from narrative_dynamics.abm.situated_contracts import (
+    EmbodiedAgentSpec,
+    EvidenceFact,
+    PassageSpec,
+    PlaceSpec,
+    SituatedWorldModel,
+    WorldObjectSpec,
+)
+from narrative_dynamics.abm.situated_memory_cognition_contracts import (
+    SituatedAgentRecallPolicy,
+    SituatedMemoryCognitiveModel,
+    SituatedMemoryRecallCue,
+)
+from narrative_dynamics.abm.situated_memory_contracts import (
+    MemoryChannelPolicy,
+    SituatedMemoryPolicy,
+)
 from narrative_dynamics.abm.situated_network_contracts import SituatedNetworkRuntimeModel
-from narrative_dynamics.abm.situated_spatial_map_contracts import SituatedSpatialMap
+from narrative_dynamics.abm.situated_percept_memory_cognition import (
+    SituatedPerceptMemoryCognitiveModel,
+)
+from narrative_dynamics.abm.situated_percept_memory_contracts import (
+    SituatedPerceptMemoryFidelityPolicy,
+    SituatedPerceptMemoryPolicy,
+)
+from narrative_dynamics.abm.situated_perception_contracts import (
+    SituatedAgentPerceptionProfile,
+    SituatedEdgeActivation,
+    SituatedEventSignalProfile,
+    SituatedPerceptFidelity,
+    SituatedPerceptionEdge,
+    SituatedPerceptionLayer,
+    SituatedPerceptionModel,
+)
+from narrative_dynamics.abm.situated_social_memory_contracts import (
+    SituatedClaimTopic,
+    SituatedSocialMemoryModel,
+    SituatedSocialMemoryPolicy,
+)
+from narrative_dynamics.abm.situated_spatial_map_contracts import (
+    SituatedSpatialMap,
+    SpatialPassage,
+    SpatialPlace,
+)
+from narrative_dynamics.narrative.runtime_planning import PlanningBeliefState
 from tests.scenario_package_fixtures import (
     mutate_json,
     refresh_manifest_hash,
@@ -29,6 +84,307 @@ from tests.scenario_package_fixtures import (
 
 def _value(path: Path) -> dict[str, object]:
     return json.loads(path.read_text(encoding="utf-8"))["value"]
+
+
+def _expected_world_model() -> SituatedWorldModel:
+    return SituatedWorldModel(
+        "law-firm-world",
+        "1",
+        (
+            PlaceSpec("lobby", "Public lobby"),
+            PlaceSpec("meeting", "Meeting room"),
+            PlaceSpec("archive", "Restricted archive"),
+        ),
+        (
+            PassageSpec("lobby-meeting", "lobby", "meeting", True),
+            PassageSpec("meeting-archive", "meeting", "archive", False),
+        ),
+        (
+            EmbodiedAgentSpec("alice", "partner", "meeting", 1),
+            EmbodiedAgentSpec("bob", "lawyer", "lobby", 1),
+            EmbodiedAgentSpec("client", "client", "lobby", 1),
+        ),
+        (
+            WorldObjectSpec(
+                "case-file",
+                "document",
+                "archive",
+                True,
+                (EvidenceFact("status", "found"),),
+            ),
+        ),
+    )
+
+
+def _expected_cognitive_agent(agent_id: str) -> SituatedAgentCognitiveModel:
+    action_ids = (
+        f"{agent_id}-inspect-file",
+        f"{agent_id}-move-archive",
+        f"{agent_id}-take-file",
+        f"{agent_id}-tell-status",
+        f"{agent_id}-wait",
+    )
+    actions = (
+        SituatedActionSpec(
+            action_ids[0],
+            SituatedActionKind.INSPECT,
+            "case-file",
+            None,
+            ("archive",),
+            False,
+            (),
+        ),
+        SituatedActionSpec(
+            action_ids[1],
+            SituatedActionKind.MOVE,
+            "meeting-archive",
+            None,
+            ("meeting",),
+            False,
+            (),
+        ),
+        SituatedActionSpec(
+            action_ids[2],
+            SituatedActionKind.TAKE,
+            "case-file",
+            None,
+            ("archive",),
+            False,
+            (),
+        ),
+        SituatedActionSpec(
+            action_ids[3],
+            SituatedActionKind.TELL,
+            None,
+            "The case file has been found.",
+            ("meeting",),
+            False,
+            (SituatedActionKind.INSPECT, SituatedActionKind.TELL),
+        ),
+        SituatedActionSpec(action_ids[4], SituatedActionKind.WAIT, repeatable=True),
+    )
+    hypotheses = (
+        SituatedHypothesis("file-found", "The missing file has been found."),
+        SituatedHypothesis("file-missing", "The file remains missing."),
+    )
+    symbols = (
+        SituatedObservationSymbol(
+            "evidence-found",
+            "Evidence supports finding the file.",
+        ),
+        SituatedObservationSymbol(
+            "evidence-missing",
+            "Evidence supports the file remaining missing.",
+        ),
+    )
+    likelihoods = tuple(
+        SituatedObservationLikelihood(
+            action_id,
+            hypothesis_id,
+            symbol_id,
+            0.8 if hypothesis_id == expected_hypothesis else 0.2,
+        )
+        for action_id in action_ids
+        for hypothesis_id in ("file-found", "file-missing")
+        for symbol_id, expected_hypothesis in (
+            ("evidence-found", "file-found"),
+            ("evidence-missing", "file-missing"),
+        )
+    )
+    reward_values = (3.0, 1.0, 2.0, 2.0, 0.0)
+    rewards = tuple(
+        SituatedGoalReward(
+            "resolve-case",
+            hypothesis_id,
+            action_id,
+            -value if hypothesis_id == "file-missing" and action_id == action_ids[3] else value,
+        )
+        for hypothesis_id in ("file-found", "file-missing")
+        for action_id, value in zip(action_ids, reward_values)
+    )
+    return SituatedAgentCognitiveModel(
+        agent_id,
+        hypotheses,
+        PlanningBeliefState({"file-found": 0.4, "file-missing": 0.6}),
+        symbols,
+        (
+            SituatedObservationRule(
+                f"{agent_id}-inspect-found",
+                "evidence-found",
+                action_ids[0],
+                SituatedActionKind.INSPECT,
+                "inspected",
+                "status",
+                "found",
+            ),
+        ),
+        likelihoods,
+        actions,
+        (action_ids, (action_ids[3], action_ids[4])),
+        (),
+        (
+            SituatedGoalSpec(
+                "resolve-case",
+                "Resolve the missing-document dispute.",
+                1.0,
+            ),
+        ),
+        rewards,
+        0.8,
+        4.0,
+    )
+
+
+def _expected_runtime_and_spatial_models() -> tuple[
+    SituatedNetworkRuntimeModel,
+    SituatedSpatialMap,
+]:
+    world = _expected_world_model()
+    cognition = SituatedCognitiveModel(
+        "law-firm-case-cognition",
+        "1",
+        world,
+        tuple(_expected_cognitive_agent(agent_id) for agent_id in ("alice", "bob", "client")),
+    )
+    perception = SituatedPerceptionModel(
+        "law-firm-perception",
+        "1",
+        world,
+        (
+            SituatedPerceptionEdge(
+                "visual-lobby-meeting",
+                SituatedPerceptionLayer.VISIBILITY,
+                "lobby",
+                "meeting",
+                1.0,
+                SituatedEdgeActivation.PASSAGE_OPEN,
+                "lobby-meeting",
+            ),
+            SituatedPerceptionEdge(
+                "auditory-meeting-archive",
+                SituatedPerceptionLayer.AUDITORY,
+                "meeting",
+                "archive",
+                12.0,
+                SituatedEdgeActivation.PASSAGE_CLOSED,
+                "meeting-archive",
+            ),
+            SituatedPerceptionEdge(
+                "interaction-meeting",
+                SituatedPerceptionLayer.INTERACTION,
+                "meeting",
+                "meeting",
+                0.0,
+            ),
+        ),
+        tuple(
+            SituatedAgentPerceptionProfile(agent_id, 5.0, 10.0, 30.0)
+            for agent_id in ("alice", "bob", "client")
+        ),
+        (
+            SituatedEventSignalProfile(SituatedActionKind.WAIT, False, None),
+            SituatedEventSignalProfile(SituatedActionKind.MOVE, True, 15.0),
+            SituatedEventSignalProfile(SituatedActionKind.INSPECT, True, None),
+            SituatedEventSignalProfile(SituatedActionKind.TAKE, True, 10.0),
+            SituatedEventSignalProfile(SituatedActionKind.TELL, True, 60.0),
+        ),
+    )
+    recall_cue = SituatedMemoryRecallCue(
+        "case-file-recall",
+        "case file",
+        ("meeting",),
+        (SituatedActionKind.INSPECT, SituatedActionKind.TELL),
+        (ObservationChannel.AUDITORY, ObservationChannel.INSPECTION),
+        0.5,
+        3,
+    )
+    recall_policies = tuple(
+        SituatedAgentRecallPolicy(agent_id, (recall_cue,), 4)
+        for agent_id in ("alice", "bob", "client")
+    )
+    percept_memory_policy = SituatedPerceptMemoryPolicy(
+        "law-firm-percept-memory",
+        "1",
+        (
+            SituatedPerceptMemoryFidelityPolicy(SituatedPerceptFidelity.DETECTED, 0.25, 0.35),
+            SituatedPerceptMemoryFidelityPolicy(SituatedPerceptFidelity.IDENTIFIED, 0.6, 0.55),
+            SituatedPerceptMemoryFidelityPolicy(SituatedPerceptFidelity.EXACT, 1.0, 1.0),
+        ),
+    )
+    percept_memory = SituatedPerceptMemoryCognitiveModel(
+        "law-firm-percept-memory-cognition",
+        "1",
+        perception,
+        cognition,
+        percept_memory_policy,
+        recall_policies,
+    )
+    channel_memory_policy = SituatedMemoryPolicy(
+        "law-firm-channel-memory",
+        "1",
+        (
+            MemoryChannelPolicy(ObservationChannel.SELF, 1.0, 0.5),
+            MemoryChannelPolicy(ObservationChannel.VISUAL, 0.9, 0.65),
+            MemoryChannelPolicy(ObservationChannel.AUDITORY, 0.7, 0.75),
+            MemoryChannelPolicy(ObservationChannel.INSPECTION, 1.0, 1.0),
+        ),
+    )
+    memory_cognition = SituatedMemoryCognitiveModel(
+        "law-firm-memory-cognition",
+        "1",
+        cognition,
+        channel_memory_policy,
+        recall_policies,
+    )
+    social_memory = SituatedSocialMemoryModel(
+        "law-firm-social-memory",
+        "1",
+        memory_cognition,
+        (SituatedClaimTopic("file-location", ("evidence-found", "evidence-missing")),),
+        SituatedSocialMemoryPolicy(0.5, 0.2, 0.4, 0.1, 0.2, 20, 100),
+    )
+    runtime = SituatedNetworkRuntimeModel(
+        "law-firm-network",
+        "1",
+        percept_memory,
+        social_memory,
+        "file-found",
+        0.7,
+        0.5,
+    )
+    spatial = SituatedSpatialMap(
+        "law-firm-map",
+        "1",
+        world,
+        (
+            SpatialPlace("lobby", 0.0, 0.0, 4.0, 4.0, 2.8),
+            SpatialPlace("meeting", 5.0, 0.0, 5.0, 4.0, 2.8),
+            SpatialPlace("archive", 11.0, 0.0, 4.0, 3.0, 2.8),
+        ),
+        (
+            SpatialPassage("lobby-meeting", "lobby", "meeting", 2.25, 0.0, 0.5, 1.2, 2.1),
+            SpatialPassage("meeting-archive", "meeting", "archive", 8.0, 0.0, 0.5, 1.2, 2.1),
+        ),
+    )
+    return runtime, spatial
+
+
+def _reverse_mapping_order(value: object) -> object:
+    if isinstance(value, dict):
+        return {
+            key: _reverse_mapping_order(item)
+            for key, item in reversed(tuple(value.items()))
+        }
+    if isinstance(value, list):
+        return [_reverse_mapping_order(item) for item in value]
+    return value
+
+
+def _write_authored_json(path: Path, value: object) -> None:
+    path.write_text(
+        json.dumps(value, ensure_ascii=False, indent=2, sort_keys=False) + "\n",
+        encoding="utf-8",
+    )
 
 
 class SituatedScenarioCompilerTests(unittest.TestCase):
@@ -47,14 +403,11 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
 
     def test_package_compiles_to_exact_v20_models_and_task_2_values(self) -> None:
         compiled = self.compile_fixture()
+        expected_runtime, expected_spatial = _expected_runtime_and_spatial_models()
 
         self.assertEqual(compiled.scenario_id, "law-firm-case")
-        self.assertIsInstance(compiled.runtime_model, SituatedNetworkRuntimeModel)
-        self.assertIsInstance(compiled.spatial_map, SituatedSpatialMap)
-        self.assertEqual(
-            compiled.runtime_model.percept_memory_model.cognitive_model.world_model,
-            compiled.spatial_map.world_model,
-        )
+        self.assertEqual(compiled.runtime_model, expected_runtime)
+        self.assertEqual(compiled.spatial_map, expected_spatial)
         self.assertIsInstance(compiled.social_world, ScenarioSocialWorld)
         self.assertIsInstance(compiled.story_plan, ScenarioStoryPlan)
         self.assertIsInstance(compiled.knowledge_catalog, ScenarioKnowledgeCatalog)
@@ -79,6 +432,142 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
             first.story_plan.acts[0].scene_ids,
             ("discover", "confront"),
         )
+
+    def test_compiled_identity_ignores_all_semantically_unordered_source_order(self) -> None:
+        baseline = self.compile_fixture("canonical-order")
+
+        for ordering in (
+            "json-object",
+            "documents",
+            "agents",
+            "relationships",
+            "catalog",
+        ):
+            with self.subTest(ordering=ordering):
+                root = write_law_firm_package(self.root / ordering)
+                manifest_path = root / "scenario-package.json"
+                if ordering == "json-object":
+                    path = root / "social/relationships.json"
+                    authored = json.loads(path.read_text(encoding="utf-8"))
+                    _write_authored_json(path, _reverse_mapping_order(authored))
+                    refresh_manifest_hash(root, "social.relationships", "relationships")
+                elif ordering in {"documents", "agents"}:
+                    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    documents = manifest["documents"]
+                    if ordering == "documents":
+                        manifest["documents"] = list(reversed(documents))
+                    else:
+                        positions = [
+                            index
+                            for index, item in enumerate(documents)
+                            if item["role"] == "agent"
+                        ]
+                        agents = [documents[index] for index in reversed(positions)]
+                        for index, agent in zip(positions, agents):
+                            documents[index] = agent
+                    _write_authored_json(manifest_path, manifest)
+                elif ordering == "relationships":
+                    path = root / "social/relationships.json"
+                    relationships = _value(path)["relationships"]
+                    mutate_json(path, "/relationships", list(reversed(relationships)))
+                    refresh_manifest_hash(root, "social.relationships", "relationships")
+                else:
+                    for relative_path, role, logical_id, pointer in (
+                        ("knowledge/catalog.json", "knowledge.catalog", "catalog", "/resources"),
+                        ("knowledge/access.json", "knowledge.access", "access", "/grants"),
+                    ):
+                        path = root / relative_path
+                        items = _value(path)[pointer[1:]]
+                        mutate_json(path, pointer, list(reversed(items)))
+                        refresh_manifest_hash(root, role, logical_id)
+
+                candidate = _compile_situated_scenario_components(
+                    load_situated_scenario_package(root)
+                )
+                self.assertEqual(candidate.runtime_model, baseline.runtime_model)
+                self.assertEqual(candidate.social_world, baseline.social_world)
+                self.assertEqual(candidate.relationship_seeds, baseline.relationship_seeds)
+                self.assertEqual(candidate.source_document_hashes, baseline.source_document_hashes)
+                self.assertEqual(candidate.package_hash, baseline.package_hash)
+                self.assertEqual(candidate.content_hash, baseline.content_hash)
+                self.assertEqual(candidate, baseline)
+
+    def test_run_fallbacks_are_a_closed_validated_mapping_even_when_unused(self) -> None:
+        corruptions = (
+            ("unknown-key", "/fallbacks/unknown", "empty", "unsupported_shape"),
+            ("invalid-map", "/fallbacks/physical.map", "empty", "unsupported_fallback"),
+        )
+        for name, pointer, replacement, code in corruptions:
+            with self.subTest(name=name):
+                root = write_law_firm_package(self.root / f"fallback-{name}")
+                run_path = root / "run.json"
+                if name == "unknown-key":
+                    fallbacks = dict(_value(run_path)["fallbacks"])
+                    fallbacks["unknown"] = replacement
+                    mutate_json(run_path, "/fallbacks", fallbacks)
+                else:
+                    fallbacks = dict(_value(run_path)["fallbacks"])
+                    fallbacks["physical.map"] = replacement
+                    mutate_json(run_path, "/fallbacks", fallbacks)
+                refresh_manifest_hash(root, "run", "run")
+
+                with self.assertRaises(ScenarioCompilationError) as raised:
+                    _compile_situated_scenario_components(
+                        load_situated_scenario_package(root)
+                    )
+
+                self.assertEqual(raised.exception.document_role, "run")
+                self.assertEqual(raised.exception.json_pointer, pointer)
+                self.assertEqual(raised.exception.code, code)
+
+    def test_norm_effect_is_a_strict_tagged_union(self) -> None:
+        for field in ("resource_id", "relationship_type"):
+            with self.subTest(field=field):
+                root = write_law_firm_package(self.root / f"norm-{field}")
+                path = root / "social/norms.json"
+                mutate_json(path, f"/norms/0/{field}", f"unexpected-{field}")
+                refresh_manifest_hash(root, "social.norms", "norms")
+
+                with self.assertRaises(ScenarioCompilationError) as raised:
+                    _compile_situated_scenario_components(
+                        load_situated_scenario_package(root)
+                    )
+
+                self.assertEqual(raised.exception.document_role, "social.norms")
+                self.assertEqual(raised.exception.json_pointer, f"/norms/0/{field}")
+                self.assertEqual(raised.exception.code, "invalid_value")
+
+    def test_social_references_report_raw_authored_indices(self) -> None:
+        corruptions = (
+            (
+                "institution-parent",
+                "/institutions/1/parent_institution_id",
+                "missing-parent",
+            ),
+            (
+                "membership-after-reorder",
+                "/memberships/0/institution_id",
+                "missing-institution",
+            ),
+        )
+        for name, pointer, replacement in corruptions:
+            with self.subTest(name=name):
+                root = write_law_firm_package(self.root / name)
+                path = root / "social/institutions.json"
+                if name == "membership-after-reorder":
+                    memberships = _value(path)["memberships"]
+                    mutate_json(path, "/memberships", list(reversed(memberships)))
+                mutate_json(path, pointer, replacement)
+                refresh_manifest_hash(root, "social.institutions", "institutions")
+
+                with self.assertRaises(ScenarioCompilationError) as raised:
+                    _compile_situated_scenario_components(
+                        load_situated_scenario_package(root)
+                    )
+
+                self.assertEqual(raised.exception.document_role, "social.institutions")
+                self.assertEqual(raised.exception.json_pointer, pointer)
+                self.assertEqual(raised.exception.code, "unknown_reference")
 
     def test_unknown_cross_document_id_reports_role_pointer_and_stable_code(self) -> None:
         root = write_law_firm_package(self.root / "unknown-place")

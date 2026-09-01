@@ -188,6 +188,89 @@ def _agents(source: ScenarioPackageSource) -> tuple[ScenarioSourceDocument, ...]
     return tuple(document for document in source.documents if document.role is ScenarioDocumentRole.AGENT)
 
 
+_SEMANTICALLY_ORDERED_ARRAY_PATHS: Mapping[
+    ScenarioDocumentRole,
+    frozenset[tuple[str, ...]],
+] = {
+    ScenarioDocumentRole.AGENT: frozenset({("cognition", "action_schedule")}),
+    ScenarioDocumentRole.STORY_OUTLINE: frozenset(
+        {
+            ("acts",),
+            ("acts", "*", "scene_ids"),
+        }
+    ),
+    ScenarioDocumentRole.ASSET_CATALOG: frozenset(
+        {("resources", "*", "dimensions")}
+    ),
+}
+
+
+def _semantic_source_value(
+    value: object,
+    *,
+    role: ScenarioDocumentRole,
+    path: tuple[str, ...] = (),
+) -> object:
+    """Normalize unordered authored arrays while retaining true sequence semantics."""
+
+    if isinstance(value, Mapping):
+        return {
+            key: _semantic_source_value(item, role=role, path=path + (key,))
+            for key, item in value.items()
+        }
+    if isinstance(value, tuple):
+        normalized = tuple(
+            _semantic_source_value(item, role=role, path=path + ("*",))
+            for item in value
+        )
+        ordered_paths = _SEMANTICALLY_ORDERED_ARRAY_PATHS.get(role, frozenset())
+        if path in ordered_paths:
+            return normalized
+        return tuple(sorted(normalized, key=stable_content_hash))
+    return value
+
+
+def _semantic_document_hash(document: ScenarioSourceDocument) -> str:
+    return stable_content_hash(
+        {
+            "role": document.role.value,
+            "logical_id": document.logical_id,
+            "schema": document.schema,
+            "value": _semantic_source_value(document.value, role=document.role),
+        }
+    )
+
+
+def _semantic_package_identity(
+    source: ScenarioPackageSource,
+) -> tuple[str, tuple[tuple[str, str, str], ...]]:
+    document_hashes = tuple(
+        sorted(
+            (
+                document.role.value,
+                document.logical_id,
+                _semantic_document_hash(document),
+            )
+            for document in source.documents
+        )
+    )
+    package_hash = stable_content_hash(
+        {
+            "scenario_id": source.scenario_id,
+            "version": source.version,
+            "documents": [
+                {
+                    "role": role,
+                    "logical_id": logical_id,
+                    "content_hash": content_hash,
+                }
+                for role, logical_id, content_hash in document_hashes
+            ],
+        }
+    )
+    return package_hash, document_hashes
+
+
 def _object(
     document: ScenarioSourceDocument,
     value: object,
@@ -1009,8 +1092,21 @@ def _run_value(source: ScenarioPackageSource) -> tuple[ScenarioSourceDocument, M
             "fallbacks",
         },
     )
-    if not isinstance(value["fallbacks"], Mapping):
+    fallbacks = value["fallbacks"]
+    if not isinstance(fallbacks, Mapping):
         raise _error(document, "/fallbacks", "invalid_type")
+    supported = {
+        ScenarioDocumentRole.PHYSICAL_MAP.value: "auto_grid",
+        ScenarioDocumentRole.SOCIAL_INSTITUTIONS.value: "empty",
+        ScenarioDocumentRole.SOCIAL_NORMS.value: "empty",
+        ScenarioDocumentRole.STORY_INTERVENTIONS.value: "none",
+    }
+    unknown = sorted(set(fallbacks) - set(supported))
+    if unknown:
+        raise _error(document, f"/fallbacks/{unknown[0]}", "unsupported_shape")
+    for role, fallback in fallbacks.items():
+        if fallback != supported[role]:
+            raise _error(document, f"/fallbacks/{role}", "unsupported_fallback")
     return document, value
 
 
@@ -1610,6 +1706,8 @@ def _compile_social_world(
     knowledge_catalog: ScenarioKnowledgeCatalog,
     asset_catalog: ScenarioAssetCatalog,
 ) -> ScenarioSocialWorld:
+    world = runtime_model.percept_memory_model.cognitive_model.world_model
+    agent_ids = {item.agent_id for item in world.agents}
     institution_document = _optional_singleton(source, ScenarioDocumentRole.SOCIAL_INSTITUTIONS)
     institutions: list[ScenarioInstitution] = []
     memberships: list[ScenarioMembership] = []
@@ -1649,6 +1747,17 @@ def _compile_social_world(
                     ),
                 )
             )
+        institution_ids = {item.institution_id for item in institutions}
+        for index, institution in enumerate(institutions):
+            if (
+                institution.parent_institution_id is not None
+                and institution.parent_institution_id not in institution_ids
+            ):
+                raise _error(
+                    institution_document,
+                    f"/institutions/{index}/parent_institution_id",
+                    "unknown_reference",
+                )
         for index, raw in enumerate(
             _array(institution_document, value["memberships"], "/memberships")
         ):
@@ -1659,18 +1768,41 @@ def _compile_social_world(
                 pointer,
                 {"agent_id", "institution_id", "role_id"},
             )
+            agent_id = _text(
+                institution_document,
+                item["agent_id"],
+                f"{pointer}/agent_id",
+            )
+            institution_id = _text(
+                institution_document,
+                item["institution_id"],
+                f"{pointer}/institution_id",
+            )
+            role_id = _text(
+                institution_document,
+                item["role_id"],
+                f"{pointer}/role_id",
+            )
+            if agent_id not in agent_ids:
+                raise _error(
+                    institution_document,
+                    f"{pointer}/agent_id",
+                    "unknown_reference",
+                )
+            if institution_id not in institution_ids:
+                raise _error(
+                    institution_document,
+                    f"{pointer}/institution_id",
+                    "unknown_reference",
+                )
             memberships.append(
                 _construct(
                     institution_document,
                     pointer,
-                    lambda item=item: ScenarioMembership(
-                        _text(institution_document, item["agent_id"], f"{pointer}/agent_id"),
-                        _text(
-                            institution_document,
-                            item["institution_id"],
-                            f"{pointer}/institution_id",
-                        ),
-                        _text(institution_document, item["role_id"], f"{pointer}/role_id"),
+                    lambda agent_id=agent_id, institution_id=institution_id, role_id=role_id: ScenarioMembership(
+                        agent_id,
+                        institution_id,
+                        role_id,
                     ),
                 )
             )
@@ -1723,7 +1855,6 @@ def _compile_social_world(
     )
     relationship_types = tuple(sorted({item.relationship_type for item in relationships}))
     roles = {item.role_id for item in memberships}
-    world = runtime_model.percept_memory_model.cognitive_model.world_model
     known_target_scopes = (
         {item.agent_id for item in world.agents}
         | {item.place_id for item in world.places}
@@ -1776,6 +1907,26 @@ def _compile_social_world(
                 item["relationship_type"],
                 f"{pointer}/relationship_type",
             )
+            active_reference = (
+                "action_id"
+                if effect in {ScenarioNormEffect.ALLOW_ACTION, ScenarioNormEffect.DENY_ACTION}
+                else "resource_id"
+                if effect is ScenarioNormEffect.REQUIRE_KNOWLEDGE_GRANT
+                else "relationship_type"
+                if effect is ScenarioNormEffect.REQUIRE_RELATIONSHIP
+                else None
+            )
+            for field, reference in (
+                ("action_id", action_id),
+                ("resource_id", resource_id),
+                ("relationship_type", relationship_type),
+            ):
+                if field != active_reference and reference is not None:
+                    raise _error(
+                        norm_document,
+                        f"{pointer}/{field}",
+                        "invalid_value",
+                    )
             target_scope_id = _optional_text(
                 norm_document,
                 item["target_scope_id"],
@@ -2466,20 +2617,11 @@ def _compile_situated_scenario_components(
     )
     _validate_interventions(source, intervention_kinds)
     _validate_perception_signal_coverage(source, runtime_model)
-    source_hashes = tuple(
-        sorted(
-            (
-                document.role.value,
-                document.logical_id,
-                document.content_hash,
-            )
-            for document in source.documents
-        )
-    )
+    package_hash, source_hashes = _semantic_package_identity(source)
     return _CompiledScenarioComponents(
         source.scenario_id,
         source.version,
-        source.content_hash,
+        package_hash,
         source_hashes,
         runtime_model,
         spatial_map,
