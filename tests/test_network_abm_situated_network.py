@@ -267,6 +267,67 @@ class SituatedNetworkRuntimeTests(unittest.TestCase):
             ),
         )
 
+    def test_logical_memory_hash_rejects_non_binary_active_values(self):
+        model, story, _, _ = tell_case(door_open=True)
+        ingest_situated_percept_story(
+            self.database,
+            model.percept_memory_model.perception_model,
+            story,
+            "bob",
+            model.percept_memory_model.memory_policy,
+        )
+        legal_hash = (
+            situated_percept_memory.hash_situated_percept_memory_store(
+                self.database
+            )
+        )
+        self.assertEqual(
+            len(list_situated_percept_memories(self.database, "bob")),
+            2,
+        )
+
+        connection = sqlite3.connect(self.database)
+        try:
+            connection.execute(
+                "UPDATE percept_memory_records SET active = 2"
+            )
+            connection.commit()
+            visible_count = connection.execute(
+                "SELECT COUNT(*) FROM percept_memory_records WHERE active = 1"
+            ).fetchone()[0]
+        finally:
+            connection.close()
+        self.assertEqual(visible_count, 0)
+        with self.assertRaisesRegex(
+            SituatedPerceptMemoryConflictError,
+            "active",
+        ):
+            situated_percept_memory.hash_situated_percept_memory_store(
+                self.database
+            )
+
+        connection = sqlite3.connect(self.database)
+        try:
+            connection.execute(
+                "UPDATE percept_memory_records SET active = 0"
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        inactive_hash = (
+            situated_percept_memory.hash_situated_percept_memory_store(
+                self.database
+            )
+        )
+        inactive_memories = list_situated_percept_memories(
+            self.database,
+            "bob",
+            include_inactive=True,
+        )
+        self.assertNotEqual(inactive_hash, legal_hash)
+        self.assertEqual(len(inactive_memories), 2)
+        self.assertTrue(all(not item.active for item in inactive_memories))
+
     def test_successful_round_publishes_the_exact_next_memory_checkpoint(self):
         model, story, cognitive_state, social_state = tell_case(door_open=True)
         initial = initialize_situated_network_runtime(

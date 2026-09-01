@@ -222,6 +222,14 @@ def _insert_values(memory: SituatedPerceptMemoryRecord) -> tuple[object, ...]:
     )
 
 
+def _active_from_row(value: object) -> bool:
+    if type(value) is not int or value not in (0, 1):
+        raise SituatedPerceptMemoryConflictError(
+            "percept memory active value must be the integer 0 or 1"
+        )
+    return value == 1
+
+
 def _row_to_memory(row: sqlite3.Row) -> SituatedPerceptMemoryRecord:
     memory = SituatedPerceptMemoryRecord(
         memory_id=row["memory_id"],
@@ -251,7 +259,7 @@ def _row_to_memory(row: sqlite3.Row) -> SituatedPerceptMemoryRecord:
         salience=row["salience"],
         policy_hash=row["policy_hash"],
         summary=row["summary"],
-        active=bool(row["active"]),
+        active=_active_from_row(row["active"]),
     )
     if row["source_hash"] != _source_hash(memory):
         raise SituatedPerceptMemoryConflictError(
