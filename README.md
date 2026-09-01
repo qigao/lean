@@ -1695,8 +1695,49 @@ return exactly one JSON object matching the supplied response schema, followed b
 the exact scene task/payload JSON. Importing `narrative_dynamics.abm` remains
 provider-neutral.
 
-V19 runtime unification and V20 authoring/visualization remain separate phases;
-V18 does not merge older runtimes or add a production UI.
+### V19 atomic situated-network runtime
+
+V19 unifies observation and orchestration for the existing situated office model.
+One atomic call advances the V15.1 percept/social/cognitive round exactly once, then
+binds its returned story, cognitive state, and social state to one privacy-preserving
+multiplex-network snapshot and one emergence-metric record. Snapshot transmissions
+identify events, agents, fidelity, and disclosed channels, but never copy private
+message payloads.
+
+```python
+from narrative_dynamics.abm import (
+    initialize_situated_network_runtime,
+    simulate_situated_network_runtime,
+)
+
+runtime = initialize_situated_network_runtime(
+    office_network_model,
+    office_story,
+    office_cognitive_state,
+    office_social_state,
+)
+trajectory = simulate_situated_network_runtime(
+    "office.sqlite3",
+    office_network_model,
+    runtime,
+    round_count=3,
+)
+
+for item in trajectory.rounds:
+    assert item.next_state.parent_state_hash == item.prior_state.content_hash
+    assert item.next_state.story.content_hash == item.next_state.snapshot.story_hash
+    assert item.next_state.metrics.snapshot_hash == item.next_state.snapshot.content_hash
+```
+
+In the office case, each runtime state presents agent nodes alongside directed social
+relationship edges, situated visual/auditory access edges, sanitized latest-round
+transmissions, and aggregate adoption, trust, claim, and reach measures. The exact
+parent chain makes the resulting trajectory replay-auditable without merging these
+read-only projections back into older network models.
+
+V19 unifies observability and orchestration, but it does not yet implement physical
+lifecycle or V1-V9 rewiring feedback; both remain future work. Map import is deferred
+to V19.1. V20 authoring/visualization and a production UI also remain separate work.
 
 ## Verification
 

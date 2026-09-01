@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from narrative_dynamics.abm.situated import SituatedActionKind
 from narrative_dynamics.abm.situated_cognition_contracts import (
     SituatedCognitiveState,
@@ -12,9 +14,12 @@ from narrative_dynamics.abm.situated_network_contracts import (
     SituatedNetworkAgentNode,
     SituatedNetworkEmergenceMetrics,
     SituatedNetworkRelationshipEdge,
+    SituatedNetworkRoundResult,
     SituatedNetworkRuntimeModel,
+    SituatedNetworkRuntimeState,
     SituatedNetworkSnapshot,
     SituatedNetworkTransmission,
+    SituatedNetworkTrajectory,
 )
 from narrative_dynamics.abm.situated_perception import (
     can_situated_agents_interact,
@@ -22,6 +27,9 @@ from narrative_dynamics.abm.situated_perception import (
     project_situated_percepts,
 )
 from narrative_dynamics.abm.situated_perception_contracts import SituatedPerceptFidelity
+from narrative_dynamics.abm.situated_percept_social_cognition import (
+    simulate_situated_percept_social_cognitive_round,
+)
 from narrative_dynamics.abm.situated_social_memory_contracts import (
     SituatedClaimStatus,
     SituatedSocialMemoryState,
@@ -288,7 +296,129 @@ def measure_situated_network_emergence(
     )
 
 
+def initialize_situated_network_runtime(
+    model: SituatedNetworkRuntimeModel,
+    story: SituatedStory,
+    cognitive_state: SituatedCognitiveState,
+    social_state: SituatedSocialMemoryState,
+) -> SituatedNetworkRuntimeState:
+    """Bind one validated V15.1/V14 checkpoint to its V19 observability view."""
+
+    snapshot = project_situated_network_snapshot(
+        model, story, cognitive_state, social_state
+    )
+    metrics = measure_situated_network_emergence(model, snapshot, social_state)
+    return SituatedNetworkRuntimeState(
+        model.model_id,
+        model.content_hash,
+        story.current_state.round_index,
+        None,
+        story,
+        cognitive_state,
+        social_state,
+        snapshot,
+        metrics,
+    )
+
+
+def _validate_runtime_state(
+    model: SituatedNetworkRuntimeModel,
+    state: SituatedNetworkRuntimeState,
+) -> None:
+    if not isinstance(model, SituatedNetworkRuntimeModel):
+        raise TypeError("situated network simulation requires a runtime model")
+    if not isinstance(state, SituatedNetworkRuntimeState):
+        raise TypeError("situated network simulation requires a runtime state")
+    if state.model_id != model.model_id or state.model_hash != model.content_hash:
+        raise ValueError("situated network state must bind the exact runtime model")
+    validate_situated_cognitive_state(
+        model.percept_memory_model.cognitive_model,
+        state.story,
+        state.cognitive_state,
+    )
+    validate_situated_social_memory_state(
+        model.social_memory_model,
+        state.cognitive_state,
+        state.social_state,
+    )
+
+
+def simulate_situated_network_round(
+    database_path: str | Path,
+    model: SituatedNetworkRuntimeModel,
+    state: SituatedNetworkRuntimeState,
+) -> SituatedNetworkRoundResult:
+    """Advance all private state once, then bind one synchronized V19 record."""
+
+    _validate_runtime_state(model, state)
+    advanced = simulate_situated_percept_social_cognitive_round(
+        database_path,
+        model.percept_memory_model,
+        model.social_memory_model,
+        state.story,
+        state.cognitive_state,
+        state.social_state,
+    )
+    snapshot = project_situated_network_snapshot(
+        model,
+        advanced.next_story,
+        advanced.next_cognitive_state,
+        advanced.next_social_state,
+    )
+    metrics = measure_situated_network_emergence(
+        model, snapshot, advanced.next_social_state
+    )
+    next_state = SituatedNetworkRuntimeState(
+        model.model_id,
+        model.content_hash,
+        state.round_index + 1,
+        state.content_hash,
+        advanced.next_story,
+        advanced.next_cognitive_state,
+        advanced.next_social_state,
+        snapshot,
+        metrics,
+    )
+    return SituatedNetworkRoundResult(
+        model.model_id, model.content_hash, state, next_state
+    )
+
+
+def simulate_situated_network_runtime(
+    database_path: str | Path,
+    model: SituatedNetworkRuntimeModel,
+    initial_state: SituatedNetworkRuntimeState,
+    *,
+    round_count: int,
+) -> SituatedNetworkTrajectory:
+    """Run a positive number of exact parent-linked V19 rounds."""
+
+    if (
+        not isinstance(round_count, int)
+        or isinstance(round_count, bool)
+        or round_count <= 0
+    ):
+        raise ValueError("situated network simulation requires a positive round count")
+    _validate_runtime_state(model, initial_state)
+    state = initial_state
+    rounds = []
+    for _ in range(round_count):
+        item = simulate_situated_network_round(database_path, model, state)
+        rounds.append(item)
+        state = item.next_state
+    return SituatedNetworkTrajectory(
+        model.model_id,
+        model.content_hash,
+        initial_state,
+        tuple(rounds),
+        state,
+    )
+
+
 __all__ = (
     "project_situated_network_snapshot",
     "measure_situated_network_emergence",
+    "initialize_situated_network_runtime",
+    "simulate_situated_network_round",
+    "simulate_situated_network_runtime",
 )

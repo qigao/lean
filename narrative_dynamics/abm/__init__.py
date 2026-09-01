@@ -412,6 +412,25 @@ from narrative_dynamics.abm.situated_realization import (
     render_narrative_realization_text,
     replay_narrative_realization,
 )
+from narrative_dynamics.abm.situated_network_contracts import (
+    SituatedNetworkAccessEdge,
+    SituatedNetworkAgentNode,
+    SituatedNetworkEmergenceMetrics,
+    SituatedNetworkRelationshipEdge,
+    SituatedNetworkRoundResult,
+    SituatedNetworkRuntimeModel,
+    SituatedNetworkRuntimeState,
+    SituatedNetworkSnapshot,
+    SituatedNetworkTrajectory,
+    SituatedNetworkTransmission,
+)
+from narrative_dynamics.abm.situated_network import (
+    initialize_situated_network_runtime,
+    measure_situated_network_emergence,
+    project_situated_network_snapshot,
+    simulate_situated_network_round,
+    simulate_situated_network_runtime,
+)
 
 
 __all__ = (
@@ -732,4 +751,19 @@ __all__ = (
     "realize_narrative_exact_facts",
     "replay_narrative_realization",
     "render_narrative_realization_text",
+    "SituatedNetworkRuntimeModel",
+    "SituatedNetworkAgentNode",
+    "SituatedNetworkRelationshipEdge",
+    "SituatedNetworkAccessEdge",
+    "SituatedNetworkTransmission",
+    "SituatedNetworkSnapshot",
+    "SituatedNetworkEmergenceMetrics",
+    "SituatedNetworkRuntimeState",
+    "SituatedNetworkRoundResult",
+    "SituatedNetworkTrajectory",
+    "project_situated_network_snapshot",
+    "measure_situated_network_emergence",
+    "initialize_situated_network_runtime",
+    "simulate_situated_network_round",
+    "simulate_situated_network_runtime",
 )
