@@ -1,0 +1,108 @@
+{
+  "schema": "narrative-dynamics.scenario-document/v1",
+  "value": {
+    "acts": [
+      {
+        "act_id": "case",
+        "scene_ids": [
+          "discover",
+          "confront"
+        ]
+      }
+    ],
+    "continuity_predicates": [
+      {
+        "kind": "passage_open",
+        "object_id": null,
+        "subject_id": "lobby-meeting",
+        "value": true
+      }
+    ],
+    "dependencies": [
+      {
+        "predecessor_scene_id": "discover",
+        "successor_scene_id": "confront"
+      }
+    ],
+    "mode": "hybrid",
+    "plan_id": "law-firm-outline",
+    "scenes": [
+      {
+        "allowed_intervention_kinds": [
+          "open_passage"
+        ],
+        "desired_outcome_ids": [
+          "document-discovered"
+        ],
+        "exit_predicates": [
+          {
+            "kind": "agent_holds",
+            "object_id": "case-file",
+            "subject_id": "alice",
+            "value": null
+          }
+        ],
+        "maximum_rounds": 4,
+        "participant_agent_ids": [
+          "alice",
+          "bob"
+        ],
+        "place_ids": [
+          "archive"
+        ],
+        "preconditions": [
+          {
+            "kind": "object_at",
+            "object_id": "archive",
+            "subject_id": "case-file",
+            "value": null
+          }
+        ],
+        "scene_id": "discover"
+      },
+      {
+        "allowed_intervention_kinds": [
+          "move_object"
+        ],
+        "desired_outcome_ids": [
+          "dispute-addressed"
+        ],
+        "exit_predicates": [
+          {
+            "kind": "belief_at_least",
+            "object_id": "file-found",
+            "subject_id": "client",
+            "value": 0.7
+          }
+        ],
+        "maximum_rounds": 6,
+        "participant_agent_ids": [
+          "alice",
+          "bob",
+          "client"
+        ],
+        "place_ids": [
+          "meeting"
+        ],
+        "preconditions": [
+          {
+            "kind": "agent_holds",
+            "object_id": "case-file",
+            "subject_id": "alice",
+            "value": null
+          }
+        ],
+        "scene_id": "confront"
+      }
+    ],
+    "terminal_predicates": [
+      {
+        "kind": "belief_at_least",
+        "object_id": "file-found",
+        "subject_id": "client",
+        "value": 0.8
+      }
+    ],
+    "version": "1"
+  }
+}

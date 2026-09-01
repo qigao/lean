@@ -1,0 +1,38 @@
+{
+  "schema": "narrative-dynamics.scenario-document/v1",
+  "value": {
+    "grants": [
+      {
+        "resource_ids": [
+          "archive-cabinet"
+        ],
+        "subject_id": null,
+        "subject_scope": "public"
+      }
+    ],
+    "resources": [
+      {
+        "authority": "official",
+        "collection_id": "archive-props",
+        "collision_metadata_ids": [
+          "cabinet-collider"
+        ],
+        "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "dimensions": [
+          2.0,
+          0.6,
+          2.2
+        ],
+        "format": "glb",
+        "kind": "model_3d",
+        "license_tag": "CC-BY-4.0",
+        "media_type": "model/gltf-binary",
+        "preview_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "resource_id": "archive-cabinet",
+        "rig_metadata_ids": [],
+        "unit": "m",
+        "uri": "https://example.test/archive-cabinet.glb"
+      }
+    ]
+  }
+}

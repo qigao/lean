@@ -1992,6 +1992,71 @@ Blender headlessly, stages the result, validates its `.blend` header, and atomic
 replaces the requested output only after success. It exports no message payloads,
 private details, database paths, renderer output, video, player, or Blender add-on.
 
+### V21.1 data-authored situated scenarios
+
+V21.1 adds a strict JSON input boundary over the existing V20 runtime. The complete
+data-only law-firm package in `examples/law_firm_scenario` can be loaded, compiled,
+and initialized directly; it does not import or execute a Python generator:
+
+```python
+from narrative_dynamics.abm import (
+    compile_situated_scenario_package,
+    initialize_compiled_scenario,
+    load_situated_scenario_package,
+)
+
+source = load_situated_scenario_package("examples/law_firm_scenario")
+scenario = compile_situated_scenario_package(source)
+state = initialize_compiled_scenario("law-firm-memory.sqlite3", scenario)
+```
+
+The package directory and manifest form a tree of ownership: one
+`scenario-package.json` declares each JSON/Tiled document, its role, logical ID,
+relative path, and integrity hash. The document contents form graphs. Places connect
+through directed passages and perception edges; institutions use an acyclic parent
+forest; social relationships are directed; story scenes use an acyclic dependency
+graph; and grants connect agents, roles, institutions, or the public to catalog
+resources. Cross-document references always use stable authored IDs, never array
+positions, filesystem paths, Python names, or object identity. Authored act order,
+scene order within an act, and action-schedule horizons retain sequence semantics;
+unordered catalogs and graph members are canonicalized for compiled identity.
+
+Physical input defines the world roster, perception graph, authoritative round-zero
+agent/object/passage state, and either explicit spatial geometry or the declared
+`physical.map=auto_grid` fallback. Social input separately defines institutions,
+memberships, every directed agent relationship, and supported enforceable norms.
+The compiler requires exact fixed-roster and cross-document coverage and constructs
+the existing public V10-V20 world, cognition, perception, memory, social-memory,
+network-runtime, story, and spatial-map values. The compiled scenario binds the
+authoritative initial story, cognitive checkpoint, and social checkpoint; opening
+the SQLite percept-memory store is deferred until initialization.
+
+Story mode is `authored`, `hybrid`, or `sandbox`, and must match the run policy.
+Authored mode assigns every round to an active scene contract; hybrid mode keeps
+agents autonomous while permitting only declared typed interventions; sandbox mode
+supplies initial conditions and terminal limits without steering actions. These
+modes are input policy only in V21.1. Knowledge and asset catalogs
+carry content hashes, metadata, and access grants, but V21.1 never fetches their
+URIs, builds a retrieval index, calls an LLM, or loads an asset. Catalog metadata is
+therefore an authorization and identity boundary, not an execution hook.
+
+Loading is deliberately inert: it reads only UTF-8 JSON documents named by the
+manifest, enforces size limits and exact schemas, recomputes every declared content
+hash, and rejects absolute paths, parent traversal, symlink escape, duplicate keys,
+non-finite numbers, and undeclared source dependencies. Raw manifest hashes remain
+loader integrity evidence. Compilation uses schema-semantic package/document
+identity, so moving the package or reordering semantically unordered input does not
+change the compiled hash. Compilation fails closed with `ScenarioCompilationError`;
+its stable document role, logical ID, JSON pointer, and code identify malformed or
+unresolved input without exposing machine-local paths or source values.
+
+V21.1 stops after safe load, semantic compilation, and exact runtime-state
+initialization. It does not advance the scenario through a new V21 coordinator and
+does not publish output records, an output bus, live transport, or live Blender
+projection. Those are the separate V21.2 phase; LLM/retrieval and production asset
+adapters remain later V21 phases. A run policy may reserve output kinds or a Blender
+mode for those future consumers, but V21.1 does not silently stub or execute them.
+
 ## Verification
 
 GitHub Actions runs:

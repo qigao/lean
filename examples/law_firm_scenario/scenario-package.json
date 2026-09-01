@@ -1,0 +1,103 @@
+{
+  "documents": [
+    {
+      "expected_hash": "sha256:178f7f5c1241315b685847f486986490e117f8501d9c1af3da574abc8ad342b1",
+      "logical_id": "world",
+      "relative_path": "physical/world.json",
+      "role": "physical.world"
+    },
+    {
+      "expected_hash": "sha256:c5b374f0710557de472e458aece161e3c8ee93b9e5875aa6a097c3e011af703e",
+      "logical_id": "perception",
+      "relative_path": "physical/perception.json",
+      "role": "physical.perception"
+    },
+    {
+      "expected_hash": "sha256:db54ca0f430cf5e108f468667201922fc7daf9e2077d828abfc1f61120b592ef",
+      "logical_id": "initial",
+      "relative_path": "physical/initial-state.json",
+      "role": "physical.initial_state"
+    },
+    {
+      "expected_hash": "sha256:f9ed4f911496de3127484624185c62f696ed1b4f69297b2d3b92b6e852449267",
+      "logical_id": "map",
+      "relative_path": "physical/map.json",
+      "role": "physical.map"
+    },
+    {
+      "expected_hash": "sha256:4634dd49dfa0ba5f444fd30e7cf8442d39b6cca7829486a4eb7b61940b378507",
+      "logical_id": "institutions",
+      "relative_path": "social/institutions.json",
+      "role": "social.institutions"
+    },
+    {
+      "expected_hash": "sha256:ea86bcff19c040f22443515be01940ec797b61484e5fa5bb7232e440c0e4cd5e",
+      "logical_id": "relationships",
+      "relative_path": "social/relationships.json",
+      "role": "social.relationships"
+    },
+    {
+      "expected_hash": "sha256:7d476ab992092b81b701d6c9e954a351bec6eb22a68634d89732db14c98acffe",
+      "logical_id": "norms",
+      "relative_path": "social/norms.json",
+      "role": "social.norms"
+    },
+    {
+      "expected_hash": "sha256:7d5ba904447b21e39bb75c807d25d433bd420b5c4e777da072129300ff3b5339",
+      "logical_id": "alice",
+      "relative_path": "agents/alice.json",
+      "role": "agent"
+    },
+    {
+      "expected_hash": "sha256:af24ca7a3c8f0652db7c6f6a0f08e3731881dc57d09d2dd60f2cb30d5f63bd6f",
+      "logical_id": "bob",
+      "relative_path": "agents/bob.json",
+      "role": "agent"
+    },
+    {
+      "expected_hash": "sha256:b9c3fd4a1361225e08eff7f3f151357e9ad1e94c95381fea196786ca9821bb47",
+      "logical_id": "client",
+      "relative_path": "agents/client.json",
+      "role": "agent"
+    },
+    {
+      "expected_hash": "sha256:295115a1567d6d5ebe29f82073bc3559cecef7e6ca494ec08f2fe3766317378b",
+      "logical_id": "outline",
+      "relative_path": "story/outline.json",
+      "role": "story.outline"
+    },
+    {
+      "expected_hash": "sha256:8da2ad09b8a5e28998ce763064921fec478f03b978d28d29e3764281bc617b2a",
+      "logical_id": "interventions",
+      "relative_path": "story/interventions.json",
+      "role": "story.interventions"
+    },
+    {
+      "expected_hash": "sha256:98c1f3c3b29cbcf5f8eccf922dc9ac20852cbe276a2e7dbaf634773ece61084c",
+      "logical_id": "catalog",
+      "relative_path": "knowledge/catalog.json",
+      "role": "knowledge.catalog"
+    },
+    {
+      "expected_hash": "sha256:add31b8d2da3008d108596143ca77df30a96e66d69e39dbd7b3492d1b5d8a547",
+      "logical_id": "access",
+      "relative_path": "knowledge/access.json",
+      "role": "knowledge.access"
+    },
+    {
+      "expected_hash": "sha256:081a3f3fbe957ac2059088a9e51b0adbc0adc78f46ab6d4058e8c777a2210317",
+      "logical_id": "catalog",
+      "relative_path": "assets/catalog.json",
+      "role": "asset.catalog"
+    },
+    {
+      "expected_hash": "sha256:134ebaab436e29cc4c2097b6f74c898cfc4096ae8a25b5d6f8757fb196866d76",
+      "logical_id": "run",
+      "relative_path": "scenario.json",
+      "role": "run"
+    }
+  ],
+  "scenario_id": "law-firm-case",
+  "schema": "narrative-dynamics.scenario-package/v1",
+  "version": "1"
+}

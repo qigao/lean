@@ -1,0 +1,35 @@
+{
+  "schema": "narrative-dynamics.scenario-document/v1",
+  "value": {
+    "grants": [
+      {
+        "resource_ids": [
+          "statute"
+        ],
+        "subject_id": null,
+        "subject_scope": "public"
+      },
+      {
+        "resource_ids": [
+          "case-file-brief"
+        ],
+        "subject_id": "alice",
+        "subject_scope": "agent"
+      },
+      {
+        "resource_ids": [
+          "case-file-brief"
+        ],
+        "subject_id": "bob",
+        "subject_scope": "agent"
+      },
+      {
+        "resource_ids": [
+          "client-guide"
+        ],
+        "subject_id": "client",
+        "subject_scope": "agent"
+      }
+    ]
+  }
+}

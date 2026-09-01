@@ -1,0 +1,34 @@
+{
+  "schema": "narrative-dynamics.scenario-document/v1",
+  "value": {
+    "institutions": [
+      {
+        "institution_id": "firm",
+        "institution_kind": "law_firm",
+        "parent_institution_id": null
+      },
+      {
+        "institution_id": "legal-team",
+        "institution_kind": "department",
+        "parent_institution_id": "firm"
+      }
+    ],
+    "memberships": [
+      {
+        "agent_id": "alice",
+        "institution_id": "firm",
+        "role_id": "partner"
+      },
+      {
+        "agent_id": "bob",
+        "institution_id": "legal-team",
+        "role_id": "lawyer"
+      },
+      {
+        "agent_id": "client",
+        "institution_id": "firm",
+        "role_id": "client"
+      }
+    ]
+  }
+}

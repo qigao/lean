@@ -1,0 +1,403 @@
+{
+  "schema": "narrative-dynamics.scenario-document/v1",
+  "value": {
+    "agent_id": "client",
+    "body": {
+      "initial_place": "lobby",
+      "inventory_capacity": 1,
+      "role": "client"
+    },
+    "cognition": {
+      "action_schedule": [
+        [
+          "client-inspect-file",
+          "client-move-archive",
+          "client-take-file",
+          "client-tell-status",
+          "client-wait"
+        ],
+        [
+          "client-tell-status",
+          "client-wait"
+        ]
+      ],
+      "actions": [
+        {
+          "action_id": "client-inspect-file",
+          "kind": "inspect",
+          "message": null,
+          "repeatable": false,
+          "required_place_ids": [
+            "archive"
+          ],
+          "source_event_kinds": [],
+          "target_id": "case-file"
+        },
+        {
+          "action_id": "client-move-archive",
+          "kind": "move",
+          "message": null,
+          "repeatable": false,
+          "required_place_ids": [
+            "meeting"
+          ],
+          "source_event_kinds": [],
+          "target_id": "meeting-archive"
+        },
+        {
+          "action_id": "client-take-file",
+          "kind": "take",
+          "message": null,
+          "repeatable": false,
+          "required_place_ids": [
+            "archive"
+          ],
+          "source_event_kinds": [],
+          "target_id": "case-file"
+        },
+        {
+          "action_id": "client-tell-status",
+          "kind": "tell",
+          "message": "The case file has been found.",
+          "repeatable": false,
+          "required_place_ids": [
+            "meeting"
+          ],
+          "source_event_kinds": [
+            "inspect",
+            "tell"
+          ],
+          "target_id": null
+        },
+        {
+          "action_id": "client-wait",
+          "kind": "wait",
+          "message": null,
+          "repeatable": true,
+          "required_place_ids": [],
+          "source_event_kinds": [],
+          "target_id": null
+        }
+      ],
+      "beta": 4.0,
+      "discount": 0.8,
+      "goals": [
+        {
+          "description": "Resolve the missing-document dispute.",
+          "goal_id": "resolve-case",
+          "weight": 1.0
+        }
+      ],
+      "hypotheses": [
+        {
+          "description": "The missing file has been found.",
+          "hypothesis_id": "file-found"
+        },
+        {
+          "description": "The file remains missing.",
+          "hypothesis_id": "file-missing"
+        }
+      ],
+      "likelihoods": [
+        {
+          "action_id": "client-inspect-file",
+          "hypothesis_id": "file-found",
+          "probability": 0.8,
+          "symbol_id": "evidence-found"
+        },
+        {
+          "action_id": "client-inspect-file",
+          "hypothesis_id": "file-found",
+          "probability": 0.2,
+          "symbol_id": "evidence-missing"
+        },
+        {
+          "action_id": "client-inspect-file",
+          "hypothesis_id": "file-missing",
+          "probability": 0.2,
+          "symbol_id": "evidence-found"
+        },
+        {
+          "action_id": "client-inspect-file",
+          "hypothesis_id": "file-missing",
+          "probability": 0.8,
+          "symbol_id": "evidence-missing"
+        },
+        {
+          "action_id": "client-move-archive",
+          "hypothesis_id": "file-found",
+          "probability": 0.8,
+          "symbol_id": "evidence-found"
+        },
+        {
+          "action_id": "client-move-archive",
+          "hypothesis_id": "file-found",
+          "probability": 0.2,
+          "symbol_id": "evidence-missing"
+        },
+        {
+          "action_id": "client-move-archive",
+          "hypothesis_id": "file-missing",
+          "probability": 0.2,
+          "symbol_id": "evidence-found"
+        },
+        {
+          "action_id": "client-move-archive",
+          "hypothesis_id": "file-missing",
+          "probability": 0.8,
+          "symbol_id": "evidence-missing"
+        },
+        {
+          "action_id": "client-take-file",
+          "hypothesis_id": "file-found",
+          "probability": 0.8,
+          "symbol_id": "evidence-found"
+        },
+        {
+          "action_id": "client-take-file",
+          "hypothesis_id": "file-found",
+          "probability": 0.2,
+          "symbol_id": "evidence-missing"
+        },
+        {
+          "action_id": "client-take-file",
+          "hypothesis_id": "file-missing",
+          "probability": 0.2,
+          "symbol_id": "evidence-found"
+        },
+        {
+          "action_id": "client-take-file",
+          "hypothesis_id": "file-missing",
+          "probability": 0.8,
+          "symbol_id": "evidence-missing"
+        },
+        {
+          "action_id": "client-tell-status",
+          "hypothesis_id": "file-found",
+          "probability": 0.8,
+          "symbol_id": "evidence-found"
+        },
+        {
+          "action_id": "client-tell-status",
+          "hypothesis_id": "file-found",
+          "probability": 0.2,
+          "symbol_id": "evidence-missing"
+        },
+        {
+          "action_id": "client-tell-status",
+          "hypothesis_id": "file-missing",
+          "probability": 0.2,
+          "symbol_id": "evidence-found"
+        },
+        {
+          "action_id": "client-tell-status",
+          "hypothesis_id": "file-missing",
+          "probability": 0.8,
+          "symbol_id": "evidence-missing"
+        },
+        {
+          "action_id": "client-wait",
+          "hypothesis_id": "file-found",
+          "probability": 0.8,
+          "symbol_id": "evidence-found"
+        },
+        {
+          "action_id": "client-wait",
+          "hypothesis_id": "file-found",
+          "probability": 0.2,
+          "symbol_id": "evidence-missing"
+        },
+        {
+          "action_id": "client-wait",
+          "hypothesis_id": "file-missing",
+          "probability": 0.2,
+          "symbol_id": "evidence-found"
+        },
+        {
+          "action_id": "client-wait",
+          "hypothesis_id": "file-missing",
+          "probability": 0.8,
+          "symbol_id": "evidence-missing"
+        }
+      ],
+      "observation_rules": [
+        {
+          "detail_name": "status",
+          "detail_value": "found",
+          "event_kind": "inspect",
+          "likelihood_action_id": "client-inspect-file",
+          "outcome": "inspected",
+          "rule_id": "client-inspect-found",
+          "symbol_id": "evidence-found"
+        }
+      ],
+      "observation_symbols": [
+        {
+          "description": "Evidence supports finding the file.",
+          "symbol_id": "evidence-found"
+        },
+        {
+          "description": "Evidence supports the file remaining missing.",
+          "symbol_id": "evidence-missing"
+        }
+      ],
+      "prior_belief": {
+        "file-found": 0.4,
+        "file-missing": 0.6
+      },
+      "rewards": [
+        {
+          "action_id": "client-inspect-file",
+          "goal_id": "resolve-case",
+          "hypothesis_id": "file-found",
+          "value": 3.0
+        },
+        {
+          "action_id": "client-move-archive",
+          "goal_id": "resolve-case",
+          "hypothesis_id": "file-found",
+          "value": 1.0
+        },
+        {
+          "action_id": "client-take-file",
+          "goal_id": "resolve-case",
+          "hypothesis_id": "file-found",
+          "value": 2.0
+        },
+        {
+          "action_id": "client-tell-status",
+          "goal_id": "resolve-case",
+          "hypothesis_id": "file-found",
+          "value": 2.0
+        },
+        {
+          "action_id": "client-wait",
+          "goal_id": "resolve-case",
+          "hypothesis_id": "file-found",
+          "value": 0.0
+        },
+        {
+          "action_id": "client-inspect-file",
+          "goal_id": "resolve-case",
+          "hypothesis_id": "file-missing",
+          "value": 3.0
+        },
+        {
+          "action_id": "client-move-archive",
+          "goal_id": "resolve-case",
+          "hypothesis_id": "file-missing",
+          "value": 1.0
+        },
+        {
+          "action_id": "client-take-file",
+          "goal_id": "resolve-case",
+          "hypothesis_id": "file-missing",
+          "value": 2.0
+        },
+        {
+          "action_id": "client-tell-status",
+          "goal_id": "resolve-case",
+          "hypothesis_id": "file-missing",
+          "value": -2.0
+        },
+        {
+          "action_id": "client-wait",
+          "goal_id": "resolve-case",
+          "hypothesis_id": "file-missing",
+          "value": 0.0
+        }
+      ],
+      "transitions": []
+    },
+    "knowledge_grants": [
+      "client-guide"
+    ],
+    "memory": {
+      "channel_policy": {
+        "channels": [
+          {
+            "channel": "self",
+            "confidence": 1.0,
+            "salience": 0.5
+          },
+          {
+            "channel": "visual",
+            "confidence": 0.9,
+            "salience": 0.65
+          },
+          {
+            "channel": "auditory",
+            "confidence": 0.7,
+            "salience": 0.75
+          },
+          {
+            "channel": "inspection",
+            "confidence": 1.0,
+            "salience": 1.0
+          }
+        ],
+        "policy_id": "law-firm-channel-memory",
+        "version": "1"
+      },
+      "percept_policy": {
+        "fidelities": [
+          {
+            "confidence": 0.25,
+            "fidelity": "detected",
+            "salience": 0.35
+          },
+          {
+            "confidence": 0.6,
+            "fidelity": "identified",
+            "salience": 0.55
+          },
+          {
+            "confidence": 1.0,
+            "fidelity": "exact",
+            "salience": 1.0
+          }
+        ],
+        "policy_id": "law-firm-percept-memory",
+        "version": "1"
+      },
+      "recall": {
+        "cues": [
+          {
+            "channels": [
+              "auditory",
+              "inspection"
+            ],
+            "cue_id": "case-file-recall",
+            "event_kinds": [
+              "inspect",
+              "tell"
+            ],
+            "limit": 3,
+            "min_confidence": 0.5,
+            "required_place_ids": [
+              "meeting"
+            ],
+            "text": "case file"
+          }
+        ],
+        "max_memories_per_round": 4
+      }
+    },
+    "perception": {
+      "max_visual_cost": 5.0,
+      "minimum_clear_sound": 30.0,
+      "minimum_detectable_sound": 10.0
+    },
+    "social": {
+      "topics": [
+        {
+          "symbol_ids": [
+            "evidence-found",
+            "evidence-missing"
+          ],
+          "topic_id": "file-location"
+        }
+      ]
+    }
+  }
+}

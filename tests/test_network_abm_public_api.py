@@ -1,6 +1,12 @@
+import json
+from pathlib import Path
 import unittest
 
 import narrative_dynamics.abm as abm
+from narrative_dynamics.abm import scenario_authoring_contracts as authoring_contracts
+from narrative_dynamics.abm import scenario_compiler
+from narrative_dynamics.abm import scenario_package
+from narrative_dynamics.abm import scenario_package_contracts as package_contracts
 from narrative_dynamics.abm.situated_projection import (
     project_situated_narrative as source_project_situated_narrative,
 )
@@ -14,7 +20,7 @@ from narrative_dynamics.abm import situated_spatial_map_contracts as spatial_con
 
 
 class NetworkABMPublicAPITests(unittest.TestCase):
-    def test_public_api_exports_current_v19_surface(self):
+    def test_public_api_exports_current_v21_1_surface(self):
         self.assertEqual(
             set(abm.__all__),
             {
@@ -356,6 +362,36 @@ class NetworkABMPublicAPITests(unittest.TestCase):
                 "SituatedSpatialMap",
                 "load_tiled_situated_spatial_map",
                 "auto_layout_situated_spatial_map",
+                "ScenarioDocumentRole",
+                "ScenarioDocumentLocator",
+                "ScenarioPackageManifest",
+                "ScenarioSourceDocument",
+                "ScenarioPackageSource",
+                "CompiledSituatedScenario",
+                "ScenarioExecutionMode",
+                "ScenarioInstitution",
+                "ScenarioMembership",
+                "ScenarioRelationship",
+                "ScenarioNormEffect",
+                "ScenarioNorm",
+                "ScenarioSocialWorld",
+                "ScenarioPredicateKind",
+                "ScenarioPredicate",
+                "ScenarioSceneDependency",
+                "ScenarioSceneContract",
+                "ScenarioStoryAct",
+                "ScenarioStoryPlan",
+                "ScenarioResourceKind",
+                "ScenarioKnowledgeResource",
+                "ScenarioKnowledgeCatalog",
+                "ScenarioAssetResource",
+                "ScenarioAssetCatalog",
+                "ScenarioResourceGrant",
+                "ScenarioRunPolicy",
+                "ScenarioCompilationError",
+                "load_situated_scenario_package",
+                "compile_situated_scenario_package",
+                "initialize_compiled_scenario",
             },
         )
         for name in abm.__all__:
@@ -402,6 +438,50 @@ class NetworkABMPublicAPITests(unittest.TestCase):
             self.assertIs(getattr(abm, name), getattr(spatial_contracts, name))
         for name in spatial_map.__all__:
             self.assertIs(getattr(abm, name), getattr(spatial_map, name))
+
+    def test_v21_1_exports_are_the_source_definitions(self):
+        package_contract_names = (
+            "ScenarioDocumentRole",
+            "ScenarioDocumentLocator",
+            "ScenarioPackageManifest",
+            "ScenarioSourceDocument",
+            "ScenarioPackageSource",
+            "CompiledSituatedScenario",
+        )
+        for name in package_contract_names:
+            self.assertIs(getattr(abm, name), getattr(package_contracts, name))
+        for name in authoring_contracts.__all__:
+            self.assertIs(getattr(abm, name), getattr(authoring_contracts, name))
+        self.assertIs(
+            abm.load_situated_scenario_package,
+            scenario_package.load_situated_scenario_package,
+        )
+        for name in scenario_compiler.__all__:
+            self.assertIs(getattr(abm, name), getattr(scenario_compiler, name))
+
+    def test_committed_law_firm_package_loads_and_compiles_without_a_generator(self):
+        root = Path(__file__).resolve().parents[1] / "examples" / "law_firm_scenario"
+        manifest = json.loads(
+            (root / "scenario-package.json").read_text(encoding="utf-8")
+        )
+        declared_files = {item["relative_path"] for item in manifest["documents"]}
+        committed_documents = {
+            path.relative_to(root).as_posix()
+            for path in root.rglob("*")
+            if path.is_file() and path.suffix in {".json", ".tmj"}
+        }
+        self.assertEqual(
+            committed_documents,
+            declared_files | {"scenario-package.json"},
+        )
+
+        source = abm.load_situated_scenario_package(root)
+        scenario = abm.compile_situated_scenario_package(source)
+
+        self.assertEqual(source.scenario_id, "law-firm-case")
+        self.assertEqual(scenario.scenario_id, "law-firm-case")
+        self.assertEqual(len(source.documents), 16)
+        self.assertEqual(scenario.runtime_model.model_id, "law-firm-network")
 
 
 if __name__ == "__main__":

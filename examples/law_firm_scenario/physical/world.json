@@ -1,0 +1,49 @@
+{
+  "schema": "narrative-dynamics.scenario-document/v1",
+  "value": {
+    "model_id": "law-firm-world",
+    "objects": [
+      {
+        "evidence": [
+          {
+            "name": "status",
+            "value": "found"
+          }
+        ],
+        "initial_place_id": "archive",
+        "kind": "document",
+        "object_id": "case-file",
+        "portable": true
+      }
+    ],
+    "passages": [
+      {
+        "initially_open": true,
+        "passage_id": "lobby-meeting",
+        "source_place_id": "lobby",
+        "target_place_id": "meeting"
+      },
+      {
+        "initially_open": false,
+        "passage_id": "meeting-archive",
+        "source_place_id": "meeting",
+        "target_place_id": "archive"
+      }
+    ],
+    "places": [
+      {
+        "label": "Public lobby",
+        "place_id": "lobby"
+      },
+      {
+        "label": "Meeting room",
+        "place_id": "meeting"
+      },
+      {
+        "label": "Restricted archive",
+        "place_id": "archive"
+      }
+    ],
+    "version": "1"
+  }
+}

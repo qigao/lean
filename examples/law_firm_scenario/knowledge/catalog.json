@@ -1,0 +1,53 @@
+{
+  "schema": "narrative-dynamics.scenario-document/v1",
+  "value": {
+    "resources": [
+      {
+        "authority": "official",
+        "concept_ids": [
+          "law",
+          "evidence"
+        ],
+        "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "index_id": "index-statute",
+        "kind": "document",
+        "language": "en",
+        "license_tag": "CC-BY-4.0",
+        "media_type": "application/pdf",
+        "resource_id": "statute",
+        "uri": "https://example.test/statute.pdf",
+        "version": "2026-09-01"
+      },
+      {
+        "authority": "firm",
+        "concept_ids": [
+          "case-file"
+        ],
+        "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "index_id": "index-case-file",
+        "kind": "document",
+        "language": "en",
+        "license_tag": "private",
+        "media_type": "application/pdf",
+        "resource_id": "case-file-brief",
+        "uri": "https://example.test/private/case-file.pdf",
+        "version": "1"
+      },
+      {
+        "authority": "firm",
+        "concept_ids": [
+          "procedure"
+        ],
+        "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "index_id": null,
+        "kind": "document",
+        "language": "en",
+        "license_tag": "client",
+        "media_type": "application/pdf",
+        "resource_id": "client-guide",
+        "uri": "https://example.test/client-guide.pdf",
+        "version": "1"
+      }
+    ]
+  }
+}

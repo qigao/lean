@@ -1,0 +1,26 @@
+{
+  "schema": "narrative-dynamics.scenario-document/v1",
+  "value": {
+    "allowed_output_kinds": [
+      "network.metrics",
+      "story.progress"
+    ],
+    "blender_mode": "final_blend",
+    "checkpoint_interval": 3,
+    "deterministic_seed": 7,
+    "fallbacks": {},
+    "maximum_output_records": 100,
+    "maximum_resource_bytes": 4096,
+    "maximum_rounds": 12,
+    "mode": "hybrid",
+    "public_journal": true,
+    "runtime_model": {
+      "adoption_threshold": 0.7,
+      "model_id": "law-firm-network",
+      "percept_memory_model_id": "law-firm-percept-memory-cognition",
+      "relationship_trust_threshold": 0.5,
+      "tracked_hypothesis_id": "file-found",
+      "version": "1"
+    }
+  }
+}

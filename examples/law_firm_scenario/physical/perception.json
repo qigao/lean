@@ -1,0 +1,63 @@
+{
+  "schema": "narrative-dynamics.scenario-document/v1",
+  "value": {
+    "edges": [
+      {
+        "activation": "passage_open",
+        "cost": 1.0,
+        "edge_id": "visual-lobby-meeting",
+        "layer": "visibility",
+        "passage_id": "lobby-meeting",
+        "source_place_id": "lobby",
+        "target_place_id": "meeting"
+      },
+      {
+        "activation": "passage_closed",
+        "cost": 12.0,
+        "edge_id": "auditory-meeting-archive",
+        "layer": "auditory",
+        "passage_id": "meeting-archive",
+        "source_place_id": "meeting",
+        "target_place_id": "archive"
+      },
+      {
+        "activation": "always",
+        "cost": 0.0,
+        "edge_id": "interaction-meeting",
+        "layer": "interaction",
+        "passage_id": null,
+        "source_place_id": "meeting",
+        "target_place_id": "meeting"
+      }
+    ],
+    "model_id": "law-firm-perception",
+    "signal_profiles": [
+      {
+        "auditory_intensity": null,
+        "kind": "wait",
+        "visually_observable": false
+      },
+      {
+        "auditory_intensity": 15.0,
+        "kind": "move",
+        "visually_observable": true
+      },
+      {
+        "auditory_intensity": null,
+        "kind": "inspect",
+        "visually_observable": true
+      },
+      {
+        "auditory_intensity": 10.0,
+        "kind": "take",
+        "visually_observable": true
+      },
+      {
+        "auditory_intensity": 60.0,
+        "kind": "tell",
+        "visually_observable": true
+      }
+    ],
+    "version": "1"
+  }
+}

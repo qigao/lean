@@ -1,0 +1,9 @@
+{
+  "schema": "narrative-dynamics.scenario-document/v1",
+  "value": {
+    "intervention_kinds": [
+      "move_object",
+      "open_passage"
+    ]
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "schema": "narrative-dynamics.scenario-document/v1",
+  "value": {
+    "agents": [
+      {
+        "agent_id": "alice",
+        "place_id": "meeting"
+      },
+      {
+        "agent_id": "bob",
+        "place_id": "lobby"
+      },
+      {
+        "agent_id": "client",
+        "place_id": "lobby"
+      }
+    ],
+    "objects": [
+      {
+        "holder_agent_id": null,
+        "object_id": "case-file",
+        "place_id": "archive"
+      }
+    ],
+    "passages": [
+      {
+        "open": true,
+        "passage_id": "lobby-meeting"
+      },
+      {
+        "open": false,
+        "passage_id": "meeting-archive"
+      }
+    ]
+  }
+}

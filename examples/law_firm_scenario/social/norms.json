@@ -1,0 +1,29 @@
+{
+  "schema": "narrative-dynamics.scenario-document/v1",
+  "value": {
+    "norms": [
+      {
+        "action_id": "client-take-file",
+        "descriptive_text": "Clients may not remove the private case file.",
+        "effect": "deny_action",
+        "norm_id": "client-confidentiality",
+        "priority": 10,
+        "relationship_type": null,
+        "resource_id": null,
+        "subject_role_id": "client",
+        "target_scope_id": "case-file"
+      },
+      {
+        "action_id": null,
+        "descriptive_text": "Lawyers require a direct file grant.",
+        "effect": "require_knowledge_grant",
+        "norm_id": "lawyer-file-access",
+        "priority": 5,
+        "relationship_type": null,
+        "resource_id": "case-file-brief",
+        "subject_role_id": "lawyer",
+        "target_scope_id": "firm"
+      }
+    ]
+  }
+}

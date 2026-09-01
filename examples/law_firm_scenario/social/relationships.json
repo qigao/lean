@@ -1,0 +1,55 @@
+{
+  "schema": "narrative-dynamics.scenario-document/v1",
+  "value": {
+    "memory_cognitive_model_id": "law-firm-memory-cognition",
+    "model_id": "law-firm-social-memory",
+    "policy": {
+      "confirmation_affinity_delta": 0.1,
+      "confirmation_rate": 0.2,
+      "contradiction_affinity_delta": 0.2,
+      "contradiction_rate": 0.4,
+      "initial_source_trust": 0.5,
+      "max_active_claims": 100,
+      "max_unresolved_age_rounds": 20
+    },
+    "relationships": [
+      {
+        "relationship_type": "supervises",
+        "source_agent_id": "alice",
+        "strength": 0.8,
+        "target_agent_id": "bob"
+      },
+      {
+        "relationship_type": "represents",
+        "source_agent_id": "alice",
+        "strength": 0.9,
+        "target_agent_id": "client"
+      },
+      {
+        "relationship_type": "reports_to",
+        "source_agent_id": "bob",
+        "strength": 0.9,
+        "target_agent_id": "alice"
+      },
+      {
+        "relationship_type": "advises",
+        "source_agent_id": "bob",
+        "strength": 0.6,
+        "target_agent_id": "client"
+      },
+      {
+        "relationship_type": "trusts",
+        "source_agent_id": "client",
+        "strength": 0.7,
+        "target_agent_id": "alice"
+      },
+      {
+        "relationship_type": "depends_on",
+        "source_agent_id": "client",
+        "strength": 0.5,
+        "target_agent_id": "bob"
+      }
+    ],
+    "version": "1"
+  }
+}
