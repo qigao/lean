@@ -352,8 +352,8 @@ class ScenarioSceneContract:
         exit_predicates = tuple(self.exit_predicates)
         if any(not isinstance(value, ScenarioPredicate) for value in preconditions + exit_predicates):
             raise TypeError("scene predicates must be ScenarioPredicate values")
-        object.__setattr__(self, "preconditions", preconditions)
-        object.__setattr__(self, "exit_predicates", exit_predicates)
+        object.__setattr__(self, "preconditions", tuple(sorted(preconditions, key=_predicate_key)))
+        object.__setattr__(self, "exit_predicates", tuple(sorted(exit_predicates, key=_predicate_key)))
         object.__setattr__(self, "allowed_intervention_kinds", _identifier_tuple(
             self.allowed_intervention_kinds, "scene intervention kind"))
         object.__setattr__(self, "desired_outcome_ids", _identifier_tuple(

@@ -173,6 +173,17 @@ class ScenarioAuthoringContractTests(unittest.TestCase):
         )
         self.assertEqual(first, second)
 
+    def test_scene_predicate_conjunctions_are_canonical(self):
+        agent_at = ScenarioPredicate(ScenarioPredicateKind.AGENT_AT, "alice", "office", None)
+        passage_open = ScenarioPredicate(ScenarioPredicateKind.PASSAGE_OPEN, "door", None, True)
+        first = ScenarioSceneContract(
+            "a", (), (), (passage_open, agent_at), (agent_at, passage_open), (), (), 3,
+        )
+        second = ScenarioSceneContract(
+            "a", (), (), (agent_at, passage_open), (passage_open, agent_at), (), (), 3,
+        )
+        self.assertEqual(first, second)
+
     def test_story_plan_rejects_duplicate_scene_membership_and_missing_dependency_endpoint(self):
         with self.assertRaisesRegex(ValueError, "scene.*act"):
             ScenarioStoryPlan(
