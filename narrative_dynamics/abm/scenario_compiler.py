@@ -85,6 +85,7 @@ from narrative_dynamics.abm.situated_network_contracts import (
     SituatedNetworkRuntimeState,
 )
 from narrative_dynamics.abm.situated_percept_memory import (
+    hash_situated_percept_memory_store,
     initialize_situated_percept_memory,
 )
 from narrative_dynamics.abm.situated_percept_memory_cognition import (
@@ -119,6 +120,15 @@ from narrative_dynamics.abm.situated_spatial_map_contracts import (
     SpatialPlace,
 )
 from narrative_dynamics.abm.situated_story import SituatedStory, initialize_situated_story
+
+
+_CANONICAL_EMPTY_PERCEPT_MEMORY_STORE_HASH = stable_content_hash(
+    {
+        "store": "situated-percept-memory",
+        "metadata": [{"key": "schema_version", "value": "1"}],
+        "records": [],
+    }
+)
 
 
 class ScenarioCompilationError(ValueError):
@@ -2772,7 +2782,18 @@ def initialize_compiled_scenario(
 
     if not isinstance(scenario, CompiledSituatedScenario):
         raise TypeError("compiled scenario initialization requires CompiledSituatedScenario")
-    initialize_situated_percept_memory(database_path)
+    index_report = initialize_situated_percept_memory(database_path)
+    if index_report.record_count != 0:
+        raise ValueError(
+            "compiled scenario initialization requires an empty percept-memory store"
+        )
+    if (
+        hash_situated_percept_memory_store(database_path)
+        != _CANONICAL_EMPTY_PERCEPT_MEMORY_STORE_HASH
+    ):
+        raise ValueError(
+            "compiled scenario initialization requires the canonical empty percept-memory store"
+        )
     return initialize_situated_network_runtime(
         database_path,
         scenario.runtime_model,

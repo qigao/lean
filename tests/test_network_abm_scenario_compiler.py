@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
+import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
 
@@ -12,6 +13,7 @@ from narrative_dynamics.abm.scenario_authoring_contracts import (
     ScenarioAssetCatalog,
     ScenarioExecutionMode,
     ScenarioKnowledgeCatalog,
+    ScenarioRelationship,
     ScenarioRunPolicy,
     ScenarioSocialWorld,
     ScenarioStoryPlan,
@@ -21,7 +23,11 @@ from narrative_dynamics.abm.scenario_compiler import (
     _compile_situated_scenario_components,
 )
 from narrative_dynamics.abm.scenario_package import load_situated_scenario_package
-from narrative_dynamics.abm.situated import ObservationChannel, SituatedActionKind
+from narrative_dynamics.abm.situated import (
+    ObservationChannel,
+    SituatedActionIntent,
+    SituatedActionKind,
+)
 from narrative_dynamics.abm.situated_cognition_contracts import (
     SituatedActionSpec,
     SituatedAgentCognitiveModel,
@@ -58,6 +64,11 @@ from narrative_dynamics.abm.situated_network_contracts import SituatedNetworkRun
 from narrative_dynamics.abm.situated_percept_memory_cognition import (
     SituatedPerceptMemoryCognitiveModel,
 )
+from narrative_dynamics.abm.situated_percept_memory import (
+    ingest_situated_percept_story,
+    initialize_situated_percept_memory,
+    list_situated_percept_memories,
+)
 from narrative_dynamics.abm.situated_percept_memory_contracts import (
     SituatedPerceptMemoryFidelityPolicy,
     SituatedPerceptMemoryPolicy,
@@ -76,12 +87,14 @@ from narrative_dynamics.abm.situated_social_memory_contracts import (
     SituatedSocialMemoryModel,
     SituatedSocialMemoryPolicy,
     SituatedSourceRelationship,
+    initialize_situated_social_memory,
 )
 from narrative_dynamics.abm.situated_spatial_map_contracts import (
     SituatedSpatialMap,
     SpatialPassage,
     SpatialPlace,
 )
+from narrative_dynamics.abm.situated_story import advance_situated_story
 from narrative_dynamics.narrative.runtime_planning import PlanningBeliefState
 from tests.scenario_package_fixtures import (
     mutate_json,
@@ -395,6 +408,27 @@ def _write_authored_json(path: Path, value: object) -> None:
     )
 
 
+def _seeded_social_checkpoint(compiled, cognitive_state):
+    base = initialize_situated_social_memory(
+        compiled.runtime_model.social_memory_model,
+        cognitive_state,
+    )
+    affinities = {
+        (item.source_agent_id, item.target_agent_id): item.strength
+        for item in compiled.social_world.relationships
+    }
+    return replace(
+        base,
+        relationships=tuple(
+            replace(
+                item,
+                affinity=affinities[(item.observer_agent_id, item.source_agent_id)],
+            )
+            for item in base.relationships
+        ),
+    )
+
+
 class SituatedScenarioCompilerTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = TemporaryDirectory()
@@ -518,6 +552,187 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
             )
 
         self.assertNotEqual(first_state.content_hash, second_state.content_hash)
+
+    def test_compiled_initial_state_rejects_forged_cognitive_location(self) -> None:
+        compiled = self.compile_public_fixture("forged-cognitive-location")
+        forged_minds = tuple(
+            replace(mind, own_place_id="archive")
+            if mind.agent_id == "alice"
+            else mind
+            for mind in compiled.initial_cognitive_state.minds
+        )
+        forged_cognition = replace(
+            compiled.initial_cognitive_state,
+            minds=forged_minds,
+        )
+        forged_social = _seeded_social_checkpoint(compiled, forged_cognition)
+
+        with self.assertRaisesRegex(ValueError, "exact public initializer"):
+            replace(
+                compiled,
+                initial_cognitive_state=forged_cognition,
+                initial_social_state=forged_social,
+            )
+
+    def test_compiled_initial_state_rejects_forged_cognitive_history(self) -> None:
+        compiled = self.compile_public_fixture("forged-cognitive-history")
+        forged_minds = tuple(
+            replace(mind, processed_observation_ids=("forged-observation",))
+            if mind.agent_id == "alice"
+            else mind
+            for mind in compiled.initial_cognitive_state.minds
+        )
+        forged_cognition = replace(
+            compiled.initial_cognitive_state,
+            minds=forged_minds,
+        )
+        forged_social = _seeded_social_checkpoint(compiled, forged_cognition)
+
+        with self.assertRaisesRegex(ValueError, "exact public initializer"):
+            replace(
+                compiled,
+                initial_cognitive_state=forged_cognition,
+                initial_social_state=forged_social,
+            )
+
+    def test_compiled_initial_state_rejects_forged_social_counts(self) -> None:
+        compiled = self.compile_public_fixture("forged-social-counts")
+        first_relationship, *remaining = compiled.initial_social_state.relationships
+        forged_social = replace(
+            compiled.initial_social_state,
+            relationships=(
+                replace(first_relationship, confirmation_count=1),
+                *remaining,
+            ),
+        )
+
+        with self.assertRaisesRegex(ValueError, "exact public initializer"):
+            replace(compiled, initial_social_state=forged_social)
+
+    def test_compiled_initial_state_rejects_nonempty_memory_store(self) -> None:
+        compiled = self.compile_public_fixture("nonempty-memory-store")
+        world = compiled.runtime_model.percept_memory_model.cognitive_model.world_model
+        foreign_story = advance_situated_story(
+            world,
+            compiled.initial_story,
+            (
+                SituatedActionIntent(
+                    "alice-wait",
+                    "alice",
+                    SituatedActionKind.WAIT,
+                ),
+            ),
+        )
+
+        with TemporaryDirectory() as temporary:
+            database_path = Path(temporary) / "memory.sqlite3"
+            report = ingest_situated_percept_story(
+                database_path,
+                compiled.runtime_model.percept_memory_model.perception_model,
+                foreign_story,
+                "alice",
+                compiled.runtime_model.percept_memory_model.memory_policy,
+            )
+            before = list_situated_percept_memories(database_path, "alice")
+            self.assertGreater(report.inserted_count, 0)
+
+            with self.assertRaisesRegex(ValueError, "empty"):
+                scenario_compiler.initialize_compiled_scenario(
+                    database_path,
+                    compiled,
+                )
+
+            self.assertEqual(
+                list_situated_percept_memories(database_path, "alice"),
+                before,
+            )
+
+    def test_compiled_initial_state_rejects_noncanonical_empty_memory_store(self) -> None:
+        compiled = self.compile_public_fixture("noncanonical-empty-memory-store")
+
+        with TemporaryDirectory() as temporary:
+            database_path = Path(temporary) / "memory.sqlite3"
+            initialize_situated_percept_memory(database_path)
+            connection = sqlite3.connect(database_path)
+            try:
+                connection.execute(
+                    "INSERT INTO percept_memory_metadata(key, value) VALUES (?, ?)",
+                    ("foreign-owner", "other-scenario"),
+                )
+                connection.commit()
+            finally:
+                connection.close()
+
+            with self.assertRaisesRegex(ValueError, "canonical empty"):
+                scenario_compiler.initialize_compiled_scenario(
+                    database_path,
+                    compiled,
+                )
+
+            connection = sqlite3.connect(database_path)
+            try:
+                foreign_metadata = connection.execute(
+                    "SELECT value FROM percept_memory_metadata WHERE key = ?",
+                    ("foreign-owner",),
+                ).fetchone()
+            finally:
+                connection.close()
+            self.assertEqual(foreign_metadata, ("other-scenario",))
+
+    def test_compiled_initial_state_requires_one_authored_relationship_per_pair(self) -> None:
+        compiled = self.compile_public_fixture("duplicate-authored-pair")
+        social_world = replace(
+            compiled.social_world,
+            relationships=compiled.social_world.relationships
+            + (ScenarioRelationship("alice", "bob", "mentors", 0.1),),
+            registered_relationship_types=compiled.social_world.registered_relationship_types
+            + ("mentors",),
+        )
+
+        with self.assertRaisesRegex(ValueError, "one authored relationship"):
+            replace(compiled, social_world=social_world)
+
+    def test_compiled_initial_state_rejects_empty_source_document_identities(self) -> None:
+        compiled = self.compile_public_fixture("empty-source-identities")
+
+        with self.assertRaisesRegex(ValueError, "required document roles"):
+            replace(compiled, source_document_hashes=())
+
+    def test_compiled_initial_state_rejects_arbitrary_source_document_identity(self) -> None:
+        compiled = self.compile_public_fixture("arbitrary-source-identity")
+
+        with self.assertRaisesRegex(ValueError, "document role"):
+            replace(
+                compiled,
+                source_document_hashes=(
+                    ("arbitrary.role", "arbitrary", "sha256:" + "0" * 64),
+                ),
+            )
+
+    def test_compiled_initial_state_requires_semantic_package_hash(self) -> None:
+        compiled = self.compile_public_fixture("semantic-package-hash")
+        first_role, first_id, first_hash = compiled.source_document_hashes[0]
+        mismatches = (
+            (
+                "document-hash",
+                {
+                    "source_document_hashes": (
+                        (first_role, first_id, "sha256:" + "0" * 64),
+                        *compiled.source_document_hashes[1:],
+                    )
+                },
+            ),
+            (
+                "package-hash",
+                {"package_hash": "sha256:" + "0" * 64},
+            ),
+        )
+        self.assertNotEqual(first_hash, "sha256:" + "0" * 64)
+
+        for name, changes in mismatches:
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ValueError, "semantic package hash"):
+                    replace(compiled, **changes)
 
     def test_complete_compilation_is_path_and_unordered_input_independent(self) -> None:
         first_root = write_law_firm_package(self.root / "canonical")

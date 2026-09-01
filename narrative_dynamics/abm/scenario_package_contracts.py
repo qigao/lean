@@ -22,8 +22,13 @@ from narrative_dynamics.abm.situated_cognition_contracts import (
 )
 from narrative_dynamics.abm.situated_contracts import validate_situated_state
 from narrative_dynamics.abm.situated_network_contracts import SituatedNetworkRuntimeModel
+from narrative_dynamics.abm.situated_percept_memory_cognition import (
+    initialize_situated_percept_memory_cognition,
+)
 from narrative_dynamics.abm.situated_social_memory_contracts import (
     SituatedSocialMemoryState,
+    SituatedSourceRelationship,
+    initialize_situated_social_memory,
     validate_situated_social_memory_state,
 )
 from narrative_dynamics.abm.situated_spatial_map_contracts import SituatedSpatialMap
@@ -136,6 +141,27 @@ def _contract_hash_value(value: object) -> object:
 
 def _contract_content_hash(value: object) -> str:
     return stable_content_hash(_contract_hash_value(value))
+
+
+def _semantic_package_hash(
+    scenario_id: str,
+    version: str,
+    document_hashes: tuple[tuple[str, str, str], ...],
+) -> str:
+    return stable_content_hash(
+        {
+            "scenario_id": scenario_id,
+            "version": version,
+            "documents": [
+                {
+                    "role": role,
+                    "logical_id": logical_id,
+                    "content_hash": content_hash,
+                }
+                for role, logical_id, content_hash in document_hashes
+            ],
+        }
+    )
 
 
 def _validate_document_roles(roles: list[ScenarioDocumentRole]) -> None:
@@ -338,11 +364,18 @@ class CompiledSituatedScenario:
             raise TypeError("compiled scenario source document hashes must be a tuple")
         source_hashes = []
         source_keys = set()
+        source_roles = []
         for item in self.source_document_hashes:
             if not isinstance(item, tuple) or len(item) != 3:
                 raise TypeError("compiled scenario source document hashes must be triples")
             role, logical_id, content_hash = item
-            role = _non_empty_text(role, label="compiled source document role")
+            try:
+                document_role = ScenarioDocumentRole(role)
+            except (TypeError, ValueError) as error:
+                raise ValueError(
+                    "compiled source document role must be supported"
+                ) from error
+            role = document_role.value
             logical_id = _non_empty_text(
                 logical_id,
                 label="compiled source document logical id",
@@ -357,12 +390,22 @@ class CompiledSituatedScenario:
                     "compiled source document role and logical id pairs must be unique"
                 )
             source_keys.add(key)
+            source_roles.append(document_role)
             source_hashes.append((role, logical_id, content_hash))
+        _validate_document_roles(source_roles)
         object.__setattr__(
             self,
             "source_document_hashes",
             tuple(sorted(source_hashes, key=lambda item: (item[0], item[1]))),
         )
+        if self.package_hash != _semantic_package_hash(
+            self.scenario_id,
+            self.version,
+            self.source_document_hashes,
+        ):
+            raise ValueError(
+                "compiled scenario package hash must be the exact semantic package hash"
+            )
 
         for name, expected in (
             ("runtime_model", SituatedNetworkRuntimeModel),
@@ -396,6 +439,14 @@ class CompiledSituatedScenario:
             self.initial_story,
             self.initial_cognitive_state,
         )
+        expected_cognitive_state = initialize_situated_percept_memory_cognition(
+            self.runtime_model.percept_memory_model,
+            self.initial_story,
+        )
+        if self.initial_cognitive_state != expected_cognitive_state:
+            raise ValueError(
+                "compiled scenario cognition must equal the exact public initializer checkpoint"
+            )
         validate_situated_social_memory_state(
             self.runtime_model.social_memory_model,
             self.initial_cognitive_state,
@@ -408,9 +459,17 @@ class CompiledSituatedScenario:
         if self.story_plan.mode is not self.run_policy.mode:
             raise ValueError("compiled scenario execution modes must match")
 
-        authored_affinities = {
-            (item.source_agent_id, item.target_agent_id): item.strength
+        authored_pairs = tuple(
+            (item.source_agent_id, item.target_agent_id)
             for item in self.social_world.relationships
+        )
+        if len(set(authored_pairs)) != len(authored_pairs):
+            raise ValueError(
+                "compiled scenario requires exactly one authored relationship per directed pair"
+            )
+        authored_affinities = {
+            pair: item.strength
+            for pair, item in zip(authored_pairs, self.social_world.relationships)
         }
         initial_relationships = {
             (item.observer_agent_id, item.source_agent_id): item
@@ -420,14 +479,36 @@ class CompiledSituatedScenario:
             raise ValueError(
                 "compiled scenario social definitions must bind the exact initial relationships"
             )
-        initial_trust = self.runtime_model.social_memory_model.policy.initial_source_trust
-        if any(
-            item.trust != initial_trust
-            or item.affinity != authored_affinities[pair]
-            for pair, item in initial_relationships.items()
-        ):
+        base_social_state = initialize_situated_social_memory(
+            self.runtime_model.social_memory_model,
+            expected_cognitive_state,
+        )
+        expected_social_state = SituatedSocialMemoryState(
+            base_social_state.model_id,
+            base_social_state.model_hash,
+            base_social_state.round_index,
+            base_social_state.parent_state_hash,
+            base_social_state.cognitive_state_hash,
+            tuple(
+                SituatedSourceRelationship(
+                    item.observer_agent_id,
+                    item.source_agent_id,
+                    item.trust,
+                    authored_affinities[
+                        (item.observer_agent_id, item.source_agent_id)
+                    ],
+                    item.confirmation_count,
+                    item.contradiction_count,
+                )
+                for item in base_social_state.relationships
+            ),
+            base_social_state.claims,
+            base_social_state.processed_evidence_ids,
+            base_social_state.checkpoint,
+        )
+        if self.initial_social_state != expected_social_state:
             raise ValueError(
-                "compiled scenario social definitions must bind exact relationship seeds"
+                "compiled scenario social state must equal the exact public initializer checkpoint"
             )
 
     def to_dict(self) -> dict[str, object]:
