@@ -145,27 +145,45 @@ class SituatedNetworkContractTests(unittest.TestCase):
                 (ObservationChannel.AUDITORY,),
             )
 
+    def test_transmission_rejects_actor_private_channels(self):
+        for channel in (ObservationChannel.SELF, ObservationChannel.INSPECTION):
+            with self.subTest(channel=channel), self.assertRaisesRegex(
+                ValueError, "visual or auditory"
+            ):
+                SituatedNetworkTransmission(
+                    "tell-1", "alice", "bob", SituatedPerceptFidelity.EXACT,
+                    (channel,),
+                )
+
+    def test_runtime_state_rejects_forged_round_zero_parent(self):
+        model, story, cognitive_state, social_state, snapshot, metrics = self._initial_runtime_values()
+        with self.assertRaisesRegex(ValueError, "initial round"):
+            SituatedNetworkRuntimeState(
+                "office-network", model.content_hash, 0, digest("forged"),
+                story, cognitive_state, social_state, snapshot, metrics,
+            )
+
+    def test_runtime_state_rejects_cross_subsystem_hash_mismatches(self):
+        model, story, cognitive_state, social_state, _, _ = self._initial_runtime_values()
+
+        mismatched_cognition = replace(cognitive_state, story_hash=digest("unrelated-story"))
+        snapshot = self._snapshot_for(model, story, mismatched_cognition, social_state)
+        with self.assertRaisesRegex(ValueError, "cognitive state must bind exact story"):
+            SituatedNetworkRuntimeState(
+                "office-network", model.content_hash, 0, None,
+                story, mismatched_cognition, social_state, snapshot, metrics_fixture(snapshot),
+            )
+
+        mismatched_social = replace(social_state, cognitive_state_hash=digest("unrelated-cognition"))
+        snapshot = self._snapshot_for(model, story, cognitive_state, mismatched_social)
+        with self.assertRaisesRegex(ValueError, "social state must bind exact cognitive state"):
+            SituatedNetworkRuntimeState(
+                "office-network", model.content_hash, 0, None,
+                story, cognitive_state, mismatched_social, snapshot, metrics_fixture(snapshot),
+            )
+
     def test_runtime_result_and_trajectory_require_exact_parent_hash_chain(self):
-        model = runtime_model()
-        story = initialize_situated_story(
-            model.percept_memory_model.cognitive_model.world_model,
-            initialize_situated_world(model.percept_memory_model.cognitive_model.world_model),
-            perception_model=model.percept_memory_model.perception_model,
-        )
-        cognitive_state = initialize_situated_percept_memory_cognition(
-            model.percept_memory_model, story
-        )
-        social_state = initialize_situated_social_memory(
-            model.social_memory_model, cognitive_state
-        )
-        snapshot = replace(
-            snapshot_fixture(round_index=0),
-            model_hash=model.content_hash,
-            story_hash=story.content_hash,
-            cognitive_state_hash=cognitive_state.content_hash,
-            social_state_hash=social_state.content_hash,
-        )
-        metrics = metrics_fixture(snapshot)
+        model, story, cognitive_state, social_state, snapshot, metrics = self._initial_runtime_values()
         state = SituatedNetworkRuntimeState(
             "office-network", model.content_hash, 0, None,
             story, cognitive_state, social_state, snapshot, metrics,
@@ -204,6 +222,34 @@ class SituatedNetworkContractTests(unittest.TestCase):
             )
         with self.assertRaisesRegex(ValueError, "exact chain"):
             replace(trajectory, final_state=state)
+
+    @staticmethod
+    def _snapshot_for(model, story, cognitive_state, social_state):
+        return replace(
+            snapshot_fixture(round_index=0),
+            model_hash=model.content_hash,
+            story_hash=story.content_hash,
+            cognitive_state_hash=cognitive_state.content_hash,
+            social_state_hash=social_state.content_hash,
+        )
+
+    @classmethod
+    def _initial_runtime_values(cls):
+        model = runtime_model()
+        story = initialize_situated_story(
+            model.percept_memory_model.cognitive_model.world_model,
+            initialize_situated_world(model.percept_memory_model.cognitive_model.world_model),
+            perception_model=model.percept_memory_model.perception_model,
+        )
+        cognitive_state = initialize_situated_percept_memory_cognition(
+            model.percept_memory_model, story
+        )
+        social_state = initialize_situated_social_memory(
+            model.social_memory_model, cognitive_state
+        )
+        snapshot = cls._snapshot_for(model, story, cognitive_state, social_state)
+        metrics = metrics_fixture(snapshot)
+        return model, story, cognitive_state, social_state, snapshot, metrics
 
 
 if __name__ == "__main__":

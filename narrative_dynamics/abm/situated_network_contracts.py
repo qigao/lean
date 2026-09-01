@@ -252,6 +252,8 @@ class SituatedNetworkTransmission:
             raise TypeError("network transmission channels must be a tuple of ObservationChannel values")
         if not self.channels:
             raise ValueError("network transmission requires disclosed channels")
+        if any(item not in (ObservationChannel.VISUAL, ObservationChannel.AUDITORY) for item in self.channels):
+            raise ValueError("network transmission channels must be visual or auditory")
         if len(set(self.channels)) != len(self.channels):
             raise ValueError("network transmission channels must be unique")
         object.__setattr__(self, "channels", tuple(sorted(self.channels, key=lambda item: item.value)))
@@ -409,7 +411,9 @@ class SituatedNetworkRuntimeState:
         object.__setattr__(self, "round_index", _nonnegative_integer(self.round_index, label="network runtime state round index"))
         if self.parent_state_hash is not None:
             object.__setattr__(self, "parent_state_hash", _hash(self.parent_state_hash, label="network runtime state parent hash"))
-        elif self.round_index != 0:
+        if self.round_index == 0 and self.parent_state_hash is not None:
+            raise ValueError("network runtime state initial round must not have a parent hash")
+        if self.round_index != 0 and self.parent_state_hash is None:
             raise ValueError("network runtime state non-initial rounds require an exact parent hash")
         if not isinstance(self.story, SituatedStory) or not isinstance(self.cognitive_state, SituatedCognitiveState) or not isinstance(self.social_state, SituatedSocialMemoryState):
             raise TypeError("network runtime state requires exact story, cognitive state, and social state")
@@ -423,6 +427,10 @@ class SituatedNetworkRuntimeState:
             or self.metrics.round_index != self.round_index
         ):
             raise ValueError("network runtime state values must share one exact round")
+        if self.cognitive_state.story_hash != self.story.content_hash:
+            raise ValueError("network runtime state cognitive state must bind exact story")
+        if self.social_state.cognitive_state_hash != self.cognitive_state.content_hash:
+            raise ValueError("network runtime state social state must bind exact cognitive state")
         if self.snapshot.model_id != self.model_id or self.snapshot.model_hash != self.model_hash:
             raise ValueError("network runtime state snapshot must bind the exact model")
         if (
