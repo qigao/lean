@@ -291,16 +291,86 @@ def _unique_evidence(items):
     return items[0] if len(items) == 1 else None
 
 
+def _claim_status_only_change(prior, claim) -> bool:
+    return (
+        claim.claim_id == prior.claim_id
+        and claim.observer_agent_id == prior.observer_agent_id
+        and claim.source_agent_id == prior.source_agent_id
+        and claim.topic_id == prior.topic_id
+        and claim.symbol_id == prior.symbol_id
+        and claim.event_ids == prior.event_ids
+        and claim.memory_ids == prior.memory_ids
+        and claim.first_round == prior.first_round
+        and claim.last_round == prior.last_round
+        and claim.support_count == prior.support_count
+        and claim.status is not prior.status
+    )
+
+
+def _claim_support_only_change(prior, claim, trigger) -> bool:
+    expected_memories = prior.memory_ids + (() if trigger.memory_id is None else (
+        trigger.memory_id,
+    ))
+    return (
+        claim.claim_id == prior.claim_id
+        and claim.observer_agent_id == prior.observer_agent_id
+        and claim.source_agent_id == prior.source_agent_id
+        and claim.topic_id == prior.topic_id
+        and claim.symbol_id == prior.symbol_id
+        and claim.event_ids == tuple(sorted(prior.event_ids + (trigger.event_id,)))
+        and claim.memory_ids == tuple(sorted(expected_memories))
+        and claim.first_round == min(prior.first_round, trigger.round_index)
+        and claim.last_round == max(prior.last_round, trigger.round_index)
+        and claim.support_count == prior.support_count + 1
+        and claim.status is prior.status
+    )
+
+
 def _claim_trigger_evidence(prior, claim, evidence):
-    if prior is None and claim.status in {
-        SituatedClaimStatus.CONFIRMED,
-        SituatedClaimStatus.CONTRADICTED,
-        SituatedClaimStatus.FORGOTTEN,
-    }:
+    related_testimony = tuple(
+        item
+        for item in evidence
+        if item.kind is SituatedSocialEvidenceKind.TESTIMONY
+        and item.observer_agent_id == claim.observer_agent_id
+        and item.source_agent_id == claim.source_agent_id
+        and item.topic_id == claim.topic_id
+    )
+    if prior is None:
+        if claim.status is not SituatedClaimStatus.ACTIVE:
+            return None
+        trigger = _unique_evidence(related_testimony)
+        if trigger is None or trigger.symbol_id != claim.symbol_id:
+            return None
+        expected_memories = () if trigger.memory_id is None else (trigger.memory_id,)
+        if not (
+            claim.event_ids == (trigger.event_id,)
+            and claim.memory_ids == expected_memories
+            and claim.first_round == trigger.round_index
+            and claim.last_round == trigger.round_index
+            and claim.support_count == 1
+        ):
+            return None
+        return trigger
+
+    if claim.status is SituatedClaimStatus.FORGOTTEN:
         return None
-    if prior is not None and claim.status is SituatedClaimStatus.FORGOTTEN:
+
+    same_symbol = tuple(
+        item
+        for item in related_testimony
+        if item.symbol_id == claim.symbol_id
+    )
+    support_trigger = _unique_evidence(same_symbol)
+    if (
+        support_trigger is not None
+        and _claim_support_only_change(prior, claim, support_trigger)
+    ):
+        return support_trigger
+
+    if not _claim_status_only_change(prior, claim):
         return None
-    if prior is not None and prior.status is SituatedClaimStatus.ACTIVE and claim.status in {
+
+    if prior.status is SituatedClaimStatus.ACTIVE and claim.status in {
         SituatedClaimStatus.CONFIRMED,
         SituatedClaimStatus.CONTRADICTED,
     }:
@@ -318,26 +388,16 @@ def _claim_trigger_evidence(prior, claim, evidence):
                 )
             )
         ))
-    if prior is not None and claim.status is SituatedClaimStatus.SUPERSEDED:
+    if (
+        prior.status is SituatedClaimStatus.ACTIVE
+        and claim.status is SituatedClaimStatus.SUPERSEDED
+    ):
         return _unique_evidence(tuple(
             item
-            for item in evidence
-            if item.kind is SituatedSocialEvidenceKind.TESTIMONY
-            and item.observer_agent_id == claim.observer_agent_id
-            and item.source_agent_id == claim.source_agent_id
-            and item.topic_id == claim.topic_id
-            and item.symbol_id != claim.symbol_id
+            for item in related_testimony
+            if item.symbol_id != claim.symbol_id
         ))
-    return _unique_evidence(tuple(
-        item
-        for item in evidence
-        if item.kind is SituatedSocialEvidenceKind.TESTIMONY
-        and item.observer_agent_id == claim.observer_agent_id
-        and item.source_agent_id == claim.source_agent_id
-        and item.topic_id == claim.topic_id
-        and item.symbol_id == claim.symbol_id
-        and item.event_id in claim.event_ids
-    ))
+    return None
 
 
 def _relationship_trigger_evidence(
@@ -357,30 +417,17 @@ def _relationship_trigger_evidence(
         and next_by_id[prior.claim_id].status
         in {SituatedClaimStatus.CONFIRMED, SituatedClaimStatus.CONTRADICTED}
     )
-    matches = []
-    for prior, next_claim in affected:
-        assert next_claim is not None
-        matches.extend(
-            item
-            for item in evidence
-            if item.kind is SituatedSocialEvidenceKind.VERIFICATION
-            and item.observer_agent_id == relationship.observer_agent_id
-            and item.topic_id == prior.topic_id
-            and (
-                (
-                    next_claim.status is SituatedClaimStatus.CONFIRMED
-                    and item.symbol_id == prior.symbol_id
-                )
-                or (
-                    next_claim.status is SituatedClaimStatus.CONTRADICTED
-                    and item.symbol_id != prior.symbol_id
-                )
-            )
-        )
-    unique = {
-        item.content_hash: item for item in matches
-    }
-    return _unique_evidence(tuple(unique[key] for key in sorted(unique)))
+    if len(affected) != 1:
+        return None
+    prior, next_claim = affected[0]
+    assert next_claim is not None
+    trigger = _claim_trigger_evidence(prior, next_claim, evidence)
+    if (
+        trigger is None
+        or trigger.kind is not SituatedSocialEvidenceKind.VERIFICATION
+    ):
+        return None
+    return trigger
 
 
 def _belief_facts(decision) -> tuple[tuple[str, object], ...]:

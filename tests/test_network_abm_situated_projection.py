@@ -310,6 +310,7 @@ def _trajectory_case(
     tmp_path,
     *,
     late_carol_tell: bool = False,
+    conflicting_alice_testimonies: bool = False,
     preload_alice_claim: bool = False,
     force_bob_move: bool = False,
 ):
@@ -398,18 +399,45 @@ def _trajectory_case(
             ),
         ),
     )
-    story = advance_situated_story(
-        cognition.world_model,
-        story,
-        (
-            SituatedActionIntent(
-                "bob-inspect",
-                "bob",
-                SituatedActionKind.INSPECT,
-                "memo",
+    if not conflicting_alice_testimonies:
+        story = advance_situated_story(
+            cognition.world_model,
+            story,
+            (
+                SituatedActionIntent(
+                    "bob-inspect",
+                    "bob",
+                    SituatedActionKind.INSPECT,
+                    "memo",
+                ),
             ),
-        ),
-    )
+        )
+    else:
+        if preload_alice_claim:
+            story = advance_situated_story(
+                cognition.world_model,
+                story,
+                (
+                    SituatedActionIntent(
+                        "alice-denied-again",
+                        "alice",
+                        SituatedActionKind.TELL,
+                        message="The restructuring is denied.",
+                    ),
+                ),
+            )
+        story = advance_situated_story(
+            cognition.world_model,
+            story,
+            (
+                SituatedActionIntent(
+                    "alice-approved",
+                    "alice",
+                    SituatedActionKind.TELL,
+                    message="The restructuring is approved.",
+                ),
+            ),
+        )
     if late_carol_tell:
         story = advance_situated_story(
             cognition.world_model,
@@ -482,7 +510,7 @@ def _trajectory_case(
             cognitive_state,
             (evidence,),
         ).next_state
-    return simulate_situated_percept_social_cognition(
+    trajectory = simulate_situated_percept_social_cognition(
         tmp_path / "projection.sqlite3",
         memory_model,
         social_model,
@@ -490,6 +518,55 @@ def _trajectory_case(
         cognitive_state,
         social_state,
         round_count=2,
+    )
+    if not conflicting_alice_testimonies:
+        return trajectory
+
+    first_round = trajectory.rounds[0]
+    events_by_action = {
+        event.action_id: event
+        for story_round in trajectory.initial_story.rounds
+        for event in story_round.events
+    }
+    supporting_event = events_by_action[
+        "alice-denied-again" if preload_alice_claim else "alice-denied"
+    ]
+    conflicting_event = events_by_action["alice-approved"]
+    aggregate_update = advance_situated_social_memory(
+        social_model,
+        cognitive_state,
+        social_state,
+        first_round.next_cognitive_state,
+        (
+            SituatedSocialEvidence(
+                "aggregate-a-support",
+                SituatedSocialEvidenceKind.TESTIMONY,
+                "bob",
+                "restructuring",
+                "denied",
+                supporting_event.round_index,
+                supporting_event.event_id,
+                source_agent_id="alice",
+            ),
+            SituatedSocialEvidence(
+                "aggregate-b-conflict",
+                SituatedSocialEvidenceKind.TESTIMONY,
+                "bob",
+                "restructuring",
+                "approved",
+                conflicting_event.round_index,
+                conflicting_event.event_id,
+                source_agent_id="alice",
+            ),
+        ),
+    )
+    aggregate_round = replace(first_round, social_update=aggregate_update)
+    return replace(
+        trajectory,
+        rounds=(aggregate_round,),
+        final_story=aggregate_round.next_story,
+        final_cognitive_state=aggregate_round.next_cognitive_state,
+        final_social_state=aggregate_round.next_social_state,
     )
 
 
@@ -514,6 +591,20 @@ def moving_social_trajectory(tmp_path):
         tmp_path,
         preload_alice_claim=True,
         force_bob_move=True,
+    )
+
+
+@pytest.fixture
+def newly_superseded_claim_trajectory(tmp_path):
+    return _trajectory_case(tmp_path, conflicting_alice_testimonies=True)
+
+
+@pytest.fixture
+def supported_then_superseded_claim_trajectory(tmp_path):
+    return _trajectory_case(
+        tmp_path,
+        conflicting_alice_testimonies=True,
+        preload_alice_claim=True,
     )
 
 
@@ -885,6 +976,109 @@ def test_social_beats_bind_only_exact_trigger_evidence_and_cite_complete_support
             )
     assert any(beat.source_event_id is None for beat in social_beats)
     assert any(beat.source_event_id is not None for beat in social_beats)
+
+
+def test_same_update_claim_creation_and_supersession_stay_event_unbound(
+    newly_superseded_claim_trajectory,
+):
+    update = newly_superseded_claim_trajectory.rounds[0].social_update
+    claims = [
+        claim
+        for claim in update.next_state.claims
+        if claim.observer_agent_id == "bob"
+        and claim.source_agent_id == "alice"
+        and claim.topic_id == "restructuring"
+    ]
+    assert update.prior_state.claims == ()
+    assert {(claim.symbol_id, claim.status) for claim in claims} == {
+        ("denied", SituatedClaimStatus.SUPERSEDED),
+        ("approved", SituatedClaimStatus.ACTIVE),
+    }
+    assert {
+        (item.symbol_id, item.kind)
+        for item in update.admitted_evidence
+    } == {
+        ("denied", SituatedSocialEvidenceKind.TESTIMONY),
+        ("approved", SituatedSocialEvidenceKind.TESTIMONY),
+    }
+
+    projection = project_situated_narrative(
+        newly_superseded_claim_trajectory.final_story,
+        objective_policy(),
+        trajectory=newly_superseded_claim_trajectory,
+    )
+    beats_by_claim_hash = {
+        support.artifact_hash: beat
+        for beat in projection.beats
+        if beat.kind is NarrativeBeatKind.CLAIM_REVISION
+        for support in beat.supporting_artifacts
+        if support.artifact_kind == "consolidated_claim"
+    }
+    for claim in claims:
+        beat = beats_by_claim_hash[claim.content_hash]
+        supports = {
+            support.artifact_kind: support
+            for support in beat.supporting_artifacts
+        }
+        assert beat.source_event_id is None
+        assert "social_evidence" not in supports
+        assert supports["social_memory_update"].artifact_hash == update.content_hash
+        assert supports["consolidated_claim"].artifact_hash == claim.content_hash
+
+
+def test_same_update_support_and_supersession_stay_event_unbound(
+    supported_then_superseded_claim_trajectory,
+):
+    update = supported_then_superseded_claim_trajectory.rounds[0].social_update
+    prior = next(
+        claim
+        for claim in update.prior_state.claims
+        if claim.observer_agent_id == "bob"
+        and claim.source_agent_id == "alice"
+        and claim.topic_id == "restructuring"
+        and claim.symbol_id == "denied"
+    )
+    changed = next(
+        claim for claim in update.next_state.claims if claim.claim_id == prior.claim_id
+    )
+    assert prior.status is SituatedClaimStatus.ACTIVE
+    assert changed.status is SituatedClaimStatus.SUPERSEDED
+    assert changed.support_count == prior.support_count + 1
+    assert set(changed.event_ids) - set(prior.event_ids) == {
+        next(
+            item.event_id
+            for item in update.admitted_evidence
+            if item.symbol_id == "denied"
+        )
+    }
+    assert any(
+        item.symbol_id == "approved"
+        and item.kind is SituatedSocialEvidenceKind.TESTIMONY
+        for item in update.admitted_evidence
+    )
+
+    projection = project_situated_narrative(
+        supported_then_superseded_claim_trajectory.final_story,
+        objective_policy(),
+        trajectory=supported_then_superseded_claim_trajectory,
+    )
+    beat = next(
+        beat
+        for beat in projection.beats
+        if beat.kind is NarrativeBeatKind.CLAIM_REVISION
+        and any(
+            support.artifact_kind == "consolidated_claim"
+            and support.artifact_hash == changed.content_hash
+            for support in beat.supporting_artifacts
+        )
+    )
+    supports = {
+        support.artifact_kind: support for support in beat.supporting_artifacts
+    }
+    assert beat.source_event_id is None
+    assert "social_evidence" not in supports
+    assert supports["social_memory_update"].artifact_hash == update.content_hash
+    assert supports["consolidated_claim"].artifact_hash == changed.content_hash
 
 
 def test_authored_trajectory_keeps_unbound_aggregate_social_beats(
