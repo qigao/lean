@@ -67,6 +67,19 @@ def _tuple_of_text(value: object, *, label: str, require_nonempty: bool = False)
     return result
 
 
+def _provider_response_hash(passages: tuple[NarrativePassage, ...]) -> str:
+    return stable_content_hash(
+        {
+            "provider_response": {
+                "passages": [
+                    {"beat_ids": list(passage.beat_ids), "text": passage.text}
+                    for passage in passages
+                ]
+            }
+        }
+    )
+
+
 class NarrativeRealizationFormat(str, Enum):
     PROSE = "prose"
     SCREENPLAY = "screenplay"
@@ -192,6 +205,13 @@ class NarrativeSceneRealizationPrompt:
         beat_ids = tuple(item.beat_id for item in self.beats)
         if beat_ids != self.scene.beat_ids:
             raise ValueError("realization scene prompt beats must match scene beat presentation order")
+        if (
+            self.scene.start_round_index != min(item.round_index for item in self.beats)
+            or self.scene.end_round_index != max(item.round_index for item in self.beats)
+            or any(item.place_id != self.scene.place_id for item in self.beats)
+            or any(item.active_pov_agent_id != self.scene.active_pov_agent_id for item in self.beats)
+        ):
+            raise ValueError("realization scene prompt scene metadata must match its beats")
         if not isinstance(self.entitlements, tuple) or any(not isinstance(item, NarrativeEntitlement) for item in self.entitlements):
             raise TypeError("realization scene prompt entitlements must be a tuple of NarrativeEntitlement values")
         expected_entitlement_ids = {
@@ -200,6 +220,29 @@ class NarrativeSceneRealizationPrompt:
         entitlement_ids = tuple(item.entitlement_id for item in self.entitlements)
         if len(set(entitlement_ids)) != len(entitlement_ids) or set(entitlement_ids) != expected_entitlement_ids:
             raise ValueError("realization scene prompt requires the exact entitlement closure")
+        entitlement_by_id = {
+            item.entitlement_id: item for item in self.entitlements
+        }
+        for beat in self.beats:
+            entitled_support = {
+                (
+                    support.artifact_kind,
+                    support.artifact_id,
+                    support.artifact_hash,
+                )
+                for entitlement_id in beat.entitlement_ids
+                for support in entitlement_by_id[entitlement_id].supporting_artifacts
+            }
+            if any(
+                (
+                    support.artifact_kind,
+                    support.artifact_id,
+                    support.artifact_hash,
+                )
+                not in entitled_support
+                for support in beat.supporting_artifacts
+            ):
+                raise ValueError("realization scene prompt entitlement support must back every beat support")
         object.__setattr__(self, "beats", tuple(self.beats))
         object.__setattr__(
             self,
@@ -243,6 +286,13 @@ class NarrativeRealizationPrompt:
         scene_ids = tuple(item.scene.scene_id for item in self.scenes)
         if len(set(scene_ids)) != len(scene_ids):
             raise ValueError("realization prompt scene ids must be unique")
+        beat_ids = tuple(
+            beat.beat_id
+            for scene in self.scenes
+            for beat in scene.beats
+        )
+        if len(set(beat_ids)) != len(beat_ids):
+            raise ValueError("realization prompt beat ids must be unique across scenes")
         object.__setattr__(self, "scenes", tuple(self.scenes))
 
     @property
@@ -326,6 +376,13 @@ class NarrativeRealizedScene:
             raise ValueError("realized scene passage ids must be unique")
         if any(item.scene_id != self.scene_id for item in self.passages):
             raise ValueError("realized scene passages must reference their realized scene")
+        beat_ids = tuple(
+            beat_id for passage in self.passages for beat_id in passage.beat_ids
+        )
+        if len(set(beat_ids)) != len(beat_ids):
+            raise ValueError("realized scene passage beat ids must be unique")
+        if self.provider_response_hash != _provider_response_hash(self.passages):
+            raise ValueError("realized scene provider response hash must match its exact response payload")
         object.__setattr__(self, "passages", tuple(self.passages))
 
     def to_dict(self) -> dict[str, object]:
@@ -379,6 +436,9 @@ class NarrativeRealizationArtifact:
         scene_ids = tuple(item.scene_id for item in self.scenes)
         if len(set(scene_ids)) != len(scene_ids):
             raise ValueError("realization artifact scene ids must be unique")
+        scene_prompt_hashes = tuple(item.scene_prompt_hash for item in self.scenes)
+        if len(set(scene_prompt_hashes)) != len(scene_prompt_hashes):
+            raise ValueError("realization artifact scene prompt hashes must be unique")
         object.__setattr__(self, "scenes", tuple(self.scenes))
 
     def to_dict(self) -> dict[str, object]:

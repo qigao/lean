@@ -4,6 +4,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
+from narrative_dynamics.contracts import stable_content_hash
 from narrative_dynamics.abm.situated_projection_contracts import (
     NarrativeAuthority,
     NarrativeBeat,
@@ -127,6 +128,19 @@ def _prompt(
     )
 
 
+def _response_hash(*passages: NarrativePassage) -> str:
+    return stable_content_hash(
+        {
+            "provider_response": {
+                "passages": [
+                    {"beat_ids": list(passage.beat_ids), "text": passage.text}
+                    for passage in passages
+                ]
+            }
+        }
+    )
+
+
 def test_request_rejects_a_non_content_addressed_projection():
     with pytest.raises(ValueError, match="projection hash"):
         NarrativeRealizationRequest("render-1", "not-a-hash")
@@ -170,7 +184,7 @@ def test_artifact_requires_a_realization_assurance(
         "passage-1", "scene-1", ("beat-1",), ("entitlement-1",), "Text."
     )
     realized_scene = NarrativeRealizedScene(
-        "scene-1", scene_prompt.content_hash, HASH_B, (passage,)
+        "scene-1", scene_prompt.content_hash, _response_hash(passage), (passage,)
     )
     with pytest.raises(TypeError, match="assurance"):
         NarrativeRealizationArtifact(
@@ -253,6 +267,43 @@ def test_scene_prompt_rejects_a_dangling_entitlement_id(projection):
         NarrativeSceneRealizationPrompt(projection.scenes[0], (dangling,), ())
 
 
+def test_scene_prompt_rejects_a_same_id_beat_with_changed_scene_metadata(projection):
+    source = projection.beats[0]
+    forged = NarrativeBeat(
+        source.beat_id,
+        source.kind,
+        2,
+        source.sequence,
+        "lobby",
+        source.active_pov_agent_id,
+        source.agent_ids,
+        source.salience,
+        source.supporting_artifacts,
+        source.entitlement_ids,
+        source.cause_beat_ids,
+        source.source_event_id,
+        source.phase,
+    )
+    with pytest.raises(ValueError, match="scene metadata"):
+        NarrativeSceneRealizationPrompt(
+            projection.scenes[0], (forged,), (projection.cut.entitlements[0],)
+        )
+
+
+def test_scene_prompt_rejects_a_same_id_entitlement_without_beat_support(projection):
+    source = projection.cut.entitlements[0]
+    forged = NarrativeEntitlement(
+        source.entitlement_id,
+        source.scope,
+        source.owner_agent_id,
+        source.round_index,
+        source.facts,
+        (NarrativeSupportRef("world_event", "event-1", HASH_B),),
+    )
+    with pytest.raises(ValueError, match="entitlement support"):
+        NarrativeSceneRealizationPrompt(projection.scenes[0], (projection.beats[0],), (forged,))
+
+
 def test_realized_scene_rejects_duplicate_passage_ids(projection):
     prompt = _scene_prompt(projection)
     passage = NarrativePassage(
@@ -260,7 +311,120 @@ def test_realized_scene_rejects_duplicate_passage_ids(projection):
     )
     with pytest.raises(ValueError, match="passage ids"):
         NarrativeRealizedScene(
-            "scene-1", prompt.content_hash, HASH_B, (passage, passage)
+            "scene-1", prompt.content_hash, _response_hash(passage, passage), (passage, passage)
+        )
+
+
+def test_realized_scene_requires_a_hash_of_its_exact_response_payload(projection):
+    prompt = _scene_prompt(projection)
+    passage = NarrativePassage(
+        "passage-1", "scene-1", ("beat-1",), ("entitlement-1",), "Text."
+    )
+    with pytest.raises(ValueError, match="provider response hash"):
+        NarrativeRealizedScene("scene-1", prompt.content_hash, HASH_B, (passage,))
+
+    realized_scene = NarrativeRealizedScene(
+        "scene-1", prompt.content_hash, _response_hash(passage), (passage,)
+    )
+    assert realized_scene.provider_response_hash == _response_hash(passage)
+
+
+def test_realized_scene_rejects_a_beat_reused_by_multiple_passages(projection):
+    prompt = _scene_prompt(projection)
+    first = NarrativePassage(
+        "passage-1", "scene-1", ("beat-1",), ("entitlement-1",), "First."
+    )
+    second = NarrativePassage(
+        "passage-2", "scene-1", ("beat-1",), ("entitlement-1",), "Second."
+    )
+    with pytest.raises(ValueError, match="beat ids"):
+        NarrativeRealizedScene(
+            "scene-1", prompt.content_hash, _response_hash(first, second), (first, second)
+        )
+
+
+def test_realized_scene_rejects_passages_for_another_scene(projection):
+    prompt = _scene_prompt(projection)
+    foreign = NarrativePassage(
+        "passage-1", "scene-2", ("beat-2",), ("entitlement-2",), "Text."
+    )
+    with pytest.raises(ValueError, match="reference their realized scene"):
+        NarrativeRealizedScene(
+            "scene-1", prompt.content_hash, _response_hash(foreign), (foreign,)
+        )
+
+
+def test_prompt_rejects_a_beat_in_multiple_scene_contexts(projection, policy, provider):
+    original = _scene_prompt(projection)
+    duplicate_scene = NarrativeScene("scene-duplicate", ("beat-1",), 1, 1, "office", None)
+    duplicate = NarrativeSceneRealizationPrompt(
+        duplicate_scene, (projection.beats[0],), (projection.cut.entitlements[0],)
+    )
+    with pytest.raises(ValueError, match="beat ids"):
+        NarrativeRealizationPrompt(
+            NarrativeRealizationRequest("render-1", projection.content_hash),
+            policy,
+            provider,
+            projection.content_hash,
+            (original, duplicate),
+        )
+
+
+def test_artifact_preserves_the_supplied_realized_scene_order(projection, policy, provider):
+    prompt = _prompt(projection, policy, provider)
+    first_passage = NarrativePassage(
+        "passage-1", "scene-1", ("beat-1",), ("entitlement-1",), "First."
+    )
+    second_passage = NarrativePassage(
+        "passage-2", "scene-2", ("beat-2",), ("entitlement-2",), "Second."
+    )
+    first_scene = NarrativeRealizedScene(
+        "scene-1", prompt.scenes[0].content_hash, _response_hash(first_passage), (first_passage,)
+    )
+    second_scene = NarrativeRealizedScene(
+        "scene-2", prompt.scenes[1].content_hash, _response_hash(second_passage), (second_passage,)
+    )
+    artifact = NarrativeRealizationArtifact(
+        "render-1",
+        projection.content_hash,
+        policy,
+        provider,
+        prompt.content_hash,
+        prompt.schema_hash,
+        prompt.prompt_template_hash,
+        NarrativeRealizationAssurance.CITATION_BOUND,
+        "accepted",
+        (second_scene, first_scene),
+    )
+    assert tuple(scene.scene_id for scene in artifact.scenes) == ("scene-2", "scene-1")
+
+
+def test_artifact_rejects_distinct_scenes_with_the_same_prompt_hash(projection, policy, provider):
+    prompt = _prompt(projection, policy, provider)
+    first_passage = NarrativePassage(
+        "passage-1", "scene-1", ("beat-1",), ("entitlement-1",), "First."
+    )
+    second_passage = NarrativePassage(
+        "passage-2", "scene-2", ("beat-2",), ("entitlement-2",), "Second."
+    )
+    first_scene = NarrativeRealizedScene(
+        "scene-1", prompt.scenes[0].content_hash, _response_hash(first_passage), (first_passage,)
+    )
+    second_scene = NarrativeRealizedScene(
+        "scene-2", prompt.scenes[0].content_hash, _response_hash(second_passage), (second_passage,)
+    )
+    with pytest.raises(ValueError, match="scene prompt hashes"):
+        NarrativeRealizationArtifact(
+            "render-1",
+            projection.content_hash,
+            policy,
+            provider,
+            prompt.content_hash,
+            prompt.schema_hash,
+            prompt.prompt_template_hash,
+            NarrativeRealizationAssurance.CITATION_BOUND,
+            "accepted",
+            (first_scene, second_scene),
         )
 
 
