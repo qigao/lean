@@ -1,0 +1,608 @@
+"""Synchronous authority for one exact compiled scenario run."""
+
+from __future__ import annotations
+
+from dataclasses import replace
+from pathlib import Path
+import sqlite3
+from tempfile import TemporaryDirectory
+
+from narrative_dynamics.abm.scenario_compiler import initialize_compiled_scenario
+from narrative_dynamics.abm.scenario_coordinator_contracts import (
+    ScenarioAgentStateView,
+    ScenarioCheckpoint,
+    ScenarioCommandCapability,
+    ScenarioCommandKind,
+    ScenarioCommandReason,
+    ScenarioCommandRequest,
+    ScenarioCommandResult,
+    ScenarioPublicStateView,
+    ScenarioRunStatus,
+    ScenarioRunView,
+)
+from narrative_dynamics.abm.scenario_package_contracts import (
+    CompiledSituatedScenario,
+)
+from narrative_dynamics.abm.scenario_queries import (
+    project_scenario_agent_state,
+    project_scenario_network_state,
+    project_scenario_output_view,
+    project_scenario_public_state,
+    project_scenario_run_view,
+)
+from narrative_dynamics.abm.scenario_state_store import (
+    InMemoryScenarioStateStore,
+    ScenarioStateStore,
+)
+from narrative_dynamics.abm.simulation_output import project_simulation_output
+from narrative_dynamics.abm.simulation_output_bus import (
+    SimulationDeliveryReport,
+    SimulationOutputBus,
+)
+from narrative_dynamics.abm.simulation_output_contracts import (
+    SimulationAudienceCapability,
+    SimulationCommandResultPayload,
+    SimulationOutputAudience,
+    SimulationOutputBatch,
+    SimulationOutputKind,
+    SimulationOutputRecord,
+    SimulationOutputView,
+    output_record_sort_key,
+)
+from narrative_dynamics.abm.situated_network import simulate_situated_network_round
+from narrative_dynamics.abm.situated_network_contracts import (
+    SituatedNetworkRoundResult,
+    SituatedNetworkRuntimeState,
+    SituatedNetworkSnapshot,
+)
+
+
+_EMPTY_PROJECTION_ERROR = "simulation output projection produced no supported records"
+_OUTPUT_LIMIT_ERROR = "scenario run exceeded maximum output records"
+
+
+def _non_empty_text(value: object, *, label: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{label} must be a non-empty string")
+    return value
+
+
+def _positive_integer(value: object, *, label: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise ValueError(f"{label} must be a positive integer")
+    return value
+
+
+def _database_path(value: object) -> str:
+    if isinstance(value, Path):
+        return str(value)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("scenario coordinator database path must be non-empty")
+    return value
+
+
+def _copy_sqlite_database(source_path: str, destination_path: str) -> None:
+    source = destination = None
+    try:
+        source = sqlite3.connect(source_path)
+        destination = sqlite3.connect(destination_path)
+        source.backup(destination)
+    except sqlite3.Error as error:
+        raise RuntimeError("scenario coordinator database backup failed") from error
+    finally:
+        if destination is not None:
+            destination.close()
+        if source is not None:
+            source.close()
+
+
+class ScenarioCoordinator:
+    """Serialize control and exact V19 transitions for one local run."""
+
+    def __init__(
+        self,
+        database_path: str,
+        scenario: CompiledSituatedScenario,
+        *,
+        run_id: str,
+        stream_id: str,
+        state_store: ScenarioStateStore,
+        publisher: object,
+        coordinator_epoch: int,
+        parent_checkpoint_hash: str | None,
+    ) -> None:
+        self._database_path = database_path
+        self._scenario = scenario
+        self._run_id = run_id
+        self._stream_id = stream_id
+        self._state_store = state_store
+        self._publisher = publisher
+        self._coordinator_epoch = coordinator_epoch
+        self._parent_checkpoint_hash = parent_checkpoint_hash
+        self._status = ScenarioRunStatus.CREATED
+        self._next_sequence = 1
+        self._output_batches: tuple[SimulationOutputBatch, ...] = ()
+        self._outputs_by_hash: dict[str, SimulationOutputBatch] = {}
+        self._checkpoints: tuple[ScenarioCheckpoint, ...] = ()
+        self._results_by_command_id: dict[
+            str, tuple[str, ScenarioCommandResult]
+        ] = {}
+        self._idempotency_results: dict[
+            str, tuple[str, str, ScenarioCommandResult]
+        ] = {}
+        self._executing = False
+        self._last_delivery_report: SimulationDeliveryReport | None = None
+
+    @classmethod
+    def create(
+        cls,
+        database_path: str | Path,
+        scenario: CompiledSituatedScenario,
+        *,
+        run_id: str,
+        stream_id: str,
+        state_store: ScenarioStateStore | None = None,
+        publisher: object | None = None,
+        coordinator_epoch: int = 1,
+        parent_checkpoint_hash: str | None = None,
+    ) -> "ScenarioCoordinator":
+        if not isinstance(scenario, CompiledSituatedScenario):
+            raise TypeError(
+                "scenario coordinator creation requires CompiledSituatedScenario"
+            )
+        exact_database_path = _database_path(database_path)
+        exact_run_id = _non_empty_text(run_id, label="scenario coordinator run id")
+        exact_stream_id = _non_empty_text(
+            stream_id,
+            label="scenario coordinator stream id",
+        )
+        exact_epoch = _positive_integer(
+            coordinator_epoch,
+            label="scenario coordinator epoch",
+        )
+        if parent_checkpoint_hash is not None:
+            ScenarioRunView(
+                exact_run_id,
+                exact_stream_id,
+                scenario.content_hash,
+                exact_epoch,
+                ScenarioRunStatus.CREATED,
+                0,
+                scenario.initial_cognitive_state.content_hash,
+                1,
+                (),
+                (),
+                parent_checkpoint_hash,
+            )
+        exact_store = (
+            InMemoryScenarioStateStore() if state_store is None else state_store
+        )
+        if not isinstance(exact_store, ScenarioStateStore):
+            raise TypeError("scenario coordinator state store must implement ScenarioStateStore")
+        exact_publisher = SimulationOutputBus() if publisher is None else publisher
+        if not callable(getattr(exact_publisher, "publish", None)):
+            raise TypeError("scenario coordinator publisher must provide publish")
+
+        initial_state = initialize_compiled_scenario(exact_database_path, scenario)
+        exact_store.initialize(exact_run_id, initial_state)
+        return cls(
+            exact_database_path,
+            scenario,
+            run_id=exact_run_id,
+            stream_id=exact_stream_id,
+            state_store=exact_store,
+            publisher=exact_publisher,
+            coordinator_epoch=exact_epoch,
+            parent_checkpoint_hash=parent_checkpoint_hash,
+        )
+
+    @property
+    def state(self) -> SituatedNetworkRuntimeState:
+        return self._state_store.load(self._run_id)
+
+    @property
+    def last_delivery_report(self) -> SimulationDeliveryReport | None:
+        return self._last_delivery_report
+
+    def run_view(self) -> ScenarioRunView:
+        return project_scenario_run_view(
+            run_id=self._run_id,
+            stream_id=self._stream_id,
+            scenario_hash=self._scenario.content_hash,
+            coordinator_epoch=self._coordinator_epoch,
+            status=self._status,
+            state=self.state,
+            next_sequence=self._next_sequence,
+            output_batches=self._output_batches,
+            checkpoints=self._checkpoints,
+            parent_checkpoint_hash=self._parent_checkpoint_hash,
+        )
+
+    def public_state_view(self) -> ScenarioPublicStateView:
+        return project_scenario_public_state(
+            self._run_id,
+            self._scenario.content_hash,
+            self.state,
+        )
+
+    def agent_state_view(
+        self,
+        agent_id: str,
+        capability: SimulationAudienceCapability,
+    ) -> ScenarioAgentStateView:
+        return project_scenario_agent_state(
+            self._run_id,
+            self._scenario.content_hash,
+            self.state,
+            agent_id,
+            capability,
+        )
+
+    def network_state(
+        self,
+        capability: SimulationAudienceCapability,
+    ) -> SituatedNetworkSnapshot:
+        return project_scenario_network_state(self.state, capability)
+
+    def output_view(
+        self,
+        batch_hash: str,
+        capability: SimulationAudienceCapability,
+    ) -> SimulationOutputView:
+        try:
+            batch = self._outputs_by_hash[batch_hash]
+        except (KeyError, TypeError):
+            raise KeyError("unknown scenario output batch") from None
+        return project_scenario_output_view(batch, capability)
+
+    def command_result(
+        self,
+        command_id: str,
+        capability: ScenarioCommandCapability,
+    ) -> ScenarioCommandResult:
+        if not isinstance(capability, ScenarioCommandCapability):
+            raise TypeError(
+                "scenario command audit requires ScenarioCommandCapability"
+            )
+        try:
+            authority_id, result = self._results_by_command_id[command_id]
+        except (KeyError, TypeError):
+            raise KeyError("unknown scenario command") from None
+        if capability.run_id != self._run_id or not (
+            capability.authority_id == authority_id
+            or capability.can_read_all_audit
+        ):
+            raise PermissionError("scenario command audit is not authorized")
+        return result
+
+    def submit_command(
+        self,
+        request: ScenarioCommandRequest,
+        capability: ScenarioCommandCapability,
+    ) -> ScenarioCommandResult:
+        if not isinstance(request, ScenarioCommandRequest):
+            raise TypeError("scenario command requires ScenarioCommandRequest")
+        if not isinstance(capability, ScenarioCommandCapability):
+            raise TypeError("scenario command requires ScenarioCommandCapability")
+        if self._executing:
+            raise RuntimeError("reentrant scenario command submission")
+        self._executing = True
+        try:
+            return self._submit_command(request, capability)
+        finally:
+            self._executing = False
+
+    def _submit_command(
+        self,
+        request: ScenarioCommandRequest,
+        capability: ScenarioCommandCapability,
+    ) -> ScenarioCommandResult:
+        cached = self._idempotency_results.get(request.idempotency_key)
+        if cached is not None:
+            request_hash, capability_hash, result = cached
+            if (
+                request_hash == request.content_hash
+                and capability_hash == capability.content_hash
+            ):
+                return result
+            raise ValueError("scenario command idempotency key was reused")
+        if request.command_id in self._results_by_command_id:
+            raise ValueError("scenario command id was reused")
+
+        state = self.state
+        rejection = self._rejection_reason(request, capability, state)
+        if rejection is not None:
+            result = self._result(
+                request,
+                capability,
+                accepted=False,
+                reason=rejection,
+                prior_status=self._status,
+                next_status=self._status,
+                prior_state=state,
+                next_state=state,
+            )
+            self._retain_result(request, capability, result)
+            return result
+
+        if request.kind is ScenarioCommandKind.STEP:
+            return self._step(request, capability, state)
+        if request.kind is ScenarioCommandKind.CHECKPOINT:
+            raise RuntimeError("scenario checkpoint store is not configured")
+
+        next_status = {
+            ScenarioCommandKind.START: ScenarioRunStatus.RUNNING,
+            ScenarioCommandKind.PAUSE: ScenarioRunStatus.PAUSED,
+            ScenarioCommandKind.RESUME: ScenarioRunStatus.RUNNING,
+            ScenarioCommandKind.STOP: ScenarioRunStatus.STOPPED,
+        }[request.kind]
+        result = self._result(
+            request,
+            capability,
+            accepted=True,
+            reason=ScenarioCommandReason.ACCEPTED,
+            prior_status=self._status,
+            next_status=next_status,
+            prior_state=state,
+            next_state=state,
+        )
+        self._status = next_status
+        self._retain_result(request, capability, result)
+        return result
+
+    def _rejection_reason(
+        self,
+        request: ScenarioCommandRequest,
+        capability: ScenarioCommandCapability,
+        state: SituatedNetworkRuntimeState,
+    ) -> ScenarioCommandReason | None:
+        if (
+            capability.run_id != self._run_id
+            or capability.authority_id != request.authority_id
+            or request.kind not in capability.allowed_kinds
+        ):
+            return ScenarioCommandReason.UNAUTHORIZED
+        if request.run_id != self._run_id:
+            return ScenarioCommandReason.RUN_MISMATCH
+        if request.scenario_hash != self._scenario.content_hash:
+            return ScenarioCommandReason.SCENARIO_MISMATCH
+        if request.coordinator_epoch != self._coordinator_epoch:
+            return ScenarioCommandReason.EPOCH_MISMATCH
+        if request.expected_state_hash != state.content_hash:
+            return ScenarioCommandReason.STALE_STATE
+        if (
+            request.kind is ScenarioCommandKind.STEP
+            and self._status is ScenarioRunStatus.COMPLETED
+        ):
+            return ScenarioCommandReason.MAXIMUM_ROUNDS
+        if not self._status_allows(request.kind):
+            return ScenarioCommandReason.INVALID_STATUS
+        if (
+            request.kind is ScenarioCommandKind.STEP
+            and state.round_index >= self._scenario.run_policy.maximum_rounds
+        ):
+            return ScenarioCommandReason.MAXIMUM_ROUNDS
+        return None
+
+    def _status_allows(self, kind: ScenarioCommandKind) -> bool:
+        if kind is ScenarioCommandKind.START:
+            return self._status is ScenarioRunStatus.CREATED
+        if kind is ScenarioCommandKind.PAUSE:
+            return self._status is ScenarioRunStatus.RUNNING
+        if kind is ScenarioCommandKind.RESUME:
+            return self._status is ScenarioRunStatus.PAUSED
+        if kind is ScenarioCommandKind.STEP:
+            return self._status in (
+                ScenarioRunStatus.RUNNING,
+                ScenarioRunStatus.PAUSED,
+            )
+        if kind is ScenarioCommandKind.STOP:
+            return self._status in (
+                ScenarioRunStatus.CREATED,
+                ScenarioRunStatus.RUNNING,
+                ScenarioRunStatus.PAUSED,
+            )
+        return self._status is not ScenarioRunStatus.STOPPED
+
+    def _step(
+        self,
+        request: ScenarioCommandRequest,
+        capability: ScenarioCommandCapability,
+        prior_state: SituatedNetworkRuntimeState,
+    ) -> ScenarioCommandResult:
+        with TemporaryDirectory(
+            prefix="scenario-coordinator-v21-3-",
+            ignore_cleanup_errors=True,
+        ) as temporary:
+            backup_path = str(Path(temporary) / "memory-backup.sqlite3")
+            _copy_sqlite_database(self._database_path, backup_path)
+            committed = False
+            try:
+                round_result = simulate_situated_network_round(
+                    self._database_path,
+                    self._scenario.runtime_model,
+                    prior_state,
+                )
+                batch = self._project_step_batch(request, round_result)
+                self._enforce_output_record_limit(batch)
+
+                next_state = round_result.next_state
+                next_status = self._status
+                if (
+                    next_state.round_index
+                    >= self._scenario.run_policy.maximum_rounds
+                ):
+                    next_status = ScenarioRunStatus.COMPLETED
+                result = self._result(
+                    request,
+                    capability,
+                    accepted=True,
+                    reason=ScenarioCommandReason.ACCEPTED,
+                    prior_status=self._status,
+                    next_status=next_status,
+                    prior_state=prior_state,
+                    next_state=next_state,
+                    output_batch_hash=batch.content_hash,
+                )
+
+                next_outputs = self._output_batches + (batch,)
+                next_outputs_by_hash = dict(self._outputs_by_hash)
+                next_outputs_by_hash[batch.content_hash] = batch
+                next_results = dict(self._results_by_command_id)
+                next_results[request.command_id] = (
+                    capability.authority_id,
+                    result,
+                )
+                next_idempotency = dict(self._idempotency_results)
+                next_idempotency[request.idempotency_key] = (
+                    request.content_hash,
+                    capability.content_hash,
+                    result,
+                )
+
+                self._state_store.compare_and_swap(
+                    self._run_id,
+                    prior_state.content_hash,
+                    next_state,
+                )
+                self._status = next_status
+                self._output_batches = next_outputs
+                self._outputs_by_hash = next_outputs_by_hash
+                self._results_by_command_id = next_results
+                self._idempotency_results = next_idempotency
+                self._next_sequence = batch.last_sequence + 1
+                committed = True
+
+                self._last_delivery_report = self._publisher.publish(batch)
+                return result
+            except Exception:
+                if not committed:
+                    _copy_sqlite_database(backup_path, self._database_path)
+                raise
+
+    def _enforce_output_record_limit(self, batch: SimulationOutputBatch) -> None:
+        retained_count = sum(len(item.records) for item in self._output_batches)
+        if (
+            retained_count + len(batch.records)
+            > self._scenario.run_policy.maximum_output_records
+        ):
+            raise ValueError(_OUTPUT_LIMIT_ERROR)
+
+    def _project_step_batch(
+        self,
+        request: ScenarioCommandRequest,
+        round_result: SituatedNetworkRoundResult,
+    ) -> SimulationOutputBatch:
+        include_command = (
+            SimulationOutputKind.COMMAND_RESULT.value
+            in self._scenario.run_policy.allowed_output_kinds
+        )
+        base_batch: SimulationOutputBatch | None
+        try:
+            base_batch = project_simulation_output(
+                self._scenario,
+                round_result,
+                stream_id=self._stream_id,
+                first_sequence=self._next_sequence,
+            )
+        except ValueError as error:
+            if not include_command or str(error) != _EMPTY_PROJECTION_ERROR:
+                raise
+            base_batch = None
+
+        records = () if base_batch is None else base_batch.records
+        if include_command:
+            command_record = SimulationOutputRecord(
+                self._stream_id,
+                self._scenario.content_hash,
+                self._next_sequence,
+                round_result.next_state.round_index,
+                round_result.next_state.content_hash,
+                SimulationOutputKind.COMMAND_RESULT,
+                SimulationOutputAudience.PUBLIC,
+                None,
+                (
+                    request.content_hash,
+                    round_result.prior_state.content_hash,
+                    round_result.next_state.content_hash,
+                    round_result.content_hash,
+                ),
+                SimulationCommandResultPayload(
+                    request.command_id,
+                    True,
+                    ScenarioCommandReason.ACCEPTED.value,
+                ),
+            )
+            records = (command_record,) + records
+        if not records:
+            raise ValueError(_EMPTY_PROJECTION_ERROR)
+
+        ordered = tuple(sorted(records, key=output_record_sort_key))
+        resequenced = tuple(
+            replace(record, sequence=self._next_sequence + index)
+            for index, record in enumerate(ordered)
+        )
+        return SimulationOutputBatch(
+            self._stream_id,
+            self._scenario.content_hash,
+            round_result.prior_state.content_hash,
+            round_result.next_state.content_hash,
+            round_result.content_hash,
+            self._next_sequence,
+            self._next_sequence + len(resequenced) - 1,
+            resequenced,
+            checkpoint=False,
+        )
+
+    def _result(
+        self,
+        request: ScenarioCommandRequest,
+        capability: ScenarioCommandCapability,
+        *,
+        accepted: bool,
+        reason: ScenarioCommandReason,
+        prior_status: ScenarioRunStatus,
+        next_status: ScenarioRunStatus,
+        prior_state: SituatedNetworkRuntimeState,
+        next_state: SituatedNetworkRuntimeState,
+        output_batch_hash: str | None = None,
+        checkpoint_hash: str | None = None,
+    ) -> ScenarioCommandResult:
+        return ScenarioCommandResult(
+            request.command_id,
+            request.idempotency_key,
+            request.content_hash,
+            capability.content_hash,
+            self._run_id,
+            self._scenario.content_hash,
+            self._coordinator_epoch,
+            request.kind,
+            accepted,
+            reason,
+            prior_status,
+            next_status,
+            prior_state.content_hash,
+            next_state.content_hash,
+            next_state.round_index,
+            output_batch_hash,
+            checkpoint_hash,
+        )
+
+    def _retain_result(
+        self,
+        request: ScenarioCommandRequest,
+        capability: ScenarioCommandCapability,
+        result: ScenarioCommandResult,
+    ) -> None:
+        self._results_by_command_id[request.command_id] = (
+            capability.authority_id,
+            result,
+        )
+        self._idempotency_results[request.idempotency_key] = (
+            request.content_hash,
+            capability.content_hash,
+            result,
+        )
+
+
+__all__ = ("ScenarioCoordinator",)
