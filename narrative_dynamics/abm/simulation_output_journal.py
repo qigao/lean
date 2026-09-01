@@ -15,10 +15,12 @@ from narrative_dynamics.contracts import stable_content_hash
 from narrative_dynamics.abm.simulation_output import filter_simulation_output
 from narrative_dynamics.abm.simulation_output_contracts import (
     SIMULATION_OUTPUT_VIEW_SCHEMA,
+    SimulationAgentDecisionPayload,
     SimulationAudienceCapability,
     SimulationBlenderDeltaPayload,
     SimulationCommandResultPayload,
     SimulationDiagnosticPayload,
+    SimulationMemoryUpdatePayload,
     SimulationNarrativeScenePayload,
     SimulationNetworkMetricsPayload,
     SimulationObjectiveEventPayload,
@@ -28,12 +30,19 @@ from narrative_dynamics.abm.simulation_output_contracts import (
     SimulationOutputPayload,
     SimulationOutputRecord,
     SimulationOutputView,
+    SimulationPrivatePerceptPayload,
+    SimulationSocialUpdatePayload,
     SimulationStateDeltaPayload,
     SimulationStoryProgressPayload,
 )
+from narrative_dynamics.abm.situated import SituatedActionIntent
+from narrative_dynamics.abm.situated_cognition import SituatedCognitiveDecision
+from narrative_dynamics.abm.situated_contracts import EvidenceFact
 from narrative_dynamics.abm.situated_network_contracts import (
     SituatedNetworkEmergenceMetrics,
 )
+from narrative_dynamics.abm.situated_perception_contracts import SituatedPercept
+from narrative_dynamics.narrative.runtime_planning import PlanningBeliefState
 
 
 SIMULATION_PUBLIC_JOURNAL_SCHEMA = (
@@ -123,6 +132,321 @@ def _payload_mapping(
     return _mapping(value, frozenset(names), label=label)
 
 
+def _trusted_metrics(
+    value: object,
+) -> SituatedNetworkEmergenceMetrics:
+    if not isinstance(value, SituatedNetworkEmergenceMetrics):
+        raise TypeError("network metrics payload requires typed metrics")
+    return SituatedNetworkEmergenceMetrics(
+        snapshot_hash=value.snapshot_hash,
+        round_index=value.round_index,
+        population_size=value.population_size,
+        occupied_place_count=value.occupied_place_count,
+        adopted_count=value.adopted_count,
+        adoption_rate=value.adoption_rate,
+        tracked_belief_mean=value.tracked_belief_mean,
+        tracked_belief_variance=value.tracked_belief_variance,
+        active_relationship_edge_count=value.active_relationship_edge_count,
+        mean_relationship_trust=value.mean_relationship_trust,
+        direct_interaction_pair_count=value.direct_interaction_pair_count,
+        latest_tell_event_count=value.latest_tell_event_count,
+        transmission_count=value.transmission_count,
+        reached_observer_count=value.reached_observer_count,
+        exact_transmission_count=value.exact_transmission_count,
+        detected_transmission_count=value.detected_transmission_count,
+        identified_transmission_count=value.identified_transmission_count,
+        active_claim_count=value.active_claim_count,
+        confirmed_claim_count=value.confirmed_claim_count,
+        contradicted_claim_count=value.contradicted_claim_count,
+        superseded_claim_count=value.superseded_claim_count,
+        forgotten_claim_count=value.forgotten_claim_count,
+    )
+
+
+def _trusted_percept(value: object) -> SituatedPercept:
+    if not isinstance(value, SituatedPercept):
+        raise TypeError("private percept payload requires a typed percept")
+    if not isinstance(value.details, tuple):
+        raise TypeError("situated percept details must be a tuple")
+    details = []
+    for fact in value.details:
+        if not isinstance(fact, EvidenceFact):
+            raise TypeError("situated percept details require EvidenceFact values")
+        details.append(EvidenceFact(fact.name, fact.value))
+    return SituatedPercept(
+        percept_id=value.percept_id,
+        round_index=value.round_index,
+        agent_id=value.agent_id,
+        source_event_id=value.source_event_id,
+        source_event_hash=value.source_event_hash,
+        channels=value.channels,
+        fidelity=value.fidelity,
+        actor_agent_id=value.actor_agent_id,
+        kind=value.kind,
+        place_id=value.place_id,
+        outcome=value.outcome,
+        details=tuple(details),
+    )
+
+
+def _trusted_belief(value: object) -> PlanningBeliefState:
+    if not isinstance(value, PlanningBeliefState):
+        raise TypeError("situated decision requires typed belief states")
+    return PlanningBeliefState(value.probabilities)
+
+
+def _trusted_intent(value: object) -> SituatedActionIntent:
+    if not isinstance(value, SituatedActionIntent):
+        raise TypeError("situated decision requires a typed action intent")
+    return SituatedActionIntent(
+        action_id=value.action_id,
+        agent_id=value.agent_id,
+        kind=value.kind,
+        target_id=value.target_id,
+        message=value.message,
+        source_event_ids=value.source_event_ids,
+    )
+
+
+def _trusted_decision(value: object) -> SituatedCognitiveDecision:
+    if not isinstance(value, SituatedCognitiveDecision):
+        raise TypeError("agent decision payload requires a typed decision")
+    for name in ("admitted_observation_ids", "admitted_symbol_ids"):
+        if not isinstance(getattr(value, name), tuple):
+            raise TypeError(f"situated decision {name.replace('_', ' ')} must be a tuple")
+    return SituatedCognitiveDecision(
+        agent_id=value.agent_id,
+        round_index=value.round_index,
+        prior_belief=_trusted_belief(value.prior_belief),
+        posterior_belief=_trusted_belief(value.posterior_belief),
+        admitted_observation_ids=value.admitted_observation_ids,
+        admitted_symbol_ids=value.admitted_symbol_ids,
+        feasible_action_ids=value.feasible_action_ids,
+        action_values=value.action_values,
+        action_policy=value.action_policy,
+        selected_action_id=value.selected_action_id,
+        selected_goal_contributions=value.selected_goal_contributions,
+        intent=_trusted_intent(value.intent),
+        recalled_memory_ids=value.recalled_memory_ids,
+        recalled_symbol_ids=value.recalled_symbol_ids,
+    )
+
+
+def _trusted_payload(value: object) -> SimulationOutputPayload:
+    payload_type = type(value)
+    if payload_type is SimulationStateDeltaPayload:
+        return SimulationStateDeltaPayload(
+            value.prior_snapshot_hash,
+            value.next_snapshot_hash,
+            value.changed_agent_ids,
+            value.changed_passage_ids,
+            value.changed_object_ids,
+        )
+    if payload_type is SimulationObjectiveEventPayload:
+        return SimulationObjectiveEventPayload(
+            value.event_id,
+            value.event_hash,
+            value.action_id,
+            value.action_kind,
+            value.actor_agent_id,
+            value.place_id,
+            value.target_id,
+            value.success,
+            value.cause_event_ids,
+        )
+    if payload_type is SimulationPrivatePerceptPayload:
+        return SimulationPrivatePerceptPayload(_trusted_percept(value.percept))
+    if payload_type is SimulationAgentDecisionPayload:
+        return SimulationAgentDecisionPayload(_trusted_decision(value.decision))
+    if payload_type is SimulationMemoryUpdatePayload:
+        return SimulationMemoryUpdatePayload(
+            value.agent_id,
+            value.prior_mind_hash,
+            value.next_mind_hash,
+            value.recalled_memory_ids,
+            value.admitted_memory_ids,
+        )
+    if payload_type is SimulationSocialUpdatePayload:
+        return SimulationSocialUpdatePayload(
+            value.observer_agent_id,
+            value.prior_claim_hashes,
+            value.next_claim_hashes,
+            value.prior_relationship_hashes,
+            value.next_relationship_hashes,
+            value.admitted_evidence_ids,
+        )
+    if payload_type is SimulationNetworkMetricsPayload:
+        return SimulationNetworkMetricsPayload(_trusted_metrics(value.metrics))
+    if payload_type is SimulationStoryProgressPayload:
+        return SimulationStoryProgressPayload(
+            value.active_scene_id,
+            value.completed_scene_ids,
+            value.status,
+        )
+    if payload_type is SimulationNarrativeScenePayload:
+        return SimulationNarrativeScenePayload(
+            value.scene_id,
+            value.projection_hash,
+            value.realization_hash,
+        )
+    if payload_type is SimulationBlenderDeltaPayload:
+        return SimulationBlenderDeltaPayload(
+            value.agent_places,
+            value.passage_states,
+            value.object_placements,
+        )
+    if payload_type is SimulationCommandResultPayload:
+        return SimulationCommandResultPayload(
+            value.command_id,
+            value.accepted,
+            value.reason_code,
+        )
+    if payload_type is SimulationDiagnosticPayload:
+        return SimulationDiagnosticPayload(value.code, value.message)
+    raise TypeError("output payload must use an exact supported base type")
+
+
+def _trusted_record(value: object) -> SimulationOutputRecord:
+    if not isinstance(value, SimulationOutputRecord):
+        raise TypeError("public journal requires typed output records")
+    return SimulationOutputRecord(
+        value.stream_id,
+        value.scenario_hash,
+        value.sequence,
+        value.round_index,
+        value.state_hash,
+        value.kind,
+        value.audience,
+        value.owner_agent_id,
+        value.source_artifact_hashes,
+        _trusted_payload(value.payload),
+        schema=value.schema,
+    )
+
+
+def _trusted_batch(value: object) -> SimulationOutputBatch:
+    if not isinstance(value, SimulationOutputBatch):
+        raise TypeError("public journal write requires a SimulationOutputBatch")
+    if not isinstance(value.records, tuple):
+        raise TypeError("output batch records must be a tuple")
+    return SimulationOutputBatch(
+        value.stream_id,
+        value.scenario_hash,
+        value.prior_state_hash,
+        value.next_state_hash,
+        value.round_result_hash,
+        value.first_sequence,
+        value.last_sequence,
+        tuple(_trusted_record(record) for record in value.records),
+        checkpoint=value.checkpoint,
+        schema=value.schema,
+    )
+
+
+def _trusted_view(value: object) -> SimulationOutputView:
+    if not isinstance(value, SimulationOutputView):
+        raise TypeError("public journal requires typed output views")
+    if not isinstance(value.records, tuple):
+        raise TypeError("output view records must be a tuple")
+    return SimulationOutputView(
+        value.stream_id,
+        value.scenario_hash,
+        value.prior_state_hash,
+        value.next_state_hash,
+        value.round_result_hash,
+        value.first_sequence,
+        value.last_sequence,
+        tuple(_trusted_record(record) for record in value.records),
+        value.source_batch_hash,
+        checkpoint=value.checkpoint,
+        schema=value.schema,
+    )
+
+
+def _metrics_document(
+    metrics: SituatedNetworkEmergenceMetrics,
+) -> dict[str, object]:
+    return {
+        "snapshot_hash": metrics.snapshot_hash,
+        "round_index": metrics.round_index,
+        "population_size": metrics.population_size,
+        "occupied_place_count": metrics.occupied_place_count,
+        "adopted_count": metrics.adopted_count,
+        "adoption_rate": metrics.adoption_rate,
+        "tracked_belief_mean": metrics.tracked_belief_mean,
+        "tracked_belief_variance": metrics.tracked_belief_variance,
+        "active_relationship_edge_count": metrics.active_relationship_edge_count,
+        "mean_relationship_trust": metrics.mean_relationship_trust,
+        "direct_interaction_pair_count": metrics.direct_interaction_pair_count,
+        "latest_tell_event_count": metrics.latest_tell_event_count,
+        "transmission_count": metrics.transmission_count,
+        "reached_observer_count": metrics.reached_observer_count,
+        "exact_transmission_count": metrics.exact_transmission_count,
+        "detected_transmission_count": metrics.detected_transmission_count,
+        "identified_transmission_count": metrics.identified_transmission_count,
+        "active_claim_count": metrics.active_claim_count,
+        "confirmed_claim_count": metrics.confirmed_claim_count,
+        "contradicted_claim_count": metrics.contradicted_claim_count,
+        "superseded_claim_count": metrics.superseded_claim_count,
+        "forgotten_claim_count": metrics.forgotten_claim_count,
+    }
+
+
+def _public_payload_document(
+    payload: SimulationOutputPayload,
+) -> dict[str, object]:
+    payload_type = type(payload)
+    if payload_type is SimulationStateDeltaPayload:
+        return {
+            "prior_snapshot_hash": payload.prior_snapshot_hash,
+            "next_snapshot_hash": payload.next_snapshot_hash,
+            "changed_agent_ids": list(payload.changed_agent_ids),
+            "changed_passage_ids": list(payload.changed_passage_ids),
+            "changed_object_ids": list(payload.changed_object_ids),
+        }
+    if payload_type is SimulationObjectiveEventPayload:
+        return {
+            "event_id": payload.event_id,
+            "event_hash": payload.event_hash,
+            "action_id": payload.action_id,
+            "action_kind": payload.action_kind,
+            "actor_agent_id": payload.actor_agent_id,
+            "place_id": payload.place_id,
+            "target_id": payload.target_id,
+            "success": payload.success,
+            "cause_event_ids": list(payload.cause_event_ids),
+        }
+    if payload_type is SimulationNetworkMetricsPayload:
+        return {"metrics": _metrics_document(payload.metrics)}
+    if payload_type is SimulationStoryProgressPayload:
+        return {
+            "active_scene_id": payload.active_scene_id,
+            "completed_scene_ids": list(payload.completed_scene_ids),
+            "status": payload.status,
+        }
+    if payload_type is SimulationNarrativeScenePayload:
+        return {
+            "scene_id": payload.scene_id,
+            "projection_hash": payload.projection_hash,
+            "realization_hash": payload.realization_hash,
+        }
+    if payload_type is SimulationBlenderDeltaPayload:
+        return {
+            "agent_places": [list(item) for item in payload.agent_places],
+            "passage_states": [list(item) for item in payload.passage_states],
+            "object_placements": [list(item) for item in payload.object_placements],
+        }
+    if payload_type is SimulationCommandResultPayload:
+        return {
+            "command_id": payload.command_id,
+            "accepted": payload.accepted,
+            "reason_code": payload.reason_code,
+        }
+    if payload_type is SimulationDiagnosticPayload:
+        return {"code": payload.code, "message": payload.message}
+    raise ValueError("public journal record kind is not public")
+
+
 def _journal_hash_body(
     *,
     stream_id: str,
@@ -176,6 +500,11 @@ class SimulationPublicJournal:
             not isinstance(batch, SimulationOutputView) for batch in self.batches
         ):
             raise ValueError("public journal requires typed output views")
+        object.__setattr__(
+            self,
+            "batches",
+            tuple(_trusted_view(batch) for batch in self.batches),
+        )
         if self.schema != SIMULATION_PUBLIC_JOURNAL_SCHEMA:
             raise ValueError("public journal schema must match the supported schema")
         previous: SimulationOutputView | None = None
@@ -192,19 +521,6 @@ class SimulationPublicJournal:
             for record in batch.records:
                 if record.kind not in _PUBLIC_PAYLOAD_DECODERS:
                     raise ValueError("public journal record kind is not public")
-                SimulationOutputRecord(
-                    record.stream_id,
-                    record.scenario_hash,
-                    record.sequence,
-                    record.round_index,
-                    record.state_hash,
-                    record.kind,
-                    record.audience,
-                    record.owner_agent_id,
-                    record.source_artifact_hashes,
-                    record.payload,
-                    schema=record.schema,
-                )
             if previous is not None:
                 if batch.first_sequence != previous.last_sequence + 1:
                     raise ValueError("public journal source sequence continuity")
@@ -226,12 +542,42 @@ class SimulationPublicJournal:
 
 
 def _record_document(record: SimulationOutputRecord) -> dict[str, object]:
-    document = record.to_dict()
-    document["record_hash"] = record.content_hash
+    payload_document = _public_payload_document(record.payload)
+    document = {
+        "schema": record.schema,
+        "stream_id": record.stream_id,
+        "scenario_hash": record.scenario_hash,
+        "sequence": record.sequence,
+        "round_index": record.round_index,
+        "state_hash": record.state_hash,
+        "kind": record.kind.value,
+        "audience": record.audience.value,
+        "owner_agent_id": record.owner_agent_id,
+        "source_artifact_hashes": list(record.source_artifact_hashes),
+        "payload": payload_document,
+        "payload_hash": stable_content_hash(payload_document),
+    }
+    document["record_hash"] = stable_content_hash(document)
     return document
 
 
 def _batch_document(view: SimulationOutputView) -> dict[str, object]:
+    record_documents = [_record_document(record) for record in view.records]
+    view_body = {
+        "schema": view.schema,
+        "stream_id": view.stream_id,
+        "scenario_hash": view.scenario_hash,
+        "prior_state_hash": view.prior_state_hash,
+        "next_state_hash": view.next_state_hash,
+        "round_result_hash": view.round_result_hash,
+        "first_sequence": view.first_sequence,
+        "last_sequence": view.last_sequence,
+        "record_hashes": [
+            document["record_hash"] for document in record_documents
+        ],
+        "source_batch_hash": view.source_batch_hash,
+        "checkpoint": view.checkpoint,
+    }
     return {
         "schema": SIMULATION_PUBLIC_JOURNAL_BATCH_SCHEMA,
         "stream_id": view.stream_id,
@@ -241,24 +587,34 @@ def _batch_document(view: SimulationOutputView) -> dict[str, object]:
         "round_result_hash": view.round_result_hash,
         "first_sequence": view.first_sequence,
         "last_sequence": view.last_sequence,
-        "records": [_record_document(record) for record in view.records],
+        "records": record_documents,
         "source_batch_hash": view.source_batch_hash,
         "checkpoint": view.checkpoint,
-        "view_hash": view.content_hash,
+        "view_hash": stable_content_hash(view_body),
     }
 
 
 def _encode_journal(journal: SimulationPublicJournal) -> bytes:
+    batch_documents = tuple(
+        _batch_document(batch) for batch in journal.batches
+    )
+    header_body = {
+        "schema": journal.schema,
+        "stream_id": journal.stream_id,
+        "scenario_hash": journal.scenario_hash,
+        "parent_journal_hash": journal.parent_journal_hash,
+        "view_hashes": [
+            document["view_hash"] for document in batch_documents
+        ],
+    }
     header = {
         "schema": journal.schema,
         "stream_id": journal.stream_id,
         "scenario_hash": journal.scenario_hash,
         "parent_journal_hash": journal.parent_journal_hash,
-        "content_hash": journal.content_hash,
+        "content_hash": stable_content_hash(header_body),
     }
-    documents = (header,) + tuple(
-        _batch_document(batch) for batch in journal.batches
-    )
+    documents = (header,) + batch_documents
     return "".join(
         json.dumps(
             document,
@@ -565,6 +921,8 @@ def replay_public_simulation_journal(
         json.JSONDecodeError,
         KeyError,
         OSError,
+        OverflowError,
+        RecursionError,
         TypeError,
         UnicodeError,
         ValueError,
@@ -586,8 +944,7 @@ def write_public_simulation_journal(
 ) -> SimulationPublicJournal:
     """Append a batch's public view by atomically replacing the complete JSONL file."""
 
-    if not isinstance(batch, SimulationOutputBatch):
-        raise TypeError("public journal write requires a SimulationOutputBatch")
+    trusted_batch = _trusted_batch(batch)
     requested_parent = _validate_parent_hash(parent_journal_hash)
     destination = Path(path)
     if destination.exists():
@@ -601,12 +958,20 @@ def write_public_simulation_journal(
         prior_batches = ()
 
     public_view = filter_simulation_output(
-        batch,
+        trusted_batch,
         SimulationAudienceCapability(SimulationOutputAudience.PUBLIC),
     )
     journal = SimulationPublicJournal(
-        batch.stream_id if not prior_batches else prior_batches[0].stream_id,
-        batch.scenario_hash if not prior_batches else prior_batches[0].scenario_hash,
+        (
+            trusted_batch.stream_id
+            if not prior_batches
+            else prior_batches[0].stream_id
+        ),
+        (
+            trusted_batch.scenario_hash
+            if not prior_batches
+            else prior_batches[0].scenario_hash
+        ),
         parent_hash,
         prior_batches + (public_view,),
     )

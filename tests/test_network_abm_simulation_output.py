@@ -399,6 +399,41 @@ class SimulationOutputProjectionTests(unittest.TestCase):
         self.assertEqual(batch.records[0].kind, SimulationOutputKind.NETWORK_METRICS)
         self.assertEqual(batch.records[0].sequence, 17)
 
+    def test_unsupported_only_policy_has_one_stable_projector_failure(self) -> None:
+        unsupported_only = replace(
+            self.scenario,
+            run_policy=replace(
+                self.scenario.run_policy,
+                allowed_output_kinds=(
+                    SimulationOutputKind.STORY_PROGRESS.value,
+                    SimulationOutputKind.NARRATIVE_SCENE.value,
+                    SimulationOutputKind.COMMAND_RESULT.value,
+                    SimulationOutputKind.DIAGNOSTIC.value,
+                ),
+            ),
+        )
+        messages = []
+
+        for first_sequence in (1, 41):
+            with self.subTest(first_sequence=first_sequence):
+                # Empty candidates must fail at the projector, not batch arithmetic.
+                with self.assertRaises(ValueError) as raised:
+                    project_simulation_output(
+                        unsupported_only,
+                        self.round_result,
+                        stream_id="law-firm-unsupported-only",
+                        first_sequence=first_sequence,
+                    )
+                messages.append(str(raised.exception))
+
+        self.assertEqual(
+            messages,
+            [
+                "simulation output projection produced no supported records",
+                "simulation output projection produced no supported records",
+            ],
+        )
+
     def test_filter_delegates_to_the_typed_view_without_serialization(self) -> None:
         batch = self._project()
         capability = SimulationAudienceCapability(

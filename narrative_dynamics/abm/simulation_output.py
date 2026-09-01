@@ -402,6 +402,10 @@ def project_simulation_output(
         for candidate in _projection_candidates(round_result, transition)
         if candidate.kind.value in allowed_kinds
     )
+    if not candidates:
+        raise ValueError(
+            "simulation output projection produced no supported records"
+        )
     provisional = tuple(
         _candidate_record(
             candidate,

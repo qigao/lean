@@ -739,6 +739,8 @@ class SimulationOutputView:
         sequences = tuple(record.sequence for record in self.records)
         if sequences != tuple(sorted(sequences)) or len(set(sequences)) != len(sequences):
             raise ValueError("output view record sequences must retain unique source order")
+        if self.records and len({record.round_index for record in self.records}) != 1:
+            raise ValueError("output view records must bind one exact round")
         if any(sequence < self.first_sequence or sequence > self.last_sequence for sequence in sequences):
             raise ValueError("output view record sequences must remain within source batch bounds")
         if any(record.stream_id != self.stream_id for record in self.records):

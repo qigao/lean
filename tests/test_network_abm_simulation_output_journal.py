@@ -240,6 +240,8 @@ class SimulationOutputJournalTests(unittest.TestCase):
             stream_id="law-firm-private-only",
             first_sequence=first_batch.last_sequence + 1,
         )
+        for batch in (first_batch, second_batch):
+            self.assertTrue(batch.records)
         self.assertTrue(all(
             record.audience is SimulationOutputAudience.AGENT
             for batch in (first_batch, second_batch)
@@ -305,6 +307,80 @@ class SimulationOutputJournalTests(unittest.TestCase):
             write_public_simulation_journal(self.path, corrupted_batch)
         self.assertFalse(self.path.exists())
 
+    def test_write_rejects_corrupted_nested_public_payload_before_replacement(self) -> None:
+        write_public_simulation_journal(self.path, self.first_batch)
+        previous = self.path.read_bytes()
+        private_value = "private-payload-do-not-expose"
+        metric_index = next(
+            index
+            for index, record in enumerate(self.second_batch.records)
+            if record.kind is SimulationOutputKind.NETWORK_METRICS
+        )
+        corrupted_metrics = copy(
+            self.second_batch.records[metric_index].payload.metrics
+        )
+        object.__setattr__(
+            corrupted_metrics,
+            "tracked_belief_mean",
+            private_value,
+        )
+        corrupted_payload = copy(self.second_batch.records[metric_index].payload)
+        object.__setattr__(corrupted_payload, "metrics", corrupted_metrics)
+        corrupted_record = copy(self.second_batch.records[metric_index])
+        object.__setattr__(corrupted_record, "payload", corrupted_payload)
+        records = list(self.second_batch.records)
+        records[metric_index] = corrupted_record
+        corrupted_batch = copy(self.second_batch)
+        object.__setattr__(corrupted_batch, "records", tuple(records))
+
+        # Reusing a nested frozen value bypasses its constructor and can publish it.
+        with self.assertRaises((TypeError, ValueError)):
+            write_public_simulation_journal(self.path, corrupted_batch)
+        self.assertEqual(self.path.read_bytes(), previous)
+        self.assertNotIn(private_value.encode("utf-8"), self.path.read_bytes())
+
+    def test_write_ignores_overridden_instance_serialization_in_real_bytes(self) -> None:
+        private_value = "private-payload-do-not-expose"
+        record_index = next(
+            index
+            for index, record in enumerate(self.first_batch.records)
+            if record.kind is SimulationOutputKind.STATE_DELTA
+        )
+        original_record = self.first_batch.records[record_index]
+        corrupted_payload = copy(original_record.payload)
+        payload_document = original_record.payload.to_dict()
+        payload_document["private_override"] = private_value
+        object.__setattr__(
+            corrupted_payload,
+            "to_dict",
+            lambda: payload_document,
+        )
+        corrupted_record = copy(original_record)
+        object.__setattr__(corrupted_record, "payload", corrupted_payload)
+        record_document = original_record.to_dict()
+        record_document["payload"] = payload_document
+        record_document["private_override"] = private_value
+        object.__setattr__(
+            corrupted_record,
+            "to_dict",
+            lambda: record_document,
+        )
+        records = list(self.first_batch.records)
+        records[record_index] = corrupted_record
+        corrupted_batch = copy(self.first_batch)
+        object.__setattr__(corrupted_batch, "records", tuple(records))
+
+        written = write_public_simulation_journal(self.path, corrupted_batch)
+
+        # Caller-owned serializers must never participate in the journal wire bytes.
+        encoded = self.path.read_bytes()
+        self.assertNotIn(private_value.encode("utf-8"), encoded)
+        self.assertEqual(
+            written.batches[0].source_batch_hash,
+            self.first_batch.content_hash,
+        )
+        self.assertEqual(replay_public_simulation_journal(self.path), written)
+
     def test_replay_rejects_tampered_payload_hash(self) -> None:
         self._write_two_batches()
         documents = self._documents()
@@ -356,6 +432,26 @@ class SimulationOutputJournalTests(unittest.TestCase):
         documents[2]["first_sequence"] -= 1
         self._refresh_integrity(documents)
         self._store_documents(documents)
+        self._assert_sanitized_failure(
+            lambda: replay_public_simulation_journal(self.path)
+        )
+
+    def test_replay_rejects_mixed_round_view_even_with_fresh_hashes(self) -> None:
+        self._write_two_batches()
+        documents = self._documents()
+        records = documents[1]["records"]
+        self.assertIsInstance(records, list)
+        self.assertGreaterEqual(len(records), 2)
+        target = next(
+            record
+            for record in records
+            if record["kind"] != SimulationOutputKind.NETWORK_METRICS.value
+        )
+        target["round_index"] += 1
+        self._refresh_integrity(documents)
+        self._store_documents(documents)
+
+        # Refreshed hashes must not make a multi-round atomic view replayable.
         self._assert_sanitized_failure(
             lambda: replay_public_simulation_journal(self.path)
         )
@@ -421,6 +517,22 @@ class SimulationOutputJournalTests(unittest.TestCase):
             '{"schema":"private-payload-do-not-expose","value":NaN}\n',
             encoding="utf-8",
         )
+        self._assert_sanitized_failure(
+            lambda: replay_public_simulation_journal(self.path)
+        )
+
+    def test_replay_sanitizes_deeply_nested_json_parser_failure(self) -> None:
+        depth = 5_000
+        self.path.write_text(
+            '{"private-payload-do-not-expose":'
+            + "[" * depth
+            + "0"
+            + "]" * depth
+            + "}\n",
+            encoding="utf-8",
+        )
+
+        # A parser recursion failure must not bypass the sanitized replay boundary.
         self._assert_sanitized_failure(
             lambda: replay_public_simulation_journal(self.path)
         )
