@@ -16,7 +16,7 @@ Structural acceptance is not a formal natural-language entailment proof. A citat
 
 - No world generation or natural-language-to-world compiler.
 - No new action, dialogue, fact, beat, scene, POV, or causal edge creation.
-- No vendor SDK, network client, embeddings, image generation, audio generation, or video rendering.
+- No vendor SDK or network client in the dependency-free ABM core; an optional, lazily imported OpenAI adapter may live in the integrations layer. No embeddings, image generation, audio generation, or video rendering.
 - No cross-scene provider context, hidden chat transcript, or global story prompt.
 - No claim that arbitrary provider prose is formally hallucination-free.
 - No V1-V9/V10-V17 runtime unification or graphical authoring UI; those are separate V19 and V20 projects.
@@ -110,3 +110,5 @@ The compiler derives entitlement citations and passage IDs, hashes the raw provi
 ## Public API and Documentation
 
 All V18 contracts and functions are exported from `narrative_dynamics.abm`. README documentation shows an injected JSON provider, exact-fact fallback, replay, and the explicit distinction between citation-bound prose and formally exact fact rendering.
+
+An optional `narrative_dynamics.integrations.openai_narrative` module supplies `OpenAINarrativeProvider`. `from_env(env_file=None)` may load an explicitly named dotenv file and reads `OPENAI_API_KEY`, `OPENAI_MODEL`, and optional `OPENAI_PROVIDER`; the path and API key remain private process configuration and never enter provider identity, prompts, artifacts, hashes, logs, or exceptions. The OpenAI SDK is imported lazily so importing `narrative_dynamics` or `narrative_dynamics.abm` remains dependency-free. The adapter uses JSON-object output and returns the decoded object through the same `complete_json` protocol as any other provider.

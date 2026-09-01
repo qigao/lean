@@ -16,7 +16,7 @@
 - A provider is called once per scene and receives only that scene's exact entitlement closure.
 - Provider responses can group adjacent beats and supply text, but cannot submit entitlement IDs or change beat order.
 - Provider prose has `citation_bound`, not formally entailed, assurance; provider-free literal output has `exact_facts` assurance.
-- No vendor SDK, network client, local path, secret, hidden chat history, or raw world/trajectory object enters a realization artifact.
+- No vendor SDK is imported by the ABM core; the optional OpenAI integration imports its SDK lazily. No network client, local path, secret, hidden chat history, or raw world/trajectory object enters a realization artifact.
 - Every accepted artifact is content-addressed, replayable without a provider, and presentation-only.
 - All pre-existing V10-V17 deterministic behavior remains compatible.
 
@@ -29,7 +29,10 @@
 - `tests/test_network_abm_situated_realization_contracts.py`: constructor, immutability, hashing, and referential-integrity tests.
 - `tests/test_network_abm_situated_realization.py`: privacy, provider schema, coverage, provenance, exact-fact, replay, and determinism tests.
 - `narrative_dynamics/abm/__init__.py`: V18 public exports.
+- `narrative_dynamics/integrations/__init__.py`: optional integration package boundary.
+- `narrative_dynamics/integrations/openai_narrative.py`: lazy OpenAI JSON-provider adapter and dotenv construction.
 - `tests/test_network_abm_public_api.py`: V18 public identity checks.
+- `tests/test_openai_narrative_provider.py`: adapter configuration, JSON decoding, and secret-isolation behavior.
 - `README.md`: capability, provider example, assurance boundary, and V19/V20 deferral.
 
 ### Task 1: Immutable V18 realization contracts
@@ -227,13 +230,16 @@ git commit -m "feat(abm): compile scene-local narrative prose"
 **Files:**
 - Modify: `narrative_dynamics/abm/situated_realization.py`
 - Modify: `tests/test_network_abm_situated_realization.py`
+- Create: `narrative_dynamics/integrations/__init__.py`
+- Create: `narrative_dynamics/integrations/openai_narrative.py`
+- Create: `tests/test_openai_narrative_provider.py`
 - Modify: `narrative_dynamics/abm/__init__.py`
 - Modify: `tests/test_network_abm_public_api.py`
 - Modify: `README.md`
 
 **Interfaces:**
 - Consumes: Tasks 1-2 and V17 public projection values.
-- Produces: `realize_narrative_exact_facts(...)` and all V18 names through `narrative_dynamics.abm`.
+- Produces: `realize_narrative_exact_facts(...)`, all V18 names through `narrative_dynamics.abm`, and optional `OpenAINarrativeProvider.from_env(env_file=None)` through `narrative_dynamics.integrations`.
 
 - [ ] **Step 1: Write failing exact-fact tests**
 
@@ -263,27 +269,44 @@ Require deterministic equality and exact literal assertions.
 
 Extend `tests/test_network_abm_public_api.py` to import every V18 contract/function from `narrative_dynamics.abm` and assert object identity with the definitions in their source modules.
 
-- [ ] **Step 6: Export and document V18**
+- [ ] **Step 6: Write failing optional OpenAI adapter tests**
 
-Add all public V18 names to `narrative_dynamics/abm/__init__.py` and `__all__`. Add README section `V18 entitlement-bound narrative realization` showing an injected JSON provider, exact-fact fallback, replay, prose/screenplay modes, scene-local context, and the honest `citation_bound` versus `exact_facts` distinction. State that V19 runtime unification and V20 authoring/visualization remain separate phases.
+Add tests that fail before the integration exists and assert observable boundary behavior:
 
-- [ ] **Step 7: Run targeted and regression verification**
+- `from_env` rejects missing `OPENAI_API_KEY` or `OPENAI_MODEL` without echoing any configured secret;
+- an explicitly supplied dotenv path is configuration only and never appears in provider identity or serialized realization artifacts;
+- `complete_json` returns the decoded JSON object from a narrowly injected fake SDK client while sending the exact task and payload as JSON;
+- malformed non-object JSON is rejected;
+- importing `narrative_dynamics.abm` does not import `openai`.
+
+The fake replaces only the external SDK request. Assertions target the real adapter's decoded return, input serialization, identity, and secret isolation rather than the fake itself.
+
+- [ ] **Step 7: Implement the optional OpenAI adapter**
+
+Create `narrative_dynamics.integrations.openai_narrative.OpenAINarrativeProvider`. Import `openai` and `python-dotenv` only inside construction paths that need them. `from_env(env_file=None)` reads `OPENAI_API_KEY`, `OPENAI_MODEL`, and optional `OPENAI_PROVIDER`; never include the key or dotenv path in identity, payload, exception text, repr, or hashes. Use JSON-object response mode and decode exactly one object. Permit SDK-client injection so the external request boundary is testable without a network call.
+
+- [ ] **Step 8: Export and document V18**
+
+Add all core V18 names to `narrative_dynamics/abm/__init__.py` and `__all__`, and export the optional adapter only from `narrative_dynamics.integrations`. Add README section `V18 entitlement-bound narrative realization` showing generic and OpenAI providers, exact-fact fallback, replay, prose/screenplay modes, scene-local context, secret isolation, and the honest `citation_bound` versus `exact_facts` distinction. State that V19 runtime unification and V20 authoring/visualization remain separate phases.
+
+- [ ] **Step 9: Run targeted, regression, and opt-in live verification**
 
 Run:
 
 ```powershell
 python -m pytest tests/test_network_abm_situated_realization_contracts.py tests/test_network_abm_situated_realization.py tests/test_network_abm_situated_projection_contracts.py tests/test_network_abm_situated_projection.py tests/test_network_abm_public_api.py -q
+python -m pytest tests/test_openai_narrative_provider.py -q
 python -m unittest discover -s tests -p "test_network_abm*.py"
 python -m compileall -q narrative_dynamics
 git diff --check
 ```
 
-Record the known repository-wide pytest collection issue separately; do not modify unrelated legacy tests in V18.
+When `C:\projects\lean\.env` contains the required OpenAI variables, run one real scene-level realization smoke test. Print only provider identity, artifact hash, scene count, passage count, and assurance; never print the API key, dotenv path, prompt payload, raw response, or accepted prose. A live-provider failure is reported separately from deterministic regression tests. Record the known repository-wide pytest collection issue separately; do not modify unrelated legacy tests in V18.
 
-- [ ] **Step 8: Commit Task 3**
+- [ ] **Step 10: Commit Task 3**
 
 ```powershell
-git add narrative_dynamics/abm/situated_realization.py tests/test_network_abm_situated_realization.py narrative_dynamics/abm/__init__.py tests/test_network_abm_public_api.py README.md
+git add narrative_dynamics/abm/situated_realization.py tests/test_network_abm_situated_realization.py narrative_dynamics/integrations/__init__.py narrative_dynamics/integrations/openai_narrative.py tests/test_openai_narrative_provider.py narrative_dynamics/abm/__init__.py tests/test_network_abm_public_api.py README.md
 git commit -m "feat(abm): expose entitlement-bound narrative realization"
 ```
 
