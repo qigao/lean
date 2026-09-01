@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 import math
+from pathlib import Path
 
 from narrative_dynamics.contracts import stable_content_hash
 from narrative_dynamics.narrative.runtime_planning import PlanningBeliefState
@@ -37,6 +38,7 @@ from narrative_dynamics.abm.scenario_authoring_contracts import (
     ScenarioStoryPlan,
 )
 from narrative_dynamics.abm.scenario_package_contracts import (
+    CompiledSituatedScenario,
     ScenarioDocumentRole,
     ScenarioPackageSource,
     ScenarioSourceDocument,
@@ -45,6 +47,7 @@ from narrative_dynamics.abm.situated import ObservationChannel, SituatedActionKi
 from narrative_dynamics.abm.situated_cognition_contracts import (
     SituatedActionSpec,
     SituatedAgentCognitiveModel,
+    SituatedCognitiveState,
     SituatedCognitiveModel,
     SituatedGoalReward,
     SituatedGoalSpec,
@@ -55,12 +58,17 @@ from narrative_dynamics.abm.situated_cognition_contracts import (
     SituatedObservationSymbol,
 )
 from narrative_dynamics.abm.situated_contracts import (
+    AgentBodyState,
     EmbodiedAgentSpec,
     EvidenceFact,
+    PassageState,
     PassageSpec,
     PlaceSpec,
+    SituatedWorldState,
     SituatedWorldModel,
+    WorldObjectState,
     WorldObjectSpec,
+    validate_situated_state,
 )
 from narrative_dynamics.abm.situated_memory_cognition_contracts import (
     SituatedAgentRecallPolicy,
@@ -71,9 +79,17 @@ from narrative_dynamics.abm.situated_memory_contracts import (
     MemoryChannelPolicy,
     SituatedMemoryPolicy,
 )
-from narrative_dynamics.abm.situated_network_contracts import SituatedNetworkRuntimeModel
+from narrative_dynamics.abm.situated_network import initialize_situated_network_runtime
+from narrative_dynamics.abm.situated_network_contracts import (
+    SituatedNetworkRuntimeModel,
+    SituatedNetworkRuntimeState,
+)
+from narrative_dynamics.abm.situated_percept_memory import (
+    initialize_situated_percept_memory,
+)
 from narrative_dynamics.abm.situated_percept_memory_cognition import (
     SituatedPerceptMemoryCognitiveModel,
+    initialize_situated_percept_memory_cognition,
 )
 from narrative_dynamics.abm.situated_percept_memory_contracts import (
     SituatedPerceptMemoryFidelityPolicy,
@@ -92,12 +108,17 @@ from narrative_dynamics.abm.situated_social_memory_contracts import (
     SituatedClaimTopic,
     SituatedSocialMemoryModel,
     SituatedSocialMemoryPolicy,
+    SituatedSocialMemoryState,
+    SituatedSourceRelationship,
+    initialize_situated_social_memory,
+    validate_situated_social_memory_state,
 )
 from narrative_dynamics.abm.situated_spatial_map_contracts import (
     SituatedSpatialMap,
     SpatialPassage,
     SpatialPlace,
 )
+from narrative_dynamics.abm.situated_story import SituatedStory, initialize_situated_story
 
 
 class ScenarioCompilationError(ValueError):
@@ -2636,4 +2657,133 @@ def _compile_situated_scenario_components(
     )
 
 
-__all__ = ("ScenarioCompilationError",)
+def _compile_initial_states(
+    source: ScenarioPackageSource,
+    components: _CompiledScenarioComponents,
+) -> tuple[SituatedStory, SituatedCognitiveState, SituatedSocialMemoryState]:
+    document = _singleton(source, ScenarioDocumentRole.PHYSICAL_INITIAL_STATE)
+    world = components.runtime_model.percept_memory_model.cognitive_model.world_model
+    perception = components.runtime_model.percept_memory_model.perception_model
+    initial = components.initial_state_source
+    try:
+        world_state = SituatedWorldState(
+            world.model_id,
+            world.content_hash,
+            0,
+            None,
+            tuple(
+                AgentBodyState(agent_id, place_id)
+                for agent_id, place_id in initial.agent_places
+            ),
+            tuple(
+                WorldObjectState(
+                    item.object_id,
+                    item.location_id if item.location_kind == "place" else None,
+                    item.location_id if item.location_kind == "agent" else None,
+                )
+                for item in initial.object_locations
+            ),
+            tuple(
+                PassageState(passage_id, open_)
+                for passage_id, open_ in initial.passage_states
+            ),
+        )
+        validate_situated_state(world, world_state)
+        story = initialize_situated_story(
+            world,
+            world_state,
+            perception_model=perception,
+        )
+        cognitive_state = initialize_situated_percept_memory_cognition(
+            components.runtime_model.percept_memory_model,
+            story,
+        )
+        base_social_state = initialize_situated_social_memory(
+            components.runtime_model.social_memory_model,
+            cognitive_state,
+        )
+        social_state = SituatedSocialMemoryState(
+            base_social_state.model_id,
+            base_social_state.model_hash,
+            base_social_state.round_index,
+            base_social_state.parent_state_hash,
+            base_social_state.cognitive_state_hash,
+            tuple(
+                SituatedSourceRelationship(
+                    item.observer_agent_id,
+                    item.source_agent_id,
+                    item.trust,
+                    item.affinity,
+                    0,
+                    0,
+                )
+                for item in components.relationship_seeds
+            ),
+            base_social_state.claims,
+            base_social_state.processed_evidence_ids,
+            base_social_state.checkpoint,
+        )
+        validate_situated_social_memory_state(
+            components.runtime_model.social_memory_model,
+            cognitive_state,
+            social_state,
+        )
+    except (TypeError, ValueError) as error:
+        raise _error(document, "", "contract_violation") from error
+    return story, cognitive_state, social_state
+
+
+def compile_situated_scenario_package(
+    source: ScenarioPackageSource,
+) -> CompiledSituatedScenario:
+    """Compile one source package into a complete path-independent checkpoint."""
+
+    components = _compile_situated_scenario_components(source)
+    initial_story, initial_cognitive_state, initial_social_state = _compile_initial_states(
+        source,
+        components,
+    )
+    try:
+        return CompiledSituatedScenario(
+            components.scenario_id,
+            components.version,
+            components.package_hash,
+            components.source_document_hashes,
+            components.runtime_model,
+            components.spatial_map,
+            initial_story,
+            initial_cognitive_state,
+            initial_social_state,
+            components.social_world,
+            components.story_plan,
+            components.knowledge_catalog,
+            components.asset_catalog,
+            components.run_policy,
+        )
+    except (TypeError, ValueError) as error:
+        raise ScenarioCompilationError("package", "", "contract_violation") from error
+
+
+def initialize_compiled_scenario(
+    database_path: str | Path,
+    scenario: CompiledSituatedScenario,
+) -> SituatedNetworkRuntimeState:
+    """Create the percept-memory store and bind the exact compiled V19 checkpoint."""
+
+    if not isinstance(scenario, CompiledSituatedScenario):
+        raise TypeError("compiled scenario initialization requires CompiledSituatedScenario")
+    initialize_situated_percept_memory(database_path)
+    return initialize_situated_network_runtime(
+        database_path,
+        scenario.runtime_model,
+        scenario.initial_story,
+        scenario.initial_cognitive_state,
+        scenario.initial_social_state,
+    )
+
+
+__all__ = (
+    "ScenarioCompilationError",
+    "compile_situated_scenario_package",
+    "initialize_compiled_scenario",
+)

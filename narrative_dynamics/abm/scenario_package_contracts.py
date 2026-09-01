@@ -3,12 +3,31 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from enum import Enum
 import math
 import re
 from types import MappingProxyType
 
+from narrative_dynamics.abm.scenario_authoring_contracts import (
+    ScenarioAssetCatalog,
+    ScenarioKnowledgeCatalog,
+    ScenarioRunPolicy,
+    ScenarioSocialWorld,
+    ScenarioStoryPlan,
+)
+from narrative_dynamics.abm.situated_cognition_contracts import (
+    SituatedCognitiveState,
+    validate_situated_cognitive_state,
+)
+from narrative_dynamics.abm.situated_contracts import validate_situated_state
+from narrative_dynamics.abm.situated_network_contracts import SituatedNetworkRuntimeModel
+from narrative_dynamics.abm.situated_social_memory_contracts import (
+    SituatedSocialMemoryState,
+    validate_situated_social_memory_state,
+)
+from narrative_dynamics.abm.situated_spatial_map_contracts import SituatedSpatialMap
+from narrative_dynamics.abm.situated_story import SituatedStory
 from narrative_dynamics.contracts import stable_content_hash
 
 
@@ -98,6 +117,25 @@ def _freeze_json_mapping(value: Mapping[str, object], *, label: str) -> Mapping[
 
 def _canonical_locator_key(locator: "ScenarioDocumentLocator") -> tuple[str, str]:
     return (locator.role.value, locator.logical_id)
+
+
+def _contract_hash_value(value: object) -> object:
+    if isinstance(value, Enum):
+        return value.value
+    if is_dataclass(value) and not isinstance(value, type):
+        return {
+            field.name: _contract_hash_value(getattr(value, field.name))
+            for field in fields(value)
+        }
+    if isinstance(value, Mapping):
+        return {key: _contract_hash_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_contract_hash_value(item) for item in value]
+    return value
+
+
+def _contract_content_hash(value: object) -> str:
+    return stable_content_hash(_contract_hash_value(value))
 
 
 def _validate_document_roles(roles: list[ScenarioDocumentRole]) -> None:
@@ -254,6 +292,162 @@ class ScenarioPackageSource:
             "version": self.version,
             "documents": [document.to_dict() for document in self.documents],
             "manifest_hash": self.manifest_hash,
+        }
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_dict())
+
+
+@dataclass(frozen=True)
+class CompiledSituatedScenario:
+    """One complete, immutable checkpoint compiled from a logical source package."""
+
+    scenario_id: str
+    version: str
+    package_hash: str
+    source_document_hashes: tuple[tuple[str, str, str], ...]
+    runtime_model: SituatedNetworkRuntimeModel
+    spatial_map: SituatedSpatialMap
+    initial_story: SituatedStory
+    initial_cognitive_state: SituatedCognitiveState
+    initial_social_state: SituatedSocialMemoryState
+    social_world: ScenarioSocialWorld
+    story_plan: ScenarioStoryPlan
+    knowledge_catalog: ScenarioKnowledgeCatalog
+    asset_catalog: ScenarioAssetCatalog
+    run_policy: ScenarioRunPolicy
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "scenario_id",
+            _non_empty_text(self.scenario_id, label="compiled scenario id"),
+        )
+        object.__setattr__(
+            self,
+            "version",
+            _non_empty_text(self.version, label="compiled scenario version"),
+        )
+        object.__setattr__(
+            self,
+            "package_hash",
+            _content_hash(self.package_hash, label="compiled scenario package hash"),
+        )
+        if not isinstance(self.source_document_hashes, tuple):
+            raise TypeError("compiled scenario source document hashes must be a tuple")
+        source_hashes = []
+        source_keys = set()
+        for item in self.source_document_hashes:
+            if not isinstance(item, tuple) or len(item) != 3:
+                raise TypeError("compiled scenario source document hashes must be triples")
+            role, logical_id, content_hash = item
+            role = _non_empty_text(role, label="compiled source document role")
+            logical_id = _non_empty_text(
+                logical_id,
+                label="compiled source document logical id",
+            )
+            content_hash = _content_hash(
+                content_hash,
+                label="compiled source document hash",
+            )
+            key = (role, logical_id)
+            if key in source_keys:
+                raise ValueError(
+                    "compiled source document role and logical id pairs must be unique"
+                )
+            source_keys.add(key)
+            source_hashes.append((role, logical_id, content_hash))
+        object.__setattr__(
+            self,
+            "source_document_hashes",
+            tuple(sorted(source_hashes, key=lambda item: (item[0], item[1]))),
+        )
+
+        for name, expected in (
+            ("runtime_model", SituatedNetworkRuntimeModel),
+            ("spatial_map", SituatedSpatialMap),
+            ("initial_story", SituatedStory),
+            ("initial_cognitive_state", SituatedCognitiveState),
+            ("initial_social_state", SituatedSocialMemoryState),
+            ("social_world", ScenarioSocialWorld),
+            ("story_plan", ScenarioStoryPlan),
+            ("knowledge_catalog", ScenarioKnowledgeCatalog),
+            ("asset_catalog", ScenarioAssetCatalog),
+            ("run_policy", ScenarioRunPolicy),
+        ):
+            if not isinstance(getattr(self, name), expected):
+                raise TypeError(f"compiled scenario {name} must be {expected.__name__}")
+
+        cognition = self.runtime_model.percept_memory_model.cognitive_model
+        perception = self.runtime_model.percept_memory_model.perception_model
+        world = cognition.world_model
+        if self.spatial_map.world_model != world:
+            raise ValueError("compiled scenario spatial map must bind the exact world")
+        if self.initial_story.perception_model != perception:
+            raise ValueError(
+                "compiled scenario initial story must bind the exact perception model"
+            )
+        if self.initial_story.rounds:
+            raise ValueError("compiled scenario initial story must be at round zero")
+        validate_situated_state(world, self.initial_story.initial_state)
+        validate_situated_cognitive_state(
+            cognition,
+            self.initial_story,
+            self.initial_cognitive_state,
+        )
+        validate_situated_social_memory_state(
+            self.runtime_model.social_memory_model,
+            self.initial_cognitive_state,
+            self.initial_social_state,
+        )
+        if not self.initial_cognitive_state.checkpoint:
+            raise ValueError("compiled scenario initial cognition must be a checkpoint")
+        if not self.initial_social_state.checkpoint:
+            raise ValueError("compiled scenario initial social state must be a checkpoint")
+        if self.story_plan.mode is not self.run_policy.mode:
+            raise ValueError("compiled scenario execution modes must match")
+
+        authored_affinities = {
+            (item.source_agent_id, item.target_agent_id): item.strength
+            for item in self.social_world.relationships
+        }
+        initial_relationships = {
+            (item.observer_agent_id, item.source_agent_id): item
+            for item in self.initial_social_state.relationships
+        }
+        if set(authored_affinities) != set(initial_relationships):
+            raise ValueError(
+                "compiled scenario social definitions must bind the exact initial relationships"
+            )
+        initial_trust = self.runtime_model.social_memory_model.policy.initial_source_trust
+        if any(
+            item.trust != initial_trust
+            or item.affinity != authored_affinities[pair]
+            for pair, item in initial_relationships.items()
+        ):
+            raise ValueError(
+                "compiled scenario social definitions must bind exact relationship seeds"
+            )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "scenario_id": self.scenario_id,
+            "version": self.version,
+            "package_hash": self.package_hash,
+            "source_document_hashes": [
+                list(item) for item in self.source_document_hashes
+            ],
+            "runtime_model_hash": self.runtime_model.content_hash,
+            "spatial_map_hash": self.spatial_map.content_hash,
+            "initial_story_hash": self.initial_story.content_hash,
+            "initial_cognitive_state_hash": self.initial_cognitive_state.content_hash,
+            "initial_social_state_hash": self.initial_social_state.content_hash,
+            "social_world_hash": _contract_content_hash(self.social_world),
+            "story_plan_hash": _contract_content_hash(self.story_plan),
+            "knowledge_catalog_hash": _contract_content_hash(self.knowledge_catalog),
+            "asset_catalog_hash": _contract_content_hash(self.asset_catalog),
+            "run_policy_hash": _contract_content_hash(self.run_policy),
         }
 
     @property

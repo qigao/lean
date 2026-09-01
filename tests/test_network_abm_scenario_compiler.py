@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
+import narrative_dynamics.abm.scenario_compiler as scenario_compiler
+import narrative_dynamics.abm.scenario_package_contracts as scenario_package_contracts
 from narrative_dynamics.abm.scenario_authoring_contracts import (
     ScenarioAssetCatalog,
     ScenarioExecutionMode,
@@ -31,11 +34,15 @@ from narrative_dynamics.abm.situated_cognition_contracts import (
     SituatedObservationSymbol,
 )
 from narrative_dynamics.abm.situated_contracts import (
+    AgentBodyState,
     EmbodiedAgentSpec,
     EvidenceFact,
+    PassageState,
     PassageSpec,
     PlaceSpec,
+    SituatedWorldState,
     SituatedWorldModel,
+    WorldObjectState,
     WorldObjectSpec,
 )
 from narrative_dynamics.abm.situated_memory_cognition_contracts import (
@@ -68,6 +75,7 @@ from narrative_dynamics.abm.situated_social_memory_contracts import (
     SituatedClaimTopic,
     SituatedSocialMemoryModel,
     SituatedSocialMemoryPolicy,
+    SituatedSourceRelationship,
 )
 from narrative_dynamics.abm.situated_spatial_map_contracts import (
     SituatedSpatialMap,
@@ -400,6 +408,201 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
         return _compile_situated_scenario_components(
             load_situated_scenario_package(root)
         )
+
+    def compile_public_fixture(self, name: str = "law-firm"):
+        root = write_law_firm_package(self.root / name)
+        return scenario_compiler.compile_situated_scenario_package(
+            load_situated_scenario_package(root)
+        )
+
+    def test_compiled_initial_state_binds_every_subsystem_and_database(self) -> None:
+        root = write_law_firm_package(self.root / "explicit-initial-state")
+        path = root / "physical/initial-state.json"
+        mutate_json(path, "/agents/2/place_id", "meeting")
+        mutate_json(path, "/objects/0/place_id", None)
+        mutate_json(path, "/objects/0/holder_agent_id", "bob")
+        mutate_json(path, "/passages/1/open", True)
+        refresh_manifest_hash(root, "physical.initial_state", "initial")
+
+        compiled = scenario_compiler.compile_situated_scenario_package(
+            load_situated_scenario_package(root)
+        )
+        world = compiled.runtime_model.percept_memory_model.cognitive_model.world_model
+        expected_world_state = SituatedWorldState(
+            world.model_id,
+            world.content_hash,
+            0,
+            None,
+            (
+                AgentBodyState("alice", "meeting"),
+                AgentBodyState("bob", "lobby"),
+                AgentBodyState("client", "meeting"),
+            ),
+            (WorldObjectState("case-file", None, "bob"),),
+            (
+                PassageState("lobby-meeting", True),
+                PassageState("meeting-archive", True),
+            ),
+        )
+        expected_relationships = (
+            SituatedSourceRelationship("alice", "bob", 0.5, 0.8, 0, 0),
+            SituatedSourceRelationship("alice", "client", 0.5, 0.9, 0, 0),
+            SituatedSourceRelationship("bob", "alice", 0.5, 0.9, 0, 0),
+            SituatedSourceRelationship("bob", "client", 0.5, 0.6, 0, 0),
+            SituatedSourceRelationship("client", "alice", 0.5, 0.7, 0, 0),
+            SituatedSourceRelationship("client", "bob", 0.5, 0.5, 0, 0),
+        )
+
+        self.assertIsInstance(
+            compiled,
+            scenario_package_contracts.CompiledSituatedScenario,
+        )
+        self.assertEqual(compiled.initial_story.initial_state, expected_world_state)
+        self.assertEqual(
+            compiled.initial_story.perception_model,
+            compiled.runtime_model.percept_memory_model.perception_model,
+        )
+        self.assertEqual(
+            {mind.agent_id: mind.own_place_id for mind in compiled.initial_cognitive_state.minds},
+            {"alice": "meeting", "bob": "lobby", "client": "meeting"},
+        )
+        self.assertTrue(compiled.initial_cognitive_state.checkpoint)
+        self.assertEqual(
+            compiled.initial_cognitive_state.story_hash,
+            compiled.initial_story.content_hash,
+        )
+        self.assertEqual(compiled.initial_social_state.relationships, expected_relationships)
+        self.assertTrue(compiled.initial_social_state.checkpoint)
+
+        with TemporaryDirectory() as temporary:
+            memory_path = Path(temporary) / "memory.sqlite3"
+            self.assertFalse(memory_path.exists())
+            state = scenario_compiler.initialize_compiled_scenario(memory_path, compiled)
+            self.assertTrue(memory_path.is_file())
+            moved_path = memory_path.with_name("moved.sqlite3")
+            memory_path.replace(moved_path)
+            self.assertTrue(moved_path.is_file())
+
+        self.assertEqual(state.story, compiled.initial_story)
+        self.assertEqual(state.cognitive_state, compiled.initial_cognitive_state)
+        self.assertEqual(state.social_state, compiled.initial_social_state)
+        self.assertEqual(state.snapshot.story_hash, compiled.initial_story.content_hash)
+        self.assertTrue(state.checkpoint)
+
+    def test_compiled_initial_state_door_change_cascades_through_every_identity(self) -> None:
+        first_root = write_law_firm_package(self.root / "closed-door")
+        second_root = write_law_firm_package(self.root / "open-door")
+        second_initial_path = second_root / "physical/initial-state.json"
+        mutate_json(second_initial_path, "/passages/1/open", True)
+        refresh_manifest_hash(second_root, "physical.initial_state", "initial")
+
+        first = scenario_compiler.compile_situated_scenario_package(
+            load_situated_scenario_package(first_root)
+        )
+        second = scenario_compiler.compile_situated_scenario_package(
+            load_situated_scenario_package(second_root)
+        )
+        self.assertNotEqual(first.package_hash, second.package_hash)
+        self.assertNotEqual(first.initial_story.content_hash, second.initial_story.content_hash)
+        self.assertNotEqual(first.content_hash, second.content_hash)
+
+        with TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            first_state = scenario_compiler.initialize_compiled_scenario(
+                directory / "first.sqlite3",
+                first,
+            )
+            second_state = scenario_compiler.initialize_compiled_scenario(
+                directory / "second.sqlite3",
+                second,
+            )
+
+        self.assertNotEqual(first_state.content_hash, second_state.content_hash)
+
+    def test_complete_compilation_is_path_and_unordered_input_independent(self) -> None:
+        first_root = write_law_firm_package(self.root / "canonical")
+        second_root = write_law_firm_package(self.root / "reversed")
+        manifest_path = second_root / "scenario-package.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        for locator in manifest["documents"]:
+            path = second_root / locator["relative_path"]
+            authored = _reverse_mapping_order(
+                json.loads(path.read_text(encoding="utf-8"))
+            )
+            value = authored["value"]
+            if locator["role"] == "social.relationships":
+                value["relationships"] = list(reversed(value["relationships"]))
+            elif locator["role"] == "knowledge.catalog":
+                value["resources"] = list(reversed(value["resources"]))
+            elif locator["role"] == "knowledge.access":
+                value["grants"] = list(reversed(value["grants"]))
+            elif locator["role"] == "asset.catalog":
+                value["resources"] = list(reversed(value["resources"]))
+                value["grants"] = list(reversed(value["grants"]))
+            _write_authored_json(path, authored)
+            refresh_manifest_hash(second_root, locator["role"], locator["logical_id"])
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["documents"] = list(reversed(manifest["documents"]))
+        _write_authored_json(manifest_path, manifest)
+
+        first = scenario_compiler.compile_situated_scenario_package(
+            load_situated_scenario_package(first_root)
+        )
+        second = scenario_compiler.compile_situated_scenario_package(
+            load_situated_scenario_package(second_root)
+        )
+
+        self.assertEqual(first, second)
+        self.assertEqual(first.package_hash, second.package_hash)
+        self.assertEqual(first.initial_story, second.initial_story)
+        self.assertEqual(first.content_hash, second.content_hash)
+
+    def test_compiled_contract_rejects_mismatched_runtime_bindings(self) -> None:
+        compiled = self.compile_public_fixture("binding-contract")
+        story_without_perception = replace(
+            compiled.initial_story,
+            perception_model=None,
+        )
+        with self.assertRaisesRegex(ValueError, "perception"):
+            replace(compiled, initial_story=story_without_perception)
+
+    def test_compiled_contract_rejects_mismatched_execution_modes(self) -> None:
+        compiled = self.compile_public_fixture("mode-contract")
+        mismatched_policy = replace(
+            compiled.run_policy,
+            mode=ScenarioExecutionMode.SANDBOX,
+        )
+        with self.assertRaisesRegex(ValueError, "mode"):
+            replace(compiled, run_policy=mismatched_policy)
+
+    def test_compiled_contract_canonicalizes_source_document_identities(self) -> None:
+        compiled = self.compile_public_fixture("source-order-contract")
+
+        reordered = replace(
+            compiled,
+            source_document_hashes=tuple(reversed(compiled.source_document_hashes)),
+        )
+
+        self.assertEqual(reordered, compiled)
+
+    def test_compiled_contract_rejects_missing_subsystems(self) -> None:
+        compiled = self.compile_public_fixture("complete-contract")
+
+        for field in (
+            "runtime_model",
+            "spatial_map",
+            "initial_story",
+            "initial_cognitive_state",
+            "initial_social_state",
+            "social_world",
+            "story_plan",
+            "knowledge_catalog",
+            "asset_catalog",
+            "run_policy",
+        ):
+            with self.subTest(field=field):
+                with self.assertRaises(TypeError):
+                    replace(compiled, **{field: None})
 
     def test_package_compiles_to_exact_v20_models_and_task_2_values(self) -> None:
         compiled = self.compile_fixture()
@@ -804,24 +1007,30 @@ class SituatedScenarioCompilerTests(unittest.TestCase):
                 self.assertEqual(raised.exception.json_pointer, pointer)
                 self.assertEqual(raised.exception.code, "unknown_reference")
 
-    def test_initial_object_holder_must_reference_the_fixed_agent_roster(self) -> None:
-        root = write_law_firm_package(self.root / "unknown-holder")
-        mutate_json(root / "physical/initial-state.json", "/objects/0/place_id", None)
-        mutate_json(
-            root / "physical/initial-state.json",
-            "/objects/0/holder_agent_id",
-            "missing-agent",
+    def test_initial_state_rejects_unknown_holder_and_duplicate_object_location(self) -> None:
+        corruptions = (
+            ("unknown-holder", None, "missing-agent", "/objects/0/holder_agent_id", "unknown_reference"),
+            ("duplicate-location", "archive", "bob", "/objects/0", "contract_violation"),
         )
-        refresh_manifest_hash(root, "physical.initial_state", "initial")
+        for name, place_id, holder_id, pointer, code in corruptions:
+            with self.subTest(name=name):
+                root = write_law_firm_package(self.root / name)
+                mutate_json(root / "physical/initial-state.json", "/objects/0/place_id", place_id)
+                mutate_json(
+                    root / "physical/initial-state.json",
+                    "/objects/0/holder_agent_id",
+                    holder_id,
+                )
+                refresh_manifest_hash(root, "physical.initial_state", "initial")
 
-        with self.assertRaises(ScenarioCompilationError) as raised:
-            _compile_situated_scenario_components(
-                load_situated_scenario_package(root)
-            )
+                with self.assertRaises(ScenarioCompilationError) as raised:
+                    scenario_compiler.compile_situated_scenario_package(
+                        load_situated_scenario_package(root)
+                    )
 
-        self.assertEqual(raised.exception.document_role, "physical.initial_state")
-        self.assertEqual(raised.exception.json_pointer, "/objects/0/holder_agent_id")
-        self.assertEqual(raised.exception.code, "unknown_reference")
+                self.assertEqual(raised.exception.document_role, "physical.initial_state")
+                self.assertEqual(raised.exception.json_pointer, pointer)
+                self.assertEqual(raised.exception.code, code)
 
     def test_relationship_types_may_be_reused_across_distinct_directed_pairs(self) -> None:
         root = write_law_firm_package(self.root / "shared-relationship-type")
