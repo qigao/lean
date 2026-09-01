@@ -36,6 +36,7 @@ from narrative_dynamics.abm.scenario_state_store import (
 )
 from narrative_dynamics.abm.simulation_output import project_simulation_output
 from narrative_dynamics.abm.simulation_output_bus import (
+    SimulationDeliveryFailure,
     SimulationDeliveryReport,
     SimulationOutputBus,
 )
@@ -59,6 +60,8 @@ from narrative_dynamics.abm.situated_network_contracts import (
 
 _EMPTY_PROJECTION_ERROR = "simulation output projection produced no supported records"
 _OUTPUT_LIMIT_ERROR = "scenario run exceeded maximum output records"
+_COMMAND_HISTORY_LIMIT_ERROR = "scenario command history limit exceeded"
+_PUBLISHER_FAILURE_SUBSCRIPTION_ID = "scenario-output-publisher"
 
 
 def _non_empty_text(value: object, *, label: str) -> str:
@@ -130,6 +133,10 @@ class ScenarioCoordinator:
         self._idempotency_results: dict[
             str, tuple[str, str, ScenarioCommandResult]
         ] = {}
+        self._attempts_by_idempotency_key: dict[
+            str, tuple[str, str, str]
+        ] = {}
+        self._attempts_by_command_id: dict[str, str] = {}
         self._executing = False
         self._last_delivery_report: SimulationDeliveryReport | None = None
 
@@ -297,17 +304,35 @@ class ScenarioCoordinator:
         request: ScenarioCommandRequest,
         capability: ScenarioCommandCapability,
     ) -> ScenarioCommandResult:
-        cached = self._idempotency_results.get(request.idempotency_key)
-        if cached is not None:
-            request_hash, capability_hash, result = cached
+        attempt = self._attempts_by_idempotency_key.get(request.idempotency_key)
+        if attempt is not None:
+            command_id, request_hash, capability_hash = attempt
             if (
-                request_hash == request.content_hash
+                command_id == request.command_id
+                and request_hash == request.content_hash
                 and capability_hash == capability.content_hash
             ):
-                return result
-            raise ValueError("scenario command idempotency key was reused")
-        if request.command_id in self._results_by_command_id:
+                cached = self._idempotency_results.get(request.idempotency_key)
+                if cached is not None:
+                    return cached[2]
+            else:
+                raise ValueError("scenario command idempotency key was reused")
+        elif request.command_id in self._attempts_by_command_id:
             raise ValueError("scenario command id was reused")
+        else:
+            if (
+                len(self._attempts_by_idempotency_key)
+                >= self._scenario.run_policy.maximum_output_records
+            ):
+                raise ValueError(_COMMAND_HISTORY_LIMIT_ERROR)
+            self._attempts_by_idempotency_key[request.idempotency_key] = (
+                request.command_id,
+                request.content_hash,
+                capability.content_hash,
+            )
+            self._attempts_by_command_id[request.command_id] = (
+                request.idempotency_key
+            )
 
         state = self.state
         rejection = self._rejection_reason(request, capability, state)
@@ -473,12 +498,33 @@ class ScenarioCoordinator:
                 self._next_sequence = batch.last_sequence + 1
                 committed = True
 
-                self._last_delivery_report = self._publisher.publish(batch)
+                self._last_delivery_report = self._publish(batch)
                 return result
             except Exception:
                 if not committed:
                     _copy_sqlite_database(backup_path, self._database_path)
                 raise
+
+    def _publish(self, batch: SimulationOutputBatch) -> SimulationDeliveryReport:
+        try:
+            report = self._publisher.publish(batch)
+        except Exception:
+            report = None
+        if (
+            not isinstance(report, SimulationDeliveryReport)
+            or report.batch_hash != batch.content_hash
+        ):
+            return SimulationDeliveryReport(
+                batch.content_hash,
+                (),
+                (
+                    SimulationDeliveryFailure(
+                        _PUBLISHER_FAILURE_SUBSCRIPTION_ID,
+                        "callback_error",
+                    ),
+                ),
+            )
+        return report
 
     def _enforce_output_record_limit(self, batch: SimulationOutputBatch) -> None:
         retained_count = sum(len(item.records) for item in self._output_batches)

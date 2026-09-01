@@ -19,7 +19,11 @@ from narrative_dynamics.abm.scenario_coordinator_contracts import (
 )
 from narrative_dynamics.abm.scenario_package import load_situated_scenario_package
 from narrative_dynamics.abm.scenario_state_store import InMemoryScenarioStateStore
-from narrative_dynamics.abm.simulation_output_bus import SimulationOutputBus
+from narrative_dynamics.abm.simulation_output_bus import (
+    SimulationDeliveryFailure,
+    SimulationDeliveryReport,
+    SimulationOutputBus,
+)
 from narrative_dynamics.abm.simulation_output_contracts import (
     SimulationAudienceCapability,
     SimulationCommandResultPayload,
@@ -145,6 +149,24 @@ class ScenarioCoordinatorTests(unittest.TestCase):
 
     def start(self, coordinator: ScenarioCoordinator):
         return self.submit(coordinator, ScenarioCommandKind.START)
+
+    def failed_projector_attempt(self, name: str):
+        database = self.root / f"{name}.sqlite3"
+        coordinator = ScenarioCoordinator.create(
+            database,
+            self.scenario,
+            run_id="law-firm-run",
+            stream_id=f"{name}-stream",
+        )
+        self.start(coordinator)
+        request = self.request(coordinator, ScenarioCommandKind.STEP)
+        with patch(
+            "narrative_dynamics.abm.scenario_coordinator.project_simulation_output",
+            side_effect=RuntimeError("projector seam failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "projector seam failed"):
+                coordinator.submit_command(request, self.capability())
+        return coordinator, request
 
     def test_create_initializes_exact_created_run_and_delegates_scoped_queries(self) -> None:
         coordinator = self.coordinator()
@@ -413,6 +435,44 @@ class ScenarioCoordinatorTests(unittest.TestCase):
         self.assertEqual(coordinator.run_view(), before)
         self.assertIs(coordinator.command_result("shared-command", operator), rejected)
 
+    def test_failed_attempt_rejects_different_request_under_same_idempotency_key(self) -> None:
+        coordinator, failed = self.failed_projector_attempt("failed-idempotency")
+        changed = replace(failed, command_id="changed-command")
+        before = coordinator.run_view()
+
+        # Mutation caught: execution failure erases the key and lets another command reuse it.
+        with self.assertRaisesRegex(ValueError, "idempotency key"):
+            coordinator.submit_command(changed, self.capability())
+
+        self.assertEqual(coordinator.run_view(), before)
+        with self.assertRaisesRegex(KeyError, "unknown scenario command"):
+            coordinator.command_result(failed.command_id, self.capability())
+
+    def test_failed_attempt_rejects_different_key_under_same_command_id(self) -> None:
+        coordinator, failed = self.failed_projector_attempt("failed-command-id")
+        changed = replace(failed, idempotency_key="changed-key")
+        before = coordinator.run_view()
+
+        # Mutation caught: execution failure erases the command ID collision boundary.
+        with self.assertRaisesRegex(ValueError, "command id"):
+            coordinator.submit_command(changed, self.capability())
+
+        self.assertEqual(coordinator.run_view(), before)
+        with self.assertRaisesRegex(KeyError, "unknown scenario command"):
+            coordinator.command_result(failed.command_id, self.capability())
+
+    def test_failed_attempt_rejects_changed_capability_but_exact_retry_succeeds(self) -> None:
+        coordinator, failed = self.failed_projector_attempt("failed-capability")
+        narrower = self.capability(ScenarioCommandKind.STEP)
+
+        # Mutation caught: retry identity ignores the separately supplied capability hash.
+        with self.assertRaisesRegex(ValueError, "idempotency key"):
+            coordinator.submit_command(failed, narrower)
+
+        retried = coordinator.submit_command(failed, self.capability())
+        self.assertTrue(retried.accepted)
+        self.assertEqual(coordinator.state.round_index, 1)
+
     def test_command_audit_is_private_to_authority_or_host_capability(self) -> None:
         coordinator = self.coordinator()
         operator = self.capability()
@@ -569,11 +629,23 @@ class ScenarioCoordinatorTests(unittest.TestCase):
                     SimulationOutputKind.COMMAND_RESULT.value,
                     SimulationOutputKind.NETWORK_METRICS.value,
                 ),
-                maximum_output_records=1,
+                maximum_output_records=3,
             ),
         )
         coordinator = self.coordinator(scenario=command_plus_metrics)
         self.start(coordinator)
+        first = self.submit(coordinator, ScenarioCommandKind.STEP)
+        first_view = coordinator.output_view(
+            first.output_batch_hash,
+            SimulationAudienceCapability(SimulationOutputAudience.INTERNAL),
+        )
+        self.assertEqual(
+            tuple(record.kind for record in first_view.records),
+            (
+                SimulationOutputKind.COMMAND_RESULT,
+                SimulationOutputKind.NETWORK_METRICS,
+            ),
+        )
         before = coordinator.run_view()
         memory_hash = hash_situated_percept_memory_store(self.database)
         request = self.request(coordinator, ScenarioCommandKind.STEP)
@@ -584,42 +656,72 @@ class ScenarioCoordinatorTests(unittest.TestCase):
         self.assertEqual(hash_situated_percept_memory_store(self.database), memory_hash)
         self.assertEqual(coordinator.run_view(), before)
 
-        metrics_only = replace(
-            command_plus_metrics,
+    def test_command_attempt_history_limit_bounds_invalid_control_spam_and_preserves_cached_results(self) -> None:
+        scenario = replace(
+            self.scenario,
+            run_policy=replace(self.scenario.run_policy, maximum_output_records=2),
+        )
+        coordinator = self.coordinator(scenario=scenario)
+        operator = self.capability()
+        first_request = self.request(coordinator, ScenarioCommandKind.PAUSE)
+        first = coordinator.submit_command(first_request, operator)
+        second_request = self.request(coordinator, ScenarioCommandKind.RESUME)
+        second = coordinator.submit_command(second_request, operator)
+        before = coordinator.run_view()
+
+        # Mutation caught: rejected controls can grow attempt/audit history without bound.
+        with self.assertRaisesRegex(
+            ValueError,
+            "^scenario command history limit exceeded$",
+        ):
+            coordinator.submit_command(
+                self.request(coordinator, ScenarioCommandKind.STEP),
+                operator,
+            )
+
+        self.assertEqual(coordinator.run_view(), before)
+        self.assertIs(coordinator.submit_command(first_request, operator), first)
+        self.assertIs(coordinator.command_result(second_request.command_id, operator), second)
+        with self.assertRaisesRegex(ValueError, "idempotency key"):
+            coordinator.submit_command(
+                replace(first_request, command_id="changed-at-capacity"),
+                operator,
+            )
+
+    def test_exact_failed_attempt_retry_remains_available_at_history_capacity(self) -> None:
+        scenario = replace(
+            self.scenario,
             run_policy=replace(
-                command_plus_metrics.run_policy,
-                allowed_output_kinds=(SimulationOutputKind.NETWORK_METRICS.value,),
+                self.scenario.run_policy,
+                maximum_output_records=2,
+                allowed_output_kinds=(SimulationOutputKind.COMMAND_RESULT.value,),
             ),
         )
-        second_database = self.root / "metrics.sqlite3"
-        second = ScenarioCoordinator.create(
-            second_database,
-            metrics_only,
-            run_id="law-firm-run",
-            stream_id="metrics-stream",
-        )
-        self.start(second)
-        first = self.submit(second, ScenarioCommandKind.STEP)
-        self.assertTrue(first.accepted)
-        self.assertEqual(second.run_view().next_sequence, 2)
-        metrics_view = second.output_view(
-            first.output_batch_hash,
-            SimulationAudienceCapability(SimulationOutputAudience.INTERNAL),
-        )
-        self.assertEqual(
-            tuple(record.kind for record in metrics_view.records),
-            (SimulationOutputKind.NETWORK_METRICS,),
-        )
-        second_request = self.request(second, ScenarioCommandKind.STEP)
-        second_before = second.run_view()
-        second_memory_hash = hash_situated_percept_memory_store(second_database)
-        with self.assertRaisesRegex(ValueError, "maximum output records"):
-            second.submit_command(second_request, self.capability())
-        self.assertEqual(
-            hash_situated_percept_memory_store(second_database),
-            second_memory_hash,
-        )
-        self.assertEqual(second.run_view(), second_before)
+        coordinator = self.coordinator(scenario=scenario)
+        self.start(coordinator)
+        failed = self.request(coordinator, ScenarioCommandKind.STEP)
+        with patch(
+            "narrative_dynamics.abm.scenario_coordinator.project_simulation_output",
+            side_effect=RuntimeError("projector seam failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "projector seam failed"):
+                coordinator.submit_command(failed, self.capability())
+        before = coordinator.run_view()
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "^scenario command history limit exceeded$",
+        ):
+            coordinator.submit_command(
+                self.request(coordinator, ScenarioCommandKind.PAUSE),
+                self.capability(),
+            )
+        self.assertEqual(coordinator.run_view(), before)
+
+        # Mutation caught: the capacity gate rejects an exact registered failed retry.
+        retried = coordinator.submit_command(failed, self.capability())
+        self.assertTrue(retried.accepted)
+        self.assertEqual(coordinator.state.round_index, 1)
 
     def test_callback_observes_committed_state_and_history_and_failure_is_operational(self) -> None:
         bus = SimulationOutputBus()
@@ -693,6 +795,121 @@ class ScenarioCoordinatorTests(unittest.TestCase):
             coordinator.last_delivery_report.failures[0].code,
             "callback_error",
         )
+
+    def test_publisher_exception_becomes_redacted_report_and_exact_retry_does_not_republish(self) -> None:
+        class RaisingPublisher:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def publish(self, _) -> None:
+                self.calls += 1
+                raise RuntimeError("private publisher failure C:\\secret\\memory.sqlite3")
+
+        publisher = RaisingPublisher()
+        coordinator = self.coordinator(publisher=publisher)
+        self.start(coordinator)
+        request = self.request(coordinator, ScenarioCommandKind.STEP)
+
+        # Mutation caught: a post-commit publisher exception escapes as command failure.
+        accepted = coordinator.submit_command(request, self.capability())
+
+        self.assertTrue(accepted.accepted)
+        self.assertEqual(coordinator.state.round_index, 1)
+        expected = SimulationDeliveryReport(
+            accepted.output_batch_hash,
+            (),
+            (
+                SimulationDeliveryFailure(
+                    "scenario-output-publisher",
+                    "callback_error",
+                ),
+            ),
+        )
+        self.assertEqual(coordinator.last_delivery_report, expected)
+        self.assertNotIn("private publisher failure", repr(expected))
+        self.assertNotIn("secret", repr(expected.to_dict()))
+        self.assertIs(
+            coordinator.submit_command(request, self.capability()),
+            accepted,
+        )
+        self.assertEqual(publisher.calls, 1)
+
+    def test_invalid_or_wrong_batch_publisher_report_is_normalized_after_commit(self) -> None:
+        private_hash = "sha256:" + "f" * 64
+        cases = (
+            (
+                "invalid-report",
+                "private invalid publisher return C:\\secret",
+            ),
+            (
+                "wrong-batch-report",
+                SimulationDeliveryReport(
+                    private_hash,
+                    ("private-subscriber",),
+                    (),
+                ),
+            ),
+        )
+
+        for name, returned in cases:
+            with self.subTest(name=name):
+                database = self.root / f"{name}.sqlite3"
+
+                class FixedPublisher:
+                    def publish(self, _):
+                        return returned
+
+                coordinator = ScenarioCoordinator.create(
+                    database,
+                    self.scenario,
+                    run_id="law-firm-run",
+                    stream_id=f"{name}-stream",
+                    publisher=FixedPublisher(),
+                )
+                self.start(coordinator)
+                accepted = self.submit(coordinator, ScenarioCommandKind.STEP)
+
+                # Mutation caught: arbitrary publisher output becomes operational state.
+                self.assertTrue(accepted.accepted)
+                self.assertEqual(coordinator.state.round_index, 1)
+                self.assertEqual(
+                    coordinator.last_delivery_report,
+                    SimulationDeliveryReport(
+                        accepted.output_batch_hash,
+                        (),
+                        (
+                            SimulationDeliveryFailure(
+                                "scenario-output-publisher",
+                                "callback_error",
+                            ),
+                        ),
+                    ),
+                )
+                self.assertNotIn("private", repr(coordinator.last_delivery_report))
+                self.assertNotIn(private_hash, repr(coordinator.last_delivery_report))
+
+    def test_valid_publisher_report_is_preserved_by_exact_identity(self) -> None:
+        class ValidPublisher:
+            def __init__(self) -> None:
+                self.report = None
+
+            def publish(self, batch):
+                self.report = SimulationDeliveryReport(
+                    batch.content_hash,
+                    ("subscriber",),
+                    (),
+                )
+                return self.report
+
+        publisher = ValidPublisher()
+        coordinator = self.coordinator(publisher=publisher)
+        self.start(coordinator)
+
+        accepted = self.submit(coordinator, ScenarioCommandKind.STEP)
+
+        # Mutation caught: normalization rebuilds a valid report and loses identity.
+        self.assertTrue(accepted.accepted)
+        self.assertIs(coordinator.last_delivery_report, publisher.report)
 
     def test_projector_failure_restores_real_sqlite_and_all_coordinator_fields_then_retries(self) -> None:
         coordinator = self.coordinator()
