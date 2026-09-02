@@ -99,9 +99,55 @@ def create_world_studio_asgi_app(
     def transport_error(code: str, status: int):
         return JSONResponse({"error": {"code": code}}, status_code=status)
 
+    def control_metadata(raw: bytes):
+        def strict_object(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError
+                result[key] = value
+            return result
+
+        try:
+            request = json.loads(
+                raw.decode("utf-8", errors="strict"),
+                object_pairs_hook=strict_object,
+            )
+        except (UnicodeDecodeError, ValueError, json.JSONDecodeError):
+            return None, None, None
+        if not isinstance(request, dict) or request.get("jsonrpc") != "2.0":
+            return None, None, None
+        request_id = request.get("id") if "id" in request else None
+        if not (
+            request_id is None
+            or isinstance(request_id, str)
+            or isinstance(request_id, int)
+            and not isinstance(request_id, bool)
+        ):
+            request_id = None
+        method = request.get("method")
+        params = request.get("params", {})
+        subscription_id = None
+        if isinstance(params, dict):
+            candidate = params.get("subscription_id")
+            if (
+                isinstance(candidate, str)
+                and candidate
+                and len(candidate) <= 256
+                and "/" not in candidate
+                and "\\" not in candidate
+            ):
+                subscription_id = candidate
+        return request_id, method if isinstance(method, str) else None, subscription_id
+
     async def authenticate(callback, host_object):
         try:
-            capability = callback(host_object)
+            if inspect.iscoroutinefunction(callback) or inspect.iscoroutinefunction(
+                getattr(callback, "__call__", None)
+            ):
+                capability = callback(host_object)
+            else:
+                capability = await asyncio.to_thread(callback, host_object)
             if inspect.isawaitable(capability):
                 capability = await capability
         except Exception:
@@ -178,144 +224,233 @@ def create_world_studio_asgi_app(
             next_connection += 1
             connection_id = f"connection-{next_connection}"
 
-        loop = asyncio.get_running_loop()
-        output_queue: asyncio.Queue = asyncio.Queue(
-            maxsize=max(1, limits.maximum_subscriptions_per_connection * 2)
-        )
-        send_lock = asyncio.Lock()
-
-        def on_output(subscription_id, view) -> None:
-            def enqueue() -> None:
-                try:
-                    output_queue.put_nowait((subscription_id, view))
-                except asyncio.QueueFull:
-                    pass
-
-            loop.call_soon_threadsafe(enqueue)
-
-        streaming_service = StudioStreamingService(
-            output_router, connection_id, on_output=on_output
-        )
-        streaming_dispatcher = JsonRpcDispatcher(streaming_service)
-        owned_subscriptions: set[str] = set()
-
-        async def send_payload(payload) -> None:
-            async with send_lock:
-                await websocket.send_json(payload)
-
-        async def output_sender() -> None:
-            while True:
-                subscription_id, view = await output_queue.get()
-                await send_payload(
-                    {
-                        "jsonrpc": "2.0",
-                        "method": "stream.output",
-                        "params": {
-                            "subscription_id": subscription_id,
-                            "output": studio_output_view_to_dict(view),
-                        },
-                    }
-                )
-
-        await websocket.accept(subprotocol=WORLD_STUDIO_WEBSOCKET_SUBPROTOCOL)
-        sender = asyncio.create_task(output_sender())
+        tasks: set[asyncio.Task] = set()
         try:
-            while True:
-                message = await websocket.receive()
-                if message["type"] == "websocket.disconnect":
-                    break
-                if message.get("bytes") is not None:
-                    raw = message["bytes"]
-                else:
-                    text = message.get("text", "")
-                    try:
-                        raw = text.encode("utf-8", errors="strict")
-                    except UnicodeEncodeError:
-                        await websocket.close(code=1007)
-                        break
-                if len(raw) > limits.maximum_websocket_frame_bytes:
-                    await websocket.close(code=1009)
-                    break
-                control_task = asyncio.create_task(
-                    asyncio.to_thread(
-                        streaming_dispatcher.parse_and_dispatch, raw, capability
-                    )
+            loop = asyncio.get_running_loop()
+            output_queue: asyncio.Queue = asyncio.Queue(
+                maxsize=max(
+                    1,
+                    output_router.limits.maximum_retained_batches
+                    * limits.maximum_subscriptions_per_connection,
                 )
-                try:
-                    response = await asyncio.wait_for(
-                        asyncio.shield(control_task),
-                        timeout=float(limits.request_timeout_seconds),
+            )
+            send_lock = asyncio.Lock()
+
+            class OutboundFrameTooLarge(RuntimeError):
+                pass
+
+            def on_output(subscription_id, view) -> None:
+                def enqueue() -> None:
+                    try:
+                        output_queue.put_nowait((subscription_id, view))
+                    except asyncio.QueueFull:
+                        pass
+
+                loop.call_soon_threadsafe(enqueue)
+
+            streaming_service = StudioStreamingService(
+                output_router, connection_id, on_output=on_output
+            )
+            streaming_dispatcher = JsonRpcDispatcher(streaming_service)
+            owned_subscriptions: set[str] = set()
+
+            async def send_payload(payload) -> None:
+                encoded = json.dumps(
+                    payload,
+                    ensure_ascii=False,
+                    allow_nan=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+                if len(encoded) > limits.maximum_websocket_frame_bytes:
+                    try:
+                        await websocket.close(code=1009)
+                    except Exception:
+                        pass
+                    raise OutboundFrameTooLarge()
+                async with send_lock:
+                    await websocket.send_text(encoded.decode("utf-8"))
+
+            async def output_sender() -> None:
+                while True:
+                    subscription_id, view = await output_queue.get()
+                    await send_payload(
+                        {
+                            "jsonrpc": "2.0",
+                            "method": "stream.output",
+                            "params": {
+                                "subscription_id": subscription_id,
+                                "output": studio_output_view_to_dict(view),
+                            },
+                        }
                     )
-                except asyncio.TimeoutError:
-                    control_task.add_done_callback(
-                        lambda completed: output_router.unsubscribe_connection(
-                            connection_id
+
+            async def control_receiver() -> None:
+                nonlocal owned_subscriptions
+                try:
+                    await receive_controls()
+                except WebSocketDisconnect:
+                    return
+
+            async def receive_controls() -> None:
+                nonlocal owned_subscriptions
+                while True:
+                    message = await websocket.receive()
+                    if message["type"] == "websocket.disconnect":
+                        return
+                    if message.get("bytes") is not None:
+                        raw = message["bytes"]
+                    else:
+                        text = message.get("text", "")
+                        try:
+                            raw = text.encode("utf-8", errors="strict")
+                        except UnicodeEncodeError:
+                            await websocket.close(code=1007)
+                            return
+                    if len(raw) > limits.maximum_websocket_frame_bytes:
+                        await websocket.close(code=1009)
+                        return
+                    control_task = asyncio.create_task(
+                        asyncio.to_thread(
+                            streaming_dispatcher.parse_and_dispatch, raw, capability
                         )
                     )
-                    await send_payload(
-                        {
-                            "jsonrpc": "2.0",
-                            "id": None,
-                            "error": {"code": -32603, "message": "Internal error"},
-                        }
-                    )
-                    continue
-                except Exception:
-                    await send_payload(
-                        {
-                            "jsonrpc": "2.0",
-                            "id": None,
-                            "error": {"code": -32603, "message": "Internal error"},
-                        }
-                    )
-                    continue
-                if not response:
-                    continue
-                try:
-                    decoded = json.loads(response)
-                except Exception:
-                    await send_payload(
-                        {
-                            "jsonrpc": "2.0",
-                            "id": None,
-                            "error": {"code": -32603, "message": "Internal error"},
-                        }
-                    )
-                    continue
-                result = decoded.get("result") if isinstance(decoded, dict) else None
-                if isinstance(result, dict) and "subscription_id" in result:
-                    subscription_id = result["subscription_id"]
-                    if result.get("unsubscribed") is True:
-                        owned_subscriptions.discard(subscription_id)
-                    elif "run_id" in result:
-                        owned_subscriptions.add(subscription_id)
-                        if len(owned_subscriptions) > limits.maximum_subscriptions_per_connection:
+                    request_id, control_method, control_subscription_id = control_metadata(raw)
+                    try:
+                        response = await asyncio.wait_for(
+                            asyncio.shield(control_task),
+                            timeout=float(limits.request_timeout_seconds),
+                        )
+                    except asyncio.TimeoutError:
+                        def finish_timed_out_control(
+                            completed,
+                            method=control_method,
+                            subscription_id=control_subscription_id,
+                        ) -> None:
                             try:
-                                output_router.unsubscribe(
-                                    subscription_id,
-                                    capability=capability,
-                                    connection_id=connection_id,
+                                late_response = completed.result()
+                                late_decoded = (
+                                    json.loads(late_response) if late_response else None
                                 )
                             except Exception:
-                                pass
-                            owned_subscriptions.discard(subscription_id)
-                            decoded = {
+                                return
+                            result = (
+                                late_decoded.get("result")
+                                if isinstance(late_decoded, dict)
+                                else None
+                            )
+                            if (
+                                method == "stream.subscribe"
+                                and subscription_id is not None
+                                and isinstance(result, dict)
+                                and result.get("subscription_id") == subscription_id
+                                and "run_id" in result
+                            ):
+                                try:
+                                    output_router.unsubscribe(
+                                        subscription_id,
+                                        capability=capability,
+                                        connection_id=connection_id,
+                                    )
+                                except Exception:
+                                    pass
+
+                        control_task.add_done_callback(finish_timed_out_control)
+                        await send_payload(
+                            {
                                 "jsonrpc": "2.0",
-                                "id": decoded.get("id"),
-                                "error": {"code": -32017, "message": "Capacity limit"},
+                                "id": request_id,
+                                "error": {
+                                    "code": -32603,
+                                    "message": "Internal error",
+                                },
                             }
-                await send_payload(decoded)
-        except WebSocketDisconnect:
-            pass
+                        )
+                        continue
+                    except Exception:
+                        await send_payload(
+                            {
+                                "jsonrpc": "2.0",
+                                "id": request_id,
+                                "error": {
+                                    "code": -32603,
+                                    "message": "Internal error",
+                                },
+                            }
+                        )
+                        continue
+                    if not response:
+                        continue
+                    try:
+                        decoded = json.loads(response)
+                    except Exception:
+                        await send_payload(
+                            {
+                                "jsonrpc": "2.0",
+                                "id": None,
+                                "error": {
+                                    "code": -32603,
+                                    "message": "Internal error",
+                                },
+                            }
+                        )
+                        continue
+                    result = decoded.get("result") if isinstance(decoded, dict) else None
+                    if isinstance(result, dict) and "subscription_id" in result:
+                        subscription_id = result["subscription_id"]
+                        if result.get("unsubscribed") is True:
+                            owned_subscriptions.discard(subscription_id)
+                        elif "run_id" in result:
+                            owned_subscriptions.add(subscription_id)
+                            if (
+                                len(owned_subscriptions)
+                                > limits.maximum_subscriptions_per_connection
+                            ):
+                                try:
+                                    output_router.unsubscribe(
+                                        subscription_id,
+                                        capability=capability,
+                                        connection_id=connection_id,
+                                    )
+                                except Exception:
+                                    pass
+                                owned_subscriptions.discard(subscription_id)
+                                decoded = {
+                                    "jsonrpc": "2.0",
+                                    "id": decoded.get("id"),
+                                    "error": {
+                                        "code": -32017,
+                                        "message": "Capacity limit",
+                                    },
+                                }
+                    await send_payload(decoded)
+
+            await websocket.accept(subprotocol=WORLD_STUDIO_WEBSOCKET_SUBPROTOCOL)
+            sender = asyncio.create_task(output_sender())
+            tasks.add(sender)
+            receiver = asyncio.create_task(control_receiver())
+            tasks.add(receiver)
+            done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            failures = await asyncio.gather(*done, return_exceptions=True)
+            if any(
+                isinstance(failure, Exception)
+                and not isinstance(failure, OutboundFrameTooLarge)
+                for failure in failures
+            ):
+                try:
+                    await websocket.close(code=1011)
+                except Exception:
+                    pass
         finally:
-            sender.cancel()
+            for task in tasks:
+                task.cancel()
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
             try:
-                await sender
-            except (asyncio.CancelledError, WebSocketDisconnect):
-                pass
-            output_router.unsubscribe_connection(connection_id)
-            async with connection_lock:
-                active_connections -= 1
+                output_router.unsubscribe_connection(connection_id)
+            finally:
+                async with connection_lock:
+                    active_connections -= 1
 
     routes = [
         Route("/health", health, methods=["GET"]),

@@ -134,6 +134,7 @@ class _SubscriptionState:
     retained_bytes: int = 0
     acknowledged: tuple[int, str] | None = None
     latest: tuple[int, str] | None = None
+    latest_bounds: tuple[int, int, str] | None = None
 
 
 def _identity(value: object, *, label: str) -> str:
@@ -329,20 +330,41 @@ class StudioOutputRouter:
         with self._lock:
             self._purge_expired_locked(now)
             snapshot = tuple(
-                state.subscription
+                (
+                    state.subscription,
+                    state.latest_bounds,
+                    frozenset(
+                        (
+                            view.first_sequence,
+                            view.last_sequence,
+                            view.source_batch_hash,
+                        )
+                        for view, _ in state.retained
+                    ),
+                )
                 for state in self._subscriptions.values()
                 if state.subscription.run_id == run_id
                 and state.subscription.stream_id == batch.stream_id
             )
 
+        pending = []
+        identity = (batch.first_sequence, batch.last_sequence, batch.content_hash)
+        for subscription, latest_bounds, retained_identities in snapshot:
+            if identity in retained_identities or latest_bounds == identity:
+                continue
+            if latest_bounds is not None and batch.first_sequence != latest_bounds[1] + 1:
+                raise SubscriptionStateError()
+            pending.append((subscription, latest_bounds))
+
         projected = tuple(
-            (subscription, self._filtered_view(batch, subscription))
-            for subscription in snapshot
+            (subscription, prior_bounds, self._filtered_view(batch, subscription))
+            for subscription, prior_bounds in pending
         )
         callbacks: list[tuple[OutputCallback, SimulationOutputView]] = []
         delivered: list[str] = []
         with self._lock:
-            for subscription, view in projected:
+            actions: list[tuple[_SubscriptionState, SimulationOutputView]] = []
+            for subscription, prior_bounds, view in projected:
                 state = self._subscriptions.get(subscription.subscription_id)
                 if (
                     state is None
@@ -350,11 +372,32 @@ class StudioOutputRouter:
                     or state.deadline <= self._clock()
                 ):
                     continue
+                if state.latest_bounds == identity:
+                    continue
+                if any(
+                    (
+                        retained.first_sequence,
+                        retained.last_sequence,
+                        retained.source_batch_hash,
+                    )
+                    == identity
+                    for retained, _ in state.retained
+                ):
+                    continue
+                if (
+                    state.latest_bounds != prior_bounds
+                    or state.latest_bounds is not None
+                    and batch.first_sequence != state.latest_bounds[1] + 1
+                ):
+                    raise SubscriptionStateError()
+                actions.append((state, view))
+            for state, view in actions:
                 size = _view_bytes(view)
                 state.retained.append((view, size))
                 state.retained_records += len(view.records)
                 state.retained_bytes += size
                 state.latest = (view.last_sequence, view.source_batch_hash)
+                state.latest_bounds = identity
                 while state.retained and (
                     len(state.retained) > self._limits.maximum_retained_batches
                     or state.retained_records > self._limits.maximum_retained_records
@@ -366,7 +409,7 @@ class StudioOutputRouter:
                 state.deadline = self._clock() + float(self._limits.lease_seconds)
                 if state.on_output is not None:
                     callbacks.append((state.on_output, view))
-                delivered.append(subscription.subscription_id)
+                delivered.append(state.subscription.subscription_id)
         for callback, view in callbacks:
             try:
                 callback(view)
@@ -455,7 +498,14 @@ class StudioOutputRouter:
             if latest is None or cursor == latest:
                 return ()
             later = tuple(view for view in retained if view.last_sequence > last_sequence)
-            if not later or later[0].first_sequence > last_sequence + 1:
+            contiguous = bool(later)
+            next_sequence = last_sequence + 1
+            for view in later:
+                if view.first_sequence != next_sequence:
+                    contiguous = False
+                    break
+                next_sequence = view.last_sequence + 1
+            if not contiguous or later[-1].last_sequence != latest[0]:
                 token = stable_content_hash(
                     {
                         "schema": "narrative-dynamics.studio-snapshot-token/v1",
@@ -614,9 +664,17 @@ class StudioStreamingService(WorldStudioService):
             capability=capability,
             stream_id=stream_id,
         )
+        if self._on_output is not None:
+            for view in views:
+                self._on_output(subscription_id, view)
+        current_sequence = sequence if not views else views[-1].last_sequence
+        current_batch_hash = batch_hash if not views else views[-1].source_batch_hash
         return {
             "subscription_id": subscription_id,
-            "outputs": [studio_output_view_to_dict(view) for view in views],
+            "resumed_from_sequence": sequence,
+            "replayed_count": len(views),
+            "current_sequence": current_sequence,
+            "current_batch_hash": current_batch_hash,
         }
 
     def _unsubscribe(self, params: JsonObject, capability: StudioCapability):

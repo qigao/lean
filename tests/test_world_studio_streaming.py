@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from narrative_dynamics.abm import (
@@ -113,6 +115,34 @@ def private_batch(sequence: int = 1) -> SimulationOutputBatch:
     )
 
 
+def public_batch_range(first: int, last: int) -> SimulationOutputBatch:
+    records = tuple(
+        SimulationOutputRecord(
+            "stream-1",
+            HASHES[0],
+            sequence,
+            1,
+            HASHES[2],
+            SimulationOutputKind.COMMAND_RESULT,
+            SimulationOutputAudience.PUBLIC,
+            None,
+            (),
+            SimulationCommandResultPayload(
+                f"command-{sequence:04d}", True, "accepted"
+            ),
+        )
+        for sequence in range(first, last + 1)
+    )
+    return SimulationOutputBatch(
+        "stream-1",
+        HASHES[0],
+        HASHES[1],
+        HASHES[2],
+        HASHES[5],
+        first,
+        last,
+        records,
+    )
 def test_acknowledged_cursor_resumes_with_only_later_batches() -> None:
     router = StudioOutputRouter()
     allowed = capability()
@@ -300,3 +330,108 @@ def test_delivered_oversize_batch_can_still_be_acknowledged() -> None:
     assert delivered[0].source_batch_hash == batch.content_hash
     router.acknowledge("sub-1", 1, batch.content_hash, capability=allowed)
     assert router.resume("sub-1", 1, batch.content_hash, capability=allowed) == ()
+
+
+def test_exact_duplicate_publication_is_idempotent_and_hash_exact() -> None:
+    delivered = []
+    allowed = capability()
+    router = StudioOutputRouter()
+    router.subscribe(
+        "sub-1",
+        "run-1",
+        "stream-1",
+        allowed,
+        tuple(SimulationOutputKind),
+        on_output=delivered.append,
+    )
+    batch = public_batch_range(1, 1)
+
+    assert router.publish("run-1", batch) == ("sub-1",)
+    assert router.publish("run-1", batch) == ()
+    assert tuple(view.source_batch_hash for view in delivered) == (batch.content_hash,)
+    router.acknowledge("sub-1", 1, batch.content_hash, capability=allowed)
+    with pytest.raises(SubscriptionStateError):
+        router.acknowledge("sub-1", 1, HASHES[7], capability=allowed)
+
+
+def test_delayed_exact_duplicate_is_deduplicated_not_treated_as_out_of_order() -> None:
+    delivered = []
+    allowed = capability()
+    router = StudioOutputRouter()
+    router.subscribe(
+        "sub-1",
+        "run-1",
+        "stream-1",
+        allowed,
+        tuple(SimulationOutputKind),
+        on_output=delivered.append,
+    )
+    first = public_batch_range(1, 1)
+    second = public_batch_range(2, 2)
+    router.publish("run-1", first)
+    router.publish("run-1", second)
+
+    assert router.publish("run-1", first) == ()
+    assert tuple(view.last_sequence for view in delivered) == (1, 2)
+
+
+def test_same_sequence_different_hash_rejects_without_delivery() -> None:
+    delivered = []
+    allowed = capability()
+    router = StudioOutputRouter()
+    router.subscribe(
+        "sub-1",
+        "run-1",
+        "stream-1",
+        allowed,
+        tuple(SimulationOutputKind),
+        on_output=delivered.append,
+    )
+    first = public_batch_range(1, 1)
+    altered_record = replace(
+        first.records[0],
+        payload=SimulationCommandResultPayload("command-altered", True, "accepted"),
+    )
+    altered = replace(first, records=(altered_record,))
+    router.publish("run-1", first)
+
+    with pytest.raises(SubscriptionStateError):
+        router.publish("run-1", altered)
+
+    assert tuple(view.source_batch_hash for view in delivered) == (first.content_hash,)
+
+
+@pytest.mark.parametrize(
+    ("first", "invalid"),
+    (
+        (public_batch_range(1, 2), public_batch_range(2, 3)),
+        (public_batch_range(1, 1), public_batch_range(3, 3)),
+        (public_batch_range(2, 2), public_batch_range(1, 1)),
+    ),
+)
+def test_noncontiguous_publication_rejects_without_retention_or_callback(
+    first: SimulationOutputBatch, invalid: SimulationOutputBatch
+) -> None:
+    delivered = []
+    allowed = capability()
+    router = StudioOutputRouter()
+    router.subscribe(
+        "sub-1",
+        "run-1",
+        "stream-1",
+        allowed,
+        tuple(SimulationOutputKind),
+        on_output=delivered.append,
+    )
+    router.publish("run-1", first)
+
+    with pytest.raises(SubscriptionStateError):
+        router.publish("run-1", invalid)
+
+    assert tuple(view.source_batch_hash for view in delivered) == (first.content_hash,)
+    router.acknowledge(
+        "sub-1", first.last_sequence, first.content_hash, capability=allowed
+    )
+    assert router.resume(
+        "sub-1", first.last_sequence, first.content_hash, capability=allowed
+    ) == ()
