@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+import re
 import sqlite3
 from tempfile import TemporaryDirectory
 
 from narrative_dynamics.abm.scenario_checkpoint_store import (
     LocalScenarioCheckpointStore,
+    _ScenarioCheckpointRestoreTargetExistsError,
 )
 from narrative_dynamics.abm.scenario_compiler import initialize_compiled_scenario
 from narrative_dynamics.abm.scenario_coordinator_contracts import (
@@ -69,6 +71,7 @@ from narrative_dynamics.abm.situated_percept_memory import (
 _EMPTY_PROJECTION_ERROR = "simulation output projection produced no supported records"
 _OUTPUT_LIMIT_ERROR = "scenario run exceeded maximum output records"
 _COMMAND_HISTORY_LIMIT_ERROR = "scenario command history limit exceeded"
+_FORK_HISTORY_LIMIT_ERROR = "scenario fork history limit exceeded"
 _PUBLISHER_FAILURE_SUBSCRIPTION_ID = "scenario-output-publisher"
 
 
@@ -105,6 +108,15 @@ def _copy_sqlite_database(source_path: str, destination_path: str) -> None:
             destination.close()
         if source is not None:
             source.close()
+
+
+def _remove_fork_database(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+        if path.exists() or path.is_symlink():
+            raise OSError("owned fork database remains")
+    except Exception:
+        raise RuntimeError("scenario fork cleanup failed") from None
 
 
 class ScenarioCoordinator:
@@ -356,6 +368,7 @@ class ScenarioCoordinator:
         attempt = self._fork_attempts_by_idempotency_key.get(
             request.idempotency_key
         )
+        registered_attempt = attempt is not None
         if attempt is not None:
             fork_id, request_hash, capability_hash = attempt
             if (
@@ -370,15 +383,6 @@ class ScenarioCoordinator:
                 raise ValueError("scenario fork idempotency key was reused")
         elif request.fork_id in self._fork_attempts_by_fork_id:
             raise ValueError("scenario fork id was reused")
-        else:
-            self._fork_attempts_by_idempotency_key[request.idempotency_key] = (
-                request.fork_id,
-                request.content_hash,
-                capability.content_hash,
-            )
-            self._fork_attempts_by_fork_id[request.fork_id] = (
-                request.idempotency_key
-            )
 
         if not capability.can_fork or capability.run_id != self._run_id:
             raise PermissionError("scenario fork is not authorized")
@@ -419,12 +423,25 @@ class ScenarioCoordinator:
         if checkpoint.coordinator_epoch != request.source_epoch:
             raise ValueError("scenario fork checkpoint source epoch does not match")
 
+        if not registered_attempt:
+            if (
+                len(self._fork_attempts_by_idempotency_key)
+                >= self._scenario.run_policy.maximum_output_records
+            ):
+                raise ValueError(_FORK_HISTORY_LIMIT_ERROR)
+            self._fork_attempts_by_idempotency_key[request.idempotency_key] = (
+                request.fork_id,
+                request.content_hash,
+                capability.content_hash,
+            )
+            self._fork_attempts_by_fork_id[request.fork_id] = (
+                request.idempotency_key
+            )
+
         child_path = _database_path(child_database_path)
         child_path_value = Path(child_path)
-        restored = False
         try:
             self._checkpoint_store.restore(request.checkpoint_hash, child_path)
-            restored = True
             if (
                 hash_situated_percept_memory_store(child_path)
                 != checkpoint.memory_store_hash
@@ -458,12 +475,15 @@ class ScenarioCoordinator:
                 checkpoint.content_hash,
                 checkpoint.state.content_hash,
             )
+        except _ScenarioCheckpointRestoreTargetExistsError:
+            raise
         except Exception:
-            if restored:
-                try:
-                    child_path_value.unlink(missing_ok=True)
-                except OSError as error:
-                    raise RuntimeError("scenario fork cleanup failed") from None
+            try:
+                visible = child_path_value.exists() or child_path_value.is_symlink()
+            except Exception:
+                raise RuntimeError("scenario fork cleanup failed") from None
+            if visible:
+                _remove_fork_database(child_path_value)
             raise
 
         retained_result = (child, result)
@@ -556,8 +576,16 @@ class ScenarioCoordinator:
     ) -> ScenarioCommandResult:
         if self._checkpoint_store is None:
             raise RuntimeError("scenario checkpoint store is not configured")
+        checkpoint_id = request.requested_checkpoint_id
+        if checkpoint_id is not None and re.fullmatch(
+            rf"{re.escape(self._run_id)}-round-[1-9][0-9]*",
+            checkpoint_id,
+        ) is not None:
+            raise ValueError(
+                "scenario checkpoint id is reserved for automatic checkpoints"
+            )
         checkpoint = self._build_checkpoint(
-            request.requested_checkpoint_id,
+            checkpoint_id,
             state,
             self._next_sequence,
         )

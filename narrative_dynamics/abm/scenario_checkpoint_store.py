@@ -17,6 +17,10 @@ from narrative_dynamics.abm.situated_percept_memory import (
 _CONTENT_HASH = re.compile(r"^sha256:([0-9a-f]{64})$")
 
 
+class _ScenarioCheckpointRestoreTargetExistsError(ValueError):
+    """Identify a restore collision without exposing the target path."""
+
+
 def _checkpoint_hash(value: object) -> tuple[str, str]:
     if not isinstance(value, str):
         raise ValueError("scenario checkpoint hash must be a content hash")
@@ -63,6 +67,26 @@ def _logical_hash(path: Path, *, message: str) -> str:
         raise ValueError(message) from None
 
 
+def _path_exists(path: Path) -> bool:
+    try:
+        return path.exists() or path.is_symlink()
+    except Exception:
+        return True
+
+
+def _cleanup_owned_paths(paths: tuple[Path, ...], *, message: str) -> None:
+    failed = False
+    for path in paths:
+        try:
+            path.unlink(missing_ok=True)
+            if _path_exists(path):
+                failed = True
+        except Exception:
+            failed = True
+    if failed:
+        raise RuntimeError(message) from None
+
+
 class LocalScenarioCheckpointStore:
     """Own immutable typed metadata and atomic content-addressed SQLite snapshots."""
 
@@ -77,6 +101,7 @@ class LocalScenarioCheckpointStore:
             raise RuntimeError("scenario checkpoint root is unavailable") from None
         self._checkpoints_by_hash: dict[str, ScenarioCheckpoint] = {}
         self._hash_by_checkpoint_id: dict[str, str] = {}
+        self._created_artifact_hashes: set[str] = set()
 
     def _artifact_path(self, checkpoint_hash: str) -> Path:
         _, digest = _checkpoint_hash(checkpoint_hash)
@@ -94,14 +119,32 @@ class LocalScenarioCheckpointStore:
         except OSError as error:
             raise RuntimeError("scenario checkpoint stage creation failed") from None
 
-    @staticmethod
-    def _remove_stage(stage: Path | None) -> None:
-        if stage is None:
-            return
+    def _validate_artifact_path(self, artifact: Path) -> None:
         try:
-            stage.unlink(missing_ok=True)
-        except OSError:
-            pass
+            if artifact.is_symlink():
+                raise ValueError("scenario checkpoint artifact must not be a symlink")
+            resolved = artifact.resolve(strict=True)
+        except ValueError:
+            raise
+        except (OSError, RuntimeError):
+            raise ValueError(
+                "scenario checkpoint snapshot failed integrity validation"
+            ) from None
+        if not resolved.is_relative_to(self._root):
+            raise ValueError("scenario checkpoint artifact escaped the store root")
+        if not artifact.is_file():
+            raise ValueError(
+                "scenario checkpoint snapshot failed integrity validation"
+            )
+
+    def _register(
+        self,
+        checkpoint_hash: str,
+        checkpoint: ScenarioCheckpoint,
+    ) -> ScenarioCheckpoint:
+        self._checkpoints_by_hash[checkpoint_hash] = checkpoint
+        self._hash_by_checkpoint_id[checkpoint.checkpoint_id] = checkpoint_hash
+        return checkpoint
 
     def create(
         self,
@@ -134,9 +177,13 @@ class LocalScenarioCheckpointStore:
             return existing
 
         artifact = self._artifact_path(checkpoint_hash)
-        stage: Path | None = None
+        if _path_exists(artifact):
+            self._validate_artifact(checkpoint_hash, checkpoint)
+            return self._register(checkpoint_hash, checkpoint)
+
+        stage = self._stage_path(self._root, artifact.name)
+        published = False
         try:
-            stage = self._stage_path(self._root, artifact.name)
             _backup_sqlite(
                 source,
                 stage,
@@ -148,31 +195,39 @@ class LocalScenarioCheckpointStore:
             ) != checkpoint.memory_store_hash:
                 raise ValueError("scenario checkpoint snapshot failed integrity validation")
             _flush_file(stage)
-            os.replace(stage, artifact)
-            stage = None
-        except ValueError:
+            try:
+                os.link(stage, artifact)
+                published = True
+            except FileExistsError:
+                pass
+            except OSError:
+                raise RuntimeError("scenario checkpoint publication failed") from None
+            self._validate_artifact(checkpoint_hash, checkpoint)
+        except Exception:
+            cleanup = (artifact, stage) if published else (stage,)
+            _cleanup_owned_paths(
+                cleanup,
+                message="scenario checkpoint publication cleanup failed",
+            )
             raise
-        except Exception as error:
-            raise RuntimeError("scenario checkpoint publication failed") from None
-        finally:
-            self._remove_stage(stage)
 
         try:
-            if _logical_hash(
-                artifact,
-                message="scenario checkpoint snapshot failed integrity validation",
-            ) != checkpoint.memory_store_hash:
-                raise ValueError("scenario checkpoint snapshot failed integrity validation")
-        except Exception:
-            try:
-                artifact.unlink(missing_ok=True)
-            except OSError:
-                pass
-            raise
-
-        self._checkpoints_by_hash[checkpoint_hash] = checkpoint
-        self._hash_by_checkpoint_id[checkpoint.checkpoint_id] = checkpoint_hash
-        return checkpoint
+            _cleanup_owned_paths(
+                (stage,),
+                message="scenario checkpoint publication cleanup failed",
+            )
+        except RuntimeError:
+            cleanup = (artifact, stage) if published else (stage,)
+            _cleanup_owned_paths(
+                cleanup,
+                message="scenario checkpoint publication cleanup failed",
+            )
+            raise RuntimeError(
+                "scenario checkpoint publication cleanup failed"
+            ) from None
+        if published:
+            self._created_artifact_hashes.add(checkpoint_hash)
+        return self._register(checkpoint_hash, checkpoint)
 
     def load(self, checkpoint_hash: str) -> ScenarioCheckpoint:
         exact_hash, _ = _checkpoint_hash(checkpoint_hash)
@@ -189,8 +244,7 @@ class LocalScenarioCheckpointStore:
         checkpoint: ScenarioCheckpoint,
     ) -> None:
         artifact = self._artifact_path(checkpoint_hash)
-        if not artifact.is_file():
-            raise ValueError("scenario checkpoint snapshot failed integrity validation")
+        self._validate_artifact_path(artifact)
         actual = _logical_hash(
             artifact,
             message="scenario checkpoint snapshot failed integrity validation",
@@ -208,16 +262,17 @@ class LocalScenarioCheckpointStore:
             target_database_path,
             label="scenario checkpoint restore target",
         )
-        if target.exists() or target.is_symlink():
-            raise ValueError("scenario checkpoint restore target already exists")
+        if _path_exists(target):
+            raise _ScenarioCheckpointRestoreTargetExistsError(
+                "scenario checkpoint restore target already exists"
+            )
         if not target.parent.is_dir():
             raise RuntimeError("scenario checkpoint restore target directory is unavailable")
 
         artifact = self._artifact_path(checkpoint.content_hash)
-        stage: Path | None = None
+        stage = self._stage_path(target.parent, target.name)
         published = False
         try:
-            stage = self._stage_path(target.parent, target.name)
             _backup_sqlite(
                 artifact,
                 stage,
@@ -229,30 +284,49 @@ class LocalScenarioCheckpointStore:
             ) != checkpoint.memory_store_hash:
                 raise ValueError("scenario checkpoint restore failed integrity validation")
             _flush_file(stage)
-            os.replace(stage, target)
-            stage = None
-            published = True
+            try:
+                os.link(stage, target)
+                published = True
+            except FileExistsError:
+                raise _ScenarioCheckpointRestoreTargetExistsError(
+                    "scenario checkpoint restore target already exists"
+                ) from None
+            except OSError:
+                raise RuntimeError("scenario checkpoint restore publication failed") from None
+            if target.is_symlink() or not target.is_file():
+                raise ValueError(
+                    "scenario checkpoint restore failed integrity validation"
+                )
             if _logical_hash(
                 target,
                 message="scenario checkpoint restore failed integrity validation",
             ) != checkpoint.memory_store_hash:
                 raise ValueError("scenario checkpoint restore failed integrity validation")
-        except ValueError:
-            if published:
-                try:
-                    target.unlink(missing_ok=True)
-                except OSError:
-                    pass
+        except _ScenarioCheckpointRestoreTargetExistsError:
+            _cleanup_owned_paths(
+                (stage,),
+                message="scenario checkpoint restore cleanup failed",
+            )
             raise
-        except Exception as error:
-            if published:
-                try:
-                    target.unlink(missing_ok=True)
-                except OSError:
-                    pass
-            raise RuntimeError("scenario checkpoint restore failed") from None
-        finally:
-            self._remove_stage(stage)
+        except Exception:
+            cleanup = (target, stage) if published else (stage,)
+            _cleanup_owned_paths(
+                cleanup,
+                message="scenario checkpoint restore cleanup failed",
+            )
+            raise
+
+        try:
+            _cleanup_owned_paths(
+                (stage,),
+                message="scenario checkpoint restore cleanup failed",
+            )
+        except RuntimeError:
+            _cleanup_owned_paths(
+                (target, stage),
+                message="scenario checkpoint restore cleanup failed",
+            )
+            raise RuntimeError("scenario checkpoint restore cleanup failed") from None
 
     def discard(self, checkpoint_hash: str) -> None:
         exact_hash, _ = _checkpoint_hash(checkpoint_hash)
@@ -260,10 +334,16 @@ class LocalScenarioCheckpointStore:
         if checkpoint is None:
             return
         artifact = self._artifact_path(exact_hash)
-        try:
-            artifact.unlink(missing_ok=True)
-        except OSError as error:
-            raise RuntimeError("scenario checkpoint discard failed") from None
+        if (
+            exact_hash in self._created_artifact_hashes
+            and _path_exists(artifact)
+        ):
+            self._validate_artifact(exact_hash, checkpoint)
+            _cleanup_owned_paths(
+                (artifact,),
+                message="scenario checkpoint discard failed",
+            )
+        self._created_artifact_hashes.discard(exact_hash)
         self._checkpoints_by_hash.pop(exact_hash, None)
         if self._hash_by_checkpoint_id.get(checkpoint.checkpoint_id) == exact_hash:
             self._hash_by_checkpoint_id.pop(checkpoint.checkpoint_id, None)

@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
+from narrative_dynamics.abm import scenario_checkpoint_store as checkpoint_store_module
 from narrative_dynamics.abm.scenario_checkpoint_store import (
     LocalScenarioCheckpointStore,
 )
@@ -140,21 +141,210 @@ class LocalScenarioCheckpointStoreTests(unittest.TestCase):
 
         self.assertEqual(tuple(self.store_root.iterdir()), ())
 
-    def test_replace_failure_preserves_prior_snapshot_and_removes_stage(self) -> None:
+    def test_existing_content_artifact_is_reused_without_clobbering_bytes(self) -> None:
         self.store.create(self.checkpoint, self.database)
         artifact = tuple(self.store_root.iterdir())[0]
         prior_bytes = artifact.read_bytes()
         second_process_store = LocalScenarioCheckpointStore(self.store_root)
 
         with patch(
-            "narrative_dynamics.abm.scenario_checkpoint_store.os.replace",
-            side_effect=OSError("private replace detail"),
+            "narrative_dynamics.abm.scenario_checkpoint_store.os.link",
+            side_effect=AssertionError("existing artifact must not be republished"),
         ):
-            with self.assertRaisesRegex(RuntimeError, "checkpoint publication failed"):
-                second_process_store.create(self.checkpoint, self.database)
+            reused = second_process_store.create(self.checkpoint, self.database)
 
+        self.assertIs(reused, self.checkpoint)
         self.assertEqual(artifact.read_bytes(), prior_bytes)
         self.assertEqual(tuple(self.store_root.glob("*.stage-*")), ())
+
+        second_process_store.discard(self.checkpoint.content_hash)
+        self.assertTrue(artifact.exists())
+        self.assertEqual(artifact.read_bytes(), prior_bytes)
+
+    def test_concurrent_content_artifact_winner_is_validated_and_reused(self) -> None:
+        artifact_hash = self.checkpoint.content_hash.split(":", 1)[1]
+        artifact = self.store_root / f"checkpoint-{artifact_hash}.sqlite3"
+        real_link = os.link
+
+        def publish_winner(source, destination) -> None:
+            real_link(source, destination)
+            raise FileExistsError("private concurrent checkpoint winner")
+
+        with patch(
+            "narrative_dynamics.abm.scenario_checkpoint_store.os.link",
+            side_effect=publish_winner,
+        ):
+            stored = self.store.create(self.checkpoint, self.database)
+
+        self.assertIs(stored, self.checkpoint)
+        self.assertTrue(artifact.exists())
+        self.assertEqual(
+            hash_situated_percept_memory_store(artifact),
+            self.checkpoint.memory_store_hash,
+        )
+        self.assertEqual(tuple(self.store_root.glob("*.stage-*")), ())
+
+    def test_invalid_existing_artifact_is_never_replaced_or_deleted(self) -> None:
+        self.store.create(self.checkpoint, self.database)
+        artifact = tuple(self.store_root.iterdir())[0]
+        artifact.write_bytes(b"prior-invalid-bytes")
+        prior_bytes = artifact.read_bytes()
+        second_process_store = LocalScenarioCheckpointStore(self.store_root)
+
+        with self.assertRaisesRegex(ValueError, "integrity validation"):
+            second_process_store.create(self.checkpoint, self.database)
+
+        self.assertTrue(artifact.exists())
+        self.assertEqual(artifact.read_bytes(), prior_bytes)
+
+    def test_restore_concurrent_target_winner_is_preserved_byte_for_byte(self) -> None:
+        self.store.create(self.checkpoint, self.database)
+        target = self.root / "concurrent-target.sqlite3"
+        winner_bytes = b"concurrent-winner-must-survive"
+
+        def publish_winner(_, destination) -> None:
+            Path(destination).write_bytes(winner_bytes)
+            raise FileExistsError("private concurrent detail")
+
+        with patch(
+            "narrative_dynamics.abm.scenario_checkpoint_store.os.link",
+            side_effect=publish_winner,
+        ):
+            with self.assertRaisesRegex(ValueError, "restore target already exists"):
+                self.store.restore(self.checkpoint.content_hash, target)
+
+        self.assertEqual(target.read_bytes(), winner_bytes)
+        self.assertEqual(tuple(target.parent.glob(f".{target.name}.stage-*")), ())
+
+    def test_restore_validation_failure_removes_owned_target_and_can_retry(self) -> None:
+        self.store.create(self.checkpoint, self.database)
+        target = self.root / "validation-retry.sqlite3"
+        real_logical_hash = checkpoint_store_module._logical_hash
+        call_count = 0
+
+        def fail_published_target(path, *, message):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 3:
+                raise ValueError("private post-publication validation failure")
+            return real_logical_hash(path, message=message)
+
+        with patch.object(
+            checkpoint_store_module,
+            "_logical_hash",
+            side_effect=fail_published_target,
+        ):
+            with self.assertRaisesRegex(ValueError, "private post-publication"):
+                self.store.restore(self.checkpoint.content_hash, target)
+
+        self.assertFalse(target.exists())
+        self.assertEqual(tuple(target.parent.glob(f".{target.name}.stage-*")), ())
+        self.store.restore(self.checkpoint.content_hash, target)
+        self.assertEqual(
+            hash_situated_percept_memory_store(target),
+            self.checkpoint.memory_store_hash,
+        )
+
+    def test_restore_publication_failure_removes_stage_and_can_retry(self) -> None:
+        self.store.create(self.checkpoint, self.database)
+        target = self.root / "publication-retry.sqlite3"
+
+        with patch(
+            "narrative_dynamics.abm.scenario_checkpoint_store.os.link",
+            side_effect=OSError("private publication failure"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "restore publication failed"):
+                self.store.restore(self.checkpoint.content_hash, target)
+
+        self.assertFalse(target.exists())
+        self.assertEqual(tuple(target.parent.glob(f".{target.name}.stage-*")), ())
+        self.store.restore(self.checkpoint.content_hash, target)
+        self.assertTrue(target.exists())
+
+    def test_cleanup_failure_is_visible_and_path_redacted(self) -> None:
+        self.store.create(self.checkpoint, self.database)
+        target = self.root / "cleanup-private-target.sqlite3"
+        real_unlink = Path.unlink
+
+        def fail_stage_unlink(path, *args, **kwargs):
+            if ".stage-" in path.name:
+                raise OSError(f"private cleanup path {path}")
+            return real_unlink(path, *args, **kwargs)
+
+        with patch(
+            "narrative_dynamics.abm.scenario_checkpoint_store.os.link",
+            side_effect=OSError("private publication failure"),
+        ), patch.object(Path, "unlink", autospec=True, side_effect=fail_stage_unlink):
+            with self.assertRaisesRegex(RuntimeError, "cleanup failed") as raised:
+                self.store.restore(self.checkpoint.content_hash, target)
+
+        self.assertNotIn(str(self.root), str(raised.exception))
+        self.assertNotIn(str(target), str(raised.exception))
+
+    def test_create_cleanup_failure_rolls_back_new_artifact_and_can_retry(self) -> None:
+        real_unlink = Path.unlink
+        failed_once = False
+
+        def fail_first_stage_unlink(path, *args, **kwargs):
+            nonlocal failed_once
+            if ".stage-" in path.name and not failed_once:
+                failed_once = True
+                raise OSError(f"private cleanup path {path}")
+            return real_unlink(path, *args, **kwargs)
+
+        with patch.object(
+            Path,
+            "unlink",
+            autospec=True,
+            side_effect=fail_first_stage_unlink,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "publication cleanup failed"):
+                self.store.create(self.checkpoint, self.database)
+
+        self.assertEqual(tuple(self.store_root.iterdir()), ())
+        stored = self.store.create(self.checkpoint, self.database)
+        self.assertIs(stored, self.checkpoint)
+
+    def test_symlink_artifact_is_rejected_with_redacted_error(self) -> None:
+        self.store.create(self.checkpoint, self.database)
+        artifact = tuple(self.store_root.iterdir())[0]
+        prior_bytes = artifact.read_bytes()
+        backing = self.root / "private-outside.sqlite3"
+        backing.write_bytes(prior_bytes)
+        artifact.unlink()
+        used_real_symlink = False
+        try:
+            artifact.symlink_to(backing)
+            used_real_symlink = True
+        except OSError:
+            artifact.write_bytes(prior_bytes)
+
+        if used_real_symlink:
+            context = self.assertRaisesRegex(ValueError, "symlink")
+            with context:
+                self.store.load(self.checkpoint.content_hash)
+            raised = context.exception
+        else:
+            real_is_symlink = Path.is_symlink
+
+            def identify_artifact(path):
+                if path == artifact:
+                    return True
+                return real_is_symlink(path)
+
+            with patch.object(
+                Path,
+                "is_symlink",
+                autospec=True,
+                side_effect=identify_artifact,
+            ):
+                context = self.assertRaisesRegex(ValueError, "symlink")
+                with context:
+                    self.store.load(self.checkpoint.content_hash)
+                raised = context.exception
+
+        self.assertNotIn(str(self.store_root), str(raised))
+        self.assertNotIn(str(backing), str(raised))
 
     def test_integrity_and_io_errors_never_expose_local_paths(self) -> None:
         self.store.create(self.checkpoint, self.database)

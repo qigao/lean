@@ -1076,6 +1076,27 @@ class ScenarioCoordinatorTests(unittest.TestCase):
         with self.assertRaisesRegex(KeyError, "unknown scenario command"):
             coordinator.command_result(request.command_id, self.capability())
 
+    def test_manual_checkpoint_rejects_reserved_automatic_id_before_store_mutation(self) -> None:
+        store = LocalScenarioCheckpointStore(self.root / "reserved-checkpoints")
+        coordinator = self.coordinator(checkpoint_store=store)
+        request = self.request(
+            coordinator,
+            ScenarioCommandKind.CHECKPOINT,
+            requested_checkpoint_id="law-firm-run-round-2",
+        )
+
+        with patch.object(
+            store,
+            "create",
+            side_effect=AssertionError("reserved ID reached checkpoint store"),
+        ) as create:
+            with self.assertRaisesRegex(ValueError, "reserved for automatic checkpoints"):
+                coordinator.submit_command(request, self.capability())
+
+        create.assert_not_called()
+        self.assertEqual(coordinator.run_view().checkpoint_hashes, ())
+        self.assertEqual(tuple((self.root / "reserved-checkpoints").iterdir()), ())
+
     def test_interval_checkpoint_marks_exact_round_batch_once(self) -> None:
         coordinator, store, checkpoint = self.checkpointed_coordinator(interval=2)
 
@@ -1263,6 +1284,127 @@ class ScenarioCoordinatorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "child stream already exists"):
             coordinator.fork(duplicate_stream, allowed, self.root / "duplicate-stream.sqlite3")
 
+    def test_invalid_fork_spam_is_not_retained_and_authorized_history_is_bounded(self) -> None:
+        scenario = replace(
+            self.scenario,
+            run_policy=replace(self.scenario.run_policy, maximum_output_records=2),
+        )
+        store = LocalScenarioCheckpointStore(self.root / "bounded-fork-checkpoints")
+        coordinator = self.coordinator(
+            scenario=scenario,
+            checkpoint_store=store,
+        )
+        checkpoint_request = self.request(
+            coordinator,
+            ScenarioCommandKind.CHECKPOINT,
+            requested_checkpoint_id="fork-base",
+        )
+        checkpoint_result = coordinator.submit_command(
+            checkpoint_request,
+            self.capability(),
+        )
+        checkpoint_hash = checkpoint_result.checkpoint_hash
+        allowed = self.capability(can_fork=True)
+
+        for number in range(4):
+            unauthorized = self.fork_request(
+                coordinator,
+                checkpoint_hash,
+                fork_id=f"unauthorized-{number}",
+                idempotency_key=f"unauthorized-{number}",
+                child_run_id=f"unauthorized-child-{number}",
+                child_stream_id=f"unauthorized-stream-{number}",
+            )
+            with self.assertRaisesRegex(PermissionError, "not authorized"):
+                coordinator.fork(
+                    unauthorized,
+                    self.capability(),
+                    self.root / f"unauthorized-{number}.sqlite3",
+                )
+
+        invalid_requests = (
+            replace(
+                self.fork_request(coordinator, checkpoint_hash),
+                fork_id="invalid-run",
+                idempotency_key="invalid-run",
+                source_run_id="other-run",
+            ),
+            replace(
+                self.fork_request(coordinator, checkpoint_hash),
+                fork_id="invalid-epoch",
+                idempotency_key="invalid-epoch",
+                source_epoch=2,
+            ),
+            replace(
+                self.fork_request(coordinator, checkpoint_hash),
+                fork_id="invalid-checkpoint",
+                idempotency_key="invalid-checkpoint",
+                checkpoint_hash="sha256:" + "f" * 64,
+            ),
+        )
+        for number, invalid in enumerate(invalid_requests):
+            with self.subTest(invalid=invalid.fork_id):
+                with self.assertRaises((ValueError, KeyError)):
+                    coordinator.fork(
+                        invalid,
+                        allowed,
+                        self.root / f"invalid-{number}.sqlite3",
+                    )
+
+        retained = []
+        for number in range(2):
+            request = self.fork_request(
+                coordinator,
+                checkpoint_hash,
+                fork_id=f"bounded-{number}",
+                idempotency_key=f"bounded-{number}",
+                child_run_id=f"bounded-child-{number}",
+                child_stream_id=f"bounded-stream-{number}",
+            )
+            retained.append(
+                (
+                    request,
+                    coordinator.fork(
+                        request,
+                        allowed,
+                        self.root / f"bounded-{number}.sqlite3",
+                    ),
+                )
+            )
+
+        overflow = self.fork_request(
+            coordinator,
+            checkpoint_hash,
+            fork_id="bounded-overflow",
+            idempotency_key="bounded-overflow",
+            child_run_id="bounded-overflow-child",
+            child_stream_id="bounded-overflow-stream",
+        )
+        with self.assertRaisesRegex(
+            ValueError,
+            "^scenario fork history limit exceeded$",
+        ):
+            coordinator.fork(
+                overflow,
+                allowed,
+                self.root / "bounded-overflow.sqlite3",
+            )
+
+        first_request, (first_child, first_result) = retained[0]
+        cached_child, cached_result = coordinator.fork(
+            first_request,
+            allowed,
+            self.root / "ignored-at-capacity.sqlite3",
+        )
+        self.assertIs(cached_child, first_child)
+        self.assertIs(cached_result, first_result)
+        with self.assertRaisesRegex(ValueError, "idempotency key was reused"):
+            coordinator.fork(
+                replace(first_request, child_run_id="collision-at-capacity"),
+                allowed,
+                self.root / "collision-at-capacity.sqlite3",
+            )
+
     def test_fork_restore_failures_return_no_child_and_are_not_cached(self) -> None:
         coordinator, store, checkpoint = self.checkpointed_coordinator()
         allowed = self.capability(can_fork=True)
@@ -1287,12 +1429,51 @@ class ScenarioCoordinatorTests(unittest.TestCase):
             child_stream_id="restore-stream",
         )
         failed_target = self.root / "restore-failure.sqlite3"
-        with patch.object(store, "restore", side_effect=RuntimeError("restore seam failed")):
+        def publish_then_fail(_, target) -> None:
+            Path(target).write_bytes(b"owned-partial-child")
+            raise RuntimeError("restore seam failed")
+
+        with patch.object(store, "restore", side_effect=publish_then_fail):
             with self.assertRaisesRegex(RuntimeError, "restore seam failed"):
                 coordinator.fork(failed_request, allowed, failed_target)
         self.assertFalse(failed_target.exists())
         retried, _ = coordinator.fork(failed_request, allowed, failed_target)
         self.assertIs(retried.run_view().status, ScenarioRunStatus.PAUSED)
+
+    def test_fork_cleanup_failure_is_visible_and_path_redacted(self) -> None:
+        coordinator, store, checkpoint = self.checkpointed_coordinator()
+        request = self.fork_request(
+            coordinator,
+            checkpoint.content_hash,
+            fork_id="cleanup-failure",
+            idempotency_key="cleanup-failure",
+            child_run_id="cleanup-child",
+            child_stream_id="cleanup-stream",
+        )
+        allowed = self.capability(can_fork=True)
+        target = self.root / "private-cleanup-child.sqlite3"
+        real_unlink = Path.unlink
+
+        def publish_then_fail(_, destination) -> None:
+            Path(destination).write_bytes(b"owned-partial-child")
+            raise RuntimeError("private restore failure")
+
+        def fail_child_cleanup(path, *args, **kwargs):
+            if path == target:
+                raise OSError(f"private child path {path}")
+            return real_unlink(path, *args, **kwargs)
+
+        with patch.object(store, "restore", side_effect=publish_then_fail), patch.object(
+            Path,
+            "unlink",
+            autospec=True,
+            side_effect=fail_child_cleanup,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "fork cleanup failed") as raised:
+                coordinator.fork(request, allowed, target)
+
+        self.assertNotIn(str(target), str(raised.exception))
+        self.assertNotIn(str(self.root), str(raised.exception))
 
 
 if __name__ == "__main__":
