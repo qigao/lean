@@ -43,6 +43,7 @@ class StudioOutputLimits:
     maximum_retained_batches: int = 256
     maximum_retained_records: int = 20_000
     maximum_retained_bytes: int = 16 * 1024 * 1024
+    maximum_seen_batch_identities: int = 20_000
     lease_seconds: float = 300.0
 
     def __post_init__(self) -> None:
@@ -53,6 +54,7 @@ class StudioOutputLimits:
             "maximum_retained_batches",
             "maximum_retained_records",
             "maximum_retained_bytes",
+            "maximum_seen_batch_identities",
         ):
             value = getattr(self, name)
             if not isinstance(value, int) or isinstance(value, bool):
@@ -65,6 +67,18 @@ class StudioOutputLimits:
             or self.lease_seconds <= 0
         ):
             raise ValueError("studio output lease seconds must be positive")
+
+    def to_dict(self) -> JsonObject:
+        return {
+            "maximum_subscriptions_per_connection": self.maximum_subscriptions_per_connection,
+            "maximum_subscriptions": self.maximum_subscriptions,
+            "maximum_subscriptions_per_run": self.maximum_subscriptions_per_run,
+            "maximum_retained_batches": self.maximum_retained_batches,
+            "maximum_retained_records": self.maximum_retained_records,
+            "maximum_retained_bytes": self.maximum_retained_bytes,
+            "maximum_seen_batch_identities": self.maximum_seen_batch_identities,
+            "lease_seconds": float(self.lease_seconds),
+        }
 
 
 class SubscriptionAuthorizationError(StudioAuthorizationError):
@@ -137,6 +151,12 @@ class _SubscriptionState:
     latest_bounds: tuple[int, int, str] | None = None
 
 
+@dataclass
+class _StreamIdentityLedger:
+    identities: dict[tuple[int, int], str] = field(default_factory=dict)
+    latest: tuple[int, int, str] | None = None
+
+
 def _identity(value: object, *, label: str) -> str:
     if (
         not isinstance(value, str)
@@ -202,6 +222,11 @@ class StudioOutputRouter:
         self._clock = clock
         self._lock = RLock()
         self._subscriptions: dict[str, _SubscriptionState] = {}
+        # There is no safe stream-end lifecycle in V22, so accepted identities are
+        # deliberately retained until router process restart. Replay views remain
+        # independently bounded on each subscription.
+        self._seen_streams: dict[tuple[str, str], _StreamIdentityLedger] = {}
+        self._seen_batch_identity_count = 0
 
     @property
     def limits(self) -> StudioOutputLimits:
@@ -322,11 +347,45 @@ class StudioOutputRouter:
             scoped.checkpoint,
         )
 
+    def _seen_duplicate_locked(
+        self,
+        stream_key: tuple[str, str],
+        identity: tuple[int, int, str],
+    ) -> bool:
+        ledger = self._seen_streams.get(stream_key)
+        if ledger is not None:
+            bounds = identity[:2]
+            seen_hash = ledger.identities.get(bounds)
+            if seen_hash is not None:
+                if seen_hash == identity[2]:
+                    return True
+                raise SubscriptionStateError()
+            if ledger.latest is not None and identity[0] != ledger.latest[1] + 1:
+                raise SubscriptionStateError()
+        if (
+            self._seen_batch_identity_count
+            >= self._limits.maximum_seen_batch_identities
+        ):
+            raise SubscriptionCapacityError()
+        return False
+
+    def _record_seen_locked(
+        self,
+        stream_key: tuple[str, str],
+        identity: tuple[int, int, str],
+    ) -> None:
+        ledger = self._seen_streams.setdefault(stream_key, _StreamIdentityLedger())
+        ledger.identities[identity[:2]] = identity[2]
+        ledger.latest = identity
+        self._seen_batch_identity_count += 1
+
     def publish(self, run_id: str, batch: SimulationOutputBatch) -> tuple[str, ...]:
         run_id = _identity(run_id, label="published run ID")
         if not isinstance(batch, SimulationOutputBatch):
             raise TypeError("published output must be a SimulationOutputBatch")
         now = self._clock()
+        identity = (batch.first_sequence, batch.last_sequence, batch.content_hash)
+        stream_key = (run_id, batch.stream_id)
         with self._lock:
             self._purge_expired_locked(now)
             snapshot = tuple(
@@ -346,9 +405,12 @@ class StudioOutputRouter:
                 if state.subscription.run_id == run_id
                 and state.subscription.stream_id == batch.stream_id
             )
+            if not snapshot:
+                return ()
+            if self._seen_duplicate_locked(stream_key, identity):
+                return ()
 
         pending = []
-        identity = (batch.first_sequence, batch.last_sequence, batch.content_hash)
         for subscription, latest_bounds, retained_identities in snapshot:
             if identity in retained_identities or latest_bounds == identity:
                 continue
@@ -363,6 +425,8 @@ class StudioOutputRouter:
         callbacks: list[tuple[OutputCallback, SimulationOutputView]] = []
         delivered: list[str] = []
         with self._lock:
+            if self._seen_duplicate_locked(stream_key, identity):
+                return ()
             actions: list[tuple[_SubscriptionState, SimulationOutputView]] = []
             for subscription, prior_bounds, view in projected:
                 state = self._subscriptions.get(subscription.subscription_id)
@@ -391,6 +455,9 @@ class StudioOutputRouter:
                 ):
                     raise SubscriptionStateError()
                 actions.append((state, view))
+            if not actions:
+                return ()
+            self._record_seen_locked(stream_key, identity)
             for state, view in actions:
                 size = _view_bytes(view)
                 state.retained.append((view, size))

@@ -375,6 +375,103 @@ def test_delayed_exact_duplicate_is_deduplicated_not_treated_as_out_of_order() -
     assert tuple(view.last_sequence for view in delivered) == (1, 2)
 
 
+def test_seen_identity_survives_replay_eviction() -> None:
+    delivered = []
+    allowed = capability()
+    router = StudioOutputRouter(
+        limits=StudioOutputLimits(maximum_retained_batches=1)
+    )
+    router.subscribe(
+        "sub-1",
+        "run-1",
+        "stream-1",
+        allowed,
+        tuple(SimulationOutputKind),
+        on_output=delivered.append,
+    )
+    first = public_batch_range(1, 1)
+    second = public_batch_range(2, 2)
+    router.publish("run-1", first)
+    router.publish("run-1", second)
+
+    assert router.publish("run-1", first) == ()
+    assert tuple(view.source_batch_hash for view in delivered) == (
+        first.content_hash,
+        second.content_hash,
+    )
+
+
+def test_evicted_bounds_with_different_hash_still_reject() -> None:
+    delivered = []
+    router = StudioOutputRouter(
+        limits=StudioOutputLimits(maximum_retained_batches=1)
+    )
+    router.subscribe(
+        "sub-1",
+        "run-1",
+        "stream-1",
+        capability(),
+        tuple(SimulationOutputKind),
+        on_output=delivered.append,
+    )
+    first = public_batch_range(1, 1)
+    second = public_batch_range(2, 2)
+    altered_record = replace(
+        first.records[0],
+        payload=SimulationCommandResultPayload("command-altered", True, "accepted"),
+    )
+    altered = replace(first, records=(altered_record,))
+    router.publish("run-1", first)
+    router.publish("run-1", second)
+
+    with pytest.raises(SubscriptionStateError):
+        router.publish("run-1", altered)
+
+    assert tuple(view.source_batch_hash for view in delivered) == (
+        first.content_hash,
+        second.content_hash,
+    )
+
+
+def test_seen_identity_capacity_rejects_atomically() -> None:
+    delivered = []
+    allowed = capability()
+    router = StudioOutputRouter(
+        limits=StudioOutputLimits(maximum_seen_batch_identities=2)
+    )
+    router.subscribe(
+        "sub-1",
+        "run-1",
+        "stream-1",
+        allowed,
+        tuple(SimulationOutputKind),
+        on_output=delivered.append,
+    )
+    first = public_batch_range(1, 1)
+    second = public_batch_range(2, 2)
+    rejected = public_batch_range(3, 3)
+    router.publish("run-1", first)
+    router.publish("run-1", second)
+
+    with pytest.raises(SubscriptionCapacityError):
+        router.publish("run-1", rejected)
+
+    assert tuple(view.source_batch_hash for view in delivered) == (
+        first.content_hash,
+        second.content_hash,
+    )
+    router.acknowledge("sub-1", 2, second.content_hash, capability=allowed)
+    assert router.resume("sub-1", 2, second.content_hash, capability=allowed) == ()
+
+
+def test_seen_identity_limit_is_validated_and_serialized() -> None:
+    limits = StudioOutputLimits(maximum_seen_batch_identities=7)
+
+    assert limits.to_dict()["maximum_seen_batch_identities"] == 7
+    with pytest.raises(ValueError):
+        StudioOutputLimits(maximum_seen_batch_identities=0)
+
+
 def test_same_sequence_different_hash_rejects_without_delivery() -> None:
     delivered = []
     allowed = capability()
