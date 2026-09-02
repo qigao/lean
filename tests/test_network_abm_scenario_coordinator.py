@@ -12,6 +12,8 @@ from unittest.mock import patch
 from narrative_dynamics.abm import scenario_coordinator as coordinator_module
 from narrative_dynamics.abm.scenario_checkpoint_store import (
     LocalScenarioCheckpointStore,
+    _PhysicalFileOwnershipToken,
+    _ScenarioCheckpointOwnedRestoreError,
 )
 from narrative_dynamics.abm.scenario_compiler import (
     compile_situated_scenario_package,
@@ -270,6 +272,88 @@ class ScenarioCoordinatorTests(unittest.TestCase):
             ),
             coordinator.state.snapshot,
         )
+
+    def test_network_state_and_run_view_are_projected_under_one_state_lock(self) -> None:
+        coordinator = self.coordinator()
+        self.start(coordinator)
+        request = self.request(coordinator, ScenarioCommandKind.STEP)
+        capability = self.capability()
+        audience = SimulationAudienceCapability(SimulationOutputAudience.ANALYST)
+        atomic_network_state = coordinator.network_state_with_run_view
+
+        network_projection_entered = Event()
+        release_network_projection = Event()
+        run_projection_entered = Event()
+        release_run_projection = Event()
+        transition_entered = Event()
+        read_result = []
+        read_errors = []
+        command_errors = []
+        original_network_projector = coordinator_module.project_scenario_network_state
+        original_run_projector = coordinator_module.project_scenario_run_view
+        original_submit = coordinator._submit_command
+
+        def project_network(state, exact_audience):
+            snapshot = original_network_projector(state, exact_audience)
+            network_projection_entered.set()
+            if not release_network_projection.wait(2):
+                raise RuntimeError("network projection barrier timed out")
+            return snapshot
+
+        def project_run_view(**values):
+            run = original_run_projector(**values)
+            run_projection_entered.set()
+            if not release_run_projection.wait(2):
+                raise RuntimeError("run projection barrier timed out")
+            return run
+
+        def submit(exact_request, exact_capability):
+            transition_entered.set()
+            return original_submit(exact_request, exact_capability)
+
+        def read_pair() -> None:
+            try:
+                read_result.append(atomic_network_state(audience))
+            except Exception as error:  # pragma: no cover - asserted below
+                read_errors.append(error)
+
+        def transition() -> None:
+            try:
+                coordinator.submit_command(request, capability)
+            except Exception as error:  # pragma: no cover - asserted below
+                command_errors.append(error)
+
+        with patch.object(
+            coordinator_module,
+            "project_scenario_network_state",
+            side_effect=project_network,
+        ), patch.object(
+            coordinator_module,
+            "project_scenario_run_view",
+            side_effect=project_run_view,
+        ), patch.object(coordinator, "_submit_command", side_effect=submit):
+            reader = Thread(target=read_pair)
+            reader.start()
+            self.assertTrue(network_projection_entered.wait(2))
+            commander = Thread(target=transition)
+            commander.start()
+            release_network_projection.set()
+            self.assertTrue(run_projection_entered.wait(2))
+            self.assertFalse(transition_entered.is_set())
+            release_run_projection.set()
+            reader.join(2)
+            commander.join(2)
+
+        self.assertFalse(reader.is_alive())
+        self.assertFalse(commander.is_alive())
+        self.assertEqual(read_errors, [])
+        self.assertEqual(command_errors, [])
+        snapshot, run = read_result[0]
+        self.assertEqual(snapshot.round_index, 0)
+        self.assertEqual(run.round_index, 0)
+        self.assertEqual(run.state_hash, request.expected_state_hash)
+        self.assertEqual(coordinator.run_view().round_index, 1)
+        self.assertNotEqual(coordinator.run_view().state_hash, run.state_hash)
 
     def test_creation_rejects_wrong_scenario_and_duplicate_state_store_run(self) -> None:
         with self.assertRaisesRegex(TypeError, "CompiledSituatedScenario"):
@@ -1653,6 +1737,83 @@ class ScenarioCoordinatorTests(unittest.TestCase):
             child.state.memory_store_hash,
         )
 
+    def test_fork_child_publisher_routes_output_without_entering_identity_or_retry(self) -> None:
+        class Publisher:
+            def __init__(self, subscription_id: str) -> None:
+                self.subscription_id = subscription_id
+                self.batches = []
+
+            def publish(self, batch):
+                self.batches.append(batch)
+                return SimulationDeliveryReport(
+                    batch.content_hash,
+                    (self.subscription_id,),
+                    (),
+                )
+
+        coordinator, _, checkpoint = self.checkpointed_coordinator()
+        request = self.fork_request(coordinator, checkpoint.content_hash)
+        capability = self.capability(can_fork=True)
+        target = self.root / "routed-child.sqlite3"
+        first_publisher = Publisher("child-route")
+        child, result = coordinator.fork(
+            request,
+            capability,
+            target,
+            child_publisher=first_publisher,
+        )
+        retry_publisher = Publisher("must-not-rebind")
+        retried_child, retried_result = coordinator.fork(
+            request,
+            capability,
+            target,
+            child_publisher=retry_publisher,
+        )
+
+        self.assertIs(retried_child, child)
+        self.assertIs(retried_result, result)
+        self.assertEqual(result.request_hash, request.content_hash)
+        child_request = ScenarioCommandRequest(
+            "routed-command",
+            "routed-command-key",
+            "law-firm-child",
+            child.run_view().scenario_hash,
+            child.run_view().coordinator_epoch,
+            child.state.content_hash,
+            "operator",
+            ScenarioCommandKind.STEP,
+        )
+        child.submit_command(
+            child_request,
+            self.capability(run_id="law-firm-child"),
+        )
+        self.assertEqual(len(first_publisher.batches), 1)
+        self.assertEqual(retry_publisher.batches, [])
+        self.assertEqual(
+            child.last_delivery_report.delivered_subscription_ids,
+            ("child-route",),
+        )
+
+    def test_fork_validates_child_publisher_before_restore_or_attempt_registration(self) -> None:
+        coordinator, _, checkpoint = self.checkpointed_coordinator()
+        request = self.fork_request(coordinator, checkpoint.content_hash)
+        capability = self.capability(can_fork=True)
+        target = self.root / "publisher-validation-child.sqlite3"
+
+        with self.assertRaisesRegex(TypeError, "child publisher must provide publish"):
+            coordinator.fork(
+                request,
+                capability,
+                target,
+                child_publisher=object(),
+            )
+
+        self.assertFalse(target.exists())
+        child, result = coordinator.fork(request, capability, target)
+        self.assertTrue(target.exists())
+        self.assertEqual(result.request_hash, request.content_hash)
+        self.assertIsNotNone(child)
+
     def test_fork_rejects_unauthorized_unknown_or_mismatched_source(self) -> None:
         coordinator, _, checkpoint = self.checkpointed_coordinator()
         request = self.fork_request(coordinator, checkpoint.content_hash)
@@ -1872,6 +2033,57 @@ class ScenarioCoordinatorTests(unittest.TestCase):
                 coordinator.fork(failed_request, allowed, failed_target)
         self.assertFalse(failed_target.exists())
         retried, _ = coordinator.fork(failed_request, allowed, failed_target)
+        self.assertIs(retried.run_view().status, ScenarioRunStatus.PAUSED)
+
+    def test_preclaimed_owned_restore_failure_is_left_for_caller_cleanup(self) -> None:
+        coordinator, store, checkpoint = self.checkpointed_coordinator()
+        request = self.fork_request(
+            coordinator,
+            checkpoint.content_hash,
+            fork_id="preclaimed-owned-failure",
+            idempotency_key="preclaimed-owned-failure",
+            child_run_id="preclaimed-owned-child",
+            child_stream_id="preclaimed-owned-stream",
+        )
+        target = self.root / "preclaimed-owned-child.sqlite3"
+        target.write_bytes(b"")
+        target_token = _PhysicalFileOwnershipToken.from_stat(
+            target.stat(follow_symlinks=False)
+        )
+
+        with patch.object(
+            store,
+            "_restore_preclaimed_owned",
+            side_effect=_ScenarioCheckpointOwnedRestoreError(
+                "preclaimed restore failure",
+                target_token,
+            ),
+        ), patch.object(
+            store,
+            "_cleanup_restored_target",
+            side_effect=AssertionError("caller-owned target must not be cleaned"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "^preclaimed restore failure$"):
+                coordinator.fork(
+                    request,
+                    self.capability(can_fork=True),
+                    target,
+                    child_database_ownership_token=target_token,
+                )
+
+        self.assertEqual(target.read_bytes(), b"")
+        self.assertEqual(
+            _PhysicalFileOwnershipToken.from_stat(
+                target.stat(follow_symlinks=False)
+            ),
+            target_token,
+        )
+        target.unlink()
+        retried, _ = coordinator.fork(
+            request,
+            self.capability(can_fork=True),
+            target,
+        )
         self.assertIs(retried.run_view().status, ScenarioRunStatus.PAUSED)
 
     def test_fork_cleanup_failure_is_visible_and_path_redacted(self) -> None:

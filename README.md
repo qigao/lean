@@ -2211,6 +2211,93 @@ H2/WSS, the pure-Web editor, story interventions, live Blender updates, LLM/retr
 providers, and remote Agents remain later phases; V21.3 adds none of those transports
 or execution paths.
 
+## World Studio V22
+
+World Studio is the pure-Web authoring and run console described by the
+[V22 design](docs/superpowers/specs/2026-09-02-world-studio-v22-design.md). Project
+documents and revisions persist in the configured SQLite workspace. Run coordinators,
+their in-memory registry, and released stream subscriptions are process-local: a browser
+can reconnect and resume within the configured retention window, but after a server
+restart it reopens the persisted project and creates a new run.
+
+Install the locked server and browser inputs, install the single declared Playwright
+browser for end-to-end verification, and build the hashed static bundle:
+
+```text
+python -m pip install -r requirements-world-studio.txt
+cd world_studio_web
+npm ci
+npx playwright install chromium
+npm run build
+cd ..
+```
+
+The launcher accepts only configured roots and identifiers. It never reads `.env`,
+loads a provider, or accepts a filesystem path from the browser. Create the workspace
+and export directories first. A development-only loopback launch is:
+
+```text
+python -m tools.run_world_studio \
+  --workspace-root .world-studio/workspace \
+  --import-root examples \
+  --import-source law-firm=examples/law_firm_scenario \
+  --export-root .world-studio/exports \
+  --static-root world_studio_web/dist \
+  --bind-host 127.0.0.1 --bind-port 8443 \
+  --origin http://127.0.0.1:8443 \
+  --development-trust-all \
+  --authority-id local-operator \
+  --project-id law-firm --run-id law-firm-run \
+  --agent-id alice
+```
+
+Open `http://127.0.0.1:8443/studio/`. The compatible root entry also serves the
+application, while bundled assets and safe SPA deep links live under `/studio/`.
+
+Development trust-all refuses non-loopback addresses. For a non-loopback deployment,
+omit that flag, use one non-empty bearer token in a protected file, and supply both TLS
+files. Hypercorn negotiates HTTP/2 for HTTPS RPC and the browser uses same-origin WSS:
+
+```text
+python -m tools.run_world_studio \
+  --workspace-root /srv/world-studio/workspace \
+  --import-root /srv/world-studio/imports \
+  --import-source law-firm=/srv/world-studio/imports/law_firm_scenario \
+  --export-root /srv/world-studio/exports \
+  --static-root world_studio_web/dist \
+  --bind-host 0.0.0.0 --bind-port 8443 \
+  --origin https://studio.example.test:8443 \
+  --auth-token-file /run/secrets/world-studio-token \
+  --tls-certificate /run/secrets/world-studio.crt \
+  --tls-private-key /run/secrets/world-studio.key \
+  --maximum-sessions 128 --session-lifetime-seconds 3600 \
+  --authority-id operator \
+  --project-id law-firm --run-id law-firm-run \
+  --agent-id alice
+```
+
+Open `https://studio.example.test:8443/studio/` and enter the configured token in
+the bootstrap form. The token is sent once in the `Authorization` header to
+`POST /session`; it is never placed in a URL, static asset, browser storage, or cookie.
+The server instead sets a random, expiring, capacity-bounded `HttpOnly`, `Secure`,
+`SameSite=Strict`, `Path=/` session cookie used by same-origin RPC and WSS. `DELETE
+/session` logs out immediately; deterministic oldest-session eviction applies at the
+configured capacity.
+
+In the browser, import a configured source identifier, edit graph/map/property or raw
+JSON views, repair pointer-specific diagnostics, validate, and compile an immutable
+revision. Then create a run, start/step it, inspect only the public/Agent/network views
+authorized by the session capability, checkpoint it, and fork from that checkpoint.
+Lifecycle state and hashes change only after authoritative RPC results. Stream resume
+recreates the identical released subscription, acknowledges committed source batches,
+and uses the active audience's existing scoped-state RPC if retention cannot fill a
+gap. Switching audience clears the old private view before loading the new one.
+
+The server sends a restrictive CSP without `unsafe-inline` or `unsafe-eval`, revalidates
+the HTML entry point, caches content-hashed assets immutably, and rejects static-path
+traversal. V22 deliberately adds no React or React Flow, Protobuf or gRPC, provider/LLM
+integration, remote worker/executor, live Blender mutation, or arbitrary state-set RPC.
+
 ## Verification
 
 GitHub Actions runs:

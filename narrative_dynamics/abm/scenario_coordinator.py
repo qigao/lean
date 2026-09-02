@@ -336,6 +336,14 @@ class ScenarioCoordinator:
         with self._state_lock:
             return project_scenario_network_state(self.state, capability)
 
+    def network_state_with_run_view(
+        self,
+        capability: SimulationAudienceCapability,
+    ) -> tuple[SituatedNetworkSnapshot, ScenarioRunView]:
+        """Project analyst metrics and their exact run binding atomically."""
+        with self._state_lock:
+            return self.network_state(capability), self.run_view()
+
     def output_view(
         self,
         batch_hash: str,
@@ -402,15 +410,33 @@ class ScenarioCoordinator:
         request: ScenarioForkRequest,
         capability: ScenarioCommandCapability,
         child_database_path: str | Path,
+        *,
+        child_publisher: object | None = None,
+        child_database_ownership_token: _PhysicalFileOwnershipToken | None = None,
     ) -> tuple["ScenarioCoordinator", ScenarioForkResult]:
         if not isinstance(request, ScenarioForkRequest):
             raise TypeError("scenario fork requires ScenarioForkRequest")
         if not isinstance(capability, ScenarioCommandCapability):
             raise TypeError("scenario fork requires ScenarioCommandCapability")
+        exact_child_publisher = (
+            SimulationOutputBus() if child_publisher is None else child_publisher
+        )
+        if not callable(getattr(exact_child_publisher, "publish", None)):
+            raise TypeError("scenario fork child publisher must provide publish")
+        if child_database_ownership_token is not None and not isinstance(
+            child_database_ownership_token, _PhysicalFileOwnershipToken
+        ):
+            raise TypeError("scenario fork child database ownership token is invalid")
         self._begin_operation("fork")
         try:
             with self._state_lock:
-                return self._fork(request, capability, child_database_path)
+                return self._fork(
+                    request,
+                    capability,
+                    child_database_path,
+                    child_publisher=exact_child_publisher,
+                    child_database_ownership_token=child_database_ownership_token,
+                )
         finally:
             self._end_operation()
 
@@ -451,6 +477,9 @@ class ScenarioCoordinator:
         request: ScenarioForkRequest,
         capability: ScenarioCommandCapability,
         child_database_path: str | Path,
+        *,
+        child_publisher: object,
+        child_database_ownership_token: _PhysicalFileOwnershipToken | None = None,
     ) -> tuple["ScenarioCoordinator", ScenarioForkResult]:
         attempt = self._fork_attempts_by_idempotency_key.get(
             request.idempotency_key
@@ -527,12 +556,20 @@ class ScenarioCoordinator:
 
         child_path = _database_path(child_database_path)
         child_path_value = Path(child_path)
+        caller_owns_child_database = child_database_ownership_token is not None
         child_ownership_token: _PhysicalFileOwnershipToken | None = None
         try:
-            child_ownership_token = self._checkpoint_store._restore_owned(
-                request.checkpoint_hash,
-                child_path,
-            )
+            if child_database_ownership_token is None:
+                child_ownership_token = self._checkpoint_store._restore_owned(
+                    request.checkpoint_hash,
+                    child_path,
+                )
+            else:
+                child_ownership_token = self._checkpoint_store._restore_preclaimed_owned(
+                    request.checkpoint_hash,
+                    child_path,
+                    child_database_ownership_token,
+                )
             self._checkpoint_store._verify_restored_target(
                 child_path,
                 child_ownership_token,
@@ -554,7 +591,7 @@ class ScenarioCoordinator:
                 run_id=request.child_run_id,
                 stream_id=request.child_stream_id,
                 state_store=child_state_store,
-                publisher=SimulationOutputBus(),
+                publisher=child_publisher,
                 checkpoint_store=self._checkpoint_store,
                 coordinator_epoch=self._coordinator_epoch + 1,
                 parent_checkpoint_hash=checkpoint.content_hash,
@@ -581,14 +618,15 @@ class ScenarioCoordinator:
         except _ScenarioCheckpointRestoreTargetExistsError:
             raise
         except _ScenarioCheckpointOwnedRestoreError as error:
-            _cleanup_fork_database(
-                self._checkpoint_store,
-                child_path_value,
-                error.ownership_token,
-            )
+            if not caller_owns_child_database:
+                _cleanup_fork_database(
+                    self._checkpoint_store,
+                    child_path_value,
+                    error.ownership_token,
+                )
             raise RuntimeError(str(error)) from None
         except Exception:
-            if child_ownership_token is not None:
+            if child_ownership_token is not None and not caller_owns_child_database:
                 _cleanup_fork_database(
                     self._checkpoint_store,
                     child_path_value,

@@ -130,6 +130,11 @@ enter compiled scenario identity.
 
 ## Delivery sequence
 
+This sequence is the historical V21 plan. The delivered browser authoring, JSON-RPC
+gateway, run console, packaging, and recovery contract is governed by the
+[World Studio V22 design](2026-09-02-world-studio-v22-design.md), which is authoritative
+for the current delivery.
+
 1. V21.2 typed output contracts, deterministic projector, public journal and replay.
 2. V21.3 single-process coordinator, command/query boundary, checkpoint and fork.
 3. Pure-Web editor with X6, PixiJS, Monaco, and JSON-RPC client.
@@ -144,3 +149,8 @@ enter compiled scenario identity.
   broker, consensus, multi-writer state, or region sharding.
 - No direct state-set RPC and no transport payload in canonical world identity.
 - No provider, Blender process, network access, or asset retrieval during projection.
+
+The V22 delivery also explicitly excludes React/React Flow, Protobuf/gRPC,
+provider/LLM integration, remote worker execution, live Blender mutation, and any
+arbitrary state-set RPC. Credentials, filesystem paths, callbacks, connection IDs,
+and deployment topology remain outside semantic scenario and run identities.
