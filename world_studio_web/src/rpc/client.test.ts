@@ -57,4 +57,31 @@ describe("JsonRpcClient", () => {
     expect((stale as JsonRpcError).code).toBe(-32011);
     await expect(client.call("project.snapshot", {})).rejects.toBeInstanceOf(JsonRpcProtocolError);
   });
+
+  it("accepts an explicit stable request ID for a caller-level logical retry", async () => {
+    const bodies: string[] = [];
+    const client = new JsonRpcClient("/rpc", {
+      fetcher: async (_input, init) => {
+        bodies.push(String(init?.body));
+        return new Response(JSON.stringify({
+          jsonrpc: "2.0", id: "command-identity", result: { accepted: true },
+        }));
+      },
+      requestId: () => "must-not-be-used",
+    });
+
+    await client.call("run.command", { command_id: "command-identity" }, {
+      stateChanging: true,
+      requestId: "command-identity",
+    });
+    await client.call("run.command", { command_id: "command-identity" }, {
+      stateChanging: true,
+      requestId: "command-identity",
+    });
+
+    expect(bodies).toEqual([
+      '{"jsonrpc":"2.0","id":"command-identity","method":"run.command","params":{"command_id":"command-identity"}}',
+      '{"jsonrpc":"2.0","id":"command-identity","method":"run.command","params":{"command_id":"command-identity"}}',
+    ]);
+  });
 });

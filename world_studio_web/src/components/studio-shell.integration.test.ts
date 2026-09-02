@@ -6,11 +6,44 @@ import { reportFixture, snapshotFixture } from "../test-fixtures";
 import type { JsonEditorElement } from "../editors/json-editor";
 import type { MapEditorElement } from "../editors/map-editor";
 import type { StudioShellElement } from "./studio-shell";
+import { RunStore } from "../state/run-store";
+import type { JsonObject, RunAuthority, ScenarioRunView } from "../schema/studio-types";
 import "./studio-shell";
 
 afterEach(() => document.body.replaceChildren());
 
 describe("studio shell integration", () => {
+  it("wires the authoritative run store into the toolbar, inspector, and bounded timeline without replacing live nodes", () => {
+    const rpc = { call: async <T,>(_method: string, _params: JsonObject) => ({}) as T };
+    const authority: RunAuthority = {
+      authority_id: "operator", project_ids: ["law-firm"], run_ids: ["run-parent"],
+      agent_ids: ["alice"],
+      permissions: ["run.command", "run.read", "state.public", "output.read"],
+    };
+    const runStore = new RunStore(rpc, authority);
+    const run: ScenarioRunView = {
+      schema: "narrative-dynamics.scenario-run-view/v1", run_id: "run-parent", stream_id: "stream-parent",
+      scenario_hash: `sha256:${"a".repeat(64)}`, coordinator_epoch: 1, status: "running", round_index: 2,
+      state_hash: `sha256:${"b".repeat(64)}`, next_sequence: 3, output_batch_hashes: [], checkpoint_hashes: [],
+      parent_checkpoint_hash: null, content_hash: `sha256:${"c".repeat(64)}`,
+    };
+    runStore.acceptRun(run);
+    const shell = document.createElement("studio-shell") as StudioShellElement;
+    shell.runStore = runStore;
+    shell.selectedRunId = "run-parent";
+    document.body.append(shell);
+
+    const toolbar = getByRole(shell, "toolbar", { name: "Run controls" });
+    const status = getByRole(toolbar, "status");
+    expect((getByRole(toolbar, "button", { name: "Pause run" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(getByRole(shell, "region", { name: "Run state inspector" }).textContent).toContain(run.state_hash);
+    expect(getByRole(shell, "list", { name: "Run output records" })).toBeTruthy();
+
+    runStore.acceptRun({ ...run, round_index: 3, content_hash: `sha256:${"d".repeat(64)}` });
+    expect(getByRole(toolbar, "status")).toBe(status);
+    expect(status.textContent).toContain("Round 3");
+  });
+
   it("loads only the selected heavy editor while preserving semantic fallbacks", () => {
     const shell = document.createElement("studio-shell") as StudioShellElement;
     shell.snapshot = snapshotFixture();

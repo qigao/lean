@@ -402,15 +402,27 @@ class ScenarioCoordinator:
         request: ScenarioForkRequest,
         capability: ScenarioCommandCapability,
         child_database_path: str | Path,
+        *,
+        child_publisher: object | None = None,
     ) -> tuple["ScenarioCoordinator", ScenarioForkResult]:
         if not isinstance(request, ScenarioForkRequest):
             raise TypeError("scenario fork requires ScenarioForkRequest")
         if not isinstance(capability, ScenarioCommandCapability):
             raise TypeError("scenario fork requires ScenarioCommandCapability")
+        exact_child_publisher = (
+            SimulationOutputBus() if child_publisher is None else child_publisher
+        )
+        if not callable(getattr(exact_child_publisher, "publish", None)):
+            raise TypeError("scenario fork child publisher must provide publish")
         self._begin_operation("fork")
         try:
             with self._state_lock:
-                return self._fork(request, capability, child_database_path)
+                return self._fork(
+                    request,
+                    capability,
+                    child_database_path,
+                    child_publisher=exact_child_publisher,
+                )
         finally:
             self._end_operation()
 
@@ -451,6 +463,8 @@ class ScenarioCoordinator:
         request: ScenarioForkRequest,
         capability: ScenarioCommandCapability,
         child_database_path: str | Path,
+        *,
+        child_publisher: object,
     ) -> tuple["ScenarioCoordinator", ScenarioForkResult]:
         attempt = self._fork_attempts_by_idempotency_key.get(
             request.idempotency_key
@@ -554,7 +568,7 @@ class ScenarioCoordinator:
                 run_id=request.child_run_id,
                 stream_id=request.child_stream_id,
                 state_store=child_state_store,
-                publisher=SimulationOutputBus(),
+                publisher=child_publisher,
                 checkpoint_store=self._checkpoint_store,
                 coordinator_epoch=self._coordinator_epoch + 1,
                 parent_checkpoint_hash=checkpoint.content_hash,

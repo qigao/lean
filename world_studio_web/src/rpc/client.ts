@@ -5,6 +5,7 @@ export type JsonRpcId = number | string;
 export interface JsonRpcCallOptions {
   stateChanging?: boolean;
   attempts?: number;
+  requestId?: JsonRpcId;
 }
 
 export interface RpcCaller {
@@ -99,7 +100,7 @@ export class JsonRpcClient implements RpcCaller {
   async call<T>(method: string, params: JsonObject, options: JsonRpcCallOptions = {}): Promise<T> {
     if (!method.trim()) throw new JsonRpcProtocolError("JSON-RPC method must be non-empty");
     assertJsonValue(params);
-    const id = this.requestId();
+    const id = options.requestId ?? this.requestId();
     if ((typeof id !== "string" && typeof id !== "number") ||
         (typeof id === "number" && (!Number.isInteger(id) || !Number.isFinite(id)))) {
       throw new JsonRpcProtocolError("JSON-RPC request ID must be a string or integer");

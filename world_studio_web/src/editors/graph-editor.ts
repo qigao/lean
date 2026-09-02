@@ -671,7 +671,7 @@ export class GraphEditorElement extends HTMLElement {
           <button type="button" data-graph-action="minimap" aria-pressed="true">Minimap</button>
           <button type="button" data-graph-action="delete">Delete selected</button>
         </div>
-        <div class="graph-canvas" aria-label="${title} visual canvas"></div>
+        <div class="graph-canvas" role="img" aria-label="${title} visual canvas"></div>
         <p class="canvas-status" role="status" aria-live="polite">Semantic graph controls ready.</p>
         <section class="graph-fallback" aria-labelledby="graph-items-title">
           <h3 id="graph-items-title">Graph items</h3>

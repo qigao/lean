@@ -20,6 +20,18 @@ import "./project-tree";
 import type { ProjectTreeElement } from "./project-tree";
 import "./property-inspector";
 import type { InspectorSelection, PropertyInspectorElement } from "./property-inspector";
+import type { RunStore } from "../state/run-store";
+import "./fork-comparison";
+import type { ForkComparisonElement } from "./fork-comparison";
+import "./output-timeline";
+import type { OutputTimelineElement } from "./output-timeline";
+import "./run-toolbar";
+import type { RunToolbarElement } from "./run-toolbar";
+import "./state-inspector";
+import type { StateInspectorElement } from "./state-inspector";
+import "./studio-workflow";
+import type { StudioWorkflowElement } from "./studio-workflow";
+import type { StreamClient } from "../rpc/stream-client";
 
 const MODES = [
   ["physical", "Physical"],
@@ -63,7 +75,33 @@ export class StudioShellElement extends HTMLElement {
   private activeMode: StudioMode = "physical";
   private selectedDocument: DraftDocument | null = null;
   private inspectorSelection: InspectorSelection | null = null;
+  private authoritativeRuns: RunStore | null = null;
+  private selectedAuthoritativeRunId = "";
+  private outputStream: StreamClient | null = null;
   private eventsBound = false;
+  private readonly onRunChange = () => this.syncRunConsole();
+
+  set runStore(value: RunStore | null) {
+    this.authoritativeRuns?.removeEventListener("change", this.onRunChange);
+    this.authoritativeRuns = value;
+    value?.addEventListener("change", this.onRunChange);
+    if (this.isConnected) this.syncRunConsole();
+  }
+
+  get runStore(): RunStore | null { return this.authoritativeRuns; }
+
+  set selectedRunId(value: string) {
+    this.selectedAuthoritativeRunId = value;
+    if (this.isConnected) this.syncRunConsole();
+  }
+
+  get selectedRunId(): string { return this.selectedAuthoritativeRunId; }
+
+  set streamClient(value: StreamClient | null) {
+    this.outputStream = value;
+    if (this.isConnected) this.syncRunConsole();
+  }
+  get streamClient(): StreamClient | null { return this.outputStream; }
 
   set snapshot(value: ProjectSnapshot | null) {
     this.projectSnapshot = value;
@@ -89,8 +127,68 @@ export class StudioShellElement extends HTMLElement {
   get diagnostics(): DiagnosticReport | null { return this.diagnosticReport; }
 
   connectedCallback(): void {
+    this.authoritativeRuns?.addEventListener("change", this.onRunChange);
     if (!this.eventsBound) this.bindShellEvents();
     this.render();
+  }
+
+  disconnectedCallback(): void {
+    this.authoritativeRuns?.removeEventListener("change", this.onRunChange);
+  }
+
+  private syncRunConsole(): void {
+    const runId = this.selectedAuthoritativeRunId || this.authoritativeRuns?.runs()[0]?.run_id || "";
+    const toolbar = this.querySelector("run-toolbar") as RunToolbarElement | null;
+    if (toolbar) {
+      if (toolbar.store !== this.authoritativeRuns) toolbar.store = this.authoritativeRuns;
+      if (toolbar.streamClient !== this.outputStream) toolbar.streamClient = this.outputStream;
+      toolbar.runId = runId;
+    }
+    const inspector = this.querySelector("state-inspector") as StateInspectorElement | null;
+    if (inspector) {
+      if (inspector.store !== this.authoritativeRuns) inspector.store = this.authoritativeRuns;
+      inspector.streamClient = this.outputStream;
+      inspector.runId = runId;
+    }
+    const timeline = this.querySelector("output-timeline") as OutputTimelineElement | null;
+    if (timeline) timeline.batches = this.authoritativeRuns?.outputs(runId) ?? [];
+    const placeholder = this.querySelector<HTMLElement>(".timeline-placeholder");
+    if (placeholder) placeholder.hidden = !!this.authoritativeRuns;
+
+    const selected = this.authoritativeRuns?.run(runId) ?? null;
+    const parent = selected?.parent_checkpoint_hash
+      ? this.authoritativeRuns?.runs().find((candidate) => candidate.checkpoint_hashes.includes(selected.parent_checkpoint_hash!)) ?? selected
+      : selected;
+    const child = parent ? this.authoritativeRuns?.runs().find((candidate) =>
+      candidate.run_id !== parent.run_id && candidate.parent_checkpoint_hash !== null &&
+      parent.checkpoint_hashes.includes(candidate.parent_checkpoint_hash)) ?? null : null;
+    const comparison = this.querySelector("fork-comparison") as ForkComparisonElement | null;
+    if (comparison) {
+      comparison.parent = parent;
+      comparison.child = child;
+      comparison.parentMetrics = this.networkMetrics(runId);
+      comparison.childMetrics = child ? this.networkMetrics(child.run_id) : null;
+    }
+    const announcementList = this.querySelector<HTMLOListElement>(".run-announcements");
+    if (announcementList) {
+      announcementList.replaceChildren();
+      for (const message of this.authoritativeRuns?.announcements ?? []) {
+        const item = document.createElement("li");
+        item.textContent = message;
+        announcementList.append(item);
+      }
+    }
+    const workflow = this.querySelector("studio-workflow") as StudioWorkflowElement | null;
+    if (workflow) {
+      if (workflow.runStore !== this.authoritativeRuns) workflow.runStore = this.authoritativeRuns;
+      workflow.streamClient = this.outputStream;
+    }
+  }
+
+  private networkMetrics(runId: string) {
+    const records = (this.authoritativeRuns?.outputs(runId) ?? []).flatMap((batch) => batch.records);
+    const record = records.reverse().find((candidate) => candidate.kind === "network.metrics");
+    return record?.kind === "network.metrics" ? record.payload.metrics : null;
   }
 
   private connectionMessage(message: string): void {
@@ -192,6 +290,10 @@ export class StudioShellElement extends HTMLElement {
       };
       const inspector = this.querySelector("property-inspector") as PropertyInspectorElement | null;
       if (inspector) inspector.selection = this.inspectorSelection;
+    });
+    this.addEventListener("studio-run-select", (event) => {
+      const runId = (event as CustomEvent<{ runId: string }>).detail?.runId;
+      if (runId && this.authoritativeRuns?.run(runId)) this.selectedRunId = runId;
     });
   }
 
@@ -301,15 +403,13 @@ export class StudioShellElement extends HTMLElement {
         <a class="skip-link" href="#studio-main">Skip to content</a>
         <header class="studio-header">
           <div><p class="eyebrow">World Studio</p><h1>Scenario authoring</h1></div>
-          <div class="run-toolbar" role="toolbar" aria-label="Run controls">
-            <span class="toolbar-label">Run console</span>
-            <button type="button" disabled>Start</button><button type="button" disabled>Step</button>
-            <span class="status-cue">Available in the live console</span>
-          </div>
+          <run-toolbar></run-toolbar>
           <p class="connection-status" role="status" aria-live="polite">Editor shell ready.</p>
+          <ol class="run-announcements visually-hidden" role="log" aria-live="polite" aria-relevant="additions text"></ol>
         </header>
         <project-tree></project-tree>
         <main id="studio-main" tabindex="-1">
+          <studio-workflow></studio-workflow>
           <section class="panel primary-editor" role="region" aria-label="Primary editor">
             <h2>Scenario editor</h2>
             <div class="mode-tabs" role="tablist" aria-label="Editor modes">${tabs}</div>
@@ -317,9 +417,11 @@ export class StudioShellElement extends HTMLElement {
           </section>
           <property-inspector></property-inspector>
           <diagnostic-list></diagnostic-list>
+          <state-inspector></state-inspector>
           <section class="panel timeline" role="region" aria-label="Timeline">
-            <details open><summary><h2>Timeline</h2></summary><p>Run events will appear here when the live console is connected.</p></details>
+            <details open><summary><h2>Timeline</h2></summary><p class="timeline-placeholder">Run events will appear here when the live console is connected.</p><output-timeline></output-timeline></details>
           </section>
+          <section class="panel fork-panel" role="region" aria-label="Fork comparison"><h2>Fork comparison</h2><fork-comparison></fork-comparison></section>
         </main>
       `;
       this.bindTabs();
@@ -331,6 +433,7 @@ export class StudioShellElement extends HTMLElement {
     const diagnostics = this.querySelector("diagnostic-list") as DiagnosticListElement | null;
     if (diagnostics) diagnostics.report = this.diagnosticReport;
     this.renderActiveEditor();
+    this.syncRunConsole();
   }
 }
 

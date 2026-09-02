@@ -147,7 +147,7 @@ studio-shell {
   text-transform: uppercase;
 }
 
-.run-toolbar,
+run-toolbar,
 .editor-toolbar,
 .mode-tabs {
   display: flex;
@@ -156,7 +156,26 @@ studio-shell {
   gap: var(--space-1);
 }
 
-.run-toolbar { justify-content: end; }
+run-toolbar { justify-content: end; }
+
+run-toolbar[aria-busy="true"] { cursor: wait; }
+
+.run-advanced-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(9rem, 1fr));
+  gap: var(--space-2);
+  align-items: end;
+  margin-block-start: var(--space-2);
+}
+
+.run-command-status {
+  flex-basis: 100%;
+  color: var(--color-muted);
+  text-align: end;
+}
+
+.stream-actions { display: flex; gap: var(--space-1); }
+.stream-status { flex-basis: 100%; color: var(--color-muted); text-align: end; }
 
 .toolbar-label { font-weight: 700; }
 
@@ -207,7 +226,8 @@ details[open] > summary { margin-block-end: var(--space-2); }
 }
 
 property-inspector,
-diagnostic-list {
+diagnostic-list,
+state-inspector {
   display: block;
   min-inline-size: 0;
   container-type: inline-size;
@@ -218,6 +238,57 @@ diagnostic-list {
   min-block-size: 7rem;
   container-name: timeline-panel;
   container-type: inline-size;
+}
+
+.fork-panel { grid-column: 1 / -1; }
+
+studio-workflow { display: block; grid-column: 1 / -1; min-inline-size: 0; }
+
+.workflow-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(10rem, 1fr));
+  gap: var(--space-2);
+  align-items: end;
+}
+
+.workflow-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+
+output-timeline,
+fork-comparison { display: block; min-inline-size: 0; }
+
+.output-events {
+  display: grid;
+  gap: var(--space-1);
+  margin-block: var(--space-2);
+  padding-inline-start: var(--space-4);
+}
+
+.timeline-marker {
+  color: var(--color-warning);
+  font-weight: 700;
+}
+
+.timeline-status,
+.state-status { color: var(--color-muted); }
+
+.scoped-state {
+  max-block-size: 22rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+fork-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.comparison-side {
+  min-inline-size: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
 }
 
 .mode-tabs {
@@ -348,6 +419,10 @@ dd { margin-inline-start: 0; overflow-wrap: anywhere; }
   main { grid-template-columns: minmax(0, 1fr); }
   .primary-editor { grid-row: auto; min-block-size: 0; }
   .timeline { grid-column: auto; }
+  .fork-panel { grid-column: auto; }
+  fork-comparison,
+  .run-advanced-fields,
+  .workflow-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 @container (max-width: 18rem) {
@@ -362,7 +437,7 @@ dd { margin-inline-start: 0; overflow-wrap: anywhere; }
 @media (max-width: 67.999rem) {
   studio-shell { grid-template-columns: minmax(0, 1fr); }
   .studio-header { grid-column: auto; grid-template-columns: minmax(0, 1fr); }
-  .run-toolbar { justify-content: start; }
+  run-toolbar { justify-content: start; }
   main { grid-column: auto; grid-template-columns: minmax(0, 1fr); }
   .primary-editor { grid-row: auto; min-block-size: 0; }
   .timeline { grid-column: auto; }

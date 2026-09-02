@@ -44,6 +44,7 @@ class StudioOutputLimits:
     maximum_retained_records: int = 20_000
     maximum_retained_bytes: int = 16 * 1024 * 1024
     maximum_seen_batch_identities: int = 20_000
+    maximum_released_subscriptions: int = 64
     lease_seconds: float = 300.0
 
     def __post_init__(self) -> None:
@@ -55,6 +56,7 @@ class StudioOutputLimits:
             "maximum_retained_records",
             "maximum_retained_bytes",
             "maximum_seen_batch_identities",
+            "maximum_released_subscriptions",
         ):
             value = getattr(self, name)
             if not isinstance(value, int) or isinstance(value, bool):
@@ -77,6 +79,7 @@ class StudioOutputLimits:
             "maximum_retained_records": self.maximum_retained_records,
             "maximum_retained_bytes": self.maximum_retained_bytes,
             "maximum_seen_batch_identities": self.maximum_seen_batch_identities,
+            "maximum_released_subscriptions": self.maximum_released_subscriptions,
             "lease_seconds": float(self.lease_seconds),
         }
 
@@ -143,6 +146,21 @@ class _SubscriptionState:
     connection_id: str
     deadline: float
     on_output: OutputCallback | None
+    retained: deque[tuple[SimulationOutputView, int]] = field(default_factory=deque)
+    retained_records: int = 0
+    retained_bytes: int = 0
+    acknowledged: tuple[int, str] | None = None
+    latest: tuple[int, str] | None = None
+    latest_bounds: tuple[int, int, str] | None = None
+
+
+@dataclass
+class _ReleasedSubscriptionState:
+    """Capability-filtered recovery only; never retains a connection or callback."""
+
+    subscription: StudioOutputSubscription
+    deadline: float
+    release_order: int
     retained: deque[tuple[SimulationOutputView, int]] = field(default_factory=deque)
     retained_records: int = 0
     retained_bytes: int = 0
@@ -222,6 +240,8 @@ class StudioOutputRouter:
         self._clock = clock
         self._lock = RLock()
         self._subscriptions: dict[str, _SubscriptionState] = {}
+        self._released: dict[str, _ReleasedSubscriptionState] = {}
+        self._release_order = 0
         # There is no safe stream-end lifecycle in V22, so accepted identities are
         # deliberately retained until router process restart. Replay views remain
         # independently bounded on each subscription.
@@ -258,7 +278,37 @@ class StudioOutputRouter:
         }
         for subscription_id in expired:
             del self._subscriptions[subscription_id]
+        released_expired = tuple(
+            subscription_id
+            for subscription_id, state in self._released.items()
+            if state.deadline <= now
+        )
+        for subscription_id in released_expired:
+            del self._released[subscription_id]
         return expired
+
+    def _archive_released_locked(self, state: _SubscriptionState, now: float) -> None:
+        self._release_order += 1
+        self._released[state.subscription.subscription_id] = _ReleasedSubscriptionState(
+            state.subscription,
+            now + float(self._limits.lease_seconds),
+            self._release_order,
+            state.retained,
+            state.retained_records,
+            state.retained_bytes,
+            state.acknowledged,
+            state.latest,
+            state.latest_bounds,
+        )
+        while len(self._released) > self._limits.maximum_released_subscriptions:
+            oldest_id = min(
+                self._released,
+                key=lambda item: (
+                    self._released[item].release_order,
+                    item,
+                ),
+            )
+            del self._released[oldest_id]
 
     def subscribe(
         self,
@@ -306,6 +356,12 @@ class StudioOutputRouter:
             self._purge_expired_locked(now)
             if subscription_id in self._subscriptions:
                 raise SubscriptionConflictError()
+            released = self._released.get(subscription_id)
+            if released is not None:
+                if released.subscription.capability != capability:
+                    raise SubscriptionAuthorizationError()
+                if released.subscription != subscription:
+                    raise SubscriptionConflictError()
             states = tuple(self._subscriptions.values())
             if len(states) >= self._limits.maximum_subscriptions:
                 raise SubscriptionCapacityError()
@@ -319,12 +375,28 @@ class StudioOutputRouter:
                 >= self._limits.maximum_subscriptions_per_run
             ):
                 raise SubscriptionCapacityError()
-            self._subscriptions[subscription_id] = _SubscriptionState(
-                subscription,
-                connection_id,
-                now + float(self._limits.lease_seconds),
-                on_output,
-            )
+            if released is None:
+                state = _SubscriptionState(
+                    subscription,
+                    connection_id,
+                    now + float(self._limits.lease_seconds),
+                    on_output,
+                )
+            else:
+                state = _SubscriptionState(
+                    subscription,
+                    connection_id,
+                    now + float(self._limits.lease_seconds),
+                    on_output,
+                    released.retained,
+                    released.retained_records,
+                    released.retained_bytes,
+                    released.acknowledged,
+                    released.latest,
+                    released.latest_bounds,
+                )
+                del self._released[subscription_id]
+            self._subscriptions[subscription_id] = state
         return subscription
 
     @staticmethod
@@ -400,8 +472,26 @@ class StudioOutputRouter:
                         )
                         for view, _ in state.retained
                     ),
+                    False,
                 )
                 for state in self._subscriptions.values()
+                if state.subscription.run_id == run_id
+                and state.subscription.stream_id == batch.stream_id
+            ) + tuple(
+                (
+                    state.subscription,
+                    state.latest_bounds,
+                    frozenset(
+                        (
+                            view.first_sequence,
+                            view.last_sequence,
+                            view.source_batch_hash,
+                        )
+                        for view, _ in state.retained
+                    ),
+                    True,
+                )
+                for state in self._released.values()
                 if state.subscription.run_id == run_id
                 and state.subscription.stream_id == batch.stream_id
             )
@@ -411,25 +501,36 @@ class StudioOutputRouter:
                 return ()
 
         pending = []
-        for subscription, latest_bounds, retained_identities in snapshot:
+        for subscription, latest_bounds, retained_identities, released in snapshot:
             if identity in retained_identities or latest_bounds == identity:
                 continue
             if latest_bounds is not None and batch.first_sequence != latest_bounds[1] + 1:
                 raise SubscriptionStateError()
-            pending.append((subscription, latest_bounds))
+            pending.append((subscription, latest_bounds, released))
 
         projected = tuple(
-            (subscription, prior_bounds, self._filtered_view(batch, subscription))
-            for subscription, prior_bounds in pending
+            (
+                subscription,
+                prior_bounds,
+                released,
+                self._filtered_view(batch, subscription),
+            )
+            for subscription, prior_bounds, released in pending
         )
         callbacks: list[tuple[OutputCallback, SimulationOutputView]] = []
         delivered: list[str] = []
         with self._lock:
             if self._seen_duplicate_locked(stream_key, identity):
                 return ()
-            actions: list[tuple[_SubscriptionState, SimulationOutputView]] = []
-            for subscription, prior_bounds, view in projected:
-                state = self._subscriptions.get(subscription.subscription_id)
+            actions: list[
+                tuple[_SubscriptionState | _ReleasedSubscriptionState, SimulationOutputView, bool]
+            ] = []
+            for subscription, prior_bounds, released, view in projected:
+                state = (
+                    self._released.get(subscription.subscription_id)
+                    if released
+                    else self._subscriptions.get(subscription.subscription_id)
+                )
                 if (
                     state is None
                     or state.subscription != subscription
@@ -454,11 +555,11 @@ class StudioOutputRouter:
                     and batch.first_sequence != state.latest_bounds[1] + 1
                 ):
                     raise SubscriptionStateError()
-                actions.append((state, view))
+                actions.append((state, view, released))
             if not actions:
                 return ()
             self._record_seen_locked(stream_key, identity)
-            for state, view in actions:
+            for state, view, released in actions:
                 size = _view_bytes(view)
                 state.retained.append((view, size))
                 state.retained_records += len(view.records)
@@ -473,10 +574,12 @@ class StudioOutputRouter:
                     removed, removed_size = state.retained.popleft()
                     state.retained_records -= len(removed.records)
                     state.retained_bytes -= removed_size
-                state.deadline = self._clock() + float(self._limits.lease_seconds)
-                if state.on_output is not None:
-                    callbacks.append((state.on_output, view))
-                delivered.append(state.subscription.subscription_id)
+                if not released:
+                    state.deadline = self._clock() + float(self._limits.lease_seconds)
+                    active = state
+                    if isinstance(active, _SubscriptionState) and active.on_output is not None:
+                        callbacks.append((active.on_output, view))
+                    delivered.append(state.subscription.subscription_id)
         for callback, view in callbacks:
             try:
                 callback(view)
@@ -617,8 +720,10 @@ class StudioOutputRouter:
                     if state.connection_id == connection_id
                 )
             )
+            now = self._clock()
             for subscription_id in removed:
-                del self._subscriptions[subscription_id]
+                state = self._subscriptions.pop(subscription_id)
+                self._archive_released_locked(state, now)
             return removed
 
 

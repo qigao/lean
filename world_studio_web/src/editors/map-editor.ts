@@ -534,7 +534,7 @@ export class MapEditorElement extends HTMLElement {
           <button type="button" data-map-action="fit">Fit map</button>
           <button type="button" data-map-action="perception" aria-pressed="false">Perception layers</button>
         </div>
-        <div class="map-canvas" aria-label="Orthogonal map visual canvas"></div>
+        <div class="map-canvas" role="img" aria-label="Orthogonal map visual canvas"></div>
         <p class="canvas-status" role="status" aria-live="polite">Semantic map controls ready.</p>
         <section aria-labelledby="map-objects-heading">
           <h3 id="map-objects-heading">Map objects</h3>

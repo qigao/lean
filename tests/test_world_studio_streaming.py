@@ -532,3 +532,146 @@ def test_noncontiguous_publication_rejects_without_retention_or_callback(
     assert router.resume(
         "sub-1", first.last_sequence, first.content_hash, capability=allowed
     ) == ()
+
+
+def test_disconnect_rebinds_exact_released_subscription_and_replays_later_output() -> None:
+    router = StudioOutputRouter()
+    allowed = capability()
+    first = public_batch_range(1, 1)
+    second = public_batch_range(2, 2)
+    router.subscribe(
+        "sub-reconnect",
+        "run-1",
+        "stream-1",
+        allowed,
+        tuple(SimulationOutputKind),
+        connection_id="connection-1",
+    )
+    router.publish("run-1", first)
+    router.acknowledge(
+        "sub-reconnect",
+        1,
+        first.content_hash,
+        capability=allowed,
+        stream_id="stream-1",
+    )
+    assert router.unsubscribe_connection("connection-1") == ("sub-reconnect",)
+
+    router.publish("run-1", second)
+    replayed_live = []
+    router.subscribe(
+        "sub-reconnect",
+        "run-1",
+        "stream-1",
+        allowed,
+        tuple(SimulationOutputKind),
+        connection_id="connection-2",
+        on_output=replayed_live.append,
+    )
+    replayed = router.resume(
+        "sub-reconnect",
+        1,
+        first.content_hash,
+        capability=allowed,
+        stream_id="stream-1",
+    )
+
+    assert replayed_live == []
+    assert tuple(item.source_batch_hash for item in replayed) == (second.content_hash,)
+
+
+def test_released_subscription_requires_exact_full_private_binding() -> None:
+    router = StudioOutputRouter()
+    allowed = capability(agent_ids=("alice",))
+    router.subscribe(
+        "sub-private",
+        "run-1",
+        "stream-1",
+        allowed,
+        tuple(SimulationOutputKind),
+        connection_id="connection-private",
+        owner_agent_id="alice",
+    )
+    router.publish("run-1", private_batch())
+    router.unsubscribe_connection("connection-private")
+
+    with pytest.raises(SubscriptionConflictError):
+        router.subscribe(
+            "sub-private",
+            "run-1",
+            "stream-1",
+            allowed,
+            tuple(SimulationOutputKind),
+            connection_id="connection-public",
+        )
+
+    restored = router.subscribe(
+        "sub-private",
+        "run-1",
+        "stream-1",
+        allowed,
+        tuple(SimulationOutputKind),
+        connection_id="connection-restored",
+        owner_agent_id="alice",
+    )
+    assert restored.owner_agent_id == "alice"
+    assert router.resume(
+        "sub-private",
+        1,
+        private_batch().content_hash,
+        capability=allowed,
+        stream_id="stream-1",
+    ) == ()
+
+
+def test_released_recovery_expires_and_is_bounded_deterministically() -> None:
+    clock = Clock()
+    allowed = capability(run_ids=("run-1", "run-2", "run-3"))
+    router = StudioOutputRouter(
+        limits=StudioOutputLimits(
+            maximum_released_subscriptions=1,
+            lease_seconds=5.0,
+        ),
+        clock=clock,
+    )
+    first = public_batch_range(1, 1)
+    router.subscribe(
+        "sub-oldest", "run-1", "stream-1", allowed,
+        tuple(SimulationOutputKind), connection_id="connection-oldest",
+    )
+    router.publish("run-1", first)
+    router.acknowledge("sub-oldest", 1, first.content_hash, capability=allowed)
+    router.unsubscribe_connection("connection-oldest")
+
+    router.subscribe(
+        "sub-newest", "run-2", "stream-2", allowed,
+        tuple(SimulationOutputKind), connection_id="connection-newest",
+    )
+    second_stream = public_batch(1, stream_id="stream-2")
+    router.publish("run-2", second_stream)
+    router.acknowledge("sub-newest", 1, second_stream.content_hash, capability=allowed)
+    router.unsubscribe_connection("connection-newest")
+
+    router.subscribe(
+        "sub-oldest", "run-1", "stream-1", allowed,
+        tuple(SimulationOutputKind), connection_id="connection-fresh",
+    )
+    with pytest.raises(SubscriptionStateError):
+        router.resume("sub-oldest", 1, first.content_hash, capability=allowed)
+    router.unsubscribe("sub-oldest", capability=allowed)
+
+    clock.value += 6.0
+    router.subscribe(
+        "sub-newest", "run-2", "stream-2", allowed,
+        tuple(SimulationOutputKind), connection_id="connection-expired",
+    )
+    with pytest.raises(SubscriptionStateError):
+        router.resume("sub-newest", 1, second_stream.content_hash, capability=allowed)
+
+
+def test_released_limit_is_validated_and_serialized() -> None:
+    limits = StudioOutputLimits(maximum_released_subscriptions=7)
+
+    assert limits.to_dict()["maximum_released_subscriptions"] == 7
+    with pytest.raises(ValueError):
+        StudioOutputLimits(maximum_released_subscriptions=0)

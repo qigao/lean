@@ -64,6 +64,7 @@ def test_health_is_exact_and_rpc_preserves_request_id(tmp_path: Path) -> None:
     app, _ = app_for(tmp_path)
     with TestClient(app) as client:
         health = client.get("/health")
+        session = client.get("/session")
         response = client.post(
             "/rpc",
             json={
@@ -79,9 +80,53 @@ def test_health_is_exact_and_rpc_preserves_request_id(tmp_path: Path) -> None:
         "status": "ok",
         "protocol_version": WORLD_STUDIO_PROTOCOL_VERSION,
     }
+    assert session.json() == {
+        "schema": "narrative-dynamics.studio-session/v1",
+        "authority": {
+            "authority_id": "operator",
+            "project_ids": ["law-firm"],
+            "run_ids": ["run-1", "run-child"],
+            "agent_ids": ["alice"],
+            "permissions": list(_capability().permissions),
+        },
+    }
+    assert session.headers["cache-control"] == "no-store"
     assert response.status_code == 200
     assert response.json()["id"] == "browser-7"
     assert response.json()["result"]["project_id"] == "law-firm"
+
+
+def test_static_index_assets_csp_and_traversal_policy_are_exact(tmp_path: Path) -> None:
+    static = tmp_path / "static"
+    assets = static / "assets"
+    assets.mkdir(parents=True)
+    (static / "index.html").write_text("<!doctype html><title>Studio</title>", encoding="utf-8")
+    (assets / "index-a1b2c3d4.js").write_text("export {};", encoding="utf-8")
+    (assets / "unhashed.js").write_text("export {};", encoding="utf-8")
+    authority = tmp_path / "authority"
+    authority.mkdir()
+    app, _ = app_for(authority, static_root=static)
+
+    with TestClient(app) as client:
+        index = client.get("/")
+        studio = client.get("/studio/")
+        immutable = client.get("/assets/index-a1b2c3d4.js")
+        unhashed = client.get("/assets/unhashed.js")
+        traversal = client.get("/%2e%2e/authority/projects.sqlite3")
+
+    for response in (index, studio, immutable, unhashed, traversal):
+        csp = response.headers["content-security-policy"]
+        assert "default-src 'self'" in csp
+        assert "connect-src 'self'" in csp
+        assert "worker-src 'self' blob:" in csp
+        assert "unsafe-inline" not in csp
+        assert "unsafe-eval" not in csp
+    assert index.status_code == studio.status_code == 200
+    assert index.headers["cache-control"] == "no-store"
+    assert studio.headers["cache-control"] == "no-store"
+    assert immutable.headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert unhashed.headers["cache-control"] == "no-cache"
+    assert traversal.status_code == 404
 
 
 @pytest.mark.parametrize(
@@ -640,6 +685,79 @@ def test_websocket_connection_capacity_and_disconnect_release_subscriptions(
         ) as replacement:
             replacement.send_json(request)
             assert "result" in receive_json_bounded(replacement)
+
+
+def test_websocket_disconnect_releases_active_slot_and_exact_rebind_resumes(
+    tmp_path: Path,
+) -> None:
+    router = StudioOutputRouter()
+    app, _ = app_for(
+        tmp_path,
+        output_router=router,
+        limits=WorldStudioServerLimits(maximum_websocket_connections=1),
+    )
+    headers = {"origin": "https://studio.example"}
+    subscribe = {
+        "jsonrpc": "2.0",
+        "id": "subscribe-reconnect",
+        "method": "stream.subscribe",
+        "params": {
+            "subscription_id": "lease-reconnect",
+            "run_id": "run-1",
+            "stream_id": "stream-1",
+            "kinds": ["command.result"],
+        },
+    }
+    first = public_batch_range(1, 1)
+    second = public_batch_range(2, 2)
+    with TestClient(app) as client:
+        with client.websocket_connect(
+            "/v1/stream", headers=headers, subprotocols=["nd-jsonrpc-v1"]
+        ) as initial:
+            initial.send_json(subscribe)
+            assert "result" in receive_json_bounded(initial)
+            router.publish("run-1", first)
+            receive_json_bounded(initial)
+            initial.send_json(
+                {
+                    "jsonrpc": "2.0",
+                    "id": "ack-reconnect",
+                    "method": "stream.acknowledge",
+                    "params": {
+                        "subscription_id": "lease-reconnect",
+                        "stream_id": "stream-1",
+                        "last_sequence": 1,
+                        "last_batch_hash": first.content_hash,
+                    },
+                }
+            )
+            assert "result" in receive_json_bounded(initial)
+
+        router.publish("run-1", second)
+        with client.websocket_connect(
+            "/v1/stream", headers=headers, subprotocols=["nd-jsonrpc-v1"]
+        ) as replacement:
+            replacement.send_json(subscribe)
+            assert "result" in receive_json_bounded(replacement)
+            replacement.send_json(
+                {
+                    "jsonrpc": "2.0",
+                    "id": "resume-reconnect",
+                    "method": "stream.resume",
+                    "params": {
+                        "subscription_id": "lease-reconnect",
+                        "stream_id": "stream-1",
+                        "last_sequence": 1,
+                        "last_batch_hash": first.content_hash,
+                    },
+                }
+            )
+            messages = (receive_json_bounded(replacement), receive_json_bounded(replacement))
+
+    response = next(item for item in messages if "id" in item)
+    notification = next(item for item in messages if "id" not in item)
+    assert response["result"]["replayed_count"] == 1
+    assert notification["params"]["output"]["source_batch_hash"] == second.content_hash
 
 
 class SlowSubscribeRouter(StudioOutputRouter):

@@ -381,7 +381,7 @@ export class JsonEditorElement extends HTMLElement {
     const source = this.selectedDocument ? prettyJson(this.selectedDocument.value) : "{}";
     this.innerHTML = `
       <section class="json-editor" role="region" aria-label="Raw JSON editor">
-        <div class="monaco-host" aria-label="Enhanced JSON editor"></div>
+        <div class="monaco-host" role="region" aria-label="Enhanced JSON editor"></div>
         <p class="editor-status" role="status" aria-live="polite">Text JSON editor ready.</p>
         <form aria-label="Edit raw JSON" novalidate>
           <label for="document-json">Document JSON</label>

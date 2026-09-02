@@ -1653,6 +1653,83 @@ class ScenarioCoordinatorTests(unittest.TestCase):
             child.state.memory_store_hash,
         )
 
+    def test_fork_child_publisher_routes_output_without_entering_identity_or_retry(self) -> None:
+        class Publisher:
+            def __init__(self, subscription_id: str) -> None:
+                self.subscription_id = subscription_id
+                self.batches = []
+
+            def publish(self, batch):
+                self.batches.append(batch)
+                return SimulationDeliveryReport(
+                    batch.content_hash,
+                    (self.subscription_id,),
+                    (),
+                )
+
+        coordinator, _, checkpoint = self.checkpointed_coordinator()
+        request = self.fork_request(coordinator, checkpoint.content_hash)
+        capability = self.capability(can_fork=True)
+        target = self.root / "routed-child.sqlite3"
+        first_publisher = Publisher("child-route")
+        child, result = coordinator.fork(
+            request,
+            capability,
+            target,
+            child_publisher=first_publisher,
+        )
+        retry_publisher = Publisher("must-not-rebind")
+        retried_child, retried_result = coordinator.fork(
+            request,
+            capability,
+            target,
+            child_publisher=retry_publisher,
+        )
+
+        self.assertIs(retried_child, child)
+        self.assertIs(retried_result, result)
+        self.assertEqual(result.request_hash, request.content_hash)
+        child_request = ScenarioCommandRequest(
+            "routed-command",
+            "routed-command-key",
+            "law-firm-child",
+            child.run_view().scenario_hash,
+            child.run_view().coordinator_epoch,
+            child.state.content_hash,
+            "operator",
+            ScenarioCommandKind.STEP,
+        )
+        child.submit_command(
+            child_request,
+            self.capability(run_id="law-firm-child"),
+        )
+        self.assertEqual(len(first_publisher.batches), 1)
+        self.assertEqual(retry_publisher.batches, [])
+        self.assertEqual(
+            child.last_delivery_report.delivered_subscription_ids,
+            ("child-route",),
+        )
+
+    def test_fork_validates_child_publisher_before_restore_or_attempt_registration(self) -> None:
+        coordinator, _, checkpoint = self.checkpointed_coordinator()
+        request = self.fork_request(coordinator, checkpoint.content_hash)
+        capability = self.capability(can_fork=True)
+        target = self.root / "publisher-validation-child.sqlite3"
+
+        with self.assertRaisesRegex(TypeError, "child publisher must provide publish"):
+            coordinator.fork(
+                request,
+                capability,
+                target,
+                child_publisher=object(),
+            )
+
+        self.assertFalse(target.exists())
+        child, result = coordinator.fork(request, capability, target)
+        self.assertTrue(target.exists())
+        self.assertEqual(result.request_hash, request.content_hash)
+        self.assertIsNotNone(child)
+
     def test_fork_rejects_unauthorized_unknown_or_mismatched_source(self) -> None:
         coordinator, _, checkpoint = self.checkpointed_coordinator()
         request = self.fork_request(coordinator, checkpoint.content_hash)

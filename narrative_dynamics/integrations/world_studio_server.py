@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import inspect
+from pathlib import Path
+import re
 from typing import Callable
+from urllib.parse import unquote
 
 from narrative_dynamics.studio.capabilities import StudioCapability
 from narrative_dynamics.studio.jsonrpc import JsonRpcDispatcher
@@ -17,6 +20,22 @@ from narrative_dynamics.studio.streaming import (
 
 WORLD_STUDIO_PROTOCOL_VERSION = "narrative-dynamics.world-studio/v1"
 WORLD_STUDIO_WEBSOCKET_SUBPROTOCOL = "nd-jsonrpc-v1"
+_HASHED_ASSET = re.compile(r"-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$")
+_CONTENT_SECURITY_POLICY = "; ".join(
+    (
+        "default-src 'self'",
+        "base-uri 'none'",
+        "object-src 'none'",
+        "frame-ancestors 'none'",
+        "form-action 'self'",
+        "script-src 'self'",
+        "style-src 'self'",
+        "img-src 'self' data:",
+        "font-src 'self'",
+        "connect-src 'self'",
+        "worker-src 'self' blob:",
+    )
+)
 
 
 @dataclass(frozen=True)
@@ -78,8 +97,9 @@ def create_world_studio_asgi_app(
     import json
 
     from starlette.applications import Starlette
-    from starlette.responses import JSONResponse, Response
-    from starlette.routing import Mount, Route, WebSocketRoute
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.responses import FileResponse, JSONResponse, Response
+    from starlette.routing import Route, WebSocketRoute
     from starlette.websockets import WebSocketDisconnect
 
     if not callable(getattr(dispatcher, "parse_and_dispatch", None)):
@@ -91,6 +111,16 @@ def create_world_studio_asgi_app(
     origins = _origins(allowed_origins)
     if not isinstance(limits, WorldStudioServerLimits):
         raise TypeError("World Studio server limits must be WorldStudioServerLimits")
+    resolved_static_root = None
+    if static_root is not None:
+        try:
+            resolved_static_root = Path(static_root).resolve(strict=True)
+        except (OSError, RuntimeError):
+            raise ValueError("World Studio static root is unavailable") from None
+        if not resolved_static_root.is_dir():
+            raise ValueError("World Studio static root must be a directory")
+        if not (resolved_static_root / "index.html").is_file():
+            raise ValueError("World Studio static root must contain index.html")
 
     connection_lock = asyncio.Lock()
     active_connections = 0
@@ -160,6 +190,30 @@ def create_world_studio_asgi_app(
             {"status": "ok", "protocol_version": WORLD_STUDIO_PROTOCOL_VERSION}
         )
 
+    async def session(request):
+        try:
+            capability = await asyncio.wait_for(
+                authenticate(authenticate_http, request),
+                timeout=float(limits.request_timeout_seconds),
+            )
+        except asyncio.TimeoutError:
+            return transport_error("timeout", 504)
+        if capability is None:
+            return transport_error("unauthorized", 401)
+        return JSONResponse(
+            {
+                "schema": "narrative-dynamics.studio-session/v1",
+                "authority": {
+                    "authority_id": capability.authority_id,
+                    "project_ids": capability.project_ids,
+                    "run_ids": capability.run_ids,
+                    "agent_ids": capability.agent_ids,
+                    "permissions": capability.permissions,
+                },
+            },
+            headers={"cache-control": "no-store"},
+        )
+
     async def rpc(request):
         content_type = request.headers.get("content-type", "")
         if content_type.split(";", 1)[0].strip().lower() != "application/json":
@@ -197,6 +251,37 @@ def create_world_studio_asgi_app(
         if not response:
             return Response(status_code=204)
         return Response(response, media_type="application/json", status_code=200)
+
+    async def static(request):
+        raw_path = request.scope.get("raw_path", b"")
+        try:
+            decoded_path = unquote(
+                raw_path.decode("ascii", errors="strict"),
+                errors="strict",
+            )
+        except (UnicodeDecodeError, UnicodeEncodeError):
+            return Response(status_code=404)
+        if "\\" in decoded_path or any(
+            segment in {".", ".."} for segment in decoded_path.split("/")
+        ):
+            return Response(status_code=404)
+        relative = request.path_params.get("path", "")
+        if relative in {"", "studio", "studio/"}:
+            target = resolved_static_root / "index.html"
+            cache_control = "no-store"
+        else:
+            try:
+                target = (resolved_static_root / relative).resolve(strict=True)
+            except (OSError, RuntimeError):
+                return Response(status_code=404)
+            if not target.is_relative_to(resolved_static_root) or not target.is_file():
+                return Response(status_code=404)
+            cache_control = (
+                "public, max-age=31536000, immutable"
+                if relative.startswith("assets/") and _HASHED_ASSET.search(target.name)
+                else "no-cache"
+            )
+        return FileResponse(target, headers={"cache-control": cache_control})
 
     async def stream(websocket):
         nonlocal active_connections, next_connection
@@ -454,14 +539,23 @@ def create_world_studio_asgi_app(
 
     routes = [
         Route("/health", health, methods=["GET"]),
+        Route("/session", session, methods=["GET"]),
         Route("/rpc", rpc, methods=["POST"]),
         WebSocketRoute("/v1/stream", stream),
     ]
-    if static_root is not None:
-        from starlette.staticfiles import StaticFiles
+    if resolved_static_root is not None:
+        routes.append(Route("/{path:path}", static, methods=["GET", "HEAD"]))
+    app = Starlette(routes=routes)
 
-        routes.append(Mount("/", app=StaticFiles(directory=static_root, html=True)))
-    return Starlette(routes=routes)
+    async def security_headers(request, call_next):
+        response = await call_next(request)
+        response.headers["content-security-policy"] = _CONTENT_SECURITY_POLICY
+        response.headers["x-content-type-options"] = "nosniff"
+        response.headers["referrer-policy"] = "no-referrer"
+        return response
+
+    app.add_middleware(BaseHTTPMiddleware, dispatch=security_headers)
+    return app
 
 
 __all__ = (
