@@ -671,12 +671,13 @@ git commit -m "feat(studio): deliver browser authoring and run console"
 
 The implementation is tracked by one `World Studio V22` milestone containing:
 
-1. roadmap issue — scope, dependency graph, acceptance checklist, and release gates;
-2. workspace issue — Task 1;
-3. service issue — Task 2;
-4. gateway issue — Task 3;
-5. authoring UI issue — Task 4;
-6. run console/release issue — Task 5.
+1. [#56 roadmap](https://github.com/qigao/lean/issues/56) — scope, dependency graph,
+   acceptance checklist, and release gates;
+2. [#51 workspace](https://github.com/qigao/lean/issues/51) — Task 1;
+3. [#52 service](https://github.com/qigao/lean/issues/52) — Task 2;
+4. [#53 gateway](https://github.com/qigao/lean/issues/53) — Task 3;
+5. [#54 authoring UI](https://github.com/qigao/lean/issues/54) — Task 4;
+6. [#55 run console/release](https://github.com/qigao/lean/issues/55) — Task 5.
 
 Issues are executed in dependency order `workspace → service → gateway → authoring UI
 → run console/release`. UI mockups and interaction decisions may proceed in parallel
