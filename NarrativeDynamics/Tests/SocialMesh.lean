@@ -16,3 +16,8 @@ example {Node : Type*} (g : MeshGraph Node) (inside : Node → Prop)
     (ha : inside a) (hout : ¬ inside outsider) :
     ¬ ReachWithin g limit a outsider := by
   exact @closed_no_cross_reach Node g inside closed limit a outsider ha hout
+
+example {Node : Type*} (g : MeshGraph Node) {a x y b : Node}
+    (left : ReachWithin g 2 a x) (bridge : g x y)
+    (right : ReachWithin g 3 y b) : ReachWithin g 6 a b := by
+  exact six_degrees_of_two_three_bridge left bridge right

@@ -92,4 +92,28 @@ theorem closed_no_cross_reach {Node : Type*} {g : MeshGraph Node}
   exact outsiderNotInside
     (@closed_walk_target_inside Node g inside closed _ source outsider sourceInside walk)
 
+/-- Bounded paths on both sides of one explicit bridge compose into a bounded
+global path. -/
+theorem reachWithin_bridge {Node : Type*} {g : MeshGraph Node}
+    {leftLimit rightLimit : Nat} {source leftGate rightGate target : Node}
+    (left : ReachWithin g leftLimit source leftGate)
+    (bridge : g leftGate rightGate)
+    (right : ReachWithin g rightLimit rightGate target) :
+    ReachWithin g (leftLimit + 1 + rightLimit) source target := by
+  rcases left with ⟨leftLength, leftBound, leftWalk⟩
+  rcases right with ⟨rightLength, rightBound, rightWalk⟩
+  refine ⟨leftLength + 1 + rightLength, by omega, ?_⟩
+  exact (leftWalk.append (MeshWalk.single bridge)).append rightWalk
+
+/-- A two-hop local path, one bridge, and a three-hop local path yield the
+conditional six-degree reachability bound. -/
+theorem six_degrees_of_two_three_bridge {Node : Type*} {g : MeshGraph Node}
+    {source leftGate rightGate target : Node}
+    (left : ReachWithin g 2 source leftGate)
+    (bridge : g leftGate rightGate)
+    (right : ReachWithin g 3 rightGate target) : ReachWithin g 6 source target := by
+  have composed : ReachWithin g (2 + 1 + 3) source target :=
+    reachWithin_bridge left bridge right
+  simpa using composed
+
 end NarrativeDynamics
