@@ -21,10 +21,16 @@ from narrative_dynamics.abm import situated_percept_memory as percept_memory
 from narrative_dynamics.abm import simulation_output
 from narrative_dynamics.abm import simulation_output_contracts as output_contracts
 from narrative_dynamics.abm import simulation_output_journal
+from narrative_dynamics.abm import scenario_checkpoint_store
+from narrative_dynamics.abm import scenario_coordinator
+from narrative_dynamics.abm import scenario_coordinator_contracts
+from narrative_dynamics.abm import scenario_queries
+from narrative_dynamics.abm import scenario_state_store
+from narrative_dynamics.abm import simulation_output_bus
 
 
 class NetworkABMPublicAPITests(unittest.TestCase):
-    def test_public_api_exports_current_v21_2_surface(self):
+    def test_public_api_exports_current_v21_3_surface(self):
         self.assertEqual(
             set(abm.__all__),
             {
@@ -430,6 +436,39 @@ class NetworkABMPublicAPITests(unittest.TestCase):
                 "SimulationPublicJournal",
                 "write_public_simulation_journal",
                 "replay_public_simulation_journal",
+                "SCENARIO_COMMAND_REQUEST_SCHEMA",
+                "SCENARIO_COMMAND_RESULT_SCHEMA",
+                "SCENARIO_RUN_VIEW_SCHEMA",
+                "SCENARIO_PUBLIC_STATE_VIEW_SCHEMA",
+                "SCENARIO_AGENT_STATE_VIEW_SCHEMA",
+                "SCENARIO_CHECKPOINT_SCHEMA",
+                "SCENARIO_FORK_REQUEST_SCHEMA",
+                "SCENARIO_FORK_RESULT_SCHEMA",
+                "ScenarioRunStatus",
+                "ScenarioCommandKind",
+                "ScenarioCommandReason",
+                "ScenarioCommandCapability",
+                "ScenarioCommandRequest",
+                "ScenarioCommandResult",
+                "ScenarioRunView",
+                "ScenarioPublicStateView",
+                "ScenarioAgentStateView",
+                "ScenarioCheckpoint",
+                "ScenarioForkRequest",
+                "ScenarioForkResult",
+                "ScenarioStateStore",
+                "InMemoryScenarioStateStore",
+                "SimulationOutputSubscription",
+                "SimulationDeliveryFailure",
+                "SimulationDeliveryReport",
+                "SimulationOutputBus",
+                "project_scenario_run_view",
+                "project_scenario_public_state",
+                "project_scenario_agent_state",
+                "project_scenario_network_state",
+                "project_scenario_output_view",
+                "LocalScenarioCheckpointStore",
+                "ScenarioCoordinator",
             },
         )
         for name in abm.__all__:
@@ -508,6 +547,20 @@ class NetworkABMPublicAPITests(unittest.TestCase):
             self.assertIs(getattr(abm, name), getattr(simulation_output, name))
         for name in simulation_output_journal.__all__:
             self.assertIs(getattr(abm, name), getattr(simulation_output_journal, name))
+
+    def test_v21_3_exports_are_the_source_definitions(self):
+        modules = (
+            scenario_coordinator_contracts,
+            scenario_state_store,
+            simulation_output_bus,
+            scenario_queries,
+            scenario_checkpoint_store,
+            scenario_coordinator,
+        )
+        for module in modules:
+            for name in module.__all__:
+                with self.subTest(module=module.__name__, name=name):
+                    self.assertIs(getattr(abm, name), getattr(module, name))
 
     def test_committed_law_firm_package_loads_and_compiles_without_a_generator(self):
         root = Path(__file__).resolve().parents[1] / "examples" / "law_firm_scenario"

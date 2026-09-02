@@ -7,6 +7,9 @@ from pathlib import Path
 import sqlite3
 from tempfile import TemporaryDirectory
 
+from narrative_dynamics.abm.scenario_checkpoint_store import (
+    LocalScenarioCheckpointStore,
+)
 from narrative_dynamics.abm.scenario_compiler import initialize_compiled_scenario
 from narrative_dynamics.abm.scenario_coordinator_contracts import (
     ScenarioAgentStateView,
@@ -16,6 +19,8 @@ from narrative_dynamics.abm.scenario_coordinator_contracts import (
     ScenarioCommandReason,
     ScenarioCommandRequest,
     ScenarioCommandResult,
+    ScenarioForkRequest,
+    ScenarioForkResult,
     ScenarioPublicStateView,
     ScenarioRunStatus,
     ScenarioRunView,
@@ -55,6 +60,9 @@ from narrative_dynamics.abm.situated_network_contracts import (
     SituatedNetworkRoundResult,
     SituatedNetworkRuntimeState,
     SituatedNetworkSnapshot,
+)
+from narrative_dynamics.abm.situated_percept_memory import (
+    hash_situated_percept_memory_store,
 )
 
 
@@ -111,8 +119,11 @@ class ScenarioCoordinator:
         stream_id: str,
         state_store: ScenarioStateStore,
         publisher: object,
+        checkpoint_store: LocalScenarioCheckpointStore | None,
         coordinator_epoch: int,
         parent_checkpoint_hash: str | None,
+        status: ScenarioRunStatus = ScenarioRunStatus.CREATED,
+        next_sequence: int = 1,
     ) -> None:
         self._database_path = database_path
         self._scenario = scenario
@@ -120,10 +131,11 @@ class ScenarioCoordinator:
         self._stream_id = stream_id
         self._state_store = state_store
         self._publisher = publisher
+        self._checkpoint_store = checkpoint_store
         self._coordinator_epoch = coordinator_epoch
         self._parent_checkpoint_hash = parent_checkpoint_hash
-        self._status = ScenarioRunStatus.CREATED
-        self._next_sequence = 1
+        self._status = status
+        self._next_sequence = next_sequence
         self._output_batches: tuple[SimulationOutputBatch, ...] = ()
         self._outputs_by_hash: dict[str, SimulationOutputBatch] = {}
         self._checkpoints: tuple[ScenarioCheckpoint, ...] = ()
@@ -139,6 +151,15 @@ class ScenarioCoordinator:
         self._attempts_by_command_id: dict[str, str] = {}
         self._executing = False
         self._last_delivery_report: SimulationDeliveryReport | None = None
+        self._fork_attempts_by_idempotency_key: dict[
+            str, tuple[str, str, str]
+        ] = {}
+        self._fork_attempts_by_fork_id: dict[str, str] = {}
+        self._fork_results: dict[
+            str, tuple["ScenarioCoordinator", ScenarioForkResult]
+        ] = {}
+        self._child_run_ids: set[str] = set()
+        self._child_stream_ids: set[str] = set()
 
     @classmethod
     def create(
@@ -150,6 +171,7 @@ class ScenarioCoordinator:
         stream_id: str,
         state_store: ScenarioStateStore | None = None,
         publisher: object | None = None,
+        checkpoint_store: LocalScenarioCheckpointStore | None = None,
         coordinator_epoch: int = 1,
         parent_checkpoint_hash: str | None = None,
     ) -> "ScenarioCoordinator":
@@ -189,6 +211,13 @@ class ScenarioCoordinator:
         exact_publisher = SimulationOutputBus() if publisher is None else publisher
         if not callable(getattr(exact_publisher, "publish", None)):
             raise TypeError("scenario coordinator publisher must provide publish")
+        if checkpoint_store is not None and not all(
+            callable(getattr(checkpoint_store, name, None))
+            for name in ("create", "load", "restore", "discard")
+        ):
+            raise TypeError(
+                "scenario coordinator checkpoint store must provide create, load, restore, and discard"
+            )
 
         initial_state = initialize_compiled_scenario(exact_database_path, scenario)
         exact_store.initialize(exact_run_id, initial_state)
@@ -199,6 +228,7 @@ class ScenarioCoordinator:
             stream_id=exact_stream_id,
             state_store=exact_store,
             publisher=exact_publisher,
+            checkpoint_store=checkpoint_store,
             coordinator_epoch=exact_epoch,
             parent_checkpoint_hash=parent_checkpoint_hash,
         )
@@ -299,6 +329,149 @@ class ScenarioCoordinator:
         finally:
             self._executing = False
 
+    def fork(
+        self,
+        request: ScenarioForkRequest,
+        capability: ScenarioCommandCapability,
+        child_database_path: str | Path,
+    ) -> tuple["ScenarioCoordinator", ScenarioForkResult]:
+        if not isinstance(request, ScenarioForkRequest):
+            raise TypeError("scenario fork requires ScenarioForkRequest")
+        if not isinstance(capability, ScenarioCommandCapability):
+            raise TypeError("scenario fork requires ScenarioCommandCapability")
+        if self._executing:
+            raise RuntimeError("reentrant scenario command submission")
+        self._executing = True
+        try:
+            return self._fork(request, capability, child_database_path)
+        finally:
+            self._executing = False
+
+    def _fork(
+        self,
+        request: ScenarioForkRequest,
+        capability: ScenarioCommandCapability,
+        child_database_path: str | Path,
+    ) -> tuple["ScenarioCoordinator", ScenarioForkResult]:
+        attempt = self._fork_attempts_by_idempotency_key.get(
+            request.idempotency_key
+        )
+        if attempt is not None:
+            fork_id, request_hash, capability_hash = attempt
+            if (
+                fork_id == request.fork_id
+                and request_hash == request.content_hash
+                and capability_hash == capability.content_hash
+            ):
+                cached = self._fork_results.get(request.idempotency_key)
+                if cached is not None:
+                    return cached
+            else:
+                raise ValueError("scenario fork idempotency key was reused")
+        elif request.fork_id in self._fork_attempts_by_fork_id:
+            raise ValueError("scenario fork id was reused")
+        else:
+            self._fork_attempts_by_idempotency_key[request.idempotency_key] = (
+                request.fork_id,
+                request.content_hash,
+                capability.content_hash,
+            )
+            self._fork_attempts_by_fork_id[request.fork_id] = (
+                request.idempotency_key
+            )
+
+        if not capability.can_fork or capability.run_id != self._run_id:
+            raise PermissionError("scenario fork is not authorized")
+        if request.source_run_id != self._run_id:
+            raise ValueError("scenario fork source run does not match")
+        if request.scenario_hash != self._scenario.content_hash:
+            raise ValueError("scenario fork scenario does not match")
+        if request.source_epoch != self._coordinator_epoch:
+            raise ValueError("scenario fork source epoch does not match")
+        if request.child_run_id == self._run_id:
+            raise ValueError("scenario fork child run must differ from source run")
+        if request.child_stream_id == self._stream_id:
+            raise ValueError("scenario fork child stream must differ from source stream")
+        if request.child_run_id in self._child_run_ids:
+            raise ValueError("scenario fork child run already exists")
+        if request.child_stream_id in self._child_stream_ids:
+            raise ValueError("scenario fork child stream already exists")
+        if self._checkpoint_store is None:
+            raise RuntimeError("scenario checkpoint store is not configured")
+
+        retained = next(
+            (
+                checkpoint
+                for checkpoint in self._checkpoints
+                if checkpoint.content_hash == request.checkpoint_hash
+            ),
+            None,
+        )
+        if retained is None:
+            raise KeyError("unknown scenario checkpoint")
+        checkpoint = self._checkpoint_store.load(request.checkpoint_hash)
+        if checkpoint != retained:
+            raise ValueError("scenario fork checkpoint metadata does not match")
+        if checkpoint.run_id != request.source_run_id:
+            raise ValueError("scenario fork checkpoint source run does not match")
+        if checkpoint.scenario_hash != request.scenario_hash:
+            raise ValueError("scenario fork checkpoint scenario does not match")
+        if checkpoint.coordinator_epoch != request.source_epoch:
+            raise ValueError("scenario fork checkpoint source epoch does not match")
+
+        child_path = _database_path(child_database_path)
+        child_path_value = Path(child_path)
+        restored = False
+        try:
+            self._checkpoint_store.restore(request.checkpoint_hash, child_path)
+            restored = True
+            if (
+                hash_situated_percept_memory_store(child_path)
+                != checkpoint.memory_store_hash
+            ):
+                raise ValueError("scenario fork restored memory hash does not match")
+            child_state_store = InMemoryScenarioStateStore()
+            child_state_store.initialize(request.child_run_id, checkpoint.state)
+            child = ScenarioCoordinator(
+                child_path,
+                self._scenario,
+                run_id=request.child_run_id,
+                stream_id=request.child_stream_id,
+                state_store=child_state_store,
+                publisher=SimulationOutputBus(),
+                checkpoint_store=self._checkpoint_store,
+                coordinator_epoch=self._coordinator_epoch + 1,
+                parent_checkpoint_hash=checkpoint.content_hash,
+                status=ScenarioRunStatus.PAUSED,
+                next_sequence=1,
+            )
+            result = ScenarioForkResult(
+                request.fork_id,
+                request.idempotency_key,
+                request.content_hash,
+                capability.content_hash,
+                self._run_id,
+                request.child_run_id,
+                request.child_stream_id,
+                self._scenario.content_hash,
+                self._coordinator_epoch + 1,
+                checkpoint.content_hash,
+                checkpoint.state.content_hash,
+            )
+        except Exception:
+            if restored:
+                try:
+                    child_path_value.unlink(missing_ok=True)
+                except OSError as error:
+                    raise RuntimeError("scenario fork cleanup failed") from None
+            raise
+
+        retained_result = (child, result)
+        self._fork_results[request.idempotency_key] = retained_result
+        self._child_run_ids.add(request.child_run_id)
+        self._child_stream_ids.add(request.child_stream_id)
+        return retained_result
+
     def _submit_command(
         self,
         request: ScenarioCommandRequest,
@@ -353,7 +526,7 @@ class ScenarioCoordinator:
         if request.kind is ScenarioCommandKind.STEP:
             return self._step(request, capability, state)
         if request.kind is ScenarioCommandKind.CHECKPOINT:
-            raise RuntimeError("scenario checkpoint store is not configured")
+            return self._checkpoint(request, capability, state)
 
         next_status = {
             ScenarioCommandKind.START: ScenarioRunStatus.RUNNING,
@@ -374,6 +547,58 @@ class ScenarioCoordinator:
         self._status = next_status
         self._retain_result(request, capability, result)
         return result
+
+    def _checkpoint(
+        self,
+        request: ScenarioCommandRequest,
+        capability: ScenarioCommandCapability,
+        state: SituatedNetworkRuntimeState,
+    ) -> ScenarioCommandResult:
+        if self._checkpoint_store is None:
+            raise RuntimeError("scenario checkpoint store is not configured")
+        checkpoint = self._build_checkpoint(
+            request.requested_checkpoint_id,
+            state,
+            self._next_sequence,
+        )
+        stored = self._checkpoint_store.create(checkpoint, self._database_path)
+        result = self._result(
+            request,
+            capability,
+            accepted=True,
+            reason=ScenarioCommandReason.ACCEPTED,
+            prior_status=self._status,
+            next_status=self._status,
+            prior_state=state,
+            next_state=state,
+            checkpoint_hash=stored.content_hash,
+        )
+        self._checkpoints = self._checkpoints + (stored,)
+        self._retain_result(request, capability, result)
+        return result
+
+    def _build_checkpoint(
+        self,
+        checkpoint_id: str | None,
+        state: SituatedNetworkRuntimeState,
+        next_sequence: int,
+    ) -> ScenarioCheckpoint:
+        if checkpoint_id is None:
+            raise ValueError("scenario checkpoint id must be provided")
+        parent_hash = (
+            self._checkpoints[-1].content_hash
+            if self._checkpoints
+            else self._parent_checkpoint_hash
+        )
+        return ScenarioCheckpoint(
+            checkpoint_id,
+            self._run_id,
+            self._scenario.content_hash,
+            self._coordinator_epoch,
+            state,
+            next_sequence,
+            parent_hash,
+        )
 
     def _rejection_reason(
         self,
@@ -442,6 +667,7 @@ class ScenarioCoordinator:
             backup_path = str(Path(temporary) / "memory-backup.sqlite3")
             _copy_sqlite_database(self._database_path, backup_path)
             committed = False
+            prepared_checkpoint: ScenarioCheckpoint | None = None
             try:
                 round_result = simulate_situated_network_round(
                     self._database_path,
@@ -452,6 +678,22 @@ class ScenarioCoordinator:
                 self._enforce_output_record_limit(batch)
 
                 next_state = round_result.next_state
+                if (
+                    self._checkpoint_store is not None
+                    and next_state.round_index
+                    % self._scenario.run_policy.checkpoint_interval
+                    == 0
+                ):
+                    batch = replace(batch, checkpoint=True)
+                    prepared_checkpoint = self._build_checkpoint(
+                        f"{self._run_id}-round-{next_state.round_index}",
+                        next_state,
+                        batch.last_sequence + 1,
+                    )
+                    prepared_checkpoint = self._checkpoint_store.create(
+                        prepared_checkpoint,
+                        self._database_path,
+                    )
                 next_status = self._status
                 if (
                     next_state.round_index
@@ -468,6 +710,11 @@ class ScenarioCoordinator:
                     prior_state=prior_state,
                     next_state=next_state,
                     output_batch_hash=batch.content_hash,
+                    checkpoint_hash=(
+                        None
+                        if prepared_checkpoint is None
+                        else prepared_checkpoint.content_hash
+                    ),
                 )
 
                 next_outputs = self._output_batches + (batch,)
@@ -484,6 +731,11 @@ class ScenarioCoordinator:
                     capability.content_hash,
                     result,
                 )
+                next_checkpoints = self._checkpoints + (
+                    ()
+                    if prepared_checkpoint is None
+                    else (prepared_checkpoint,)
+                )
 
                 self._state_store.compare_and_swap(
                     self._run_id,
@@ -495,6 +747,7 @@ class ScenarioCoordinator:
                 self._outputs_by_hash = next_outputs_by_hash
                 self._results_by_command_id = next_results
                 self._idempotency_results = next_idempotency
+                self._checkpoints = next_checkpoints
                 self._next_sequence = batch.last_sequence + 1
                 committed = True
 
@@ -502,7 +755,19 @@ class ScenarioCoordinator:
                 return result
             except Exception:
                 if not committed:
+                    discard_error: Exception | None = None
+                    if prepared_checkpoint is not None:
+                        try:
+                            self._checkpoint_store.discard(
+                                prepared_checkpoint.content_hash
+                            )
+                        except Exception as error:
+                            discard_error = error
                     _copy_sqlite_database(backup_path, self._database_path)
+                    if discard_error is not None:
+                        raise RuntimeError(
+                            "scenario automatic checkpoint rollback failed"
+                        ) from discard_error
                 raise
 
     def _publish(self, batch: SimulationOutputBatch) -> SimulationDeliveryReport:

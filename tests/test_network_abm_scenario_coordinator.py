@@ -6,6 +6,9 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
+from narrative_dynamics.abm.scenario_checkpoint_store import (
+    LocalScenarioCheckpointStore,
+)
 from narrative_dynamics.abm.scenario_compiler import (
     compile_situated_scenario_package,
 )
@@ -15,6 +18,7 @@ from narrative_dynamics.abm.scenario_coordinator_contracts import (
     ScenarioCommandKind,
     ScenarioCommandReason,
     ScenarioCommandRequest,
+    ScenarioForkRequest,
     ScenarioRunStatus,
 )
 from narrative_dynamics.abm.scenario_package import load_situated_scenario_package
@@ -79,14 +83,19 @@ class ScenarioCoordinatorTests(unittest.TestCase):
         scenario=None,
         state_store=None,
         publisher=None,
+        checkpoint_store=None,
+        database=None,
+        run_id="law-firm-run",
+        stream_id="law-firm-stream",
     ) -> ScenarioCoordinator:
         return ScenarioCoordinator.create(
-            self.database,
+            self.database if database is None else database,
             self.scenario if scenario is None else scenario,
-            run_id="law-firm-run",
-            stream_id="law-firm-stream",
+            run_id=run_id,
+            stream_id=stream_id,
             state_store=state_store,
             publisher=publisher,
+            checkpoint_store=checkpoint_store,
         )
 
     def capability(
@@ -95,6 +104,7 @@ class ScenarioCoordinatorTests(unittest.TestCase):
         authority_id: str = "operator",
         run_id: str = "law-firm-run",
         can_read_all_audit: bool = False,
+        can_fork: bool = False,
     ) -> ScenarioCommandCapability:
         allowed = self.all_command_kinds if not kinds else tuple(
             sorted(kinds, key=lambda kind: kind.value)
@@ -103,6 +113,7 @@ class ScenarioCoordinatorTests(unittest.TestCase):
             authority_id,
             run_id,
             allowed,
+            can_fork=can_fork,
             can_read_all_audit=can_read_all_audit,
         )
 
@@ -118,6 +129,7 @@ class ScenarioCoordinatorTests(unittest.TestCase):
         coordinator_epoch: int = 1,
         expected_state_hash: str | None = None,
         authority_id: str = "operator",
+        requested_checkpoint_id: str | None = None,
     ) -> ScenarioCommandRequest:
         self.command_number += 1
         suffix = str(self.command_number)
@@ -134,6 +146,9 @@ class ScenarioCoordinatorTests(unittest.TestCase):
             else expected_state_hash,
             authority_id,
             kind,
+            requested_checkpoint_id
+            if requested_checkpoint_id is not None
+            else (f"checkpoint-{suffix}" if kind is ScenarioCommandKind.CHECKPOINT else None),
         )
 
     def submit(
@@ -167,6 +182,51 @@ class ScenarioCoordinatorTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "projector seam failed"):
                 coordinator.submit_command(request, self.capability())
         return coordinator, request
+
+    def checkpointed_coordinator(self, *, interval: int = 2):
+        scenario = replace(
+            self.scenario,
+            run_policy=replace(
+                self.scenario.run_policy,
+                checkpoint_interval=interval,
+            ),
+        )
+        store = LocalScenarioCheckpointStore(self.root / "checkpoints")
+        coordinator = self.coordinator(
+            scenario=scenario,
+            checkpoint_store=store,
+        )
+        self.start(coordinator)
+        for _ in range(interval):
+            self.submit(coordinator, ScenarioCommandKind.STEP)
+        checkpoint_hash = coordinator.run_view().checkpoint_hashes[-1]
+        return coordinator, store, store.load(checkpoint_hash)
+
+    def fork_request(
+        self,
+        coordinator: ScenarioCoordinator,
+        checkpoint_hash: str,
+        *,
+        fork_id: str = "fork-1",
+        idempotency_key: str = "fork-idem-1",
+        source_run_id: str = "law-firm-run",
+        scenario_hash: str | None = None,
+        source_epoch: int = 1,
+        child_run_id: str = "law-firm-child",
+        child_stream_id: str = "law-firm-child-stream",
+    ) -> ScenarioForkRequest:
+        return ScenarioForkRequest(
+            fork_id,
+            idempotency_key,
+            source_run_id,
+            coordinator.run_view().scenario_hash
+            if scenario_hash is None
+            else scenario_hash,
+            source_epoch,
+            checkpoint_hash,
+            child_run_id,
+            child_stream_id,
+        )
 
     def test_create_initializes_exact_created_run_and_delegates_scoped_queries(self) -> None:
         coordinator = self.coordinator()
@@ -984,6 +1044,255 @@ class ScenarioCoordinatorTests(unittest.TestCase):
         retried = coordinator.submit_command(request, self.capability())
         self.assertTrue(retried.accepted)
         self.assertEqual(coordinator.state.round_index, 1)
+
+    def test_manual_checkpoint_is_exact_and_idempotent(self) -> None:
+        store = LocalScenarioCheckpointStore(self.root / "manual-checkpoints")
+        coordinator = self.coordinator(checkpoint_store=store)
+        request = self.request(
+            coordinator,
+            ScenarioCommandKind.CHECKPOINT,
+            requested_checkpoint_id="opening-state",
+        )
+
+        created = coordinator.submit_command(request, self.capability())
+
+        self.assertTrue(created.accepted)
+        self.assertIsNotNone(created.checkpoint_hash)
+        self.assertEqual(coordinator.run_view().checkpoint_hashes, (created.checkpoint_hash,))
+        checkpoint = store.load(created.checkpoint_hash)
+        self.assertIs(checkpoint.state, coordinator.state)
+        self.assertEqual(checkpoint.next_sequence, 1)
+        self.assertIs(coordinator.submit_command(request, self.capability()), created)
+        self.assertEqual(coordinator.run_view().checkpoint_hashes, (created.checkpoint_hash,))
+
+    def test_checkpoint_command_requires_configured_store_without_caching_failure(self) -> None:
+        coordinator = self.coordinator()
+        request = self.request(coordinator, ScenarioCommandKind.CHECKPOINT)
+
+        with self.assertRaisesRegex(RuntimeError, "checkpoint store is not configured"):
+            coordinator.submit_command(request, self.capability())
+
+        self.assertEqual(coordinator.run_view().checkpoint_hashes, ())
+        with self.assertRaisesRegex(KeyError, "unknown scenario command"):
+            coordinator.command_result(request.command_id, self.capability())
+
+    def test_interval_checkpoint_marks_exact_round_batch_once(self) -> None:
+        coordinator, store, checkpoint = self.checkpointed_coordinator(interval=2)
+
+        view = coordinator.output_view(
+            coordinator.run_view().output_batch_hashes[-1],
+            SimulationAudienceCapability(SimulationOutputAudience.INTERNAL),
+        )
+        self.assertTrue(view.checkpoint)
+        self.assertEqual(len(coordinator.run_view().checkpoint_hashes), 1)
+        self.assertEqual(checkpoint.checkpoint_id, "law-firm-run-round-2")
+        self.assertEqual(checkpoint.state, coordinator.state)
+        self.assertEqual(checkpoint.next_sequence, coordinator.run_view().next_sequence)
+        self.assertIs(store.load(checkpoint.content_hash), checkpoint)
+
+    def test_automatic_checkpoint_creation_failure_rolls_back_entire_step(self) -> None:
+        scenario = replace(
+            self.scenario,
+            run_policy=replace(self.scenario.run_policy, checkpoint_interval=2),
+        )
+        store = LocalScenarioCheckpointStore(self.root / "create-failure-checkpoints")
+        coordinator = self.coordinator(scenario=scenario, checkpoint_store=store)
+        self.start(coordinator)
+        self.submit(coordinator, ScenarioCommandKind.STEP)
+        request = self.request(coordinator, ScenarioCommandKind.STEP)
+        before = coordinator.run_view()
+        before_memory_hash = hash_situated_percept_memory_store(self.database)
+
+        with patch.object(store, "create", side_effect=RuntimeError("checkpoint seam failed")):
+            with self.assertRaisesRegex(RuntimeError, "checkpoint seam failed"):
+                coordinator.submit_command(request, self.capability())
+
+        self.assertEqual(coordinator.run_view(), before)
+        self.assertEqual(hash_situated_percept_memory_store(self.database), before_memory_hash)
+        self.assertEqual(tuple((self.root / "create-failure-checkpoints").iterdir()), ())
+        retried = coordinator.submit_command(request, self.capability())
+        self.assertTrue(retried.accepted)
+        self.assertEqual(len(coordinator.run_view().checkpoint_hashes), 1)
+
+    def test_post_checkpoint_cas_failure_discards_artifact_and_rolls_back(self) -> None:
+        scenario = replace(
+            self.scenario,
+            run_policy=replace(self.scenario.run_policy, checkpoint_interval=1),
+        )
+        store = LocalScenarioCheckpointStore(self.root / "cas-checkpoints")
+        state_store = InMemoryScenarioStateStore()
+        coordinator = self.coordinator(
+            scenario=scenario,
+            checkpoint_store=store,
+            state_store=state_store,
+        )
+        self.start(coordinator)
+        request = self.request(coordinator, ScenarioCommandKind.STEP)
+        before = coordinator.run_view()
+        before_state = coordinator.state
+        before_memory_hash = hash_situated_percept_memory_store(self.database)
+
+        with patch.object(
+            state_store,
+            "compare_and_swap",
+            side_effect=RuntimeError("CAS after checkpoint failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "CAS after checkpoint failed"):
+                coordinator.submit_command(request, self.capability())
+
+        self.assertEqual(coordinator.run_view(), before)
+        self.assertIs(coordinator.state, before_state)
+        self.assertEqual(hash_situated_percept_memory_store(self.database), before_memory_hash)
+        self.assertEqual(tuple((self.root / "cas-checkpoints").iterdir()), ())
+        retried = coordinator.submit_command(request, self.capability())
+        self.assertTrue(retried.accepted)
+        self.assertEqual(len(coordinator.run_view().checkpoint_hashes), 1)
+
+    def test_fork_restores_paused_independent_child_with_fresh_identity(self) -> None:
+        coordinator, _, checkpoint = self.checkpointed_coordinator()
+        request = self.fork_request(coordinator, checkpoint.content_hash)
+        capability = self.capability(can_fork=True)
+        child_database = self.root / "child.sqlite3"
+
+        child, result = coordinator.fork(request, capability, child_database)
+
+        self.assertIs(child.run_view().status, ScenarioRunStatus.PAUSED)
+        self.assertIs(child.state, checkpoint.state)
+        self.assertEqual(child.run_view().next_sequence, 1)
+        self.assertEqual(
+            child.run_view().coordinator_epoch,
+            coordinator.run_view().coordinator_epoch + 1,
+        )
+        self.assertEqual(child.run_view().parent_checkpoint_hash, checkpoint.content_hash)
+        self.assertEqual(result.child_state_hash, checkpoint.state.content_hash)
+        self.assertEqual(
+            hash_situated_percept_memory_store(child_database),
+            checkpoint.memory_store_hash,
+        )
+        repeated_child, repeated_result = coordinator.fork(
+            request,
+            capability,
+            child_database,
+        )
+        self.assertIs(repeated_child, child)
+        self.assertIs(repeated_result, result)
+
+        self.submit(coordinator, ScenarioCommandKind.STEP)
+        parent_after_step = coordinator.state
+        child_capability = self.capability(run_id="law-firm-child")
+        for number in range(2):
+            child_request = ScenarioCommandRequest(
+                f"child-command-{number}",
+                f"child-idem-{number}",
+                "law-firm-child",
+                child.run_view().scenario_hash,
+                child.run_view().coordinator_epoch,
+                child.state.content_hash,
+                "operator",
+                ScenarioCommandKind.STEP,
+            )
+            self.assertTrue(child.submit_command(child_request, child_capability).accepted)
+
+        self.assertIs(coordinator.state, parent_after_step)
+        self.assertNotEqual(child.state.content_hash, coordinator.state.content_hash)
+        self.assertEqual(
+            hash_situated_percept_memory_store(self.database),
+            coordinator.state.memory_store_hash,
+        )
+        self.assertEqual(
+            hash_situated_percept_memory_store(child_database),
+            child.state.memory_store_hash,
+        )
+
+    def test_fork_rejects_unauthorized_unknown_or_mismatched_source(self) -> None:
+        coordinator, _, checkpoint = self.checkpointed_coordinator()
+        request = self.fork_request(coordinator, checkpoint.content_hash)
+        allowed = self.capability(can_fork=True)
+
+        with self.assertRaisesRegex(PermissionError, "fork is not authorized"):
+            coordinator.fork(request, self.capability(), self.root / "unauthorized.sqlite3")
+        unknown = replace(request, fork_id="unknown", idempotency_key="unknown", checkpoint_hash="sha256:" + "f" * 64)
+        with self.assertRaisesRegex(KeyError, "unknown scenario checkpoint"):
+            coordinator.fork(unknown, allowed, self.root / "unknown.sqlite3")
+
+        other_hash = "sha256:" + "e" * 64
+        cases = (
+            (replace(request, fork_id="run", idempotency_key="run", source_run_id="other-run"), "source run"),
+            (replace(request, fork_id="scenario", idempotency_key="scenario", scenario_hash=other_hash), "scenario"),
+            (replace(request, fork_id="epoch", idempotency_key="epoch", source_epoch=2), "source epoch"),
+        )
+        for changed, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(ValueError, message):
+                    coordinator.fork(changed, allowed, self.root / f"{message}.sqlite3")
+
+    def test_fork_identity_collisions_and_duplicate_children_are_rejected(self) -> None:
+        coordinator, _, checkpoint = self.checkpointed_coordinator()
+        allowed = self.capability(can_fork=True)
+        request = self.fork_request(coordinator, checkpoint.content_hash)
+        coordinator.fork(request, allowed, self.root / "first-child.sqlite3")
+
+        changed_key = replace(request, child_run_id="changed-child")
+        with self.assertRaisesRegex(ValueError, "fork idempotency key was reused"):
+            coordinator.fork(changed_key, allowed, self.root / "changed.sqlite3")
+        changed_fork_id = replace(
+            request,
+            idempotency_key="another-key",
+            child_run_id="another-child",
+            child_stream_id="another-stream",
+        )
+        with self.assertRaisesRegex(ValueError, "fork id was reused"):
+            coordinator.fork(changed_fork_id, allowed, self.root / "another.sqlite3")
+
+        duplicate_run = self.fork_request(
+            coordinator,
+            checkpoint.content_hash,
+            fork_id="duplicate-run",
+            idempotency_key="duplicate-run",
+            child_stream_id="fresh-stream",
+        )
+        with self.assertRaisesRegex(ValueError, "child run already exists"):
+            coordinator.fork(duplicate_run, allowed, self.root / "duplicate-run.sqlite3")
+        duplicate_stream = self.fork_request(
+            coordinator,
+            checkpoint.content_hash,
+            fork_id="duplicate-stream",
+            idempotency_key="duplicate-stream",
+            child_run_id="fresh-child",
+        )
+        with self.assertRaisesRegex(ValueError, "child stream already exists"):
+            coordinator.fork(duplicate_stream, allowed, self.root / "duplicate-stream.sqlite3")
+
+    def test_fork_restore_failures_return_no_child_and_are_not_cached(self) -> None:
+        coordinator, store, checkpoint = self.checkpointed_coordinator()
+        allowed = self.capability(can_fork=True)
+
+        existing_request = self.fork_request(coordinator, checkpoint.content_hash)
+        existing_target = self.root / "existing-child.sqlite3"
+        existing_target.write_bytes(b"private-existing")
+        with self.assertRaisesRegex(ValueError, "restore target already exists"):
+            coordinator.fork(existing_request, allowed, existing_target)
+        self.assertEqual(existing_target.read_bytes(), b"private-existing")
+        existing_target.unlink()
+        child, _ = coordinator.fork(existing_request, allowed, existing_target)
+        self.assertTrue(existing_target.exists())
+        self.assertIs(child.run_view().status, ScenarioRunStatus.PAUSED)
+
+        failed_request = self.fork_request(
+            coordinator,
+            checkpoint.content_hash,
+            fork_id="restore-failure",
+            idempotency_key="restore-failure",
+            child_run_id="restore-child",
+            child_stream_id="restore-stream",
+        )
+        failed_target = self.root / "restore-failure.sqlite3"
+        with patch.object(store, "restore", side_effect=RuntimeError("restore seam failed")):
+            with self.assertRaisesRegex(RuntimeError, "restore seam failed"):
+                coordinator.fork(failed_request, allowed, failed_target)
+        self.assertFalse(failed_target.exists())
+        retried, _ = coordinator.fork(failed_request, allowed, failed_target)
+        self.assertIs(retried.run_view().status, ScenarioRunStatus.PAUSED)
 
 
 if __name__ == "__main__":
