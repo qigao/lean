@@ -2141,7 +2141,7 @@ bus.subscribe(
     "public-preview",
     tuple(SimulationOutputKind),
     SimulationAudienceCapability(SimulationOutputAudience.PUBLIC),
-    lambda view: print(view.round_index, len(view.records)),
+    lambda view: print(view.next_state_hash, len(view.records)),
 )
 checkpoints = LocalScenarioCheckpointStore("law-firm-checkpoints")
 coordinator = ScenarioCoordinator.create(
@@ -2197,10 +2197,19 @@ assert coordinator.command_result(start_request.command_id, operator) is started
 
 `start` and `resume` are synchronous status changes; they never launch a background
 loop. Subscriber callbacks observe already committed state and cannot issue commands
-reentrantly. Non-`step` results remain in the capability-scoped command audit ledger
-and do not fabricate V19 output batches. JSON-RPC over H2/WSS, the pure-Web editor,
-story interventions, live Blender updates, LLM/retrieval providers, and remote Agents
-remain later phases; V21.3 adds none of those transports or execution paths.
+reentrantly. Commands, forks, and coherent queries are serialized by one coordinator
+`RLock`; the output bus similarly serializes cross-thread publication and subscription
+mutation while allowing same-thread callback unsubscribe for the next publication.
+Non-`step` results remain in the capability-scoped command audit ledger and do not
+fabricate V19 output batches. Output retention uses `maximum_output_records`, while
+command-attempt and fork-attempt maps each use the finite derived bound
+`maximum_output_records + maximum_rounds + len(ScenarioCommandKind)`, so a one-record
+budget cannot block mandatory `start` plus the declared steps. Checkpoint/restore
+publication uses same-filesystem hard-link create-if-absent semantics and physical file
+ownership checks; it never replaces a concurrent artifact or target. JSON-RPC over
+H2/WSS, the pure-Web editor, story interventions, live Blender updates, LLM/retrieval
+providers, and remote Agents remain later phases; V21.3 adds none of those transports
+or execution paths.
 
 ## Verification
 

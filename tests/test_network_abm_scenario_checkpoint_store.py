@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import sqlite3
 from tempfile import TemporaryDirectory
+from threading import Condition, Event, Thread
 import unittest
 from unittest.mock import patch
 
@@ -104,6 +105,65 @@ class LocalScenarioCheckpointStoreTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "checkpoint id was reused"):
             self.store.create(conflict, self.database)
         self.assertIs(self.store.load(first.content_hash), first)
+
+    def test_concurrent_same_human_id_registers_one_winner_and_one_conflict(self) -> None:
+        competing = replace(self.checkpoint, next_sequence=8)
+        real_logical_hash = checkpoint_store_module._logical_hash
+        arrivals = 0
+        arrival_condition = Condition()
+        start = Event()
+        successes = []
+        errors = []
+
+        def synchronized_source_hash(path, *, message):
+            nonlocal arrivals
+            if Path(path) == self.database:
+                with arrival_condition:
+                    arrivals += 1
+                    arrival_condition.notify_all()
+                    if arrivals == 1:
+                        arrival_condition.wait_for(lambda: arrivals >= 2, timeout=0.5)
+            return real_logical_hash(path, message=message)
+
+        def create(checkpoint) -> None:
+            start.wait(5)
+            try:
+                successes.append(self.store.create(checkpoint, self.database))
+            except Exception as error:
+                errors.append(error)
+
+        with patch.object(
+            checkpoint_store_module,
+            "_logical_hash",
+            side_effect=synchronized_source_hash,
+        ):
+            first = Thread(target=create, args=(self.checkpoint,))
+            second = Thread(target=create, args=(competing,))
+            first.start()
+            second.start()
+            start.set()
+            first.join(5)
+            second.join(5)
+
+        # Mutation caught: metadata check and registration are split across a race.
+        self.assertFalse(first.is_alive())
+        self.assertFalse(second.is_alive())
+        self.assertEqual(len(successes), 1)
+        self.assertEqual(len(errors), 1)
+        self.assertIsInstance(errors[0], ValueError)
+        self.assertEqual(
+            str(errors[0]),
+            "scenario checkpoint id was reused for different content",
+        )
+        winner = successes[0]
+        self.assertIs(self.store.load(winner.content_hash), winner)
+        loser = competing if winner is self.checkpoint else self.checkpoint
+        with self.assertRaisesRegex(KeyError, "unknown scenario checkpoint"):
+            self.store.load(loser.content_hash)
+        artifacts = tuple(
+            path for path in self.store_root.iterdir() if ".stage-" not in path.name
+        )
+        self.assertEqual(len(artifacts), 1)
 
     def test_unknown_hash_load_restore_and_discard_are_path_safe(self) -> None:
         unknown = "sha256:" + "f" * 64
@@ -433,6 +493,53 @@ class LocalScenarioCheckpointStoreTests(unittest.TestCase):
         self.assertNotIn(str(self.store_root), rendered)
         self.assertNotIn(str(self.database), rendered)
         self.assertNotIn(str(self.root / "private-target.sqlite3"), rendered)
+
+    def test_stage_open_permission_error_is_stable_path_free_and_suppressed(self) -> None:
+        private_detail = f"cannot open {self.store_root} {self.database.name} .stage-private"
+
+        with patch.object(
+            Path,
+            "open",
+            autospec=True,
+            side_effect=PermissionError(private_detail),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "^scenario checkpoint stage flush failed$",
+            ) as raised:
+                self.store.create(self.checkpoint, self.database)
+
+        # Mutation caught: raw Path.open errors expose stage and source locations.
+        rendered = str(raised.exception)
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertTrue(raised.exception.__suppress_context__)
+        self.assertNotIn(str(self.store_root), rendered)
+        self.assertNotIn(self.database.name, rendered)
+        self.assertNotIn(".stage-private", rendered)
+
+    def test_stage_fsync_permission_error_is_stable_path_free_and_suppressed(self) -> None:
+        self.store.create(self.checkpoint, self.database)
+        target = self.root / "private-restore-target.sqlite3"
+        private_detail = f"cannot fsync {self.store_root} {target} .stage-private"
+
+        with patch(
+            "narrative_dynamics.abm.scenario_checkpoint_store.os.fsync",
+            side_effect=PermissionError(private_detail),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "^scenario checkpoint stage flush failed$",
+            ) as raised:
+                self.store.restore(self.checkpoint.content_hash, target)
+
+        # Mutation caught: raw fsync errors expose checkpoint and target locations.
+        rendered = str(raised.exception)
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertTrue(raised.exception.__suppress_context__)
+        self.assertNotIn(str(self.store_root), rendered)
+        self.assertNotIn(str(target), rendered)
+        self.assertNotIn(".stage-private", rendered)
+        self.assertFalse(target.exists())
 
     def test_discard_is_exact_and_idempotent(self) -> None:
         self.store.create(self.checkpoint, self.database)

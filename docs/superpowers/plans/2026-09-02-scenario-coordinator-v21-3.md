@@ -267,8 +267,10 @@ publish(batch) -> SimulationDeliveryReport
 Reject duplicate subscription IDs and empty kind sets. Snapshot and sort the internal
 subscription/callback pairs before delivery. Derive `SimulationOutputView.from_batch`,
 then create a new validated view containing only allowlisted kinds before callback.
-Use a publication guard reset in `finally`. A nested call raises `RuntimeError` with
-stable text; the outer callback records only `callback_error`.
+Use an `RLock` across publication and subscription mutation plus an active publishing
+thread ID reset in `finally`. Another thread waits; a nested call from the active
+callback thread raises `RuntimeError` with stable text, and the outer callback records
+only `callback_error`.
 
 - [ ] **Step 5: Run Task 2 GREEN**
 
@@ -470,9 +472,12 @@ command_result(command_id, capability)
 submit_command(request, capability) -> ScenarioCommandResult
 ```
 
-Use an execution guard to reject reentrant `submit_command`. Cache by idempotency key
-with exact request and capability hashes. Reject duplicate command IDs with different
-keys. Implement the lifecycle exactly as the design state machine.
+Use an `RLock` across commands, forks, and coherent query methods, with active thread
+and operation identity to reject same-thread reentrant `submit_command`. Cache by
+idempotency key with exact request and capability hashes. Reject duplicate command IDs
+with different keys. Bound command and fork attempt maps independently by
+`maximum_output_records + maximum_rounds + len(ScenarioCommandKind)`. Implement the
+lifecycle exactly as the design state machine.
 
 - [ ] **Step 6: Implement atomic step and canonical command record**
 
@@ -540,9 +545,10 @@ self.assertEqual(
 )
 ```
 
-Test path-safe checkpoint IDs, conflicting ID reuse, unknown hash, restore to a
-non-empty target, tampered source store, and `os.replace` failure preserving previous
-snapshot bytes with no stage left. Assert exceptions contain no source/target/root path.
+Test path-safe checkpoint IDs, conflicting ID reuse (including concurrent different
+content under one human ID), unknown hash, restore to a non-empty target, tampered
+source store, and hard-link publication failure preserving previous snapshot bytes
+with no stage left. Assert exceptions contain no source/target/root path.
 
 - [ ] **Step 2: Add failing coordinator checkpoint/fork tests**
 
@@ -589,12 +595,13 @@ discard(checkpoint_hash) -> None
 ```
 
 Use a path-safe encoded filename derived from the checkpoint content hash, not the
-human checkpoint ID. Validate the source logical memory hash before backup. Write via
-same-directory stage, flush/fsync, `os.replace`, cleanup in `finally`, then validate the
-published snapshot hash. Restore requires a missing target, writes through a
-same-directory stage, validates, and atomically replaces. `discard` resolves only the
-store-owned hash filename, removes its metadata and snapshot, and is idempotent for an
-unknown hash.
+human checkpoint ID. Hold a store `RLock` across metadata and the complete
+create/load/restore/discard lifecycle. Validate the source logical memory hash before
+backup. Write via a same-directory stage, flush/fsync, then publish with a
+same-filesystem hard link that creates the destination only if absent; cleanup uses
+captured no-follow physical ownership. Restore likewise requires a missing target and
+never replaces a concurrent winner. `discard` removes only the exact store-owned
+physical artifact and is idempotent for an unknown hash.
 
 - [ ] **Step 5: Integrate manual/automatic checkpoint and idempotent fork**
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 import re
+from threading import RLock, get_ident
 
 from narrative_dynamics.abm.simulation_output_contracts import (
     SimulationAudienceCapability,
@@ -171,10 +172,11 @@ class SimulationOutputBus:
     """Deliver output views synchronously from a stable subscription snapshot."""
 
     def __init__(self) -> None:
+        self._lock = RLock()
         self._subscriptions: dict[
             str, tuple[SimulationOutputSubscription, SimulationOutputCallback]
         ] = {}
-        self._publishing = False
+        self._publishing_thread_id: int | None = None
 
     def subscribe(
         self,
@@ -190,73 +192,86 @@ class SimulationOutputBus:
         )
         if not callable(callback):
             raise TypeError("output subscription callback must be callable")
-        if subscription.subscription_id in self._subscriptions:
-            raise ValueError("output subscription id already exists")
-        self._subscriptions[subscription.subscription_id] = (subscription, callback)
-        return subscription
+        with self._lock:
+            if subscription.subscription_id in self._subscriptions:
+                raise ValueError("output subscription id already exists")
+            self._subscriptions[subscription.subscription_id] = (
+                subscription,
+                callback,
+            )
+            return subscription
 
     def unsubscribe(self, subscription_id: str) -> None:
         normalized_id = _text(subscription_id, label="output subscription id")
-        self._subscriptions.pop(normalized_id, None)
+        with self._lock:
+            self._subscriptions.pop(normalized_id, None)
 
     def publish(self, batch: SimulationOutputBatch) -> SimulationDeliveryReport:
-        if self._publishing:
-            raise RuntimeError("reentrant_publish")
-        if not isinstance(batch, SimulationOutputBatch):
-            raise TypeError("output publication requires a SimulationOutputBatch")
+        with self._lock:
+            thread_id = get_ident()
+            if self._publishing_thread_id == thread_id:
+                raise RuntimeError("reentrant_publish")
+            if not isinstance(batch, SimulationOutputBatch):
+                raise TypeError("output publication requires a SimulationOutputBatch")
 
-        snapshot = tuple(
-            sorted(self._subscriptions.values(), key=lambda item: item[0].subscription_id)
-        )
-        delivered: list[str] = []
-        failures: list[SimulationDeliveryFailure] = []
-        self._publishing = True
-        try:
-            for subscription, callback in snapshot:
-                scoped = SimulationOutputView.from_batch(batch, subscription.capability)
-                view = SimulationOutputView(
-                    scoped.stream_id,
-                    scoped.scenario_hash,
-                    scoped.prior_state_hash,
-                    scoped.next_state_hash,
-                    scoped.round_result_hash,
-                    scoped.first_sequence,
-                    scoped.last_sequence,
-                    tuple(
-                        record
-                        for record in scoped.records
-                        if record.kind in subscription.kinds
-                    ),
-                    scoped.source_batch_hash,
-                    scoped.checkpoint,
+            snapshot = tuple(
+                sorted(
+                    self._subscriptions.values(),
+                    key=lambda item: item[0].subscription_id,
                 )
-                try:
-                    result = callback(view)
-                except Exception:
-                    failures.append(
-                        SimulationDeliveryFailure(
-                            subscription.subscription_id,
-                            "callback_error",
-                        )
+            )
+            delivered: list[str] = []
+            failures: list[SimulationDeliveryFailure] = []
+            self._publishing_thread_id = thread_id
+            try:
+                for subscription, callback in snapshot:
+                    scoped = SimulationOutputView.from_batch(
+                        batch,
+                        subscription.capability,
                     )
-                    continue
-                if result is not None:
-                    failures.append(
-                        SimulationDeliveryFailure(
-                            subscription.subscription_id,
-                            "non_none_return",
-                        )
+                    view = SimulationOutputView(
+                        scoped.stream_id,
+                        scoped.scenario_hash,
+                        scoped.prior_state_hash,
+                        scoped.next_state_hash,
+                        scoped.round_result_hash,
+                        scoped.first_sequence,
+                        scoped.last_sequence,
+                        tuple(
+                            record
+                            for record in scoped.records
+                            if record.kind in subscription.kinds
+                        ),
+                        scoped.source_batch_hash,
+                        scoped.checkpoint,
                     )
-                    continue
-                delivered.append(subscription.subscription_id)
-        finally:
-            self._publishing = False
+                    try:
+                        result = callback(view)
+                    except Exception:
+                        failures.append(
+                            SimulationDeliveryFailure(
+                                subscription.subscription_id,
+                                "callback_error",
+                            )
+                        )
+                        continue
+                    if result is not None:
+                        failures.append(
+                            SimulationDeliveryFailure(
+                                subscription.subscription_id,
+                                "non_none_return",
+                            )
+                        )
+                        continue
+                    delivered.append(subscription.subscription_id)
+            finally:
+                self._publishing_thread_id = None
 
-        return SimulationDeliveryReport(
-            batch.content_hash,
-            tuple(delivered),
-            tuple(failures),
-        )
+            return SimulationDeliveryReport(
+                batch.content_hash,
+                tuple(delivered),
+                tuple(failures),
+            )
 
 
 __all__ = (

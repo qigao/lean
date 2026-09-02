@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import sqlite3
 from tempfile import TemporaryDirectory
+from threading import RLock, get_ident
 
 from narrative_dynamics.abm.scenario_checkpoint_store import (
     LocalScenarioCheckpointStore,
@@ -77,6 +78,22 @@ _FORK_HISTORY_LIMIT_ERROR = "scenario fork history limit exceeded"
 _PUBLISHER_FAILURE_SUBSCRIPTION_ID = "scenario-output-publisher"
 
 
+def _derived_attempt_history_limit(scenario: CompiledSituatedScenario) -> int:
+    """Bound one attempt map without coupling it to retained output alone.
+
+    The output budget and declared round budget provide finite scenario-specific
+    capacity.  One additional slot per closed command kind leaves bounded lifecycle
+    and audit headroom.  Because both budgets are positive, the formula always
+    admits mandatory ``start`` plus every declared ``step``.
+    """
+
+    return (
+        scenario.run_policy.maximum_output_records
+        + scenario.run_policy.maximum_rounds
+        + len(ScenarioCommandKind)
+    )
+
+
 def _non_empty_text(value: object, *, label: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{label} must be a non-empty string")
@@ -143,6 +160,7 @@ class ScenarioCoordinator:
         status: ScenarioRunStatus = ScenarioRunStatus.CREATED,
         next_sequence: int = 1,
     ) -> None:
+        self._lock = RLock()
         self._database_path = database_path
         self._scenario = scenario
         self._run_id = run_id
@@ -167,7 +185,10 @@ class ScenarioCoordinator:
             str, tuple[str, str, str]
         ] = {}
         self._attempts_by_command_id: dict[str, str] = {}
-        self._executing = False
+        self._executing_thread_id: int | None = None
+        self._executing_operation: str | None = None
+        self._command_history_limit = _derived_attempt_history_limit(scenario)
+        self._fork_history_limit = _derived_attempt_history_limit(scenario)
         self._last_delivery_report: SimulationDeliveryReport | None = None
         self._fork_attempts_by_idempotency_key: dict[
             str, tuple[str, str, str]
@@ -261,62 +282,69 @@ class ScenarioCoordinator:
 
     @property
     def state(self) -> SituatedNetworkRuntimeState:
-        return self._state_store.load(self._run_id)
+        with self._lock:
+            return self._state_store.load(self._run_id)
 
     @property
     def last_delivery_report(self) -> SimulationDeliveryReport | None:
-        return self._last_delivery_report
+        with self._lock:
+            return self._last_delivery_report
 
     def run_view(self) -> ScenarioRunView:
-        return project_scenario_run_view(
-            run_id=self._run_id,
-            stream_id=self._stream_id,
-            scenario_hash=self._scenario.content_hash,
-            coordinator_epoch=self._coordinator_epoch,
-            status=self._status,
-            state=self.state,
-            next_sequence=self._next_sequence,
-            output_batches=self._output_batches,
-            checkpoints=self._checkpoints,
-            parent_checkpoint_hash=self._parent_checkpoint_hash,
-        )
+        with self._lock:
+            return project_scenario_run_view(
+                run_id=self._run_id,
+                stream_id=self._stream_id,
+                scenario_hash=self._scenario.content_hash,
+                coordinator_epoch=self._coordinator_epoch,
+                status=self._status,
+                state=self.state,
+                next_sequence=self._next_sequence,
+                output_batches=self._output_batches,
+                checkpoints=self._checkpoints,
+                parent_checkpoint_hash=self._parent_checkpoint_hash,
+            )
 
     def public_state_view(self) -> ScenarioPublicStateView:
-        return project_scenario_public_state(
-            self._run_id,
-            self._scenario.content_hash,
-            self.state,
-        )
+        with self._lock:
+            return project_scenario_public_state(
+                self._run_id,
+                self._scenario.content_hash,
+                self.state,
+            )
 
     def agent_state_view(
         self,
         agent_id: str,
         capability: SimulationAudienceCapability,
     ) -> ScenarioAgentStateView:
-        return project_scenario_agent_state(
-            self._run_id,
-            self._scenario.content_hash,
-            self.state,
-            agent_id,
-            capability,
-        )
+        with self._lock:
+            return project_scenario_agent_state(
+                self._run_id,
+                self._scenario.content_hash,
+                self.state,
+                agent_id,
+                capability,
+            )
 
     def network_state(
         self,
         capability: SimulationAudienceCapability,
     ) -> SituatedNetworkSnapshot:
-        return project_scenario_network_state(self.state, capability)
+        with self._lock:
+            return project_scenario_network_state(self.state, capability)
 
     def output_view(
         self,
         batch_hash: str,
         capability: SimulationAudienceCapability,
     ) -> SimulationOutputView:
-        try:
-            batch = self._outputs_by_hash[batch_hash]
-        except (KeyError, TypeError):
-            raise KeyError("unknown scenario output batch") from None
-        return project_scenario_output_view(batch, capability)
+        with self._lock:
+            try:
+                batch = self._outputs_by_hash[batch_hash]
+            except (KeyError, TypeError):
+                raise KeyError("unknown scenario output batch") from None
+            return project_scenario_output_view(batch, capability)
 
     def command_result(
         self,
@@ -327,16 +355,20 @@ class ScenarioCoordinator:
             raise TypeError(
                 "scenario command audit requires ScenarioCommandCapability"
             )
-        try:
-            authority_id, result = self._results_by_command_id[command_id]
-        except (KeyError, TypeError):
-            raise KeyError("unknown scenario command") from None
-        if capability.run_id != self._run_id or not (
-            capability.authority_id == authority_id
-            or capability.can_read_all_audit
-        ):
-            raise PermissionError("scenario command audit is not authorized")
-        return result
+        with self._lock:
+            if capability.run_id != self._run_id:
+                raise PermissionError("scenario command audit is not authorized")
+            try:
+                retained = self._results_by_command_id.get(command_id)
+            except TypeError:
+                retained = None
+            if capability.can_read_all_audit:
+                if retained is None:
+                    raise KeyError("unknown scenario command") from None
+                return retained[1]
+            if retained is None or capability.authority_id != retained[0]:
+                raise PermissionError("scenario command audit is not authorized")
+            return retained[1]
 
     def submit_command(
         self,
@@ -347,13 +379,20 @@ class ScenarioCoordinator:
             raise TypeError("scenario command requires ScenarioCommandRequest")
         if not isinstance(capability, ScenarioCommandCapability):
             raise TypeError("scenario command requires ScenarioCommandCapability")
-        if self._executing:
-            raise RuntimeError("reentrant scenario command submission")
-        self._executing = True
-        try:
-            return self._submit_command(request, capability)
-        finally:
-            self._executing = False
+        with self._lock:
+            thread_id = get_ident()
+            if (
+                self._executing_thread_id == thread_id
+                and self._executing_operation is not None
+            ):
+                raise RuntimeError("reentrant scenario command submission")
+            self._executing_thread_id = thread_id
+            self._executing_operation = "submit_command"
+            try:
+                return self._submit_command(request, capability)
+            finally:
+                self._executing_thread_id = None
+                self._executing_operation = None
 
     def fork(
         self,
@@ -365,13 +404,20 @@ class ScenarioCoordinator:
             raise TypeError("scenario fork requires ScenarioForkRequest")
         if not isinstance(capability, ScenarioCommandCapability):
             raise TypeError("scenario fork requires ScenarioCommandCapability")
-        if self._executing:
-            raise RuntimeError("reentrant scenario command submission")
-        self._executing = True
-        try:
-            return self._fork(request, capability, child_database_path)
-        finally:
-            self._executing = False
+        with self._lock:
+            thread_id = get_ident()
+            if (
+                self._executing_thread_id == thread_id
+                and self._executing_operation is not None
+            ):
+                raise RuntimeError("reentrant scenario command submission")
+            self._executing_thread_id = thread_id
+            self._executing_operation = "fork"
+            try:
+                return self._fork(request, capability, child_database_path)
+            finally:
+                self._executing_thread_id = None
+                self._executing_operation = None
 
     def _fork(
         self,
@@ -440,7 +486,7 @@ class ScenarioCoordinator:
         if not registered_attempt:
             if (
                 len(self._fork_attempts_by_idempotency_key)
-                >= self._scenario.run_policy.maximum_output_records
+                >= self._fork_history_limit
             ):
                 raise ValueError(_FORK_HISTORY_LIMIT_ERROR)
             self._fork_attempts_by_idempotency_key[request.idempotency_key] = (
@@ -552,7 +598,7 @@ class ScenarioCoordinator:
         else:
             if (
                 len(self._attempts_by_idempotency_key)
-                >= self._scenario.run_policy.maximum_output_records
+                >= self._command_history_limit
             ):
                 raise ValueError(_COMMAND_HISTORY_LIMIT_ERROR)
             self._attempts_by_idempotency_key[request.idempotency_key] = (

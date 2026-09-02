@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from threading import Event, Lock, Thread
 import unittest
 
 from narrative_dynamics.abm.scenario_compiler import (
@@ -264,6 +265,125 @@ class SimulationOutputBusTests(unittest.TestCase):
             ("a-remover", "b-removed"),
         )
         self.assertEqual(second.delivered_subscription_ids, ("a-remover",))
+
+    def test_cross_thread_publications_wait_and_deliver_in_serial_order(self) -> None:
+        bus = SimulationOutputBus()
+        first_callback_entered = Event()
+        release_first_callback = Event()
+        second_attempting = Event()
+        second_done = Event()
+        call_lock = Lock()
+        calls = 0
+        reports = []
+        errors = []
+
+        def callback(_: SimulationOutputView) -> None:
+            nonlocal calls
+            with call_lock:
+                calls += 1
+                call_number = calls
+            if call_number == 1:
+                first_callback_entered.set()
+                if not release_first_callback.wait(5):
+                    raise RuntimeError("test callback release timed out")
+
+        bus.subscribe(
+            "serialized",
+            self.all_kinds,
+            SimulationAudienceCapability(SimulationOutputAudience.PUBLIC),
+            callback,
+        )
+
+        def publish(*, attempting=None, done=None) -> None:
+            if attempting is not None:
+                attempting.set()
+            try:
+                reports.append(bus.publish(self.batch))
+            except Exception as error:
+                errors.append(error)
+            finally:
+                if done is not None:
+                    done.set()
+
+        first = Thread(target=publish)
+        first.start()
+        self.assertTrue(first_callback_entered.wait(5))
+        second = Thread(
+            target=publish,
+            kwargs={"attempting": second_attempting, "done": second_done},
+        )
+        second.start()
+        self.assertTrue(second_attempting.wait(5))
+        completed_while_first_was_active = second_done.wait(0.5)
+        release_first_callback.set()
+        first.join(5)
+        second.join(5)
+
+        # Mutation caught: a Boolean guard rejects another thread as reentrant.
+        self.assertFalse(completed_while_first_was_active)
+        self.assertFalse(first.is_alive())
+        self.assertFalse(second.is_alive())
+        self.assertEqual(errors, [])
+        self.assertEqual(len(reports), 2)
+        self.assertEqual(calls, 2)
+        self.assertTrue(
+            all(
+                report.delivered_subscription_ids == ("serialized",)
+                for report in reports
+            )
+        )
+
+    def test_cross_thread_unsubscribe_waits_until_publication_finishes(self) -> None:
+        bus = SimulationOutputBus()
+        callback_entered = Event()
+        release_callback = Event()
+        unsubscribe_attempting = Event()
+        unsubscribe_done = Event()
+        calls = []
+
+        def blocker(_: SimulationOutputView) -> None:
+            calls.append("a-blocker")
+            if len(calls) == 1:
+                callback_entered.set()
+                if not release_callback.wait(5):
+                    raise RuntimeError("test callback release timed out")
+
+        bus.subscribe(
+            "a-blocker",
+            self.all_kinds,
+            SimulationAudienceCapability(SimulationOutputAudience.PUBLIC),
+            blocker,
+        )
+        bus.subscribe(
+            "b-victim",
+            self.all_kinds,
+            SimulationAudienceCapability(SimulationOutputAudience.PUBLIC),
+            lambda _: calls.append("b-victim"),
+        )
+
+        publisher = Thread(target=bus.publish, args=(self.batch,))
+        publisher.start()
+        self.assertTrue(callback_entered.wait(5))
+
+        def unsubscribe() -> None:
+            unsubscribe_attempting.set()
+            bus.unsubscribe("b-victim")
+            unsubscribe_done.set()
+
+        remover = Thread(target=unsubscribe)
+        remover.start()
+        self.assertTrue(unsubscribe_attempting.wait(5))
+        completed_while_publication_was_active = unsubscribe_done.wait(0.5)
+        release_callback.set()
+        publisher.join(5)
+        remover.join(5)
+        bus.publish(self.batch)
+
+        # Mutation caught: cross-thread mutation changes state inside publication.
+        self.assertFalse(completed_while_publication_was_active)
+        self.assertFalse(publisher.is_alive())
+        self.assertFalse(remover.is_alive())
+        self.assertEqual(calls, ["a-blocker", "b-victim", "a-blocker"])
 
     def test_contracts_are_frozen_canonical_and_content_addressed(self) -> None:
         capability = SimulationAudienceCapability(SimulationOutputAudience.PUBLIC)

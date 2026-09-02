@@ -5,9 +5,11 @@ import os
 from pathlib import Path
 import sqlite3
 from tempfile import TemporaryDirectory
+from threading import Event, Lock, Thread
 import unittest
 from unittest.mock import patch
 
+from narrative_dynamics.abm import scenario_coordinator as coordinator_module
 from narrative_dynamics.abm.scenario_checkpoint_store import (
     LocalScenarioCheckpointStore,
 )
@@ -481,7 +483,10 @@ class ScenarioCoordinatorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "idempotency key"):
             coordinator.submit_command(changed_request, operator)
         with self.assertRaisesRegex(KeyError, "unknown scenario command"):
-            coordinator.command_result("different-command", operator)
+            coordinator.command_result(
+                "different-command",
+                self.capability(can_read_all_audit=True),
+            )
 
         changed_capability = self.capability(
             ScenarioCommandKind.PAUSE,
@@ -508,7 +513,10 @@ class ScenarioCoordinatorTests(unittest.TestCase):
 
         self.assertEqual(coordinator.run_view(), before)
         with self.assertRaisesRegex(KeyError, "unknown scenario command"):
-            coordinator.command_result(failed.command_id, self.capability())
+            coordinator.command_result(
+                failed.command_id,
+                self.capability(can_read_all_audit=True),
+            )
 
     def test_failed_attempt_rejects_different_key_under_same_command_id(self) -> None:
         coordinator, failed = self.failed_projector_attempt("failed-command-id")
@@ -521,7 +529,10 @@ class ScenarioCoordinatorTests(unittest.TestCase):
 
         self.assertEqual(coordinator.run_view(), before)
         with self.assertRaisesRegex(KeyError, "unknown scenario command"):
-            coordinator.command_result(failed.command_id, self.capability())
+            coordinator.command_result(
+                failed.command_id,
+                self.capability(can_read_all_audit=True),
+            )
 
     def test_failed_attempt_rejects_changed_capability_but_exact_retry_succeeds(self) -> None:
         coordinator, failed = self.failed_projector_attempt("failed-capability")
@@ -551,6 +562,164 @@ class ScenarioCoordinatorTests(unittest.TestCase):
             can_read_all_audit=True,
         )
         self.assertIs(coordinator.command_result(request.command_id, host), result)
+
+    def test_command_audit_hides_known_and_unknown_ids_from_foreign_authorities(self) -> None:
+        coordinator = self.coordinator()
+        request = self.request(coordinator, ScenarioCommandKind.START)
+        coordinator.submit_command(request, self.capability())
+        foreign = self.capability(authority_id="foreign")
+
+        errors = []
+        for command_id in (request.command_id, "unknown-command"):
+            with self.subTest(command_id=command_id):
+                with self.assertRaises(PermissionError) as raised:
+                    coordinator.command_result(command_id, foreign)
+                errors.append(str(raised.exception))
+
+        # Mutation caught: looking up the ID before authorization reveals existence.
+        self.assertEqual(
+            errors,
+            [
+                "scenario command audit is not authorized",
+                "scenario command audit is not authorized",
+            ],
+        )
+        host = self.capability(authority_id="host", can_read_all_audit=True)
+        with self.assertRaisesRegex(KeyError, "unknown scenario command"):
+            coordinator.command_result("unknown-command", host)
+        with self.assertRaisesRegex(PermissionError, "not authorized"):
+            coordinator.command_result("unknown-command", self.capability())
+        wrong_run_host = self.capability(
+            authority_id="host",
+            run_id="other-run",
+            can_read_all_audit=True,
+        )
+        for command_id in (request.command_id, "unknown-command"):
+            with self.subTest(wrong_run_command_id=command_id):
+                with self.assertRaisesRegex(PermissionError, "not authorized"):
+                    coordinator.command_result(command_id, wrong_run_host)
+
+    def test_concurrent_real_steps_serialize_and_keep_sqlite_state_coherent(self) -> None:
+        coordinator = self.coordinator()
+        self.start(coordinator)
+        first_request = self.request(coordinator, ScenarioCommandKind.STEP)
+        second_request = self.request(coordinator, ScenarioCommandKind.STEP)
+        real_transition = coordinator_module.simulate_situated_network_round
+        first_transition_entered = Event()
+        release_first_transition = Event()
+        second_transition_entered = Event()
+        second_attempting = Event()
+        invocation_lock = Lock()
+        invocation_count = 0
+        results = {}
+        errors = []
+
+        def controlled_transition(*args, **kwargs):
+            nonlocal invocation_count
+            with invocation_lock:
+                invocation_count += 1
+                invocation = invocation_count
+            if invocation == 1:
+                first_transition_entered.set()
+                if not release_first_transition.wait(5):
+                    raise RuntimeError("test transition release timed out")
+            else:
+                second_transition_entered.set()
+            return real_transition(*args, **kwargs)
+
+        def submit(label, request, *, attempting=None) -> None:
+            if attempting is not None:
+                attempting.set()
+            try:
+                results[label] = coordinator.submit_command(
+                    request,
+                    self.capability(),
+                )
+            except Exception as error:
+                errors.append(error)
+
+        with patch.object(
+            coordinator_module,
+            "simulate_situated_network_round",
+            side_effect=controlled_transition,
+        ):
+            first = Thread(target=submit, args=("first", first_request))
+            first.start()
+            self.assertTrue(first_transition_entered.wait(5))
+            second = Thread(
+                target=submit,
+                args=("second", second_request),
+                kwargs={"attempting": second_attempting},
+            )
+            second.start()
+            self.assertTrue(second_attempting.wait(5))
+            entered_while_first_was_active = second_transition_entered.wait(0.5)
+            release_first_transition.set()
+            first.join(5)
+            second.join(5)
+
+        # Mutation caught: a Boolean guard rejects/races instead of serializing threads.
+        self.assertFalse(first.is_alive())
+        self.assertFalse(second.is_alive())
+        self.assertFalse(entered_while_first_was_active)
+        self.assertEqual(errors, [])
+        self.assertTrue(results["first"].accepted)
+        self.assertFalse(results["second"].accepted)
+        self.assertIs(results["second"].reason, ScenarioCommandReason.STALE_STATE)
+        self.assertEqual(coordinator.state.round_index, 1)
+        self.assertEqual(
+            coordinator.state.memory_store_hash,
+            hash_situated_percept_memory_store(self.database),
+        )
+
+    def test_cross_thread_query_waits_for_a_coherent_committed_step(self) -> None:
+        coordinator = self.coordinator()
+        self.start(coordinator)
+        request = self.request(coordinator, ScenarioCommandKind.STEP)
+        real_transition = coordinator_module.simulate_situated_network_round
+        transition_entered = Event()
+        release_transition = Event()
+        reader_attempting = Event()
+        reader_done = Event()
+        observed = []
+
+        def controlled_transition(*args, **kwargs):
+            transition_entered.set()
+            if not release_transition.wait(5):
+                raise RuntimeError("test transition release timed out")
+            return real_transition(*args, **kwargs)
+
+        def read_view() -> None:
+            reader_attempting.set()
+            observed.append(coordinator.run_view())
+            reader_done.set()
+
+        with patch.object(
+            coordinator_module,
+            "simulate_situated_network_round",
+            side_effect=controlled_transition,
+        ):
+            writer = Thread(
+                target=coordinator.submit_command,
+                args=(request, self.capability()),
+            )
+            writer.start()
+            self.assertTrue(transition_entered.wait(5))
+            reader = Thread(target=read_view)
+            reader.start()
+            self.assertTrue(reader_attempting.wait(5))
+            completed_before_commit = reader_done.wait(0.5)
+            release_transition.set()
+            writer.join(5)
+            reader.join(5)
+
+        # Mutation caught: unlocked queries can observe the pre-step half of an operation.
+        self.assertFalse(completed_before_commit)
+        self.assertFalse(writer.is_alive())
+        self.assertFalse(reader.is_alive())
+        self.assertEqual(len(observed), 1)
+        self.assertEqual(observed[0].round_index, 1)
+        self.assertEqual(observed[0].state_hash, coordinator.state.content_hash)
 
     def test_one_running_step_advances_one_round_and_emits_canonical_command_record(self) -> None:
         coordinator = self.coordinator()
@@ -657,6 +826,50 @@ class ScenarioCoordinatorTests(unittest.TestCase):
         self.assertEqual(view.first_sequence, 1)
         self.assertEqual(view.last_sequence, 1)
 
+    def test_one_record_budget_still_permits_start_and_first_command_only_step(self) -> None:
+        scenario = replace(
+            self.scenario,
+            run_policy=replace(
+                self.scenario.run_policy,
+                maximum_rounds=1,
+                maximum_output_records=1,
+                allowed_output_kinds=(SimulationOutputKind.COMMAND_RESULT.value,),
+            ),
+        )
+        coordinator = self.coordinator(scenario=scenario)
+
+        started = self.start(coordinator)
+        stepped = self.submit(coordinator, ScenarioCommandKind.STEP)
+
+        # Mutation caught: tying command attempts directly to output capacity blocks step.
+        self.assertTrue(started.accepted)
+        self.assertTrue(stepped.accepted)
+        self.assertEqual(coordinator.state.round_index, 1)
+        self.assertIs(coordinator.run_view().status, ScenarioRunStatus.COMPLETED)
+
+    def test_command_history_cannot_preempt_the_full_declared_round_budget(self) -> None:
+        scenario = replace(
+            self.scenario,
+            run_policy=replace(
+                self.scenario.run_policy,
+                maximum_rounds=3,
+                maximum_output_records=3,
+                allowed_output_kinds=(SimulationOutputKind.COMMAND_RESULT.value,),
+            ),
+        )
+        coordinator = self.coordinator(scenario=scenario)
+
+        self.start(coordinator)
+        results = [
+            self.submit(coordinator, ScenarioCommandKind.STEP)
+            for _ in range(3)
+        ]
+
+        # Mutation caught: a smaller attempt cap rejects a legal final declared step.
+        self.assertTrue(all(result.accepted for result in results))
+        self.assertEqual(coordinator.state.round_index, 3)
+        self.assertIs(coordinator.run_view().status, ScenarioRunStatus.COMPLETED)
+
     def test_policy_without_base_or_command_record_has_stable_atomic_failure(self) -> None:
         scenario = replace(
             self.scenario,
@@ -680,7 +893,10 @@ class ScenarioCoordinatorTests(unittest.TestCase):
         self.assertEqual(hash_situated_percept_memory_store(self.database), memory_hash)
         self.assertEqual(coordinator.run_view(), before)
         with self.assertRaisesRegex(KeyError, "unknown scenario command"):
-            coordinator.command_result(request.command_id, self.capability())
+            coordinator.command_result(
+                request.command_id,
+                self.capability(can_read_all_audit=True),
+            )
 
     def test_output_limit_counts_optional_command_and_all_retained_records(self) -> None:
         command_plus_metrics = replace(
@@ -721,7 +937,11 @@ class ScenarioCoordinatorTests(unittest.TestCase):
     def test_command_attempt_history_limit_bounds_invalid_control_spam_and_preserves_cached_results(self) -> None:
         scenario = replace(
             self.scenario,
-            run_policy=replace(self.scenario.run_policy, maximum_output_records=2),
+            run_policy=replace(
+                self.scenario.run_policy,
+                maximum_rounds=1,
+                maximum_output_records=1,
+            ),
         )
         coordinator = self.coordinator(scenario=scenario)
         operator = self.capability()
@@ -729,6 +949,13 @@ class ScenarioCoordinatorTests(unittest.TestCase):
         first = coordinator.submit_command(first_request, operator)
         second_request = self.request(coordinator, ScenarioCommandKind.RESUME)
         second = coordinator.submit_command(second_request, operator)
+        # The derived bound is 1 output + 1 round + 6 closed command kinds = 8.
+        for _ in range(6):
+            rejected = coordinator.submit_command(
+                self.request(coordinator, ScenarioCommandKind.STEP),
+                operator,
+            )
+            self.assertFalse(rejected.accepted)
         before = coordinator.run_view()
 
         # Mutation caught: rejected controls can grow attempt/audit history without bound.
@@ -755,6 +982,7 @@ class ScenarioCoordinatorTests(unittest.TestCase):
             self.scenario,
             run_policy=replace(
                 self.scenario.run_policy,
+                maximum_rounds=1,
                 maximum_output_records=2,
                 allowed_output_kinds=(SimulationOutputKind.COMMAND_RESULT.value,),
             ),
@@ -768,6 +996,13 @@ class ScenarioCoordinatorTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(RuntimeError, "projector seam failed"):
                 coordinator.submit_command(failed, self.capability())
+        # Fill the remaining 7 slots in the derived 2 + 1 + 6 attempt bound.
+        for _ in range(7):
+            rejected = coordinator.submit_command(
+                self.request(coordinator, ScenarioCommandKind.START),
+                self.capability(),
+            )
+            self.assertFalse(rejected.accepted)
         before = coordinator.run_view()
 
         with self.assertRaisesRegex(
@@ -990,7 +1225,10 @@ class ScenarioCoordinatorTests(unittest.TestCase):
         self.assertEqual(hash_situated_percept_memory_store(self.database), memory_hash)
         self.assertEqual(coordinator.run_view(), before)
         with self.assertRaisesRegex(KeyError, "unknown scenario command"):
-            coordinator.command_result(request.command_id, self.capability())
+            coordinator.command_result(
+                request.command_id,
+                self.capability(can_read_all_audit=True),
+            )
 
         retried = coordinator.submit_command(request, self.capability())
         self.assertTrue(retried.accepted)
@@ -1017,7 +1255,10 @@ class ScenarioCoordinatorTests(unittest.TestCase):
         self.assertEqual(hash_situated_percept_memory_store(self.database), memory_hash)
         self.assertEqual(coordinator.run_view(), before)
         with self.assertRaisesRegex(KeyError, "unknown scenario command"):
-            coordinator.command_result(request.command_id, self.capability())
+            coordinator.command_result(
+                request.command_id,
+                self.capability(can_read_all_audit=True),
+            )
 
         retried = coordinator.submit_command(request, self.capability())
         self.assertTrue(retried.accepted)
@@ -1041,7 +1282,10 @@ class ScenarioCoordinatorTests(unittest.TestCase):
         self.assertEqual(hash_situated_percept_memory_store(self.database), memory_hash)
         self.assertEqual(coordinator.run_view(), before)
         with self.assertRaisesRegex(KeyError, "unknown scenario command"):
-            coordinator.command_result(request.command_id, self.capability())
+            coordinator.command_result(
+                request.command_id,
+                self.capability(can_read_all_audit=True),
+            )
 
         retried = coordinator.submit_command(request, self.capability())
         self.assertTrue(retried.accepted)
@@ -1076,7 +1320,10 @@ class ScenarioCoordinatorTests(unittest.TestCase):
 
         self.assertEqual(coordinator.run_view().checkpoint_hashes, ())
         with self.assertRaisesRegex(KeyError, "unknown scenario command"):
-            coordinator.command_result(request.command_id, self.capability())
+            coordinator.command_result(
+                request.command_id,
+                self.capability(can_read_all_audit=True),
+            )
 
     def test_manual_checkpoint_rejects_reserved_automatic_id_before_store_mutation(self) -> None:
         store = LocalScenarioCheckpointStore(self.root / "reserved-checkpoints")
@@ -1289,7 +1536,11 @@ class ScenarioCoordinatorTests(unittest.TestCase):
     def test_invalid_fork_spam_is_not_retained_and_authorized_history_is_bounded(self) -> None:
         scenario = replace(
             self.scenario,
-            run_policy=replace(self.scenario.run_policy, maximum_output_records=2),
+            run_policy=replace(
+                self.scenario.run_policy,
+                maximum_rounds=1,
+                maximum_output_records=1,
+            ),
         )
         store = LocalScenarioCheckpointStore(self.root / "bounded-fork-checkpoints")
         coordinator = self.coordinator(
@@ -1354,7 +1605,8 @@ class ScenarioCoordinatorTests(unittest.TestCase):
                     )
 
         retained = []
-        for number in range(2):
+        # Independent fork attempts use the same finite 1 + 1 + 6 derived bound.
+        for number in range(8):
             request = self.fork_request(
                 coordinator,
                 checkpoint_hash,

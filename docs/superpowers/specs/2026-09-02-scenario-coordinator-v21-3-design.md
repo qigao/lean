@@ -15,6 +15,9 @@ pure-Web editor. It is not itself a server and does not introduce a transport.
 ## Binding choices
 
 - One coordinator is the sole writer for one `run_id` and one SQLite memory store.
+- A per-coordinator reentrant lock serializes commands, forks, and coherent queries
+  across threads. Same-thread callback command/fork reentry is rejected explicitly;
+  callback queries remain safe.
 - The coordinator is synchronous and single-process. `start` and `resume` change run
   status; they do not create a background thread. A `step` command performs one exact
   barriered V19 round.
@@ -138,6 +141,8 @@ the future `AgentExecutor` and `AgentDirectory` wire seams remain reserved.
 `SimulationOutputBus` stores subscriptions containing an output-kind allowlist and one
 existing `SimulationAudienceCapability`. Publication snapshots the subscription table,
 filters before callback, and invokes callbacks synchronously in subscription-ID order.
+A reentrant bus lock serializes cross-thread publications and subscription mutations;
+only nested `publish()` from the active callback thread is `reentrant_publish`.
 
 - A callback receives only `SimulationOutputView`.
 - A callback must return `None`; any other value is a redacted delivery failure.
@@ -177,9 +182,13 @@ state hash/object, source sequence, parent checkpoint hash, and memory-store has
 Its content hash excludes its file location.
 
 `LocalScenarioCheckpointStore` writes an exact SQLite snapshot through a
-same-directory stage, flush/fsync, and `os.replace`. It keeps typed artifact metadata
-for the active process and restores by checkpoint hash. Duplicate checkpoint IDs are
-idempotent only for the same artifact; conflicting reuse is rejected.
+same-directory stage, flush/fsync, and same-filesystem hard-link create-if-absent
+publication. It never replaces an existing artifact or restore target. A store-level
+reentrant lock covers metadata plus each create/load/restore/discard lifecycle, and
+no-follow physical `(st_dev, st_ino)` ownership checks prevent cleanup from unlinking
+substituted files. It keeps typed artifact metadata for the active process and restores
+by checkpoint hash. Duplicate checkpoint IDs are idempotent only for the same artifact;
+conflicting reuse is rejected.
 `discard(checkpoint_hash)` removes only an exact store-owned artifact and is used to
 roll back an automatic checkpoint if the following state compare-and-swap fails.
 
@@ -196,7 +205,11 @@ to the checkpoint's `memory_store_hash` before the child is exposed.
 
 - `maximum_rounds`, `checkpoint_interval`, and `maximum_output_records` are enforced
   from the compiled run policy.
-- Command and output history are bounded by those scenario limits for V21.3.
+- Output records remain bounded by `maximum_output_records`. Command-attempt and
+  fork-attempt maps are bounded independently by the deterministic formula
+  `maximum_output_records + maximum_rounds + len(ScenarioCommandKind)`. The positive
+  output budget plus one slot per closed command kind guarantees that mandatory
+  `start` and all declared `step` attempts cannot be pre-empted by the history bound.
 - No unbounded queue or background worker exists.
 - A process crash after V19 publishes SQLite but before the coordinator records the
   next state remains the known V19 crash boundary. Durable coordinator metadata and

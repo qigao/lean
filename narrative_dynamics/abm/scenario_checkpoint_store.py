@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import wraps
 import os
 from pathlib import Path
 import re
 import sqlite3
 import stat
 from tempfile import mkstemp
+from threading import RLock
 
 from narrative_dynamics.abm.scenario_coordinator_contracts import ScenarioCheckpoint
 from narrative_dynamics.abm.situated_percept_memory import (
@@ -43,6 +45,19 @@ class _ScenarioCheckpointOwnedRestoreError(RuntimeError):
     ) -> None:
         super().__init__(message)
         self.ownership_token = ownership_token
+
+
+class _ScenarioCheckpointStageOwnershipError(RuntimeError):
+    """Keep ownership failures distinct while sanitizing stage I/O errors."""
+
+
+def _synchronized_store(method):
+    @wraps(method)
+    def synchronized(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return synchronized
 
 
 def _checkpoint_hash(value: object) -> tuple[str, str]:
@@ -111,10 +126,19 @@ def _flush_file(path: Path, expected: _PhysicalFileOwnershipToken) -> None:
         expected,
         message="scenario checkpoint stage ownership changed",
     )
-    with path.open("rb+") as stream:
-        if _PhysicalFileOwnershipToken.from_stat(os.fstat(stream.fileno())) != expected:
-            raise RuntimeError("scenario checkpoint stage ownership changed")
-        os.fsync(stream.fileno())
+    try:
+        with path.open("rb+") as stream:
+            if (
+                _PhysicalFileOwnershipToken.from_stat(os.fstat(stream.fileno()))
+                != expected
+            ):
+                raise _ScenarioCheckpointStageOwnershipError
+            stream.flush()
+            os.fsync(stream.fileno())
+    except _ScenarioCheckpointStageOwnershipError:
+        raise RuntimeError("scenario checkpoint stage ownership changed") from None
+    except Exception:
+        raise RuntimeError("scenario checkpoint stage flush failed") from None
     _require_file_token(
         path,
         expected,
@@ -223,6 +247,7 @@ class LocalScenarioCheckpointStore:
                 raise OSError("not a directory")
         except OSError as error:
             raise RuntimeError("scenario checkpoint root is unavailable") from None
+        self._lock = RLock()
         self._checkpoints_by_hash: dict[str, ScenarioCheckpoint] = {}
         self._hash_by_checkpoint_id: dict[str, str] = {}
         self._artifact_tokens_by_hash: dict[
@@ -319,6 +344,7 @@ class LocalScenarioCheckpointStore:
         if self._hash_by_checkpoint_id.get(checkpoint.checkpoint_id) == checkpoint_hash:
             self._hash_by_checkpoint_id.pop(checkpoint.checkpoint_id, None)
 
+    @_synchronized_store
     def create(
         self,
         checkpoint: ScenarioCheckpoint,
@@ -431,6 +457,7 @@ class LocalScenarioCheckpointStore:
             owned=published,
         )
 
+    @_synchronized_store
     def load(self, checkpoint_hash: str) -> ScenarioCheckpoint:
         exact_hash, _ = _checkpoint_hash(checkpoint_hash)
         try:
@@ -465,6 +492,7 @@ class LocalScenarioCheckpointStore:
             raise ValueError("scenario checkpoint snapshot failed integrity validation")
         return artifact_token
 
+    @_synchronized_store
     def restore(
         self,
         checkpoint_hash: str,
@@ -475,6 +503,7 @@ class LocalScenarioCheckpointStore:
         except _ScenarioCheckpointOwnedRestoreError as error:
             raise RuntimeError(str(error)) from None
 
+    @_synchronized_store
     def _restore_owned(
         self,
         checkpoint_hash: str,
@@ -576,8 +605,9 @@ class LocalScenarioCheckpointStore:
             raise RuntimeError("scenario checkpoint restore cleanup failed") from None
         return stage_token
 
-    @staticmethod
+    @_synchronized_store
     def _cleanup_restored_target(
+        self,
         target_database_path: str | Path,
         ownership_token: _PhysicalFileOwnershipToken,
     ) -> None:
@@ -592,8 +622,9 @@ class LocalScenarioCheckpointStore:
             message="scenario checkpoint restore target ownership changed",
         )
 
-    @staticmethod
+    @_synchronized_store
     def _verify_restored_target(
+        self,
         target_database_path: str | Path,
         ownership_token: _PhysicalFileOwnershipToken,
     ) -> None:
@@ -609,6 +640,7 @@ class LocalScenarioCheckpointStore:
             message="scenario checkpoint restore target ownership changed",
         )
 
+    @_synchronized_store
     def discard(self, checkpoint_hash: str) -> None:
         exact_hash, _ = _checkpoint_hash(checkpoint_hash)
         checkpoint = self._checkpoints_by_hash.get(exact_hash)
