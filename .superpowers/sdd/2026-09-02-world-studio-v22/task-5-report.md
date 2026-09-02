@@ -489,3 +489,62 @@ Host used for this round: Node 24.5.0, npm 11.5.2, Windows.
   breaking Monaco downgrade.
 - The Playwright `.last-run.json` artifact was removed before staging; generated result
   directories remain ignored.
+
+## Fix Round 4
+
+Review base and pre-commit head: `284e632bf9065e74e28043d7c31e63d107817531` on
+`feature/world-studio-v22-1-workspace`. The final commit hash is reported in the handoff
+because a commit cannot embed its own resulting hash. This round changes only the
+subscription-cleanup incarnation lifecycle finding.
+
+### RED to GREEN evidence
+
+Two server-registry lifecycle cases were added before production changed. The first
+subscribes deterministic ID A, retires it, closes the client, connects a new WebSocket,
+subscribes a new A incarnation, and retires it again. It reproduced the finding with
+`1 failed, 16 passed`: the second socket's first switch control was `stream.subscribe`
+when the registry required `stream.unsubscribe`. The client-lifetime completed-ID set
+had mistaken the new A incarnation for the already retired old A. The second case drives
+A to B to A to B on one socket and records every actual generation-unique wire binding;
+it already protected the intended behavior because those wire IDs differ, and now
+guards the incarnation sequence A, B-generation-1, A-generation-2, B-generation-3.
+
+GREEN replaces permanent completed-ID history with a map containing only currently
+in-flight retirement promises. A concurrent duplicate cleanup for the same active ID
+shares the exact promise, while `finally` removes the entry after either success or
+failure. Consequently a later subscription incarnation using the same deterministic ID
+always performs a new unsubscribe. The existing serialized switch chain bounds this
+map to active control work; there is no client-lifetime ID retention. Exact response
+validation and safe close on ambiguous cleanup are unchanged.
+
+Final focused evidence is `17 passed`: both A incarnations are unsubscribed once with no
+orphan/capacity leak; the one-socket sequence retires each active incarnation once and
+leaves only B-generation-3 active. The same-tick supersession registry, private-output
+discard, unique generation IDs, duplicate-cleanup behavior, and ambiguous-cleanup close
+tests remain green.
+
+### Verification, scope, and audit
+
+Host used for this round: Node 24.5.0, npm 11.5.2, Windows.
+
+- `npx vitest run src/rpc/stream-client.test.ts` — 1 file, 17 tests passed.
+- `npm test -- --run` — 15 files, 88 tests passed.
+- `npm run typecheck` — exit 0.
+- `npm run build` — 2,752 modules transformed in 4.37s; only the known lazy Monaco
+  chunk-size warning remains.
+- `npx playwright test e2e/law-firm.spec.ts` against the production build and launcher
+  token mode — `1 passed (12.8s)`.
+- `git diff --check` — clean apart from host LF-to-CRLF notices.
+- Production changed only `world_studio_web/src/rpc/stream-client.ts`; coverage changed
+  only `world_studio_web/src/rpc/stream-client.test.ts`; this report is the third file.
+  No Python, RPC/schema, server, component, dependency, or persistence surface changed,
+  so the proportionate gate is the complete browser/build/real-E2E surface.
+- The forbidden and identity scan is clean. The in-flight cleanup map is bounded
+  transport coordination only and does not enter semantic content, command, fork, run,
+  checkpoint, recovery, or capability identities/hashes. Dependency manifests are
+  unchanged.
+- `npm audit --omit=dev` still reports only the previously disclosed Monaco-vendored
+  DOMPurify chain (two findings: one low and one moderate); the offered forced fix is a
+  breaking Monaco downgrade.
+- The Playwright `.last-run.json` artifact was removed before staging; generated result
+  directories remain ignored.

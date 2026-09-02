@@ -247,7 +247,7 @@ export class StreamClient extends EventTarget {
   private audienceGeneration = 0;
   private audienceSwitchTail: Promise<void> = Promise.resolve();
   private readonly retiredSubscriptionIds = new Set<string>();
-  private readonly unsubscribedSubscriptionIds = new Set<string>();
+  private readonly retirementControls = new Map<string, Promise<void>>();
 
   constructor(private readonly endpoint: string, options: StreamClientOptions = {}) {
     super();
@@ -297,24 +297,29 @@ export class StreamClient extends EventTarget {
   }
 
   private async unsubscribeRetiring(subscriptionId: string): Promise<void> {
-    if (this.unsubscribedSubscriptionIds.has(subscriptionId)) return;
-    let result: JsonValue;
+    const existing = this.retirementControls.get(subscriptionId);
+    if (existing !== undefined) return existing;
+    const cleanup = (async (): Promise<void> => {
+      let result: JsonValue;
+      try {
+        result = await this.sendControl("stream.unsubscribe", { subscription_id: subscriptionId });
+      } catch (error) {
+        this.close();
+        throw error;
+      }
+      if (!isRecord(result) || !hasExactKeys(result, ["subscription_id", "unsubscribed"]) ||
+          result.subscription_id !== subscriptionId || result.unsubscribed !== true) {
+        this.close();
+        throw new StreamProtocolError("Audience switch unsubscribe response is malformed");
+      }
+    })();
+    this.retirementControls.set(subscriptionId, cleanup);
     try {
-      result = await this.sendControl("stream.unsubscribe", { subscription_id: subscriptionId });
-    } catch (error) {
-      this.close();
-      throw error;
-    }
-    if (!isRecord(result) || !hasExactKeys(result, ["subscription_id", "unsubscribed"]) ||
-        result.subscription_id !== subscriptionId || result.unsubscribed !== true) {
-      this.close();
-      throw new StreamProtocolError("Audience switch unsubscribe response is malformed");
-    }
-    this.unsubscribedSubscriptionIds.add(subscriptionId);
-    while (this.unsubscribedSubscriptionIds.size > this.maximumRetainedIdentities) {
-      const oldest = this.unsubscribedSubscriptionIds.values().next().value as string | undefined;
-      if (oldest === undefined) break;
-      this.unsubscribedSubscriptionIds.delete(oldest);
+      await cleanup;
+    } finally {
+      if (this.retirementControls.get(subscriptionId) === cleanup) {
+        this.retirementControls.delete(subscriptionId);
+      }
     }
   }
 

@@ -95,6 +95,42 @@ async function flush(): Promise<void> {
   for (let index = 0; index < 12; index += 1) await Promise.resolve();
 }
 
+function respondToSubscription(socket: Socket, index: number): string {
+  const request = socket.request(index);
+  const params = request.params as JsonObject;
+  const subscriptionId = params.subscription_id;
+  const runId = params.run_id;
+  const streamId = params.stream_id;
+  const kinds = params.kinds;
+  const audience = params.audience;
+  expect(request.method).toBe("stream.subscribe");
+  if (typeof subscriptionId !== "string" || typeof runId !== "string" ||
+      typeof streamId !== "string" || !Array.isArray(kinds) || typeof audience !== "string") {
+    throw new Error("Subscribe request binding is malformed");
+  }
+  const result: JsonObject = {
+    subscription_id: subscriptionId,
+    run_id: runId,
+    stream_id: streamId,
+    kinds,
+    audience,
+  };
+  if (params.owner_agent_id !== undefined) result.owner_agent_id = params.owner_agent_id;
+  socket.respond(index, result);
+  return subscriptionId;
+}
+
+function respondToRetirement(socket: Socket, index: number, active: Set<string>): string {
+  const request = socket.request(index);
+  const params = request.params as JsonObject;
+  const subscriptionId = params.subscription_id;
+  expect(request.method).toBe("stream.unsubscribe");
+  if (typeof subscriptionId !== "string") throw new Error("Retirement ID is malformed");
+  expect(active.delete(subscriptionId)).toBe(true);
+  socket.respond(index, { subscription_id: subscriptionId, unsubscribed: true });
+  return subscriptionId;
+}
+
 async function connectedClient(
   options: ConstructorParameters<typeof StreamClient>[1] = {},
   initialBinding: StreamBinding = binding(),
@@ -456,6 +492,92 @@ describe("StreamClient strict JSON-RPC transport", () => {
     await expect(switching).rejects.toThrow("unsubscribe response is malformed");
     expect(sockets[0]!.readyState).toBe(3);
     expect(client.status).toBe("disconnected");
+  });
+
+  it("retires a reused subscription ID again after a new WebSocket incarnation", async () => {
+    const failures: Error[] = [];
+    const a = binding({ subscription_id: "subscription-A" });
+    const { client, sockets } = await connectedClient({
+      onProtocolError: (error) => failures.push(error),
+    }, a);
+    const active = new Set([a.subscription_id]);
+    const retirements: string[] = [];
+
+    const firstSwitch = client.switchAudience(binding({
+      subscription_id: "subscription-B",
+      audience: "agent",
+      owner_agent_id: "alice",
+    }), () => undefined);
+    await flush();
+    retirements.push(respondToRetirement(sockets[0]!, 1, active));
+    await flush();
+    expect(active.size).toBe(0);
+    active.add(respondToSubscription(sockets[0]!, 2));
+    await expect(firstSwitch).resolves.toBeUndefined();
+    expect(active).toEqual(new Set([client.binding!.subscription_id]));
+
+    client.close();
+    active.clear();
+    const reconnecting = client.connect(a);
+    sockets[1]!.open();
+    active.add(respondToSubscription(sockets[1]!, 0));
+    await expect(reconnecting).resolves.toBeUndefined();
+
+    const secondSwitch = client.switchAudience(binding({
+      subscription_id: "subscription-B",
+      audience: "agent",
+      owner_agent_id: "alice",
+    }), () => undefined);
+    await flush();
+    retirements.push(respondToRetirement(sockets[1]!, 1, active));
+    await flush();
+    expect(active.size).toBe(0);
+    active.add(respondToSubscription(sockets[1]!, 2));
+    await expect(secondSwitch).resolves.toBeUndefined();
+
+    expect(retirements).toEqual(["subscription-A", "subscription-A"]);
+    expect(active).toEqual(new Set([client.binding!.subscription_id]));
+    expect(failures).toEqual([]);
+  });
+
+  it("retires every A to B to A to B subscription incarnation on one socket", async () => {
+    const a = binding({ subscription_id: "subscription-A" });
+    const { client, sockets } = await connectedClient({}, a);
+    const socket = sockets[0]!;
+    const active = new Set([a.subscription_id]);
+    const retirements: string[] = [];
+    let control = 1;
+    const selections = [
+      binding({ subscription_id: "subscription-B", audience: "agent", owner_agent_id: "alice" }),
+      binding({ subscription_id: "subscription-A", audience: "public", owner_agent_id: null }),
+      binding({ subscription_id: "subscription-B", audience: "agent", owner_agent_id: "alice" }),
+    ];
+
+    for (const selection of selections) {
+      const switching = client.switchAudience(selection, () => undefined);
+      await flush();
+      retirements.push(respondToRetirement(socket, control, active));
+      control += 1;
+      await flush();
+      expect(active.size).toBe(0);
+      active.add(respondToSubscription(socket, control));
+      control += 1;
+      await expect(switching).resolves.toBeUndefined();
+      expect(active).toEqual(new Set([client.binding!.subscription_id]));
+    }
+
+    expect(retirements).toEqual([
+      "subscription-A",
+      "subscription-B-generation-1",
+      "subscription-A-generation-2",
+    ]);
+    expect(new Set(retirements).size).toBe(retirements.length);
+    expect(client.binding).toMatchObject({
+      subscription_id: "subscription-B-generation-3",
+      audience: "agent",
+      owner_agent_id: "alice",
+    });
+    expect(active).toEqual(new Set(["subscription-B-generation-3"]));
   });
 
   it("never commits an older Agent switch after a newer public selection", async () => {
