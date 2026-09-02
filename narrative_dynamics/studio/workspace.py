@@ -13,7 +13,6 @@ import shutil
 import sys
 from typing import cast
 
-from narrative_dynamics.abm.scenario_compiler import compile_situated_scenario_package
 from narrative_dynamics.abm.scenario_package import load_situated_scenario_package
 from narrative_dynamics.abm.scenario_package_contracts import (
     SCENARIO_DOCUMENT_SCHEMA,
@@ -656,7 +655,15 @@ class ScenarioProjectWorkspace:
     @staticmethod
     def _compile_snapshot(snapshot: ScenarioDraftSnapshot):
         source = _source_from_snapshot(snapshot)
-        compiled = compile_situated_scenario_package(source)
+        compiled, report = compile_with_report(
+            snapshot.project_id,
+            snapshot.revision,
+            source,
+        )
+        if compiled is None:
+            raise ScenarioProjectValidationError(
+                "scenario project cannot compile", report
+            )
         if snapshot.compiled_scenario_hash != compiled.content_hash:
             raise ScenarioProjectValidationError("scenario project compile identity failed")
         return compiled
@@ -667,6 +674,7 @@ class ScenarioProjectWorkspace:
         if (
             not isinstance(target_name, str)
             or _EXPORT_TARGET.fullmatch(target_name) is None
+            or len(target_name) > 128
             or target_name in {".", ".."}
             or ":" in target_name
         ):
@@ -679,9 +687,7 @@ class ScenarioProjectWorkspace:
         snapshot = self._store.load(project_id)
         _export_interleave(snapshot)
         compiled = self._compile_snapshot(snapshot)
-        published_name = (
-            f"{target_name}-{compiled.package_hash.removeprefix('sha256:')}"
-        )
+        published_name = compiled.package_hash.removeprefix("sha256:")
         target = export_root / published_name
         if target.exists() or target.is_symlink():
             raise ScenarioProjectConflictError("scenario export target already exists")

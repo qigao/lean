@@ -107,9 +107,7 @@ def test_export_is_direct_loader_compatible_and_no_clobber(tmp_path: Path) -> No
     manifest = json.loads(manifest_bytes)
 
     assert target.is_dir()
-    assert exported.target_name == (
-        "law-firm-release-" + compiled.package_hash.removeprefix("sha256:")
-    )
+    assert exported.target_name == compiled.package_hash.removeprefix("sha256:")
     assert exported.snapshot_hash == imported.content_hash
     assert exported.compiled_scenario_hash == compiled.content_hash
     assert workspace_compiled == compiled
@@ -178,7 +176,58 @@ def test_export_uses_one_loaded_snapshot_across_a_forced_interleaving(
     assert exported.compiled_scenario_hash == compiled.content_hash
 
 
-@pytest.mark.parametrize("target_name", ["../escape", "nested/name", "nested\\name", "."])
+def test_identical_content_has_one_hash_only_address_across_caller_labels(
+    tmp_path: Path,
+) -> None:
+    export_root = tmp_path / "exports"
+    export_root.mkdir()
+    workspace, _ = _imported(tmp_path / "studio.sqlite3", export_root)
+    compiled = workspace.compile("law-firm")
+
+    first = workspace.export("law-firm", "first-caller-label")
+
+    assert first.target_name == compiled.package_hash.removeprefix("sha256:")
+    with pytest.raises(ScenarioProjectConflictError, match="exists"):
+        workspace.export("law-firm", "different-caller-label")
+    assert tuple(path.name for path in export_root.iterdir()) == (first.target_name,)
+
+
+def test_invalid_exact_snapshot_rejects_export_with_stable_report_and_no_publication(
+    tmp_path: Path,
+) -> None:
+    export_root = tmp_path / "exports"
+    export_root.mkdir()
+    workspace, imported = _imported(tmp_path / "studio.sqlite3", export_root)
+    bad_value = "private-invalid-export-value"
+    invalid = workspace.apply(
+        ScenarioDraftOperation(
+            "op-invalid-export",
+            "key-invalid-export",
+            "law-firm",
+            imported.revision,
+            imported.content_hash,
+            "physical.world",
+            None,
+            DraftOperationKind.SET_VALUE,
+            pointer="/passages/0/target_place_id",
+            value=bad_value,
+        )
+    )
+
+    with pytest.raises(ScenarioProjectValidationError, match="cannot compile") as raised:
+        workspace.export("law-firm", "invalid-caller-label")
+
+    assert raised.value.diagnostic_report == invalid.diagnostic_report
+    serialized = json.dumps(raised.value.diagnostic_report.to_dict(), sort_keys=True)
+    assert bad_value not in serialized
+    assert str(tmp_path) not in serialized
+    assert not tuple(export_root.iterdir())
+    assert not list(export_root.glob(".*.stage-*"))
+
+
+@pytest.mark.parametrize(
+    "target_name", ["../escape", "nested/name", "nested\\name", ".", "x" * 129]
+)
 def test_export_rejects_root_escape_and_path_like_targets(
     tmp_path: Path, target_name: str
 ) -> None:
@@ -224,8 +273,22 @@ def test_publication_failure_preserves_prior_export_and_leaves_no_stage(
 ) -> None:
     export_root = tmp_path / "exports"
     export_root.mkdir()
-    workspace, _ = _imported(tmp_path / "studio.sqlite3", export_root)
+    workspace, imported = _imported(tmp_path / "studio.sqlite3", export_root)
     first = workspace.export("law-firm", "first-release")
+    workspace.apply(
+        ScenarioDraftOperation(
+            "op-second-export",
+            "key-second-export",
+            "law-firm",
+            imported.revision,
+            imported.content_hash,
+            "physical.world",
+            None,
+            DraftOperationKind.SET_VALUE,
+            pointer="/places/0/label",
+            value="Changed before failed publication",
+        )
+    )
 
     def fail_publication(stage: Path, target: Path) -> None:
         raise OSError("private injected detail")
