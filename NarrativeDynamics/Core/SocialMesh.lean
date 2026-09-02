@@ -41,4 +41,55 @@ theorem reachWithin_mono {Node : Type*} {g : MeshGraph Node}
   rcases reachable with ⟨length, bound, walk⟩
   exact ⟨length, Nat.le_trans bound largerBound, walk⟩
 
+/-- The graph visible inside one society retains only internal edges. -/
+def restrictMesh {Node : Type*} (g : MeshGraph Node) (inside : Node → Prop) :
+    MeshGraph Node :=
+  fun source target => inside source ∧ inside target ∧ g source target
+
+/-- A society is closed when no active mesh edge leaves it. -/
+def ClosedSociety {Node : Type*} (g : MeshGraph Node) (inside : Node → Prop) : Prop :=
+  ∀ {source target}, inside source → g source target → inside target
+
+/-- Every walk in a local projection is also a walk in the global mesh. -/
+theorem restricted_walk_lifts {Node : Type*} {g : MeshGraph Node}
+    {inside : Node → Prop} {length : Nat} {source target : Node}
+    (walk : MeshWalk (restrictMesh g inside) length source target) :
+    MeshWalk g length source target := by
+  induction walk with
+  | refl => exact MeshWalk.refl _
+  | step edge rest ih => exact MeshWalk.step edge.2.2 ih
+
+/-- A walk beginning inside a closed society also ends inside it. -/
+theorem closed_walk_target_inside {Node : Type*} {g : MeshGraph Node}
+    {inside : Node → Prop} (closed : ClosedSociety g inside)
+    {length : Nat} {source target : Node} (sourceInside : inside source)
+    (walk : MeshWalk g length source target) : inside target := by
+  induction walk with
+  | refl => exact sourceInside
+  | step edge rest ih => exact ih (closed sourceInside edge)
+
+/-- A global walk beginning inside a closed society can be reconstructed in
+that society's local projection. -/
+theorem closed_walk_restricts {Node : Type*} {g : MeshGraph Node}
+    {inside : Node → Prop} (closed : ClosedSociety g inside)
+    {length : Nat} {source target : Node} (sourceInside : inside source)
+    (walk : MeshWalk g length source target) :
+    MeshWalk (restrictMesh g inside) length source target := by
+  induction walk with
+  | refl => exact MeshWalk.refl _
+  | step edge rest ih =>
+      have nextInside := closed sourceInside edge
+      exact MeshWalk.step ⟨sourceInside, nextInside, edge⟩ (ih nextInside)
+
+/-- No bounded path can cross from a closed society to an outside node. -/
+theorem closed_no_cross_reach {Node : Type*} {g : MeshGraph Node}
+    {inside : Node → Prop} (closed : ClosedSociety g inside)
+    {limit : Nat} (source outsider : Node) (sourceInside : inside source)
+    (outsiderNotInside : ¬ inside outsider) :
+    ¬ ReachWithin g limit source outsider := by
+  intro reachable
+  rcases reachable with ⟨_, _, walk⟩
+  exact outsiderNotInside
+    (@closed_walk_target_inside Node g inside closed _ source outsider sourceInside walk)
+
 end NarrativeDynamics
