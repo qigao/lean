@@ -15,6 +15,7 @@ from narrative_dynamics.abm.scenario_checkpoint_store import (
 )
 from narrative_dynamics.abm.scenario_compiler import (
     compile_situated_scenario_package,
+    initialize_compiled_scenario,
 )
 from narrative_dynamics.abm.scenario_coordinator import ScenarioCoordinator
 from narrative_dynamics.abm.scenario_coordinator_contracts import (
@@ -27,6 +28,7 @@ from narrative_dynamics.abm.scenario_coordinator_contracts import (
 )
 from narrative_dynamics.abm.scenario_package import load_situated_scenario_package
 from narrative_dynamics.abm.scenario_state_store import InMemoryScenarioStateStore
+from narrative_dynamics.abm.simulation_output import project_simulation_output
 from narrative_dynamics.abm.simulation_output_bus import (
     SimulationDeliveryFailure,
     SimulationDeliveryReport,
@@ -41,6 +43,7 @@ from narrative_dynamics.abm.simulation_output_contracts import (
 from narrative_dynamics.abm.situated_percept_memory import (
     hash_situated_percept_memory_store,
 )
+from narrative_dynamics.abm.situated_network import simulate_situated_network_round
 from tests.scenario_package_fixtures import (
     mutate_json,
     refresh_manifest_hash,
@@ -720,6 +723,182 @@ class ScenarioCoordinatorTests(unittest.TestCase):
         self.assertEqual(len(observed), 1)
         self.assertEqual(observed[0].round_index, 1)
         self.assertEqual(observed[0].state_hash, coordinator.state.content_hash)
+
+    def test_external_bus_callback_query_does_not_deadlock_step_publication(self) -> None:
+        bus = SimulationOutputBus()
+        step_publish_attempted = Event()
+
+        class SignalingPublisher:
+            def publish(self, batch):
+                step_publish_attempted.set()
+                return bus.publish(batch)
+
+        coordinator = self.coordinator(publisher=SignalingPublisher())
+        self.start(coordinator)
+        external_database = self.root / "external-publication.sqlite3"
+        external_initial = initialize_compiled_scenario(
+            external_database,
+            self.scenario,
+        )
+        external_round = simulate_situated_network_round(
+            external_database,
+            self.scenario.runtime_model,
+            external_initial,
+        )
+        external_batch = project_simulation_output(
+            self.scenario,
+            external_round,
+            stream_id="external-publication",
+            first_sequence=1,
+        )
+        callback_entered = Event()
+        allow_callback_query = Event()
+        callback_query_done = Event()
+        callback_lock = Lock()
+        callback_count = 0
+        observed = []
+        external_reports = []
+        step_results = []
+        errors = []
+
+        def callback(_) -> None:
+            nonlocal callback_count
+            with callback_lock:
+                callback_count += 1
+                call_number = callback_count
+            if call_number != 1:
+                return
+            callback_entered.set()
+            if not allow_callback_query.wait(5):
+                raise RuntimeError("test callback query release timed out")
+            observed.append(coordinator.run_view())
+            callback_query_done.set()
+
+        bus.subscribe(
+            "coordinator-query",
+            tuple(SimulationOutputKind),
+            SimulationAudienceCapability(SimulationOutputAudience.PUBLIC),
+            callback,
+        )
+
+        def publish_external() -> None:
+            try:
+                external_reports.append(bus.publish(external_batch))
+            except Exception as error:
+                errors.append(error)
+
+        step_request = self.request(coordinator, ScenarioCommandKind.STEP)
+
+        def step() -> None:
+            try:
+                step_results.append(
+                    coordinator.submit_command(step_request, self.capability())
+                )
+            except Exception as error:
+                errors.append(error)
+
+        external = Thread(target=publish_external, daemon=True)
+        external.start()
+        self.assertTrue(callback_entered.wait(5))
+        stepping = Thread(target=step, daemon=True)
+        stepping.start()
+        self.assertTrue(step_publish_attempted.wait(5))
+        allow_callback_query.set()
+        external.join(5)
+        stepping.join(5)
+
+        # Mutation caught: holding the state lock while waiting for the bus forms
+        # bus -> callback query -> coordinator / coordinator -> bus lock inversion.
+        self.assertFalse(external.is_alive())
+        self.assertFalse(stepping.is_alive())
+        self.assertTrue(callback_query_done.is_set())
+        self.assertEqual(errors, [])
+        self.assertEqual(len(external_reports), 1)
+        self.assertEqual(external_reports[0].failures, ())
+        self.assertEqual(len(step_results), 1)
+        self.assertTrue(step_results[0].accepted)
+        self.assertEqual(coordinator.last_delivery_report.failures, ())
+        self.assertEqual(len(observed), 1)
+        self.assertEqual(observed[0].round_index, 1)
+        self.assertEqual(observed[0].state_hash, coordinator.state.content_hash)
+        self.assertEqual(
+            coordinator.state.memory_store_hash,
+            hash_situated_percept_memory_store(self.database),
+        )
+
+    def test_second_writer_waits_until_publication_report_is_committed(self) -> None:
+        bus = SimulationOutputBus()
+        coordinator = self.coordinator(publisher=bus)
+        callback_entered = Event()
+        release_callback = Event()
+        second_attempting = Event()
+        second_done = Event()
+        first_results = []
+        second_results = []
+        errors = []
+
+        def callback(_) -> None:
+            callback_entered.set()
+            if not release_callback.wait(5):
+                raise RuntimeError("test publication release timed out")
+
+        bus.subscribe(
+            "publication-gate",
+            tuple(SimulationOutputKind),
+            SimulationAudienceCapability(SimulationOutputAudience.PUBLIC),
+            callback,
+        )
+        self.start(coordinator)
+        first_request = self.request(coordinator, ScenarioCommandKind.STEP)
+
+        def first_step() -> None:
+            try:
+                first_results.append(
+                    coordinator.submit_command(first_request, self.capability())
+                )
+            except Exception as error:
+                errors.append(error)
+
+        first = Thread(target=first_step)
+        first.start()
+        self.assertTrue(callback_entered.wait(5))
+        self.assertEqual(coordinator.state.round_index, 1)
+        second_request = self.request(coordinator, ScenarioCommandKind.PAUSE)
+
+        def second_write() -> None:
+            second_attempting.set()
+            try:
+                second_results.append(
+                    coordinator.submit_command(second_request, self.capability())
+                )
+            except Exception as error:
+                errors.append(error)
+            finally:
+                second_done.set()
+
+        second = Thread(target=second_write)
+        second.start()
+        self.assertTrue(second_attempting.wait(5))
+        completed_during_publication = second_done.wait(0.5)
+        release_callback.set()
+        first.join(5)
+        second.join(5)
+
+        # Mutation caught: releasing operation ownership before callbacks lets a
+        # second writer overtake delivery-report publication.
+        self.assertFalse(completed_during_publication)
+        self.assertFalse(first.is_alive())
+        self.assertFalse(second.is_alive())
+        self.assertEqual(errors, [])
+        self.assertEqual(len(first_results), 1)
+        self.assertEqual(len(second_results), 1)
+        self.assertTrue(first_results[0].accepted)
+        self.assertTrue(second_results[0].accepted)
+        self.assertIs(coordinator.run_view().status, ScenarioRunStatus.PAUSED)
+        self.assertEqual(
+            coordinator.last_delivery_report.batch_hash,
+            first_results[0].output_batch_hash,
+        )
 
     def test_one_running_step_advances_one_round_and_emits_canonical_command_record(self) -> None:
         coordinator = self.coordinator()

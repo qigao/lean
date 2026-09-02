@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 import sqlite3
 from tempfile import TemporaryDirectory
-from threading import RLock, get_ident
+from threading import Condition, Lock, RLock, get_ident
 
 from narrative_dynamics.abm.scenario_checkpoint_store import (
     LocalScenarioCheckpointStore,
@@ -160,7 +160,8 @@ class ScenarioCoordinator:
         status: ScenarioRunStatus = ScenarioRunStatus.CREATED,
         next_sequence: int = 1,
     ) -> None:
-        self._lock = RLock()
+        self._state_lock = RLock()
+        self._operation_condition = Condition(Lock())
         self._database_path = database_path
         self._scenario = scenario
         self._run_id = run_id
@@ -185,8 +186,9 @@ class ScenarioCoordinator:
             str, tuple[str, str, str]
         ] = {}
         self._attempts_by_command_id: dict[str, str] = {}
-        self._executing_thread_id: int | None = None
-        self._executing_operation: str | None = None
+        self._operation_owner_thread_id: int | None = None
+        self._operation_name: str | None = None
+        self._operation_phase: str | None = None
         self._command_history_limit = _derived_attempt_history_limit(scenario)
         self._fork_history_limit = _derived_attempt_history_limit(scenario)
         self._last_delivery_report: SimulationDeliveryReport | None = None
@@ -282,16 +284,16 @@ class ScenarioCoordinator:
 
     @property
     def state(self) -> SituatedNetworkRuntimeState:
-        with self._lock:
+        with self._state_lock:
             return self._state_store.load(self._run_id)
 
     @property
     def last_delivery_report(self) -> SimulationDeliveryReport | None:
-        with self._lock:
+        with self._state_lock:
             return self._last_delivery_report
 
     def run_view(self) -> ScenarioRunView:
-        with self._lock:
+        with self._state_lock:
             return project_scenario_run_view(
                 run_id=self._run_id,
                 stream_id=self._stream_id,
@@ -306,7 +308,7 @@ class ScenarioCoordinator:
             )
 
     def public_state_view(self) -> ScenarioPublicStateView:
-        with self._lock:
+        with self._state_lock:
             return project_scenario_public_state(
                 self._run_id,
                 self._scenario.content_hash,
@@ -318,7 +320,7 @@ class ScenarioCoordinator:
         agent_id: str,
         capability: SimulationAudienceCapability,
     ) -> ScenarioAgentStateView:
-        with self._lock:
+        with self._state_lock:
             return project_scenario_agent_state(
                 self._run_id,
                 self._scenario.content_hash,
@@ -331,7 +333,7 @@ class ScenarioCoordinator:
         self,
         capability: SimulationAudienceCapability,
     ) -> SituatedNetworkSnapshot:
-        with self._lock:
+        with self._state_lock:
             return project_scenario_network_state(self.state, capability)
 
     def output_view(
@@ -339,7 +341,7 @@ class ScenarioCoordinator:
         batch_hash: str,
         capability: SimulationAudienceCapability,
     ) -> SimulationOutputView:
-        with self._lock:
+        with self._state_lock:
             try:
                 batch = self._outputs_by_hash[batch_hash]
             except (KeyError, TypeError):
@@ -355,7 +357,7 @@ class ScenarioCoordinator:
             raise TypeError(
                 "scenario command audit requires ScenarioCommandCapability"
             )
-        with self._lock:
+        with self._state_lock:
             if capability.run_id != self._run_id:
                 raise PermissionError("scenario command audit is not authorized")
             try:
@@ -379,20 +381,21 @@ class ScenarioCoordinator:
             raise TypeError("scenario command requires ScenarioCommandRequest")
         if not isinstance(capability, ScenarioCommandCapability):
             raise TypeError("scenario command requires ScenarioCommandCapability")
-        with self._lock:
-            thread_id = get_ident()
-            if (
-                self._executing_thread_id == thread_id
-                and self._executing_operation is not None
-            ):
-                raise RuntimeError("reentrant scenario command submission")
-            self._executing_thread_id = thread_id
-            self._executing_operation = "submit_command"
-            try:
-                return self._submit_command(request, capability)
-            finally:
-                self._executing_thread_id = None
-                self._executing_operation = None
+        self._begin_operation("submit_command")
+        try:
+            with self._state_lock:
+                result, publication_batch = self._submit_command(
+                    request,
+                    capability,
+                )
+            if publication_batch is not None:
+                self._mark_publication_phase()
+                report = self._publish(publication_batch)
+                with self._state_lock:
+                    self._last_delivery_report = report
+            return result
+        finally:
+            self._end_operation()
 
     def fork(
         self,
@@ -404,20 +407,44 @@ class ScenarioCoordinator:
             raise TypeError("scenario fork requires ScenarioForkRequest")
         if not isinstance(capability, ScenarioCommandCapability):
             raise TypeError("scenario fork requires ScenarioCommandCapability")
-        with self._lock:
-            thread_id = get_ident()
-            if (
-                self._executing_thread_id == thread_id
-                and self._executing_operation is not None
-            ):
-                raise RuntimeError("reentrant scenario command submission")
-            self._executing_thread_id = thread_id
-            self._executing_operation = "fork"
-            try:
+        self._begin_operation("fork")
+        try:
+            with self._state_lock:
                 return self._fork(request, capability, child_database_path)
-            finally:
-                self._executing_thread_id = None
-                self._executing_operation = None
+        finally:
+            self._end_operation()
+
+    def _begin_operation(self, operation: str) -> None:
+        thread_id = get_ident()
+        with self._operation_condition:
+            if self._operation_owner_thread_id == thread_id:
+                raise RuntimeError("reentrant scenario command submission")
+            while self._operation_owner_thread_id is not None:
+                self._operation_condition.wait()
+            self._operation_owner_thread_id = thread_id
+            self._operation_name = operation
+            self._operation_phase = "executing"
+
+    def _mark_publication_phase(self) -> None:
+        thread_id = get_ident()
+        with self._operation_condition:
+            if (
+                self._operation_owner_thread_id != thread_id
+                or self._operation_name != "submit_command"
+                or self._operation_phase != "executing"
+            ):
+                raise RuntimeError("scenario coordinator operation ownership changed")
+            self._operation_phase = "publishing"
+
+    def _end_operation(self) -> None:
+        thread_id = get_ident()
+        with self._operation_condition:
+            if self._operation_owner_thread_id != thread_id:
+                raise RuntimeError("scenario coordinator operation ownership changed")
+            self._operation_owner_thread_id = None
+            self._operation_name = None
+            self._operation_phase = None
+            self._operation_condition.notify_all()
 
     def _fork(
         self,
@@ -579,7 +606,7 @@ class ScenarioCoordinator:
         self,
         request: ScenarioCommandRequest,
         capability: ScenarioCommandCapability,
-    ) -> ScenarioCommandResult:
+    ) -> tuple[ScenarioCommandResult, SimulationOutputBatch | None]:
         attempt = self._attempts_by_idempotency_key.get(request.idempotency_key)
         if attempt is not None:
             command_id, request_hash, capability_hash = attempt
@@ -590,7 +617,7 @@ class ScenarioCoordinator:
             ):
                 cached = self._idempotency_results.get(request.idempotency_key)
                 if cached is not None:
-                    return cached[2]
+                    return cached[2], None
             else:
                 raise ValueError("scenario command idempotency key was reused")
         elif request.command_id in self._attempts_by_command_id:
@@ -624,12 +651,12 @@ class ScenarioCoordinator:
                 next_state=state,
             )
             self._retain_result(request, capability, result)
-            return result
+            return result, None
 
         if request.kind is ScenarioCommandKind.STEP:
             return self._step(request, capability, state)
         if request.kind is ScenarioCommandKind.CHECKPOINT:
-            return self._checkpoint(request, capability, state)
+            return self._checkpoint(request, capability, state), None
 
         next_status = {
             ScenarioCommandKind.START: ScenarioRunStatus.RUNNING,
@@ -649,7 +676,7 @@ class ScenarioCoordinator:
         )
         self._status = next_status
         self._retain_result(request, capability, result)
-        return result
+        return result, None
 
     def _checkpoint(
         self,
@@ -770,7 +797,7 @@ class ScenarioCoordinator:
         request: ScenarioCommandRequest,
         capability: ScenarioCommandCapability,
         prior_state: SituatedNetworkRuntimeState,
-    ) -> ScenarioCommandResult:
+    ) -> tuple[ScenarioCommandResult, SimulationOutputBatch]:
         with TemporaryDirectory(
             prefix="scenario-coordinator-v21-3-",
             ignore_cleanup_errors=True,
@@ -862,8 +889,7 @@ class ScenarioCoordinator:
                 self._next_sequence = batch.last_sequence + 1
                 committed = True
 
-                self._last_delivery_report = self._publish(batch)
-                return result
+                return result, batch
             except Exception:
                 if not committed:
                     discard_error: Exception | None = None
