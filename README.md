@@ -2066,6 +2066,29 @@ projection. Those are the separate V21.2 phase; LLM/retrieval and production ass
 adapters remain later V21 phases. A run policy may reserve output kinds or a Blender
 mode for those future consumers, but V21.1 does not silently stub or execute them.
 
+### Lean social-mesh feasibility V23.0
+
+V23.0 begins with a formal graph-theoretic foundation rather than a networking or
+NetworkX prototype. `NarrativeDynamics.Core.SocialMesh` defines exact-length walks
+and bounded reachability over a directed mesh snapshot. Lean proves that every path
+inside a local-society projection lifts to the global mesh; if the society is closed
+under outgoing edges, every global path starting inside remains in that projection
+and no bounded path reaches an outsider.
+
+One explicit bridge composes bounded paths on both sides. In particular, a path of
+at most two hops to the bridge, the bridge edge itself, and a path of at most three
+hops from it imply reachability within six hops. This is a conditional six-degree
+theorem, not a claim that every empirical society has diameter six. A separate
+placement structure makes authoritative physical residence a function while social
+membership remains a relation, formally permitting one Agent to belong to multiple
+societies without occupying multiple physical worlds.
+
+This proof layer does not yet formalize Watts--Strogatz clustering or expected path
+length, Barabasi--Albert preferential attachment or power-law asymptotics, temporal
+mesh transitions, automatic community formation, Python execution, NetworkX, P2P,
+WSS, or Raft. Those models can be added only after their assumptions and required
+invariants are stated explicitly.
+
 ## Verification
 
 GitHub Actions runs:
