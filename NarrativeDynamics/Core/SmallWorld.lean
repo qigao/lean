@@ -50,4 +50,50 @@ theorem globalHopBound_of_subgraph {Node : Type*} {g h : MeshGraph Node}
   intro source target
   exact reachWithin_of_subgraph included (bounded source target)
 
+/-- A quotient-level society edge is realized by an Agent-level edge between
+the societies' designated gateways. Membership remains explicit evidence. -/
+structure SocietyGatewayModel {Agent Society : Type*}
+    (agentGraph : MeshGraph Agent) (societyGraph : MeshGraph Society) where
+  member : Agent → Society → Prop
+  gateway : Society → Agent
+  gatewayMember : ∀ society, member (gateway society) society
+  bridge : ∀ {source target}, societyGraph source target →
+    agentGraph (gateway source) (gateway target)
+
+/-- Every exact society walk has an exact Agent-level realization between the
+corresponding gateways. -/
+theorem SocietyGatewayModel.walk_lifts {Agent Society : Type*}
+    {agentGraph : MeshGraph Agent} {societyGraph : MeshGraph Society}
+    (model : SocietyGatewayModel agentGraph societyGraph)
+    {length : Nat} {source target : Society}
+    (walk : MeshWalk societyGraph length source target) :
+    MeshWalk agentGraph length (model.gateway source) (model.gateway target) := by
+  exact walk.mapNodes model.gateway (fun edge => model.bridge edge)
+
+/-- Society-level bounded reachability lifts without increasing the gateway hop
+budget. -/
+theorem SocietyGatewayModel.reach_lifts {Agent Society : Type*}
+    {agentGraph : MeshGraph Agent} {societyGraph : MeshGraph Society}
+    (model : SocietyGatewayModel agentGraph societyGraph)
+    {limit : Nat} {source target : Society}
+    (reachable : ReachWithin societyGraph limit source target) :
+    ReachWithin agentGraph limit (model.gateway source) (model.gateway target) := by
+  rcases reachable with ⟨length, bound, walk⟩
+  exact ⟨length, bound, model.walk_lifts walk⟩
+
+/-- Entering a source gateway, traversing the society mesh, and leaving a target
+gateway compose into one Agent-level route with an additive hop budget. -/
+theorem reachWithin_via_societies {Agent Society : Type*}
+    {agentGraph : MeshGraph Agent} {societyGraph : MeshGraph Society}
+    (model : SocietyGatewayModel agentGraph societyGraph)
+    {entryLimit societyLimit exitLimit : Nat}
+    {source target : Agent} {sourceSociety targetSociety : Society}
+    (entry : ReachWithin agentGraph entryLimit source
+      (model.gateway sourceSociety))
+    (between : ReachWithin societyGraph societyLimit sourceSociety targetSociety)
+    (exit : ReachWithin agentGraph exitLimit
+      (model.gateway targetSociety) target) :
+    ReachWithin agentGraph (entryLimit + societyLimit + exitLimit) source target := by
+  exact reachWithin_append (reachWithin_append entry (model.reach_lifts between)) exit
+
 end NarrativeDynamics
