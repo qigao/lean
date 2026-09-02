@@ -37,4 +37,24 @@ describe("diagnostic list", () => {
       message_key: "passage_source_unknown",
     });
   });
+
+  it("keeps its polite status node connected while report counts change", () => {
+    const diagnostics = document.createElement("diagnostic-list") as DiagnosticListElement;
+    document.body.append(diagnostics);
+    const status = getByRole(diagnostics, "status");
+
+    diagnostics.report = reportFixture(2, [{
+      severity: "warning",
+      code: "unused_place",
+      document_role: "physical.world",
+      logical_id: null,
+      pointer: "/places/0",
+      related_ids: ["lobby"],
+      message_key: "place_unused",
+    }]);
+
+    expect(getByRole(diagnostics, "status")).toBe(status);
+    expect(status.textContent).toBe("1 diagnostic: 0 errors, 1 warning.");
+    expect(status.isConnected).toBe(true);
+  });
 });

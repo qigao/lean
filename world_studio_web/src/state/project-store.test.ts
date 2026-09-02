@@ -98,7 +98,7 @@ describe("ProjectStore", () => {
       operationId: () => "operation-2",
       idempotencyKey: () => "operation-key-2",
     });
-    store.accept(current);
+    store.accept(current, reportFixture(2));
 
     await expect(store.apply({
       document_role: "physical.world",
@@ -110,7 +110,37 @@ describe("ProjectStore", () => {
     expect(rpc.calls.map(({ method }) => method)).toEqual(["project.apply", "project.snapshot"]);
     expect(rpc.calls[1]?.params).toEqual({ project_id: "law-firm" });
     expect(store.snapshot).toEqual(remote);
+    expect(store.diagnosticReport).toBeNull();
+    expect(store.status).toBe("conflict");
     expect(store.conflict).toEqual({ kind: "stale_state", attempted_revision: 2, current_revision: 5 });
+  });
+
+  it("ends in an error state and clears the stale report when stale recovery reload fails", async () => {
+    const rpc = new RpcStub();
+    const current = snapshotFixture(2);
+    const reloadFailure = new Error("snapshot service unavailable");
+    rpc.handler = async (method) => {
+      if (method === "project.apply") throw new JsonRpcError(-32011, "Stale state", { code: "stale_state" });
+      throw reloadFailure;
+    };
+    const store = new ProjectStore(rpc, {
+      operationId: () => "operation-reload-failure",
+      idempotencyKey: () => "operation-key-reload-failure",
+    });
+    store.accept(current, reportFixture(2));
+
+    await expect(store.apply({
+      document_role: "physical.world",
+      logical_id: null,
+      kind: "remove_value",
+      pointer: "/places/0",
+    })).rejects.toBe(reloadFailure);
+
+    expect(store.status).toBe("error");
+    expect(store.snapshot).toBe(current);
+    expect(store.diagnosticReport).toBeNull();
+    expect(store.conflict).toBeNull();
+    expect(rpc.calls.map(({ method }) => method)).toEqual(["project.apply", "project.snapshot"]);
   });
 
   it("rejects a non-matching apply result without replacing authority", async () => {

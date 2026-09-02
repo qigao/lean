@@ -1,5 +1,6 @@
 import { fireEvent, getByLabelText, getByRole } from "@testing-library/dom";
 import { afterEach, describe, expect, it } from "vitest";
+import { JsonRpcError } from "../rpc/client";
 import type { OperationIntent } from "../schema/studio-types";
 import { reportFixture, snapshotFixture } from "../test-fixtures";
 import type { JsonEditorElement } from "../editors/json-editor";
@@ -54,6 +55,60 @@ describe("studio shell integration", () => {
     expect(applied).toEqual([operation]);
   });
 
+  it("announces a stale conflict only for JSON-RPC code -32011", async () => {
+    const shell = document.createElement("studio-shell") as StudioShellElement;
+    shell.snapshot = snapshotFixture();
+    let rejection: Error = new JsonRpcError(-32011, "Stale state");
+    shell.store = { apply: async () => { throw rejection; } };
+    document.body.append(shell);
+    const editor = shell.querySelector("graph-editor")!;
+    const operation: OperationIntent = {
+      document_role: "physical.world",
+      logical_id: null,
+      kind: "remove_value",
+      pointer: "/places/0",
+    };
+
+    editor.dispatchEvent(new CustomEvent("studio-operation", { bubbles: true, detail: operation }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(shell.querySelector(".connection-status")?.textContent).toContain("conflict detected");
+
+    rejection = new JsonRpcError(-32010, "Application failure with untrusted detail");
+    editor.dispatchEvent(new CustomEvent("studio-operation", { bubbles: true, detail: operation }));
+    await Promise.resolve();
+    await Promise.resolve();
+    const message = shell.querySelector(".connection-status")?.textContent ?? "";
+    expect(message).toContain("RPC -32010");
+    expect(message).not.toContain("conflict");
+    expect(message).not.toContain("untrusted detail");
+  });
+
+  it("keeps one connected polite status node while rendering and announcing updates", async () => {
+    const shell = document.createElement("studio-shell") as StudioShellElement;
+    shell.snapshot = snapshotFixture(2);
+    shell.store = { apply: async () => undefined };
+    document.body.append(shell);
+    const status = shell.querySelector(".connection-status");
+
+    shell.snapshot = snapshotFixture(3);
+    expect(shell.querySelector(".connection-status")).toBe(status);
+
+    shell.querySelector("graph-editor")?.dispatchEvent(new CustomEvent("studio-operation", {
+      bubbles: true,
+      detail: {
+        document_role: "physical.world",
+        logical_id: null,
+        kind: "remove_value",
+        pointer: "/places/0",
+      } satisfies OperationIntent,
+    }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(shell.querySelector(".connection-status")).toBe(status);
+    expect(status?.textContent).toBe("Project revision accepted by the server.");
+  });
+
   it("routes a selected diagnostic into the active raw JSON pointer and inspector", () => {
     const report = reportFixture(2, [{
       severity: "error",
@@ -75,6 +130,35 @@ describe("studio shell integration", () => {
     expect(document.activeElement).toBe(textarea);
     expect(textarea.dataset.pointer).toBe("/passages/0/source_place_id");
     expect(getByRole(shell, "region", { name: "Property inspector" }).textContent).toContain("/passages/0/source_place_id");
+  });
+
+  it("routes semantic or Pixi map selection into the property inspector", () => {
+    const base = snapshotFixture();
+    const shell = document.createElement("studio-shell") as StudioShellElement;
+    shell.snapshot = {
+      ...base,
+      documents: [...base.documents, {
+        role: "physical.map",
+        logical_id: null,
+        content_hash: base.content_hash,
+        value: {
+          orientation: "orthogonal",
+          tilewidth: 10,
+          tileheight: 10,
+          layers: [{
+            type: "objectgroup",
+            objects: [{ id: 1, name: "lobby", class: "place", x: 4, y: 8, width: 20, height: 20 }],
+          }],
+        },
+      }],
+    };
+    document.body.append(shell);
+    fireEvent.click(getByRole(shell, "tab", { name: "Map" }));
+    fireEvent.click(getByRole(shell, "button", { name: "Public lobby at 4, 8" }));
+
+    const inspector = getByRole(shell, "region", { name: "Property inspector" });
+    expect(inspector.textContent).toContain("lobby");
+    expect(inspector.textContent).toContain("/layers/0/objects/0");
   });
 
   it("keeps the skip link first and has no positive tabindex or unlabeled form controls", () => {

@@ -43,11 +43,27 @@ export interface GraphPosition {
   y: number;
 }
 
+export interface GraphCanvasActions {
+  select: (id: string) => void;
+  move: (id: string, position: GraphPosition) => void;
+  connect: (source: string, target: string) => void;
+  delete: (id: string) => void;
+}
+
+export interface GraphCanvasAdapter {
+  dispose: () => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  fit: () => void;
+  setMinimapVisible: (visible: boolean) => void;
+}
+
 export type GraphCanvasLoader = (
   container: HTMLElement,
   graph: DomainGraph,
   layout: JsonObject,
-) => Promise<() => void>;
+  actions: GraphCanvasActions,
+) => Promise<GraphCanvasAdapter>;
 
 function record(value: JsonValue | undefined): JsonObject | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value : undefined;
@@ -348,7 +364,8 @@ async function loadX6Canvas(
   container: HTMLElement,
   graph: DomainGraph,
   layout: JsonObject,
-): Promise<() => void> {
+  actions: GraphCanvasActions,
+): Promise<GraphCanvasAdapter> {
   const { Graph, MiniMap, Selection, Snapline } = await import("@antv/x6");
   const surface = document.createElement("div");
   surface.className = "graph-surface";
@@ -362,7 +379,13 @@ async function loadX6Canvas(
     grid: true,
     panning: { enabled: true },
     mousewheel: { enabled: true, modifiers: ["ctrl", "meta"] },
-    connecting: { snap: true, allowBlank: false, allowLoop: false },
+    connecting: {
+      snap: true,
+      allowBlank: false,
+      allowLoop: false,
+      allowNode: graph.mode === "physical",
+      allowEdge: false,
+    },
     interacting: true,
   });
   canvas.use(new Selection({ enabled: true, multiple: false, rubberband: true, movable: true }));
@@ -379,10 +402,29 @@ async function loadX6Canvas(
       width: 140,
       height: 44,
       label: item.label,
+      attrs: { body: { magnet: graph.mode === "physical" } },
     });
   });
   graph.edges.forEach((item) => canvas.addEdge({ id: item.id, source: item.source, target: item.target, label: item.label }));
-  return () => canvas.dispose();
+  canvas.on("cell:click", ({ cell }) => actions.select(cell.id));
+  canvas.on("node:moved", ({ node }) => actions.move(node.id, node.position()));
+  canvas.on("edge:connected", ({ edge }) => {
+    const source = edge.getSourceCellId();
+    const target = edge.getTargetCellId();
+    canvas.removeCell(edge, { silent: true });
+    if (source && target) actions.connect(source, target);
+  });
+  canvas.bindKey(["backspace", "delete"], () => {
+    for (const cell of canvas.getSelectedCells()) actions.delete(cell.id);
+    return false;
+  });
+  return {
+    dispose: () => canvas.dispose(),
+    zoomIn: () => { canvas.zoom(0.1); },
+    zoomOut: () => { canvas.zoom(-0.1); },
+    fit: () => { canvas.zoomToFit({ padding: 24, maxScale: 1 }); },
+    setMinimapVisible: (visible) => { miniMap.hidden = !visible; },
+  };
 }
 
 export class GraphEditorElement extends HTMLElement {
@@ -390,7 +432,7 @@ export class GraphEditorElement extends HTMLElement {
   private graphMode: GraphMode = "physical";
   private selectedId: string | null = null;
   private enabled = false;
-  private disposeCanvas: (() => void) | undefined;
+  private canvasAdapter: GraphCanvasAdapter | undefined;
   canvasLoader: GraphCanvasLoader = loadX6Canvas;
 
   set snapshot(value: ProjectSnapshot | null) {
@@ -426,8 +468,36 @@ export class GraphEditorElement extends HTMLElement {
   }
 
   disconnectedCallback(): void {
-    this.disposeCanvas?.();
-    this.disposeCanvas = undefined;
+    this.canvasAdapter?.dispose();
+    this.canvasAdapter = undefined;
+  }
+
+  private emitOperation(intent: OperationIntent): void {
+    this.dispatchEvent(new CustomEvent<OperationIntent>("studio-operation", {
+      bubbles: true,
+      composed: true,
+      detail: intent,
+    }));
+  }
+
+  private selectId(id: string, focus: boolean): void {
+    const cell = this.project
+      ? [...projectGraph(this.project, this.graphMode).nodes, ...projectGraph(this.project, this.graphMode).edges]
+          .find((item) => item.id === id)
+      : undefined;
+    if (!cell) return;
+    this.selectedId = id;
+    this.querySelectorAll<HTMLElement>("[data-node-id],[data-cell-id]").forEach((item) => {
+      item.setAttribute("aria-pressed", String(item.dataset.nodeId === id || item.dataset.cellId === id));
+    });
+    const target = Array.from(this.querySelectorAll<HTMLElement>("[data-node-id],[data-cell-id]"))
+      .find((item) => item.dataset.nodeId === id || item.dataset.cellId === id);
+    if (focus) target?.focus();
+    this.dispatchEvent(new CustomEvent("studio-select", {
+      bubbles: true,
+      composed: true,
+      detail: { mode: this.graphMode, id },
+    }));
   }
 
   private select(nodes: HTMLButtonElement[], index: number): void {
@@ -468,6 +538,36 @@ export class GraphEditorElement extends HTMLElement {
         }
       });
     });
+    this.querySelectorAll<HTMLButtonElement>("[data-cell-id]").forEach((button) => {
+      button.addEventListener("click", () => this.selectId(button.dataset.cellId ?? "", true));
+    });
+    this.querySelectorAll<HTMLButtonElement>("[data-delete-id]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const cell = [...graph.nodes, ...graph.edges].find(({ id }) => id === button.dataset.deleteId);
+        if (cell) this.emitOperation(deleteGraphCellIntent(cell));
+      });
+    });
+
+    const status = this.querySelector<HTMLElement>(".canvas-status");
+    const runControl = (action: keyof Pick<GraphCanvasAdapter, "zoomIn" | "zoomOut" | "fit">): void => {
+      if (this.canvasAdapter) this.canvasAdapter[action]();
+      else if (status) status.textContent = "Visual graph unavailable. Semantic graph controls remain available.";
+    };
+    this.querySelector<HTMLButtonElement>("[data-graph-action=zoom-in]")?.addEventListener("click", () => runControl("zoomIn"));
+    this.querySelector<HTMLButtonElement>("[data-graph-action=zoom-out]")?.addEventListener("click", () => runControl("zoomOut"));
+    this.querySelector<HTMLButtonElement>("[data-graph-action=fit]")?.addEventListener("click", () => runControl("fit"));
+    this.querySelector<HTMLButtonElement>("[data-graph-action=minimap]")?.addEventListener("click", (event) => {
+      const button = event.currentTarget as HTMLButtonElement;
+      const visible = button.getAttribute("aria-pressed") !== "true";
+      button.setAttribute("aria-pressed", String(visible));
+      this.canvasAdapter?.setMinimapVisible(visible);
+      if (!this.canvasAdapter && status) status.textContent = "Visual graph unavailable. Semantic graph controls remain available.";
+    });
+    this.querySelector<HTMLButtonElement>("[data-graph-action=delete]")?.addEventListener("click", () => {
+      const cell = [...graph.nodes, ...graph.edges].find(({ id }) => id === this.selectedId);
+      if (cell) this.emitOperation(deleteGraphCellIntent(cell));
+      else if (status) status.textContent = "Select a removable graph item first.";
+    });
 
     this.querySelector<HTMLFormElement>("form")?.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -485,11 +585,7 @@ export class GraphEditorElement extends HTMLElement {
         });
         id?.removeAttribute("aria-invalid");
         if (error) error.textContent = "";
-        this.dispatchEvent(new CustomEvent<OperationIntent>("studio-operation", {
-          bubbles: true,
-          composed: true,
-          detail: intent,
-        }));
+        this.emitOperation(intent);
       } catch {
         if (id) {
           id.setAttribute("aria-invalid", "true");
@@ -504,14 +600,37 @@ export class GraphEditorElement extends HTMLElement {
   private async initializeCanvas(): Promise<void> {
     const container = this.querySelector<HTMLElement>(".graph-canvas");
     const status = this.querySelector<HTMLElement>(".canvas-status");
-    if (!container || !status || !this.project || !this.enabled || this.disposeCanvas) return;
+    if (!container || !status || !this.project || !this.enabled || this.canvasAdapter) return;
     if (this.canvasLoader === loadX6Canvas && navigator.userAgent.includes("jsdom")) {
       status.textContent = "Visual graph unavailable. Semantic graph controls remain available.";
       return;
     }
     status.textContent = "Loading visual graph.";
     try {
-      this.disposeCanvas = await this.canvasLoader(container, projectGraph(this.project, this.graphMode), this.project.layout);
+      const graph = projectGraph(this.project, this.graphMode);
+      this.canvasAdapter = await this.canvasLoader(container, graph, this.project.layout, {
+        select: (id) => this.selectId(id, false),
+        move: (id, position) => {
+          if (graph.nodes.some((node) => node.id === id) && this.project) {
+            this.emitOperation(setGraphPositionIntent(this.project, this.graphMode, id, position));
+          }
+        },
+        connect: (source, target) => {
+          if (this.graphMode !== "physical" ||
+              !graph.nodes.some((node) => node.id === source) ||
+              !graph.nodes.some((node) => node.id === target)) return;
+          const sourceField = this.querySelector<HTMLSelectElement>("#passage-source");
+          const targetField = this.querySelector<HTMLSelectElement>("#passage-target");
+          if (sourceField) sourceField.value = source;
+          if (targetField) targetField.value = target;
+          this.querySelector<HTMLInputElement>("#passage-id")?.focus();
+          status.textContent = "Canvas connection selected. Enter a passage ID to submit the authoritative operation.";
+        },
+        delete: (id) => {
+          const cell = [...graph.nodes, ...graph.edges].find((item) => item.id === id);
+          if (cell) this.emitOperation(deleteGraphCellIntent(cell));
+        },
+      });
       status.textContent = "Visual graph ready. Semantic graph controls remain available below.";
     } catch {
       status.textContent = "Visual graph unavailable. Semantic graph controls remain available.";
@@ -519,8 +638,8 @@ export class GraphEditorElement extends HTMLElement {
   }
 
   render(): void {
-    this.disposeCanvas?.();
-    this.disposeCanvas = undefined;
+    this.canvasAdapter?.dispose();
+    this.canvasAdapter = undefined;
     const graph = this.project ? projectGraph(this.project, this.graphMode) : { mode: this.graphMode, nodes: [], edges: [] };
     const title = `${this.graphMode[0]?.toUpperCase() ?? ""}${this.graphMode.slice(1)} graph`;
     const nodeOptions = graph.nodes.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}</option>`).join("");
@@ -528,15 +647,16 @@ export class GraphEditorElement extends HTMLElement {
       const selected = this.selectedId === item.id || (this.selectedId === null && index === 0);
       return `<li><button type="button" data-node-id="${escapeHtml(item.id)}" tabindex="${selected ? "0" : "-1"}" aria-pressed="${selected}" aria-label="Select ${escapeHtml(item.domainKind)} ${escapeHtml(item.label)}">${escapeHtml(item.label)}</button></li>`;
     }).join("");
-    const edgeItems = graph.edges.map((item) => `<li>${escapeHtml(item.label)}: ${escapeHtml(item.source)} → ${escapeHtml(item.target)}</li>`).join("");
+    const edgeItems = graph.edges.map((item) => `<li><button type="button" data-cell-id="${escapeHtml(item.id)}" aria-pressed="${this.selectedId === item.id}" aria-label="Select ${escapeHtml(item.domainKind)} ${escapeHtml(item.label)}">${escapeHtml(item.label)}: ${escapeHtml(item.source)} → ${escapeHtml(item.target)}</button><button type="button" data-delete-id="${escapeHtml(item.id)}" aria-label="Delete ${escapeHtml(item.domainKind)} ${escapeHtml(item.label)}">Delete</button></li>`).join("");
 
     this.innerHTML = `
       <section class="graph-editor" role="region" aria-label="${title}">
         <div class="editor-toolbar" role="toolbar" aria-label="Graph view controls">
-          <button type="button" aria-label="Zoom in">Zoom in</button>
-          <button type="button" aria-label="Zoom out">Zoom out</button>
-          <button type="button">Fit graph</button>
-          <button type="button" aria-pressed="true">Minimap</button>
+          <button type="button" data-graph-action="zoom-in" aria-label="Zoom in">Zoom in</button>
+          <button type="button" data-graph-action="zoom-out" aria-label="Zoom out">Zoom out</button>
+          <button type="button" data-graph-action="fit">Fit graph</button>
+          <button type="button" data-graph-action="minimap" aria-pressed="true">Minimap</button>
+          <button type="button" data-graph-action="delete">Delete selected</button>
         </div>
         <div class="graph-canvas" aria-label="${title} visual canvas"></div>
         <p class="canvas-status" role="status" aria-live="polite">Semantic graph controls ready.</p>

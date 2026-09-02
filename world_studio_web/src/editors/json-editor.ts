@@ -50,15 +50,166 @@ function prettyJson(value: JsonObject): string {
   return JSON.stringify(value, null, 2);
 }
 
-function pointerToken(pointer: string): string {
-  const token = pointer.split("/").at(-1) ?? "";
-  return token.replaceAll("~1", "/").replaceAll("~0", "~");
+interface JsonRangeNode {
+  type: "object" | "array" | "scalar";
+  start: number;
+  end: number;
+  members?: Array<{ key: string; value: JsonRangeNode }>;
+  items?: JsonRangeNode[];
+}
+
+class RangeJsonParser {
+  private offset = 0;
+
+  constructor(private readonly source: string) {}
+
+  parse(): JsonRangeNode {
+    this.skipWhitespace();
+    const node = this.parseValue();
+    this.skipWhitespace();
+    if (this.offset !== this.source.length) throw new SyntaxError("Unexpected trailing JSON content");
+    return node;
+  }
+
+  private skipWhitespace(): void {
+    while (/\s/.test(this.source[this.offset] ?? "")) this.offset += 1;
+  }
+
+  private parseValue(): JsonRangeNode {
+    this.skipWhitespace();
+    const character = this.source[this.offset];
+    if (character === "{") return this.parseObject();
+    if (character === "[") return this.parseArray();
+    if (character === '"') {
+      const string = this.parseString();
+      return { type: "scalar", start: string.start, end: string.end };
+    }
+    const start = this.offset;
+    const tail = this.source.slice(this.offset);
+    const literal = tail.match(/^(?:true|false|null)/)?.[0] ??
+      tail.match(/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/)?.[0];
+    if (!literal) throw new SyntaxError("Expected a JSON value");
+    this.offset += literal.length;
+    return { type: "scalar", start, end: this.offset };
+  }
+
+  private parseString(): { start: number; end: number; value: string } {
+    const start = this.offset;
+    this.offset += 1;
+    while (this.offset < this.source.length) {
+      const character = this.source[this.offset];
+      if (character === "\\") {
+        this.offset += 2;
+        continue;
+      }
+      this.offset += 1;
+      if (character === '"') {
+        const raw = this.source.slice(start, this.offset);
+        const value: unknown = JSON.parse(raw);
+        if (typeof value !== "string") throw new SyntaxError("Expected a JSON string");
+        return { start, end: this.offset, value };
+      }
+    }
+    throw new SyntaxError("Unterminated JSON string");
+  }
+
+  private parseObject(): JsonRangeNode {
+    const start = this.offset;
+    const members: Array<{ key: string; value: JsonRangeNode }> = [];
+    this.offset += 1;
+    this.skipWhitespace();
+    if (this.source[this.offset] === "}") {
+      this.offset += 1;
+      return { type: "object", start, end: this.offset, members };
+    }
+    while (this.offset < this.source.length) {
+      const key = this.parseString();
+      this.skipWhitespace();
+      if (this.source[this.offset] !== ":") throw new SyntaxError("Expected an object member separator");
+      this.offset += 1;
+      const value = this.parseValue();
+      members.push({ key: key.value, value });
+      this.skipWhitespace();
+      if (this.source[this.offset] === "}") {
+        this.offset += 1;
+        return { type: "object", start, end: this.offset, members };
+      }
+      if (this.source[this.offset] !== ",") throw new SyntaxError("Expected another object member");
+      this.offset += 1;
+      this.skipWhitespace();
+    }
+    throw new SyntaxError("Unterminated JSON object");
+  }
+
+  private parseArray(): JsonRangeNode {
+    const start = this.offset;
+    const items: JsonRangeNode[] = [];
+    this.offset += 1;
+    this.skipWhitespace();
+    if (this.source[this.offset] === "]") {
+      this.offset += 1;
+      return { type: "array", start, end: this.offset, items };
+    }
+    while (this.offset < this.source.length) {
+      items.push(this.parseValue());
+      this.skipWhitespace();
+      if (this.source[this.offset] === "]") {
+        this.offset += 1;
+        return { type: "array", start, end: this.offset, items };
+      }
+      if (this.source[this.offset] !== ",") throw new SyntaxError("Expected another array item");
+      this.offset += 1;
+    }
+    throw new SyntaxError("Unterminated JSON array");
+  }
+}
+
+function pointerTokens(pointer: string): string[] | null {
+  if (pointer === "") return [];
+  if (!pointer.startsWith("/")) return null;
+  const tokens: string[] = [];
+  for (const encoded of pointer.slice(1).split("/")) {
+    let token = "";
+    for (let index = 0; index < encoded.length; index += 1) {
+      const character = encoded[index];
+      if (character !== "~") {
+        token += character;
+        continue;
+      }
+      const escape = encoded[index + 1];
+      if (escape === "0") token += "~";
+      else if (escape === "1") token += "/";
+      else return null;
+      index += 1;
+    }
+    tokens.push(token);
+  }
+  return tokens;
 }
 
 function tokenRange(source: string, pointer: string): [number, number] {
-  const token = JSON.stringify(pointerToken(pointer));
-  const start = Math.max(0, source.indexOf(token));
-  return [start, Math.min(source.length, start + Math.max(1, token.length))];
+  try {
+    let node = new RangeJsonParser(source).parse();
+    const tokens = pointerTokens(pointer);
+    if (tokens === null) throw new SyntaxError("Invalid RFC 6901 pointer");
+    for (const token of tokens) {
+      if (node.type === "object") {
+        const member = node.members?.filter(({ key }) => key === token).at(-1);
+        if (!member) throw new SyntaxError("JSON pointer member was not found");
+        node = member.value;
+      } else if (node.type === "array") {
+        if (!/^(?:0|[1-9]\d*)$/.test(token)) throw new SyntaxError("Invalid JSON pointer array index");
+        const item = node.items?.[Number(token)];
+        if (!item) throw new SyntaxError("JSON pointer array item was not found");
+        node = item;
+      } else {
+        throw new SyntaxError("JSON pointer traversed through a scalar");
+      }
+    }
+    return [node.start, node.end];
+  } catch {
+    return [0, Math.min(source.length, 1)];
+  }
 }
 
 function lineAndColumn(source: string, offset: number): { line: number; column: number } {

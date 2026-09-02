@@ -77,4 +77,28 @@ describe("raw JSON authority adapter", () => {
     expect(textarea.dataset.pointer).toBe("/places/0/label");
     expect(textarea.selectionEnd).toBeGreaterThan(textarea.selectionStart);
   });
+
+  it("traverses arrays and decoded RFC 6901 tokens to select the target object", () => {
+    const editor = document.createElement("json-editor") as JsonEditorElement;
+    editor.document = physicalDocument();
+    document.body.append(editor);
+    const textarea = getByLabelText(editor, "Document JSON") as HTMLTextAreaElement;
+    textarea.value = '{"rows":[{"label":"first"},{"label":"second","a/b":{"~key":[1,{"ok":true}]}}]}';
+
+    editor.focusPointer("/rows/1/a~1b/~0key/1");
+
+    expect(textarea.value.slice(textarea.selectionStart, textarea.selectionEnd)).toBe('{"ok":true}');
+  });
+
+  it("uses the last duplicate object member and selects its complete array value", () => {
+    const editor = document.createElement("json-editor") as JsonEditorElement;
+    editor.document = physicalDocument();
+    document.body.append(editor);
+    const textarea = getByLabelText(editor, "Document JSON") as HTMLTextAreaElement;
+    textarea.value = '{"target":"obsolete","target":{"items":[10,20]}}';
+
+    editor.focusPointer("/target/items");
+
+    expect(textarea.value.slice(textarea.selectionStart, textarea.selectionEnd)).toBe("[10,20]");
+  });
 });

@@ -4,6 +4,7 @@ import "../editors/map-editor";
 import { projectGraph, type GraphEditorElement, type GraphMode } from "../editors/graph-editor";
 import type { JsonEditorElement } from "../editors/json-editor";
 import type { MapEditorElement } from "../editors/map-editor";
+import { JsonRpcError } from "../rpc/client";
 import type {
   DiagnosticReport,
   DraftDocument,
@@ -115,10 +116,13 @@ export class StudioShellElement extends HTMLElement {
       }
       this.connectionMessage("Project revision accepted by the server.");
     } catch (error) {
-      const conflict = error instanceof Error && error.name === "JsonRpcError";
-      this.connectionMessage(conflict
-        ? "Project conflict detected. The latest server revision is now authoritative."
-        : "Project operation failed. The last accepted snapshot remains authoritative.");
+      if (error instanceof JsonRpcError && error.code === -32011) {
+        this.connectionMessage("Project conflict detected. The latest server revision is now authoritative.");
+      } else if (error instanceof JsonRpcError) {
+        this.connectionMessage(`Project operation was rejected by the server (RPC ${error.code}). The last accepted snapshot remains authoritative.`);
+      } else {
+        this.connectionMessage("Project operation failed. The last accepted snapshot remains authoritative.");
+      }
     }
   }
 
@@ -170,6 +174,21 @@ export class StudioShellElement extends HTMLElement {
         logicalId: cell.logicalId,
         pointer: cell.pointer,
         value: document ? valueAtPointer(document.value, cell.pointer) : null,
+      };
+      const inspector = this.querySelector("property-inspector") as PropertyInspectorElement | null;
+      if (inspector) inspector.selection = this.inspectorSelection;
+    });
+    this.addEventListener("studio-map-select", (event) => {
+      const detail = (event as CustomEvent<{ id: string; pointer: string }>).detail;
+      const document = this.projectSnapshot?.documents.find((item) =>
+        item.role === "physical.map" && item.logical_id === null);
+      if (!document || !detail?.pointer) return;
+      this.inspectorSelection = {
+        label: detail.id,
+        documentRole: document.role,
+        logicalId: document.logical_id,
+        pointer: detail.pointer,
+        value: valueAtPointer(document.value, detail.pointer),
       };
       const inspector = this.querySelector("property-inspector") as PropertyInspectorElement | null;
       if (inspector) inspector.selection = this.inspectorSelection;
@@ -277,38 +296,40 @@ export class StudioShellElement extends HTMLElement {
       return `<button id="studio-tab-${mode}" type="button" role="tab" data-mode="${mode}" aria-selected="${selected}" aria-controls="studio-panel-${mode}" tabindex="${selected ? "0" : "-1"}">${label}</button>`;
     }).join("");
     const panels = MODES.map(([mode]) => `<div id="studio-panel-${mode}" role="tabpanel" tabindex="0" aria-labelledby="studio-tab-${mode}"${mode === this.activeMode ? "" : " hidden"}></div>`).join("");
-    this.innerHTML = `
-      <a class="skip-link" href="#studio-main">Skip to content</a>
-      <header class="studio-header">
-        <div><p class="eyebrow">World Studio</p><h1>Scenario authoring</h1></div>
-        <div class="run-toolbar" role="toolbar" aria-label="Run controls">
-          <span class="toolbar-label">Run console</span>
-          <button type="button" disabled>Start</button><button type="button" disabled>Step</button>
-          <span class="status-cue">Available in the live console</span>
-        </div>
-        <p class="connection-status" role="status" aria-live="polite">Editor shell ready.</p>
-      </header>
-      <project-tree></project-tree>
-      <main id="studio-main" tabindex="-1">
-        <section class="panel primary-editor" role="region" aria-label="Primary editor">
-          <h2>Scenario editor</h2>
-          <div class="mode-tabs" role="tablist" aria-label="Editor modes">${tabs}</div>
-          ${panels}
-        </section>
-        <property-inspector></property-inspector>
-        <diagnostic-list></diagnostic-list>
-        <section class="panel timeline" role="region" aria-label="Timeline">
-          <details open><summary><h2>Timeline</h2></summary><p>Run events will appear here when the live console is connected.</p></details>
-        </section>
-      </main>
-    `;
+    if (!this.querySelector(".connection-status")) {
+      this.innerHTML = `
+        <a class="skip-link" href="#studio-main">Skip to content</a>
+        <header class="studio-header">
+          <div><p class="eyebrow">World Studio</p><h1>Scenario authoring</h1></div>
+          <div class="run-toolbar" role="toolbar" aria-label="Run controls">
+            <span class="toolbar-label">Run console</span>
+            <button type="button" disabled>Start</button><button type="button" disabled>Step</button>
+            <span class="status-cue">Available in the live console</span>
+          </div>
+          <p class="connection-status" role="status" aria-live="polite">Editor shell ready.</p>
+        </header>
+        <project-tree></project-tree>
+        <main id="studio-main" tabindex="-1">
+          <section class="panel primary-editor" role="region" aria-label="Primary editor">
+            <h2>Scenario editor</h2>
+            <div class="mode-tabs" role="tablist" aria-label="Editor modes">${tabs}</div>
+            ${panels}
+          </section>
+          <property-inspector></property-inspector>
+          <diagnostic-list></diagnostic-list>
+          <section class="panel timeline" role="region" aria-label="Timeline">
+            <details open><summary><h2>Timeline</h2></summary><p>Run events will appear here when the live console is connected.</p></details>
+          </section>
+        </main>
+      `;
+      this.bindTabs();
+    }
     const tree = this.querySelector("project-tree") as ProjectTreeElement | null;
     if (tree) { tree.projectId = this.projectId; tree.snapshot = this.projectSnapshot; }
     const inspector = this.querySelector("property-inspector") as PropertyInspectorElement | null;
     if (inspector) inspector.selection = this.inspectorSelection;
     const diagnostics = this.querySelector("diagnostic-list") as DiagnosticListElement | null;
     if (diagnostics) diagnostics.report = this.diagnosticReport;
-    this.bindTabs();
     this.renderActiveEditor();
   }
 }

@@ -45,13 +45,19 @@ export class DiagnosticListElement extends HTMLElement {
       const label = `${severity}: ${message(diagnostic.message_key)}`;
       return `<li><button type="button" data-diagnostic-index="${index}" aria-label="${escapeHtml(label)}"><span class="severity-cue">${severity}</span><span>${escapeHtml(message(diagnostic.message_key))}</span><code>${escapeHtml(diagnostic.pointer || "/")}</code></button></li>`;
     }).join("");
-    this.innerHTML = `
-      <section class="panel diagnostics" role="region" aria-label="Diagnostics">
-        <h2>Diagnostics</h2>
-        <p class="diagnostic-status" role="status" aria-live="polite">${count}</p>
-        ${items ? `<ul>${items}</ul>` : "<p>No diagnostics.</p>"}
-      </section>
-    `;
+    if (!this.querySelector(".diagnostic-status")) {
+      this.innerHTML = `
+        <section class="panel diagnostics" role="region" aria-label="Diagnostics">
+          <h2>Diagnostics</h2>
+          <p class="diagnostic-status" role="status" aria-live="polite"></p>
+          <div class="diagnostic-items"></div>
+        </section>
+      `;
+    }
+    const status = this.querySelector<HTMLElement>(".diagnostic-status");
+    const content = this.querySelector<HTMLElement>(".diagnostic-items");
+    if (status) status.textContent = count;
+    if (content) content.innerHTML = items ? `<ul>${items}</ul>` : "<p>No diagnostics.</p>";
     this.bind();
   }
 }

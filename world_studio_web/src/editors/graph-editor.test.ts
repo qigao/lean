@@ -209,4 +209,83 @@ describe("graph semantic fallback", () => {
       value: expect.objectContaining({ passage_id: "lobby-archive", source_place_id: "lobby", target_place_id: "archive" }),
     }));
   });
+
+  it("translates canvas authoring events and toolbar controls without accepting canvas state as authority", async () => {
+    interface CanvasActions {
+      select: (id: string) => void;
+      move: (id: string, position: { x: number; y: number }) => void;
+      connect: (source: string, target: string) => void;
+      delete: (id: string) => void;
+    }
+    let actions: CanvasActions | undefined;
+    const controlCalls: string[] = [];
+    const editor = document.createElement("graph-editor") as GraphEditorElement;
+    editor.snapshot = graphSnapshot();
+    editor.mode = "physical";
+    editor.canvasLoader = async (_container, _graph, _layout, canvasActions: CanvasActions) => {
+      actions = canvasActions;
+      return {
+        dispose: () => undefined,
+        zoomIn: () => controlCalls.push("zoom-in"),
+        zoomOut: () => controlCalls.push("zoom-out"),
+        fit: () => controlCalls.push("fit"),
+        setMinimapVisible: (visible: boolean) => controlCalls.push(`minimap:${visible}`),
+      };
+    };
+    editor.active = true;
+    document.body.append(editor);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const selections: unknown[] = [];
+    const operations: OperationIntent[] = [];
+    editor.addEventListener("studio-select", ((event: CustomEvent) => { selections.push(event.detail); }) as EventListener);
+    editor.addEventListener("studio-operation", ((event: CustomEvent<OperationIntent>) => { operations.push(event.detail); }) as EventListener);
+    actions!.select("meeting");
+    actions!.move("lobby", { x: 12, y: 34 });
+    actions!.delete("lobby-meeting");
+    actions!.connect("lobby", "archive");
+
+    expect(selections).toEqual([{ mode: "physical", id: "meeting" }]);
+    expect(getByRole(editor, "button", { name: "Select place Meeting room" }).getAttribute("aria-pressed")).toBe("true");
+    expect(operations).toEqual([
+      {
+        document_role: "layout",
+        logical_id: null,
+        kind: "set_layout",
+        pointer: "/graphs",
+        value: { physical: { lobby: { x: 12, y: 34 } } },
+      },
+      {
+        document_role: "physical.world",
+        logical_id: null,
+        kind: "remove_value",
+        pointer: "/passages/0",
+      },
+    ]);
+    expect((getByLabelText(editor, "Source place") as HTMLSelectElement).value).toBe("lobby");
+    expect((getByLabelText(editor, "Target place") as HTMLSelectElement).value).toBe("archive");
+    expect(document.activeElement).toBe(getByLabelText(editor, "Passage ID"));
+
+    fireEvent.input(getByLabelText(editor, "Passage ID"), { target: { value: "lobby-archive" } });
+    fireEvent.submit(getByRole(editor, "form", { name: "Create passage" }));
+    expect(operations[2]).toEqual({
+      document_role: "physical.world",
+      logical_id: null,
+      kind: "insert_value",
+      pointer: "/passages/2",
+      value: {
+        passage_id: "lobby-archive",
+        source_place_id: "lobby",
+        target_place_id: "archive",
+        initially_open: false,
+      },
+    });
+
+    fireEvent.click(getByRole(editor, "button", { name: "Zoom in" }));
+    fireEvent.click(getByRole(editor, "button", { name: "Zoom out" }));
+    fireEvent.click(getByRole(editor, "button", { name: "Fit graph" }));
+    fireEvent.click(getByRole(editor, "button", { name: "Minimap" }));
+    expect(controlCalls).toEqual(["zoom-in", "zoom-out", "fit", "minimap:false"]);
+  });
 });

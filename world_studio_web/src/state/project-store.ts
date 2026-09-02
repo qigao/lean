@@ -153,16 +153,25 @@ export class ProjectStore extends EventTarget {
       return result;
     } catch (error) {
       if (error instanceof JsonRpcError && error.code === -32011) {
-        const reloaded = await this.rpc.call<ProjectSnapshot>("project.snapshot", { project_id: prior.project_id });
-        if (!isSnapshot(reloaded)) throw new JsonRpcProtocolError("Reloaded project snapshot is malformed");
-        this.acceptedSnapshot = freezeJson(reloaded);
-        this.conflictState = {
-          kind: "stale_state",
-          attempted_revision: prior.revision,
-          current_revision: reloaded.revision,
-        };
-        this.state = "conflict";
-        this.announce();
+        this.acceptedReport = null;
+        try {
+          const reloaded = await this.rpc.call<ProjectSnapshot>("project.snapshot", { project_id: prior.project_id });
+          if (!isSnapshot(reloaded)) throw new JsonRpcProtocolError("Reloaded project snapshot is malformed");
+          this.acceptedSnapshot = freezeJson(reloaded);
+          this.conflictState = {
+            kind: "stale_state",
+            attempted_revision: prior.revision,
+            current_revision: reloaded.revision,
+          };
+          this.state = "conflict";
+        } catch (reloadError) {
+          this.conflictState = null;
+          this.state = "error";
+          throw reloadError;
+        } finally {
+          if (this.state === "applying") this.state = "error";
+          this.announce();
+        }
         throw error;
       }
       this.state = "error";
