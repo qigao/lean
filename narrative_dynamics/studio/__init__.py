@@ -42,6 +42,9 @@ from narrative_dynamics.studio.run_registry import (
     ScenarioRunRegistry,
     ScenarioRunReservation,
     ScenarioRunReservationConflictError,
+    ScenarioRunReservationFailedError,
+    ScenarioRunReservationInspection,
+    ScenarioRunReservationState,
 )
 from narrative_dynamics.studio.jsonrpc import (
     JsonRpcDispatcher,
@@ -101,6 +104,9 @@ __all__ = (
     "ScenarioRunRegistry",
     "ScenarioRunReservation",
     "ScenarioRunReservationConflictError",
+    "ScenarioRunReservationFailedError",
+    "ScenarioRunReservationInspection",
+    "ScenarioRunReservationState",
     "ScenarioWorkspaceLimits",
     "SQLiteScenarioProjectStore",
     "STUDIO_PERMISSIONS",

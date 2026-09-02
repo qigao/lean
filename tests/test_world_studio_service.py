@@ -52,6 +52,8 @@ class LocalCoordinatorFactory:
         self._ownership_lock = Lock()
         self._owned: dict[str, ScenarioCoordinator | None] = {}
         self._created_instances: list[ScenarioCoordinator] = []
+        self._aborted_creates = 0
+        self._aborted_forks = 0
 
     @property
     def owned_run_ids(self) -> tuple[str, ...]:
@@ -62,6 +64,16 @@ class LocalCoordinatorFactory:
     def created_instance_count(self) -> int:
         with self._ownership_lock:
             return len(self._created_instances)
+
+    @property
+    def aborted_create_count(self) -> int:
+        with self._ownership_lock:
+            return self._aborted_creates
+
+    @property
+    def aborted_fork_count(self) -> int:
+        with self._ownership_lock:
+            return self._aborted_forks
 
     def _own(
         self, run_id: str, coordinator: ScenarioCoordinator | None
@@ -124,6 +136,8 @@ class LocalCoordinatorFactory:
         stream_id: str,
     ) -> None:
         del project_id, stream_id
+        with self._ownership_lock:
+            self._aborted_creates += 1
         self._discard(run_id)
 
     def abort_fork(
@@ -132,6 +146,8 @@ class LocalCoordinatorFactory:
         request: ScenarioForkRequest,
     ) -> None:
         del coordinator
+        with self._ownership_lock:
+            self._aborted_forks += 1
         self._discard(request.child_run_id)
 
 
@@ -155,13 +171,14 @@ def _service(
     tmp_path: Path,
     *,
     factory: LocalCoordinatorFactory | None = None,
+    registry: InMemoryScenarioRunRegistry | None = None,
 ):
     workspace = ScenarioProjectWorkspace.open(
         tmp_path / "studio.sqlite3",
         import_roots=(LAW_FIRM.parent,),
         export_root=tmp_path,
     )
-    registry = InMemoryScenarioRunRegistry()
+    registry = registry or InMemoryScenarioRunRegistry()
     service = WorldStudioService(
         workspace,
         registry,
@@ -641,6 +658,89 @@ class NoCheckpointFactory(LocalCoordinatorFactory):
         return coordinator
 
 
+class PublishThenRaiseRegistry(InMemoryScenarioRunRegistry):
+    """Exercises a registry boundary that reports failure after atomic publication."""
+
+    def __init__(self, *run_ids: str) -> None:
+        super().__init__()
+        self._throw_run_ids = frozenset(run_ids)
+
+    def commit(self, reservation, coordinator, *, outcome=None) -> None:
+        super().commit(reservation, coordinator, outcome=outcome)
+        if reservation.run_id in self._throw_run_ids:
+            super().commit(reservation, coordinator, outcome=outcome)
+            raise RuntimeError("registry transport failed after publication")
+
+
+class ObservedWaitingRegistry(InMemoryScenarioRunRegistry):
+    def __init__(self, target_run_id: str) -> None:
+        super().__init__()
+        self._target_run_id = target_run_id
+        self._target_lock = Lock()
+        self._target_reservations = 0
+        self.second_reservation_entered = Event()
+
+    def reserve(self, run_id: str, request_hash: str):
+        if run_id == self._target_run_id:
+            with self._target_lock:
+                self._target_reservations += 1
+                if self._target_reservations == 2:
+                    self.second_reservation_entered.set()
+        return super().reserve(run_id, request_hash)
+
+
+class CleanupFailingCreateFactory(LocalCoordinatorFactory):
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.create_entered = Event()
+        self.release_create = Event()
+        self.create_calls = 0
+        self.cleanup_calls = 0
+
+    def create(self, scenario, *, project_id: str, run_id: str, stream_id: str):
+        del scenario, project_id, stream_id
+        with self._ownership_lock:
+            self.create_calls += 1
+        (self._root / f"{run_id}.sqlite3").write_bytes(b"partial create resource")
+        self._own(run_id, None)
+        self.create_entered.set()
+        assert self.release_create.wait(5)
+        raise RuntimeError("create failed after its side effect")
+
+    def abort_create(self, *, project_id: str, run_id: str, stream_id: str) -> None:
+        del project_id, run_id, stream_id
+        with self._ownership_lock:
+            self.cleanup_calls += 1
+        raise RuntimeError("create cleanup failed")
+
+
+class CleanupFailingForkFactory(LocalCoordinatorFactory):
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.fork_entered = Event()
+        self.release_fork = Event()
+        self.fork_calls = 0
+        self.cleanup_calls = 0
+
+    def fork(self, coordinator, request, capability):
+        del coordinator, capability
+        with self._ownership_lock:
+            self.fork_calls += 1
+        (self._root / f"{request.child_run_id}.sqlite3").write_bytes(
+            b"partial fork resource"
+        )
+        self._own(request.child_run_id, None)
+        self.fork_entered.set()
+        assert self.release_fork.wait(5)
+        raise RuntimeError("fork failed after its side effect")
+
+    def abort_fork(self, coordinator, request) -> None:
+        del coordinator, request
+        with self._ownership_lock:
+            self.cleanup_calls += 1
+        raise RuntimeError("fork cleanup failed")
+
+
 def _run_create_params(imported, *, run_id: str = "run-1", stream_id: str = "stream-1"):
     return {
         "project_id": "law-firm",
@@ -673,6 +773,55 @@ def test_concurrent_exact_run_create_converges_on_one_owned_coordinator(
     assert factory.owned_run_ids == ("run-1",)
     assert registry.resolve("run-1").run_view().content_hash == results[0]["content_hash"]
     assert (tmp_path / "run-1.sqlite3").is_file()
+
+
+def test_run_create_reconciles_registry_publication_before_commit_error(
+    tmp_path: Path,
+) -> None:
+    registry = PublishThenRaiseRegistry("run-1")
+    factory = LocalCoordinatorFactory(tmp_path)
+    service, _ = _service(tmp_path, factory=factory, registry=registry)
+    capability = _capability()
+    imported = _create_and_import(service, capability)
+    params = _run_create_params(imported)
+
+    created = service.invoke("run.create", params, capability)
+    retry = service.invoke("run.create", params, capability)
+    resolved = service.invoke("run.view", {"run_id": "run-1"}, capability)
+
+    assert retry == created
+    assert resolved["content_hash"] == created["content_hash"]
+    assert factory.created_instance_count == 1
+    assert factory.aborted_create_count == 0
+    assert factory.owned_run_ids == ("run-1",)
+    assert (tmp_path / "run-1.sqlite3").is_file()
+
+
+def test_failed_create_cleanup_poisons_waiting_and_exact_retries(
+    tmp_path: Path,
+) -> None:
+    registry = ObservedWaitingRegistry("run-1")
+    factory = CleanupFailingCreateFactory(tmp_path)
+    service, _ = _service(tmp_path, factory=factory, registry=registry)
+    capability = _capability()
+    imported = _create_and_import(service, capability)
+    params = _run_create_params(imported)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(service.invoke, "run.create", params, capability)
+        assert factory.create_entered.wait(5)
+        second = executor.submit(service.invoke, "run.create", params, capability)
+        assert registry.second_reservation_entered.wait(5)
+        factory.release_create.set()
+        errors = (first.exception(timeout=5), second.exception(timeout=5))
+
+    assert all(isinstance(error, StudioRunLifecycleError) for error in errors)
+    with pytest.raises(StudioRunLifecycleError):
+        service.invoke("run.create", params, capability)
+    assert factory.create_calls == 1
+    assert factory.cleanup_calls == 1
+    assert factory.owned_run_ids == ("run-1",)
+    assert (tmp_path / "run-1.sqlite3").read_bytes() == b"partial create resource"
 
 
 def test_failed_run_create_aborts_factory_resource_and_releases_reservation(
@@ -752,6 +901,55 @@ def test_concurrent_exact_fork_converges_on_one_registered_child(
         "checkpoint_hash"
     ]
     assert (tmp_path / "run-child.sqlite3").is_file()
+
+
+def test_run_fork_reconciles_registry_publication_before_commit_error(
+    tmp_path: Path,
+) -> None:
+    registry = PublishThenRaiseRegistry("run-child")
+    factory = LocalCoordinatorFactory(tmp_path)
+    service, _ = _service(tmp_path, factory=factory, registry=registry)
+    capability = _capability()
+    imported = _create_and_import(service, capability)
+    params = _checkpointed_service(service, capability, imported)
+
+    forked = service.invoke("run.fork", params, capability)
+    retry = service.invoke("run.fork", params, capability)
+    child = service.invoke("run.view", {"run_id": "run-child"}, capability)
+
+    assert retry == forked
+    assert child["parent_checkpoint_hash"] == forked["checkpoint_hash"]
+    assert factory.created_instance_count == 2
+    assert factory.aborted_fork_count == 0
+    assert factory.owned_run_ids == ("run-1", "run-child")
+    assert (tmp_path / "run-child.sqlite3").is_file()
+
+
+def test_failed_fork_cleanup_poisons_waiting_and_exact_retries(
+    tmp_path: Path,
+) -> None:
+    registry = ObservedWaitingRegistry("run-child")
+    factory = CleanupFailingForkFactory(tmp_path)
+    service, _ = _service(tmp_path, factory=factory, registry=registry)
+    capability = _capability()
+    imported = _create_and_import(service, capability)
+    params = _checkpointed_service(service, capability, imported)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(service.invoke, "run.fork", params, capability)
+        assert factory.fork_entered.wait(5)
+        second = executor.submit(service.invoke, "run.fork", params, capability)
+        assert registry.second_reservation_entered.wait(5)
+        factory.release_fork.set()
+        errors = (first.exception(timeout=5), second.exception(timeout=5))
+
+    assert all(isinstance(error, StudioRunLifecycleError) for error in errors)
+    with pytest.raises(StudioRunLifecycleError):
+        service.invoke("run.fork", params, capability)
+    assert factory.fork_calls == 1
+    assert factory.cleanup_calls == 1
+    assert factory.owned_run_ids == ("run-1", "run-child")
+    assert (tmp_path / "run-child.sqlite3").read_bytes() == b"partial fork resource"
 
 
 def test_conflicting_fork_retry_is_rejected_without_replacing_child(

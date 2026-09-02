@@ -56,7 +56,10 @@ from narrative_dynamics.studio.project_store import (
 )
 from narrative_dynamics.studio.run_registry import (
     ScenarioRunRegistry,
+    ScenarioRunReservation,
     ScenarioRunReservationConflictError,
+    ScenarioRunReservationFailedError,
+    ScenarioRunReservationState,
 )
 from narrative_dynamics.studio.workspace import ScenarioProjectWorkspace
 
@@ -909,38 +912,81 @@ class WorldStudioService:
             reservation = self._runs.reserve(run_id, request_hash)
         except ScenarioRunReservationConflictError:
             raise StudioConflictError() from None
+        except ScenarioRunReservationFailedError:
+            raise StudioRunLifecycleError() from None
         if not reservation.acquired:
             if reservation.coordinator is None:
                 raise RuntimeError("scenario run reservation lost its coordinator")
             return _run_view(reservation.coordinator.run_view())
 
-        factory_started = False
         try:
             _, scenario = self._workspace.compile_exact(
                 project_id,
                 expected_revision,
                 expected_hash,
             )
-            factory_started = True
+        except Exception:
+            self._runs.abort(reservation)
+            raise
+        try:
             coordinator = self._factory.create(
                 scenario,
                 project_id=project_id,
                 run_id=run_id,
                 stream_id=stream_id,
             )
+        except Exception:
+            self._discard_failed_create(
+                reservation,
+                project_id=project_id,
+                run_id=run_id,
+                stream_id=stream_id,
+            )
+            raise
+        try:
             self._runs.commit(reservation, coordinator)
         except Exception:
-            try:
-                if factory_started:
-                    self._factory.abort_create(
+            inspection = self._runs.inspect(reservation)
+            if not (
+                inspection.state is ScenarioRunReservationState.COMMITTED
+                and inspection.coordinator is coordinator
+                and inspection.outcome is None
+            ):
+                if inspection.state is ScenarioRunReservationState.PENDING:
+                    self._discard_failed_create(
+                        reservation,
                         project_id=project_id,
                         run_id=run_id,
                         stream_id=stream_id,
                     )
-            finally:
-                self._runs.abort(reservation)
-            raise
+                    raise
+                if inspection.state is ScenarioRunReservationState.MISSING:
+                    self._runs.mark_failed(reservation)
+                raise StudioRunLifecycleError() from None
         return _run_view(coordinator.run_view())
+
+    def _discard_failed_create(
+        self,
+        reservation: ScenarioRunReservation,
+        *,
+        project_id: str,
+        run_id: str,
+        stream_id: str,
+    ) -> None:
+        try:
+            self._factory.abort_create(
+                project_id=project_id,
+                run_id=run_id,
+                stream_id=stream_id,
+            )
+        except Exception:
+            self._runs.mark_failed(reservation)
+            raise StudioRunLifecycleError() from None
+        try:
+            self._runs.abort(reservation)
+        except Exception:
+            self._runs.mark_failed(reservation)
+            raise StudioRunLifecycleError() from None
 
     def _coordinator(self, capability: StudioCapability, run_id: str, permission: str) -> ScenarioCoordinator:
         self._require_run(capability, run_id, permission)
@@ -1051,14 +1097,14 @@ class WorldStudioService:
             reservation = self._runs.reserve(child_run_id, reservation_hash)
         except ScenarioRunReservationConflictError:
             raise StudioConflictError() from None
+        except ScenarioRunReservationFailedError:
+            raise StudioRunLifecycleError() from None
         if not reservation.acquired:
             if not isinstance(reservation.outcome, ScenarioForkResult):
                 raise RuntimeError("scenario fork reservation lost its result")
             return _fork_result(reservation.outcome)
 
-        factory_started = False
         try:
-            factory_started = True
             try:
                 child, result = self._factory.fork(
                     coordinator,
@@ -1087,15 +1133,42 @@ class WorldStudioService:
                 if str(error) == "scenario checkpoint store is not configured":
                     raise StudioRunLifecycleError() from None
                 raise
+        except Exception:
+            self._discard_failed_fork(reservation, coordinator, request)
+            raise
+        try:
             self._runs.commit(reservation, child, outcome=result)
         except Exception:
-            try:
-                if factory_started:
-                    self._factory.abort_fork(coordinator, request)
-            finally:
-                self._runs.abort(reservation)
-            raise
+            inspection = self._runs.inspect(reservation)
+            if not (
+                inspection.state is ScenarioRunReservationState.COMMITTED
+                and inspection.coordinator is child
+                and inspection.outcome == result
+            ):
+                if inspection.state is ScenarioRunReservationState.PENDING:
+                    self._discard_failed_fork(reservation, coordinator, request)
+                    raise
+                if inspection.state is ScenarioRunReservationState.MISSING:
+                    self._runs.mark_failed(reservation)
+                raise StudioRunLifecycleError() from None
         return _fork_result(result)
+
+    def _discard_failed_fork(
+        self,
+        reservation: ScenarioRunReservation,
+        coordinator: ScenarioCoordinator,
+        request: ScenarioForkRequest,
+    ) -> None:
+        try:
+            self._factory.abort_fork(coordinator, request)
+        except Exception:
+            self._runs.mark_failed(reservation)
+            raise StudioRunLifecycleError() from None
+        try:
+            self._runs.abort(reservation)
+        except Exception:
+            self._runs.mark_failed(reservation)
+            raise StudioRunLifecycleError() from None
 
     def _run_view(self, raw: object, capability: StudioCapability) -> JsonObject:
         values = _params(raw, required=("run_id",))
