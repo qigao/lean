@@ -456,7 +456,7 @@ def simulate_situated_network_round(
             checkpoint=False,
         )
         result = SituatedNetworkRoundResult(
-            model.model_id, model.content_hash, state, next_state
+            model.model_id, model.content_hash, state, next_state, advanced
         )
         _validate_runtime_state(staged_path, model, next_state)
         if (

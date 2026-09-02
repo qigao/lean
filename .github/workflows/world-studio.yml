@@ -1,0 +1,66 @@
+name: World Studio
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-world-studio.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: world_studio_web/package-lock.json
+
+      - name: Install locked Python dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements-world-studio.txt
+
+      - name: Install locked browser dependencies
+        working-directory: world_studio_web
+        run: npm ci
+
+      - name: Install Chromium
+        working-directory: world_studio_web
+        run: npx playwright install --with-deps chromium
+
+      - name: Verify Python studio and coordinator
+        run: |
+          python -m pytest tests/test_world_studio_*.py tests/test_network_abm_scenario_coordinator.py tests/test_network_abm_scenario_checkpoint_store.py tests/test_network_abm_simulation_output_bus.py tests/test_network_abm_public_api.py -q
+          python -m unittest discover -s tests -p "test_network_abm*.py" -q
+          python -m compileall -q narrative_dynamics tests tools/run_world_studio.py
+
+      - name: Verify browser unit and accessibility contracts
+        working-directory: world_studio_web
+        run: |
+          npm test -- --run
+          npm run typecheck
+          npm run build
+
+      - name: Verify real law-firm browser flow
+        working-directory: world_studio_web
+        run: npx playwright test e2e/law-firm.spec.ts
+
+      - name: Upload bounded Playwright diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: world-studio-playwright-diagnostics
+          path: world_studio_web/test-results
+          if-no-files-found: ignore
+          retention-days: 3

@@ -1,0 +1,24 @@
+# Fully pinned optional World Studio server and Python-test environment.
+starlette==1.0.0
+hypercorn==0.18.0
+httpx==0.28.1
+pytest==9.0.3
+
+# Transitive pins keep CI and local launcher behavior reproducible.
+anyio==4.3.0
+certifi==2024.2.2
+colorama==0.4.6; platform_system == "Windows"
+h11==0.16.0
+h2==4.4.1
+hpack==4.2.0
+httpcore==1.0.9
+hyperframe==6.1.0
+idna==3.7
+iniconfig==1.1.1
+packaging==24.2
+pluggy==1.6.0
+priority==2.0.0
+Pygments==2.17.2
+sniffio==1.3.1
+typing-extensions==4.15.0
+wsproto==1.3.2
