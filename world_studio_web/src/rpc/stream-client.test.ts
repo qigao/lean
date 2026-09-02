@@ -79,11 +79,26 @@ function output(first: number, last: number, hashCharacter: string): SimulationO
   };
 }
 
+function agentOutput(first: number, last: number, hashCharacter: string): SimulationOutputView {
+  const view = output(first, last, hashCharacter);
+  return {
+    ...view,
+    records: view.records.map((record) => ({
+      ...record,
+      audience: "agent",
+      owner_agent_id: "alice",
+    })),
+  };
+}
+
 async function flush(): Promise<void> {
   for (let index = 0; index < 12; index += 1) await Promise.resolve();
 }
 
-async function connectedClient(options: ConstructorParameters<typeof StreamClient>[1] = {}) {
+async function connectedClient(
+  options: ConstructorParameters<typeof StreamClient>[1] = {},
+  initialBinding: StreamBinding = binding(),
+) {
   const sockets: Socket[] = [];
   const batches: SimulationOutputView[] = [];
   const client = new StreamClient("ws://example.test/v1/stream", {
@@ -96,23 +111,30 @@ async function connectedClient(options: ConstructorParameters<typeof StreamClien
     onOutput: async (batch) => { batches.push(batch); },
     ...options,
   });
-  const connecting = client.connect(binding());
+  const connecting = client.connect(initialBinding);
   sockets[0]!.open();
   expect(sockets[0]!.request(0)).toMatchObject({
     jsonrpc: "2.0",
     method: "stream.subscribe",
     params: {
-      subscription_id: "subscription-1",
+      subscription_id: initialBinding.subscription_id,
       run_id: "run-1",
       stream_id: "stream-1",
       kinds: ["state.delta", "network.metrics"],
-      audience: "public",
+      audience: initialBinding.audience,
     },
   });
-  sockets[0]!.respond(0, {
-    subscription_id: "subscription-1", run_id: "run-1", stream_id: "stream-1",
-    kinds: ["state.delta", "network.metrics"], audience: "public",
-  });
+  const response: JsonObject = {
+    subscription_id: initialBinding.subscription_id,
+    run_id: "run-1",
+    stream_id: "stream-1",
+    kinds: ["state.delta", "network.metrics"],
+    audience: initialBinding.audience,
+  };
+  if (initialBinding.owner_agent_id !== null) {
+    response.owner_agent_id = initialBinding.owner_agent_id;
+  }
+  sockets[0]!.respond(0, response);
   await connecting;
   return { client, sockets, batches };
 }
@@ -409,10 +431,10 @@ describe("StreamClient strict JSON-RPC transport", () => {
     sockets[0]!.respond(1, { subscription_id: "subscription-1", unsubscribed: true });
     await flush();
     expect(sockets[0]!.request(2)).toMatchObject({ method: "stream.subscribe", params: {
-      subscription_id: "subscription-agent", audience: "agent", owner_agent_id: "alice",
+      subscription_id: "subscription-agent-generation-1", audience: "agent", owner_agent_id: "alice",
     }});
     sockets[0]!.respond(2, {
-      subscription_id: "subscription-agent", run_id: "run-1", stream_id: "stream-1",
+      subscription_id: "subscription-agent-generation-1", run_id: "run-1", stream_id: "stream-1",
       kinds: ["state.delta", "network.metrics"], audience: "agent", owner_agent_id: "alice",
     });
     await expect(switching).resolves.toBeUndefined();
@@ -437,14 +459,98 @@ describe("StreamClient strict JSON-RPC transport", () => {
 
     expect(sockets[0]!.sent).toHaveLength(3);
     expect(sockets[0]!.request(2)).toMatchObject({ method: "stream.subscribe", params: {
-      subscription_id: "subscription-public-new", audience: "public",
+      subscription_id: "subscription-public-new-generation-2", audience: "public",
     }});
     expect(sockets[0]!.sent.some((raw) => raw.includes("subscription-agent"))).toBe(false);
     sockets[0]!.respond(2, {
-      subscription_id: "subscription-public-new", run_id: "run-1", stream_id: "stream-1",
+      subscription_id: "subscription-public-new-generation-2", run_id: "run-1", stream_id: "stream-1",
       kinds: ["state.delta", "network.metrics"], audience: "public",
     });
     await expect(newer).resolves.toBeUndefined();
+    expect(client.binding?.audience).toBe("public");
+  });
+
+  it("detaches a retiring Agent delivery generation before unsubscribe completes", async () => {
+    const failures: Error[] = [];
+    const markers: JsonObject[] = [];
+    const agent = binding({
+      subscription_id: "subscription-shared",
+      audience: "agent",
+      owner_agent_id: "alice",
+    });
+    const { client, sockets, batches } = await connectedClient({
+      onProtocolError: (error) => failures.push(error),
+      onMarker: (_runId, marker) => markers.push(marker),
+    }, agent);
+
+    const switching = client.switchAudience(binding({
+      subscription_id: "subscription-shared",
+      audience: "public",
+      owner_agent_id: null,
+    }), () => undefined);
+    expect(client.binding).toBeNull();
+    await flush();
+    expect(sockets[0]!.request(1)).toMatchObject({
+      method: "stream.unsubscribe",
+      params: { subscription_id: "subscription-shared" },
+    });
+
+    sockets[0]!.receive({
+      jsonrpc: "2.0",
+      method: "stream.output",
+      params: {
+        subscription_id: "subscription-shared",
+        output: agentOutput(1, 1, "1"),
+      },
+    });
+    await flush();
+    expect(batches).toEqual([]);
+    expect(sockets[0]!.sent).toHaveLength(2);
+    expect(markers).toEqual([]);
+    expect(failures).toEqual([]);
+
+    sockets[0]!.respond(1, {
+      subscription_id: "subscription-shared",
+      unsubscribed: true,
+    });
+    await flush();
+    const subscribe = sockets[0]!.request(2);
+    expect(subscribe).toMatchObject({
+      method: "stream.subscribe",
+      params: { audience: "public" },
+    });
+    expect(subscribe.params).not.toMatchObject({
+      subscription_id: "subscription-shared",
+    });
+    const nextSubscriptionId = (subscribe.params as JsonObject).subscription_id;
+    expect(typeof nextSubscriptionId).toBe("string");
+    sockets[0]!.respond(2, {
+      subscription_id: nextSubscriptionId as string,
+      run_id: "run-1",
+      stream_id: "stream-1",
+      kinds: ["state.delta", "network.metrics"],
+      audience: "public",
+    });
+    await expect(switching).resolves.toBeUndefined();
+    expect(client.binding).toMatchObject({
+      subscription_id: nextSubscriptionId,
+      audience: "public",
+      owner_agent_id: null,
+    });
+
+    sockets[0]!.receive({
+      jsonrpc: "2.0",
+      method: "stream.output",
+      params: {
+        subscription_id: "subscription-shared",
+        output: agentOutput(1, 1, "1"),
+      },
+    });
+    await flush();
+    expect(batches).toEqual([]);
+    expect(sockets[0]!.sent).toHaveLength(3);
+    expect(markers).toEqual([]);
+    expect(failures).toEqual([]);
     expect(client.binding?.audience).toBe("public");
   });
 

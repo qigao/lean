@@ -336,6 +336,14 @@ class ScenarioCoordinator:
         with self._state_lock:
             return project_scenario_network_state(self.state, capability)
 
+    def network_state_with_run_view(
+        self,
+        capability: SimulationAudienceCapability,
+    ) -> tuple[SituatedNetworkSnapshot, ScenarioRunView]:
+        """Project analyst metrics and their exact run binding atomically."""
+        with self._state_lock:
+            return self.network_state(capability), self.run_view()
+
     def output_view(
         self,
         batch_hash: str,

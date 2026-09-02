@@ -271,6 +271,88 @@ class ScenarioCoordinatorTests(unittest.TestCase):
             coordinator.state.snapshot,
         )
 
+    def test_network_state_and_run_view_are_projected_under_one_state_lock(self) -> None:
+        coordinator = self.coordinator()
+        self.start(coordinator)
+        request = self.request(coordinator, ScenarioCommandKind.STEP)
+        capability = self.capability()
+        audience = SimulationAudienceCapability(SimulationOutputAudience.ANALYST)
+        atomic_network_state = coordinator.network_state_with_run_view
+
+        network_projection_entered = Event()
+        release_network_projection = Event()
+        run_projection_entered = Event()
+        release_run_projection = Event()
+        transition_entered = Event()
+        read_result = []
+        read_errors = []
+        command_errors = []
+        original_network_projector = coordinator_module.project_scenario_network_state
+        original_run_projector = coordinator_module.project_scenario_run_view
+        original_submit = coordinator._submit_command
+
+        def project_network(state, exact_audience):
+            snapshot = original_network_projector(state, exact_audience)
+            network_projection_entered.set()
+            if not release_network_projection.wait(2):
+                raise RuntimeError("network projection barrier timed out")
+            return snapshot
+
+        def project_run_view(**values):
+            run = original_run_projector(**values)
+            run_projection_entered.set()
+            if not release_run_projection.wait(2):
+                raise RuntimeError("run projection barrier timed out")
+            return run
+
+        def submit(exact_request, exact_capability):
+            transition_entered.set()
+            return original_submit(exact_request, exact_capability)
+
+        def read_pair() -> None:
+            try:
+                read_result.append(atomic_network_state(audience))
+            except Exception as error:  # pragma: no cover - asserted below
+                read_errors.append(error)
+
+        def transition() -> None:
+            try:
+                coordinator.submit_command(request, capability)
+            except Exception as error:  # pragma: no cover - asserted below
+                command_errors.append(error)
+
+        with patch.object(
+            coordinator_module,
+            "project_scenario_network_state",
+            side_effect=project_network,
+        ), patch.object(
+            coordinator_module,
+            "project_scenario_run_view",
+            side_effect=project_run_view,
+        ), patch.object(coordinator, "_submit_command", side_effect=submit):
+            reader = Thread(target=read_pair)
+            reader.start()
+            self.assertTrue(network_projection_entered.wait(2))
+            commander = Thread(target=transition)
+            commander.start()
+            release_network_projection.set()
+            self.assertTrue(run_projection_entered.wait(2))
+            self.assertFalse(transition_entered.is_set())
+            release_run_projection.set()
+            reader.join(2)
+            commander.join(2)
+
+        self.assertFalse(reader.is_alive())
+        self.assertFalse(commander.is_alive())
+        self.assertEqual(read_errors, [])
+        self.assertEqual(command_errors, [])
+        snapshot, run = read_result[0]
+        self.assertEqual(snapshot.round_index, 0)
+        self.assertEqual(run.round_index, 0)
+        self.assertEqual(run.state_hash, request.expected_state_hash)
+        self.assertEqual(coordinator.run_view().round_index, 1)
+        self.assertNotEqual(coordinator.run_view().state_hash, run.state_hash)
+
     def test_creation_rejects_wrong_scenario_and_duplicate_state_store_run(self) -> None:
         with self.assertRaisesRegex(TypeError, "CompiledSituatedScenario"):
             ScenarioCoordinator.create(

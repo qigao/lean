@@ -1207,8 +1207,8 @@ class WorldStudioService:
         run_id = _text(values["run_id"], label="run ID")
         coordinator = self._coordinator(capability, run_id, "state.network")
         audience = SimulationAudienceCapability(SimulationOutputAudience.ANALYST)
-        run = coordinator.run_view()
-        return _network_state(coordinator.network_state(audience), run)
+        snapshot, run = coordinator.network_state_with_run_view(audience)
+        return _network_state(snapshot, run)
 
     def _output_get(self, raw: object, capability: StudioCapability) -> JsonObject:
         values = _params(raw, required=("run_id", "batch_hash"), optional=("agent_id",))

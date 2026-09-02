@@ -402,6 +402,41 @@ def test_real_coordinator_lifecycle_and_scoped_queries(tmp_path: Path) -> None:
     assert registry.resolve("run-child").run_view().run_id == "run-child"
 
 
+def test_network_state_uses_the_coordinator_atomic_snapshot_pair(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    service, registry = _service(tmp_path)
+    capability = _capability()
+    imported = _create_and_import(service, capability)
+    service.invoke(
+        "run.create",
+        {
+            "project_id": "law-firm",
+            "run_id": "run-1",
+            "stream_id": "stream-1",
+            "expected_revision": imported["revision"],
+            "expected_snapshot_hash": imported["content_hash"],
+        },
+        capability,
+    )
+    coordinator = registry.resolve("run-1")
+    original = coordinator.network_state_with_run_view
+    observed = []
+
+    def atomic_pair(audience):
+        observed.append(audience)
+        return original(audience)
+
+    monkeypatch.setattr(coordinator, "network_state_with_run_view", atomic_pair)
+    network = service.invoke("state.network", {"run_id": "run-1"}, capability)
+
+    assert len(observed) == 1
+    assert observed[0].audience.value == "analyst"
+    assert network["round_index"] == 0
+    assert network["state_hash"] == coordinator.run_view().state_hash
+
+
 def test_capabilities_are_narrowed_before_private_queries(tmp_path: Path) -> None:
     service, _ = _service(tmp_path)
     full = _capability()

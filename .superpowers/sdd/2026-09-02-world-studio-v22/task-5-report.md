@@ -343,3 +343,85 @@ Host used for this round: Python 3.12.7, Node 24.5.0, npm 11.5.2, Windows.
   installed and the real token-mode E2E has no environment blocker.
 - `world_studio_web/test-results/` and `playwright-report/` are ignored; generated run
   artifacts are removed before the fix commit.
+
+## Fix Round 2
+
+Review base and pre-commit head: `6aeb8ec8b459e356c48069371820f8fdddd6ccb0` on
+`feature/world-studio-v22-1-workspace`. The final commit hash is reported in the handoff
+because a commit cannot embed its own resulting hash. This round changes only the two
+remaining parts of review Finding 6.
+
+### RED to GREEN evidence
+
+1. Retiring audience delivery generation. The deterministic browser RED begins an
+   Agent-to-Public switch, holds the unsubscribe response, and delivers an old
+   Alice-private notification. Current production failed before the barrier assertion:
+   `client.binding` still returned the Agent binding instead of `null` (`1 failed, 12
+   passed`). GREEN invalidates the active delivery binding and cursors synchronously,
+   before the clearing callback or any await. Every queued notification captures its
+   delivery generation, so a retired generation returns before validation, delivery,
+   acknowledgement, or marker creation. Retired subscription IDs are bounded by the
+   existing client identity limit and ignored non-fatally, while control responses
+   continue to resolve. Each audience switch derives a generation-unique wire
+   subscription ID, so even a caller reusing the same ID cannot confuse a late Agent
+   frame with the new Public subscription. The held-unsubscribe test now observes zero
+   output deliveries, acknowledgements, markers, and protocol errors before and after
+   Public activation, and the focused StreamClient suite is `13 passed`.
+2. Atomic analyst state/run binding. The coordinator RED failed with `AttributeError`
+   because there was no atomic pair API. The next service RED observed zero calls to the
+   new pair and proved the handler still made separate reads. GREEN adds
+   `ScenarioCoordinator.network_state_with_run_view`, which holds the existing outer
+   `RLock` while reusing the existing network and run projections. A deterministic
+   projector barrier starts a real STEP concurrently and proves `_submit_command`
+   cannot enter between the network and run projectors; the returned pair remains round
+   0 with its exact old state hash while the later transition advances the coordinator
+   to round 1 and a different hash. The service now serializes only that returned pair.
+   The coordinator and service single-test gates both pass.
+
+No callback, publisher, or transport work was moved under the coordinator state lock;
+the existing `network_state` and `run_view` public APIs and all semantic identities are
+unchanged.
+
+### Verification evidence
+
+Host used for this round: Python 3.12.7, Node 24.5.0, npm 11.5.2, Windows.
+
+- Focused `npx vitest run src/rpc/stream-client.test.ts src/state/run-store.test.ts` —
+  2 files, 29 tests passed.
+- Focused full service/coordinator regression — `73 passed, 30 subtests passed in
+  39.79s`.
+- `npm ci` — 151 packages installed from the unchanged exact lockfile.
+- The complete brief Python pytest gate, with PowerShell expanding the Studio wildcard
+  before invocation — `248 passed, 1 skipped, 89 subtests passed in 84.89s`. The skip
+  remains the Windows directory-symlink privilege case.
+- `python -m unittest discover -s tests -p "test_network_abm*.py" -q` — `Ran 698
+  tests in 78.070s`, `OK (skipped=1)`.
+- `python -m compileall -q narrative_dynamics tests tools/run_world_studio.py` — exit 0.
+- `npm test -- --run` — 15 files, 84 tests passed.
+- `npm run typecheck` — exit 0.
+- `npm run build` — 2,752 modules transformed in 6.58s; only the known lazy Monaco
+  chunk-size warning remains.
+- `npx playwright test e2e/law-firm.spec.ts` against the production build and launcher
+  token mode — `1 passed (13.9s)`.
+- `git diff --check` — clean apart from host LF-to-CRLF notices.
+
+### Files, scope, and audit
+
+- Production: `world_studio_web/src/rpc/stream-client.ts`,
+  `narrative_dynamics/abm/scenario_coordinator.py`, and
+  `narrative_dynamics/studio/service.py`.
+- Tests: `world_studio_web/src/rpc/stream-client.test.ts`,
+  `tests/test_network_abm_scenario_coordinator.py`, and
+  `tests/test_world_studio_service.py`.
+- Report: this file only. No dependency, schema, RPC, route, component, launcher,
+  persistence, or documentation contract changed.
+- The forbidden-scope scan has no added React/React Flow, gRPC/Protobuf, provider/LLM,
+  remote-worker, state-set, or Blender surface. The identity scan shows only the
+  generation-bound transport subscription ID; no generation, connection, callback,
+  credential, path, publisher, bind address, or topology value enters a command, fork,
+  run, checkpoint, content, or recovery semantic identity/hash.
+- `npm audit --omit=dev` still reports only the previously disclosed Monaco-vendored
+  DOMPurify chain (two findings: one low and one moderate); the offered forced fix is a
+  breaking Monaco downgrade. No production or development dependency changed.
+- The Playwright `.last-run.json` artifact was removed before staging; generated result
+  directories remain ignored.
