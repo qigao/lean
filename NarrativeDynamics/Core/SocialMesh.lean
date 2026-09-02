@@ -116,4 +116,27 @@ theorem six_degrees_of_two_three_bridge {Node : Type*} {g : MeshGraph Node}
     reachWithin_bridge left bridge right
   simpa using composed
 
+/-- Physical residence is a single authoritative function while social
+membership is an unrestricted relation, so the two notions do not compete. -/
+structure AgentMeshPlacement (Agent World Society : Type*) where
+  physicalWorld : Agent → World
+  socialMember : Agent → Society → Prop
+
+/-- Functional physical placement admits only one current world per Agent. -/
+theorem physical_world_unique {Agent World Society : Type*}
+    (placement : AgentMeshPlacement Agent World Society) {agent : Agent}
+    {first second : World} (hfirst : placement.physicalWorld agent = first)
+    (hsecond : placement.physicalWorld agent = second) : first = second := by
+  exact hfirst.symm.trans hsecond
+
+/-- Any two simultaneous social memberships coexist with the same unique
+physical placement. -/
+theorem multiple_social_memberships_compatible {Agent World Society : Type*}
+    (placement : AgentMeshPlacement Agent World Society) {agent : Agent}
+    {first second : Society} (hfirst : placement.socialMember agent first)
+    (hsecond : placement.socialMember agent second) :
+    ∃ world, placement.physicalWorld agent = world ∧
+      placement.socialMember agent first ∧ placement.socialMember agent second := by
+  exact ⟨placement.physicalWorld agent, rfl, hfirst, hsecond⟩
+
 end NarrativeDynamics
