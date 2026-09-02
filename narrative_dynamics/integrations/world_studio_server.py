@@ -137,11 +137,12 @@ def create_world_studio_asgi_app(
         if not (resolved_static_root / "index.html").is_file():
             raise ValueError("World Studio static root must contain index.html")
 
-    connection_lock = asyncio.Lock()
+    connection_condition = asyncio.Condition()
     active_connections = 0
     next_connection = 0
     session_lock = RLock()
     sessions: OrderedDict[str, tuple[StudioCapability, float]] = OrderedDict()
+    session_connections: dict[str, dict[str, Callable[[], None]]] = {}
 
     def transport_error(code: str, status: int):
         return JSONResponse({"error": {"code": code}}, status_code=status)
@@ -187,32 +188,88 @@ def create_world_studio_asgi_app(
                 subscription_id = candidate
         return request_id, method if isinstance(method, str) else None, subscription_id
 
-    def session_capability(host_object) -> StudioCapability | None:
+    def invalidate_sessions(identities: tuple[str, ...]) -> tuple[Callable[[], None], ...]:
+        callbacks: list[Callable[[], None]] = []
+        with session_lock:
+            for identity in identities:
+                sessions.pop(identity, None)
+                callbacks.extend(session_connections.pop(identity, {}).values())
+        return tuple(callbacks)
+
+    @staticmethod
+    def signal_revocation(callbacks: tuple[Callable[[], None], ...]) -> None:
+        for callback in callbacks:
+            try:
+                callback()
+            except Exception:
+                continue
+
+    def purge_expired_sessions(now: float) -> None:
+        with session_lock:
+            expired = tuple(
+                identity for identity, (_, deadline) in sessions.items()
+                if deadline <= now
+            )
+        signal_revocation(invalidate_sessions(expired))
+
+    def session_binding(host_object) -> tuple[str, StudioCapability, float] | None:
         session_id = host_object.cookies.get(WORLD_STUDIO_SESSION_COOKIE)
         if not isinstance(session_id, str) or not session_id:
             return None
         now = clock()
+        purge_expired_sessions(now)
         with session_lock:
-            expired = tuple(
-                identity for identity, (_, deadline) in sessions.items()
-                if deadline <= now
-            )
-            for identity in expired:
-                sessions.pop(identity, None)
             retained = sessions.get(session_id)
-            return None if retained is None else retained[0]
+            return None if retained is None else (session_id, retained[0], retained[1])
+
+    def session_capability(host_object) -> StudioCapability | None:
+        retained = session_binding(host_object)
+        return None if retained is None else retained[1]
+
+    def session_is_valid(session_id: str, deadline: float) -> bool:
+        now = clock()
+        purge_expired_sessions(now)
+        with session_lock:
+            retained = sessions.get(session_id)
+            return retained is not None and retained[1] == deadline and deadline > now
+
+    def bind_session_connection(
+        session_id: str,
+        deadline: float,
+        connection_id: str,
+        revoke: Callable[[], None],
+    ) -> bool:
+        now = clock()
+        purge_expired_sessions(now)
+        with session_lock:
+            retained = sessions.get(session_id)
+            if retained is None or retained[1] != deadline or deadline <= now:
+                return False
+            session_connections.setdefault(session_id, {})[connection_id] = revoke
+            return True
+
+    def unbind_session_connection(session_id: str, connection_id: str) -> None:
+        with session_lock:
+            connections = session_connections.get(session_id)
+            if connections is None:
+                return
+            connections.pop(connection_id, None)
+            if not connections:
+                session_connections.pop(session_id, None)
 
     def create_session(capability: StudioCapability) -> str:
         now = clock()
+        purge_expired_sessions(now)
+        evicted: tuple[Callable[[], None], ...] = ()
         with session_lock:
-            expired = tuple(
-                identity for identity, (_, deadline) in sessions.items()
-                if deadline <= now
-            )
-            for identity in expired:
-                sessions.pop(identity, None)
+            evicted_ids: list[str] = []
             while len(sessions) >= limits.maximum_sessions:
-                sessions.popitem(last=False)
+                identity, _ = sessions.popitem(last=False)
+                evicted_ids.append(identity)
+            callbacks: list[Callable[[], None]] = []
+            for identity in evicted_ids:
+                callbacks.extend(session_connections.pop(identity, {}).values())
+            evicted = tuple(callbacks)
             for _ in range(8):
                 session_id = secrets.token_urlsafe(32)
                 if session_id not in sessions:
@@ -220,6 +277,7 @@ def create_world_studio_asgi_app(
                         capability,
                         now + float(limits.session_lifetime_seconds),
                     )
+                    signal_revocation(evicted)
                     return session_id
         raise RuntimeError("World Studio session identity allocation failed")
 
@@ -271,8 +329,7 @@ def create_world_studio_asgi_app(
         if request.method == "DELETE":
             session_id = request.cookies.get(WORLD_STUDIO_SESSION_COOKIE)
             if isinstance(session_id, str):
-                with session_lock:
-                    sessions.pop(session_id, None)
+                signal_revocation(invalidate_sessions((session_id,)))
             response = Response(status_code=204, headers={"cache-control": "no-store"})
             response.delete_cookie(
                 WORLD_STUDIO_SESSION_COOKIE,
@@ -412,30 +469,52 @@ def create_world_studio_asgi_app(
         if origin not in origins or WORLD_STUDIO_WEBSOCKET_SUBPROTOCOL not in offered:
             await websocket.close(code=1008)
             return
-        try:
-            capability = await asyncio.wait_for(
-                authenticate(
-                    authenticate_websocket,
-                    websocket,
-                    allow_ambient=allow_ambient_authentication,
-                ),
-                timeout=float(limits.request_timeout_seconds),
-            )
-        except asyncio.TimeoutError:
-            await websocket.close(code=1013)
-            return
+        cookie_binding = session_binding(websocket)
+        if cookie_binding is not None:
+            bound_session_id, capability, bound_session_deadline = cookie_binding
+        else:
+            bound_session_id = None
+            bound_session_deadline = None
+            try:
+                capability = await asyncio.wait_for(
+                    authenticate(
+                        authenticate_websocket,
+                        websocket,
+                        allow_ambient=allow_ambient_authentication,
+                        allow_session=False,
+                    ),
+                    timeout=float(limits.request_timeout_seconds),
+                )
+            except asyncio.TimeoutError:
+                await websocket.close(code=1013)
+                return
         if capability is None:
             await websocket.close(code=1008)
             return
-        async with connection_lock:
+        admitted = False
+        async with connection_condition:
             if active_connections >= limits.maximum_websocket_connections:
-                await websocket.close(code=1013)
-                return
-            active_connections += 1
-            next_connection += 1
-            connection_id = f"connection-{next_connection}"
+                try:
+                    await asyncio.wait_for(
+                        connection_condition.wait_for(
+                            lambda: active_connections < limits.maximum_websocket_connections
+                        ),
+                        timeout=min(0.05, float(limits.request_timeout_seconds)),
+                    )
+                except asyncio.TimeoutError:
+                    pass
+            if active_connections < limits.maximum_websocket_connections:
+                active_connections += 1
+                next_connection += 1
+                connection_id = f"connection-{next_connection}"
+                admitted = True
+        if not admitted:
+            await websocket.close(code=1013)
+            return
 
         tasks: set[asyncio.Task] = set()
+        control_tasks: set[asyncio.Task] = set()
+        connection_revoked = False
         try:
             loop = asyncio.get_running_loop()
             output_queue: asyncio.Queue = asyncio.Queue(
@@ -446,8 +525,27 @@ def create_world_studio_asgi_app(
                 )
             )
             send_lock = asyncio.Lock()
+            session_revoked = asyncio.Event()
+
+            def revoke_session() -> None:
+                loop.call_soon_threadsafe(session_revoked.set)
+
+            if (
+                bound_session_id is not None
+                and bound_session_deadline is not None
+                and not bind_session_connection(
+                    bound_session_id,
+                    bound_session_deadline,
+                    connection_id,
+                    revoke_session,
+                )
+            ):
+                session_revoked.set()
 
             class OutboundFrameTooLarge(RuntimeError):
+                pass
+
+            class SessionRevoked(RuntimeError):
                 pass
 
             def on_output(subscription_id, view) -> None:
@@ -466,6 +564,17 @@ def create_world_studio_asgi_app(
             owned_subscriptions: set[str] = set()
 
             async def send_payload(payload) -> None:
+                if (
+                    bound_session_id is not None
+                    and bound_session_deadline is not None
+                    and not session_is_valid(bound_session_id, bound_session_deadline)
+                ):
+                    discard_owned_subscriptions()
+                    try:
+                        await websocket.close(code=1008)
+                    except Exception:
+                        pass
+                    raise SessionRevoked()
                 encoded = json.dumps(
                     payload,
                     ensure_ascii=False,
@@ -503,6 +612,36 @@ def create_world_studio_asgi_app(
                 except WebSocketDisconnect:
                     return
 
+            def discard_owned_subscriptions() -> None:
+                for subscription_id in tuple(owned_subscriptions):
+                    try:
+                        output_router.unsubscribe(
+                            subscription_id,
+                            capability=capability,
+                            connection_id=connection_id,
+                        )
+                    except Exception:
+                        pass
+                    owned_subscriptions.discard(subscription_id)
+
+            async def session_guard() -> None:
+                if bound_session_id is None or bound_session_deadline is None:
+                    await asyncio.Future()
+                    return
+                while not session_revoked.is_set():
+                    if not session_is_valid(bound_session_id, bound_session_deadline):
+                        session_revoked.set()
+                        break
+                    try:
+                        await asyncio.wait_for(session_revoked.wait(), timeout=0.05)
+                    except asyncio.TimeoutError:
+                        continue
+                discard_owned_subscriptions()
+                try:
+                    await websocket.close(code=1008)
+                except Exception:
+                    pass
+
             async def receive_controls() -> None:
                 nonlocal owned_subscriptions
                 while True:
@@ -521,11 +660,29 @@ def create_world_studio_asgi_app(
                     if len(raw) > limits.maximum_websocket_frame_bytes:
                         await websocket.close(code=1009)
                         return
+                    if (
+                        bound_session_id is not None
+                        and bound_session_deadline is not None
+                        and not session_is_valid(bound_session_id, bound_session_deadline)
+                    ):
+                        discard_owned_subscriptions()
+                        await websocket.close(code=1008)
+                        return
                     control_task = asyncio.create_task(
                         asyncio.to_thread(
                             streaming_dispatcher.parse_and_dispatch, raw, capability
                         )
                     )
+                    control_tasks.add(control_task)
+
+                    def finish_control(completed) -> None:
+                        control_tasks.discard(completed)
+                        if connection_revoked:
+                            output_router.revoke_connection(connection_id)
+                            if not control_tasks:
+                                output_router.release_connection_revocation(connection_id)
+
+                    control_task.add_done_callback(finish_control)
                     request_id, control_method, control_subscription_id = control_metadata(raw)
                     try:
                         response = await asyncio.wait_for(
@@ -641,11 +798,14 @@ def create_world_studio_asgi_app(
             tasks.add(sender)
             receiver = asyncio.create_task(control_receiver())
             tasks.add(receiver)
+            if bound_session_id is not None:
+                guard = asyncio.create_task(session_guard())
+                tasks.add(guard)
             done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             failures = await asyncio.gather(*done, return_exceptions=True)
             if any(
                 isinstance(failure, Exception)
-                and not isinstance(failure, OutboundFrameTooLarge)
+                and not isinstance(failure, (OutboundFrameTooLarge, SessionRevoked))
                 for failure in failures
             ):
                 try:
@@ -658,10 +818,23 @@ def create_world_studio_asgi_app(
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=True)
             try:
-                output_router.unsubscribe_connection(connection_id)
+                if (
+                    bound_session_id is not None
+                    and bound_session_deadline is not None
+                    and not session_is_valid(bound_session_id, bound_session_deadline)
+                ):
+                    connection_revoked = True
+                    output_router.revoke_connection(connection_id)
+                    if not control_tasks:
+                        output_router.release_connection_revocation(connection_id)
+                else:
+                    output_router.unsubscribe_connection(connection_id)
             finally:
-                async with connection_lock:
+                if bound_session_id is not None:
+                    unbind_session_connection(bound_session_id, connection_id)
+                async with connection_condition:
                     active_connections -= 1
+                    connection_condition.notify_all()
 
     routes = [
         Route("/health", health, methods=["GET"]),

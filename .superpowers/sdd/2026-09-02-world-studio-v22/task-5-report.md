@@ -548,3 +548,84 @@ Host used for this round: Node 24.5.0, npm 11.5.2, Windows.
   breaking Monaco downgrade.
 - The Playwright `.last-run.json` artifact was removed before staging; generated result
   directories remain ignored.
+
+## Final Integration Fix Round 1
+
+Review base and pre-commit head: `311771ea96980e0627a0006482741f721b2ac82d` on
+`feature/world-studio-v22-1-workspace`. This round addresses the one Critical and three
+Important findings from the final cross-task review. It does not push, merge, create a
+PR, add a dependency, or change a semantic scenario/run/checkpoint hash.
+
+### RED to GREEN evidence
+
+1. Restart-safe local run ownership. Two real launcher/RPC REDs restarted the
+   application and reused an existing parent or child run ID. The parent was wrongly
+   accepted against its existing SQLite database; the failed child fork deleted the
+   prior child database (`2 failed`). GREEN persists a minimal sorted run-ID metadata
+   document, migrates pre-metadata SQLite/checkpoint/owner artifacts into unavailable
+   entries at startup, and initializes the process-local registry with those unavailable
+   IDs. A fresh run is claimed with an exclusive owner marker before creation. Cleanup
+   verifies the marker and exact file/directory `st_dev`, `st_ino`, and type before
+   deleting only artifacts created by that claim; missing or changed provenance fails
+   closed. Both restart tests now preserve the exact old database bytes and checkpoint
+   tree (`2 passed`), and launcher plus service regression is `28 passed`.
+2. Cookie-session WSS revocation. Logout and fake-clock expiry REDs left live private
+   WebSockets usable (`2 failed`). GREEN binds each cookie-authenticated WSS to its exact
+   session ID and absolute deadline, signals connections on logout/expiry/capacity
+   eviction, polls the absolute deadline for idle sockets, and revalidates before every
+   control and output. Revocation closes with 1008 and hard-removes private subscriptions
+   instead of archiving replay state. A third deterministic RED held a private subscribe
+   inside its worker until after logout; the late subscription was archived and blocked a
+   differently scoped rebind. A router connection-revocation barrier now rejects controls
+   completing in that window, discards their state, and is released only after all
+   in-flight controls finish. The three revocation cases pass and the complete server plus
+   streaming suite is `60 passed`. The final suite also exposed a disconnect-slot race:
+   a replacement WSS could arrive just before the old ASGI handler decremented the active
+   count. A condition notification now lets a full connection wait up to 50 ms for an
+   actual release; ten consecutive focused repetitions passed while a genuinely live
+   full slot still returns 1013. Ambient trust-all WebSockets retain their prior
+   process-local semantics.
+3. Browser stream connection lifecycle. Focused RED was `3 failed`: pre-open close and
+   error left `connect()` pending, while a rejected subscribe left the socket OPEN and
+   blocked retry. GREEN uses a settle-once lifecycle, rejects pre-open failures, closes
+   and clears the exact failed socket/binding/pending controls/cursors, and guards every
+   event by socket incarnation. Tests perform a successful retry after each failure and
+   explicitly fire a late old-socket close after retry; the new socket remains connected.
+   Focused evidence is `20 passed`.
+4. Browser authoring authority. ProjectStore RED was `11 failed`: extra/missing keys,
+   invalid hashes, non-finite JSON, malformed diagnostics, and malformed apply wrappers
+   or nested values all replaced accepted state. GREEN adds exact recursive validators
+   for draft documents, diagnostics, reports, snapshots, and apply results, including
+   plain finite JSON objects, integer/enumeration/hash constraints, duplicate document
+   identity rejection, and snapshot/report/apply cross-bindings before mutation. Every
+   malformed apply now leaves the exact prior snapshot and report references unchanged
+   and enters error state (`16 passed`). Workflow RED was `4 failed`; create/import now
+   each use one attempt, reconcile ambiguous responses through `project.snapshot`, and
+   can continue importing an already-created empty project. Workflow evidence is `4
+   passed`.
+
+### Verification, scope, and audits
+
+Host: Python 3.12.7, Node 24.5.0, npm 11.5.2, Windows.
+
+- Final complete World Studio/core ABM pytest gate: `253 passed, 1 skipped, 89 subtests
+  passed in 64.97s`; the skip remains the Windows directory-symlink privilege case. The
+  affected complete server/streaming gate is `60 passed`.
+- `python -m unittest discover -s tests -p "test_network_abm*.py" -q` — `Ran 698
+  tests in 54.341s`, `OK (skipped=1)`.
+- `python -m compileall -q narrative_dynamics tests tools/run_world_studio.py` — exit 0.
+- Exact-lockfile `npm ci` installed 151 packages; final `npm test -- --run` — 15 files,
+  105 tests passed; `npm run typecheck` and `npm run build` passed. The known lazy Monaco
+  chunk-size warning remains.
+- Real launcher/token-mode `npx playwright test e2e/law-firm.spec.ts` — `1 passed
+  (14.1s)`.
+- `git diff --check` is clean apart from host LF-to-CRLF notices. Generated Playwright
+  results remain ignored.
+- `npm audit --omit=dev` still reports only the previously disclosed Monaco-vendored
+  DOMPurify chain (one low and one moderate finding). The offered forced remediation is
+  a breaking Monaco downgrade, so this integration fix does not apply it.
+- Forbidden-scope inspection found no React/React Flow, gRPC/Protobuf, provider/LLM,
+  remote worker/broker, state-set/recovery RPC, or live Blender surface. Run metadata,
+  filesystem ownership, session/deadline/connection state, and browser socket generation
+  remain deployment/transport-only and do not enter semantic content, command, fork,
+  run, checkpoint, recovery, or capability identities/hashes.

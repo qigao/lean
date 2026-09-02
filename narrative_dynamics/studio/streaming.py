@@ -242,6 +242,7 @@ class StudioOutputRouter:
         self._lock = RLock()
         self._subscriptions: dict[str, _SubscriptionState] = {}
         self._released: dict[str, _ReleasedSubscriptionState] = {}
+        self._revoked_connections: set[str] = set()
         self._release_order = 0
         # There is no safe stream-end lifecycle in V22, so accepted identities are
         # deliberately retained until router process restart. Replay views remain
@@ -369,6 +370,8 @@ class StudioOutputRouter:
         now = self._clock()
         with self._lock:
             self._purge_expired_locked(now)
+            if connection_id in self._revoked_connections:
+                raise SubscriptionAuthorizationError()
             if subscription_id in self._subscriptions:
                 raise SubscriptionConflictError()
             released = self._released.get(subscription_id)
@@ -738,6 +741,31 @@ class StudioOutputRouter:
                 state = self._subscriptions.pop(subscription_id)
                 self._archive_released_locked(state, now)
             return removed
+
+    def revoke_connection(self, connection_id: str) -> tuple[str, ...]:
+        """Reject future controls and remove state without retaining private replay."""
+
+        connection_id = _identity(connection_id, label="subscription connection ID")
+        with self._lock:
+            self._purge_expired_locked(self._clock())
+            self._revoked_connections.add(connection_id)
+            removed = tuple(
+                sorted(
+                    subscription_id
+                    for subscription_id, state in self._subscriptions.items()
+                    if state.connection_id == connection_id
+                )
+            )
+            for subscription_id in removed:
+                del self._subscriptions[subscription_id]
+            return removed
+
+    def release_connection_revocation(self, connection_id: str) -> None:
+        """Forget a revocation only after every in-flight control has completed."""
+
+        connection_id = _identity(connection_id, label="subscription connection ID")
+        with self._lock:
+            self._revoked_connections.discard(connection_id)
 
 
 class StudioStreamingService(WorldStudioService):

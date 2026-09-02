@@ -1,16 +1,19 @@
 import {
+  assertJsonValue,
   JsonRpcError,
   JsonRpcProtocolError,
   type RpcCaller,
 } from "../rpc/client";
 import type {
   DiagnosticReport,
+  DraftDocument,
   JsonObject,
   JsonValue,
   OperationIntent,
   ProjectApplyParams,
   ProjectApplyResult,
   ProjectSnapshot,
+  ScenarioDiagnostic,
 } from "../schema/studio-types";
 
 export type ProjectStoreStatus = "empty" | "loading" | "ready" | "applying" | "conflict" | "error";
@@ -38,16 +41,94 @@ function defaultIdentity(prefix: string): string {
   return `${prefix}-${crypto.randomUUID()}`;
 }
 
-function isSnapshot(value: unknown): value is ProjectSnapshot {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const snapshot = value as Partial<ProjectSnapshot>;
-  return snapshot.schema === "narrative-dynamics.scenario-draft-snapshot/v1" &&
-    typeof snapshot.project_id === "string" &&
-    Number.isInteger(snapshot.revision) &&
-    (snapshot.revision ?? 0) > 0 &&
-    typeof snapshot.content_hash === "string" &&
-    Array.isArray(snapshot.documents) &&
-    !!snapshot.layout && typeof snapshot.layout === "object" && !Array.isArray(snapshot.layout);
+const HASH = /^sha256:[0-9a-f]{64}$/;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
+  const keys = Object.keys(value);
+  return keys.length === expected.length && expected.every((key) => keys.includes(key));
+}
+
+function isText(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function isHash(value: unknown): value is string {
+  return typeof value === "string" && HASH.test(value);
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) > 0;
+}
+
+function assertDocument(value: unknown): asserts value is DraftDocument {
+  if (!isRecord(value) || !hasExactKeys(value, ["role", "logical_id", "value", "content_hash"]) ||
+      !isText(value.role) || !(value.logical_id === null || isText(value.logical_id)) ||
+      !isRecord(value.value) || !isHash(value.content_hash)) {
+    throw new JsonRpcProtocolError("Project draft document is malformed");
+  }
+  assertJsonValue(value.value);
+}
+
+function assertDiagnostic(value: unknown): asserts value is ScenarioDiagnostic {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "severity", "code", "document_role", "logical_id", "pointer", "related_ids", "message_key",
+  ]) || !["error", "warning"].includes(value.severity as string) ||
+      !isText(value.code) || !isText(value.document_role) ||
+      !(value.logical_id === null || isText(value.logical_id)) || typeof value.pointer !== "string" ||
+      !Array.isArray(value.related_ids) || !value.related_ids.every(isText) || !isText(value.message_key)) {
+    throw new JsonRpcProtocolError("Project diagnostic is malformed");
+  }
+}
+
+function assertReport(value: unknown): asserts value is DiagnosticReport {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "schema", "project_id", "revision", "diagnostics", "content_hash",
+  ]) || value.schema !== "narrative-dynamics.scenario-diagnostic-report/v1" ||
+      !isText(value.project_id) || !isPositiveInteger(value.revision) ||
+      !Array.isArray(value.diagnostics) || !isHash(value.content_hash)) {
+    throw new JsonRpcProtocolError("Project diagnostic report is malformed");
+  }
+  value.diagnostics.forEach(assertDiagnostic);
+}
+
+function assertSnapshot(value: unknown): asserts value is ProjectSnapshot {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "schema", "project_id", "revision", "scenario_id", "version", "documents",
+    "document_semantic_hash", "layout", "layout_hash", "diagnostic_report_hash",
+    "compiled_scenario_hash", "content_hash",
+  ]) || value.schema !== "narrative-dynamics.scenario-draft-snapshot/v1" ||
+      !isText(value.project_id) || !isPositiveInteger(value.revision) ||
+      !(value.scenario_id === null || isText(value.scenario_id)) ||
+      !(value.version === null || isText(value.version)) ||
+      (value.scenario_id === null) !== (value.version === null) ||
+      !Array.isArray(value.documents) || !isHash(value.document_semantic_hash) ||
+      !isRecord(value.layout) || !isHash(value.layout_hash) || !isHash(value.diagnostic_report_hash) ||
+      !(value.compiled_scenario_hash === null || isHash(value.compiled_scenario_hash)) ||
+      !isHash(value.content_hash)) {
+    throw new JsonRpcProtocolError("Project snapshot is malformed");
+  }
+  value.documents.forEach(assertDocument);
+  const identities = value.documents.map((document) => `${document.role}\u0000${document.logical_id ?? ""}`);
+  if (new Set(identities).size !== identities.length) {
+    throw new JsonRpcProtocolError("Project snapshot document identities are duplicated");
+  }
+  assertJsonValue(value.layout);
+}
+
+function assertApplyResult(value: unknown): asserts value is ProjectApplyResult {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "operation_hash", "prior_revision", "next_snapshot", "diagnostic_report",
+  ]) || !isHash(value.operation_hash) || !isPositiveInteger(value.prior_revision)) {
+    throw new JsonRpcProtocolError("Project apply result is malformed");
+  }
+  assertSnapshot(value.next_snapshot);
+  assertReport(value.diagnostic_report);
 }
 
 function operationParams(snapshot: ProjectSnapshot, intent: OperationIntent, ids: ProjectIdSource): ProjectApplyParams {
@@ -103,7 +184,14 @@ export class ProjectStore extends EventTarget {
   }
 
   accept(snapshot: ProjectSnapshot, report: DiagnosticReport | null = null): void {
-    if (!isSnapshot(snapshot)) throw new JsonRpcProtocolError("Project snapshot is malformed");
+    assertSnapshot(snapshot);
+    if (report !== null) {
+      assertReport(report);
+      if (report.project_id !== snapshot.project_id || report.revision !== snapshot.revision ||
+          report.content_hash !== snapshot.diagnostic_report_hash) {
+        throw new JsonRpcProtocolError("Project diagnostic report does not match the snapshot");
+      }
+    }
     this.acceptedSnapshot = freezeJson(snapshot);
     this.acceptedReport = report === null ? null : freezeJson(report);
     this.conflictState = null;
@@ -138,6 +226,7 @@ export class ProjectStore extends EventTarget {
         stateChanging: true,
         attempts: 2,
       });
+      assertApplyResult(result);
       if (result.prior_revision !== prior.revision ||
           result.next_snapshot.project_id !== prior.project_id ||
           result.next_snapshot.revision !== prior.revision + 1 ||
@@ -156,7 +245,7 @@ export class ProjectStore extends EventTarget {
         this.acceptedReport = null;
         try {
           const reloaded = await this.rpc.call<ProjectSnapshot>("project.snapshot", { project_id: prior.project_id });
-          if (!isSnapshot(reloaded)) throw new JsonRpcProtocolError("Reloaded project snapshot is malformed");
+          assertSnapshot(reloaded);
           this.acceptedSnapshot = freezeJson(reloaded);
           this.conflictState = {
             kind: "stale_state",

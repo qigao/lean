@@ -102,17 +102,35 @@ export class StudioWorkflowElement extends HTMLElement {
     this.status("Creating and importing the configured project source.");
     try {
       const { projectId, sourceId } = this.requireProjectValues();
-      const created = await this.rpc.call<ProjectSnapshot>("project.create", { project_id: projectId }, {
-        stateChanging: true, attempts: 2, requestId: `project-create:${projectId}`,
-      });
-      const imported = await this.rpc.call<ProjectSnapshot>("project.import", {
-        project_id: projectId,
-        source_id: sourceId,
-        expected_revision: created.revision,
-        expected_snapshot_hash: created.content_hash,
-      }, {
-        stateChanging: true, attempts: 2, requestId: `project-import:${projectId}:${created.revision}`,
-      });
+      let created: ProjectSnapshot;
+      try {
+        created = await this.rpc.call<ProjectSnapshot>("project.create", { project_id: projectId }, {
+          stateChanging: true, attempts: 1, requestId: `project-create:${projectId}`,
+        });
+        this.accept(created);
+      } catch {
+        created = await this.rpc.call<ProjectSnapshot>("project.snapshot", { project_id: projectId });
+        this.accept(created);
+      }
+      let imported: ProjectSnapshot;
+      try {
+        imported = await this.rpc.call<ProjectSnapshot>("project.import", {
+          project_id: projectId,
+          source_id: sourceId,
+          expected_revision: created.revision,
+          expected_snapshot_hash: created.content_hash,
+        }, {
+          stateChanging: true, attempts: 1, requestId: `project-import:${projectId}:${created.revision}`,
+        });
+        this.accept(imported);
+      } catch (importError) {
+        const reconciled = await this.rpc.call<ProjectSnapshot>(
+          "project.snapshot", { project_id: projectId },
+        );
+        this.accept(reconciled);
+        if (reconciled.revision <= created.revision) throw importError;
+        imported = reconciled;
+      }
       this.accept(imported);
       this.status(`Project ${projectId} imported at revision ${imported.revision}.`);
     } catch {

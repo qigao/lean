@@ -6,9 +6,12 @@ import argparse
 import asyncio
 from dataclasses import dataclass, field
 import ipaddress
+import json
+import os
 from pathlib import Path
 import secrets
 import shutil
+import stat
 from threading import RLock
 
 from narrative_dynamics.abm.scenario_checkpoint_store import LocalScenarioCheckpointStore
@@ -160,27 +163,223 @@ class _RouterPublisher:
         return SimulationDeliveryReport(batch.content_hash, delivered, ())
 
 
+@dataclass(frozen=True)
+class _OwnedArtifact:
+    path: Path
+    device: int
+    inode: int
+    is_directory: bool
+
+
+@dataclass
+class _RunArtifactClaim:
+    run_id: str
+    marker: _OwnedArtifact
+    database: _OwnedArtifact | None = None
+    checkpoints: _OwnedArtifact | None = None
+
+
 class _LocalCoordinatorFactory:
+    _METADATA_SCHEMA = "narrative-dynamics.local-run-metadata/v1"
+
     def __init__(self, root: Path, router: StudioOutputRouter) -> None:
         self._root = root.resolve(strict=True)
         self._router = router
         self._lock = RLock()
         self._owned: dict[str, ScenarioCoordinator] = {}
+        self._claims: dict[str, _RunArtifactClaim] = {}
+        self._metadata_path = self._root / "run-metadata.json"
+        self._persisted_run_ids = self._load_run_ids()
+
+    @property
+    def unavailable_run_ids(self) -> tuple[str, ...]:
+        return tuple(sorted(self._persisted_run_ids))
 
     def _database(self, run_id: str) -> Path:
         return self._root / f"{run_id}.sqlite3"
 
+    def _checkpoints(self, run_id: str) -> Path:
+        return self._root / f"{run_id}-checkpoints"
+
+    def _marker(self, run_id: str) -> Path:
+        return self._root / f".{run_id}.owner"
+
+    @staticmethod
+    def _run_id(run_id: str) -> str:
+        if (
+            not isinstance(run_id, str)
+            or not run_id
+            or run_id in {".", ".."}
+            or Path(run_id).name != run_id
+            or "/" in run_id
+            or "\\" in run_id
+        ):
+            raise ValueError("local coordinator run ID must be one path component")
+        return run_id
+
+    @staticmethod
+    def _artifact(path: Path, *, directory: bool) -> _OwnedArtifact:
+        details = path.stat(follow_symlinks=False)
+        if directory:
+            valid = stat.S_ISDIR(details.st_mode)
+        else:
+            valid = stat.S_ISREG(details.st_mode)
+        if not valid:
+            raise RuntimeError("local coordinator artifact type changed")
+        return _OwnedArtifact(path, details.st_dev, details.st_ino, directory)
+
+    @staticmethod
+    def _matches(artifact: _OwnedArtifact) -> bool:
+        try:
+            current = artifact.path.stat(follow_symlinks=False)
+        except FileNotFoundError:
+            return False
+        expected_type = stat.S_ISDIR if artifact.is_directory else stat.S_ISREG
+        return (
+            expected_type(current.st_mode)
+            and current.st_dev == artifact.device
+            and current.st_ino == artifact.inode
+        )
+
+    def _load_run_ids(self) -> set[str]:
+        persisted: set[str] = set()
+        if self._metadata_path.exists():
+            try:
+                payload = json.loads(self._metadata_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                raise ValueError("World Studio run metadata is unavailable") from None
+            if (
+                not isinstance(payload, dict)
+                or set(payload) != {"schema", "run_ids"}
+                or payload.get("schema") != self._METADATA_SCHEMA
+                or not isinstance(payload.get("run_ids"), list)
+                or any(not isinstance(item, str) for item in payload["run_ids"])
+            ):
+                raise ValueError("World Studio run metadata is invalid")
+            persisted.update(self._run_id(item) for item in payload["run_ids"])
+        discovered = {
+            path.name.removesuffix(".sqlite3")
+            for path in self._root.glob("*.sqlite3")
+            if path.is_file()
+        }
+        discovered.update(
+            path.name.removesuffix("-checkpoints")
+            for path in self._root.glob("*-checkpoints")
+            if path.is_dir()
+        )
+        discovered.update(
+            path.name[1:].removesuffix(".owner")
+            for path in self._root.glob(".*.owner")
+            if path.is_file()
+        )
+        persisted.update(self._run_id(item) for item in discovered)
+        if persisted or self._metadata_path.exists():
+            self._write_run_ids(persisted)
+        return persisted
+
+    def _write_run_ids(self, run_ids: set[str]) -> None:
+        payload = json.dumps(
+            {"schema": self._METADATA_SCHEMA, "run_ids": sorted(run_ids)},
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        temporary = self._root / f".run-metadata-{secrets.token_hex(16)}.tmp"
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, self._metadata_path)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def _claim(self, run_id: str, *, checkpoints: bool) -> _RunArtifactClaim:
+        exact_run_id = self._run_id(run_id)
+        database = self._database(exact_run_id)
+        checkpoint_root = self._checkpoints(exact_run_id)
+        marker = self._marker(exact_run_id)
+        with self._lock:
+            if exact_run_id in self._claims:
+                raise FileExistsError("local coordinator run is already claimed")
+            descriptor = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            try:
+                with os.fdopen(descriptor, "w", encoding="ascii") as handle:
+                    handle.write(secrets.token_hex(32))
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                marker_artifact = self._artifact(marker, directory=False)
+                if database.exists() or (checkpoints and checkpoint_root.exists()):
+                    marker.unlink()
+                    raise FileExistsError("local coordinator artifacts already exist")
+                claim = _RunArtifactClaim(exact_run_id, marker_artifact)
+                self._claims[exact_run_id] = claim
+                self._persisted_run_ids.add(exact_run_id)
+                try:
+                    self._write_run_ids(self._persisted_run_ids)
+                except Exception:
+                    self._persisted_run_ids.discard(exact_run_id)
+                    self._claims.pop(exact_run_id, None)
+                    if self._matches(marker_artifact):
+                        marker.unlink()
+                    raise
+                return claim
+            except Exception:
+                if marker.exists() and exact_run_id not in self._claims:
+                    try:
+                        marker.unlink()
+                    except OSError:
+                        pass
+                raise
+
+    def _refresh_claim(self, claim: _RunArtifactClaim, *, checkpoints: bool) -> None:
+        with self._lock:
+            database = self._database(claim.run_id)
+            checkpoint_root = self._checkpoints(claim.run_id)
+            if database.exists():
+                claim.database = self._artifact(database, directory=False)
+            if checkpoints and checkpoint_root.exists():
+                claim.checkpoints = self._artifact(checkpoint_root, directory=True)
+
+    def _abort(self, run_id: str) -> None:
+        with self._lock:
+            claim = self._claims.get(run_id)
+            if claim is None:
+                return
+            if not self._matches(claim.marker):
+                raise RuntimeError("local coordinator ownership marker changed")
+            for artifact in (claim.database, claim.checkpoints):
+                if artifact is None:
+                    continue
+                if not self._matches(artifact):
+                    raise RuntimeError("local coordinator owned artifact changed")
+            if claim.database is not None:
+                claim.database.path.unlink()
+            if claim.checkpoints is not None:
+                shutil.rmtree(claim.checkpoints.path)
+            claim.marker.path.unlink()
+            self._owned.pop(run_id, None)
+            self._claims.pop(run_id, None)
+            self._persisted_run_ids.discard(run_id)
+            self._write_run_ids(self._persisted_run_ids)
+
     def create(self, scenario, *, project_id: str, run_id: str, stream_id: str):
         del project_id
-        checkpoint_store = LocalScenarioCheckpointStore(self._root / f"{run_id}-checkpoints")
-        coordinator = ScenarioCoordinator.create(
-            self._database(run_id),
-            scenario,
-            run_id=run_id,
-            stream_id=stream_id,
-            publisher=_RouterPublisher(self._router, run_id),
-            checkpoint_store=checkpoint_store,
-        )
+        claim = self._claim(run_id, checkpoints=True)
+        try:
+            checkpoint_store = LocalScenarioCheckpointStore(self._checkpoints(run_id))
+            coordinator = ScenarioCoordinator.create(
+                self._database(run_id),
+                scenario,
+                run_id=run_id,
+                stream_id=stream_id,
+                publisher=_RouterPublisher(self._router, run_id),
+                checkpoint_store=checkpoint_store,
+            )
+        finally:
+            self._refresh_claim(claim, checkpoints=True)
         with self._lock:
             self._owned[run_id] = coordinator
         return coordinator
@@ -191,28 +390,27 @@ class _LocalCoordinatorFactory:
         request: ScenarioForkRequest,
         capability: ScenarioCommandCapability,
     ):
-        child, result = coordinator.fork(
-            request,
-            capability,
-            self._database(request.child_run_id),
-            child_publisher=_RouterPublisher(self._router, request.child_run_id),
-        )
+        claim = self._claim(request.child_run_id, checkpoints=False)
+        try:
+            child, result = coordinator.fork(
+                request,
+                capability,
+                self._database(request.child_run_id),
+                child_publisher=_RouterPublisher(self._router, request.child_run_id),
+            )
+        finally:
+            self._refresh_claim(claim, checkpoints=False)
         with self._lock:
             self._owned[request.child_run_id] = child
         return child, result
 
     def abort_create(self, *, project_id: str, run_id: str, stream_id: str) -> None:
         del project_id, stream_id
-        with self._lock:
-            self._owned.pop(run_id, None)
-        self._database(run_id).unlink(missing_ok=True)
-        shutil.rmtree(self._root / f"{run_id}-checkpoints", ignore_errors=True)
+        self._abort(run_id)
 
     def abort_fork(self, coordinator: ScenarioCoordinator, request: ScenarioForkRequest) -> None:
         del coordinator
-        with self._lock:
-            self._owned.pop(request.child_run_id, None)
-        self._database(request.child_run_id).unlink(missing_ok=True)
+        self._abort(request.child_run_id)
 
 
 class _ConfiguredAuthenticator:
@@ -242,8 +440,10 @@ def build_application(settings: LauncherSettings):
         limits=settings.workspace_limits,
     )
     router = StudioOutputRouter(limits=settings.output_limits)
-    registry = InMemoryScenarioRunRegistry()
     factory = _LocalCoordinatorFactory(runs_root, router)
+    registry = InMemoryScenarioRunRegistry(
+        unavailable_run_ids=factory.unavailable_run_ids,
+    )
     service = WorldStudioService(
         workspace,
         registry,

@@ -186,3 +186,115 @@ def test_composition_routes_real_sqlite_coordinator_and_fork_output(tmp_path: Pa
 
     assert (settings(tmp_path).workspace_root / "projects.sqlite3").is_file()
     assert (settings(tmp_path).workspace_root / "runs" / "run-child.sqlite3").is_file()
+
+
+def _rpc(client: TestClient, method: str, params: dict, request_id: str = "test") -> dict:
+    response = client.post("/rpc", json={
+        "jsonrpc": "2.0", "id": request_id, "method": method, "params": params,
+    })
+    assert response.status_code == 200
+    return response.json()
+
+
+def _imported_project(client: TestClient) -> dict:
+    created = _rpc(client, "project.create", {"project_id": "law-firm"}, "create")["result"]
+    return _rpc(client, "project.import", {
+        "project_id": "law-firm", "source_id": "law-firm-fixture",
+        "expected_revision": created["revision"],
+        "expected_snapshot_hash": created["content_hash"],
+    }, "import")["result"]
+
+
+def _create_run(client: TestClient, snapshot: dict, run_id: str, stream_id: str) -> dict:
+    return _rpc(client, "run.create", {
+        "project_id": "law-firm", "run_id": run_id, "stream_id": stream_id,
+        "expected_revision": snapshot["revision"],
+        "expected_snapshot_hash": snapshot["content_hash"],
+    }, f"create-{run_id}")["result"]
+
+
+def _checkpoint_run(client: TestClient, run: dict, number: int) -> tuple[dict, dict]:
+    started = _rpc(client, "run.command", {
+        "command_id": f"start-{number}", "idempotency_key": f"start-key-{number}",
+        "run_id": run["run_id"], "scenario_hash": run["scenario_hash"],
+        "coordinator_epoch": run["coordinator_epoch"],
+        "expected_state_hash": run["state_hash"], "kind": "start",
+    }, f"start-{number}")["result"]
+    running = _rpc(client, "run.view", {"run_id": run["run_id"]}, f"view-{number}")["result"]
+    checkpoint = _rpc(client, "run.command", {
+        "command_id": f"checkpoint-{number}", "idempotency_key": f"checkpoint-key-{number}",
+        "run_id": running["run_id"], "scenario_hash": running["scenario_hash"],
+        "coordinator_epoch": running["coordinator_epoch"],
+        "expected_state_hash": running["state_hash"], "kind": "checkpoint",
+        "requested_checkpoint_id": f"checkpoint-{number}",
+    }, f"checkpoint-{number}")["result"]
+    assert started["accepted"] is True
+    return running, checkpoint
+
+
+def test_restart_rejects_parent_run_id_reuse_without_deleting_prior_artifacts(tmp_path: Path) -> None:
+    configured = settings(tmp_path)
+    first = build_application(configured)
+    with TestClient(first, base_url="http://127.0.0.1:8765") as client:
+        imported = _imported_project(client)
+        _create_run(client, imported, "run-parent", "stream-parent")
+
+    database = configured.workspace_root / "runs" / "run-parent.sqlite3"
+    checkpoints = configured.workspace_root / "runs" / "run-parent-checkpoints"
+    before_database = database.read_bytes()
+    before_files = {
+        item.relative_to(checkpoints).as_posix(): item.read_bytes()
+        for item in checkpoints.rglob("*") if item.is_file()
+    }
+
+    restarted = build_application(configured)
+    with TestClient(restarted, base_url="http://127.0.0.1:8765") as client:
+        snapshot = _rpc(client, "project.snapshot", {"project_id": "law-firm"}, "snapshot")["result"]
+        rejected = _rpc(client, "run.create", {
+            "project_id": "law-firm", "run_id": "run-parent", "stream_id": "stream-reused",
+            "expected_revision": snapshot["revision"],
+            "expected_snapshot_hash": snapshot["content_hash"],
+        }, "reuse-parent")
+        assert "error" in rejected and "result" not in rejected
+
+    assert database.read_bytes() == before_database
+    assert {
+        item.relative_to(checkpoints).as_posix(): item.read_bytes()
+        for item in checkpoints.rglob("*") if item.is_file()
+    } == before_files
+
+
+def test_restart_rejects_child_run_id_reuse_without_deleting_prior_artifacts(tmp_path: Path) -> None:
+    configured = settings(tmp_path, run_ids=("run-parent", "run-child", "run-replacement"))
+    first = build_application(configured)
+    with TestClient(first, base_url="http://127.0.0.1:8765") as client:
+        imported = _imported_project(client)
+        parent = _create_run(client, imported, "run-parent", "stream-parent")
+        running, checkpoint = _checkpoint_run(client, parent, 1)
+        forked = _rpc(client, "run.fork", {
+            "fork_id": "fork-original", "idempotency_key": "fork-original-key",
+            "source_run_id": "run-parent", "scenario_hash": running["scenario_hash"],
+            "source_epoch": running["coordinator_epoch"],
+            "checkpoint_hash": checkpoint["checkpoint_hash"],
+            "child_run_id": "run-child", "child_stream_id": "stream-child",
+        }, "fork-original")
+        assert "result" in forked
+
+    child_database = configured.workspace_root / "runs" / "run-child.sqlite3"
+    before_database = child_database.read_bytes()
+
+    restarted = build_application(configured)
+    with TestClient(restarted, base_url="http://127.0.0.1:8765") as client:
+        snapshot = _rpc(client, "project.snapshot", {"project_id": "law-firm"}, "snapshot")["result"]
+        replacement = _create_run(client, snapshot, "run-replacement", "stream-replacement")
+        running, checkpoint = _checkpoint_run(client, replacement, 2)
+        rejected = _rpc(client, "run.fork", {
+            "fork_id": "fork-reused", "idempotency_key": "fork-reused-key",
+            "source_run_id": "run-replacement", "scenario_hash": running["scenario_hash"],
+            "source_epoch": running["coordinator_epoch"],
+            "checkpoint_hash": checkpoint["checkpoint_hash"],
+            "child_run_id": "run-child", "child_stream_id": "stream-reused",
+        }, "fork-reused")
+        assert "error" in rejected and "result" not in rejected
+
+    assert child_database.read_bytes() == before_database

@@ -41,6 +41,46 @@ function resultFor(prior: ProjectSnapshot, next: ProjectSnapshot): ProjectApplyR
 }
 
 describe("ProjectStore", () => {
+  it.each([
+    ["snapshot extra key", { ...snapshotFixture(2), unexpected: true }],
+    ["snapshot missing key", (() => {
+      const value = { ...snapshotFixture(2) } as Record<string, unknown>;
+      delete value.layout_hash;
+      return value;
+    })()],
+    ["document hash", {
+      ...snapshotFixture(2),
+      documents: [{ ...snapshotFixture(2).documents[0]!, content_hash: "bad" }],
+    }],
+    ["non-finite layout", { ...snapshotFixture(2), layout: { x: Number.POSITIVE_INFINITY } }],
+  ])("rejects malformed %s without replacing accepted authority", (_label, malformed) => {
+    const store = new ProjectStore(new RpcStub());
+    const accepted = snapshotFixture(3);
+    store.accept(accepted, reportFixture(3));
+
+    expect(() => store.accept(malformed as unknown as ProjectSnapshot)).toThrow(JsonRpcProtocolError);
+    expect(store.snapshot).toBe(accepted);
+    expect(store.diagnosticReport).toEqual(reportFixture(3));
+  });
+
+  it.each([
+    ["report extra key", { ...reportFixture(2), unexpected: true }],
+    ["diagnostic severity", reportFixture(2, [{
+      severity: "fatal" as "error", code: "bad", document_role: "physical.world",
+      logical_id: null, pointer: "", related_ids: [], message_key: "bad",
+    }])],
+    ["report hash", { ...reportFixture(2), content_hash: "bad" }],
+  ])("rejects malformed %s without replacing accepted authority", (_label, malformed) => {
+    const store = new ProjectStore(new RpcStub());
+    const accepted = snapshotFixture(2);
+    store.accept(accepted);
+
+    expect(() => store.accept(accepted, malformed as ReturnType<typeof reportFixture>))
+      .toThrow(JsonRpcProtocolError);
+    expect(store.snapshot).toBe(accepted);
+    expect(store.diagnosticReport).toBeNull();
+  });
+
   it("retains the immutable accepted snapshot until an exact next revision returns", async () => {
     const rpc = new RpcStub();
     const current = snapshotFixture(2);
@@ -180,5 +220,42 @@ describe("ProjectStore", () => {
       pointer: "/places/0",
     })).rejects.toBeInstanceOf(JsonRpcProtocolError);
     expect(store.snapshot).toBe(current);
+  });
+
+  it.each([
+    ["wrapper extra key", (current: ProjectSnapshot) => ({
+      ...resultFor(current, snapshotFixture(3)), unexpected: true,
+    })],
+    ["operation hash", (current: ProjectSnapshot) => ({
+      ...resultFor(current, snapshotFixture(3)), operation_hash: "bad",
+    })],
+    ["nested snapshot", (current: ProjectSnapshot) => ({
+      ...resultFor(current, snapshotFixture(3)),
+      next_snapshot: { ...snapshotFixture(3), documents: [{
+        ...snapshotFixture(3).documents[0]!, value: [] as unknown as JsonObject,
+      }] },
+    })],
+    ["nested report", (current: ProjectSnapshot) => ({
+      ...resultFor(current, snapshotFixture(3)),
+      diagnostic_report: { ...reportFixture(3), diagnostics: [{
+        severity: "warning", code: "warn", document_role: "physical.world",
+        logical_id: null, pointer: "", related_ids: ["ok", 7 as unknown as string],
+        message_key: "warn",
+      }] },
+    })],
+  ])("rejects malformed apply %s before changing authority", async (_label, malformed) => {
+    const rpc = new RpcStub();
+    const current = snapshotFixture(2);
+    const report = reportFixture(2);
+    rpc.handler = async () => malformed(current);
+    const store = new ProjectStore(rpc);
+    store.accept(current, report);
+
+    await expect(store.apply({
+      document_role: "physical.world", logical_id: null, kind: "remove_value", pointer: "/places/0",
+    })).rejects.toBeInstanceOf(JsonRpcProtocolError);
+    expect(store.snapshot).toBe(current);
+    expect(store.diagnosticReport).toBe(report);
+    expect(store.status).toBe("error");
   });
 });

@@ -348,26 +348,66 @@ export class StreamClient extends EventTarget {
     this.updateStatus("connecting", "Connecting to the run output stream.");
     const socket = this.socketFactory(this.endpoint, [PROTOCOL]);
     this.socket = socket;
-    socket.onmessage = (event) => this.receive(event.data);
-    socket.onerror = () => this.fail(new StreamProtocolError("Stream transport failed"));
-    socket.onclose = () => {
-      if (this.socket === socket) {
-        this.rejectPending(new StreamProtocolError("Stream connection closed"));
-        this.updateStatus("disconnected", "Run output stream disconnected.");
-      }
-    };
     await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      let opened = false;
+      const rejectConnection = (error: Error, close = true): void => {
+        if (settled) return;
+        settled = true;
+        if (this.socket === socket) {
+          this.socket = null;
+          this.rejectPending(error);
+          this.activeBinding = null;
+          this.streamScopeBinding = null;
+          this.identities.clear();
+          this.committedCursor = null;
+          this.confirmedAcknowledgementCursor = null;
+          this.audienceGeneration += 1;
+          this.updateStatus("disconnected", error.message);
+        }
+        if (close && socket.readyState < 2) socket.close(1002, "connection failed");
+        reject(error);
+      };
+      socket.onmessage = (event) => {
+        if (this.socket === socket) this.receive(event.data);
+      };
+      socket.onerror = () => {
+        const error = new StreamProtocolError("Stream transport failed");
+        if (!opened) {
+          this.onProtocolError(error);
+          rejectConnection(error);
+        } else if (this.socket === socket) {
+          this.fail(error);
+        }
+      };
+      socket.onclose = () => {
+        if (this.socket !== socket) return;
+        const error = new StreamProtocolError("Stream connection closed");
+        if (!settled) {
+          rejectConnection(error, false);
+          return;
+        }
+        this.socket = null;
+        this.rejectPending(error);
+        this.updateStatus("disconnected", "Run output stream disconnected.");
+      };
       socket.onopen = () => {
+        if (settled || this.socket !== socket) return;
+        opened = true;
         if (socket.protocol !== PROTOCOL) {
           const error = new StreamProtocolError(`Server did not negotiate ${PROTOCOL}`);
-          socket.close(1002, "subprotocol required");
-          reject(error);
+          rejectConnection(error);
           return;
         }
         void this.subscribe(binding).then(() => {
+          if (settled || this.socket !== socket) return;
+          settled = true;
           this.updateStatus("connected", "Run output stream connected.");
           resolve();
-        }, reject);
+        }, (error: unknown) => {
+          rejectConnection(error instanceof Error
+            ? error : new StreamProtocolError("Stream subscription failed"));
+        });
       };
     });
   }

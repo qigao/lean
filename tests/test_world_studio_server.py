@@ -196,6 +196,136 @@ def test_browser_sessions_expire_and_evict_oldest_at_capacity(tmp_path: Path) ->
         assert second.get("/session").status_code == 401
 
 
+def _private_subscription_request(identity: str) -> dict:
+    return {
+        "jsonrpc": "2.0", "id": f"subscribe-{identity}", "method": "stream.subscribe",
+        "params": {
+            "subscription_id": identity, "run_id": "run-1", "stream_id": "stream-1",
+            "kinds": ["percept.private"], "audience": "agent", "owner_agent_id": "alice",
+        },
+    }
+
+
+def test_logout_revokes_live_private_websocket_and_releases_subscription(tmp_path: Path) -> None:
+    bearer = "logout-bearer"
+    router = StudioOutputRouter()
+
+    def authenticate(request):
+        return _capability() if request.headers.get("authorization") == f"Bearer {bearer}" else None
+
+    app, _ = app_for(
+        tmp_path,
+        output_router=router,
+        authenticate_http=authenticate,
+        authenticate_websocket=lambda websocket: None,
+        allow_ambient_authentication=False,
+    )
+    headers = {"origin": "https://studio.example"}
+    with TestClient(app, base_url="https://studio.example") as client:
+        assert client.post("/session", headers={"authorization": f"Bearer {bearer}"}).status_code == 200
+        with client.websocket_connect(
+            "wss://studio.example/v1/stream", headers=headers, subprotocols=["nd-jsonrpc-v1"]
+        ) as websocket:
+            websocket.send_json(_private_subscription_request("logout-private"))
+            assert "result" in receive_json_bounded(websocket)
+            assert client.delete("/session").status_code == 204
+            with pytest.raises(WebSocketDisconnect) as raised:
+                receive_json_bounded(websocket)
+            assert raised.value.code == 1008
+
+        assert client.post("/session", headers={"authorization": f"Bearer {bearer}"}).status_code == 200
+        with client.websocket_connect(
+            "wss://studio.example/v1/stream", headers=headers, subprotocols=["nd-jsonrpc-v1"]
+        ) as replacement:
+            replacement.send_json(_private_subscription_request("logout-private"))
+            assert "result" in receive_json_bounded(replacement)
+
+
+def test_logout_discards_a_private_subscription_that_finishes_after_revocation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer = "racing-logout-bearer"
+    router = StudioOutputRouter()
+    entered = threading.Event()
+    release = threading.Event()
+    original_subscribe = router.subscribe
+
+    def delayed_subscribe(*args, **kwargs):
+        entered.set()
+        assert release.wait(timeout=2)
+        return original_subscribe(*args, **kwargs)
+
+    monkeypatch.setattr(router, "subscribe", delayed_subscribe)
+
+    def authenticate(request):
+        return _capability() if request.headers.get("authorization") == f"Bearer {bearer}" else None
+
+    app, _ = app_for(
+        tmp_path,
+        output_router=router,
+        authenticate_http=authenticate,
+        authenticate_websocket=lambda websocket: None,
+        allow_ambient_authentication=False,
+    )
+    headers = {"origin": "https://studio.example"}
+    with TestClient(app, base_url="https://studio.example") as client:
+        assert client.post("/session", headers={"authorization": f"Bearer {bearer}"}).status_code == 200
+        with client.websocket_connect(
+            "wss://studio.example/v1/stream", headers=headers, subprotocols=["nd-jsonrpc-v1"]
+        ) as websocket:
+            websocket.send_json(_private_subscription_request("racing-private"))
+            assert entered.wait(timeout=1)
+            assert client.delete("/session").status_code == 204
+            release.set()
+            with pytest.raises(WebSocketDisconnect):
+                receive_json_bounded(websocket)
+
+        assert client.post("/session", headers={"authorization": f"Bearer {bearer}"}).status_code == 200
+        with client.websocket_connect(
+            "wss://studio.example/v1/stream", headers=headers, subprotocols=["nd-jsonrpc-v1"]
+        ) as replacement:
+            replacement.send_json({
+                "jsonrpc": "2.0", "id": "public-rebind", "method": "stream.subscribe",
+                "params": {
+                    "subscription_id": "racing-private", "run_id": "run-1",
+                    "stream_id": "stream-1", "kinds": [], "audience": "public",
+                },
+            })
+            assert "result" in receive_json_bounded(replacement)
+
+
+def test_expiry_revokes_live_private_websocket_before_private_delivery(tmp_path: Path) -> None:
+    now = [10.0]
+    bearer = "expiry-bearer"
+    router = StudioOutputRouter()
+
+    def authenticate(request):
+        return _capability() if request.headers.get("authorization") == f"Bearer {bearer}" else None
+
+    app, _ = app_for(
+        tmp_path,
+        output_router=router,
+        authenticate_http=authenticate,
+        authenticate_websocket=lambda websocket: None,
+        allow_ambient_authentication=False,
+        clock=lambda: now[0],
+        limits=WorldStudioServerLimits(session_lifetime_seconds=5),
+    )
+    headers = {"origin": "https://studio.example"}
+    with TestClient(app, base_url="https://studio.example") as client:
+        assert client.post("/session", headers={"authorization": f"Bearer {bearer}"}).status_code == 200
+        with client.websocket_connect(
+            "wss://studio.example/v1/stream", headers=headers, subprotocols=["nd-jsonrpc-v1"]
+        ) as websocket:
+            websocket.send_json(_private_subscription_request("expiry-private"))
+            assert "result" in receive_json_bounded(websocket)
+            now[0] = 15.0
+            router.publish("run-1", private_batch())
+            with pytest.raises(WebSocketDisconnect) as raised:
+                receive_json_bounded(websocket)
+            assert raised.value.code == 1008
+
+
 def test_websocket_subscription_requires_closed_authorized_audience_and_owner(
     tmp_path: Path,
 ) -> None:

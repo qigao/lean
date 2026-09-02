@@ -84,6 +84,13 @@ class _FailedRun:
     owner_token: str
 
 
+@dataclass(frozen=True)
+class _UnavailableRun:
+    """Persisted run whose process-local coordinator cannot be restored."""
+
+    pass
+
+
 class ScenarioRunRegistry(Protocol):
     def reserve(self, run_id: str, request_hash: str) -> ScenarioRunReservation: ...
 
@@ -115,10 +122,17 @@ class ScenarioRunRegistry(Protocol):
 class InMemoryScenarioRunRegistry:
     """Thread-safe no-overwrite registry for local coordinators."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, unavailable_run_ids: tuple[str, ...] = ()) -> None:
         self._lock = RLock()
         self._condition = Condition(self._lock)
-        self._runs: dict[str, _PendingRun | _RegisteredRun | _FailedRun] = {}
+        self._runs: dict[
+            str, _PendingRun | _RegisteredRun | _FailedRun | _UnavailableRun
+        ] = {}
+        for run_id in unavailable_run_ids:
+            exact_run_id = self._run_id(run_id)
+            if exact_run_id in self._runs:
+                raise ValueError("scenario unavailable run IDs must be unique")
+            self._runs[exact_run_id] = _UnavailableRun()
 
     @staticmethod
     def _run_id(run_id: object) -> str:
@@ -155,6 +169,10 @@ class InMemoryScenarioRunRegistry:
                 if isinstance(entry, _FailedRun):
                     raise ScenarioRunReservationFailedError(
                         "scenario run reservation is terminally failed"
+                    )
+                if isinstance(entry, _UnavailableRun):
+                    raise ScenarioRunReservationFailedError(
+                        "scenario run coordinator is unavailable after restart"
                     )
                 if entry.request_hash != exact_request_hash:
                     raise ScenarioRunReservationConflictError(
@@ -316,6 +334,8 @@ class InMemoryScenarioRunRegistry:
                     continue
                 if isinstance(entry, _FailedRun):
                     raise KeyError("unknown scenario run")
+                if isinstance(entry, _UnavailableRun):
+                    raise KeyError("scenario run coordinator is unavailable after restart")
                 return entry.coordinator
 
     def list_for(self, capability: StudioCapability) -> tuple[ScenarioRunView, ...]:

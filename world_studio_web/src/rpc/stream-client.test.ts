@@ -16,6 +16,7 @@ class Socket implements WebSocketLike {
   send(data: string): void { this.sent.push(data); }
   close(): void { this.readyState = 3; this.onclose?.(new CloseEvent("close")); }
   open(): void { this.readyState = 1; this.onopen?.(new Event("open")); }
+  error(): void { this.onerror?.(new Event("error")); }
   receive(value: unknown): void {
     this.onmessage?.(new MessageEvent("message", { data: JSON.stringify(value) }));
   }
@@ -218,6 +219,65 @@ describe("StreamClient strict JSON-RPC transport", () => {
     socket.open();
     await expect(connecting).rejects.toThrow("nd-jsonrpc-v1");
     expect(socket.readyState).toBe(3);
+  });
+
+  it.each(["close", "error"] as const)(
+    "rejects a pre-open %s and permits a successful retry",
+    async (failure) => {
+      const sockets: Socket[] = [];
+      const client = new StreamClient("ws://example.test/v1/stream", {
+        socketFactory: () => {
+          const socket = new Socket();
+          sockets.push(socket);
+          return socket;
+        },
+      });
+      const first = client.connect(binding());
+      const firstOutcome = first.then(() => "resolved", () => "rejected");
+      if (failure === "close") sockets[0]!.close();
+      else sockets[0]!.error();
+      await flush();
+
+      expect(await Promise.race([firstOutcome, Promise.resolve("pending")])).toBe("rejected");
+      expect(client.status).toBe("disconnected");
+      expect(client.binding).toBeNull();
+
+      const retry = client.connect(binding());
+      sockets[1]!.open();
+      respondToSubscription(sockets[1]!, 0);
+      await expect(retry).resolves.toBeUndefined();
+      expect(client.status).toBe("connected");
+      sockets[0]!.onclose?.(new CloseEvent("close"));
+      expect(client.status).toBe("connected");
+    },
+  );
+
+  it("closes and resets a rejected subscription so retry can succeed", async () => {
+    const sockets: Socket[] = [];
+    const client = new StreamClient("ws://example.test/v1/stream", {
+      socketFactory: () => {
+        const socket = new Socket();
+        sockets.push(socket);
+        return socket;
+      },
+    });
+    const first = client.connect(binding());
+    sockets[0]!.open();
+    const request = sockets[0]!.request(0);
+    sockets[0]!.receive({
+      jsonrpc: "2.0", id: request.id,
+      error: { code: -32015, message: "Subscription rejected" },
+    });
+    await expect(first).rejects.toThrow("Subscription rejected");
+    expect(sockets[0]!.readyState).toBe(3);
+    expect(client.status).toBe("disconnected");
+    expect(client.binding).toBeNull();
+
+    const retry = client.connect(binding());
+    sockets[1]!.open();
+    respondToSubscription(sockets[1]!, 0);
+    await expect(retry).resolves.toBeUndefined();
+    expect(client.status).toBe("connected");
   });
 
   it("validates binding, commits in source order, then acknowledges monotonically", async () => {
