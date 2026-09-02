@@ -2103,9 +2103,113 @@ append stages the complete replacement beside the destination, flushes and fsync
 then publishes it with an atomic replace, so a failed publication preserves the prior
 journal. Replay is local and deterministic: it performs no Agent or provider call.
 
-JSON-RPC/H2/WSS, the Web editor, the synchronous bus, coordinator, commands, live
-Blender, and remote Agents remain later phases. V21.2 does not import or fabricate
-those systems, and an output policy containing only unsupported kinds fails closed.
+V21.2 itself does not import or fabricate a bus, coordinator, or commands; those are
+the V21.3 layer below. JSON-RPC/H2/WSS, the Web editor, live Blender, and remote
+Agents remain later phases, and an output policy containing only unsupported kinds
+fails closed at the V21.2 projection boundary.
+
+### V21.3 synchronous scenario coordinator and exact forks
+
+V21.3 turns one compiled scenario into a controllable local run. The coordinator is
+the sole writer for its SQLite memory store, advances exactly one existing V19 round
+per `step`, keeps capability-scoped output and command audit history, and can create
+an exact checkpoint whose state and SQLite snapshot seed an independent paused run.
+This complete law-firm outline uses only the public API:
+
+```python
+from narrative_dynamics.abm import (
+    InMemoryScenarioStateStore,
+    LocalScenarioCheckpointStore,
+    ScenarioCommandCapability,
+    ScenarioCommandKind,
+    ScenarioCommandRequest,
+    ScenarioCoordinator,
+    ScenarioForkRequest,
+    SimulationAudienceCapability,
+    SimulationOutputAudience,
+    SimulationOutputBus,
+    SimulationOutputKind,
+    compile_situated_scenario_package,
+    load_situated_scenario_package,
+)
+
+scenario = compile_situated_scenario_package(
+    load_situated_scenario_package("examples/law_firm_scenario")
+)
+bus = SimulationOutputBus()
+bus.subscribe(
+    "public-preview",
+    tuple(SimulationOutputKind),
+    SimulationAudienceCapability(SimulationOutputAudience.PUBLIC),
+    lambda view: print(view.next_state_hash, len(view.records)),
+)
+checkpoints = LocalScenarioCheckpointStore("law-firm-checkpoints")
+coordinator = ScenarioCoordinator.create(
+    "law-firm-memory.sqlite3",
+    scenario,
+    run_id="law-firm-run",
+    stream_id="law-firm-stream",
+    state_store=InMemoryScenarioStateStore(),
+    publisher=bus,
+    checkpoint_store=checkpoints,
+)
+operator = ScenarioCommandCapability(
+    "operator",
+    "law-firm-run",
+    tuple(sorted(ScenarioCommandKind, key=lambda kind: kind.value)),
+    can_fork=True,
+    can_read_all_audit=True,
+)
+
+start_request = ScenarioCommandRequest(
+    "start-1", "start-key-1", "law-firm-run", scenario.content_hash, 1,
+    coordinator.state.content_hash, "operator", ScenarioCommandKind.START,
+)
+started = coordinator.submit_command(start_request, operator)
+step_request = ScenarioCommandRequest(
+    "step-1", "step-key-1", "law-firm-run", scenario.content_hash, 1,
+    coordinator.state.content_hash, "operator", ScenarioCommandKind.STEP,
+)
+stepped = coordinator.submit_command(step_request, operator)
+public_state = coordinator.public_state_view()
+public_output = coordinator.output_view(
+    stepped.output_batch_hash,
+    SimulationAudienceCapability(SimulationOutputAudience.PUBLIC),
+)
+
+checkpoint_request = ScenarioCommandRequest(
+    "checkpoint-1", "checkpoint-key-1", "law-firm-run", scenario.content_hash, 1,
+    coordinator.state.content_hash, "operator", ScenarioCommandKind.CHECKPOINT,
+    requested_checkpoint_id="after-first-round",
+)
+checkpointed = coordinator.submit_command(checkpoint_request, operator)
+child, forked = coordinator.fork(
+    ScenarioForkRequest(
+        "fork-1", "fork-key-1", "law-firm-run", scenario.content_hash, 1,
+        checkpointed.checkpoint_hash, "law-firm-branch", "law-firm-branch-stream",
+    ),
+    operator,
+    "law-firm-branch-memory.sqlite3",
+)
+assert child.run_view().status.value == "paused"
+assert coordinator.command_result(start_request.command_id, operator) is started
+```
+
+`start` and `resume` are synchronous status changes; they never launch a background
+loop. Subscriber callbacks observe already committed state and cannot issue commands
+reentrantly. Commands, forks, and coherent queries are serialized by one coordinator
+`RLock`; the output bus similarly serializes cross-thread publication and subscription
+mutation while allowing same-thread callback unsubscribe for the next publication.
+Non-`step` results remain in the capability-scoped command audit ledger and do not
+fabricate V19 output batches. Output retention uses `maximum_output_records`, while
+command-attempt and fork-attempt maps each use the finite derived bound
+`maximum_output_records + maximum_rounds + len(ScenarioCommandKind)`, so a one-record
+budget cannot block mandatory `start` plus the declared steps. Checkpoint/restore
+publication uses same-filesystem hard-link create-if-absent semantics and physical file
+ownership checks; it never replaces a concurrent artifact or target. JSON-RPC over
+H2/WSS, the pure-Web editor, story interventions, live Blender updates, LLM/retrieval
+providers, and remote Agents remain later phases; V21.3 adds none of those transports
+or execution paths.
 
 ## Verification
 
