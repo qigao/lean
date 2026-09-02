@@ -3,6 +3,11 @@ from pathlib import Path
 import unittest
 
 import narrative_dynamics.abm as abm
+import narrative_dynamics.studio as studio
+from narrative_dynamics.studio import capabilities as studio_capabilities
+from narrative_dynamics.studio import jsonrpc as studio_jsonrpc
+from narrative_dynamics.studio import run_registry as studio_run_registry
+from narrative_dynamics.studio import service as studio_service
 from narrative_dynamics.abm import scenario_authoring_contracts as authoring_contracts
 from narrative_dynamics.abm import scenario_compiler
 from narrative_dynamics.abm import scenario_package
@@ -561,6 +566,18 @@ class NetworkABMPublicAPITests(unittest.TestCase):
             for name in module.__all__:
                 with self.subTest(module=module.__name__, name=name):
                     self.assertIs(getattr(abm, name), getattr(module, name))
+
+    def test_v22_studio_exports_are_the_source_definitions(self):
+        modules = (
+            studio_capabilities,
+            studio_run_registry,
+            studio_service,
+            studio_jsonrpc,
+        )
+        for module in modules:
+            for name in module.__all__:
+                with self.subTest(module=module.__name__, name=name):
+                    self.assertIs(getattr(studio, name), getattr(module, name))
 
     def test_committed_law_firm_package_loads_and_compiles_without_a_generator(self):
         root = Path(__file__).resolve().parents[1] / "examples" / "law_firm_scenario"

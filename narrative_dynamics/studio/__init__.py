@@ -1,5 +1,9 @@
 """Persistent World Studio scenario-authoring authority."""
 
+from narrative_dynamics.studio.capabilities import (
+    STUDIO_PERMISSIONS,
+    StudioCapability,
+)
 from narrative_dynamics.studio.contracts import (
     DEFAULT_ACCEPTED_OPERATION_JOURNAL,
     DEFAULT_JSON_DOCUMENT_BYTES,
@@ -33,6 +37,31 @@ from narrative_dynamics.studio.project_store import (
     ScenarioProjectValidationError,
 )
 from narrative_dynamics.studio.workspace import ScenarioProjectWorkspace
+from narrative_dynamics.studio.run_registry import (
+    InMemoryScenarioRunRegistry,
+    ScenarioRunRegistry,
+)
+from narrative_dynamics.studio.jsonrpc import (
+    JsonRpcDispatcher,
+    JsonRpcId,
+    JsonRpcLimits,
+)
+from narrative_dynamics.studio.service import (
+    JsonObject,
+    ScenarioCoordinatorFactory,
+    StudioAuthorizationError,
+    StudioCapacityError,
+    StudioConflictError,
+    StudioError,
+    StudioHistoryGapError,
+    StudioInvalidParamsError,
+    StudioMethodNotFoundError,
+    StudioNotFoundError,
+    StudioRunLifecycleError,
+    StudioStaleStateError,
+    StudioValidationError,
+    WorldStudioService,
+)
 
 
 __all__ = (
@@ -41,7 +70,12 @@ __all__ = (
     "DEFAULT_OPERATION_PAYLOAD_BYTES",
     "DEFAULT_TILED_MAP_BYTES",
     "DraftOperationKind",
+    "InMemoryScenarioRunRegistry",
+    "JsonRpcDispatcher",
+    "JsonRpcId",
+    "JsonRpcLimits",
     "JsonValue",
+    "JsonObject",
     "SCENARIO_DIAGNOSTIC_REPORT_SCHEMA",
     "SCENARIO_DRAFT_OPERATION_SCHEMA",
     "SCENARIO_DRAFT_SNAPSHOT_SCHEMA",
@@ -61,8 +95,24 @@ __all__ = (
     "ScenarioProjectStore",
     "ScenarioProjectValidationError",
     "ScenarioProjectWorkspace",
+    "ScenarioCoordinatorFactory",
+    "ScenarioRunRegistry",
     "ScenarioWorkspaceLimits",
     "SQLiteScenarioProjectStore",
+    "STUDIO_PERMISSIONS",
+    "StudioAuthorizationError",
+    "StudioCapability",
+    "StudioCapacityError",
+    "StudioConflictError",
+    "StudioError",
+    "StudioHistoryGapError",
+    "StudioInvalidParamsError",
+    "StudioMethodNotFoundError",
+    "StudioNotFoundError",
+    "StudioRunLifecycleError",
+    "StudioStaleStateError",
+    "StudioValidationError",
+    "WorldStudioService",
     "canonical_json_bytes",
     "canonical_json_hash",
 )
