@@ -360,13 +360,29 @@ function escapeHtml(value: string): string {
   })[character] ?? character);
 }
 
+export function installX6DeletionKeyboard<TPlugin>(
+  canvas: {
+    use: (plugin: TPlugin) => unknown;
+    bindKey: (keys: string[], callback: () => unknown) => unknown;
+    getSelectedCells: () => Array<{ id: string }>;
+  },
+  KeyboardPlugin: new (options: { enabled: boolean }) => TPlugin,
+  onDelete: (id: string) => void,
+): void {
+  canvas.use(new KeyboardPlugin({ enabled: true }));
+  canvas.bindKey(["backspace", "delete"], () => {
+    for (const cell of canvas.getSelectedCells()) onDelete(cell.id);
+    return false;
+  });
+}
+
 async function loadX6Canvas(
   container: HTMLElement,
   graph: DomainGraph,
   layout: JsonObject,
   actions: GraphCanvasActions,
 ): Promise<GraphCanvasAdapter> {
-  const { Graph, MiniMap, Selection, Snapline } = await import("@antv/x6");
+  const { Graph, Keyboard, MiniMap, Selection, Snapline } = await import("@antv/x6");
   const surface = document.createElement("div");
   surface.className = "graph-surface";
   const miniMap = document.createElement("div");
@@ -391,6 +407,7 @@ async function loadX6Canvas(
   canvas.use(new Selection({ enabled: true, multiple: false, rubberband: true, movable: true }));
   canvas.use(new Snapline({ enabled: true, sharp: true }));
   canvas.use(new MiniMap({ container: miniMap, width: 160, height: 100, padding: 8, scalable: true }));
+  installX6DeletionKeyboard(canvas, Keyboard, actions.delete);
   const graphs = record(layout.graphs) ?? {};
   const positions = record(graphs[graph.mode]) ?? {};
   graph.nodes.forEach((item, index) => {
@@ -413,10 +430,6 @@ async function loadX6Canvas(
     const target = edge.getTargetCellId();
     canvas.removeCell(edge, { silent: true });
     if (source && target) actions.connect(source, target);
-  });
-  canvas.bindKey(["backspace", "delete"], () => {
-    for (const cell of canvas.getSelectedCells()) actions.delete(cell.id);
-    return false;
   });
   return {
     dispose: () => canvas.dispose(),

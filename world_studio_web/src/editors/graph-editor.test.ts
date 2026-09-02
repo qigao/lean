@@ -7,6 +7,7 @@ import {
   createPhysicalPlaceIntent,
   deleteGraphCellIntent,
   GraphEditorElement,
+  installX6DeletionKeyboard,
   projectGraph,
   setGraphPositionIntent,
   setGraphPropertyIntent,
@@ -178,6 +179,52 @@ describe("graph domain operations", () => {
       target_place_id: "archive",
       initially_open: false,
     })).toThrow("existing places");
+  });
+});
+
+describe("X6 keyboard loader contract", () => {
+  it("installs an enabled keyboard plugin before binding deletion for selected cells", () => {
+    class ContractKeyboard {
+      readonly name = "keyboard";
+      readonly enabled: boolean;
+
+      constructor(options: { enabled: boolean }) {
+        this.enabled = options.enabled;
+      }
+    }
+
+    class ContractCanvas {
+      private keyboard: ContractKeyboard | undefined;
+      private readonly bindings = new Map<string, () => unknown>();
+      selectedCells = [{ id: "lobby-meeting" }];
+
+      use(plugin: ContractKeyboard): void {
+        if (plugin.name === "keyboard") this.keyboard = plugin;
+      }
+
+      bindKey(keys: string[], callback: () => unknown): void {
+        if (!this.keyboard?.enabled) return;
+        for (const key of keys) this.bindings.set(key, callback);
+      }
+
+      getSelectedCells(): Array<{ id: string }> {
+        return this.selectedCells;
+      }
+
+      press(key: string): void {
+        this.bindings.get(key)?.();
+      }
+    }
+
+    const canvas = new ContractCanvas();
+    const deleted: string[] = [];
+    installX6DeletionKeyboard(canvas, ContractKeyboard, (id) => deleted.push(id));
+
+    canvas.press("delete");
+    canvas.selectedCells = [{ id: "archive" }];
+    canvas.press("backspace");
+
+    expect(deleted).toEqual(["lobby-meeting", "archive"]);
   });
 });
 
