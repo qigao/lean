@@ -10,6 +10,8 @@ from tempfile import TemporaryDirectory
 
 from narrative_dynamics.abm.scenario_checkpoint_store import (
     LocalScenarioCheckpointStore,
+    _PhysicalFileOwnershipToken,
+    _ScenarioCheckpointOwnedRestoreError,
     _ScenarioCheckpointRestoreTargetExistsError,
 )
 from narrative_dynamics.abm.scenario_compiler import initialize_compiled_scenario
@@ -110,13 +112,17 @@ def _copy_sqlite_database(source_path: str, destination_path: str) -> None:
             source.close()
 
 
-def _remove_fork_database(path: Path) -> None:
+def _cleanup_fork_database(
+    checkpoint_store: LocalScenarioCheckpointStore,
+    path: Path,
+    ownership_token: _PhysicalFileOwnershipToken,
+) -> None:
     try:
-        path.unlink(missing_ok=True)
-        if path.exists() or path.is_symlink():
-            raise OSError("owned fork database remains")
+        checkpoint_store._cleanup_restored_target(path, ownership_token)
     except Exception:
-        raise RuntimeError("scenario fork cleanup failed") from None
+        raise RuntimeError(
+            "scenario fork cleanup failed: ownership changed"
+        ) from None
 
 
 class ScenarioCoordinator:
@@ -225,10 +231,18 @@ class ScenarioCoordinator:
             raise TypeError("scenario coordinator publisher must provide publish")
         if checkpoint_store is not None and not all(
             callable(getattr(checkpoint_store, name, None))
-            for name in ("create", "load", "restore", "discard")
+            for name in (
+                "create",
+                "load",
+                "restore",
+                "discard",
+                "_restore_owned",
+                "_cleanup_restored_target",
+                "_verify_restored_target",
+            )
         ):
             raise TypeError(
-                "scenario coordinator checkpoint store must provide create, load, restore, and discard"
+                "scenario coordinator checkpoint store must provide the local checkpoint lifecycle"
             )
 
         initial_state = initialize_compiled_scenario(exact_database_path, scenario)
@@ -440,13 +454,25 @@ class ScenarioCoordinator:
 
         child_path = _database_path(child_database_path)
         child_path_value = Path(child_path)
+        child_ownership_token: _PhysicalFileOwnershipToken | None = None
         try:
-            self._checkpoint_store.restore(request.checkpoint_hash, child_path)
+            child_ownership_token = self._checkpoint_store._restore_owned(
+                request.checkpoint_hash,
+                child_path,
+            )
+            self._checkpoint_store._verify_restored_target(
+                child_path,
+                child_ownership_token,
+            )
             if (
                 hash_situated_percept_memory_store(child_path)
                 != checkpoint.memory_store_hash
             ):
                 raise ValueError("scenario fork restored memory hash does not match")
+            self._checkpoint_store._verify_restored_target(
+                child_path,
+                child_ownership_token,
+            )
             child_state_store = InMemoryScenarioStateStore()
             child_state_store.initialize(request.child_run_id, checkpoint.state)
             child = ScenarioCoordinator(
@@ -475,15 +501,26 @@ class ScenarioCoordinator:
                 checkpoint.content_hash,
                 checkpoint.state.content_hash,
             )
+            self._checkpoint_store._verify_restored_target(
+                child_path,
+                child_ownership_token,
+            )
         except _ScenarioCheckpointRestoreTargetExistsError:
             raise
+        except _ScenarioCheckpointOwnedRestoreError as error:
+            _cleanup_fork_database(
+                self._checkpoint_store,
+                child_path_value,
+                error.ownership_token,
+            )
+            raise RuntimeError(str(error)) from None
         except Exception:
-            try:
-                visible = child_path_value.exists() or child_path_value.is_symlink()
-            except Exception:
-                raise RuntimeError("scenario fork cleanup failed") from None
-            if visible:
-                _remove_fork_database(child_path_value)
+            if child_ownership_token is not None:
+                _cleanup_fork_database(
+                    self._checkpoint_store,
+                    child_path_value,
+                    child_ownership_token,
+                )
             raise
 
         retained_result = (child, result)

@@ -73,7 +73,9 @@ class LocalScenarioCheckpointStoreTests(unittest.TestCase):
             self.checkpoint,
         )
         restored = self.root / "restored-memory.sqlite3"
-        self.store.restore(self.checkpoint.content_hash, restored)
+        self.assertIsNone(
+            self.store.restore(self.checkpoint.content_hash, restored)
+        )
         self.assertEqual(
             hash_situated_percept_memory_store(restored),
             self.checkpoint.memory_store_hash,
@@ -197,6 +199,43 @@ class LocalScenarioCheckpointStoreTests(unittest.TestCase):
         self.assertTrue(artifact.exists())
         self.assertEqual(artifact.read_bytes(), prior_bytes)
 
+    def test_discard_never_unlinks_valid_logical_artifact_with_replaced_inode(self) -> None:
+        self.store.create(self.checkpoint, self.database)
+        artifact = tuple(self.store_root.iterdir())[0]
+        foreign = self.root / "foreign-valid-memory.sqlite3"
+        source = destination = None
+        try:
+            source = sqlite3.connect(self.database)
+            destination = sqlite3.connect(foreign)
+            source.backup(destination)
+        finally:
+            if destination is not None:
+                destination.close()
+            if source is not None:
+                source.close()
+        with foreign.open("ab") as stream:
+            stream.write(b"unrelated-foreign-physical-data")
+        foreign_bytes = foreign.read_bytes()
+        os.replace(foreign, artifact)
+        self.assertEqual(
+            hash_situated_percept_memory_store(artifact),
+            self.checkpoint.memory_store_hash,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "ownership") as raised:
+            self.store.discard(self.checkpoint.content_hash)
+
+        self.assertEqual(artifact.read_bytes(), foreign_bytes)
+        self.assertNotIn(str(artifact), str(raised.exception))
+        self.assertNotIn(str(self.store_root), str(raised.exception))
+        with self.assertRaisesRegex(KeyError, "unknown scenario checkpoint"):
+            self.store.load(self.checkpoint.content_hash)
+
+        reused = self.store.create(self.checkpoint, self.database)
+        self.assertIs(reused, self.checkpoint)
+        self.store.discard(self.checkpoint.content_hash)
+        self.assertEqual(artifact.read_bytes(), foreign_bytes)
+
     def test_restore_concurrent_target_winner_is_preserved_byte_for_byte(self) -> None:
         self.store.create(self.checkpoint, self.database)
         target = self.root / "concurrent-target.sqlite3"
@@ -304,6 +343,35 @@ class LocalScenarioCheckpointStoreTests(unittest.TestCase):
         self.assertEqual(tuple(self.store_root.iterdir()), ())
         stored = self.store.create(self.checkpoint, self.database)
         self.assertIs(stored, self.checkpoint)
+
+    def test_create_cleanup_never_unlinks_substituted_stage_path(self) -> None:
+        real_link = os.link
+        substituted_stage = None
+        foreign_bytes = b"foreign-substituted-stage-bytes"
+
+        def publish_then_substitute_stage(source, destination) -> None:
+            nonlocal substituted_stage
+            real_link(source, destination)
+            substituted_stage = Path(source)
+            foreign = self.root / "foreign-stage-file"
+            foreign.write_bytes(foreign_bytes)
+            os.replace(foreign, substituted_stage)
+
+        with patch(
+            "narrative_dynamics.abm.scenario_checkpoint_store.os.link",
+            side_effect=publish_then_substitute_stage,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "cleanup failed") as raised:
+                self.store.create(self.checkpoint, self.database)
+
+        self.assertIsNotNone(substituted_stage)
+        self.assertEqual(substituted_stage.read_bytes(), foreign_bytes)
+        self.assertNotIn(str(substituted_stage), str(raised.exception))
+        artifacts = tuple(
+            path for path in self.store_root.iterdir()
+            if ".stage-" not in path.name
+        )
+        self.assertEqual(artifacts, ())
 
     def test_symlink_artifact_is_rejected_with_redacted_error(self) -> None:
         self.store.create(self.checkpoint, self.database)

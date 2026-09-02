@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import os
 from pathlib import Path
+import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
@@ -1429,11 +1431,12 @@ class ScenarioCoordinatorTests(unittest.TestCase):
             child_stream_id="restore-stream",
         )
         failed_target = self.root / "restore-failure.sqlite3"
-        def publish_then_fail(_, target) -> None:
-            Path(target).write_bytes(b"owned-partial-child")
-            raise RuntimeError("restore seam failed")
 
-        with patch.object(store, "restore", side_effect=publish_then_fail):
+        with patch.object(
+            store,
+            "_restore_owned",
+            side_effect=RuntimeError("restore seam failed"),
+        ):
             with self.assertRaisesRegex(RuntimeError, "restore seam failed"):
                 coordinator.fork(failed_request, allowed, failed_target)
         self.assertFalse(failed_target.exists())
@@ -1454,16 +1457,16 @@ class ScenarioCoordinatorTests(unittest.TestCase):
         target = self.root / "private-cleanup-child.sqlite3"
         real_unlink = Path.unlink
 
-        def publish_then_fail(_, destination) -> None:
-            Path(destination).write_bytes(b"owned-partial-child")
-            raise RuntimeError("private restore failure")
-
         def fail_child_cleanup(path, *args, **kwargs):
             if path == target:
                 raise OSError(f"private child path {path}")
             return real_unlink(path, *args, **kwargs)
 
-        with patch.object(store, "restore", side_effect=publish_then_fail), patch.object(
+        with patch(
+            "narrative_dynamics.abm.scenario_coordinator."
+            "hash_situated_percept_memory_store",
+            side_effect=RuntimeError("private post-restore failure"),
+        ), patch.object(
             Path,
             "unlink",
             autospec=True,
@@ -1474,6 +1477,55 @@ class ScenarioCoordinatorTests(unittest.TestCase):
 
         self.assertNotIn(str(target), str(raised.exception))
         self.assertNotIn(str(self.root), str(raised.exception))
+
+    def test_fork_cleanup_never_unlinks_substituted_valid_child_database(self) -> None:
+        coordinator, _, checkpoint = self.checkpointed_coordinator()
+        request = self.fork_request(
+            coordinator,
+            checkpoint.content_hash,
+            fork_id="substituted-child",
+            idempotency_key="substituted-child",
+            child_run_id="substituted-child-run",
+            child_stream_id="substituted-child-stream",
+        )
+        allowed = self.capability(can_fork=True)
+        target = self.root / "substituted-child.sqlite3"
+        foreign = self.root / "foreign-child.sqlite3"
+        foreign_bytes = None
+
+        def substitute_then_fail(path) -> str:
+            nonlocal foreign_bytes
+            source = destination = None
+            try:
+                source = sqlite3.connect(path)
+                destination = sqlite3.connect(foreign)
+                source.backup(destination)
+            finally:
+                if destination is not None:
+                    destination.close()
+                if source is not None:
+                    source.close()
+            with foreign.open("ab") as stream:
+                stream.write(b"unrelated-foreign-child-data")
+            foreign_bytes = foreign.read_bytes()
+            os.replace(foreign, path)
+            raise RuntimeError("post-restore seam failed")
+
+        with patch(
+            "narrative_dynamics.abm.scenario_coordinator."
+            "hash_situated_percept_memory_store",
+            side_effect=substitute_then_fail,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "ownership") as raised:
+                coordinator.fork(request, allowed, target)
+
+        self.assertEqual(target.read_bytes(), foreign_bytes)
+        self.assertNotIn(str(target), str(raised.exception))
+        self.assertNotIn(str(self.root), str(raised.exception))
+
+        target.unlink()
+        child, _ = coordinator.fork(request, allowed, target)
+        self.assertIs(child.run_view().status, ScenarioRunStatus.PAUSED)
 
 
 if __name__ == "__main__":
