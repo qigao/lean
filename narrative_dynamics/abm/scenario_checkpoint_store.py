@@ -606,6 +606,50 @@ class LocalScenarioCheckpointStore:
         return stage_token
 
     @_synchronized_store
+    def _restore_preclaimed_owned(
+        self,
+        checkpoint_hash: str,
+        target_database_path: str | Path,
+        ownership_token: _PhysicalFileOwnershipToken,
+    ) -> _PhysicalFileOwnershipToken:
+        """Restore into one exact empty regular file already owned by the caller."""
+
+        if not isinstance(ownership_token, _PhysicalFileOwnershipToken):
+            raise TypeError("scenario checkpoint preclaimed restore requires ownership token")
+        checkpoint = self.load(checkpoint_hash)
+        target = _database_path(
+            target_database_path,
+            label="scenario checkpoint preclaimed restore target",
+        )
+        _require_file_token(
+            target,
+            ownership_token,
+            message="scenario checkpoint preclaimed target ownership changed",
+        )
+        try:
+            if target.stat(follow_symlinks=False).st_size != 0:
+                raise RuntimeError("scenario checkpoint preclaimed target must be empty")
+        except OSError:
+            raise RuntimeError("scenario checkpoint preclaimed target is unavailable") from None
+        artifact = self._artifact_path(checkpoint.content_hash)
+        artifact_token = self._artifact_tokens_by_hash[checkpoint.content_hash]
+        _backup_sqlite(
+            artifact,
+            target,
+            message="scenario checkpoint preclaimed restore failed",
+            source_token=artifact_token,
+            destination_token=ownership_token,
+        )
+        if _owned_logical_hash(
+            target,
+            ownership_token,
+            message="scenario checkpoint preclaimed restore failed integrity validation",
+        ) != checkpoint.memory_store_hash:
+            raise ValueError("scenario checkpoint restore failed integrity validation")
+        _flush_file(target, ownership_token)
+        return ownership_token
+
+    @_synchronized_store
     def _cleanup_restored_target(
         self,
         target_database_path: str | Path,

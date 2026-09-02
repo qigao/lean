@@ -64,6 +64,12 @@ interface DeliveryGeneration {
   binding: StreamBinding;
 }
 
+interface ConnectAttempt {
+  generation: number;
+  socket: WebSocketLike;
+  reject: (error: Error, close?: boolean) => void;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -235,6 +241,8 @@ export class StreamClient extends EventTarget {
   private readonly recoverGap: (request: StreamGapRecoveryRequest) => void | Promise<void>;
   private readonly maximumRetainedIdentities: number;
   private socket: WebSocketLike | null = null;
+  private connectGeneration = 0;
+  private connectAttempt: ConnectAttempt | null = null;
   private activeBinding: StreamBinding | null = null;
   private streamScopeBinding: StreamBinding | null = null;
   private pending = new Map<string, PendingControl>();
@@ -334,6 +342,18 @@ export class StreamClient extends EventTarget {
     return { ...structuredClone(binding), subscription_id: subscriptionId };
   }
 
+  private resetConnectionAuthority(error: Error, message: string): void {
+    this.rejectPending(error);
+    this.activeBinding = null;
+    this.streamScopeBinding = null;
+    this.identities.clear();
+    this.committedCursor = null;
+    this.confirmedAcknowledgementCursor = null;
+    this.deliveryChain = Promise.resolve();
+    this.audienceGeneration += 1;
+    this.updateStatus("disconnected", message);
+  }
+
   async connect(binding: StreamBinding): Promise<void> {
     assertBinding(binding);
     if (this.socket && this.socket.readyState < 2) throw new Error("Stream connection is already active");
@@ -346,34 +366,41 @@ export class StreamClient extends EventTarget {
     this.activeBinding = structuredClone(binding);
     this.streamScopeBinding = structuredClone(binding);
     this.updateStatus("connecting", "Connecting to the run output stream.");
-    const socket = this.socketFactory(this.endpoint, [PROTOCOL]);
+    const generation = ++this.connectGeneration;
+    let socket: WebSocketLike;
+    try {
+      socket = this.socketFactory(this.endpoint, [PROTOCOL]);
+    } catch (error) {
+      const normalized = error instanceof Error
+        ? error : new StreamProtocolError("Stream socket factory failed");
+      if (generation === this.connectGeneration) {
+        this.resetConnectionAuthority(normalized, normalized.message);
+      }
+      throw normalized;
+    }
     this.socket = socket;
     await new Promise<void>((resolve, reject) => {
       let settled = false;
-      let opened = false;
       const rejectConnection = (error: Error, close = true): void => {
         if (settled) return;
         settled = true;
+        if (this.connectAttempt?.generation === generation) {
+          this.connectAttempt = null;
+        }
         if (this.socket === socket) {
           this.socket = null;
-          this.rejectPending(error);
-          this.activeBinding = null;
-          this.streamScopeBinding = null;
-          this.identities.clear();
-          this.committedCursor = null;
-          this.confirmedAcknowledgementCursor = null;
-          this.audienceGeneration += 1;
-          this.updateStatus("disconnected", error.message);
+          this.resetConnectionAuthority(error, error.message);
         }
         if (close && socket.readyState < 2) socket.close(1002, "connection failed");
         reject(error);
       };
+      this.connectAttempt = { generation, socket, reject: rejectConnection };
       socket.onmessage = (event) => {
         if (this.socket === socket) this.receive(event.data);
       };
       socket.onerror = () => {
         const error = new StreamProtocolError("Stream transport failed");
-        if (!opened) {
+        if (!settled) {
           this.onProtocolError(error);
           rejectConnection(error);
         } else if (this.socket === socket) {
@@ -393,7 +420,6 @@ export class StreamClient extends EventTarget {
       };
       socket.onopen = () => {
         if (settled || this.socket !== socket) return;
-        opened = true;
         if (socket.protocol !== PROTOCOL) {
           const error = new StreamProtocolError(`Server did not negotiate ${PROTOCOL}`);
           rejectConnection(error);
@@ -402,6 +428,9 @@ export class StreamClient extends EventTarget {
         void this.subscribe(binding).then(() => {
           if (settled || this.socket !== socket) return;
           settled = true;
+          if (this.connectAttempt?.generation === generation) {
+            this.connectAttempt = null;
+          }
           this.updateStatus("connected", "Run output stream connected.");
           resolve();
         }, (error: unknown) => {
@@ -716,10 +745,16 @@ export class StreamClient extends EventTarget {
 
   close(): void {
     const socket = this.socket;
-    this.socket = null;
-    this.rejectPending(new StreamProtocolError("Stream client closed"));
+    const error = new StreamProtocolError("Stream client closed");
+    const attempt = this.connectAttempt;
+    if (attempt !== null && attempt.socket === socket) {
+      attempt.reject(error, false);
+    } else {
+      this.socket = null;
+      this.rejectPending(error);
+      this.updateStatus("disconnected", "Run output stream closed.");
+    }
     socket?.close(1000, "client closed");
-    this.updateStatus("disconnected", "Run output stream closed.");
   }
 }
 

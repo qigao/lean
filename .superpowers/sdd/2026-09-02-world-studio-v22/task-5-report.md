@@ -629,3 +629,106 @@ Host: Python 3.12.7, Node 24.5.0, npm 11.5.2, Windows.
   filesystem ownership, session/deadline/connection state, and browser socket generation
   remain deployment/transport-only and do not enter semantic content, command, fork,
   run, checkpoint, recovery, or capability identities/hashes.
+
+## Final Integration Fix Round 2
+
+Review base and pre-commit head: `e6a3ee0` on
+`feature/world-studio-v22-1-workspace`. This round addresses five Important findings and
+one Minor contract finding from the fresh final re-review. It adds no dependency and
+does not change semantic scenario, run, checkpoint, recovery, or capability hashes.
+
+### RED to GREEN evidence
+
+1. Cross-platform run artifact namespace. Focused RED was `8 failed, 1 skipped`: six
+   Windows-unsafe IDs were accepted, the database did not exist before SQLite opened,
+   and fork ignored an existing child checkpoint namespace. The dangling-symlink case
+   skips on this Windows host without symlink privilege. GREEN rejects control/invalid
+   Windows filename characters, ADS colons, trailing dot/space, and reserved device
+   basenames; discovers namespace entries with `scandir`/no-follow semantics; rejects
+   any existing owner, database, or checkpoint entry for both create and fork; and
+   atomically reserves the exact database file with `O_EXCL` plus `O_NOFOLLOW` where
+   available. Parent checkpoint directories are also atomically created by the claim
+   and retained by exact device/inode identity. SQLite initializes the claimed inode.
+   Fork accepts an optional internal physical-file ownership token and restores the
+   checkpoint into that exact preclaimed empty regular file. Existing callers retain
+   the old default path because the new coordinator argument is keyword-only and
+   defaults to `None`; checkpoint hashes and public protocol DTOs are unchanged.
+   Cleanup verifies exact type/device/inode before removing only claim-owned entries;
+   foreign database/checkpoint/symlink entries are never deleted. Final launcher
+   evidence is `14 passed, 1 skipped`; checkpoint-store evidence is `22 passed`.
+2. WSS teardown and queued-private revocation. Two deterministic sender-failure REDs
+   (ambient trust-all and still-valid cookie) let a delayed subscribe complete after
+   teardown and occupy its ID (`2 failed`). GREEN first archives established normal
+   subscriptions for reconnect, then establishes a router revocation barrier whenever
+   any control worker remains. Completion callbacks re-revoke any raced insertion and
+   release the barrier only after the final worker completes. Invalid cookie teardown
+   still hard-revokes without retaining private replay. Each race test opens a real
+   replacement WSS against a maximum-one connection limit and proves both the exact
+   established-history ID and late ID can subscribe. A separate RED held the first
+   send and the session-guard close, queued a private frame past its first validity
+   check, logged out, and observed that private `send_text` start (`1 failed`). GREEN
+   rechecks the exact bound session deadline and revocation event inside `send_lock`
+   immediately before starting `send_text`; discard and close occur after releasing the
+   lock. The session `RLock` is used only for a synchronous validity read and is released
+   before every await; session mutation never acquires `send_lock`, and no authority
+   callback is made while the session lock is held. Combined focused evidence is `4
+   passed`.
+3. Browser connection-attempt lifecycle. Focused RED was `4 failed`: explicit close
+   left a pre-open connect promise pending; close during subscribe left the binding;
+   synchronous socket-factory failure left `connecting`; and post-open error without a
+   close left subscribe pending. GREEN stores an exact socket/generation reject handle,
+   settles once, rejects pending controls, clears failed binding/scope/cursors/delivery
+   state, and closes only the failed socket. Every case performs a successful retry;
+   the pre-open test fires late error and close events from the old socket and proves
+   the replacement stays connected. Established intentional close preserves the
+   released binding/cursor required by `reconnect()`. Focused evidence is `24 passed`.
+4. Authoring mutation authority. Create and import remain one-attempt operations.
+   Create now reconciles an existing project only for explicit identity conflict
+   `-32015`; authorization, validation, other RPC errors, and protocol errors do not
+   issue a snapshot request. Import never reinterprets explicit RPC/protocol failure as
+   success, even if an unrelated revision could have advanced. A generic lost response
+   may accept the authoritative snapshot but reports a bounded `outcome is ambiguous`
+   status rather than claiming success. A second normal button action snapshots the
+   existing project and retries import from that accepted revision, so an empty project
+   is not stranded. Focused workflow evidence is `11 passed`.
+5. Closed browser DTO contracts. Minor-contract RED was `6 failed`: unknown document
+   roles, invalid role/logical-ID coupling, unstable diagnostic message keys, and
+   duplicate or noncanonical related IDs were accepted. GREEN mirrors the Python role
+   set, requires logical IDs only for `agent`, validates stable diagnostic code/message
+   keys and safe identities, and requires strictly sorted unique related IDs. The full
+   focused browser authority set (StreamClient, workflow, ProjectStore) is `57 passed`;
+   malformed apply tests continue to prove the exact prior snapshot/report references
+   remain unchanged and status becomes `error`.
+
+### Verification, scope, and audits
+
+Host: Python 3.12.7, Node 24.5.0, npm 11.5.2, Windows.
+
+- Complete World Studio/core ABM pytest gate: `264 passed, 2 skipped, 89 subtests passed
+  in 81.84s`. The skips are the existing directory-symlink and new dangling-file-
+  symlink tests on a host without symlink privilege.
+- `python -m unittest discover -s tests -p "test_network_abm*.py" -q` — `Ran 698
+  tests in 68.388s`, `OK (skipped=1)`.
+- `python -m compileall -q narrative_dynamics tests tools/run_world_studio.py` — exit 0.
+- `npm test -- --run` — 15 files, 122 tests passed. `npm run typecheck` passed.
+- `npm run build` — 2,752 modules transformed; only the known large lazy Monaco chunk
+  warning remains.
+- The first real token-mode Playwright run correctly exposed an integration regression:
+  explicit connected close had cleared reconnect authority, so `Reconnect stream`
+  remained disabled and the test timed out at 180 seconds. The close paths are now
+  split as described above; StreamClient (`24 passed`), typecheck, and production build
+  passed again, then `npx playwright test e2e/law-firm.spec.ts` passed (`1 passed,
+  11.0s`).
+- `git diff --check` is clean apart from host LF-to-CRLF notices. Generated Playwright
+  results remain ignored and dependency manifests are unchanged.
+- `npm audit --omit=dev` still reports the previously disclosed Monaco-vendored
+  DOMPurify chain (`2 vulnerabilities`: one low, one moderate). Its offered forced fix
+  is a breaking Monaco downgrade, so it remains an audit warning rather than an
+  integration change.
+- Scope inspection found no React/React Flow, gRPC/Protobuf, distributed worker/broker,
+  provider/LLM, state-set/recovery RPC, or live Blender implementation. Filesystem
+  ownership, router revocation, cookie deadlines, and browser connection generations
+  remain deployment/transport metadata only.
+
+Resulting local commit hash is recorded in the handoff because a commit cannot contain
+its own hash. No push, merge, or PR is performed by this round.

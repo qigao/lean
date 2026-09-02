@@ -294,6 +294,87 @@ def test_logout_discards_a_private_subscription_that_finishes_after_revocation(
             assert "result" in receive_json_bounded(replacement)
 
 
+def test_logout_revalidates_queued_private_frame_inside_send_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer = "queued-private-bearer"
+    router = StudioOutputRouter()
+    first_send_started = threading.Event()
+    release_first_send = threading.Event()
+    private_encoded = threading.Event()
+    private_send_started = threading.Event()
+    close_started = threading.Event()
+    release_close = threading.Event()
+    original_send_text = WebSocket.send_text
+    original_close = WebSocket.close
+    original_dumps = json.dumps
+
+    def observed_dumps(payload, *args, **kwargs):
+        if isinstance(payload, dict) and payload.get("method") == "stream.output":
+            private_encoded.set()
+        return original_dumps(payload, *args, **kwargs)
+
+    async def blocked_send_text(websocket, data):
+        payload = json.loads(data)
+        if payload.get("id") == "subscribe-queued-private":
+            first_send_started.set()
+            assert await asyncio.to_thread(release_first_send.wait, 2)
+        if payload.get("method") == "stream.output":
+            private_send_started.set()
+        await original_send_text(websocket, data)
+
+    async def blocked_close(websocket, code=1000, reason=None):
+        if code == 1008:
+            close_started.set()
+            assert await asyncio.to_thread(release_close.wait, 2)
+        if reason is None:
+            await original_close(websocket, code=code)
+        else:
+            await original_close(websocket, code=code, reason=reason)
+
+    monkeypatch.setattr(json, "dumps", observed_dumps)
+    monkeypatch.setattr(WebSocket, "send_text", blocked_send_text)
+    monkeypatch.setattr(WebSocket, "close", blocked_close)
+
+    def authenticate(request):
+        return _capability() if request.headers.get("authorization") == f"Bearer {bearer}" else None
+
+    app, _ = app_for(
+        tmp_path,
+        output_router=router,
+        authenticate_http=authenticate,
+        authenticate_websocket=lambda websocket: None,
+        allow_ambient_authentication=False,
+    )
+    headers = {"origin": "https://studio.example"}
+    try:
+        with TestClient(app, base_url="https://studio.example") as client:
+            assert client.post(
+                "/session", headers={"authorization": f"Bearer {bearer}"}
+            ).status_code == 200
+            with client.websocket_connect(
+                "wss://studio.example/v1/stream",
+                headers=headers,
+                subprotocols=["nd-jsonrpc-v1"],
+            ) as websocket:
+                websocket.send_json(_private_subscription_request("queued-private"))
+                assert first_send_started.wait(timeout=1)
+                assert router.publish("run-1", private_batch(1)) == ("queued-private",)
+                assert private_encoded.wait(timeout=1)
+                assert client.delete("/session").status_code == 204
+                assert close_started.wait(timeout=1)
+                release_first_send.set()
+                assert not private_send_started.wait(timeout=0.1)
+                release_close.set()
+                assert "result" in receive_json_bounded(websocket)
+                with pytest.raises(WebSocketDisconnect):
+                    receive_json_bounded(websocket)
+    finally:
+        release_first_send.set()
+        release_close.set()
+
+
 def test_expiry_revokes_live_private_websocket_before_private_delivery(tmp_path: Path) -> None:
     now = [10.0]
     bearer = "expiry-bearer"
@@ -1423,6 +1504,166 @@ def test_sender_failure_releases_subscription_and_connection_capacity(
 
     assert any(message["type"] == "websocket.accept" for message in sent)
     assert any("result" in payload for payload in payloads)
+
+
+@pytest.mark.parametrize("cookie_authenticated", (False, True))
+def test_sender_failure_revokes_delayed_subscribe_without_losing_established_history(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    cookie_authenticated: bool,
+) -> None:
+    bearer = "teardown-race-bearer"
+    router = StudioOutputRouter()
+    entered = threading.Event()
+    release = threading.Event()
+    completed = threading.Event()
+    original_subscribe = router.subscribe
+
+    def delayed_subscribe(subscription_id, *args, **kwargs):
+        if subscription_id == "late-subscription":
+            entered.set()
+            assert release.wait(timeout=2)
+        try:
+            return original_subscribe(subscription_id, *args, **kwargs)
+        finally:
+            if subscription_id == "late-subscription":
+                completed.set()
+
+    monkeypatch.setattr(router, "subscribe", delayed_subscribe)
+
+    def authenticate(request):
+        return _capability() if request.headers.get("authorization") == f"Bearer {bearer}" else None
+
+    app, _ = app_for(
+        tmp_path,
+        output_router=router,
+        authenticate_http=authenticate if cookie_authenticated else auth,
+        authenticate_websocket=(lambda websocket: None) if cookie_authenticated else auth,
+        allow_ambient_authentication=not cookie_authenticated,
+        limits=WorldStudioServerLimits(
+            maximum_websocket_connections=1,
+            request_timeout_seconds=1,
+        ),
+    )
+    cookie = None
+    client_context = TestClient(app, base_url="https://studio.example")
+    if cookie_authenticated:
+        client_context.__enter__()
+        login = client_context.post(
+            "/session", headers={"authorization": f"Bearer {bearer}"}
+        )
+        assert login.status_code == 200
+        cookie = login.cookies.get(WORLD_STUDIO_SESSION_COOKIE)
+
+    headers = [
+        (b"origin", b"https://studio.example"),
+        (b"sec-websocket-protocol", b"nd-jsonrpc-v1"),
+    ]
+    if cookie is not None:
+        headers.append(
+            (b"cookie", f"{WORLD_STUDIO_SESSION_COOKIE}={cookie}".encode("ascii"))
+        )
+    scope = {
+        "type": "websocket",
+        "asgi": {"version": "3.0", "spec_version": "2.4"},
+        "http_version": "1.1",
+        "scheme": "wss",
+        "server": ("testserver", 443),
+        "client": ("testclient", 50000),
+        "root_path": "",
+        "path": "/v1/stream",
+        "raw_path": b"/v1/stream",
+        "query_string": b"",
+        "headers": headers,
+        "subprotocols": ["nd-jsonrpc-v1"],
+        "state": {},
+    }
+
+    def request(identity: str) -> dict:
+        return {
+            "jsonrpc": "2.0",
+            "id": f"subscribe-{identity}",
+            "method": "stream.subscribe",
+            "params": {
+                "subscription_id": identity,
+                "run_id": "run-1",
+                "stream_id": "stream-1",
+                "kinds": [],
+                "audience": "public",
+            },
+        }
+
+    async def exercise() -> list[dict]:
+        events: asyncio.Queue[dict] = asyncio.Queue()
+        await events.put({"type": "websocket.connect"})
+        await events.put(
+            {"type": "websocket.receive", "text": json.dumps(request("established"))}
+        )
+        await events.put(
+            {"type": "websocket.receive", "text": json.dumps(request("late-subscription"))}
+        )
+
+        async def receive():
+            return await events.get()
+
+        established_sent = asyncio.Event()
+
+        async def fail_output(message):
+            if message["type"] != "websocket.send":
+                return
+            payload = json.loads(message["text"])
+            if payload.get("id") == "subscribe-established":
+                established_sent.set()
+            if payload.get("method") == "stream.output":
+                raise RuntimeError("sender transport failed")
+
+        application = asyncio.create_task(app(scope, receive, fail_output))
+        await asyncio.wait_for(established_sent.wait(), timeout=1)
+        assert await asyncio.to_thread(entered.wait, 1)
+        assert router.publish("run-1", public_batch(1)) == ("established",)
+        await asyncio.wait_for(application, timeout=1)
+        release.set()
+        assert await asyncio.to_thread(completed.wait, 1)
+        await asyncio.sleep(0.05)
+        replacement_events = deque((
+            {"type": "websocket.connect"},
+            {"type": "websocket.receive", "text": json.dumps(request("established"))},
+            {"type": "websocket.receive", "text": json.dumps(request("late-subscription"))},
+            {"type": "websocket.disconnect", "code": 1000},
+        ))
+        replacement_sent: list[dict] = []
+
+        async def replacement_receive():
+            return replacement_events.popleft()
+
+        async def replacement_send(message):
+            replacement_sent.append(message)
+
+        replacement_scope = {**scope, "client": ("replacement", 50001), "state": {}}
+        await asyncio.wait_for(
+            app(replacement_scope, replacement_receive, replacement_send),
+            timeout=1,
+        )
+        return replacement_sent
+
+    try:
+        replacement_sent = asyncio.run(exercise())
+    finally:
+        release.set()
+        if cookie_authenticated:
+            client_context.__exit__(None, None, None)
+
+    payloads = tuple(
+        json.loads(message["text"])
+        for message in replacement_sent
+        if message["type"] == "websocket.send"
+    )
+    assert any(message["type"] == "websocket.accept" for message in replacement_sent)
+    assert {
+        payload["result"]["subscription_id"]
+        for payload in payloads
+        if "result" in payload
+    } == {"established", "late-subscription"}
 
 
 def test_core_imports_do_not_load_optional_asgi_dependencies() -> None:

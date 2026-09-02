@@ -280,6 +280,104 @@ describe("StreamClient strict JSON-RPC transport", () => {
     expect(client.status).toBe("connected");
   });
 
+  it("close rejects a pre-open connect attempt and stale events cannot break its retry", async () => {
+    const sockets: Socket[] = [];
+    const client = new StreamClient("ws://example.test/v1/stream", {
+      socketFactory: () => {
+        const socket = new Socket();
+        sockets.push(socket);
+        return socket;
+      },
+    });
+    const first = client.connect(binding());
+    client.close();
+    await expect(first).rejects.toThrow("closed");
+    expect(client.status).toBe("disconnected");
+    expect(client.binding).toBeNull();
+
+    const retry = client.connect(binding());
+    sockets[1]!.open();
+    respondToSubscription(sockets[1]!, 0);
+    await expect(retry).resolves.toBeUndefined();
+    sockets[0]!.onerror?.(new Event("error"));
+    sockets[0]!.onclose?.(new CloseEvent("close"));
+    expect(client.status).toBe("connected");
+    expect(client.binding?.subscription_id).toBe("subscription-1");
+  });
+
+  it("close rejects a pending subscribe and permits retry", async () => {
+    const sockets: Socket[] = [];
+    const client = new StreamClient("ws://example.test/v1/stream", {
+      socketFactory: () => {
+        const socket = new Socket();
+        sockets.push(socket);
+        return socket;
+      },
+    });
+    const first = client.connect(binding());
+    sockets[0]!.open();
+    expect(sockets[0]!.request(0).method).toBe("stream.subscribe");
+    client.close();
+    await expect(first).rejects.toThrow("closed");
+    expect(client.binding).toBeNull();
+
+    const retry = client.connect(binding());
+    sockets[1]!.open();
+    respondToSubscription(sockets[1]!, 0);
+    await expect(retry).resolves.toBeUndefined();
+    expect(client.status).toBe("connected");
+  });
+
+  it("resets a synchronous socket-factory failure and permits retry", async () => {
+    const sockets: Socket[] = [];
+    let failFactory = true;
+    const client = new StreamClient("ws://example.test/v1/stream", {
+      socketFactory: () => {
+        if (failFactory) {
+          failFactory = false;
+          throw new Error("socket factory failed");
+        }
+        const socket = new Socket();
+        sockets.push(socket);
+        return socket;
+      },
+    });
+    await expect(client.connect(binding())).rejects.toThrow("socket factory failed");
+    expect(client.status).toBe("disconnected");
+    expect(client.binding).toBeNull();
+
+    const retry = client.connect(binding());
+    sockets[0]!.open();
+    respondToSubscription(sockets[0]!, 0);
+    await expect(retry).resolves.toBeUndefined();
+    expect(client.status).toBe("connected");
+  });
+
+  it("rejects a post-open transport error while subscribe is pending and permits retry", async () => {
+    const sockets: Socket[] = [];
+    const client = new StreamClient("ws://example.test/v1/stream", {
+      socketFactory: () => {
+        const socket = new Socket();
+        sockets.push(socket);
+        return socket;
+      },
+    });
+    const first = client.connect(binding());
+    const outcome = first.then(() => "resolved", () => "rejected");
+    sockets[0]!.open();
+    sockets[0]!.error();
+    await flush();
+    expect(await Promise.race([outcome, Promise.resolve("pending")])).toBe("rejected");
+    expect(sockets[0]!.readyState).toBe(3);
+    expect(client.binding).toBeNull();
+
+    const retry = client.connect(binding());
+    sockets[1]!.open();
+    respondToSubscription(sockets[1]!, 0);
+    await expect(retry).resolves.toBeUndefined();
+    expect(client.status).toBe("connected");
+  });
+
   it("validates binding, commits in source order, then acknowledges monotonically", async () => {
     const { client, sockets, batches } = await connectedClient();
     const first = output(1, 1, "1");

@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
+import stat
 
 import pytest
 from starlette.testclient import TestClient
 
 from narrative_dynamics.studio import STUDIO_PERMISSIONS
-from tools.run_world_studio import LauncherSettings, build_application, settings_from_args
+from tools.run_world_studio import (
+    LauncherSettings,
+    _LocalCoordinatorFactory,
+    build_application,
+    settings_from_args,
+)
 
 
 LAW_FIRM = Path("examples/law_firm_scenario").resolve()
@@ -298,3 +305,98 @@ def test_restart_rejects_child_run_id_reuse_without_deleting_prior_artifacts(tmp
         assert "error" in rejected and "result" not in rejected
 
     assert child_database.read_bytes() == before_database
+
+
+@pytest.mark.parametrize("run_id", ("bad:name", "trailing.", "trailing ", "CON", "nul.txt", "bad<id>"))
+def test_local_run_ids_reject_platform_unsafe_filename_identities(run_id: str) -> None:
+    with pytest.raises(ValueError, match="filename-safe"):
+        _LocalCoordinatorFactory._run_id(run_id)
+
+
+def test_parent_database_is_exclusively_reserved_before_sqlite_initialization(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configured = settings(tmp_path)
+    claimed_checkpoints: list[tuple[int, int]] = []
+    original = __import__(
+        "tools.run_world_studio", fromlist=["initialize_situated_percept_memory"]
+    ).initialize_situated_percept_memory
+
+    def observed_initialize(database_path, *args, **kwargs):
+        details = os.stat(database_path, follow_symlinks=False)
+        assert stat.S_ISREG(details.st_mode)
+        assert details.st_size == 0
+        checkpoint_details = os.stat(
+            configured.workspace_root / "runs" / "run-parent-checkpoints",
+            follow_symlinks=False,
+        )
+        assert stat.S_ISDIR(checkpoint_details.st_mode)
+        claimed_checkpoints.append(
+            (checkpoint_details.st_dev, checkpoint_details.st_ino)
+        )
+        return original(database_path, *args, **kwargs)
+
+    monkeypatch.setattr(
+        "tools.run_world_studio.initialize_situated_percept_memory",
+        observed_initialize,
+    )
+    app = build_application(configured)
+    with TestClient(app, base_url="http://127.0.0.1:8765") as client:
+        imported = _imported_project(client)
+        created = _create_run(client, imported, "run-parent", "stream-parent")
+        assert created["run_id"] == "run-parent"
+    final_checkpoints = os.stat(
+        configured.workspace_root / "runs" / "run-parent-checkpoints",
+        follow_symlinks=False,
+    )
+    assert claimed_checkpoints == [(final_checkpoints.st_dev, final_checkpoints.st_ino)]
+
+
+def test_fork_rejects_foreign_checkpoint_namespace_without_deleting_it(tmp_path: Path) -> None:
+    configured = settings(tmp_path)
+    app = build_application(configured)
+    child_checkpoints = configured.workspace_root / "runs" / "run-child-checkpoints"
+    child_checkpoints.mkdir()
+    sentinel = child_checkpoints / "foreign.txt"
+    sentinel.write_bytes(b"foreign-checkpoint-tree")
+
+    with TestClient(app, base_url="http://127.0.0.1:8765") as client:
+        imported = _imported_project(client)
+        parent = _create_run(client, imported, "run-parent", "stream-parent")
+        running, checkpoint = _checkpoint_run(client, parent, 3)
+        rejected = _rpc(client, "run.fork", {
+            "fork_id": "fork-foreign", "idempotency_key": "fork-foreign-key",
+            "source_run_id": "run-parent", "scenario_hash": running["scenario_hash"],
+            "source_epoch": running["coordinator_epoch"],
+            "checkpoint_hash": checkpoint["checkpoint_hash"],
+            "child_run_id": "run-child", "child_stream_id": "stream-child",
+        }, "fork-foreign")
+        assert "error" in rejected and "result" not in rejected
+
+    assert sentinel.read_bytes() == b"foreign-checkpoint-tree"
+    assert not (configured.workspace_root / "runs" / "run-child.sqlite3").exists()
+
+
+def test_parent_create_rejects_dangling_database_symlink_without_removing_it(tmp_path: Path) -> None:
+    configured = settings(tmp_path)
+    runs = configured.workspace_root / "runs"
+    runs.mkdir()
+    database = runs / "run-parent.sqlite3"
+    foreign_target = tmp_path / "foreign-target.sqlite3"
+    try:
+        database.symlink_to(foreign_target)
+    except OSError:
+        pytest.skip("host cannot create a file symlink")
+
+    app = build_application(configured)
+    with TestClient(app, base_url="http://127.0.0.1:8765") as client:
+        imported = _imported_project(client)
+        rejected = _rpc(client, "run.create", {
+            "project_id": "law-firm", "run_id": "run-parent", "stream_id": "stream-parent",
+            "expected_revision": imported["revision"],
+            "expected_snapshot_hash": imported["content_hash"],
+        }, "dangling-parent")
+        assert "error" in rejected and "result" not in rejected
+
+    assert database.is_symlink()
+    assert not foreign_target.exists()

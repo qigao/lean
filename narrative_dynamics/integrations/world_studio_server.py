@@ -565,9 +565,14 @@ def create_world_studio_asgi_app(
 
             async def send_payload(payload) -> None:
                 if (
-                    bound_session_id is not None
-                    and bound_session_deadline is not None
-                    and not session_is_valid(bound_session_id, bound_session_deadline)
+                    session_revoked.is_set()
+                    or (
+                        bound_session_id is not None
+                        and bound_session_deadline is not None
+                        and not session_is_valid(
+                            bound_session_id, bound_session_deadline
+                        )
+                    )
                 ):
                     discard_owned_subscriptions()
                     try:
@@ -589,7 +594,22 @@ def create_world_studio_asgi_app(
                         pass
                     raise OutboundFrameTooLarge()
                 async with send_lock:
-                    await websocket.send_text(encoded.decode("utf-8"))
+                    invalid_at_send = session_revoked.is_set() or (
+                        bound_session_id is not None
+                        and bound_session_deadline is not None
+                        and not session_is_valid(
+                            bound_session_id, bound_session_deadline
+                        )
+                    )
+                    if not invalid_at_send:
+                        await websocket.send_text(encoded.decode("utf-8"))
+                if invalid_at_send:
+                    discard_owned_subscriptions()
+                    try:
+                        await websocket.close(code=1008)
+                    except Exception:
+                        pass
+                    raise SessionRevoked()
 
             async def output_sender() -> None:
                 while True:
@@ -818,17 +838,21 @@ def create_world_studio_asgi_app(
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=True)
             try:
-                if (
+                session_invalid = (
                     bound_session_id is not None
                     and bound_session_deadline is not None
                     and not session_is_valid(bound_session_id, bound_session_deadline)
-                ):
+                )
+                if session_invalid:
                     connection_revoked = True
                     output_router.revoke_connection(connection_id)
                     if not control_tasks:
                         output_router.release_connection_revocation(connection_id)
                 else:
                     output_router.unsubscribe_connection(connection_id)
+                    if control_tasks:
+                        connection_revoked = True
+                        output_router.revoke_connection(connection_id)
             finally:
                 if bound_session_id is not None:
                     unbind_session_connection(bound_session_id, connection_id)

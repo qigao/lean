@@ -42,6 +42,14 @@ function defaultIdentity(prefix: string): string {
 }
 
 const HASH = /^sha256:[0-9a-f]{64}$/;
+const STABLE_KEY = /^[a-z][a-z0-9_]*$/;
+const SAFE_IDENTITY = /^[A-Za-z0-9][A-Za-z0-9_.:-]*$/;
+const DOCUMENT_ROLES = new Set([
+  "physical.world", "physical.perception", "physical.initial_state", "physical.map",
+  "social.institutions", "social.relationships", "social.norms", "agent",
+  "story.outline", "story.interventions", "knowledge.catalog", "knowledge.access",
+  "asset.catalog", "run",
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
@@ -66,9 +74,17 @@ function isPositiveInteger(value: unknown): value is number {
   return Number.isInteger(value) && (value as number) > 0;
 }
 
+function isCanonicalIdentityList(value: unknown): value is string[] {
+  return Array.isArray(value) &&
+    value.every((item) => isText(item) && SAFE_IDENTITY.test(item)) &&
+    value.every((item, index) => index === 0 || value[index - 1]! < item);
+}
+
 function assertDocument(value: unknown): asserts value is DraftDocument {
   if (!isRecord(value) || !hasExactKeys(value, ["role", "logical_id", "value", "content_hash"]) ||
-      !isText(value.role) || !(value.logical_id === null || isText(value.logical_id)) ||
+      !isText(value.role) || !DOCUMENT_ROLES.has(value.role) ||
+      !(value.logical_id === null || isText(value.logical_id) && SAFE_IDENTITY.test(value.logical_id)) ||
+      (value.role === "agent") !== (value.logical_id !== null) ||
       !isRecord(value.value) || !isHash(value.content_hash)) {
     throw new JsonRpcProtocolError("Project draft document is malformed");
   }
@@ -79,9 +95,12 @@ function assertDiagnostic(value: unknown): asserts value is ScenarioDiagnostic {
   if (!isRecord(value) || !hasExactKeys(value, [
     "severity", "code", "document_role", "logical_id", "pointer", "related_ids", "message_key",
   ]) || !["error", "warning"].includes(value.severity as string) ||
-      !isText(value.code) || !isText(value.document_role) ||
-      !(value.logical_id === null || isText(value.logical_id)) || typeof value.pointer !== "string" ||
-      !Array.isArray(value.related_ids) || !value.related_ids.every(isText) || !isText(value.message_key)) {
+      !isText(value.code) || !STABLE_KEY.test(value.code) ||
+      !isText(value.document_role) || !DOCUMENT_ROLES.has(value.document_role) ||
+      !(value.logical_id === null || isText(value.logical_id) && SAFE_IDENTITY.test(value.logical_id)) ||
+      (value.document_role === "agent") !== (value.logical_id !== null) ||
+      typeof value.pointer !== "string" || !isCanonicalIdentityList(value.related_ids) ||
+      !isText(value.message_key) || !STABLE_KEY.test(value.message_key)) {
     throw new JsonRpcProtocolError("Project diagnostic is malformed");
   }
 }

@@ -14,8 +14,14 @@ import shutil
 import stat
 from threading import RLock
 
-from narrative_dynamics.abm.scenario_checkpoint_store import LocalScenarioCheckpointStore
+from narrative_dynamics.abm.scenario_checkpoint_store import (
+    LocalScenarioCheckpointStore,
+    _PhysicalFileOwnershipToken,
+)
 from narrative_dynamics.abm.scenario_coordinator import ScenarioCoordinator
+from narrative_dynamics.abm.situated_percept_memory import (
+    initialize_situated_percept_memory,
+)
 from narrative_dynamics.abm.scenario_coordinator_contracts import (
     ScenarioCommandCapability,
     ScenarioForkRequest,
@@ -206,6 +212,12 @@ class _LocalCoordinatorFactory:
 
     @staticmethod
     def _run_id(run_id: str) -> str:
+        reserved = {
+            "CON", "PRN", "AUX", "NUL",
+            *(f"COM{index}" for index in range(1, 10)),
+            *(f"LPT{index}" for index in range(1, 10)),
+        }
+        filename_base = run_id.split(".", 1)[0].upper() if isinstance(run_id, str) else ""
         if (
             not isinstance(run_id, str)
             or not run_id
@@ -213,8 +225,11 @@ class _LocalCoordinatorFactory:
             or Path(run_id).name != run_id
             or "/" in run_id
             or "\\" in run_id
+            or run_id[-1] in {".", " "}
+            or filename_base in reserved
+            or any(ord(character) < 32 or character in '<>:"/\\|?*' for character in run_id)
         ):
-            raise ValueError("local coordinator run ID must be one path component")
+            raise ValueError("local coordinator run ID must be a filename-safe identity")
         return run_id
 
     @staticmethod
@@ -257,21 +272,16 @@ class _LocalCoordinatorFactory:
             ):
                 raise ValueError("World Studio run metadata is invalid")
             persisted.update(self._run_id(item) for item in payload["run_ids"])
-        discovered = {
-            path.name.removesuffix(".sqlite3")
-            for path in self._root.glob("*.sqlite3")
-            if path.is_file()
-        }
-        discovered.update(
-            path.name.removesuffix("-checkpoints")
-            for path in self._root.glob("*-checkpoints")
-            if path.is_dir()
-        )
-        discovered.update(
-            path.name[1:].removesuffix(".owner")
-            for path in self._root.glob(".*.owner")
-            if path.is_file()
-        )
+        discovered: set[str] = set()
+        with os.scandir(self._root) as entries:
+            for entry in entries:
+                name = entry.name
+                if name.endswith(".sqlite3"):
+                    discovered.add(name.removesuffix(".sqlite3"))
+                elif name.endswith("-checkpoints"):
+                    discovered.add(name.removesuffix("-checkpoints"))
+                elif name.startswith(".") and name.endswith(".owner"):
+                    discovered.add(name[1:].removesuffix(".owner"))
         persisted.update(self._run_id(item) for item in discovered)
         if persisted or self._metadata_path.exists():
             self._write_run_ids(persisted)
@@ -305,16 +315,33 @@ class _LocalCoordinatorFactory:
             if exact_run_id in self._claims:
                 raise FileExistsError("local coordinator run is already claimed")
             descriptor = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            claim: _RunArtifactClaim | None = None
+            marker_artifact: _OwnedArtifact | None = None
             try:
                 with os.fdopen(descriptor, "w", encoding="ascii") as handle:
                     handle.write(secrets.token_hex(32))
                     handle.flush()
                     os.fsync(handle.fileno())
                 marker_artifact = self._artifact(marker, directory=False)
-                if database.exists() or (checkpoints and checkpoint_root.exists()):
-                    marker.unlink()
+                if os.path.lexists(database) or os.path.lexists(checkpoint_root):
+                    if self._matches(marker_artifact):
+                        marker.unlink()
                     raise FileExistsError("local coordinator artifacts already exist")
-                claim = _RunArtifactClaim(exact_run_id, marker_artifact)
+                database_flags = os.O_RDWR | os.O_CREAT | os.O_EXCL
+                database_flags |= getattr(os, "O_NOFOLLOW", 0)
+                database_descriptor = os.open(database, database_flags, 0o600)
+                os.close(database_descriptor)
+                database_artifact = self._artifact(database, directory=False)
+                claim = _RunArtifactClaim(
+                    exact_run_id,
+                    marker_artifact,
+                    database=database_artifact,
+                )
+                if checkpoints:
+                    checkpoint_root.mkdir(mode=0o700)
+                    claim.checkpoints = self._artifact(
+                        checkpoint_root, directory=True
+                    )
                 self._claims[exact_run_id] = claim
                 self._persisted_run_ids.add(exact_run_id)
                 try:
@@ -324,12 +351,30 @@ class _LocalCoordinatorFactory:
                     self._claims.pop(exact_run_id, None)
                     if self._matches(marker_artifact):
                         marker.unlink()
+                    if self._matches(database_artifact):
+                        database.unlink()
+                    if claim.checkpoints is not None and self._matches(claim.checkpoints):
+                        claim.checkpoints.path.rmdir()
                     raise
                 return claim
             except Exception:
-                if marker.exists() and exact_run_id not in self._claims:
+                if claim is not None and claim.database is not None and self._matches(claim.database):
                     try:
-                        marker.unlink()
+                        claim.database.path.unlink()
+                    except OSError:
+                        pass
+                if claim is not None and claim.checkpoints is not None and self._matches(claim.checkpoints):
+                    try:
+                        claim.checkpoints.path.rmdir()
+                    except OSError:
+                        pass
+                if (
+                    marker_artifact is not None
+                    and self._matches(marker_artifact)
+                    and exact_run_id not in self._claims
+                ):
+                    try:
+                        marker_artifact.path.unlink()
                     except OSError:
                         pass
                 raise
@@ -338,10 +383,14 @@ class _LocalCoordinatorFactory:
         with self._lock:
             database = self._database(claim.run_id)
             checkpoint_root = self._checkpoints(claim.run_id)
-            if database.exists():
-                claim.database = self._artifact(database, directory=False)
-            if checkpoints and checkpoint_root.exists():
-                claim.checkpoints = self._artifact(checkpoint_root, directory=True)
+            if claim.database is None or not self._matches(claim.database):
+                raise RuntimeError("local coordinator database ownership changed")
+            if checkpoints and (
+                claim.checkpoints is None or not self._matches(claim.checkpoints)
+            ):
+                raise RuntimeError("local coordinator checkpoint ownership changed")
+            elif not checkpoints and os.path.lexists(checkpoint_root):
+                raise RuntimeError("local coordinator checkpoint ownership changed")
 
     def _abort(self, run_id: str) -> None:
         with self._lock:
@@ -370,6 +419,7 @@ class _LocalCoordinatorFactory:
         claim = self._claim(run_id, checkpoints=True)
         try:
             checkpoint_store = LocalScenarioCheckpointStore(self._checkpoints(run_id))
+            initialize_situated_percept_memory(self._database(run_id))
             coordinator = ScenarioCoordinator.create(
                 self._database(run_id),
                 scenario,
@@ -397,6 +447,10 @@ class _LocalCoordinatorFactory:
                 capability,
                 self._database(request.child_run_id),
                 child_publisher=_RouterPublisher(self._router, request.child_run_id),
+                child_database_ownership_token=_PhysicalFileOwnershipToken(
+                    claim.database.device,
+                    claim.database.inode,
+                ) if claim.database is not None else None,
             )
         finally:
             self._refresh_claim(claim, checkpoints=False)

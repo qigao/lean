@@ -53,6 +53,18 @@ describe("ProjectStore", () => {
       documents: [{ ...snapshotFixture(2).documents[0]!, content_hash: "bad" }],
     }],
     ["non-finite layout", { ...snapshotFixture(2), layout: { x: Number.POSITIVE_INFINITY } }],
+    ["unknown document role", {
+      ...snapshotFixture(2),
+      documents: [{ ...snapshotFixture(2).documents[0]!, role: "physical.unknown" }],
+    }],
+    ["singleton document logical ID", {
+      ...snapshotFixture(2),
+      documents: [{ ...snapshotFixture(2).documents[0]!, logical_id: "unexpected" }],
+    }],
+    ["agent document without logical ID", {
+      ...snapshotFixture(2),
+      documents: [{ ...snapshotFixture(2).documents[0]!, role: "agent", logical_id: null }],
+    }],
   ])("rejects malformed %s without replacing accepted authority", (_label, malformed) => {
     const store = new ProjectStore(new RpcStub());
     const accepted = snapshotFixture(3);
@@ -70,6 +82,18 @@ describe("ProjectStore", () => {
       logical_id: null, pointer: "", related_ids: [], message_key: "bad",
     }])],
     ["report hash", { ...reportFixture(2), content_hash: "bad" }],
+    ["diagnostic message key syntax", reportFixture(2, [{
+      severity: "warning", code: "warning_code", document_role: "physical.world",
+      logical_id: null, pointer: "", related_ids: [], message_key: "Bad-Key",
+    }])],
+    ["diagnostic duplicate related IDs", reportFixture(2, [{
+      severity: "warning", code: "warning_code", document_role: "physical.world",
+      logical_id: null, pointer: "", related_ids: ["alpha", "alpha"], message_key: "warning_key",
+    }])],
+    ["diagnostic noncanonical related ID order", reportFixture(2, [{
+      severity: "warning", code: "warning_code", document_role: "physical.world",
+      logical_id: null, pointer: "", related_ids: ["beta", "alpha"], message_key: "warning_key",
+    }])],
   ])("rejects malformed %s without replacing accepted authority", (_label, malformed) => {
     const store = new ProjectStore(new RpcStub());
     const accepted = snapshotFixture(2);

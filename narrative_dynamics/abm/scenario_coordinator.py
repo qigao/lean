@@ -412,6 +412,7 @@ class ScenarioCoordinator:
         child_database_path: str | Path,
         *,
         child_publisher: object | None = None,
+        child_database_ownership_token: _PhysicalFileOwnershipToken | None = None,
     ) -> tuple["ScenarioCoordinator", ScenarioForkResult]:
         if not isinstance(request, ScenarioForkRequest):
             raise TypeError("scenario fork requires ScenarioForkRequest")
@@ -422,6 +423,10 @@ class ScenarioCoordinator:
         )
         if not callable(getattr(exact_child_publisher, "publish", None)):
             raise TypeError("scenario fork child publisher must provide publish")
+        if child_database_ownership_token is not None and not isinstance(
+            child_database_ownership_token, _PhysicalFileOwnershipToken
+        ):
+            raise TypeError("scenario fork child database ownership token is invalid")
         self._begin_operation("fork")
         try:
             with self._state_lock:
@@ -430,6 +435,7 @@ class ScenarioCoordinator:
                     capability,
                     child_database_path,
                     child_publisher=exact_child_publisher,
+                    child_database_ownership_token=child_database_ownership_token,
                 )
         finally:
             self._end_operation()
@@ -473,6 +479,7 @@ class ScenarioCoordinator:
         child_database_path: str | Path,
         *,
         child_publisher: object,
+        child_database_ownership_token: _PhysicalFileOwnershipToken | None = None,
     ) -> tuple["ScenarioCoordinator", ScenarioForkResult]:
         attempt = self._fork_attempts_by_idempotency_key.get(
             request.idempotency_key
@@ -551,10 +558,17 @@ class ScenarioCoordinator:
         child_path_value = Path(child_path)
         child_ownership_token: _PhysicalFileOwnershipToken | None = None
         try:
-            child_ownership_token = self._checkpoint_store._restore_owned(
-                request.checkpoint_hash,
-                child_path,
-            )
+            if child_database_ownership_token is None:
+                child_ownership_token = self._checkpoint_store._restore_owned(
+                    request.checkpoint_hash,
+                    child_path,
+                )
+            else:
+                child_ownership_token = self._checkpoint_store._restore_preclaimed_owned(
+                    request.checkpoint_hash,
+                    child_path,
+                    child_database_ownership_token,
+                )
             self._checkpoint_store._verify_restored_target(
                 child_path,
                 child_ownership_token,

@@ -1,4 +1,4 @@
-import type { RpcCaller } from "../rpc/client";
+import { JsonRpcError, JsonRpcProtocolError, type RpcCaller } from "../rpc/client";
 import type { StreamClient } from "../rpc/stream-client";
 import type {
   ProjectSnapshot,
@@ -108,7 +108,11 @@ export class StudioWorkflowElement extends HTMLElement {
           stateChanging: true, attempts: 1, requestId: `project-create:${projectId}`,
         });
         this.accept(created);
-      } catch {
+      } catch (createError) {
+        if (createError instanceof JsonRpcProtocolError ||
+            createError instanceof JsonRpcError && createError.code !== -32015) {
+          throw createError;
+        }
         created = await this.rpc.call<ProjectSnapshot>("project.snapshot", { project_id: projectId });
         this.accept(created);
       }
@@ -124,12 +128,18 @@ export class StudioWorkflowElement extends HTMLElement {
         });
         this.accept(imported);
       } catch (importError) {
+        if (importError instanceof JsonRpcError || importError instanceof JsonRpcProtocolError) {
+          throw importError;
+        }
         const reconciled = await this.rpc.call<ProjectSnapshot>(
           "project.snapshot", { project_id: projectId },
         );
         this.accept(reconciled);
-        if (reconciled.revision <= created.revision) throw importError;
-        imported = reconciled;
+        this.status(
+          `Project ${projectId} import outcome is ambiguous at authoritative revision ` +
+          `${reconciled.revision}. Review it or retry import.`,
+        );
+        return;
       }
       this.accept(imported);
       this.status(`Project ${projectId} imported at revision ${imported.revision}.`);

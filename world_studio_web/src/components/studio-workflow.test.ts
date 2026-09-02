@@ -1,7 +1,12 @@
 import { fireEvent, getByLabelText, getByRole } from "@testing-library/dom";
 import { afterEach, describe, expect, it } from "vitest";
 import type { JsonObject, ProjectSnapshot } from "../schema/studio-types";
-import { JsonRpcError, type JsonRpcCallOptions, type RpcCaller } from "../rpc/client";
+import {
+  JsonRpcError,
+  JsonRpcProtocolError,
+  type JsonRpcCallOptions,
+  type RpcCaller,
+} from "../rpc/client";
 import { ProjectStore } from "../state/project-store";
 import type { StudioWorkflowElement } from "./studio-workflow";
 import "./studio-workflow";
@@ -111,7 +116,9 @@ describe("studio workflow", () => {
       expect(rpc.calls).toEqual(ambiguousMethod === "create"
         ? ["project.create:1", "project.snapshot:1", "project.import:1"]
         : ["project.create:1", "project.import:1", "project.snapshot:1"]);
-      expect(getByRole(workflow, "status").textContent).toContain("imported");
+      expect(getByRole(workflow, "status").textContent).toContain(
+        ambiguousMethod === "create" ? "imported" : "ambiguous",
+      );
     },
   );
 
@@ -120,7 +127,7 @@ describe("studio workflow", () => {
       calls: string[] = [];
       async call<T>(method: string, _params: JsonObject, options?: JsonRpcCallOptions): Promise<T> {
         this.calls.push(`${method}:${options?.attempts ?? 1}`);
-        if (method === "project.create") throw new JsonRpcError(-32010, "Conflict");
+        if (method === "project.create") throw new JsonRpcError(-32015, "Conflict");
         if (method === "project.snapshot") return snapshot(1) as T;
         if (method === "project.import") return snapshot(2) as T;
         throw new Error("unexpected method");
@@ -138,5 +145,105 @@ describe("studio workflow", () => {
 
     expect(projectStore.snapshot?.revision).toBe(2);
     expect(rpc.calls).toEqual(["project.create:1", "project.snapshot:1", "project.import:1"]);
+  });
+
+  it.each([
+    ["authorization", () => new JsonRpcError(-32012, "Not authorized")],
+    ["validation", () => new JsonRpcError(-32602, "Invalid params")],
+    ["protocol", () => new JsonRpcProtocolError("Malformed create response")],
+  ])("does not reinterpret an explicit create %s failure as an existing project", async (_label, failure) => {
+    class ExplicitCreateFailureRpc implements RpcCaller {
+      calls: string[] = [];
+      async call<T>(method: string): Promise<T> {
+        this.calls.push(method);
+        throw failure();
+      }
+    }
+    const rpc = new ExplicitCreateFailureRpc();
+    const projectStore = new ProjectStore(rpc);
+    const workflow = document.createElement("studio-workflow") as StudioWorkflowElement;
+    workflow.rpc = rpc;
+    workflow.projectStore = projectStore;
+    document.body.append(workflow);
+
+    fireEvent.click(getByRole(workflow, "button", { name: "Import project" }));
+    for (let index = 0; index < 12; index += 1) await Promise.resolve();
+
+    expect(rpc.calls).toEqual(["project.create"]);
+    expect(projectStore.snapshot).toBeNull();
+    expect(getByRole(workflow, "status").textContent).toContain("failed");
+  });
+
+  it.each([
+    ["conflict", () => new JsonRpcError(-32015, "Import conflict")],
+    ["validation", () => new JsonRpcError(-32602, "Invalid import")],
+    ["protocol", () => new JsonRpcProtocolError("Malformed import response")],
+  ])("does not reinterpret an explicit import %s failure as unrelated revision progress", async (_label, failure) => {
+    class ExplicitImportFailureRpc implements RpcCaller {
+      calls: string[] = [];
+      async call<T>(method: string): Promise<T> {
+        this.calls.push(method);
+        if (method === "project.create") return snapshot(1) as T;
+        if (method === "project.import") throw failure();
+        if (method === "project.snapshot") return snapshot(9) as T;
+        throw new Error("unexpected method");
+      }
+    }
+    const rpc = new ExplicitImportFailureRpc();
+    const projectStore = new ProjectStore(rpc);
+    const workflow = document.createElement("studio-workflow") as StudioWorkflowElement;
+    workflow.rpc = rpc;
+    workflow.projectStore = projectStore;
+    document.body.append(workflow);
+
+    fireEvent.click(getByRole(workflow, "button", { name: "Import project" }));
+    for (let index = 0; index < 12; index += 1) await Promise.resolve();
+
+    expect(rpc.calls).toEqual(["project.create", "project.import"]);
+    expect(projectStore.snapshot?.revision).toBe(1);
+    expect(getByRole(workflow, "status").textContent).toContain("failed");
+  });
+
+  it("reports a lost import response as ambiguous and retries from the accepted snapshot", async () => {
+    class RetriableAmbiguousRpc implements RpcCaller {
+      calls: string[] = [];
+      private importAttempts = 0;
+      async call<T>(method: string, _params: JsonObject, options?: JsonRpcCallOptions): Promise<T> {
+        this.calls.push(`${method}:${options?.attempts ?? 1}`);
+        if (method === "project.create") {
+          if (this.importAttempts > 0) throw new JsonRpcError(-32015, "Already exists");
+          return snapshot(1) as T;
+        }
+        if (method === "project.import") {
+          this.importAttempts += 1;
+          if (this.importAttempts === 1) throw new Error("response lost after commit");
+          return snapshot(3) as T;
+        }
+        if (method === "project.snapshot") return snapshot(2) as T;
+        throw new Error("unexpected method");
+      }
+    }
+    const rpc = new RetriableAmbiguousRpc();
+    const projectStore = new ProjectStore(rpc);
+    const workflow = document.createElement("studio-workflow") as StudioWorkflowElement;
+    workflow.rpc = rpc;
+    workflow.projectStore = projectStore;
+    document.body.append(workflow);
+    const importButton = getByRole(workflow, "button", { name: "Import project" });
+
+    fireEvent.click(importButton);
+    for (let index = 0; index < 16; index += 1) await Promise.resolve();
+    expect(projectStore.snapshot?.revision).toBe(2);
+    expect(getByRole(workflow, "status").textContent).toContain("ambiguous");
+    expect(getByRole(workflow, "status").textContent).not.toContain(" imported ");
+
+    fireEvent.click(importButton);
+    for (let index = 0; index < 20; index += 1) await Promise.resolve();
+    expect(projectStore.snapshot?.revision).toBe(3);
+    expect(getByRole(workflow, "status").textContent).toContain("imported");
+    expect(rpc.calls).toEqual([
+      "project.create:1", "project.import:1", "project.snapshot:1",
+      "project.create:1", "project.snapshot:1", "project.import:1",
+    ]);
   });
 });
