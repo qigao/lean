@@ -652,6 +652,26 @@ class ScenarioProjectWorkspace:
             )
         return self._compile_snapshot(snapshot)
 
+    def compile_exact(
+        self,
+        project_id: str,
+        expected_revision: int,
+        expected_snapshot_hash: str,
+    ):
+        """Load and compile one exact immutable draft authority."""
+
+        snapshot, report = self._store.load_authority(project_id)
+        if (
+            snapshot.revision != expected_revision
+            or snapshot.content_hash != expected_snapshot_hash
+        ):
+            raise ScenarioProjectConflictError("scenario project revision is stale")
+        if report.has_errors:
+            raise ScenarioProjectValidationError(
+                "scenario project cannot compile", report
+            )
+        return snapshot, self._compile_snapshot(snapshot)
+
     @staticmethod
     def _compile_snapshot(snapshot: ScenarioDraftSnapshot):
         source = _source_from_snapshot(snapshot)

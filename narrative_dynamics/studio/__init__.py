@@ -40,6 +40,8 @@ from narrative_dynamics.studio.workspace import ScenarioProjectWorkspace
 from narrative_dynamics.studio.run_registry import (
     InMemoryScenarioRunRegistry,
     ScenarioRunRegistry,
+    ScenarioRunReservation,
+    ScenarioRunReservationConflictError,
 )
 from narrative_dynamics.studio.jsonrpc import (
     JsonRpcDispatcher,
@@ -97,6 +99,8 @@ __all__ = (
     "ScenarioProjectWorkspace",
     "ScenarioCoordinatorFactory",
     "ScenarioRunRegistry",
+    "ScenarioRunReservation",
+    "ScenarioRunReservationConflictError",
     "ScenarioWorkspaceLimits",
     "SQLiteScenarioProjectStore",
     "STUDIO_PERMISSIONS",

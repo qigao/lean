@@ -14,8 +14,10 @@ from narrative_dynamics.studio import (
 )
 from tests.test_world_studio_service import (
     LocalCoordinatorFactory,
+    NoCheckpointFactory,
     _capability,
     _create_and_import,
+    _run_create_params,
     _service,
 )
 
@@ -96,7 +98,19 @@ def test_application_errors_use_stable_codes_without_lookup_oracles(tmp_path: Pa
         _capability(project_ids=("unknown",), permissions=("project.read",)),
     )
     validation = dispatcher.parse_and_dispatch(
-        b'{"jsonrpc":"2.0","id":3,"method":"scenario.compile","params":{"project_id":"law-firm"}}',
+        json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "scenario.compile",
+                "params": {
+                    "project_id": "law-firm",
+                    "expected_revision": created["revision"],
+                    "expected_snapshot_hash": created["content_hash"],
+                },
+            },
+            separators=(",", ":"),
+        ).encode(),
         full,
     )
     stale_request = json.dumps(
@@ -256,3 +270,38 @@ def test_limits_are_positive_bounded_values() -> None:
         JsonRpcLimits(maximum_depth=0)
     with pytest.raises((TypeError, ValueError)):
         JsonRpcLimits(maximum_members=True)
+
+
+def test_missing_fork_checkpoint_store_maps_to_lifecycle_application_code(
+    tmp_path: Path,
+) -> None:
+    factory = NoCheckpointFactory(tmp_path)
+    service, _ = _service(tmp_path, factory=factory)
+    capability = _capability()
+    imported = _create_and_import(service, capability)
+    service.invoke("run.create", _run_create_params(imported), capability)
+    parent = service.invoke("run.view", {"run_id": "run-1"}, capability)
+    raw = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": "no-checkpoint-store",
+            "method": "run.fork",
+            "params": {
+                "fork_id": "fork-no-store",
+                "idempotency_key": "fork-no-store-key",
+                "source_run_id": "run-1",
+                "scenario_hash": parent["scenario_hash"],
+                "source_epoch": parent["coordinator_epoch"],
+                "checkpoint_hash": "sha256:" + "0" * 64,
+                "child_run_id": "run-child",
+                "child_stream_id": "stream-child",
+            },
+        },
+        separators=(",", ":"),
+    ).encode()
+
+    response = JsonRpcDispatcher(service).parse_and_dispatch(raw, capability)
+
+    assert _error_code(response) == -32013
+    assert json.loads(response)["error"]["message"] == "Invalid run lifecycle"
+    assert factory.owned_run_ids == ("run-1",)

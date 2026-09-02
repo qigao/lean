@@ -69,6 +69,27 @@ def _document(snapshot, role: str, logical_id: str | None = None):
     )
 
 
+def test_compile_exact_binds_one_loaded_revision_and_rejects_stale_identity(
+    tmp_path: Path,
+) -> None:
+    workspace, imported = _imported(tmp_path / "studio.sqlite3")
+
+    compiled_snapshot, compiled = workspace.compile_exact(
+        "law-firm", imported.revision, imported.content_hash
+    )
+
+    assert compiled_snapshot == imported
+    assert compiled.content_hash == imported.compiled_scenario_hash
+    with pytest.raises(ScenarioProjectConflictError, match="stale"):
+        workspace.compile_exact(
+            "law-firm", imported.revision + 1, imported.content_hash
+        )
+    with pytest.raises(ScenarioProjectConflictError, match="stale"):
+        workspace.compile_exact(
+            "law-firm", imported.revision, "sha256:" + "0" * 64
+        )
+
+
 def test_real_sqlite_workspace_import_survives_reopen(tmp_path: Path) -> None:
     database = tmp_path / "studio.sqlite3"
     workspace = _workspace(database)

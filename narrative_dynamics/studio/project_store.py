@@ -119,6 +119,10 @@ class ScenarioProjectStore(Protocol):
 
     def load(self, project_id: str) -> ScenarioDraftSnapshot: ...
 
+    def load_authority(
+        self, project_id: str
+    ) -> tuple[ScenarioDraftSnapshot, ScenarioDiagnosticReport]: ...
+
     def apply(
         self,
         operation: ScenarioDraftOperation,
@@ -316,6 +320,25 @@ class SQLiteScenarioProjectStore:
             if row is None:
                 raise ScenarioProjectNotFoundError("scenario project is unknown")
             return self._decode_snapshot(row[0])
+        except ScenarioProjectNotFoundError:
+            raise
+        except (OSError, sqlite3.Error, ValueError, TypeError, KeyError):
+            raise ScenarioProjectStorageError("scenario project storage failed") from None
+
+    def load_authority(
+        self, project_id: str
+    ) -> tuple[ScenarioDraftSnapshot, ScenarioDiagnosticReport]:
+        """Decode one snapshot/report pair from the same SQLite row read."""
+
+        try:
+            with self._connect() as connection:
+                row = self._project_row(connection, project_id)
+            if row is None:
+                raise ScenarioProjectNotFoundError("scenario project is unknown")
+            snapshot = self._decode_snapshot(row[0])
+            report = self._decode_report(row[1])
+            self._validate_snapshot_report(snapshot, report)
+            return snapshot, report
         except ScenarioProjectNotFoundError:
             raise
         except (OSError, sqlite3.Error, ValueError, TypeError, KeyError):

@@ -35,6 +35,7 @@ from narrative_dynamics.abm.simulation_output_contracts import (
     SimulationStateDeltaPayload,
     SimulationStoryProgressPayload,
 )
+from narrative_dynamics.contracts import stable_content_hash
 from narrative_dynamics.studio.capabilities import StudioCapability
 from narrative_dynamics.studio.contracts import (
     DraftOperationKind,
@@ -53,7 +54,10 @@ from narrative_dynamics.studio.project_store import (
     ScenarioProjectStorageError,
     ScenarioProjectValidationError,
 )
-from narrative_dynamics.studio.run_registry import ScenarioRunRegistry
+from narrative_dynamics.studio.run_registry import (
+    ScenarioRunRegistry,
+    ScenarioRunReservationConflictError,
+)
 from narrative_dynamics.studio.workspace import ScenarioProjectWorkspace
 
 
@@ -166,6 +170,20 @@ class ScenarioCoordinatorFactory(Protocol):
         request: ScenarioForkRequest,
         capability: ScenarioCommandCapability,
     ) -> tuple[ScenarioCoordinator, ScenarioForkResult]: ...
+
+    def abort_create(
+        self,
+        *,
+        project_id: str,
+        run_id: str,
+        stream_id: str,
+    ) -> None: ...
+
+    def abort_fork(
+        self,
+        coordinator: ScenarioCoordinator,
+        request: ScenarioForkRequest,
+    ) -> None: ...
 
 
 def _params(
@@ -841,11 +859,17 @@ class WorldStudioService:
         return _diagnostic_report(self._workspace.validate(project_id))
 
     def _scenario_compile(self, raw: object, capability: StudioCapability) -> JsonObject:
-        values = _params(raw, required=("project_id",))
+        values = _params(
+            raw,
+            required=("project_id", "expected_revision", "expected_snapshot_hash"),
+        )
         project_id = _text(values["project_id"], label="project ID")
         self._require_project(capability, project_id, "scenario.compile")
-        snapshot = self._workspace.snapshot(project_id)
-        scenario = self._workspace.compile(project_id)
+        snapshot, scenario = self._workspace.compile_exact(
+            project_id,
+            _integer(values["expected_revision"], label="expected revision"),
+            _text(values["expected_snapshot_hash"], label="expected snapshot hash"),
+        )
         return {
             "project_id": project_id,
             "revision": snapshot.revision,
@@ -868,31 +892,54 @@ class WorldStudioService:
         stream_id = _text(values["stream_id"], label="stream ID")
         self._require_project(capability, project_id, "run.create")
         self._require_run(capability, run_id, "run.create")
-        try:
-            self._runs.resolve(run_id)
-        except KeyError:
-            pass
-        else:
-            raise StudioConflictError()
         expected_revision = _integer(values["expected_revision"], label="expected revision")
         expected_hash = _text(values["expected_snapshot_hash"], label="expected snapshot hash")
-        snapshot = self._workspace.snapshot(project_id)
-        if snapshot.revision != expected_revision or snapshot.content_hash != expected_hash:
-            raise StudioStaleStateError()
-        scenario = self._workspace.compile(project_id)
-        current = self._workspace.snapshot(project_id)
-        if current != snapshot or scenario.content_hash != snapshot.compiled_scenario_hash:
-            raise StudioStaleStateError()
-        coordinator = self._factory.create(
-            scenario,
-            project_id=project_id,
-            run_id=run_id,
-            stream_id=stream_id,
+        request_hash = stable_content_hash(
+            {
+                "operation": "run.create",
+                "capability_hash": capability.content_hash,
+                "project_id": project_id,
+                "run_id": run_id,
+                "stream_id": stream_id,
+                "expected_revision": expected_revision,
+                "expected_snapshot_hash": expected_hash,
+            }
         )
         try:
-            self._runs.register(run_id, coordinator)
-        except ValueError:
+            reservation = self._runs.reserve(run_id, request_hash)
+        except ScenarioRunReservationConflictError:
             raise StudioConflictError() from None
+        if not reservation.acquired:
+            if reservation.coordinator is None:
+                raise RuntimeError("scenario run reservation lost its coordinator")
+            return _run_view(reservation.coordinator.run_view())
+
+        factory_started = False
+        try:
+            _, scenario = self._workspace.compile_exact(
+                project_id,
+                expected_revision,
+                expected_hash,
+            )
+            factory_started = True
+            coordinator = self._factory.create(
+                scenario,
+                project_id=project_id,
+                run_id=run_id,
+                stream_id=stream_id,
+            )
+            self._runs.commit(reservation, coordinator)
+        except Exception:
+            try:
+                if factory_started:
+                    self._factory.abort_create(
+                        project_id=project_id,
+                        run_id=run_id,
+                        stream_id=stream_id,
+                    )
+            finally:
+                self._runs.abort(reservation)
+            raise
         return _run_view(coordinator.run_view())
 
     def _coordinator(self, capability: StudioCapability, run_id: str, permission: str) -> ScenarioCoordinator:
@@ -976,10 +1023,6 @@ class WorldStudioService:
         self._require_run(capability, child_run_id, "run.fork")
         coordinator = self._runs.resolve(source_run_id)
         try:
-            registered_child = self._runs.resolve(child_run_id)
-        except KeyError:
-            registered_child = None
-        try:
             request = ScenarioForkRequest(
                 _text(values["fork_id"], label="fork ID"),
                 _text(values["idempotency_key"], label="idempotency key"),
@@ -992,43 +1035,66 @@ class WorldStudioService:
             )
         except (TypeError, ValueError):
             raise StudioInvalidParamsError("scenario fork is invalid") from None
+        command_capability = self._command_capability(
+            capability,
+            source_run_id,
+            fork=True,
+        )
+        reservation_hash = stable_content_hash(
+            {
+                "operation": "run.fork",
+                "request_hash": request.content_hash,
+                "capability_hash": command_capability.content_hash,
+            }
+        )
         try:
-            child, result = self._factory.fork(
-                coordinator,
-                request,
-                self._command_capability(capability, source_run_id, fork=True),
-            )
-        except ValueError as error:
-            detail = str(error)
-            if "was reused" in detail or "already exists" in detail:
-                raise StudioConflictError() from None
-            if "history limit" in detail:
-                raise StudioCapacityError() from None
-            if any(
-                marker in detail
-                for marker in (
-                    "source run does not match",
-                    "scenario does not match",
-                    "source epoch does not match",
-                    "child run must differ",
-                    "child stream must differ",
-                )
-            ):
-                raise StudioRunLifecycleError() from None
-            raise
-        if registered_child is not None:
-            if registered_child is not child:
-                raise StudioConflictError()
-        else:
+            reservation = self._runs.reserve(child_run_id, reservation_hash)
+        except ScenarioRunReservationConflictError:
+            raise StudioConflictError() from None
+        if not reservation.acquired:
+            if not isinstance(reservation.outcome, ScenarioForkResult):
+                raise RuntimeError("scenario fork reservation lost its result")
+            return _fork_result(reservation.outcome)
+
+        factory_started = False
+        try:
+            factory_started = True
             try:
-                self._runs.register(child_run_id, child)
-            except ValueError:
-                try:
-                    raced_child = self._runs.resolve(child_run_id)
-                except KeyError:
+                child, result = self._factory.fork(
+                    coordinator,
+                    request,
+                    command_capability,
+                )
+            except ValueError as error:
+                detail = str(error)
+                if "was reused" in detail or "already exists" in detail:
                     raise StudioConflictError() from None
-                if raced_child is not child:
-                    raise StudioConflictError() from None
+                if "history limit" in detail:
+                    raise StudioCapacityError() from None
+                if any(
+                    marker in detail
+                    for marker in (
+                        "source run does not match",
+                        "scenario does not match",
+                        "source epoch does not match",
+                        "child run must differ",
+                        "child stream must differ",
+                    )
+                ):
+                    raise StudioRunLifecycleError() from None
+                raise
+            except RuntimeError as error:
+                if str(error) == "scenario checkpoint store is not configured":
+                    raise StudioRunLifecycleError() from None
+                raise
+            self._runs.commit(reservation, child, outcome=result)
+        except Exception:
+            try:
+                if factory_started:
+                    self._factory.abort_fork(coordinator, request)
+            finally:
+                self._runs.abort(reservation)
+            raise
         return _fork_result(result)
 
     def _run_view(self, raw: object, capability: StudioCapability) -> JsonObject:
@@ -1069,8 +1135,9 @@ class WorldStudioService:
     def _output_get(self, raw: object, capability: StudioCapability) -> JsonObject:
         values = _params(raw, required=("run_id", "batch_hash"), optional=("agent_id",))
         run_id = _text(values["run_id"], label="run ID")
-        coordinator = self._coordinator(capability, run_id, "output.read")
+        batch_hash = _text(values["batch_hash"], label="batch hash")
         agent_id = _optional_text(values.get("agent_id"), label="agent ID")
+        self._require_run(capability, run_id, "output.read")
         if agent_id is not None:
             self._require_agent(capability, agent_id)
             audience = SimulationAudienceCapability(SimulationOutputAudience.AGENT, agent_id)
@@ -1078,9 +1145,10 @@ class WorldStudioService:
             audience = SimulationAudienceCapability(SimulationOutputAudience.ANALYST)
         else:
             audience = SimulationAudienceCapability(SimulationOutputAudience.PUBLIC)
+        coordinator = self._runs.resolve(run_id)
         return _output_view(
             coordinator.output_view(
-                _text(values["batch_hash"], label="batch hash"),
+                batch_hash,
                 audience,
             )
         )
