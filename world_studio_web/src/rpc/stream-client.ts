@@ -247,6 +247,7 @@ export class StreamClient extends EventTarget {
   private audienceGeneration = 0;
   private audienceSwitchTail: Promise<void> = Promise.resolve();
   private readonly retiredSubscriptionIds = new Set<string>();
+  private readonly unsubscribedSubscriptionIds = new Set<string>();
 
   constructor(private readonly endpoint: string, options: StreamClientOptions = {}) {
     super();
@@ -292,6 +293,28 @@ export class StreamClient extends EventTarget {
       const oldest = this.retiredSubscriptionIds.values().next().value as string | undefined;
       if (oldest === undefined) break;
       this.retiredSubscriptionIds.delete(oldest);
+    }
+  }
+
+  private async unsubscribeRetiring(subscriptionId: string): Promise<void> {
+    if (this.unsubscribedSubscriptionIds.has(subscriptionId)) return;
+    let result: JsonValue;
+    try {
+      result = await this.sendControl("stream.unsubscribe", { subscription_id: subscriptionId });
+    } catch (error) {
+      this.close();
+      throw error;
+    }
+    if (!isRecord(result) || !hasExactKeys(result, ["subscription_id", "unsubscribed"]) ||
+        result.subscription_id !== subscriptionId || result.unsubscribed !== true) {
+      this.close();
+      throw new StreamProtocolError("Audience switch unsubscribe response is malformed");
+    }
+    this.unsubscribedSubscriptionIds.add(subscriptionId);
+    while (this.unsubscribedSubscriptionIds.size > this.maximumRetainedIdentities) {
+      const oldest = this.unsubscribedSubscriptionIds.values().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.unsubscribedSubscriptionIds.delete(oldest);
     }
   }
 
@@ -626,15 +649,8 @@ export class StreamClient extends EventTarget {
     clearPrivateData();
     const nextBinding = this.switchedBinding(binding, generation);
     const operation = this.audienceSwitchTail.catch(() => undefined).then(async () => {
-      if (generation !== this.audienceGeneration) {
-        throw new StreamProtocolError("Audience switch was superseded by a newer selection");
-      }
       if (retiring !== null) {
-        const result = await this.sendControl("stream.unsubscribe", { subscription_id: retiring.subscription_id });
-        if (!isRecord(result) || !hasExactKeys(result, ["subscription_id", "unsubscribed"]) ||
-            result.subscription_id !== retiring.subscription_id || result.unsubscribed !== true) {
-          throw new StreamProtocolError("Audience switch unsubscribe response is malformed");
-        }
+        await this.unsubscribeRetiring(retiring.subscription_id);
       }
       if (generation !== this.audienceGeneration) {
         throw new StreamProtocolError("Audience switch was superseded by a newer selection");
@@ -642,13 +658,7 @@ export class StreamClient extends EventTarget {
       await this.subscribe(nextBinding);
       if (generation !== this.audienceGeneration) {
         this.retireSubscription(nextBinding.subscription_id);
-        const cleanup = await this.sendControl("stream.unsubscribe", {
-          subscription_id: nextBinding.subscription_id,
-        });
-        if (!isRecord(cleanup) || cleanup.subscription_id !== nextBinding.subscription_id ||
-            cleanup.unsubscribed !== true) {
-          this.close();
-        }
+        await this.unsubscribeRetiring(nextBinding.subscription_id);
         throw new StreamProtocolError("Audience switch was superseded by a newer selection");
       }
       this.activeBinding = structuredClone(nextBinding);

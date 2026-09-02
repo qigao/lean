@@ -425,3 +425,67 @@ Host used for this round: Python 3.12.7, Node 24.5.0, npm 11.5.2, Windows.
   breaking Monaco downgrade. No production or development dependency changed.
 - The Playwright `.last-run.json` artifact was removed before staging; generated result
   directories remain ignored.
+
+## Fix Round 3
+
+Review base and pre-commit head: `c7051e1feb9e8043fae9b61bceb6da6123fe4e3c` on
+`feature/world-studio-v22-1-workspace`. The final commit hash is reported in the handoff
+because a commit cannot embed its own resulting hash. This round changes only the
+same-tick audience-switch retirement finding.
+
+### RED to GREEN evidence
+
+The exact RED creates a real `StreamClient` with a server-like control registry capped
+at two active subscriptions, calls two audience switches synchronously without a
+microtask flush, and delivers an old Alice-private notification while both requests are
+pending. Current production failed with `1 failed, 13 passed`: the registry observed
+zero unsubscribe requests for `subscription-original`, not the required one. The trace
+confirmed the first deferred operation saw its stale generation and returned before
+cleaning its captured original binding; the second call had already detached
+`activeBinding` and therefore captured no retirement work.
+
+GREEN makes cleanup of every captured active binding the first unconditional action in
+the existing serialized audience-switch chain. Generation checks now gate only whether
+the candidate may subscribe and become active. Cleanup IDs are exact-validated,
+deduplicated, and bounded by the existing client identity limit; a rejected or malformed
+cleanup is ambiguous authority and closes the transport before rejecting. Candidate
+subscriptions that become stale after subscribe are retired through the same path.
+Control responses still bypass the notification delivery chain, and the generation-
+unique wire IDs from Fix Round 2 are unchanged.
+
+The server-registry test now proves the original ID is unsubscribed exactly once, the
+superseded candidate is never left subscribed, only the final Public generation remains
+active, and no old private output, acknowledgement, marker, or protocol error is
+produced. Six additional same-tick switch pairs keep registry occupancy at one and never
+hit its capacity. A separate cleanup-ambiguity RED observed the socket remain open after
+`unsubscribed: false`; GREEN closes it and leaves the client disconnected. Final focused
+StreamClient evidence is `15 passed`.
+
+### Verification, scope, and audit
+
+Host used for this round: Node 24.5.0, npm 11.5.2, Windows.
+
+- `npx vitest run src/rpc/stream-client.test.ts` — 1 file, 15 tests passed.
+- The first full unit/build pass found no behavior failure (`86 tests passed`; production
+  build passed) but typechecking correctly rejected four possibly undefined JSON values
+  in the new server-registry test harness. The harness now validates and narrows those
+  fields before echoing them; focused test and typecheck then passed.
+- Final `npm test -- --run` — 15 files, 86 tests passed.
+- Final `npm run typecheck` — exit 0.
+- Final `npm run build` — 2,752 modules transformed in 4.99s; only the known lazy Monaco
+  chunk-size warning remains.
+- `npx playwright test e2e/law-firm.spec.ts` against the production build and launcher
+  token mode — `1 passed (13.7s)`.
+- `git diff --check` — clean apart from host LF-to-CRLF notices.
+- Production changed only `world_studio_web/src/rpc/stream-client.ts`; coverage changed
+  only `world_studio_web/src/rpc/stream-client.test.ts`; this report is the third file.
+  No Python, RPC/schema, server, component, dependency, or persistence surface changed,
+  so the proportionate gate is the complete browser/build/real-E2E surface.
+- The forbidden and identity scan is clean. Only bounded transport subscription cleanup
+  state was added; it does not enter semantic content, command, fork, run, checkpoint,
+  recovery, or capability identities/hashes. Dependency manifests are unchanged.
+- `npm audit --omit=dev` still reports only the previously disclosed Monaco-vendored
+  DOMPurify chain (two findings: one low and one moderate); the offered forced fix is a
+  breaking Monaco downgrade.
+- The Playwright `.last-run.json` artifact was removed before staging; generated result
+  directories remain ignored.

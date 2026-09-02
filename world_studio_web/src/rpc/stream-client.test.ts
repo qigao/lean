@@ -440,6 +440,24 @@ describe("StreamClient strict JSON-RPC transport", () => {
     await expect(switching).resolves.toBeUndefined();
   });
 
+  it("closes the stream when retirement cleanup is ambiguous", async () => {
+    const { client, sockets } = await connectedClient();
+    const switching = client.switchAudience(binding({
+      subscription_id: "subscription-agent",
+      audience: "agent",
+      owner_agent_id: "alice",
+    }), () => undefined);
+    await flush();
+    sockets[0]!.respond(1, {
+      subscription_id: "subscription-1",
+      unsubscribed: false,
+    });
+
+    await expect(switching).rejects.toThrow("unsubscribe response is malformed");
+    expect(sockets[0]!.readyState).toBe(3);
+    expect(client.status).toBe("disconnected");
+  });
+
   it("never commits an older Agent switch after a newer public selection", async () => {
     const { client, sockets } = await connectedClient();
     let clears = 0;
@@ -468,6 +486,150 @@ describe("StreamClient strict JSON-RPC transport", () => {
     });
     await expect(newer).resolves.toBeUndefined();
     expect(client.binding?.audience).toBe("public");
+  });
+
+  it("retires the original subscription once when two audience switches start in the same tick", async () => {
+    const failures: Error[] = [];
+    const markers: JsonObject[] = [];
+    const original = binding({
+      subscription_id: "subscription-original",
+      audience: "agent",
+      owner_agent_id: "alice",
+    });
+    const { client, sockets, batches } = await connectedClient({
+      onProtocolError: (error) => failures.push(error),
+      onMarker: (_runId, marker) => markers.push(marker),
+    }, original);
+    const socket = sockets[0]!;
+    const active = new Set([original.subscription_id]);
+    const subscribed: string[] = [original.subscription_id];
+    const unsubscribed: string[] = [];
+    const capacityErrors: string[] = [];
+    let nextControl = 1;
+
+    const drainControls = async (): Promise<void> => {
+      for (let pass = 0; pass < 8; pass += 1) {
+        await flush();
+        let progressed = false;
+        while (nextControl < socket.sent.length) {
+          progressed = true;
+          const index = nextControl;
+          nextControl += 1;
+          const request = socket.request(index);
+          const params = request.params as JsonObject;
+          const subscriptionId = params.subscription_id;
+          if (typeof subscriptionId !== "string") {
+            throw new Error("Control request subscription ID is malformed");
+          }
+          if (request.method === "stream.unsubscribe") {
+            unsubscribed.push(subscriptionId);
+            socket.respond(index, {
+              subscription_id: subscriptionId,
+              unsubscribed: active.delete(subscriptionId),
+            });
+          } else if (request.method === "stream.subscribe") {
+            if (active.size >= 2) {
+              capacityErrors.push(subscriptionId);
+              socket.receive({
+                jsonrpc: "2.0",
+                id: request.id,
+                error: { code: -32015, message: "Subscription capacity exceeded" },
+              });
+            } else {
+              active.add(subscriptionId);
+              subscribed.push(subscriptionId);
+              const runId = params.run_id;
+              const streamId = params.stream_id;
+              const kinds = params.kinds;
+              const audience = params.audience;
+              if (typeof runId !== "string" || typeof streamId !== "string" ||
+                  !Array.isArray(kinds) || typeof audience !== "string") {
+                throw new Error("Subscribe request binding is malformed");
+              }
+              const result: JsonObject = {
+                subscription_id: subscriptionId,
+                run_id: runId,
+                stream_id: streamId,
+                kinds,
+                audience,
+              };
+              if (params.owner_agent_id !== undefined) {
+                result.owner_agent_id = params.owner_agent_id;
+              }
+              socket.respond(index, result);
+            }
+          } else {
+            throw new Error(`Unexpected control method ${String(request.method)}`);
+          }
+          await flush();
+        }
+        if (!progressed) return;
+      }
+      throw new Error("Control drain did not become idle");
+    };
+
+    const superseded = client.switchAudience(binding({
+      subscription_id: "subscription-candidate-agent",
+      audience: "agent",
+      owner_agent_id: "alice",
+    }), () => undefined).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    const selected = client.switchAudience(binding({
+      subscription_id: "subscription-final-public",
+      audience: "public",
+      owner_agent_id: null,
+    }), () => undefined);
+    socket.receive({
+      jsonrpc: "2.0",
+      method: "stream.output",
+      params: {
+        subscription_id: original.subscription_id,
+        output: agentOutput(1, 1, "1"),
+      },
+    });
+
+    await drainControls();
+    expect(await superseded).toBeInstanceOf(StreamProtocolError);
+    await expect(selected).resolves.toBeUndefined();
+    expect(unsubscribed.filter((item) => item === original.subscription_id)).toHaveLength(1);
+    expect(subscribed.some((item) => item.includes("candidate-agent"))).toBe(false);
+    expect(active).toEqual(new Set([client.binding!.subscription_id]));
+    expect(client.binding?.audience).toBe("public");
+    expect(batches).toEqual([]);
+    expect(socket.sent.map((raw) => JSON.parse(raw) as JsonObject)
+      .filter((request) => request.method === "stream.acknowledge")).toEqual([]);
+    expect(markers).toEqual([]);
+    expect(failures).toEqual([]);
+
+    for (let cycle = 0; cycle < 6; cycle += 1) {
+      const skipped = client.switchAudience(binding({
+        subscription_id: `subscription-repeat-candidate-${cycle}`,
+        audience: "agent",
+        owner_agent_id: "alice",
+      }), () => undefined).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      const retained = client.switchAudience(binding({
+        subscription_id: `subscription-repeat-final-${cycle}`,
+        audience: "public",
+        owner_agent_id: null,
+      }), () => undefined);
+      await drainControls();
+      expect(await skipped).toBeInstanceOf(StreamProtocolError);
+      await expect(retained).resolves.toBeUndefined();
+      expect(active).toEqual(new Set([client.binding!.subscription_id]));
+    }
+
+    expect(capacityErrors).toEqual([]);
+    expect(subscribed.some((item) => item.includes("repeat-candidate"))).toBe(false);
+    expect(new Set(unsubscribed).size).toBe(unsubscribed.length);
+    expect(active).toEqual(new Set([client.binding!.subscription_id]));
+    expect(batches).toEqual([]);
+    expect(markers).toEqual([]);
+    expect(failures).toEqual([]);
   });
 
   it("detaches a retiring Agent delivery generation before unsubscribe completes", async () => {
