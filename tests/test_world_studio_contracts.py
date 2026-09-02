@@ -217,3 +217,19 @@ def test_layout_operation_rejects_domain_document_addressing() -> None:
             pointer="/places/records",
             value={"x": 10, "y": 20},
         )
+
+
+def test_replace_document_rejects_a_pointer_that_would_be_ignored() -> None:
+    with pytest.raises(ValueError, match="replace"):
+        ScenarioDraftOperation(
+            "op-replace",
+            "key-replace",
+            "project-1",
+            1,
+            SNAPSHOT_HASH,
+            "physical.world",
+            None,
+            DraftOperationKind.REPLACE_DOCUMENT,
+            pointer="/places/0",
+            value={"places": []},
+        )

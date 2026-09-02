@@ -378,6 +378,9 @@ class SQLiteScenarioProjectStore:
         expected_revision: int,
         expected_hash: str,
     ) -> ScenarioDraftSnapshot:
+        self._validate_snapshot_report(snapshot, report)
+        if snapshot.revision != expected_revision + 1:
+            raise ValueError("scenario import revision must increase by one")
         try:
             with self._connect() as connection:
                 connection.execute("BEGIN IMMEDIATE")
@@ -387,6 +390,8 @@ class SQLiteScenarioProjectStore:
                 current = self._decode_snapshot(row[0])
                 if current.revision != expected_revision or current.content_hash != expected_hash:
                     raise ScenarioProjectConflictError("scenario project revision is stale")
+                if snapshot.revision != current.revision + 1:
+                    raise ValueError("scenario import revision must increase by one")
                 connection.execute(
                     "UPDATE projects SET snapshot_json = ?, report_json = ?, "
                     "journal_cursor = NULL, redo_entry = NULL WHERE project_id = ?",
@@ -409,6 +414,13 @@ class SQLiteScenarioProjectStore:
         next_snapshot: ScenarioDraftSnapshot,
         report: ScenarioDiagnosticReport,
     ) -> ScenarioDraftOperationResult:
+        if not isinstance(operation, ScenarioDraftOperation):
+            raise TypeError("scenario store apply requires ScenarioDraftOperation")
+        self._validate_snapshot_report(next_snapshot, report)
+        if operation.project_id != next_snapshot.project_id:
+            raise ValueError("scenario transition project identities must match")
+        if next_snapshot.revision != operation.expected_revision + 1:
+            raise ValueError("scenario transition revision must increase by one")
         result = ScenarioDraftOperationResult(
             operation.content_hash,
             operation.expected_revision,
@@ -452,6 +464,11 @@ class SQLiteScenarioProjectStore:
                     or current.content_hash != operation.expected_snapshot_hash
                 ):
                     raise ScenarioProjectConflictError("scenario project revision is stale")
+                if (
+                    next_snapshot.project_id != current.project_id
+                    or next_snapshot.revision != current.revision + 1
+                ):
+                    raise ValueError("scenario transition state is inconsistent")
                 if row[4] >= self._limits.accepted_operation_journal:
                     raise ScenarioProjectCapacityError(
                         "scenario project operation journal is full"
@@ -504,6 +521,22 @@ class SQLiteScenarioProjectStore:
             raise
         except (OSError, sqlite3.Error, ValueError, TypeError, KeyError):
             raise ScenarioProjectStorageError("scenario project storage failed") from None
+
+    @staticmethod
+    def _validate_snapshot_report(
+        snapshot: ScenarioDraftSnapshot,
+        report: ScenarioDiagnosticReport,
+    ) -> None:
+        if not isinstance(snapshot, ScenarioDraftSnapshot):
+            raise TypeError("scenario transition snapshot must be ScenarioDraftSnapshot")
+        if not isinstance(report, ScenarioDiagnosticReport):
+            raise TypeError("scenario transition report must be ScenarioDiagnosticReport")
+        if snapshot.project_id != report.project_id:
+            raise ValueError("scenario transition project identities must match")
+        if snapshot.revision != report.revision:
+            raise ValueError("scenario transition revisions must match")
+        if snapshot.diagnostic_report_hash != report.content_hash:
+            raise ValueError("scenario transition diagnostic hash must match")
 
     @staticmethod
     def _revised_state(

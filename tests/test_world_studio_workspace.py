@@ -8,10 +8,14 @@ import pytest
 
 from narrative_dynamics.studio import (
     DraftOperationKind,
+    SQLiteScenarioProjectStore,
+    ScenarioDiagnosticReport,
     ScenarioDraftOperation,
+    ScenarioDraftSnapshot,
     ScenarioProjectCapacityError,
     ScenarioProjectConflictError,
     ScenarioProjectStorageError,
+    ScenarioProjectValidationError,
     ScenarioProjectWorkspace,
     ScenarioWorkspaceLimits,
 )
@@ -198,6 +202,25 @@ def test_json_operations_have_rfc6901_set_insert_remove_move_and_replace_semanti
     assert _document(snapshot, "physical.world").value["version"] == "2"
 
 
+def test_move_rejects_object_members_instead_of_treating_them_as_array_elements(
+    tmp_path: Path,
+) -> None:
+    workspace, imported = _imported(tmp_path / "studio.sqlite3")
+    operation = _operation(
+        imported,
+        operation_id="op-object-move",
+        idempotency_key="key-object-move",
+        kind=DraftOperationKind.MOVE_VALUE,
+        from_pointer="/places/0/label",
+        pointer="/places/1/moved_label",
+        value=None,
+    )
+
+    with pytest.raises(ScenarioProjectValidationError, match="array"):
+        workspace.apply(operation)
+    assert workspace.snapshot("law-firm") == imported
+
+
 def test_layout_revision_changes_workspace_identity_only(tmp_path: Path) -> None:
     workspace, imported = _imported(tmp_path / "studio.sqlite3")
     result = workspace.apply(
@@ -338,3 +361,63 @@ def test_operation_limit_counts_typed_payload_not_identity_envelope(
     )
 
     assert result.next_snapshot.revision == imported.revision + 1
+
+
+def test_store_import_snapshot_rejects_cross_project_report_before_write(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "studio.sqlite3"
+    workspace = _workspace(database)
+    alpha = workspace.create_project("alpha")
+    beta = workspace.create_project("beta")
+    store = SQLiteScenarioProjectStore(database, ScenarioWorkspaceLimits())
+    beta_report = ScenarioDiagnosticReport(
+        "beta", 2, workspace.validate("beta").diagnostics
+    )
+    cross_project = ScenarioDraftSnapshot(
+        "alpha", 2, (), {}, beta_report.content_hash, None
+    )
+
+    with pytest.raises(ValueError, match="project identities"):
+        store.import_snapshot(
+            cross_project,
+            beta_report,
+            alpha.revision,
+            alpha.content_hash,
+        )
+
+    assert workspace.snapshot("alpha") == alpha
+    assert workspace.snapshot("beta") == beta
+
+
+def test_store_apply_rejects_cross_project_next_state_before_write(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "studio.sqlite3"
+    workspace = _workspace(database)
+    alpha = workspace.create_project("alpha")
+    beta = workspace.create_project("beta")
+    store = SQLiteScenarioProjectStore(database, ScenarioWorkspaceLimits())
+    beta_report = ScenarioDiagnosticReport(
+        "beta", 2, workspace.validate("beta").diagnostics
+    )
+    beta_next = ScenarioDraftSnapshot(
+        "beta", 2, (), {}, beta_report.content_hash, None
+    )
+    operation = ScenarioDraftOperation(
+        "op-cross-project",
+        "key-cross-project",
+        "alpha",
+        alpha.revision,
+        alpha.content_hash,
+        "physical.world",
+        None,
+        DraftOperationKind.REMOVE_VALUE,
+        pointer="/unused",
+    )
+
+    with pytest.raises(ValueError, match="project identities"):
+        store.apply(operation, beta_next, beta_report)
+
+    assert workspace.snapshot("alpha") == alpha
+    assert workspace.snapshot("beta") == beta

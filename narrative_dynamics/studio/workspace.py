@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
+import ctypes
+import errno
 import os
 import re
 import secrets
 import shutil
+import sys
 from typing import cast
 
 from narrative_dynamics.abm.scenario_compiler import compile_situated_scenario_package
@@ -68,9 +71,55 @@ _SINGLETON_EXPORT_PATHS = {
 def _publish_stage(stage: Path, target: Path) -> None:
     """Private publication seam: atomically rename without replacing a target."""
 
-    if target.exists() or target.is_symlink():
-        raise FileExistsError
-    os.rename(stage, target)
+    if stage.parent != target.parent:
+        raise ValueError("scenario publication requires a same-parent stage")
+    if sys.platform == "win32":
+        move_file = ctypes.WinDLL("kernel32", use_last_error=True).MoveFileExW
+        move_file.argtypes = (ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32)
+        move_file.restype = ctypes.c_int
+        if move_file(str(stage), str(target), 0):
+            return
+        error = ctypes.get_last_error()
+        if error in {80, 183}:
+            raise FileExistsError(error, "scenario export target exists")
+        raise OSError(error, "scenario package publication failed")
+    if sys.platform.startswith("linux"):
+        libc = ctypes.CDLL(None, use_errno=True)
+        rename_at2 = getattr(libc, "renameat2", None)
+        if rename_at2 is None:
+            raise OSError(errno.ENOTSUP, "atomic no-replace rename is unavailable")
+        rename_at2.argtypes = (
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        )
+        rename_at2.restype = ctypes.c_int
+        if rename_at2(-100, os.fsencode(stage), -100, os.fsencode(target), 1) == 0:
+            return
+        error = ctypes.get_errno()
+        if error in {errno.EEXIST, errno.ENOTEMPTY}:
+            raise FileExistsError(error, "scenario export target exists")
+        raise OSError(error, "scenario package publication failed")
+    if sys.platform == "darwin":
+        libc = ctypes.CDLL(None, use_errno=True)
+        rename_exclusive = getattr(libc, "renamex_np", None)
+        if rename_exclusive is None:
+            raise OSError(errno.ENOTSUP, "atomic no-replace rename is unavailable")
+        rename_exclusive.argtypes = (
+            ctypes.c_char_p,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        )
+        rename_exclusive.restype = ctypes.c_int
+        if rename_exclusive(os.fsencode(stage), os.fsencode(target), 4) == 0:
+            return
+        error = ctypes.get_errno()
+        if error in {errno.EEXIST, errno.ENOTEMPTY}:
+            raise FileExistsError(error, "scenario export target exists")
+        raise OSError(error, "scenario package publication failed")
+    raise OSError(errno.ENOTSUP, "atomic no-replace rename is unavailable")
 
 
 def _write_fsynced(path: Path, data: bytes) -> None:
@@ -94,6 +143,30 @@ def _export_document_path(document: ScenarioDraftDocument) -> str:
         assert document.logical_id is not None
         return f"agents/{document.logical_id}.json"
     return _SINGLETON_EXPORT_PATHS[document.role]
+
+
+def _canonical_manifest(
+    scenario_id: str,
+    version: str,
+    documents: tuple[ScenarioDraftDocument, ...],
+) -> dict[str, object]:
+    return {
+        "schema": SCENARIO_PACKAGE_SCHEMA,
+        "scenario_id": scenario_id,
+        "version": version,
+        "documents": [
+            {
+                "role": document.role,
+                "path": _export_document_path(document),
+                "sha256": document.content_hash,
+            }
+            for document in documents
+        ],
+    }
+
+
+def _export_interleave(snapshot: ScenarioDraftSnapshot) -> None:
+    """Private deterministic seam for export concurrency regression coverage."""
 
 
 def _has_symlink_component(path: Path) -> bool:
@@ -130,19 +203,11 @@ def _source_from_snapshot(snapshot: ScenarioDraftSnapshot) -> ScenarioPackageSou
         for document in snapshot.documents
     )
     raw_manifest_hash = canonical_json_hash(
-        {
-            "schema": "narrative-dynamics.scenario-package/v1",
-            "scenario_id": snapshot.scenario_id,
-            "version": snapshot.version,
-            "documents": [
-                {
-                    "role": document.role,
-                    "logical_id": document.logical_id,
-                    "sha256": document.content_hash,
-                }
-                for document in snapshot.documents
-            ],
-        }
+        _canonical_manifest(
+            snapshot.scenario_id,
+            snapshot.version,
+            snapshot.documents,
+        )
     )
     return ScenarioPackageSource(
         snapshot.scenario_id,
@@ -232,6 +297,21 @@ def _remove_value(root: object, pointer: str) -> tuple[object, object]:
     else:
         raise ScenarioProjectValidationError("draft operation JSON pointer is unknown")
     return root, removed
+
+
+def _move_array_value(root: object, from_pointer: str, pointer: str) -> object:
+    source_parent, source_token = _parent(root, _decode_pointer(from_pointer))
+    target_parent, target_token = _parent(root, _decode_pointer(pointer))
+    if not isinstance(source_parent, list) or not isinstance(target_parent, list):
+        raise ScenarioProjectValidationError(
+            "draft move source and target must be array positions"
+        )
+    source_index = _array_index(source_token, len(source_parent), insertion=False)
+    target_length = len(target_parent) - (1 if source_parent is target_parent else 0)
+    target_index = _array_index(target_token, target_length, insertion=True)
+    moved = source_parent.pop(source_index)
+    target_parent.insert(target_index, moved)
+    return root
 
 
 class ScenarioProjectWorkspace:
@@ -361,11 +441,11 @@ class ScenarioProjectWorkspace:
                 for index, item in enumerate(source.documents)
             ),
             canonical_json_hash(
-                {
-                    "scenario_id": source.scenario_id,
-                    "version": source.version,
-                    "documents": [item.content_hash for item in canonical_documents],
-                }
+                _canonical_manifest(
+                    source.scenario_id,
+                    source.version,
+                    canonical_documents,
+                )
             ),
         )
         compiled, report = compile_with_report(project_id, revision, canonical_source)
@@ -474,8 +554,9 @@ class ScenarioProjectWorkspace:
                 value, _ = _remove_value(value, operation.pointer)
             elif operation.kind is DraftOperationKind.MOVE_VALUE:
                 assert operation.from_pointer is not None
-                value, moved = _remove_value(value, operation.from_pointer)
-                value = _set_value(value, operation.pointer, moved, insert=True)
+                value = _move_array_value(
+                    value, operation.from_pointer, operation.pointer
+                )
             if not isinstance(value, dict):
                 raise ScenarioProjectValidationError(
                     "scenario draft document root must be an object"
@@ -570,6 +651,10 @@ class ScenarioProjectWorkspace:
             raise ScenarioProjectValidationError(
                 "scenario project cannot compile", report
             )
+        return self._compile_snapshot(snapshot)
+
+    @staticmethod
+    def _compile_snapshot(snapshot: ScenarioDraftSnapshot):
         source = _source_from_snapshot(snapshot)
         compiled = compile_situated_scenario_package(source)
         if snapshot.compiled_scenario_hash != compiled.content_hash:
@@ -591,15 +676,18 @@ class ScenarioProjectWorkspace:
         export_root = self._export_root
         if export_root.is_symlink() or not export_root.is_dir():
             raise ScenarioProjectValidationError("scenario package publication failed")
-        target = export_root / target_name
+        snapshot = self._store.load(project_id)
+        _export_interleave(snapshot)
+        compiled = self._compile_snapshot(snapshot)
+        published_name = (
+            f"{target_name}-{compiled.package_hash.removeprefix('sha256:')}"
+        )
+        target = export_root / published_name
         if target.exists() or target.is_symlink():
             raise ScenarioProjectConflictError("scenario export target already exists")
-        snapshot = self._store.load(project_id)
-        compiled = self.compile(project_id)
         stage = export_root / f".{target_name}.stage-{secrets.token_hex(12)}"
         try:
             stage.mkdir()
-            locators: list[dict[str, object]] = []
             for document in snapshot.documents:
                 relative_path = _export_document_path(document)
                 raw_value = scenario_document_raw_value(document.role, document.value)
@@ -608,19 +696,13 @@ class ScenarioProjectWorkspace:
                 if raw_hash != document.content_hash:
                     raise ValueError
                 _write_fsynced(stage / Path(relative_path), data)
-                locators.append(
-                    {
-                        "role": document.role,
-                        "path": relative_path,
-                        "sha256": raw_hash,
-                    }
-                )
-            manifest = {
-                "schema": SCENARIO_PACKAGE_SCHEMA,
-                "scenario_id": snapshot.scenario_id,
-                "version": snapshot.version,
-                "documents": locators,
-            }
+            if snapshot.scenario_id is None or snapshot.version is None:
+                raise ValueError
+            manifest = _canonical_manifest(
+                snapshot.scenario_id,
+                snapshot.version,
+                snapshot.documents,
+            )
             _write_fsynced(stage / "scenario.json", canonical_json_bytes(manifest))
             _publish_stage(stage, target)
         except FileExistsError:
@@ -637,7 +719,7 @@ class ScenarioProjectWorkspace:
             project_id,
             snapshot.revision,
             snapshot.content_hash,
-            target_name,
+            published_name,
             compiled.package_hash,
             compiled.content_hash,
         )

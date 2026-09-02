@@ -505,6 +505,8 @@ class ScenarioDraftOperation:
             label="draft operation pointer",
             allow_empty=kind in {DraftOperationKind.REPLACE_DOCUMENT, DraftOperationKind.SET_LAYOUT},
         )
+        if kind is DraftOperationKind.REPLACE_DOCUMENT and pointer:
+            raise ValueError("replace document operation requires an empty pointer")
         frozen_value = _freeze_json(self.value, label="draft operation value")
         from_pointer = self.from_pointer
         if kind is DraftOperationKind.MOVE_VALUE:
