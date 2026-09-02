@@ -556,6 +556,7 @@ class ScenarioCoordinator:
 
         child_path = _database_path(child_database_path)
         child_path_value = Path(child_path)
+        caller_owns_child_database = child_database_ownership_token is not None
         child_ownership_token: _PhysicalFileOwnershipToken | None = None
         try:
             if child_database_ownership_token is None:
@@ -617,14 +618,15 @@ class ScenarioCoordinator:
         except _ScenarioCheckpointRestoreTargetExistsError:
             raise
         except _ScenarioCheckpointOwnedRestoreError as error:
-            _cleanup_fork_database(
-                self._checkpoint_store,
-                child_path_value,
-                error.ownership_token,
-            )
+            if not caller_owns_child_database:
+                _cleanup_fork_database(
+                    self._checkpoint_store,
+                    child_path_value,
+                    error.ownership_token,
+                )
             raise RuntimeError(str(error)) from None
         except Exception:
-            if child_ownership_token is not None:
+            if child_ownership_token is not None and not caller_owns_child_database:
                 _cleanup_fork_database(
                     self._checkpoint_store,
                     child_path_value,

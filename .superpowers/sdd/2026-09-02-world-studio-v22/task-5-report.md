@@ -732,3 +732,78 @@ Host: Python 3.12.7, Node 24.5.0, npm 11.5.2, Windows.
 
 Resulting local commit hash is recorded in the handoff because a commit cannot contain
 its own hash. No push, merge, or PR is performed by this round.
+
+## Final Integration Fix Round 3
+
+Review base and pre-commit head: `0704ad2` on
+`feature/world-studio-v22-1-workspace`. This narrowly scoped round addresses the two
+Important findings from the Round 2 re-review plus directly related browser diagnostic
+contract parity. It adds no dependency, protocol method, or semantic hash input.
+
+### RED to GREEN evidence
+
+1. Preclaimed fork cleanup ownership. Two real factory/service fault-injection REDs
+   raised a distinct `ValueError` immediately after checkpoint target ownership
+   verification 1 (post-preclaimed restore) and verification 3 (after child/result
+   construction at the final ownership boundary). In both cases the coordinator
+   unlinked the caller-owned database; factory refresh and service abort then failed and
+   masked the original error as `StudioRunLifecycleError` (`2 failed`). GREEN records
+   whether the target was preclaimed by the caller and never invokes coordinator cleanup
+   for that mode, including `_ScenarioCheckpointOwnedRestoreError` and every generic
+   failure after restore. Legacy `_restore_owned` forks retain their existing exact-token
+   cleanup. The factory can therefore verify its still-existing claimed inode in
+   `finally`; service abort removes the exact child database, owner marker, metadata
+   entry, and process claim. Both injected errors remain their original `ValueError`,
+   all factory artifacts are absent, and the exact same fork request and child ID then
+   succeed (`2 passed`). A direct coordinator regression injects
+   `_ScenarioCheckpointOwnedRestoreError`, makes cleanup itself fail if called, proves
+   the exact empty caller-owned inode remains, and then proves a legacy retry succeeds
+   (`1 passed`). Affected launcher/service/checkpoint coverage is `60 passed, 1 skipped`;
+   full coordinator coverage is `52 passed, 30 subtests passed`.
+2. Browser diagnostic parity. Python contracts were inspected directly. Draft documents
+   retain the closed `DOCUMENT_ROLES` set and `agent`/logical-ID coupling. Diagnostics
+   now independently accept any Python-compatible safe identity for `document_role` and
+   optional `logical_id`, including package-level diagnostics. Pointer validation mirrors
+   RFC 6901 with empty root allowed, leading slash required otherwise, and only `~0` and
+   `~1` escapes. Stable code/message keys and strictly sorted unique related IDs remain.
+   Reports now require Python's nondecreasing `_diagnostic_key` order:
+   `(document_role, logical_id-or-empty, pointer, code, severity, related_ids)`; exact
+   duplicate diagnostics remain allowed. Code-point comparison mirrors Python string
+   ordering rather than locale or UTF-16 code-unit order.
+
+   Focused RED was `7 failed`: the serialized real-shape `manifest_missing` package
+   diagnostic, a package compiler diagnostic with independent non-null logical ID and
+   valid escaped pointer, three invalid pointers, noncanonical report ordering, and a
+   valid `set_layout` apply returning a manifest-missing report. All seven are GREEN;
+   the complete ProjectStore suite is `29 passed`, including the layout mutation and
+   exact accepted snapshot/report authority checks.
+
+### Verification, scope, and audits
+
+Host: Python 3.12.7, Node 24.5.0, npm 11.5.2, Windows.
+
+- Complete World Studio/core ABM pytest gate: `267 passed, 2 skipped, 89 subtests passed
+  in 74.73s`. The skips remain Windows host symlink-privilege cases.
+- `python -m unittest discover -s tests -p "test_network_abm*.py" -q` — `Ran 699
+  tests in 74.501s`, `OK (skipped=1)`.
+- `python -m compileall -q narrative_dynamics tests tools/run_world_studio.py` — exit 0.
+- `npm test -- --run` — 15 files, 129 tests passed. `npm run typecheck` passed.
+- `npm run build` — 2,752 modules transformed; only the known large lazy Monaco chunk
+  warning remains.
+- Real launcher/token-mode `npx playwright test e2e/law-firm.spec.ts` — `1 passed
+  (13.7s)`.
+- `git diff --check` is clean apart from host LF-to-CRLF notices. Generated Playwright
+  artifacts remain ignored. Dependency manifests are unchanged.
+- `npm audit --omit=dev` still reports the known Monaco-vendored DOMPurify chain (`2
+  vulnerabilities`: one low, one moderate). The offered forced fix is a breaking Monaco
+  downgrade and remains deferred.
+- Review-noted optional public coordinator keyword exposure of the private ownership
+  token is recorded but deferred; changing that API is not required to close this
+  ownership bug. The future async `onOutput` stale-delivery edge is also deferred because
+  it is outside the current production path and this round's scope.
+- No React/React Flow, gRPC/Protobuf, distributed worker/broker, provider/LLM, state-set
+  RPC, or live Blender implementation was introduced. Ownership provenance and browser
+  validation remain transport/persistence boundary concerns only.
+
+Resulting local commit hash is recorded in the handoff because a commit cannot contain
+its own hash. No push, merge, or PR is performed by this round.

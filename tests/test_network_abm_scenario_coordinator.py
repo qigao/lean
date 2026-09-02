@@ -12,6 +12,8 @@ from unittest.mock import patch
 from narrative_dynamics.abm import scenario_coordinator as coordinator_module
 from narrative_dynamics.abm.scenario_checkpoint_store import (
     LocalScenarioCheckpointStore,
+    _PhysicalFileOwnershipToken,
+    _ScenarioCheckpointOwnedRestoreError,
 )
 from narrative_dynamics.abm.scenario_compiler import (
     compile_situated_scenario_package,
@@ -2031,6 +2033,57 @@ class ScenarioCoordinatorTests(unittest.TestCase):
                 coordinator.fork(failed_request, allowed, failed_target)
         self.assertFalse(failed_target.exists())
         retried, _ = coordinator.fork(failed_request, allowed, failed_target)
+        self.assertIs(retried.run_view().status, ScenarioRunStatus.PAUSED)
+
+    def test_preclaimed_owned_restore_failure_is_left_for_caller_cleanup(self) -> None:
+        coordinator, store, checkpoint = self.checkpointed_coordinator()
+        request = self.fork_request(
+            coordinator,
+            checkpoint.content_hash,
+            fork_id="preclaimed-owned-failure",
+            idempotency_key="preclaimed-owned-failure",
+            child_run_id="preclaimed-owned-child",
+            child_stream_id="preclaimed-owned-stream",
+        )
+        target = self.root / "preclaimed-owned-child.sqlite3"
+        target.write_bytes(b"")
+        target_token = _PhysicalFileOwnershipToken.from_stat(
+            target.stat(follow_symlinks=False)
+        )
+
+        with patch.object(
+            store,
+            "_restore_preclaimed_owned",
+            side_effect=_ScenarioCheckpointOwnedRestoreError(
+                "preclaimed restore failure",
+                target_token,
+            ),
+        ), patch.object(
+            store,
+            "_cleanup_restored_target",
+            side_effect=AssertionError("caller-owned target must not be cleaned"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "^preclaimed restore failure$"):
+                coordinator.fork(
+                    request,
+                    self.capability(can_fork=True),
+                    target,
+                    child_database_ownership_token=target_token,
+                )
+
+        self.assertEqual(target.read_bytes(), b"")
+        self.assertEqual(
+            _PhysicalFileOwnershipToken.from_stat(
+                target.stat(follow_symlinks=False)
+            ),
+            target_token,
+        )
+        target.unlink()
+        retried, _ = coordinator.fork(
+            request,
+            self.capability(can_fork=True),
+            target,
+        )
         self.assertIs(retried.run_view().status, ScenarioRunStatus.PAUSED)
 
     def test_fork_cleanup_failure_is_visible_and_path_redacted(self) -> None:

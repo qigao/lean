@@ -42,6 +42,36 @@ function resultFor(prior: ProjectSnapshot, next: ProjectSnapshot): ProjectApplyR
 
 describe("ProjectStore", () => {
   it.each([
+    ["serialized manifest-missing", {
+      severity: "error" as const,
+      code: "manifest_missing",
+      document_role: "package",
+      logical_id: null,
+      pointer: "",
+      related_ids: [],
+      message_key: "manifest_missing",
+    }],
+    ["package compiler diagnostic with independent logical ID", {
+      severity: "error" as const,
+      code: "package_invalid",
+      document_role: "package",
+      logical_id: "manifest-v1",
+      pointer: "/documents/~0metadata/~1source",
+      related_ids: ["agent-a", "agent-b"],
+      message_key: "package_invalid",
+    }],
+  ])("accepts a real-shape %s diagnostic", (_label, diagnostic) => {
+    const store = new ProjectStore(new RpcStub());
+    const accepted = snapshotFixture(2);
+    const report = reportFixture(2, [diagnostic]);
+
+    expect(() => store.accept(accepted, report)).not.toThrow();
+    expect(store.snapshot).toBe(accepted);
+    expect(store.diagnosticReport).toBe(report);
+    expect(store.status).toBe("ready");
+  });
+
+  it.each([
     ["snapshot extra key", { ...snapshotFixture(2), unexpected: true }],
     ["snapshot missing key", (() => {
       const value = { ...snapshotFixture(2) } as Record<string, unknown>;
@@ -93,6 +123,25 @@ describe("ProjectStore", () => {
     ["diagnostic noncanonical related ID order", reportFixture(2, [{
       severity: "warning", code: "warning_code", document_role: "physical.world",
       logical_id: null, pointer: "", related_ids: ["beta", "alpha"], message_key: "warning_key",
+    }])],
+    ["diagnostic relative pointer", reportFixture(2, [{
+      severity: "warning", code: "warning_code", document_role: "physical.world",
+      logical_id: null, pointer: "documents/0", related_ids: [], message_key: "warning_key",
+    }])],
+    ["diagnostic invalid pointer escape", reportFixture(2, [{
+      severity: "warning", code: "warning_code", document_role: "physical.world",
+      logical_id: null, pointer: "/documents/~2", related_ids: [], message_key: "warning_key",
+    }])],
+    ["diagnostic dangling pointer escape", reportFixture(2, [{
+      severity: "warning", code: "warning_code", document_role: "physical.world",
+      logical_id: null, pointer: "/documents/~", related_ids: [], message_key: "warning_key",
+    }])],
+    ["noncanonical diagnostic report order", reportFixture(2, [{
+      severity: "error", code: "world_warning", document_role: "physical.world",
+      logical_id: null, pointer: "", related_ids: [], message_key: "world_warning",
+    }, {
+      severity: "warning", code: "agent_warning", document_role: "agent",
+      logical_id: "alice", pointer: "", related_ids: [], message_key: "agent_warning",
     }])],
   ])("rejects malformed %s without replacing accepted authority", (_label, malformed) => {
     const store = new ProjectStore(new RpcStub());
@@ -147,6 +196,32 @@ describe("ProjectStore", () => {
     deferred.resolve(resultFor(current, next));
     await pending;
     expect(store.snapshot).toEqual(next);
+    expect(store.status).toBe("ready");
+  });
+
+  it("accepts a valid layout apply whose authoritative report is manifest-missing", async () => {
+    const rpc = new RpcStub();
+    const current = snapshotFixture(2);
+    const next = snapshotFixture(3, { layout: { package: { x: 12, y: 24 } } });
+    const manifestMissing = reportFixture(3, [{
+      severity: "error", code: "manifest_missing", document_role: "package",
+      logical_id: null, pointer: "", related_ids: [], message_key: "manifest_missing",
+    }]);
+    rpc.handler = async () => ({
+      ...resultFor(current, next),
+      diagnostic_report: manifestMissing,
+    });
+    const store = new ProjectStore(rpc);
+    store.accept(current);
+
+    await expect(store.apply({
+      document_role: "physical.world",
+      logical_id: null,
+      kind: "set_layout",
+      value: { package: { x: 12, y: 24 } },
+    })).resolves.toMatchObject({ next_snapshot: next });
+    expect(store.snapshot).toBe(next);
+    expect(store.diagnosticReport).toBe(manifestMissing);
     expect(store.status).toBe("ready");
   });
 

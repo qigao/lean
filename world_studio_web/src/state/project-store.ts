@@ -80,6 +80,52 @@ function isCanonicalIdentityList(value: unknown): value is string[] {
     value.every((item, index) => index === 0 || value[index - 1]! < item);
 }
 
+function isJsonPointer(value: unknown): value is string {
+  if (typeof value !== "string" || value !== "" && !value.startsWith("/")) return false;
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] !== "~") continue;
+    if (value[index + 1] !== "0" && value[index + 1] !== "1") return false;
+    index += 1;
+  }
+  return true;
+}
+
+function compareText(left: string, right: string): number {
+  const leftCodePoints = Array.from(left, (item) => item.codePointAt(0)!);
+  const rightCodePoints = Array.from(right, (item) => item.codePointAt(0)!);
+  const length = Math.min(leftCodePoints.length, rightCodePoints.length);
+  for (let index = 0; index < length; index += 1) {
+    if (leftCodePoints[index] !== rightCodePoints[index]) {
+      return leftCodePoints[index]! < rightCodePoints[index]! ? -1 : 1;
+    }
+  }
+  return Math.sign(leftCodePoints.length - rightCodePoints.length);
+}
+
+function compareIdentityLists(left: string[], right: string[]): number {
+  const length = Math.min(left.length, right.length);
+  for (let index = 0; index < length; index += 1) {
+    const compared = compareText(left[index]!, right[index]!);
+    if (compared !== 0) return compared;
+  }
+  return Math.sign(left.length - right.length);
+}
+
+function compareDiagnostics(left: ScenarioDiagnostic, right: ScenarioDiagnostic): number {
+  const textFields: Array<[string, string]> = [
+    [left.document_role, right.document_role],
+    [left.logical_id ?? "", right.logical_id ?? ""],
+    [left.pointer, right.pointer],
+    [left.code, right.code],
+    [left.severity, right.severity],
+  ];
+  for (const [leftValue, rightValue] of textFields) {
+    const compared = compareText(leftValue, rightValue);
+    if (compared !== 0) return compared;
+  }
+  return compareIdentityLists(left.related_ids, right.related_ids);
+}
+
 function assertDocument(value: unknown): asserts value is DraftDocument {
   if (!isRecord(value) || !hasExactKeys(value, ["role", "logical_id", "value", "content_hash"]) ||
       !isText(value.role) || !DOCUMENT_ROLES.has(value.role) ||
@@ -96,10 +142,9 @@ function assertDiagnostic(value: unknown): asserts value is ScenarioDiagnostic {
     "severity", "code", "document_role", "logical_id", "pointer", "related_ids", "message_key",
   ]) || !["error", "warning"].includes(value.severity as string) ||
       !isText(value.code) || !STABLE_KEY.test(value.code) ||
-      !isText(value.document_role) || !DOCUMENT_ROLES.has(value.document_role) ||
+      !isText(value.document_role) || !SAFE_IDENTITY.test(value.document_role) ||
       !(value.logical_id === null || isText(value.logical_id) && SAFE_IDENTITY.test(value.logical_id)) ||
-      (value.document_role === "agent") !== (value.logical_id !== null) ||
-      typeof value.pointer !== "string" || !isCanonicalIdentityList(value.related_ids) ||
+      !isJsonPointer(value.pointer) || !isCanonicalIdentityList(value.related_ids) ||
       !isText(value.message_key) || !STABLE_KEY.test(value.message_key)) {
     throw new JsonRpcProtocolError("Project diagnostic is malformed");
   }
@@ -114,6 +159,13 @@ function assertReport(value: unknown): asserts value is DiagnosticReport {
     throw new JsonRpcProtocolError("Project diagnostic report is malformed");
   }
   value.diagnostics.forEach(assertDiagnostic);
+  const diagnostics = value.diagnostics as ScenarioDiagnostic[];
+  if (diagnostics.some(
+    (diagnostic, index) => index > 0 &&
+      compareDiagnostics(diagnostics[index - 1]!, diagnostic) > 0,
+  )) {
+    throw new JsonRpcProtocolError("Project diagnostic report order is noncanonical");
+  }
 }
 
 function assertSnapshot(value: unknown): asserts value is ProjectSnapshot {

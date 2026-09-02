@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import os
 import stat
@@ -7,7 +8,7 @@ import stat
 import pytest
 from starlette.testclient import TestClient
 
-from narrative_dynamics.studio import STUDIO_PERMISSIONS
+from narrative_dynamics.studio import STUDIO_PERMISSIONS, StudioCapability
 from tools.run_world_studio import (
     LauncherSettings,
     _LocalCoordinatorFactory,
@@ -400,3 +401,79 @@ def test_parent_create_rejects_dangling_database_symlink_without_removing_it(tmp
 
     assert database.is_symlink()
     assert not foreign_target.exists()
+
+
+@pytest.mark.parametrize("failing_verification", (1, 3))
+def test_preclaimed_fork_failure_keeps_factory_cleanup_authority_and_allows_retry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failing_verification: int,
+) -> None:
+    configured = settings(tmp_path)
+    app = build_application(configured)
+    with TestClient(app, base_url="http://127.0.0.1:8765") as client:
+        imported = _imported_project(client)
+        parent = _create_run(client, imported, "run-parent", "stream-parent")
+        running, checkpoint = _checkpoint_run(client, parent, 4)
+
+    factory = app.state.coordinator_factory
+    parent_coordinator = factory._owned["run-parent"]
+    checkpoint_store = parent_coordinator._checkpoint_store
+    original_verify = checkpoint_store._verify_restored_target
+    verification_count = 0
+
+    def fail_after_verification(*args, **kwargs):
+        nonlocal verification_count
+        result = original_verify(*args, **kwargs)
+        verification_count += 1
+        if verification_count == failing_verification:
+            raise ValueError(f"injected verification {failing_verification}")
+        return result
+
+    monkeypatch.setattr(
+        checkpoint_store,
+        "_verify_restored_target",
+        fail_after_verification,
+    )
+    capability = StudioCapability(
+        configured.authority_id,
+        project_ids=configured.project_ids,
+        run_ids=configured.run_ids,
+        agent_ids=configured.agent_ids,
+        permissions=configured.permissions,
+    )
+    params = {
+        "fork_id": "fork-retry",
+        "idempotency_key": "fork-retry-key",
+        "source_run_id": "run-parent",
+        "scenario_hash": running["scenario_hash"],
+        "source_epoch": running["coordinator_epoch"],
+        "checkpoint_hash": checkpoint["checkpoint_hash"],
+        "child_run_id": "run-child",
+        "child_stream_id": "stream-child",
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=rf"^injected verification {failing_verification}$",
+    ):
+        app.state.studio_service.invoke("run.fork", params, capability)
+
+    runs = configured.workspace_root / "runs"
+    assert not (runs / "run-child.sqlite3").exists()
+    assert not (runs / ".run-child.owner").exists()
+    assert json.loads((runs / "run-metadata.json").read_text(encoding="utf-8")) == {
+        "schema": "narrative-dynamics.local-run-metadata/v1",
+        "run_ids": ["run-parent"],
+    }
+    assert "run-child" not in factory._claims
+    assert "run-child" not in factory._owned
+
+    monkeypatch.setattr(
+        checkpoint_store,
+        "_verify_restored_target",
+        original_verify,
+    )
+    retried = app.state.studio_service.invoke("run.fork", params, capability)
+    assert retried["child_run_id"] == "run-child"
+    assert (runs / "run-child.sqlite3").is_file()
