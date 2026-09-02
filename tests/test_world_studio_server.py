@@ -17,6 +17,7 @@ from narrative_dynamics.studio import JsonRpcDispatcher, StudioCapability
 from narrative_dynamics.studio.streaming import StudioOutputRouter
 from narrative_dynamics.integrations.world_studio_server import (
     WORLD_STUDIO_PROTOCOL_VERSION,
+    WORLD_STUDIO_SESSION_COOKIE,
     WorldStudioServerLimits,
     create_world_studio_asgi_app,
 )
@@ -96,6 +97,145 @@ def test_health_is_exact_and_rpc_preserves_request_id(tmp_path: Path) -> None:
     assert response.json()["result"]["project_id"] == "law-firm"
 
 
+def test_browser_session_handoff_is_opaque_and_authenticates_rpc_and_wss(
+    tmp_path: Path,
+) -> None:
+    bearer = "production-bearer-secret"
+
+    def authenticate(request):
+        return _capability() if request.headers.get("authorization") == f"Bearer {bearer}" else None
+
+    app, _ = app_for(
+        tmp_path,
+        authenticate_http=authenticate,
+        authenticate_websocket=lambda websocket: None,
+        allow_ambient_authentication=False,
+    )
+    with TestClient(app, base_url="https://studio.example") as anonymous:
+        bearer_rpc = anonymous.post("/rpc", headers={"authorization": f"Bearer {bearer}"}, json={
+            "jsonrpc": "2.0", "id": "bearer-rpc", "method": "project.snapshot",
+            "params": {"project_id": "law-firm"},
+        })
+        assert bearer_rpc.status_code == 401
+    with TestClient(app, base_url="https://studio.example") as client:
+        denied = client.post("/session", headers={"authorization": "Bearer invalid"})
+        assert denied.status_code == 401
+        assert "set-cookie" not in denied.headers
+
+        login = client.post("/session", headers={"authorization": f"Bearer {bearer}"})
+        cookie = login.cookies.get(WORLD_STUDIO_SESSION_COOKIE)
+        assert login.status_code == 200
+        assert cookie and cookie != bearer and bearer not in login.text
+        set_cookie = login.headers["set-cookie"]
+        assert "HttpOnly" in set_cookie
+        assert "Secure" in set_cookie
+        assert "SameSite=strict" in set_cookie
+        assert "Path=/" in set_cookie
+        assert bearer not in set_cookie
+        assert client.post("/session").status_code == 401
+
+        session = client.get("/session")
+        response = client.post("/rpc", json={
+            "jsonrpc": "2.0", "id": "cookie-rpc", "method": "project.snapshot",
+            "params": {"project_id": "law-firm"},
+        })
+        assert session.status_code == response.status_code == 200
+        assert response.json()["id"] == "cookie-rpc"
+
+        with client.websocket_connect(
+            "wss://studio.example/v1/stream",
+            headers={"origin": "https://studio.example"},
+            subprotocols=["nd-jsonrpc-v1"],
+        ) as websocket:
+            websocket.send_json({
+                "jsonrpc": "2.0", "id": "cookie-wss", "method": "stream.subscribe",
+                "params": {
+                    "subscription_id": "cookie-sub", "run_id": "run-1",
+                    "stream_id": "stream-1", "kinds": [], "audience": "public",
+                },
+            })
+            assert receive_json_bounded(websocket)["result"]["subscription_id"] == "cookie-sub"
+
+        logout = client.delete("/session")
+        assert logout.status_code == 204
+        assert "Max-Age=0" in logout.headers["set-cookie"]
+        assert client.get("/session").status_code == 401
+
+
+def test_browser_sessions_expire_and_evict_oldest_at_capacity(tmp_path: Path) -> None:
+    now = [10.0]
+    bearer = "bounded-bearer"
+
+    def authenticate(request):
+        return _capability() if request.headers.get("authorization") == f"Bearer {bearer}" else None
+
+    app, _ = app_for(
+        tmp_path,
+        authenticate_http=authenticate,
+        authenticate_websocket=lambda websocket: None,
+        allow_ambient_authentication=False,
+        clock=lambda: now[0],
+        limits=WorldStudioServerLimits(maximum_sessions=1, session_lifetime_seconds=5),
+    )
+    with (
+        TestClient(app, base_url="https://studio.example") as first,
+        TestClient(app, base_url="https://studio.example") as second,
+    ):
+        first_login = first.post("/session", headers={"authorization": f"Bearer {bearer}"})
+        first_cookie = first_login.cookies.get(WORLD_STUDIO_SESSION_COOKIE)
+        assert first_cookie
+        assert first.get("/session").status_code == 200
+
+        second_login = second.post("/session", headers={"authorization": f"Bearer {bearer}"})
+        second_cookie = second_login.cookies.get(WORLD_STUDIO_SESSION_COOKIE)
+        assert second_cookie and second_cookie != first_cookie
+        assert first.get("/session").status_code == 401
+        assert second.get("/session").status_code == 200
+
+        now[0] = 15.0
+        assert second.get("/session").status_code == 401
+
+
+def test_websocket_subscription_requires_closed_authorized_audience_and_owner(
+    tmp_path: Path,
+) -> None:
+    restricted = _capability(permissions=("output.read",))
+    app, _ = app_for(
+        tmp_path,
+        authenticate_websocket=lambda websocket: restricted,
+    )
+    headers = {"origin": "https://studio.example"}
+    with TestClient(app) as client:
+        with client.websocket_connect(
+            "/v1/stream", headers=headers, subprotocols=["nd-jsonrpc-v1"]
+        ) as websocket:
+            def subscribe(identity: str, **extra):
+                params = {
+                    "subscription_id": identity, "run_id": "run-1",
+                    "stream_id": "stream-1", "kinds": [], **extra,
+                }
+                websocket.send_json({
+                    "jsonrpc": "2.0", "id": identity,
+                    "method": "stream.subscribe", "params": params,
+                })
+                return receive_json_bounded(websocket)
+
+            assert subscribe("missing")["error"]["code"] == -32602
+            assert subscribe("objective", audience="objective")["error"]["code"] == -32602
+            assert subscribe("analyst", audience="analyst")["error"]["code"] == -32010
+            assert subscribe("public-owner", audience="public", owner_agent_id="alice")["error"]["code"] == -32602
+            assert subscribe("agent-ownerless", audience="agent")["error"]["code"] == -32602
+            accepted = subscribe("agent-alice", audience="agent", owner_agent_id="alice")
+            assert accepted["result"] == {
+                "subscription_id": "agent-alice",
+                "run_id": "run-1",
+                "stream_id": "stream-1",
+                "kinds": [],
+                "audience": "agent",
+                "owner_agent_id": "alice",
+            }
+
+
 def test_static_index_assets_csp_and_traversal_policy_are_exact(tmp_path: Path) -> None:
     static = tmp_path / "static"
     assets = static / "assets"
@@ -110,23 +250,36 @@ def test_static_index_assets_csp_and_traversal_policy_are_exact(tmp_path: Path) 
     with TestClient(app) as client:
         index = client.get("/")
         studio = client.get("/studio/")
-        immutable = client.get("/assets/index-a1b2c3d4.js")
-        unhashed = client.get("/assets/unhashed.js")
-        traversal = client.get("/%2e%2e/authority/projects.sqlite3")
+        deep_link = client.get("/studio/projects/law-firm")
+        immutable = client.get("/studio/assets/index-a1b2c3d4.js")
+        unhashed = client.get("/studio/assets/unhashed.js")
+        unprefixed = client.get("/assets/index-a1b2c3d4.js")
+        asset_namespace = client.get("/studio/assets")
+        missing_asset = client.get("/studio/assets/missing-a1b2c3d4.js")
+        traversal = client.get("/studio/%2e%2e/authority/projects.sqlite3")
+        double_encoded_traversal = client.get("/studio/%252e%252e/authority/projects.sqlite3")
 
-    for response in (index, studio, immutable, unhashed, traversal):
+    for response in (
+        index, studio, deep_link, immutable, unhashed, unprefixed, asset_namespace,
+        missing_asset, traversal, double_encoded_traversal,
+    ):
         csp = response.headers["content-security-policy"]
         assert "default-src 'self'" in csp
         assert "connect-src 'self'" in csp
         assert "worker-src 'self' blob:" in csp
         assert "unsafe-inline" not in csp
         assert "unsafe-eval" not in csp
-    assert index.status_code == studio.status_code == 200
-    assert index.headers["cache-control"] == "no-store"
-    assert studio.headers["cache-control"] == "no-store"
+    assert index.status_code == studio.status_code == deep_link.status_code == 200
+    assert index.text == studio.text == deep_link.text
+    assert index.headers["cache-control"] == "no-cache"
+    assert studio.headers["cache-control"] == "no-cache"
+    assert deep_link.headers["cache-control"] == "no-cache"
     assert immutable.headers["cache-control"] == "public, max-age=31536000, immutable"
     assert unhashed.headers["cache-control"] == "no-cache"
-    assert traversal.status_code == 404
+    assert (
+        unprefixed.status_code == asset_namespace.status_code == missing_asset.status_code ==
+        traversal.status_code == double_encoded_traversal.status_code == 404
+    )
 
 
 @pytest.mark.parametrize(
@@ -330,6 +483,7 @@ def test_websocket_controls_and_live_output_use_jsonrpc_envelopes(tmp_path: Path
                         "run_id": "run-1",
                         "stream_id": "stream-1",
                         "kinds": ["command.result"],
+                        "audience": "public",
                     },
                 }
             )
@@ -401,6 +555,7 @@ def test_nonempty_resume_replays_only_as_ordered_id_free_notifications(
                         "run_id": "run-1",
                         "stream_id": "stream-1",
                         "kinds": ["command.result"],
+                        "audience": "public",
                     },
                 }
             )
@@ -498,6 +653,7 @@ def test_bounded_gateway_queue_delivers_every_retained_replay_notification(
                         "run_id": "run-1",
                         "stream_id": "stream-1",
                         "kinds": [],
+                        "audience": "public",
                     },
                 }
             )
@@ -603,6 +759,7 @@ def test_websocket_subscription_capacity_is_a_jsonrpc_failure(tmp_path: Path) ->
                             "run_id": "run-1",
                             "stream_id": "stream-1",
                             "kinds": [],
+                            "audience": "public",
                         },
                     }
                 )
@@ -665,6 +822,7 @@ def test_websocket_connection_capacity_and_disconnect_release_subscriptions(
             "run_id": "run-1",
             "stream_id": "stream-1",
             "kinds": [],
+            "audience": "public",
         },
     }
     with TestClient(app) as client:
@@ -706,6 +864,7 @@ def test_websocket_disconnect_releases_active_slot_and_exact_rebind_resumes(
             "run_id": "run-1",
             "stream_id": "stream-1",
             "kinds": ["command.result"],
+            "audience": "public",
         },
     }
     first = public_batch_range(1, 1)
@@ -789,6 +948,7 @@ def test_timed_out_control_cannot_leave_a_lease_after_disconnect(tmp_path: Path)
             "run_id": "run-1",
             "stream_id": "stream-1",
             "kinds": [],
+            "audience": "public",
         },
     }
     with TestClient(app) as client:
@@ -832,6 +992,7 @@ def test_late_subscribe_cleanup_preserves_subsequently_created_lease(
                             "run_id": "run-1",
                             "stream_id": "stream-1",
                             "kinds": [],
+                            "audience": "public",
                         },
                     }
                 )
@@ -906,6 +1067,7 @@ def test_timed_out_control_cleanup_does_not_remove_other_leases(
                             "run_id": "run-1",
                             "stream_id": "stream-1",
                             "kinds": [],
+                            "audience": "public",
                         },
                     }
                 )
@@ -966,6 +1128,8 @@ def test_oversized_output_closes_connection_without_sending_or_leaking_lease(
             "run_id": "run-1",
             "stream_id": "stream-1",
             "kinds": ["percept.private"],
+            "audience": "agent",
+            "owner_agent_id": "alice",
         },
     }
     with TestClient(app) as client:
@@ -1079,6 +1243,7 @@ def test_sender_failure_releases_subscription_and_connection_capacity(
                 "run_id": "run-1",
                 "stream_id": "stream-1",
                 "kinds": [],
+                "audience": "public",
             },
         },
         separators=(",", ":"),

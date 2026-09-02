@@ -198,7 +198,7 @@ export class RunToolbarElement extends HTMLElement {
     if (!this.stream) return;
     try {
       await this.stream.reconnect();
-      this.runStore?.announce("Run output stream reconnected and resumed from its acknowledged cursor.");
+      this.runStore?.announce("Run output stream reconnected and resumed from its committed cursor.");
     } catch {
       this.runStore?.announce("Run output stream recovery failed.");
     }

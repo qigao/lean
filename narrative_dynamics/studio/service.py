@@ -450,8 +450,12 @@ def _agent_state(view: object) -> JsonObject:
     }
 
 
-def _network_state(snapshot: object) -> JsonObject:
+def _network_state(snapshot: object, run: object) -> JsonObject:
     return {
+        "schema": "narrative-dynamics.scenario-network-state-view/v1",
+        "run_id": run.run_id,
+        "scenario_hash": run.scenario_hash,
+        "state_hash": run.state_hash,
         "model_id": snapshot.model_id,
         "model_hash": snapshot.model_hash,
         "round_index": snapshot.round_index,
@@ -1203,7 +1207,8 @@ class WorldStudioService:
         run_id = _text(values["run_id"], label="run ID")
         coordinator = self._coordinator(capability, run_id, "state.network")
         audience = SimulationAudienceCapability(SimulationOutputAudience.ANALYST)
-        return _network_state(coordinator.network_state(audience))
+        run = coordinator.run_view()
+        return _network_state(coordinator.network_state(audience), run)
 
     def _output_get(self, raw: object, capability: StudioCapability) -> JsonObject:
         values = _params(raw, required=("run_id", "batch_hash"), optional=("agent_id",))

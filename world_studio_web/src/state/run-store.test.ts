@@ -4,6 +4,7 @@ import type {
   JsonObject,
   RunAuthority,
   ScenarioCommandResult,
+  ScenarioForkResult,
   ScenarioRunView,
 } from "../schema/studio-types";
 import { RunStore } from "./run-store";
@@ -54,6 +55,25 @@ function commandResult(overrides: Partial<ScenarioCommandResult> = {}): Scenario
   };
 }
 
+function forkResult(overrides: Partial<ScenarioForkResult> = {}): ScenarioForkResult {
+  return {
+    schema: "narrative-dynamics.scenario-fork-result/v1",
+    fork_id: "fork-1",
+    idempotency_key: "fork-key-1",
+    request_hash: HASH("1"),
+    capability_hash: HASH("2"),
+    source_run_id: "run-1",
+    child_run_id: "run-child",
+    child_stream_id: "stream-child",
+    scenario_hash: HASH("a"),
+    child_epoch: 2,
+    checkpoint_hash: HASH("7"),
+    child_state_hash: HASH("8"),
+    content_hash: HASH("3"),
+    ...overrides,
+  };
+}
+
 const AUTHORITY: RunAuthority = {
   authority_id: "operator",
   project_ids: ["law-firm"],
@@ -96,6 +116,39 @@ function identities() {
 afterEach(() => document.body.replaceChildren());
 
 describe("RunStore authoritative transitions", () => {
+  it("rejects unknown fields in run, command, and fork authority objects", async () => {
+    const rpc = new TransportRpc();
+    const store = new RunStore(rpc, AUTHORITY, identities());
+    expect(() => store.acceptRun({ ...runView(), unexpected: true }))
+      .toThrow("run view is malformed");
+
+    store.acceptRun(runView());
+    rpc.handler = (method) => method === "run.command"
+      ? { ...commandResult(), unexpected: true }
+      : runView({ status: "running" });
+    await expect(store.command("run-1", "start")).rejects.toThrow("command result is malformed");
+
+    const parent = runView({ status: "paused", checkpoint_hashes: [HASH("7")] });
+    const forkStore = new RunStore(rpc, AUTHORITY, identities());
+    forkStore.acceptRun(parent);
+    rpc.handler = () => ({ ...forkResult(), unexpected: true });
+    await expect(forkStore.fork("run-1", HASH("7"), "run-child", "stream-child"))
+      .rejects.toThrow("fork result is malformed");
+  });
+
+  it.each([
+    ["command ID", { command_id: "command-swapped" }],
+    ["idempotency key", { idempotency_key: "command-key-swapped" }],
+  ])("rejects a command result with a mismatched %s", async (_label, mismatch) => {
+    const rpc = new TransportRpc();
+    const created = runView();
+    rpc.handler = () => commandResult(mismatch);
+    const store = new RunStore(rpc, AUTHORITY, identities());
+    store.acceptRun(created);
+
+    await expect(store.command("run-1", "start")).rejects.toThrow("does not bind");
+    expect(store.run("run-1")).toEqual(created);
+  });
   it("creates from an exact project revision and accepts only the returned run view", async () => {
     const rpc = new TransportRpc();
     const created = runView();
@@ -215,24 +268,11 @@ describe("RunStore authoritative transitions", () => {
       status: "paused",
       parent_checkpoint_hash: HASH("7"),
       state_hash: HASH("8"),
+      coordinator_epoch: 2,
       content_hash: HASH("6"),
     });
     rpc.handler = (method, params) => {
-      if (method === "run.fork") return {
-        schema: "narrative-dynamics.scenario-fork-result/v1",
-        fork_id: "fork-1",
-        idempotency_key: "fork-key-1",
-        request_hash: HASH("1"),
-        capability_hash: HASH("2"),
-        source_run_id: "run-1",
-        child_run_id: "run-child",
-        child_stream_id: "stream-child",
-        scenario_hash: HASH("a"),
-        child_epoch: 2,
-        checkpoint_hash: HASH("7"),
-        child_state_hash: HASH("8"),
-        content_hash: HASH("3"),
-      };
+      if (method === "run.fork") return forkResult();
       if (method === "run.view") return params.run_id === "run-child" ? child : parent;
       throw new Error("unexpected call");
     };
@@ -258,17 +298,11 @@ describe("RunStore authoritative transitions", () => {
     const child = runView({
       run_id: "run-child", stream_id: "stream-child", status: "paused",
       parent_checkpoint_hash: HASH("7"), state_hash: HASH("8"), content_hash: HASH("6"),
+      coordinator_epoch: 2,
     });
     let childRefreshFails = true;
     rpc.handler = (method, params) => {
-      if (method === "run.fork") return {
-        schema: "narrative-dynamics.scenario-fork-result/v1",
-        fork_id: "fork-1", idempotency_key: "fork-key-1",
-        request_hash: HASH("1"), capability_hash: HASH("2"),
-        source_run_id: "run-1", child_run_id: "run-child", child_stream_id: "stream-child",
-        scenario_hash: HASH("a"), child_epoch: 2, checkpoint_hash: HASH("7"),
-        child_state_hash: HASH("8"), content_hash: HASH("3"),
-      };
+      if (method === "run.fork") return forkResult();
       if (params.run_id === "run-child" && childRefreshFails) {
         throw new TypeError("child view transport disconnected");
       }
@@ -287,6 +321,33 @@ describe("RunStore authoritative transitions", () => {
     expect(forks).toHaveLength(2);
     expect(forks[1]?.params).toEqual(first.params);
     expect(forks[1]?.options?.requestId).toBe(first.options?.requestId);
+  });
+
+  it("rejects mismatched fork identity and swapped refreshed parent/child views", async () => {
+    const parent = runView({ status: "paused", checkpoint_hashes: [HASH("7")] });
+    const child = runView({
+      run_id: "run-child", stream_id: "stream-child", status: "paused",
+      coordinator_epoch: 2, parent_checkpoint_hash: HASH("7"),
+      state_hash: HASH("8"), content_hash: HASH("6"),
+    });
+
+    const identityRpc = new TransportRpc();
+    identityRpc.handler = () => forkResult({ fork_id: "fork-swapped" });
+    const identityStore = new RunStore(identityRpc, AUTHORITY, identities());
+    identityStore.acceptRun(parent);
+    await expect(identityStore.fork("run-1", HASH("7"), "run-child", "stream-child"))
+      .rejects.toThrow("requested lineage");
+
+    const swappedRpc = new TransportRpc();
+    swappedRpc.handler = (method, params) => method === "run.fork"
+      ? forkResult()
+      : params.run_id === "run-1" ? child : parent;
+    const swappedStore = new RunStore(swappedRpc, AUTHORITY, identities());
+    swappedStore.acceptRun(parent);
+    await expect(swappedStore.fork("run-1", HASH("7"), "run-child", "stream-child"))
+      .rejects.toThrow("Fork refreshed views");
+    expect(swappedStore.run("run-1")).toEqual(parent);
+    expect(swappedStore.run("run-child")).toBeNull();
   });
 
   it("clears private state and retained output before requesting another audience", async () => {
@@ -332,5 +393,70 @@ describe("RunStore authoritative transitions", () => {
     await expect(store.selectAudience("run-1", { audience: "agent", owner_agent_id: "bob" }))
       .rejects.toThrow("not authorized");
     expect(rpc.calls).toHaveLength(0);
+  });
+
+  it("keeps the newest audience when an older private response arrives late", async () => {
+    const rpc = new TransportRpc();
+    let resolveAgent!: (value: JsonObject) => void;
+    const agent = new Promise<JsonObject>((resolve) => { resolveAgent = resolve; });
+    rpc.handler = (method) => method === "state.agent" ? agent : {
+      schema: "narrative-dynamics.scenario-public-state-view/v1",
+      run_id: "run-1", scenario_hash: HASH("a"), round_index: 0,
+      state_hash: HASH("b"), content_hash: HASH("9"),
+    };
+    const store = new RunStore(rpc, AUTHORITY, identities());
+    store.acceptRun(runView());
+
+    const older = store.selectAudience("run-1", { audience: "agent", owner_agent_id: "alice" });
+    expect(store.isAudienceBusy("run-1")).toBe(true);
+    const newer = store.selectAudience("run-1", { audience: "public", owner_agent_id: null });
+    await newer;
+    resolveAgent({
+      schema: "narrative-dynamics.scenario-agent-state-view/v1",
+      run_id: "run-1", scenario_hash: HASH("a"), round_index: 0,
+      state_hash: HASH("b"), agent_id: "alice", content_hash: HASH("8"),
+    });
+    await expect(older).rejects.toThrow("superseded");
+
+    expect(store.scopedState("run-1")?.audience).toBe("public");
+    expect(store.isAudienceBusy("run-1")).toBe(false);
+  });
+
+  it("rejects network state without exact accepted run/scenario/state binding", async () => {
+    const rpc = new TransportRpc();
+    rpc.handler = () => ({
+      schema: "narrative-dynamics.scenario-network-state-view/v1",
+      run_id: "run-2", scenario_hash: HASH("a"), round_index: 0,
+      state_hash: HASH("b"), content_hash: HASH("9"),
+    });
+    const store = new RunStore(rpc, AUTHORITY, identities());
+    store.acceptRun(runView());
+
+    await expect(store.selectAudience("run-1", { audience: "network", owner_agent_id: null }))
+      .rejects.toThrow("does not bind");
+    expect(store.scopedState("run-1")).toBeNull();
+  });
+
+  it("retains bounded per-run transition markers and persistent bounded announcements", () => {
+    const rpc = new TransportRpc();
+    const store = new RunStore(rpc, AUTHORITY, identities(), {
+      maximumTimelineMarkers: 2,
+      maximumAnnouncements: 2,
+    });
+    store.acceptRun(runView());
+    store.markTimeline("run-1", {
+      kind: "gap", after_sequence: 1, before_sequence: 4, label: "Gap detected.",
+    });
+    store.markTimeline("run-1", {
+      kind: "recovery-started", after_sequence: 1, before_sequence: 4, label: "Recovery begun.",
+    });
+    store.markTimeline("run-1", {
+      kind: "recovery-completed", after_sequence: 1, before_sequence: 4, label: "Recovery completed.",
+    });
+
+    expect(store.timelineMarkers("run-1").map((marker) => marker.kind)).toEqual([
+      "recovery-started", "recovery-completed",
+    ]);
+    expect(store.announcements).toEqual(["Recovery begun.", "Recovery completed."]);
   });
 });

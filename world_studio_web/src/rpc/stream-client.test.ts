@@ -106,11 +106,12 @@ async function connectedClient(options: ConstructorParameters<typeof StreamClien
       run_id: "run-1",
       stream_id: "stream-1",
       kinds: ["state.delta", "network.metrics"],
+      audience: "public",
     },
   });
   sockets[0]!.respond(0, {
     subscription_id: "subscription-1", run_id: "run-1", stream_id: "stream-1",
-    kinds: ["state.delta", "network.metrics"],
+    kinds: ["state.delta", "network.metrics"], audience: "public",
   });
   await connecting;
   return { client, sockets, batches };
@@ -185,9 +186,65 @@ describe("StreamClient strict JSON-RPC transport", () => {
     expect(client.cursor).toEqual({ sequence: 1, batch_hash: HASH("1") });
   });
 
+  it("re-acknowledges a committed duplicate after an acknowledgement response is lost", async () => {
+    const { client, sockets, batches } = await connectedClient();
+    const first = output(1, 1, "1");
+    sockets[0]!.receive({ jsonrpc: "2.0", method: "stream.output", params: {
+      subscription_id: "subscription-1", output: first,
+    }});
+    await flush();
+    expect(sockets[0]!.request(1)).toMatchObject({ method: "stream.acknowledge" });
+    expect(client.cursor).toEqual({ sequence: 1, batch_hash: HASH("1") });
+
+    sockets[0]!.close();
+    await flush();
+    const reconnecting = client.reconnect();
+    sockets[1]!.open();
+    sockets[1]!.respond(0, {
+      subscription_id: "subscription-1", run_id: "run-1", stream_id: "stream-1",
+      kinds: ["state.delta", "network.metrics"], audience: "public",
+    });
+    await flush();
+    expect(sockets[1]!.request(1)).toMatchObject({ method: "stream.resume", params: {
+      last_sequence: 1, last_batch_hash: HASH("1"),
+    }});
+    sockets[1]!.respond(1, {
+      subscription_id: "subscription-1", resumed_from_sequence: 1,
+      replayed_count: 0, current_sequence: 1, current_batch_hash: HASH("1"),
+    });
+    await reconnecting;
+
+    sockets[1]!.receive({ jsonrpc: "2.0", method: "stream.output", params: {
+      subscription_id: "subscription-1", output: first,
+    }});
+    await flush();
+    expect(sockets[1]!.request(2)).toMatchObject({ method: "stream.acknowledge", params: {
+      last_sequence: 1, last_batch_hash: HASH("1"),
+    }});
+    sockets[1]!.respond(2, { subscription_id: "subscription-1", acknowledged: true });
+    await flush();
+
+    const second = output(2, 2, "2");
+    sockets[1]!.receive({ jsonrpc: "2.0", method: "stream.output", params: {
+      subscription_id: "subscription-1", output: second,
+    }});
+    await flush();
+    expect(sockets[1]!.request(3)).toMatchObject({ method: "stream.acknowledge", params: {
+      last_sequence: 2, last_batch_hash: HASH("2"),
+    }});
+    sockets[1]!.respond(3, { subscription_id: "subscription-1", acknowledged: true });
+    await flush();
+    expect(batches).toEqual([first, second]);
+    expect(client.cursor).toEqual({ sequence: 2, batch_hash: HASH("2") });
+  });
+
   it("deduplicates an exact batch and rejects conflicts, regressions, and gaps", async () => {
     const failures: Error[] = [];
-    const { sockets, batches } = await connectedClient({ onProtocolError: (error) => failures.push(error) });
+    const markers: JsonObject[] = [];
+    const { sockets, batches } = await connectedClient({
+      onProtocolError: (error) => failures.push(error),
+      onMarker: (_runId, marker) => markers.push(marker),
+    });
     const first = output(1, 1, "1");
     const notify = (batch: SimulationOutputView) => sockets[0]!.receive({
       jsonrpc: "2.0", method: "stream.output",
@@ -205,10 +262,17 @@ describe("StreamClient strict JSON-RPC transport", () => {
     expect(batches).toEqual([first]);
     expect(failures).toHaveLength(2);
     expect(failures.every((failure) => failure instanceof StreamProtocolError)).toBe(true);
+    expect(markers).toEqual([{
+      kind: "gap", after_sequence: 1, before_sequence: 3,
+      label: "Output gap detected before source sequence 3.",
+    }]);
   });
 
   it("reconnects by recreating the identical released subscription before resuming", async () => {
-    const { client, sockets } = await connectedClient();
+    const markers: JsonObject[] = [];
+    const { client, sockets } = await connectedClient({
+      onMarker: (_runId, marker) => markers.push(marker),
+    });
     const first = output(1, 1, "1");
     sockets[0]!.receive({ jsonrpc: "2.0", method: "stream.output", params: {
       subscription_id: "subscription-1", output: first,
@@ -225,7 +289,7 @@ describe("StreamClient strict JSON-RPC transport", () => {
     }});
     sockets[1]!.respond(0, {
       subscription_id: "subscription-1", run_id: "run-1", stream_id: "stream-1",
-      kinds: ["state.delta", "network.metrics"],
+      kinds: ["state.delta", "network.metrics"], audience: "public",
     });
     await flush();
     expect(sockets[1]!.request(1)).toMatchObject({ method: "stream.resume", params: {
@@ -237,12 +301,18 @@ describe("StreamClient strict JSON-RPC transport", () => {
       replayed_count: 0, current_sequence: 1, current_batch_hash: HASH("1"),
     });
     await expect(reconnecting).resolves.toBeUndefined();
+    expect(markers).toEqual([{
+      kind: "resume", after_sequence: 1, before_sequence: 1,
+      label: "Stream resumed from source sequence 1.",
+    }]);
   });
 
   it("uses only a scoped gap token, resets the cursor, and resubscribes", async () => {
     const recovered: JsonObject[] = [];
+    const markers: JsonObject[] = [];
     const { client, sockets } = await connectedClient({
       recoverGap: async (request) => { recovered.push(request); },
+      onMarker: (_runId, marker) => markers.push(marker),
     });
     const first = output(1, 1, "1");
     sockets[0]!.receive({ jsonrpc: "2.0", method: "stream.output", params: {
@@ -256,7 +326,7 @@ describe("StreamClient strict JSON-RPC transport", () => {
     sockets[1]!.open();
     sockets[1]!.respond(0, {
       subscription_id: "subscription-1", run_id: "run-1", stream_id: "stream-1",
-      kinds: ["state.delta", "network.metrics"],
+      kinds: ["state.delta", "network.metrics"], audience: "public",
     });
     await flush();
     const resume = sockets[1]!.request(1);
@@ -283,9 +353,46 @@ describe("StreamClient strict JSON-RPC transport", () => {
     expect(sockets[1]!.request(3)).toMatchObject({ method: "stream.subscribe" });
     sockets[1]!.respond(3, {
       subscription_id: "subscription-1", run_id: "run-1", stream_id: "stream-1",
-      kinds: ["state.delta", "network.metrics"],
+      kinds: ["state.delta", "network.metrics"], audience: "public",
     });
     await expect(reconnecting).resolves.toBeUndefined();
+    expect(markers.map((marker) => marker.kind)).toEqual([
+      "gap", "recovery-started", "recovery-completed",
+    ]);
+  });
+
+  it("marks scoped recovery failure from the actual -32016 transition", async () => {
+    const markers: JsonObject[] = [];
+    const { client, sockets } = await connectedClient({
+      recoverGap: async () => { throw new Error("scoped state failed"); },
+      onMarker: (_runId, marker) => markers.push(marker),
+    });
+    const first = output(1, 1, "1");
+    sockets[0]!.receive({ jsonrpc: "2.0", method: "stream.output", params: {
+      subscription_id: "subscription-1", output: first,
+    }});
+    await flush();
+    sockets[0]!.respond(1, { subscription_id: "subscription-1", acknowledged: true });
+    await flush();
+    sockets[0]!.close();
+    const reconnecting = client.reconnect();
+    sockets[1]!.open();
+    sockets[1]!.respond(0, {
+      subscription_id: "subscription-1", run_id: "run-1", stream_id: "stream-1",
+      kinds: ["state.delta", "network.metrics"], audience: "public",
+    });
+    await flush();
+    const resume = sockets[1]!.request(1);
+    sockets[1]!.receive({ jsonrpc: "2.0", id: resume.id, error: {
+      code: -32016, message: "Subscription history gap", data: {
+        current_sequence: 8, current_batch_hash: HASH("8"), snapshot_token: HASH("7"),
+      },
+    }});
+
+    await expect(reconnecting).rejects.toThrow("scoped state failed");
+    expect(markers.map((marker) => marker.kind)).toEqual([
+      "gap", "recovery-started", "recovery-failed",
+    ]);
   });
 
   it("clears private data synchronously before requesting a new audience binding", async () => {
@@ -297,17 +404,48 @@ describe("StreamClient strict JSON-RPC transport", () => {
       owner_agent_id: "alice",
     }), () => { cleared = true; });
     expect(cleared).toBe(true);
+    await flush();
     expect(sockets[0]!.request(1)).toMatchObject({ method: "stream.unsubscribe" });
     sockets[0]!.respond(1, { subscription_id: "subscription-1", unsubscribed: true });
     await flush();
     expect(sockets[0]!.request(2)).toMatchObject({ method: "stream.subscribe", params: {
-      subscription_id: "subscription-agent", owner_agent_id: "alice",
+      subscription_id: "subscription-agent", audience: "agent", owner_agent_id: "alice",
     }});
     sockets[0]!.respond(2, {
       subscription_id: "subscription-agent", run_id: "run-1", stream_id: "stream-1",
-      kinds: ["state.delta", "network.metrics"],
+      kinds: ["state.delta", "network.metrics"], audience: "agent", owner_agent_id: "alice",
     });
     await expect(switching).resolves.toBeUndefined();
+  });
+
+  it("never commits an older Agent switch after a newer public selection", async () => {
+    const { client, sockets } = await connectedClient();
+    let clears = 0;
+    const older = client.switchAudience(binding({
+      subscription_id: "subscription-agent", audience: "agent", owner_agent_id: "alice",
+    }), () => { clears += 1; });
+    await flush();
+    expect(sockets[0]!.request(1)).toMatchObject({ method: "stream.unsubscribe" });
+
+    const newer = client.switchAudience(binding({
+      subscription_id: "subscription-public-new", audience: "public", owner_agent_id: null,
+    }), () => { clears += 1; });
+    expect(clears).toBe(2);
+    sockets[0]!.respond(1, { subscription_id: "subscription-1", unsubscribed: true });
+    await expect(older).rejects.toThrow("superseded");
+    await flush();
+
+    expect(sockets[0]!.sent).toHaveLength(3);
+    expect(sockets[0]!.request(2)).toMatchObject({ method: "stream.subscribe", params: {
+      subscription_id: "subscription-public-new", audience: "public",
+    }});
+    expect(sockets[0]!.sent.some((raw) => raw.includes("subscription-agent"))).toBe(false);
+    sockets[0]!.respond(2, {
+      subscription_id: "subscription-public-new", run_id: "run-1", stream_id: "stream-1",
+      kinds: ["state.delta", "network.metrics"], audience: "public",
+    });
+    await expect(newer).resolves.toBeUndefined();
+    expect(client.binding?.audience).toBe("public");
   });
 
   it("rejects output for another subscription, stream, run scenario, or malformed envelope", async () => {

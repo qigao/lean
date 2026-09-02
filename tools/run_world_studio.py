@@ -270,6 +270,7 @@ def build_application(settings: LauncherSettings):
         allowed_origins=settings.allowed_origins,
         limits=settings.server_limits,
         static_root=settings.static_root,
+        allow_ambient_authentication=settings.development_trust_all,
     )
     app.state.studio_service = service
     app.state.output_router = router
@@ -308,6 +309,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--request-timeout-seconds", type=float, default=30.0)
     parser.add_argument("--maximum-websocket-connections", type=int, default=128)
     parser.add_argument("--maximum-subscriptions-per-connection", type=int, default=16)
+    parser.add_argument("--maximum-sessions", type=int, default=128)
+    parser.add_argument("--session-lifetime-seconds", type=int, default=3600)
     parser.add_argument("--maximum-retained-batches", type=int, default=128)
     parser.add_argument("--maximum-released-subscriptions", type=int, default=64)
     return parser
@@ -356,6 +359,8 @@ def settings_from_args(arguments: list[str] | None = None) -> LauncherSettings:
             request_timeout_seconds=values.request_timeout_seconds,
             maximum_websocket_connections=values.maximum_websocket_connections,
             maximum_subscriptions_per_connection=values.maximum_subscriptions_per_connection,
+            maximum_sessions=values.maximum_sessions,
+            session_lifetime_seconds=values.session_lifetime_seconds,
         ),
     )
 

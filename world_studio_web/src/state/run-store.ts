@@ -15,6 +15,7 @@ import type {
   ScenarioRunStatus,
   ScenarioRunView,
   SimulationOutputView,
+  TimelineMarker,
 } from "../schema/studio-types";
 
 const HASH = /^sha256:[0-9a-f]{64}$/;
@@ -33,6 +34,7 @@ export interface RunStoreLimits {
   maximumOutputRecords: number;
   maximumOutputBytes: number;
   maximumAnnouncements: number;
+  maximumTimelineMarkers: number;
 }
 
 export interface RunAudienceSelection {
@@ -88,8 +90,33 @@ function hashes(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(hash) && new Set(value).size === value.length;
 }
 
+function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actual = Object.keys(value);
+  return actual.length === keys.length && actual.every((key) => keys.includes(key));
+}
+
+function sameStrings(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function sameRunView(left: ScenarioRunView, right: ScenarioRunView): boolean {
+  return left.schema === right.schema && left.run_id === right.run_id &&
+    left.stream_id === right.stream_id && left.scenario_hash === right.scenario_hash &&
+    left.coordinator_epoch === right.coordinator_epoch && left.status === right.status &&
+    left.round_index === right.round_index && left.state_hash === right.state_hash &&
+    left.next_sequence === right.next_sequence &&
+    sameStrings(left.output_batch_hashes, right.output_batch_hashes) &&
+    sameStrings(left.checkpoint_hashes, right.checkpoint_hashes) &&
+    left.parent_checkpoint_hash === right.parent_checkpoint_hash &&
+    left.content_hash === right.content_hash;
+}
+
 export function assertScenarioRunView(value: unknown): asserts value is ScenarioRunView {
-  if (!record(value) || value.schema !== "narrative-dynamics.scenario-run-view/v1" ||
+  if (!record(value) || !exactKeys(value, [
+    "schema", "run_id", "stream_id", "scenario_hash", "coordinator_epoch", "status",
+    "round_index", "state_hash", "next_sequence", "output_batch_hashes",
+    "checkpoint_hashes", "parent_checkpoint_hash", "content_hash",
+  ]) || value.schema !== "narrative-dynamics.scenario-run-view/v1" ||
       !text(value.run_id) || !text(value.stream_id) || !hash(value.scenario_hash) ||
       !positive(value.coordinator_epoch) || !STATUSES.has(value.status as ScenarioRunStatus) ||
       !nonnegative(value.round_index) || !hash(value.state_hash) || !positive(value.next_sequence) ||
@@ -101,7 +128,12 @@ export function assertScenarioRunView(value: unknown): asserts value is Scenario
 }
 
 function assertCommandResult(value: unknown): asserts value is ScenarioCommandResult {
-  if (!record(value) || value.schema !== "narrative-dynamics.scenario-command-result/v1" ||
+  if (!record(value) || !exactKeys(value, [
+    "schema", "command_id", "idempotency_key", "request_hash", "capability_hash",
+    "run_id", "scenario_hash", "coordinator_epoch", "kind", "accepted", "reason",
+    "prior_status", "next_status", "prior_state_hash", "next_state_hash", "round_index",
+    "output_batch_hash", "checkpoint_hash", "content_hash",
+  ]) || value.schema !== "narrative-dynamics.scenario-command-result/v1" ||
       !text(value.command_id) || !text(value.idempotency_key) || !hash(value.request_hash) ||
       !hash(value.capability_hash) || !text(value.run_id) || !hash(value.scenario_hash) ||
       !positive(value.coordinator_epoch) || !COMMANDS.has(value.kind as ScenarioCommandKind) ||
@@ -117,7 +149,11 @@ function assertCommandResult(value: unknown): asserts value is ScenarioCommandRe
 }
 
 function assertForkResult(value: unknown): asserts value is ScenarioForkResult {
-  if (!record(value) || value.schema !== "narrative-dynamics.scenario-fork-result/v1" ||
+  if (!record(value) || !exactKeys(value, [
+    "schema", "fork_id", "idempotency_key", "request_hash", "capability_hash",
+    "source_run_id", "child_run_id", "child_stream_id", "scenario_hash", "child_epoch",
+    "checkpoint_hash", "child_state_hash", "content_hash",
+  ]) || value.schema !== "narrative-dynamics.scenario-fork-result/v1" ||
       !text(value.fork_id) || !text(value.idempotency_key) || !hash(value.request_hash) ||
       !hash(value.capability_hash) || !text(value.source_run_id) || !text(value.child_run_id) ||
       !text(value.child_stream_id) || !hash(value.scenario_hash) || !positive(value.child_epoch) ||
@@ -138,8 +174,11 @@ export class RunStore extends EventTarget {
   private readonly busyRuns = new Set<string>();
   private readonly retries = new Map<string, PendingMutation>();
   private readonly scoped = new Map<string, ScopedRunState>();
+  private readonly audienceGenerations = new Map<string, number>();
+  private readonly pendingAudiences = new Map<string, number>();
   private readonly retained = new Map<string, SimulationOutputView[]>();
   private readonly notices: string[] = [];
+  private readonly markers = new Map<string, TimelineMarker[]>();
 
   constructor(
     private readonly rpc: RpcCaller,
@@ -160,6 +199,7 @@ export class RunStore extends EventTarget {
       maximumOutputRecords: limits.maximumOutputRecords ?? 4_000,
       maximumOutputBytes: limits.maximumOutputBytes ?? 4 * 1024 * 1024,
       maximumAnnouncements: limits.maximumAnnouncements ?? 8,
+      maximumTimelineMarkers: limits.maximumTimelineMarkers ?? 64,
     };
     for (const [name, value] of Object.entries(this.limits)) {
       if (!Number.isInteger(value) || value <= 0) throw new TypeError(`${name} must be a positive integer`);
@@ -169,6 +209,9 @@ export class RunStore extends EventTarget {
   get authorizedAgentIds(): string[] { return [...this.authority.agent_ids]; }
   get permissions(): string[] { return [...this.authority.permissions]; }
   get announcements(): string[] { return [...this.notices]; }
+  timelineMarkers(runId: string): TimelineMarker[] {
+    return structuredClone(this.markers.get(runId) ?? []);
+  }
 
   private changed(): void { this.dispatchEvent(new Event("change")); }
 
@@ -180,9 +223,30 @@ export class RunStore extends EventTarget {
     this.changed();
   }
 
+  markTimeline(runId: string, marker: TimelineMarker): void {
+    if (!this.views.has(runId)) throw new Error("Load the run before marking its timeline");
+    if (!record(marker) || ![
+      "gap", "recovery-started", "recovery-completed", "recovery-failed", "resume",
+    ].includes(marker.kind) || !nonnegative(marker.after_sequence) ||
+        !nonnegative(marker.before_sequence) || marker.before_sequence < marker.after_sequence ||
+        !text(marker.label)) {
+      throw new TypeError("Timeline marker is malformed");
+    }
+    const accepted = freeze(structuredClone({
+      ...marker,
+      label: marker.label.trim().slice(0, 240),
+    }));
+    const retained = this.markers.get(runId) ?? [];
+    retained.push(accepted);
+    while (retained.length > this.limits.maximumTimelineMarkers) retained.shift();
+    this.markers.set(runId, retained);
+    this.announce(accepted.label);
+  }
+
   run(runId: string): ScenarioRunView | null { return this.views.get(runId) ?? null; }
   runs(): ScenarioRunView[] { return [...this.views.values()]; }
   isBusy(runId: string): boolean { return this.busyRuns.has(runId); }
+  isAudienceBusy(runId: string): boolean { return (this.pendingAudiences.get(runId) ?? 0) > 0; }
   scopedState(runId: string): ScopedRunState | null { return this.scoped.get(runId) ?? null; }
   outputs(runId: string): SimulationOutputView[] { return [...(this.retained.get(runId) ?? [])]; }
 
@@ -278,20 +342,36 @@ export class RunStore extends EventTarget {
         });
         outcomeReceived = true;
         assertCommandResult(result);
-        if (result.run_id !== runId || result.scenario_hash !== view.scenario_hash ||
+        if (result.command_id !== mutation.params.command_id ||
+            result.idempotency_key !== mutation.params.idempotency_key ||
+            result.run_id !== runId || result.scenario_hash !== view.scenario_hash ||
             result.coordinator_epoch !== view.coordinator_epoch || result.kind !== kind ||
             result.prior_status !== view.status || result.prior_state_hash !== view.state_hash) {
           throw new JsonRpcProtocolError("Scenario command result does not bind the accepted run");
         }
         if (!result.accepted) {
+          if (result.next_status !== view.status || result.next_state_hash !== view.state_hash ||
+              result.round_index !== view.round_index || result.output_batch_hash !== null ||
+              result.checkpoint_hash !== null) {
+            throw new JsonRpcProtocolError("Rejected command result attempts an authoritative transition");
+          }
           this.retries.delete(runId);
           this.announce(`${kind} was rejected: ${result.reason}.`);
           return freeze(structuredClone(result));
         }
         const refreshed = await this.rpc.call<ScenarioRunView>("run.view", { run_id: runId });
         assertScenarioRunView(refreshed);
+        const expectedOutputHashes = result.output_batch_hash === null
+          ? view.output_batch_hashes : [...view.output_batch_hashes, result.output_batch_hash];
+        const expectedCheckpointHashes = result.checkpoint_hash === null
+          ? view.checkpoint_hashes : [...view.checkpoint_hashes, result.checkpoint_hash];
         if (refreshed.status !== result.next_status || refreshed.state_hash !== result.next_state_hash ||
-            refreshed.round_index !== result.round_index || refreshed.run_id !== runId) {
+            refreshed.round_index !== result.round_index || refreshed.run_id !== runId ||
+            refreshed.stream_id !== view.stream_id || refreshed.scenario_hash !== view.scenario_hash ||
+            refreshed.coordinator_epoch !== view.coordinator_epoch ||
+            refreshed.parent_checkpoint_hash !== view.parent_checkpoint_hash ||
+            !sameStrings(refreshed.output_batch_hashes, expectedOutputHashes) ||
+            !sameStrings(refreshed.checkpoint_hashes, expectedCheckpointHashes)) {
           throw new JsonRpcProtocolError("Refreshed run does not match the accepted command result");
         }
         this.acceptRun(refreshed);
@@ -349,7 +429,9 @@ export class RunStore extends EventTarget {
         });
         outcomeReceived = true;
         assertForkResult(result);
-        if (result.source_run_id !== sourceRunId || result.child_run_id !== childRunId ||
+        if (result.fork_id !== mutation.params.fork_id ||
+            result.idempotency_key !== mutation.params.idempotency_key ||
+            result.source_run_id !== sourceRunId || result.child_run_id !== childRunId ||
             result.child_stream_id !== childStreamId || result.scenario_hash !== source.scenario_hash ||
             result.checkpoint_hash !== checkpointHash) {
           throw new JsonRpcProtocolError("Fork result does not match the requested lineage");
@@ -360,8 +442,14 @@ export class RunStore extends EventTarget {
         ]);
         assertScenarioRunView(parent);
         assertScenarioRunView(child);
-        if (child.parent_checkpoint_hash !== checkpointHash || child.state_hash !== result.child_state_hash ||
-            child.stream_id !== childStreamId) throw new JsonRpcProtocolError("Fork child view is malformed");
+        if (!sameRunView(parent, source) ||
+            child.run_id !== result.child_run_id || child.stream_id !== result.child_stream_id ||
+            child.scenario_hash !== result.scenario_hash ||
+            child.coordinator_epoch !== result.child_epoch ||
+            child.parent_checkpoint_hash !== result.checkpoint_hash ||
+            child.state_hash !== result.child_state_hash) {
+          throw new JsonRpcProtocolError("Fork refreshed views do not match the requested lineage");
+        }
         this.acceptRun(parent);
         this.acceptRun(child);
         this.retries.delete(sourceRunId);
@@ -404,28 +492,42 @@ export class RunStore extends EventTarget {
     const permission = selection.audience === "public" ? "state.public"
       : selection.audience === "agent" ? "state.agent" : "state.network";
     if (!this.authority.permissions.includes(permission)) throw new Error("State audience is not authorized");
+    const generation = (this.audienceGenerations.get(runId) ?? 0) + 1;
+    this.audienceGenerations.set(runId, generation);
+    this.pendingAudiences.set(runId, (this.pendingAudiences.get(runId) ?? 0) + 1);
     this.clearAudienceData(runId);
     const method = selection.audience === "public" ? "state.public"
       : selection.audience === "agent" ? "state.agent" : "state.network";
     const params = selection.audience === "agent"
       ? { run_id: runId, agent_id: selection.owner_agent_id! }
       : { run_id: runId };
-    const value = await this.rpc.call<JsonObject>(method, params);
-    if (!record(value) || !hash(value.content_hash) || !nonnegative(value.round_index) ||
-        value.round_index !== run.round_index) {
-      throw new JsonRpcProtocolError("Scoped state does not bind the accepted run round");
-    }
-    if (selection.audience !== "network" && (
-      value.schema !== (selection.audience === "public"
+    try {
+      const value = await this.rpc.call<JsonObject>(method, params);
+      const expectedSchema = selection.audience === "public"
         ? "narrative-dynamics.scenario-public-state-view/v1"
-        : "narrative-dynamics.scenario-agent-state-view/v1") ||
-      value.run_id !== run.run_id || value.scenario_hash !== run.scenario_hash || value.state_hash !== run.state_hash
-    )) throw new JsonRpcProtocolError("Scoped state does not bind the accepted run state");
-    if (selection.audience === "agent" && value.agent_id !== selection.owner_agent_id) {
-      throw new JsonRpcProtocolError("Agent state does not bind the selected owner");
+        : selection.audience === "agent"
+          ? "narrative-dynamics.scenario-agent-state-view/v1"
+          : "narrative-dynamics.scenario-network-state-view/v1";
+      if (!record(value) || !hash(value.content_hash) || !nonnegative(value.round_index) ||
+          value.round_index !== run.round_index || value.schema !== expectedSchema ||
+          value.run_id !== run.run_id || value.scenario_hash !== run.scenario_hash ||
+          value.state_hash !== run.state_hash) {
+        throw new JsonRpcProtocolError("Scoped state does not bind the accepted run state");
+      }
+      if (selection.audience === "agent" && value.agent_id !== selection.owner_agent_id) {
+        throw new JsonRpcProtocolError("Agent state does not bind the selected owner");
+      }
+      if (this.audienceGenerations.get(runId) !== generation) {
+        throw new JsonRpcProtocolError("Scoped state response was superseded by a newer audience");
+      }
+      this.acceptScopedState(runId, selection.audience, selection.owner_agent_id, value);
+      return this.scoped.get(runId)!;
+    } finally {
+      const pending = (this.pendingAudiences.get(runId) ?? 1) - 1;
+      if (pending === 0) this.pendingAudiences.delete(runId);
+      else this.pendingAudiences.set(runId, pending);
+      this.changed();
     }
-    this.acceptScopedState(runId, selection.audience, selection.owner_agent_id, value);
-    return this.scoped.get(runId)!;
   }
 
   acceptOutput(runId: string, output: SimulationOutputView): void {

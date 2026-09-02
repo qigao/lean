@@ -39,6 +39,13 @@ describe("studio shell integration", () => {
     expect(getByRole(shell, "region", { name: "Run state inspector" }).textContent).toContain(run.state_hash);
     expect(getByRole(shell, "list", { name: "Run output records" })).toBeTruthy();
 
+    runStore.markTimeline("run-parent", {
+      kind: "gap", after_sequence: 2, before_sequence: 5,
+      label: "Output gap detected before source sequence 5.",
+    });
+    expect(getByRole(shell, "list", { name: "Run output records" }).textContent).toContain("Gap 3–4");
+    expect(getByRole(shell, "log").textContent).toContain("Output gap detected");
+
     runStore.acceptRun({ ...run, round_index: 3, content_hash: `sha256:${"d".repeat(64)}` });
     expect(getByRole(toolbar, "status")).toBe(status);
     expect(status.textContent).toContain("Round 3");

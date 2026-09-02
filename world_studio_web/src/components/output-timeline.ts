@@ -1,11 +1,4 @@
-import type { SimulationOutputView } from "../schema/studio-types";
-
-export interface TimelineMarker {
-  kind: "gap" | "recovery";
-  after_sequence: number;
-  before_sequence: number;
-  label: string;
-}
+import type { SimulationOutputView, TimelineMarker } from "../schema/studio-types";
 
 export class OutputTimelineElement extends HTMLElement {
   private sourceBatches: SimulationOutputView[] = [];
@@ -40,10 +33,8 @@ export class OutputTimelineElement extends HTMLElement {
     const ordered = [...this.sourceBatches]
       .sort((left, right) => left.first_sequence - right.first_sequence)
       .slice(-this.batchLimit);
-    const firstRetained = ordered[0]?.first_sequence ?? Number.POSITIVE_INFINITY;
     const lastRetained = ordered.at(-1)?.last_sequence ?? 0;
-    const markers = this.sourceMarkers.filter((marker) =>
-      marker.after_sequence >= firstRetained - 1 && marker.before_sequence <= lastRetained);
+    const markers = this.sourceMarkers.slice(-this.batchLimit);
     const events: ({ type: "batch"; value: SimulationOutputView } | { type: "marker"; value: TimelineMarker })[] = [];
     for (const batch of ordered) {
       for (const marker of markers.filter((item) => item.after_sequence < batch.first_sequence &&
@@ -52,13 +43,20 @@ export class OutputTimelineElement extends HTMLElement {
       }
       events.push({ type: "batch", value: batch });
     }
+    for (const marker of markers) {
+      if (!events.some((event) => event.type === "marker" && event.value === marker)) {
+        events.push({ type: "marker", value: marker });
+      }
+    }
     const list = this.querySelector<HTMLOListElement>("ol")!;
     list.replaceChildren();
     for (const event of events) {
       const item = document.createElement("li");
       if (event.type === "marker") {
         item.className = `timeline-marker ${event.value.kind}`;
-        item.textContent = `Gap ${event.value.after_sequence + 1}–${event.value.before_sequence - 1}. ${event.value.label}`;
+        item.textContent = event.value.kind === "gap"
+          ? `Gap ${event.value.after_sequence + 1}–${event.value.before_sequence - 1}. ${event.value.label}`
+          : `Source sequence ${event.value.after_sequence}. ${event.value.label}`;
       } else {
         const batch = event.value;
         const bounds = batch.first_sequence === batch.last_sequence

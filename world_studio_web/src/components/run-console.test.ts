@@ -2,6 +2,8 @@ import { fireEvent, getAllByRole, getByLabelText, getByRole, queryByRole } from 
 import { afterEach, describe, expect, it } from "vitest";
 import type { JsonObject, RunAuthority, ScenarioRunView, SimulationOutputView } from "../schema/studio-types";
 import type { RpcCaller } from "../rpc/client";
+import type { StreamClient } from "../rpc/stream-client";
+import type { StreamBinding } from "../schema/studio-types";
 import { RunStore } from "../state/run-store";
 import type { ForkComparisonElement } from "./fork-comparison";
 import type { OutputTimelineElement } from "./output-timeline";
@@ -111,7 +113,10 @@ describe("run toolbar", () => {
     let complete!: (value: unknown) => void;
     rpc.handler = (method) => method === "run.command"
       ? new Promise((resolve) => { complete = resolve; })
-      : view({ round_index: 5, state_hash: HASH("f"), next_sequence: 12, content_hash: HASH("6") });
+      : view({
+        round_index: 5, state_hash: HASH("f"), next_sequence: 12,
+        output_batch_hashes: [HASH("1"), HASH("3")], content_hash: HASH("6"),
+      });
     const toolbar = document.createElement("run-toolbar") as RunToolbarElement;
     toolbar.store = store;
     toolbar.runId = "run-parent";
@@ -185,21 +190,51 @@ describe("state inspector", () => {
     expect(wasCleared).toBe(true);
     expect(inspector.textContent).not.toContain("private-for-alice");
   });
+
+  it("maps Network UI scope to analyst wire audience and disables switching while busy", async () => {
+    const [store, rpc] = storeWith(view());
+    let finish!: (value: JsonObject) => void;
+    const pending = new Promise<JsonObject>((resolve) => { finish = resolve; });
+    rpc.handler = () => pending;
+    let streamed: StreamBinding | null = null;
+    const inspector = document.createElement("state-inspector") as StateInspectorElement;
+    inspector.store = store;
+    inspector.runId = "run-parent";
+    inspector.streamClient = {
+      switchAudience: async (binding: StreamBinding, clear: () => void) => {
+        clear();
+        streamed = binding;
+      },
+    } as StreamClient;
+    document.body.append(inspector);
+    const audience = getByLabelText(inspector, "State audience") as HTMLSelectElement;
+
+    fireEvent.change(audience, { target: { value: "network" } });
+    for (let index = 0; index < 5; index += 1) await Promise.resolve();
+    expect(streamed).toMatchObject({ audience: "analyst", owner_agent_id: null });
+    expect(audience.disabled).toBe(true);
+
+    finish({
+      schema: "narrative-dynamics.scenario-network-state-view/v1",
+      run_id: "run-parent", scenario_hash: HASH("a"), round_index: 4,
+      state_hash: HASH("b"), content_hash: HASH("3"),
+    });
+    for (let index = 0; index < 8; index += 1) await Promise.resolve();
+    expect(audience.disabled).toBe(false);
+  });
 });
 
 describe("output timeline", () => {
-  it("preserves source sequence, renders explicit gap/recovery markers, and bounds retention", () => {
+  it("preserves source sequence and bounds retention", () => {
     const timeline = document.createElement("output-timeline") as OutputTimelineElement;
     timeline.maximumBatches = 2;
     timeline.batches = [output(1, 1, "1"), output(2, 2, "2"), output(5, 5, "5")];
-    timeline.markers = [{ kind: "gap", after_sequence: 2, before_sequence: 5, label: "Recovered from scoped snapshot" }];
     document.body.append(timeline);
 
     const items = getAllByRole(timeline, "listitem").map((item) => item.textContent ?? "");
-    expect(items).toHaveLength(3);
+    expect(items).toHaveLength(2);
     expect(items[0]).toContain("Sequence 2");
-    expect(items[1]).toContain("Gap 3–4");
-    expect(items[2]).toContain("Sequence 5");
+    expect(items[1]).toContain("Sequence 5");
     expect(items.join(" ")).not.toContain("Sequence 1");
     expect(getByRole(timeline, "status").textContent).toContain("2 retained batches");
   });

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from threading import Event, Thread
 
 import pytest
 
@@ -290,7 +291,9 @@ def test_owner_projection_requires_exact_agent_membership() -> None:
     allowed = capability(agent_ids=("alice",))
     with pytest.raises(SubscriptionAuthorizationError):
         router.subscribe(
-            "sub-bob", "run-1", "stream-1", allowed, (), owner_agent_id="bob"
+            "sub-bob", "run-1", "stream-1", allowed, (),
+            audience=SimulationOutputAudience.AGENT,
+            owner_agent_id="bob",
         )
     captured = []
     subscription = router.subscribe(
@@ -299,6 +302,7 @@ def test_owner_projection_requires_exact_agent_membership() -> None:
         "stream-1",
         allowed,
         tuple(SimulationOutputKind),
+        audience=SimulationOutputAudience.AGENT,
         owner_agent_id="alice",
         on_output=captured.append,
     )
@@ -308,6 +312,43 @@ def test_owner_projection_requires_exact_agent_membership() -> None:
         SimulationOutputAudience.AGENT, "alice"
     )
     assert captured[0].records[0].owner_agent_id == "alice"
+
+
+def test_explicit_closed_audience_never_escalates_from_capability() -> None:
+    router = StudioOutputRouter()
+    privileged = capability(
+        agent_ids=("alice",), permissions=("output.read", "state.network")
+    )
+    public = router.subscribe(
+        "sub-public", "run-1", "stream-1", privileged, (),
+        audience=SimulationOutputAudience.PUBLIC,
+    )
+    analyst = router.subscribe(
+        "sub-analyst", "run-1", "stream-2", privileged, (),
+        audience=SimulationOutputAudience.ANALYST,
+    )
+
+    assert public.audience is SimulationOutputAudience.PUBLIC
+    assert public.audience_capability == SimulationAudienceCapability(
+        SimulationOutputAudience.PUBLIC
+    )
+    assert analyst.audience is SimulationOutputAudience.ANALYST
+    with pytest.raises(SubscriptionAuthorizationError):
+        router.subscribe(
+            "sub-denied-analyst", "run-1", "stream-3", capability(), (),
+            audience=SimulationOutputAudience.ANALYST,
+        )
+    with pytest.raises((TypeError, ValueError)):
+        router.subscribe(
+            "sub-invalid", "run-1", "stream-4", privileged, (),
+            audience=SimulationOutputAudience.OBJECTIVE,
+        )
+    with pytest.raises(SubscriptionAuthorizationError):
+        router.subscribe(
+            "sub-owner-on-public", "run-1", "stream-5", privileged, (),
+            audience=SimulationOutputAudience.PUBLIC,
+            owner_agent_id="alice",
+        )
 
 
 def test_delivered_oversize_batch_can_still_be_acknowledged() -> None:
@@ -580,6 +621,65 @@ def test_disconnect_rebinds_exact_released_subscription_and_replays_later_output
     assert tuple(item.source_batch_hash for item in replayed) == (second.content_hash,)
 
 
+def test_publish_commits_once_when_released_subscription_rebinds_during_projection() -> None:
+    class ProjectionBarrierRouter(StudioOutputRouter):
+        def __init__(self) -> None:
+            super().__init__()
+            self.projecting = Event()
+            self.continue_projection = Event()
+            self.block_projection = False
+
+        def _filtered_view(self, batch, subscription):
+            if self.block_projection:
+                self.projecting.set()
+                assert self.continue_projection.wait(timeout=2.0)
+            return super()._filtered_view(batch, subscription)
+
+    router = ProjectionBarrierRouter()
+    allowed = capability()
+    first = public_batch_range(1, 1)
+    second = public_batch_range(2, 2)
+    third = public_batch_range(3, 3)
+    router.subscribe(
+        "sub-race", "run-1", "stream-1", allowed,
+        tuple(SimulationOutputKind), connection_id="connection-1",
+    )
+    router.publish("run-1", first)
+    router.acknowledge("sub-race", 1, first.content_hash, capability=allowed)
+    assert router.unsubscribe_connection("connection-1") == ("sub-race",)
+    router.block_projection = True
+
+    delivered = []
+    publish_result = []
+    publish_error = []
+
+    def publish_second() -> None:
+        try:
+            publish_result.append(router.publish("run-1", second))
+        except BaseException as error:  # retain the worker failure for the main assertion
+            publish_error.append(error)
+
+    worker = Thread(target=publish_second)
+    worker.start()
+    assert router.projecting.wait(timeout=2.0)
+    router.subscribe(
+        "sub-race", "run-1", "stream-1", allowed,
+        tuple(SimulationOutputKind), connection_id="connection-2",
+        on_output=delivered.append,
+    )
+    router.continue_projection.set()
+    worker.join(timeout=2.0)
+
+    assert not worker.is_alive()
+    assert publish_error == []
+    assert publish_result == [("sub-race",)]
+    assert [view.source_batch_hash for view in delivered] == [second.content_hash]
+    assert router.publish("run-1", third) == ("sub-race",)
+    assert [view.source_batch_hash for view in delivered] == [
+        second.content_hash, third.content_hash,
+    ]
+
+
 def test_released_subscription_requires_exact_full_private_binding() -> None:
     router = StudioOutputRouter()
     allowed = capability(agent_ids=("alice",))
@@ -590,6 +690,7 @@ def test_released_subscription_requires_exact_full_private_binding() -> None:
         allowed,
         tuple(SimulationOutputKind),
         connection_id="connection-private",
+        audience=SimulationOutputAudience.AGENT,
         owner_agent_id="alice",
     )
     router.publish("run-1", private_batch())
@@ -612,6 +713,7 @@ def test_released_subscription_requires_exact_full_private_binding() -> None:
         allowed,
         tuple(SimulationOutputKind),
         connection_id="connection-restored",
+        audience=SimulationOutputAudience.AGENT,
         owner_agent_id="alice",
     )
     assert restored.owner_agent_id == "alice"

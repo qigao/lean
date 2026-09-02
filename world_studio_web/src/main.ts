@@ -2,10 +2,11 @@ import { JsonRpcClient } from "./rpc/client";
 import { ProjectStore } from "./state/project-store";
 import { RunStore } from "./state/run-store";
 import { StreamClient } from "./rpc/stream-client";
-import type { JsonObject, RunAuthority, StudioSession } from "./schema/studio-types";
+import type { RunAuthority, StudioSession } from "./schema/studio-types";
 import "./components/studio-shell";
 import type { StudioShellElement } from "./components/studio-shell";
 import type { StudioWorkflowElement } from "./components/studio-workflow";
+import { establishBrowserSession } from "./session-bootstrap";
 import "./styles.css";
 
 const shell = document.querySelector<StudioShellElement>("#studio-app");
@@ -31,10 +32,7 @@ async function bootstrap(shell: StudioShellElement): Promise<void> {
     if (store.snapshot && shell.snapshot !== store.snapshot) shell.snapshot = store.snapshot;
     if (shell.diagnostics !== store.diagnosticReport) shell.diagnostics = store.diagnosticReport;
   });
-  const response = await fetch("/session", { headers: { accept: "application/json" } });
-  if (!response.ok) throw new Error("Studio session is unavailable");
-  const session = await response.json() as Partial<StudioSession>;
-  if (session.schema !== "narrative-dynamics.studio-session/v1") throw new Error("Studio session is malformed");
+  const session: StudioSession = await establishBrowserSession(shell);
   const runStore = new RunStore(rpc, authority(session.authority));
   const streamUrl = new URL("/v1/stream", window.location.href);
   streamUrl.protocol = streamUrl.protocol === "https:" ? "wss:" : "ws:";
@@ -45,8 +43,9 @@ async function bootstrap(shell: StudioShellElement): Promise<void> {
       runStore.acceptOutput(run.run_id, output);
     },
     onStatus: (status, message) => runStore.announce(`${status}: ${message}`),
+    onMarker: (runId, marker) => runStore.markTimeline(runId, marker),
     recoverGap: async (request) => runStore.selectAudience(request.run_id, {
-      audience: request.audience,
+      audience: request.audience === "analyst" ? "network" : request.audience,
       owner_agent_id: request.owner_agent_id,
     }).then(() => undefined),
   });

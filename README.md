@@ -2251,6 +2251,9 @@ python -m tools.run_world_studio \
   --agent-id alice
 ```
 
+Open `http://127.0.0.1:8443/studio/`. The compatible root entry also serves the
+application, while bundled assets and safe SPA deep links live under `/studio/`.
+
 Development trust-all refuses non-loopback addresses. For a non-loopback deployment,
 omit that flag, use one non-empty bearer token in a protected file, and supply both TLS
 files. Hypercorn negotiates HTTP/2 for HTTPS RPC and the browser uses same-origin WSS:
@@ -2267,10 +2270,19 @@ python -m tools.run_world_studio \
   --auth-token-file /run/secrets/world-studio-token \
   --tls-certificate /run/secrets/world-studio.crt \
   --tls-private-key /run/secrets/world-studio.key \
+  --maximum-sessions 128 --session-lifetime-seconds 3600 \
   --authority-id operator \
   --project-id law-firm --run-id law-firm-run \
   --agent-id alice
 ```
+
+Open `https://studio.example.test:8443/studio/` and enter the configured token in
+the bootstrap form. The token is sent once in the `Authorization` header to
+`POST /session`; it is never placed in a URL, static asset, browser storage, or cookie.
+The server instead sets a random, expiring, capacity-bounded `HttpOnly`, `Secure`,
+`SameSite=Strict`, `Path=/` session cookie used by same-origin RPC and WSS. `DELETE
+/session` logs out immediately; deterministic oldest-session eviction applies at the
+configured capacity.
 
 In the browser, import a configured source identifier, edit graph/map/property or raw
 JSON views, repair pointer-specific diagnostics, validate, and compile an immutable

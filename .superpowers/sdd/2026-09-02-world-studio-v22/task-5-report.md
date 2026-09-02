@@ -215,3 +215,131 @@ Release/docs/report:
 - Generated `world_studio_web/test-results/` and `playwright-report/` are ignored. The
   generated `.last-run.json` was deleted before staging; no diagnostic artifact is part
   of the commit.
+
+## Fix Round 1
+
+Review base and pre-commit head: `64befdc8e1f91e54fd5bdc0ab008fdfcbe7c80ae` on
+`feature/world-studio-v22-1-workspace`. This round addresses only the reviewer's one
+Critical and eight Important findings; it does not take the deferred Task 4 Minor or
+broaden V22's provider, worker, renderer, protocol, or state-mutation scope.
+
+### RED to GREEN evidence
+
+1. Browser authentication. RED tests demonstrated that token mode had no native-browser
+   credential path because fetch and WebSocket construction could not supply the launch
+   token. GREEN adds an accessible bootstrap form that sends the token once in an
+   `Authorization` header to `POST /session`; the server stores only a random opaque,
+   bounded, expiring session identifier and returns an HttpOnly, SameSite=Strict,
+   Path=/ cookie (Secure under TLS). `GET /session`, `POST /rpc`, WSS, logout, expiry,
+   deterministic capacity eviction, invalid credentials, and absence of token
+   reflection are covered. Launcher token mode disables ambient authorization, while
+   explicit loopback-only development trust-all remains compatible.
+2. Closed stream audience. RED tests showed the wire subscription omitted audience and
+   the router inferred analyst access from capability. GREEN requires exact
+   `public|agent|analyst` on WSS, requires owner exactly for `agent`, explicitly checks
+   analyst `state.network` and agent ownership, filters before retention, and binds the
+   audience through subscribe echo, active/released identity, and reconnect. The UI's
+   `network` label maps only at the boundary to wire `analyst`.
+3. Ack loss. RED simulated a server-processed ack whose response was lost: the client
+   deduplicated the replay without re-acking and could deadlock. GREEN separates the
+   committed source cursor from the confirmed acknowledgement cursor, resumes from the
+   safe committed boundary, and idempotently re-acks an exact committed duplicate until
+   confirmation before accepting the following batch.
+4. Released publish/rebind race. RED used a deterministic projection barrier to move a
+   released subscription into the active map between publish snapshot and commit. The
+   old commit path lost that batch. GREEN resolves the exact binding in either map while
+   holding the commit lock, retains/delivers once, and accepts the next contiguous batch
+   without a gap.
+5. Strict command and fork authority. RED cases accepted unknown fields, mismatched
+   command/idempotency IDs, swapped parent/child views, and incomplete refreshed-view
+   bindings. GREEN uses exact-key validators and compares every request/result and
+   authoritative run, stream, scenario, epoch, state, checkpoint, and lineage binding
+   before replacing canonical state or releasing the stable retry identity. Accepted
+   commands/forks whose refresh fails retain the same logical identity on retry.
+6. Network binding and audience generations. RED showed network state lacked
+   run/scenario/state identity and a delayed private response could overwrite a later
+   public selection. GREEN extends the exact Task 2 response with its schema/run/scenario/
+   state binding, validates it in `RunStore`, clears private data synchronously, disables
+   the selector while pending, and serializes/generates switches so stale agent work can
+   neither commit nor establish a stale subscription.
+7. `/studio/*` packaging. RED cases showed literal path resolution could not serve the
+   configured Vite base or a deep link. GREEN builds with base `/studio/`, strips that
+   prefix safely, serves hashed assets immutable, unhashed assets no-cache, and the index
+   revalidated for safe SPA paths. Missing assets, unprefixed assets, traversal,
+   backslash, NUL, residual encoding, and double-encoded traversal return 404.
+8. Production timeline markers. RED integration coverage showed the shell supplied only
+   batches and no production path populated marker UI. GREEN records bounded per-run
+   markers for detected gaps, scoped recovery start/completion/failure, and resume
+   boundaries; it binds them through the real shell and preserves source ordering and
+   bounded persistent aria-live announcements. Tests drive real stream transitions.
+9. Real E2E strength. The first strengthened RED found that the selected inspector still
+   displayed the pre-edit 0.8 relationship; the test now reselects through the UI and
+   verifies 0.85. The next RED proved the authored output policy legally produced only
+   public metrics, so the browser now authors the real private-output allowance through
+   the Raw JSON editor. GREEN asserts an actual Alice-owned output, no Bob output, the
+   relationship change and persistence, and exact numeric revision plus content hash
+   equality across process restart, while retaining all ten real browser/ASGI/SQLite/
+   coordinator steps.
+
+Focused GREEN evidence includes 23 streaming tests, 16 RunStore tests, 12 StreamClient
+tests, and the final combined browser unit suite below. All tests use real router,
+gateway, store, scenario, coordinator, SQLite, or browser objects as appropriate; no
+authority or persistence mock was introduced.
+
+### Final verification evidence
+
+Host used for this round: Python 3.12.7, Node 24.5.0, npm 11.5.2, Windows.
+
+- `npm ci` — 151 packages installed from the exact lockfile.
+- The brief's complete focused Python gate (with PowerShell expanding
+  `tests/test_world_studio_*.py` before invoking pytest) — `246 passed, 1 skipped, 89
+  subtests passed in 55.20s`. The skip remains the Windows directory-symlink privilege
+  case.
+- `python -m unittest discover -s tests -p "test_network_abm*.py" -q` — `Ran 697
+  tests in 50.193s`, `OK (skipped=1)`.
+- `python -m compileall -q narrative_dynamics tests tools/run_world_studio.py` — exit 0.
+- `npm test -- --run` — 15 files, 83 tests passed.
+- `npm run typecheck` — exit 0.
+- `npm run build` — 2,752 modules transformed in 2.14s; only the known lazy Monaco
+  chunk-size warning remains.
+- `npx playwright test e2e/law-firm.spec.ts` against the production build and launcher
+  token mode — `1 passed (9.1s)`.
+- `git diff --check` — clean apart from host LF-to-CRLF notices.
+
+### Fix-round files
+
+- Runtime and gateway: `narrative_dynamics/integrations/world_studio_server.py`,
+  `narrative_dynamics/studio/service.py`, `narrative_dynamics/studio/streaming.py`,
+  `tools/run_world_studio.py`.
+- Backend tests: `tests/test_world_studio_launcher.py`,
+  `tests/test_world_studio_server.py`, `tests/test_world_studio_service.py`,
+  `tests/test_world_studio_streaming.py`.
+- Browser runtime: `world_studio_web/src/session-bootstrap.ts`,
+  `world_studio_web/src/main.ts`, `world_studio_web/src/rpc/stream-client.ts`,
+  `world_studio_web/src/state/run-store.ts`, the state/timeline/toolbar/shell components,
+  schema, styles, index, and Vite configuration.
+- Browser tests: `world_studio_web/src/session-bootstrap.test.ts`, StreamClient,
+  RunStore, component/integration tests, and `world_studio_web/e2e/law-firm.spec.ts`.
+- Documentation: `README.md` and this report.
+
+### Audit and disclosed concerns
+
+- The forbidden-scope scan remains clean: no React/React Flow, gRPC/Protobuf,
+  provider/LLM integration, remote worker/broker, live Blender control, or state-set
+  endpoint was added. Task 2's RPC set remains closed; no `/recovery` route or
+  `state.recover` method exists.
+- Identity inspection found no credential, cookie/session, filesystem/static path,
+  callback/connection ID, publisher object, bind address, audience-switch generation,
+  or deployment topology in semantic command, fork, run, checkpoint, content, or
+  recovery identities. Browser session identifiers are random opaque transport
+  credentials and contain no semantic identity.
+- CSP still contains neither `unsafe-inline` nor `unsafe-eval`; session tokens are not
+  placed in URLs, assets, request bodies, cookies, local/session storage, DOM messages,
+  or returned payloads.
+- `npm audit --omit=dev` still reports the previously disclosed Monaco-vendored
+  DOMPurify chain (two findings: one low, one moderate). The offered forced remediation
+  crosses a Monaco breaking downgrade, so this narrowly scoped fix does not apply it.
+- The production build's known Monaco chunk warning remains. Playwright Chromium is
+  installed and the real token-mode E2E has no environment blocker.
+- `world_studio_web/test-results/` and `playwright-report/` are ignored; generated run
+  artifacts are removed before the fix commit.

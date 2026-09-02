@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass
 import inspect
 from pathlib import Path
 import re
+import secrets
+from threading import RLock
+from time import monotonic
 from typing import Callable
 from urllib.parse import unquote
 
@@ -20,6 +24,7 @@ from narrative_dynamics.studio.streaming import (
 
 WORLD_STUDIO_PROTOCOL_VERSION = "narrative-dynamics.world-studio/v1"
 WORLD_STUDIO_WEBSOCKET_SUBPROTOCOL = "nd-jsonrpc-v1"
+WORLD_STUDIO_SESSION_COOKIE = "world_studio_session"
 _HASHED_ASSET = re.compile(r"-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$")
 _CONTENT_SECURITY_POLICY = "; ".join(
     (
@@ -45,6 +50,8 @@ class WorldStudioServerLimits:
     request_timeout_seconds: float = 30.0
     maximum_websocket_connections: int = 128
     maximum_subscriptions_per_connection: int = 16
+    maximum_sessions: int = 128
+    session_lifetime_seconds: int = 3_600
 
     def __post_init__(self) -> None:
         for name in (
@@ -52,6 +59,8 @@ class WorldStudioServerLimits:
             "maximum_websocket_frame_bytes",
             "maximum_websocket_connections",
             "maximum_subscriptions_per_connection",
+            "maximum_sessions",
+            "session_lifetime_seconds",
         ):
             value = getattr(self, name)
             if not isinstance(value, int) or isinstance(value, bool):
@@ -91,6 +100,8 @@ def create_world_studio_asgi_app(
     allowed_origins: tuple[str, ...],
     limits: WorldStudioServerLimits,
     static_root=None,
+    allow_ambient_authentication: bool = True,
+    clock: Callable[[], float] = monotonic,
 ):
     """Build the optional ASGI app; Hypercorn supplies HTTP/2 and TLS at deployment."""
     import asyncio
@@ -111,6 +122,10 @@ def create_world_studio_asgi_app(
     origins = _origins(allowed_origins)
     if not isinstance(limits, WorldStudioServerLimits):
         raise TypeError("World Studio server limits must be WorldStudioServerLimits")
+    if not isinstance(allow_ambient_authentication, bool):
+        raise TypeError("World Studio ambient authentication flag must be boolean")
+    if not callable(clock):
+        raise TypeError("World Studio session clock must be callable")
     resolved_static_root = None
     if static_root is not None:
         try:
@@ -125,6 +140,8 @@ def create_world_studio_asgi_app(
     connection_lock = asyncio.Lock()
     active_connections = 0
     next_connection = 0
+    session_lock = RLock()
+    sessions: OrderedDict[str, tuple[StudioCapability, float]] = OrderedDict()
 
     def transport_error(code: str, status: int):
         return JSONResponse({"error": {"code": code}}, status_code=status)
@@ -170,7 +187,55 @@ def create_world_studio_asgi_app(
                 subscription_id = candidate
         return request_id, method if isinstance(method, str) else None, subscription_id
 
-    async def authenticate(callback, host_object):
+    def session_capability(host_object) -> StudioCapability | None:
+        session_id = host_object.cookies.get(WORLD_STUDIO_SESSION_COOKIE)
+        if not isinstance(session_id, str) or not session_id:
+            return None
+        now = clock()
+        with session_lock:
+            expired = tuple(
+                identity for identity, (_, deadline) in sessions.items()
+                if deadline <= now
+            )
+            for identity in expired:
+                sessions.pop(identity, None)
+            retained = sessions.get(session_id)
+            return None if retained is None else retained[0]
+
+    def create_session(capability: StudioCapability) -> str:
+        now = clock()
+        with session_lock:
+            expired = tuple(
+                identity for identity, (_, deadline) in sessions.items()
+                if deadline <= now
+            )
+            for identity in expired:
+                sessions.pop(identity, None)
+            while len(sessions) >= limits.maximum_sessions:
+                sessions.popitem(last=False)
+            for _ in range(8):
+                session_id = secrets.token_urlsafe(32)
+                if session_id not in sessions:
+                    sessions[session_id] = (
+                        capability,
+                        now + float(limits.session_lifetime_seconds),
+                    )
+                    return session_id
+        raise RuntimeError("World Studio session identity allocation failed")
+
+    async def authenticate(
+        callback,
+        host_object,
+        *,
+        allow_ambient: bool = True,
+        allow_session: bool = True,
+    ):
+        if allow_session:
+            retained = session_capability(host_object)
+            if retained is not None:
+                return retained
+        if not allow_ambient:
+            return None
         try:
             if inspect.iscoroutinefunction(callback) or inspect.iscoroutinefunction(
                 getattr(callback, "__call__", None)
@@ -190,29 +255,71 @@ def create_world_studio_asgi_app(
             {"status": "ok", "protocol_version": WORLD_STUDIO_PROTOCOL_VERSION}
         )
 
+    def session_payload(capability: StudioCapability):
+        return {
+            "schema": "narrative-dynamics.studio-session/v1",
+            "authority": {
+                "authority_id": capability.authority_id,
+                "project_ids": capability.project_ids,
+                "run_ids": capability.run_ids,
+                "agent_ids": capability.agent_ids,
+                "permissions": capability.permissions,
+            },
+        }
+
     async def session(request):
-        try:
-            capability = await asyncio.wait_for(
-                authenticate(authenticate_http, request),
-                timeout=float(limits.request_timeout_seconds),
+        if request.method == "DELETE":
+            session_id = request.cookies.get(WORLD_STUDIO_SESSION_COOKIE)
+            if isinstance(session_id, str):
+                with session_lock:
+                    sessions.pop(session_id, None)
+            response = Response(status_code=204, headers={"cache-control": "no-store"})
+            response.delete_cookie(
+                WORLD_STUDIO_SESSION_COOKIE,
+                path="/",
+                secure=request.url.scheme == "https",
+                httponly=True,
+                samesite="strict",
             )
+            return response
+        try:
+            if request.method == "POST":
+                capability = await asyncio.wait_for(
+                    authenticate(
+                        authenticate_http,
+                        request,
+                        allow_ambient=True,
+                        allow_session=False,
+                    ),
+                    timeout=float(limits.request_timeout_seconds),
+                )
+            else:
+                capability = await asyncio.wait_for(
+                    authenticate(
+                        authenticate_http,
+                        request,
+                        allow_ambient=allow_ambient_authentication,
+                    ),
+                    timeout=float(limits.request_timeout_seconds),
+                )
         except asyncio.TimeoutError:
             return transport_error("timeout", 504)
         if capability is None:
             return transport_error("unauthorized", 401)
-        return JSONResponse(
-            {
-                "schema": "narrative-dynamics.studio-session/v1",
-                "authority": {
-                    "authority_id": capability.authority_id,
-                    "project_ids": capability.project_ids,
-                    "run_ids": capability.run_ids,
-                    "agent_ids": capability.agent_ids,
-                    "permissions": capability.permissions,
-                },
-            },
-            headers={"cache-control": "no-store"},
+        response = JSONResponse(
+            session_payload(capability), headers={"cache-control": "no-store"}
         )
+        if request.method == "POST":
+            response.set_cookie(
+                WORLD_STUDIO_SESSION_COOKIE,
+                create_session(capability),
+                max_age=limits.session_lifetime_seconds,
+                path="/",
+                secure=request.url.scheme == "https",
+                httponly=True,
+                samesite="strict",
+            )
+        return response
 
     async def rpc(request):
         content_type = request.headers.get("content-type", "")
@@ -228,7 +335,11 @@ def create_world_studio_asgi_app(
             return transport_error("invalid_body", 400)
         try:
             capability = await asyncio.wait_for(
-                authenticate(authenticate_http, request),
+                authenticate(
+                    authenticate_http,
+                    request,
+                    allow_ambient=allow_ambient_authentication,
+                ),
                 timeout=float(limits.request_timeout_seconds),
             )
         except asyncio.TimeoutError:
@@ -261,26 +372,37 @@ def create_world_studio_asgi_app(
             )
         except (UnicodeDecodeError, UnicodeEncodeError):
             return Response(status_code=404)
-        if "\\" in decoded_path or any(
+        if "\\" in decoded_path or "\x00" in decoded_path or "%" in decoded_path or any(
             segment in {".", ".."} for segment in decoded_path.split("/")
         ):
             return Response(status_code=404)
-        relative = request.path_params.get("path", "")
-        if relative in {"", "studio", "studio/"}:
+        if decoded_path == "/":
+            relative = ""
+        elif decoded_path in {"/studio", "/studio/"}:
+            relative = ""
+        elif decoded_path.startswith("/studio/"):
+            relative = decoded_path[len("/studio/") :]
+        else:
+            return Response(status_code=404)
+        if not relative:
             target = resolved_static_root / "index.html"
-            cache_control = "no-store"
+            cache_control = "no-cache"
         else:
             try:
                 target = (resolved_static_root / relative).resolve(strict=True)
-            except (OSError, RuntimeError):
-                return Response(status_code=404)
-            if not target.is_relative_to(resolved_static_root) or not target.is_file():
-                return Response(status_code=404)
-            cache_control = (
-                "public, max-age=31536000, immutable"
-                if relative.startswith("assets/") and _HASHED_ASSET.search(target.name)
-                else "no-cache"
-            )
+            except (OSError, RuntimeError, ValueError):
+                target = None
+            if target is None or not target.is_relative_to(resolved_static_root) or not target.is_file():
+                if relative == "assets" or relative.startswith("assets/"):
+                    return Response(status_code=404)
+                target = resolved_static_root / "index.html"
+                cache_control = "no-cache"
+            else:
+                cache_control = (
+                    "public, max-age=31536000, immutable"
+                    if relative.startswith("assets/") and _HASHED_ASSET.search(target.name)
+                    else "no-cache"
+                )
         return FileResponse(target, headers={"cache-control": cache_control})
 
     async def stream(websocket):
@@ -292,7 +414,11 @@ def create_world_studio_asgi_app(
             return
         try:
             capability = await asyncio.wait_for(
-                authenticate(authenticate_websocket, websocket),
+                authenticate(
+                    authenticate_websocket,
+                    websocket,
+                    allow_ambient=allow_ambient_authentication,
+                ),
                 timeout=float(limits.request_timeout_seconds),
             )
         except asyncio.TimeoutError:
@@ -539,7 +665,7 @@ def create_world_studio_asgi_app(
 
     routes = [
         Route("/health", health, methods=["GET"]),
-        Route("/session", session, methods=["GET"]),
+        Route("/session", session, methods=["GET", "POST", "DELETE"]),
         Route("/rpc", rpc, methods=["POST"]),
         WebSocketRoute("/v1/stream", stream),
     ]
@@ -560,6 +686,7 @@ def create_world_studio_asgi_app(
 
 __all__ = (
     "WORLD_STUDIO_PROTOCOL_VERSION",
+    "WORLD_STUDIO_SESSION_COOKIE",
     "WORLD_STUDIO_WEBSOCKET_SUBPROTOCOL",
     "WorldStudioServerLimits",
     "create_world_studio_asgi_app",

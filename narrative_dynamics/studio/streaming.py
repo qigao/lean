@@ -132,6 +132,7 @@ class StudioOutputSubscription:
     stream_id: str
     capability: StudioCapability
     kinds: tuple[SimulationOutputKind, ...]
+    audience: SimulationOutputAudience
     owner_agent_id: str | None
     audience_capability: SimulationAudienceCapability
 
@@ -254,16 +255,28 @@ class StudioOutputRouter:
 
     @staticmethod
     def _audience(
-        capability: StudioCapability, owner_agent_id: str | None
+        capability: StudioCapability,
+        audience: SimulationOutputAudience,
+        owner_agent_id: str | None,
     ) -> SimulationAudienceCapability:
-        if owner_agent_id is not None:
+        if not isinstance(audience, SimulationOutputAudience):
+            raise TypeError("subscription audience must be SimulationOutputAudience")
+        if audience is SimulationOutputAudience.AGENT:
+            if owner_agent_id is None:
+                raise SubscriptionAuthorizationError()
             owner = _identity(owner_agent_id, label="subscription owner agent ID")
             if owner not in capability.agent_ids:
                 raise SubscriptionAuthorizationError()
             return SimulationAudienceCapability(SimulationOutputAudience.AGENT, owner)
-        if "state.network" in capability.permissions:
+        if owner_agent_id is not None:
+            raise SubscriptionAuthorizationError()
+        if audience is SimulationOutputAudience.ANALYST:
+            if "state.network" not in capability.permissions:
+                raise SubscriptionAuthorizationError()
             return SimulationAudienceCapability(SimulationOutputAudience.ANALYST)
-        return SimulationAudienceCapability(SimulationOutputAudience.PUBLIC)
+        if audience is SimulationOutputAudience.PUBLIC:
+            return SimulationAudienceCapability(SimulationOutputAudience.PUBLIC)
+        raise ValueError("subscription audience must be public, agent, or analyst")
 
     @staticmethod
     def _authorize_run(capability: StudioCapability, run_id: str) -> None:
@@ -319,6 +332,7 @@ class StudioOutputRouter:
         kinds: tuple[SimulationOutputKind, ...],
         *,
         connection_id: str | None = None,
+        audience: SimulationOutputAudience = SimulationOutputAudience.PUBLIC,
         owner_agent_id: str | None = None,
         on_output: OutputCallback | None = None,
     ) -> StudioOutputSubscription:
@@ -341,15 +355,16 @@ class StudioOutputRouter:
         )
         if on_output is not None and not callable(on_output):
             raise TypeError("subscription output callback must be callable")
-        audience = self._audience(capability, owner_agent_id)
+        audience_capability = self._audience(capability, audience, owner_agent_id)
         subscription = StudioOutputSubscription(
             subscription_id,
             run_id,
             stream_id,
             capability,
             canonical_kinds,
-            owner_agent_id,
             audience,
+            owner_agent_id,
+            audience_capability,
         )
         now = self._clock()
         with self._lock:
@@ -526,11 +541,9 @@ class StudioOutputRouter:
                 tuple[_SubscriptionState | _ReleasedSubscriptionState, SimulationOutputView, bool]
             ] = []
             for subscription, prior_bounds, released, view in projected:
-                state = (
-                    self._released.get(subscription.subscription_id)
-                    if released
-                    else self._subscriptions.get(subscription.subscription_id)
-                )
+                active_state = self._subscriptions.get(subscription.subscription_id)
+                released_state = self._released.get(subscription.subscription_id)
+                state = active_state if active_state is not None else released_state
                 if (
                     state is None
                     or state.subscription != subscription
@@ -555,7 +568,7 @@ class StudioOutputRouter:
                     and batch.first_sequence != state.latest_bounds[1] + 1
                 ):
                     raise SubscriptionStateError()
-                actions.append((state, view, released))
+                actions.append((state, view, released_state is not None))
             if not actions:
                 return ()
             self._record_seen_locked(stream_key, identity)
@@ -753,8 +766,11 @@ class StudioStreamingService(WorldStudioService):
         return method in self._methods
 
     def _subscribe(self, params: JsonObject, capability: StudioCapability):
-        allowed = {"subscription_id", "run_id", "stream_id", "kinds", "owner_agent_id"}
-        required = {"subscription_id", "run_id", "stream_id", "kinds"}
+        allowed = {
+            "subscription_id", "run_id", "stream_id", "kinds", "audience",
+            "owner_agent_id",
+        }
+        required = {"subscription_id", "run_id", "stream_id", "kinds", "audience"}
         if set(params) - allowed or not required.issubset(params):
             raise StudioInvalidParamsError()
         try:
@@ -762,6 +778,10 @@ class StudioStreamingService(WorldStudioService):
             if not isinstance(raw_kinds, list):
                 raise ValueError
             kinds = tuple(SimulationOutputKind(item) for item in raw_kinds)
+            audience = SimulationOutputAudience(params["audience"])
+            has_owner = "owner_agent_id" in params
+            if (audience is SimulationOutputAudience.AGENT) != has_owner:
+                raise ValueError
             subscription_id = _identity(
                 params["subscription_id"], label="subscription ID"
             )
@@ -775,6 +795,7 @@ class StudioStreamingService(WorldStudioService):
                 capability,
                 kinds,
                 connection_id=self._connection_id,
+                audience=audience,
                 owner_agent_id=params.get("owner_agent_id"),
                 on_output=callback,
             )
@@ -785,12 +806,16 @@ class StudioStreamingService(WorldStudioService):
             ):
                 raise
             raise StudioInvalidParamsError() from None
-        return {
+        result = {
             "subscription_id": subscription.subscription_id,
             "run_id": subscription.run_id,
             "stream_id": subscription.stream_id,
             "kinds": [kind.value for kind in subscription.kinds],
+            "audience": subscription.audience.value,
         }
+        if subscription.owner_agent_id is not None:
+            result["owner_agent_id"] = subscription.owner_agent_id
+        return result
 
     @staticmethod
     def _cursor_params(params: JsonObject) -> tuple[str, str, int, str]:

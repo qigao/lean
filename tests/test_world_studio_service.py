@@ -382,6 +382,10 @@ def test_real_coordinator_lifecycle_and_scoped_queries(tmp_path: Path) -> None:
     assert agent["agent_id"] == "alice"
     assert agent["mind"]["agent_id"] == "alice"
     assert network["round_index"] == 1
+    assert network["schema"] == "narrative-dynamics.scenario-network-state-view/v1"
+    assert network["run_id"] == "run-1"
+    assert network["scenario_hash"] == public["scenario_hash"]
+    assert network["state_hash"] == public["state_hash"]
     assert output["source_batch_hash"] == stepped["output_batch_hash"]
     assert all(record["owner_agent_id"] is None for record in output["records"])
     assert audit == stepped

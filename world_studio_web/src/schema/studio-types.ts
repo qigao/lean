@@ -241,6 +241,10 @@ export interface ScenarioAgentStateView {
 }
 
 export interface ScenarioNetworkStateView {
+  schema: "narrative-dynamics.scenario-network-state-view/v1";
+  run_id: string;
+  scenario_hash: string;
+  state_hash: string;
   model_id: string;
   model_hash: string;
   round_index: number;
@@ -386,6 +390,20 @@ export interface StreamBinding {
   stream_id: string;
   scenario_hash: string;
   kinds: SimulationOutputKind[];
-  audience: "public" | "agent" | "network";
+  audience: "public" | "agent" | "analyst";
   owner_agent_id: string | null;
+}
+
+export type TimelineMarkerKind =
+  | "gap"
+  | "recovery-started"
+  | "recovery-completed"
+  | "recovery-failed"
+  | "resume";
+
+export interface TimelineMarker extends JsonObject {
+  kind: TimelineMarkerKind;
+  after_sequence: number;
+  before_sequence: number;
+  label: string;
 }

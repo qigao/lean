@@ -13,6 +13,7 @@ export class StateInspectorElement extends HTMLElement {
   private selectedRunId = "";
   private initialized = false;
   streamClient: StreamClient | null = null;
+  private selectionGeneration = 0;
   private readonly onStoreChange = () => this.update();
 
   set store(value: RunStore | null) {
@@ -79,7 +80,8 @@ export class StateInspectorElement extends HTMLElement {
       select.append(option);
     }
     if (choices.some(([value]) => value === prior)) select.value = prior;
-    select.disabled = !run || choices.length === 0;
+    select.disabled = !run || choices.length === 0 ||
+      (run !== null && this.runStore?.isAudienceBusy(run.run_id) === true);
     const scoped = this.runStore?.scopedState(this.selectedRunId);
     this.querySelector<HTMLElement>(".scoped-state")!.textContent = scoped
       ? JSON.stringify(scoped.value, null, 2)
@@ -92,6 +94,9 @@ export class StateInspectorElement extends HTMLElement {
     const status = this.querySelector<HTMLElement>(".state-status")!;
     const [prefix, owner] = value.split(":", 2);
     const audience = prefix === "agent" ? "agent" : prefix === "network" ? "network" : "public";
+    const generation = ++this.selectionGeneration;
+    const selector = this.querySelector<HTMLSelectElement>("select")!;
+    selector.disabled = true;
     section.setAttribute("aria-busy", "true");
     status.textContent = `Loading ${audience} state.`;
     try {
@@ -103,7 +108,7 @@ export class StateInspectorElement extends HTMLElement {
           stream_id: run.stream_id,
           scenario_hash: run.scenario_hash,
           kinds: [...OUTPUT_KINDS],
-          audience,
+          audience: audience === "network" ? "analyst" : audience,
           owner_agent_id: audience === "agent" ? owner ?? null : null,
         }, () => this.runStore?.clearAudienceData(this.selectedRunId));
       }
@@ -111,12 +116,14 @@ export class StateInspectorElement extends HTMLElement {
         audience,
         owner_agent_id: audience === "agent" ? owner ?? null : null,
       });
-      status.textContent = `${audience} state loaded.`;
+      if (generation === this.selectionGeneration) status.textContent = `${audience} state loaded.`;
     } catch {
-      status.textContent = "Scoped state could not be loaded.";
+      if (generation === this.selectionGeneration) status.textContent = "Scoped state could not be loaded.";
     } finally {
-      section.setAttribute("aria-busy", "false");
-      this.update();
+      if (generation === this.selectionGeneration) {
+        section.setAttribute("aria-busy", "false");
+        this.update();
+      }
     }
   }
 }

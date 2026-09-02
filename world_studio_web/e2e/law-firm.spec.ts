@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,8 +12,10 @@ const fixture = resolve(repositoryRoot, "examples", "law_firm_scenario");
 const temporaryRoot = mkdtempSync(resolve(tmpdir(), "world-studio-e2e-"));
 const workspaceRoot = resolve(temporaryRoot, "workspace");
 const exportRoot = resolve(temporaryRoot, "export");
+const tokenFile = resolve(temporaryRoot, "operator-token.txt");
 mkdirSync(workspaceRoot);
 mkdirSync(exportRoot);
+writeFileSync(tokenFile, "e2e-one-time-token", "utf8");
 
 let server: ChildProcessWithoutNullStreams | null = null;
 let serverOutput = "";
@@ -29,7 +31,7 @@ function launcherArguments(): string[] {
     "--bind-host", "127.0.0.1",
     "--bind-port", "8766",
     "--origin", "http://127.0.0.1:8766",
-    "--development-trust-all",
+    "--auth-token-file", tokenFile,
     "--authority-id", "e2e-operator",
     "--project-id", "law-firm",
     "--run-id", "run-parent",
@@ -86,6 +88,14 @@ async function applyInspectorJson(page: Page, value: unknown): Promise<void> {
   await expect(page.locator(".connection-status")).toHaveText("Project revision accepted by the server.");
 }
 
+async function authenticate(page: Page): Promise<void> {
+  const token = page.getByLabel("Access token");
+  await expect(token).toBeVisible();
+  await token.fill("e2e-one-time-token");
+  await page.getByRole("button", { name: "Authenticate" }).click();
+  await expect(page.locator(".connection-status")).toHaveText("Editor shell ready.");
+}
+
 test.beforeAll(async () => { await startServer(); });
 test.afterAll(async () => {
   await stopServer();
@@ -93,8 +103,8 @@ test.afterAll(async () => {
 });
 
 test("law-firm authoring, privacy, recovery, fork, and persistence use real authorities", async ({ page }) => {
-  await page.goto("/");
-  await expect(page.locator(".connection-status")).toHaveText("Editor shell ready.");
+  await page.goto("/studio/");
+  await authenticate(page);
 
   // 1. Import the configured examples/law_firm_scenario source by server-owned ID.
   await page.getByRole("button", { name: "Import project" }).click();
@@ -110,6 +120,16 @@ test("law-firm authoring, privacy, recovery, fork, and persistence use real auth
   await applyInspectorJson(page, {
     relationship_type: "supervises", source_agent_id: "alice", strength: 0.85, target_agent_id: "bob",
   });
+  await page.getByRole("button", { name: "Select relationship supervises" }).first().click();
+  await expect(page.getByRole("region", { name: "Property inspector" })).toContainText("0.85");
+  await page.getByRole("treeitem", { name: "run" }).click();
+  await page.getByRole("tab", { name: "Raw JSON" }).click();
+  const runJson = page.getByLabel("Document JSON");
+  const runtime = JSON.parse(await runJson.inputValue()) as Record<string, unknown>;
+  runtime.allowed_output_kinds = ["network.metrics", "percept.private", "story.progress"];
+  await runJson.fill(JSON.stringify(runtime, null, 2));
+  await page.getByRole("button", { name: "Apply JSON replacement" }).click();
+  await expect(page.locator(".connection-status")).toHaveText("Project revision accepted by the server.");
 
   // 3. Introduce a dangling scene dependency, observe diagnostics, and repair it.
   await page.getByRole("tab", { name: "Story" }).click();
@@ -150,6 +170,7 @@ test("law-firm authoring, privacy, recovery, fork, and persistence use real auth
   await page.getByRole("button", { name: "Step run" }).click();
   const timeline = page.getByRole("list", { name: "Run output records" });
   await expect(timeline.getByRole("listitem").last()).toContainText("Sequence");
+  await expect(timeline).toContainText("owner alice");
   await expect(timeline).not.toContainText("owner bob");
 
   // 7. Force a real WSS disconnect, recreate the identical subscription, and resume.
@@ -157,7 +178,7 @@ test("law-firm authoring, privacy, recovery, fork, and persistence use real auth
   await expect(page.locator(".stream-status")).toContainText("disconnected");
   await page.getByRole("button", { name: "Reconnect stream" }).click();
   await expect(page.locator(".stream-status")).toContainText("connected");
-  await expect(page.getByRole("log")).toContainText("resumed from its acknowledged cursor");
+  await expect(page.getByRole("log")).toContainText("resumed from its committed cursor");
 
   // 8. Checkpoint and fork through the real checkpoint store/coordinator.
   await page.getByText("Checkpoint and fork").click();
@@ -184,12 +205,31 @@ test("law-firm authoring, privacy, recovery, fork, and persistence use real auth
   expect(childHash).not.toBe(parentHash);
 
   // 10. Restart the actual service process and reopen the persisted SQLite project revision.
-  const savedRevision = await page.locator(".workflow-status").textContent();
+  const savedSnapshot = await page.locator("#studio-app").evaluate((element) => {
+    const snapshot = (element as HTMLElement & {
+      snapshot: { revision: number; content_hash: string } | null;
+    }).snapshot;
+    if (!snapshot) throw new Error("No authoritative project snapshot is loaded");
+    return { revision: snapshot.revision, content_hash: snapshot.content_hash };
+  });
+  expect(Number.isInteger(savedSnapshot.revision)).toBe(true);
+  expect(savedSnapshot.content_hash).toMatch(/^sha256:[0-9a-f]{64}$/);
   await stopServer();
   await startServer();
   await page.reload();
+  await authenticate(page);
   await page.getByRole("button", { name: "Open project" }).click();
-  await expect(page.locator(".workflow-status")).toContainText("reopened at saved revision");
+  await expect(page.locator(".workflow-status")).toContainText(`reopened at saved revision ${savedSnapshot.revision}`);
   await expect(page.getByRole("button", { name: "Select place Client reception" })).toBeVisible();
-  expect(savedRevision).toBeTruthy();
+  const reopenedSnapshot = await page.locator("#studio-app").evaluate((element) => {
+    const snapshot = (element as HTMLElement & {
+      snapshot: { revision: number; content_hash: string } | null;
+    }).snapshot;
+    if (!snapshot) throw new Error("No reopened project snapshot is loaded");
+    return { revision: snapshot.revision, content_hash: snapshot.content_hash };
+  });
+  expect(reopenedSnapshot).toEqual(savedSnapshot);
+  await page.getByRole("tab", { name: "Social" }).click();
+  await page.getByRole("button", { name: "Select relationship supervises" }).first().click();
+  await expect(page.getByRole("region", { name: "Property inspector" })).toContainText("0.85");
 });

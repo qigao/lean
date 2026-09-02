@@ -6,7 +6,7 @@ import pytest
 from starlette.testclient import TestClient
 
 from narrative_dynamics.studio import STUDIO_PERMISSIONS
-from tools.run_world_studio import LauncherSettings, build_application
+from tools.run_world_studio import LauncherSettings, build_application, settings_from_args
 
 
 LAW_FIRM = Path("examples/law_firm_scenario").resolve()
@@ -54,6 +54,54 @@ def test_development_trust_and_non_loopback_policy_fail_closed(tmp_path: Path) -
         )
     with pytest.raises(ValueError, match="TLS certificate and private key"):
         settings(tmp_path, tls_certificate=tmp_path / "missing.pem")
+
+
+def test_token_mode_uses_one_time_session_handoff_not_ambient_bearer(
+    tmp_path: Path,
+) -> None:
+    app = build_application(settings(
+        tmp_path,
+        development_trust_all=False,
+        auth_token="operator-secret",
+    ))
+    with TestClient(app, base_url="http://127.0.0.1:8765") as client:
+        assert client.get("/session").status_code == 401
+        bearer_rpc = client.post("/rpc", headers={"authorization": "Bearer operator-secret"}, json={
+            "jsonrpc": "2.0", "id": "ambient", "method": "project.create",
+            "params": {"project_id": "law-firm"},
+        })
+        assert bearer_rpc.status_code == 401
+
+        login = client.post("/session", headers={"authorization": "Bearer operator-secret"})
+        assert login.status_code == 200
+        assert "HttpOnly" in login.headers["set-cookie"]
+        assert "Secure" not in login.headers["set-cookie"]
+        assert client.post("/rpc", json={
+            "jsonrpc": "2.0", "id": "cookie", "method": "project.create",
+            "params": {"project_id": "law-firm"},
+        }).status_code == 200
+
+
+def test_session_capacity_and_lifetime_are_explicit_launcher_limits(tmp_path: Path) -> None:
+    configured = settings(tmp_path)
+    token_file = tmp_path / "token.txt"
+    token_file.write_text("operator-secret", encoding="utf-8")
+    parsed = settings_from_args([
+        "--workspace-root", str(configured.workspace_root),
+        "--import-root", str(LAW_FIRM.parent),
+        "--import-source", f"law-firm-fixture={LAW_FIRM}",
+        "--export-root", str(configured.export_root),
+        "--static-root", str(configured.static_root),
+        "--bind-host", "127.0.0.1", "--bind-port", "8765",
+        "--origin", "http://127.0.0.1:8765",
+        "--auth-token-file", str(token_file),
+        "--authority-id", "local-operator",
+        "--project-id", "law-firm", "--run-id", "run-parent",
+        "--maximum-sessions", "7", "--session-lifetime-seconds", "45",
+    ])
+
+    assert parsed.server_limits.maximum_sessions == 7
+    assert parsed.server_limits.session_lifetime_seconds == 45
 
 
 def test_composition_routes_real_sqlite_coordinator_and_fork_output(tmp_path: Path) -> None:
@@ -126,6 +174,7 @@ def test_composition_routes_real_sqlite_coordinator_and_fork_output(tmp_path: Pa
                 "params": {
                     "subscription_id": "child-public", "run_id": "run-child",
                     "stream_id": "stream-child", "kinds": ["state.delta", "network.metrics"],
+                    "audience": "public",
                 },
             })
             assert stream.receive_json()["result"]["subscription_id"] == "child-public"

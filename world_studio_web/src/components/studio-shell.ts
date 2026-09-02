@@ -151,7 +151,10 @@ export class StudioShellElement extends HTMLElement {
       inspector.runId = runId;
     }
     const timeline = this.querySelector("output-timeline") as OutputTimelineElement | null;
-    if (timeline) timeline.batches = this.authoritativeRuns?.outputs(runId) ?? [];
+    if (timeline) {
+      timeline.batches = this.authoritativeRuns?.outputs(runId) ?? [];
+      timeline.markers = this.authoritativeRuns?.timelineMarkers(runId) ?? [];
+    }
     const placeholder = this.querySelector<HTMLElement>(".timeline-placeholder");
     if (placeholder) placeholder.hidden = !!this.authoritativeRuns;
 

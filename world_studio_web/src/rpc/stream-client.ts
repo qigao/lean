@@ -7,6 +7,7 @@ import type {
   SimulationOutputRecord,
   SimulationOutputView,
   StreamBinding,
+  TimelineMarker,
 } from "../schema/studio-types";
 
 const PROTOCOL = "nd-jsonrpc-v1";
@@ -48,6 +49,7 @@ export interface StreamClientOptions {
   onOutput?: (output: SimulationOutputView) => void | Promise<void>;
   onProtocolError?: (error: Error) => void;
   onStatus?: (status: StreamConnectionStatus, message: string) => void;
+  onMarker?: (runId: string, marker: TimelineMarker) => void;
   recoverGap?: (request: StreamGapRecoveryRequest) => void | Promise<void>;
   maximumRetainedIdentities?: number;
 }
@@ -184,7 +186,7 @@ function assertBinding(binding: StreamBinding): void {
   if (!binding.subscription_id || !binding.run_id || !binding.stream_id || !isHash(binding.scenario_hash) ||
       !Array.isArray(binding.kinds) || binding.kinds.some((kind) => !OUTPUT_KINDS.has(kind)) ||
       new Set(binding.kinds).size !== binding.kinds.length ||
-      !["public", "agent", "network"].includes(binding.audience) ||
+      !["public", "agent", "analyst"].includes(binding.audience) ||
       (binding.audience === "agent") !== (typeof binding.owner_agent_id === "string" && !!binding.owner_agent_id)) {
     throw new StreamProtocolError("Stream binding is malformed");
   }
@@ -196,6 +198,7 @@ function subscriptionParams(binding: StreamBinding): JsonObject {
     run_id: binding.run_id,
     stream_id: binding.stream_id,
     kinds: [...binding.kinds],
+    audience: binding.audience,
   };
   if (binding.owner_agent_id !== null) params.owner_agent_id = binding.owner_agent_id;
   return params;
@@ -223,16 +226,21 @@ export class StreamClient extends EventTarget {
   private readonly onOutput: (output: SimulationOutputView) => void | Promise<void>;
   private readonly onProtocolError: (error: Error) => void;
   private readonly onStatus: (status: StreamConnectionStatus, message: string) => void;
+  private readonly onMarker: (runId: string, marker: TimelineMarker) => void;
   private readonly recoverGap: (request: StreamGapRecoveryRequest) => void | Promise<void>;
   private readonly maximumRetainedIdentities: number;
   private socket: WebSocketLike | null = null;
   private activeBinding: StreamBinding | null = null;
+  private streamScopeBinding: StreamBinding | null = null;
   private pending = new Map<string, PendingControl>();
   private requestNumber = 0;
   private state: StreamConnectionStatus = "disconnected";
-  private acknowledgedCursor: StreamCursor | null = null;
+  private committedCursor: StreamCursor | null = null;
+  private confirmedAcknowledgementCursor: StreamCursor | null = null;
   private readonly identities = new Map<string, string>();
   private deliveryChain: Promise<void> = Promise.resolve();
+  private audienceGeneration = 0;
+  private audienceSwitchTail: Promise<void> = Promise.resolve();
 
   constructor(private readonly endpoint: string, options: StreamClientOptions = {}) {
     super();
@@ -240,6 +248,7 @@ export class StreamClient extends EventTarget {
     this.onOutput = options.onOutput ?? (() => undefined);
     this.onProtocolError = options.onProtocolError ?? (() => undefined);
     this.onStatus = options.onStatus ?? (() => undefined);
+    this.onMarker = options.onMarker ?? (() => undefined);
     this.recoverGap = options.recoverGap ?? (() => {
       throw new StreamProtocolError("No scoped recovery handler is configured");
     });
@@ -251,7 +260,7 @@ export class StreamClient extends EventTarget {
 
   get status(): StreamConnectionStatus { return this.state; }
   get binding(): StreamBinding | null { return this.activeBinding ? structuredClone(this.activeBinding) : null; }
-  get cursor(): StreamCursor | null { return this.acknowledgedCursor ? { ...this.acknowledgedCursor } : null; }
+  get cursor(): StreamCursor | null { return this.committedCursor ? { ...this.committedCursor } : null; }
   get retainedIdentityCount(): number { return this.identities.size; }
 
   private updateStatus(status: StreamConnectionStatus, message: string): void {
@@ -266,15 +275,22 @@ export class StreamClient extends EventTarget {
     this.updateStatus("error", normalized.message);
   }
 
+  private mark(binding: StreamBinding, marker: TimelineMarker): void {
+    try { this.onMarker(binding.run_id, freezeMarker(marker)); }
+    catch { /* A view callback cannot change stream protocol authority. */ }
+  }
+
   async connect(binding: StreamBinding): Promise<void> {
     assertBinding(binding);
     if (this.socket && this.socket.readyState < 2) throw new Error("Stream connection is already active");
     const prior = this.activeBinding;
     if (prior && JSON.stringify(prior) !== JSON.stringify(binding)) {
       this.identities.clear();
-      this.acknowledgedCursor = null;
+      this.committedCursor = null;
+      this.confirmedAcknowledgementCursor = null;
     }
     this.activeBinding = structuredClone(binding);
+    this.streamScopeBinding = structuredClone(binding);
     this.updateStatus("connecting", "Connecting to the run output stream.");
     const socket = this.socketFactory(this.endpoint, [PROTOCOL]);
     this.socket = socket;
@@ -404,10 +420,14 @@ export class StreamClient extends EventTarget {
 
   private async subscribe(binding: StreamBinding): Promise<void> {
     const result = await this.sendControl("stream.subscribe", subscriptionParams(binding));
-    if (!isRecord(result) || !hasExactKeys(result, ["subscription_id", "run_id", "stream_id", "kinds"]) ||
+    const required = ["subscription_id", "run_id", "stream_id", "kinds", "audience"];
+    const optional = binding.audience === "agent" ? ["owner_agent_id"] : [];
+    if (!isRecord(result) || !hasExactKeys(result, required, optional) ||
         result.subscription_id !== binding.subscription_id || result.run_id !== binding.run_id ||
         result.stream_id !== binding.stream_id || !Array.isArray(result.kinds) ||
-        JSON.stringify(result.kinds) !== JSON.stringify(binding.kinds)) {
+        JSON.stringify(result.kinds) !== JSON.stringify(binding.kinds) ||
+        result.audience !== binding.audience ||
+        (binding.audience === "agent" && result.owner_agent_id !== binding.owner_agent_id)) {
       throw new StreamProtocolError("Subscription response does not match the requested binding");
     }
   }
@@ -423,11 +443,27 @@ export class StreamClient extends EventTarget {
     const bounds = `${rawOutput.first_sequence}:${rawOutput.last_sequence}`;
     const priorHash = this.identities.get(bounds);
     if (priorHash !== undefined) {
-      if (priorHash === rawOutput.source_batch_hash) return;
+      if (priorHash === rawOutput.source_batch_hash) {
+        if (this.committedCursor?.sequence === rawOutput.last_sequence &&
+            this.committedCursor.batch_hash === rawOutput.source_batch_hash &&
+            (!this.confirmedAcknowledgementCursor ||
+             this.confirmedAcknowledgementCursor.sequence < rawOutput.last_sequence)) {
+          await this.acknowledge(binding, this.committedCursor);
+        }
+        return;
+      }
       throw new StreamProtocolError("Output sequence bounds conflict with a different batch hash");
     }
-    if (this.acknowledgedCursor && rawOutput.first_sequence !== this.acknowledgedCursor.sequence + 1) {
-      throw new StreamProtocolError(rawOutput.last_sequence <= this.acknowledgedCursor.sequence
+    if (this.committedCursor && rawOutput.first_sequence !== this.committedCursor.sequence + 1) {
+      if (rawOutput.first_sequence > this.committedCursor.sequence + 1) {
+        this.mark(binding, {
+          kind: "gap",
+          after_sequence: this.committedCursor.sequence,
+          before_sequence: rawOutput.first_sequence,
+          label: `Output gap detected before source sequence ${rawOutput.first_sequence}.`,
+        });
+      }
+      throw new StreamProtocolError(rawOutput.last_sequence <= this.committedCursor.sequence
         ? "Output sequence regressed" : "Output sequence gap requires recovery");
     }
     await this.onOutput(freezeOutput(rawOutput));
@@ -437,28 +473,34 @@ export class StreamClient extends EventTarget {
       if (oldest === undefined) break;
       this.identities.delete(oldest);
     }
+    this.committedCursor = { sequence: rawOutput.last_sequence, batch_hash: rawOutput.source_batch_hash };
+    await this.acknowledge(binding, this.committedCursor);
+  }
+
+  private async acknowledge(binding: StreamBinding, cursor: StreamCursor): Promise<void> {
     const result = await this.sendControl("stream.acknowledge", {
       subscription_id: binding.subscription_id,
       stream_id: binding.stream_id,
-      last_sequence: rawOutput.last_sequence,
-      last_batch_hash: rawOutput.source_batch_hash,
+      last_sequence: cursor.sequence,
+      last_batch_hash: cursor.batch_hash,
     });
-    if (!isRecord(result) || result.subscription_id !== binding.subscription_id || result.acknowledged !== true) {
+    if (!isRecord(result) || !hasExactKeys(result, ["subscription_id", "acknowledged"]) ||
+        result.subscription_id !== binding.subscription_id || result.acknowledged !== true) {
       throw new StreamProtocolError("Stream acknowledgement response is malformed");
     }
-    if (this.acknowledgedCursor && rawOutput.last_sequence <= this.acknowledgedCursor.sequence) {
+    if (this.confirmedAcknowledgementCursor && cursor.sequence <= this.confirmedAcknowledgementCursor.sequence) {
       throw new StreamProtocolError("Stream acknowledgement did not advance monotonically");
     }
-    this.acknowledgedCursor = { sequence: rawOutput.last_sequence, batch_hash: rawOutput.source_batch_hash };
+    this.confirmedAcknowledgementCursor = { ...cursor };
   }
 
   async reconnect(): Promise<void> {
     const binding = this.activeBinding;
     if (!binding) throw new Error("No released subscription is available to reconnect");
-    const cursor = this.acknowledgedCursor ? { ...this.acknowledgedCursor } : null;
+    const cursor = this.committedCursor ? { ...this.committedCursor } : null;
     await this.connect(binding);
     if (!cursor) return;
-    this.updateStatus("recovering", "Resuming run output from the last acknowledged batch.");
+    this.updateStatus("recovering", "Resuming run output from the last committed batch.");
     try {
       const result = await this.sendControl("stream.resume", {
         subscription_id: binding.subscription_id,
@@ -471,6 +513,12 @@ export class StreamClient extends EventTarget {
           !isPositiveInteger(result.current_sequence) || !isHash(result.current_batch_hash)) {
         throw new StreamProtocolError("Stream resume response is malformed");
       }
+      this.mark(binding, {
+        kind: "resume",
+        after_sequence: cursor.sequence,
+        before_sequence: result.current_sequence,
+        label: `Stream resumed from source sequence ${cursor.sequence}.`,
+      });
       this.updateStatus("connected", "Run output stream resumed.");
     } catch (error) {
       if (!(error instanceof JsonRpcError) || error.code !== -32016) throw error;
@@ -484,38 +532,89 @@ export class StreamClient extends EventTarget {
         !isPositiveInteger(data.current_sequence) || !isHash(data.current_batch_hash) || !isHash(data.snapshot_token)) {
       throw new StreamProtocolError("History-gap recovery data is malformed");
     }
-    await this.recoverGap({
-      run_id: binding.run_id,
-      audience: binding.audience,
-      owner_agent_id: binding.owner_agent_id,
-      snapshot_token: data.snapshot_token,
+    const after = this.committedCursor?.sequence ?? 0;
+    const boundary = { after_sequence: after, before_sequence: data.current_sequence };
+    this.mark(binding, {
+      kind: "gap", ...boundary,
+      label: `Retained stream history has a gap at source sequence ${after}.`,
     });
-    this.identities.clear();
-    this.acknowledgedCursor = { sequence: data.current_sequence, batch_hash: data.current_batch_hash };
-    const unsubscribed = await this.sendControl("stream.unsubscribe", { subscription_id: binding.subscription_id });
-    if (!isRecord(unsubscribed) || unsubscribed.subscription_id !== binding.subscription_id || unsubscribed.unsubscribed !== true) {
-      throw new StreamProtocolError("Gap recovery unsubscribe response is malformed");
+    this.mark(binding, {
+      kind: "recovery-started", ...boundary,
+      label: "Capability-scoped state recovery begun.",
+    });
+    try {
+      await this.recoverGap({
+        run_id: binding.run_id,
+        audience: binding.audience,
+        owner_agent_id: binding.owner_agent_id,
+        snapshot_token: data.snapshot_token,
+      });
+      this.identities.clear();
+      this.committedCursor = { sequence: data.current_sequence, batch_hash: data.current_batch_hash };
+      this.confirmedAcknowledgementCursor = { ...this.committedCursor };
+      const unsubscribed = await this.sendControl("stream.unsubscribe", { subscription_id: binding.subscription_id });
+      if (!isRecord(unsubscribed) || unsubscribed.subscription_id !== binding.subscription_id || unsubscribed.unsubscribed !== true) {
+        throw new StreamProtocolError("Gap recovery unsubscribe response is malformed");
+      }
+      await this.subscribe(binding);
+      this.mark(binding, {
+        kind: "recovery-completed", ...boundary,
+        label: `Capability-scoped state recovery completed at source sequence ${data.current_sequence}.`,
+      });
+      this.updateStatus("connected", "Run output recovered from a capability-scoped state snapshot.");
+    } catch (recoveryError) {
+      this.mark(binding, {
+        kind: "recovery-failed", ...boundary,
+        label: "Capability-scoped state recovery failed.",
+      });
+      throw recoveryError;
     }
-    await this.subscribe(binding);
-    this.updateStatus("connected", "Run output recovered from a capability-scoped state snapshot.");
   }
 
-  async switchAudience(binding: StreamBinding, clearPrivateData: () => void): Promise<void> {
+  switchAudience(binding: StreamBinding, clearPrivateData: () => void): Promise<void> {
     assertBinding(binding);
-    const prior = this.activeBinding;
+    const prior = this.streamScopeBinding;
     if (!prior || !this.socket || this.socket.readyState !== 1) throw new Error("Stream is not connected");
     if (binding.run_id !== prior.run_id || binding.stream_id !== prior.stream_id ||
         binding.scenario_hash !== prior.scenario_hash) throw new StreamProtocolError("Audience switch must retain the run binding");
     clearPrivateData();
+    const generation = ++this.audienceGeneration;
     this.identities.clear();
-    this.acknowledgedCursor = null;
-    const result = await this.sendControl("stream.unsubscribe", { subscription_id: prior.subscription_id });
-    if (!isRecord(result) || result.subscription_id !== prior.subscription_id || result.unsubscribed !== true) {
-      throw new StreamProtocolError("Audience switch unsubscribe response is malformed");
-    }
-    this.activeBinding = structuredClone(binding);
-    await this.subscribe(binding);
-    this.updateStatus("connected", `Run output audience changed to ${binding.audience}.`);
+    this.committedCursor = null;
+    this.confirmedAcknowledgementCursor = null;
+    const operation = this.audienceSwitchTail.catch(() => undefined).then(async () => {
+      if (generation !== this.audienceGeneration) {
+        throw new StreamProtocolError("Audience switch was superseded by a newer selection");
+      }
+      const active = this.activeBinding;
+      if (active !== null) {
+        const result = await this.sendControl("stream.unsubscribe", { subscription_id: active.subscription_id });
+        if (!isRecord(result) || !hasExactKeys(result, ["subscription_id", "unsubscribed"]) ||
+            result.subscription_id !== active.subscription_id || result.unsubscribed !== true) {
+          throw new StreamProtocolError("Audience switch unsubscribe response is malformed");
+        }
+        this.activeBinding = null;
+      }
+      if (generation !== this.audienceGeneration) {
+        throw new StreamProtocolError("Audience switch was superseded by a newer selection");
+      }
+      await this.subscribe(binding);
+      if (generation !== this.audienceGeneration) {
+        const cleanup = await this.sendControl("stream.unsubscribe", {
+          subscription_id: binding.subscription_id,
+        });
+        if (!isRecord(cleanup) || cleanup.subscription_id !== binding.subscription_id ||
+            cleanup.unsubscribed !== true) {
+          this.close();
+        }
+        throw new StreamProtocolError("Audience switch was superseded by a newer selection");
+      }
+      this.activeBinding = structuredClone(binding);
+      this.streamScopeBinding = structuredClone(binding);
+      this.updateStatus("connected", `Run output audience changed to ${binding.audience}.`);
+    });
+    this.audienceSwitchTail = operation.then(() => undefined, () => undefined);
+    return operation;
   }
 
   close(): void {
@@ -537,4 +636,8 @@ function freezeOutput(output: SimulationOutputView): SimulationOutputView {
   };
   visit(copy);
   return copy;
+}
+
+function freezeMarker(marker: TimelineMarker): TimelineMarker {
+  return Object.freeze(structuredClone(marker));
 }
