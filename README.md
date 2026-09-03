@@ -2138,6 +2138,34 @@ estimates. V23.2 still does not sample a Watts--Strogatz network, prove an expec
 clustering/path-length law, construct a Barabasi--Albert process, or establish a
 power-law degree distribution.
 
+### Lean Watts--Strogatz foundation V23.3
+
+V23.3 constructs the deterministic initial graph needed by a later stochastic
+Watts--Strogatz model. `NarrativeDynamics.Core.WattsStrogatz` places `Fin n` nodes
+on a modular ring and connects distinct nodes whose clockwise or counterclockwise
+difference is within a configured radius. The relation is decidable, symmetric,
+and loopless. Valid parameter packages require a positive radius and
+`2 * radius < nodeCount`, excluding an already-complete local neighborhood.
+
+Mathlib's finite `cycleGraph` is formally embedded into every positive-radius
+ring. A converter preserves exact walk length from `SimpleGraph.Walk` to the
+project's `MeshWalk`; finite simple-path length then proves the regular ring has a
+global hop bound of `nodeCount - 1`. The existing executable metric definitions
+also check a concrete baseline: the six-node radius-two ring has local clustering
+coefficient `2 / 3` at node zero.
+
+An explicit undirected-shortcut operation retains every old edge and adds both
+orientations of one new connection. Distinct shortcut endpoints preserve
+looplessness, and a symmetric base remains symmetric. More importantly, Lean now
+proves that retaining edges cannot increase any pair's exact shortest hop count,
+the exact mesh diameter, or finite average shortest-path length. No analogous
+global clustering monotonicity is asserted because a shortcut may create a new
+open wedge even while shortening paths.
+
+V23.3 is still not the random WS model: it defines no probability space, rewiring
+sampler, expectation, concentration bound, or asymptotic small-world theorem. It
+also makes no Barabasi--Albert or power-law claim.
+
 ### V21.2 typed simulation output and public journal
 
 V21.2 projects an accepted situated-network round into one deterministic typed batch.
