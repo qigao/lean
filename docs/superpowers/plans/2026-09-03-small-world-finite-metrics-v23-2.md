@@ -171,31 +171,41 @@ theorem exists_reachWithin_of_globalHopBound {Node : Type*}
 
 noncomputable def shortestHopCount {Node : Type*} (g : MeshGraph Node)
     (bounded : ∃ limit, GlobalHopBound g limit) (source target : Node) : Nat :=
-  Nat.find (exists_reachWithin_of_globalHopBound g bounded source target)
+  by
+    classical
+    exact Nat.find (exists_reachWithin_of_globalHopBound g bounded source target)
 
 theorem shortestHopCount_spec {Node : Type*} (g : MeshGraph Node)
     (bounded : ∃ limit, GlobalHopBound g limit) (source target : Node) :
-    ReachWithin g (shortestHopCount g bounded source target) source target :=
-  Nat.find_spec (exists_reachWithin_of_globalHopBound g bounded source target)
+    ReachWithin g (shortestHopCount g bounded source target) source target := by
+  classical
+  exact Nat.find_spec (exists_reachWithin_of_globalHopBound g bounded source target)
 
 theorem shortestHopCount_minimal {Node : Type*} (g : MeshGraph Node)
     (bounded : ∃ limit, GlobalHopBound g limit) {source target : Node}
     {candidate : Nat} (reachable : ReachWithin g candidate source target) :
-    shortestHopCount g bounded source target ≤ candidate :=
-  Nat.find_min' (exists_reachWithin_of_globalHopBound g bounded source target)
+    shortestHopCount g bounded source target ≤ candidate := by
+  classical
+  exact Nat.find_min' (exists_reachWithin_of_globalHopBound g bounded source target)
     reachable
 
 noncomputable def meshDiameter {Node : Type*} (g : MeshGraph Node)
-    (bounded : ∃ limit, GlobalHopBound g limit) : Nat := Nat.find bounded
+    (bounded : ∃ limit, GlobalHopBound g limit) : Nat := by
+  classical
+  exact Nat.find bounded
 
 theorem meshDiameter_spec {Node : Type*} (g : MeshGraph Node)
     (bounded : ∃ limit, GlobalHopBound g limit) :
-    GlobalHopBound g (meshDiameter g bounded) := Nat.find_spec bounded
+    GlobalHopBound g (meshDiameter g bounded) := by
+  classical
+  exact Nat.find_spec bounded
 
 theorem meshDiameter_minimal {Node : Type*} (g : MeshGraph Node)
     (bounded : ∃ limit, GlobalHopBound g limit) {candidate : Nat}
     (candidateBound : GlobalHopBound g candidate) :
-    meshDiameter g bounded ≤ candidate := Nat.find_min' bounded candidateBound
+    meshDiameter g bounded ≤ candidate := by
+  classical
+  exact Nat.find_min' bounded candidateBound
 
 theorem SmallWorldCertificate.meshDiameter_le {Node : Type*}
     {g : MeshGraph Node} {limit : Nat}
