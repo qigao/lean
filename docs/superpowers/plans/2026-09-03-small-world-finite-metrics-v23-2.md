@@ -96,9 +96,12 @@ theorem closedNeighborPairs_eq_of_perfect {Node : Type*} [Fintype Node]
   rw [closedNeighborPairs]
   apply Finset.filter_eq_self.2
   intro pair pairIn
-  simp only [orderedNeighborPairs, neighborSet, Finset.mem_filter,
-    Finset.mem_product, Finset.mem_univ, true_and] at pairIn
-  exact clustered pairIn.2 pairIn.1.1 pairIn.1.2
+  rw [orderedNeighborPairs] at pairIn
+  rcases Finset.mem_filter.mp pairIn with ⟨pairMembers, different⟩
+  rcases Finset.mem_product.mp pairMembers with ⟨leftMember, rightMember⟩
+  rw [neighborSet] at leftMember rightMember
+  exact clustered different (Finset.mem_filter.mp leftMember).2
+    (Finset.mem_filter.mp rightMember).2
 
 theorem localClusteringCoefficient_eq_one_of_perfect {Node : Type*}
     [Fintype Node] [DecidableEq Node] (g : MeshGraph Node) [DecidableRel g]
