@@ -2089,6 +2089,30 @@ mesh transitions, automatic community formation, Python execution, NetworkX, P2P
 WSS, or Raft. Those models can be added only after their assumptions and required
 invariants are stated explicitly.
 
+### Lean deterministic small-world certificate V23.1
+
+V23.1 turns the initial bridge result into a composable two-level network theorem.
+`NarrativeDynamics.Core.SmallWorld` maps an exact walk in the society graph to an
+exact Agent-level walk between designated society gateways. Agent entry, society
+travel, and Agent exit then compose with an additive hop budget. Consequently, if
+every Agent can reach and be reached from its assigned society gateway within one
+hop, and every pair of societies is connected within four hops, every ordered Agent
+pair is connected within six hops: `1 + 4 + 1 = 6`.
+
+The module also defines a deterministic `SmallWorldCertificate`: symmetric edges,
+a uniform global hop bound, and perfect local clustering, meaning that every pair
+of distinct neighbors of a center is directly connected. The certificate is
+stronger than merely having a high empirical clustering coefficient. Adding
+shortcuts provably preserves its existing global hop bound, but the proof does not
+claim arbitrary new edges preserve perfect clustering because they may introduce
+new open wedges.
+
+All conclusions remain conditional on explicit graph witnesses. V23.1 does not
+claim that real societies satisfy six degrees, calculate a numerical clustering
+coefficient or average shortest path, sample a Watts--Strogatz distribution, or
+prove Barabasi--Albert preferential attachment and power-law asymptotics. Those
+finite-metric and probabilistic results remain separate proof phases.
+
 ### V21.2 typed simulation output and public journal
 
 V21.2 projects an accepted situated-network round into one deterministic typed batch.
