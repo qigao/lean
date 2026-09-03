@@ -96,4 +96,31 @@ theorem reachWithin_via_societies {Agent Society : Type*}
     ReachWithin agentGraph (entryLimit + societyLimit + exitLimit) source target := by
   exact reachWithin_append (reachWithin_append entry (model.reach_lifts between)) exit
 
+/-- Every Agent is assigned to a society it belongs to and is at most one hop in
+both directions from that society's gateway. -/
+structure OneHopGatewayCover {Agent Society : Type*}
+    {agentGraph : MeshGraph Agent} {societyGraph : MeshGraph Society}
+    (model : SocietyGatewayModel agentGraph societyGraph) where
+  societyOf : Agent → Society
+  assignedMember : ∀ agent, model.member agent (societyOf agent)
+  toGateway : ∀ agent,
+    ReachWithin agentGraph 1 agent (model.gateway (societyOf agent))
+  fromGateway : ∀ agent,
+    ReachWithin agentGraph 1 (model.gateway (societyOf agent)) agent
+
+/-- One-hop access on both sides of a society mesh whose global hop bound is four
+yields an Agent-level global hop bound of six. -/
+theorem global_six_hop_bound {Agent Society : Type*}
+    {agentGraph : MeshGraph Agent} {societyGraph : MeshGraph Society}
+    (model : SocietyGatewayModel agentGraph societyGraph)
+    (cover : OneHopGatewayCover model)
+    (societyBound : GlobalHopBound societyGraph 4) :
+    GlobalHopBound agentGraph 6 := by
+  intro source target
+  have routed := reachWithin_via_societies model
+    (cover.toGateway source)
+    (societyBound (cover.societyOf source) (cover.societyOf target))
+    (cover.fromGateway target)
+  simpa using routed
+
 end NarrativeDynamics

@@ -15,3 +15,11 @@ example {Agent Society : Type*} {agentGraph : MeshGraph Agent}
     (reachable : ReachWithin societyGraph limit source target) :
     ReachWithin agentGraph limit (model.gateway source) (model.gateway target) := by
   exact model.reach_lifts reachable
+
+example {Agent Society : Type*} {agentGraph : MeshGraph Agent}
+    {societyGraph : MeshGraph Society}
+    (model : SocietyGatewayModel agentGraph societyGraph)
+    (cover : OneHopGatewayCover model)
+    (societyBound : GlobalHopBound societyGraph 4) :
+    GlobalHopBound agentGraph 6 := by
+  exact global_six_hop_bound model cover societyBound
