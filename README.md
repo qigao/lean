@@ -2113,6 +2113,31 @@ coefficient or average shortest path, sample a Watts--Strogatz distribution, or
 prove Barabasi--Albert preferential attachment and power-law asymptotics. Those
 finite-metric and probabilistic results remain separate proof phases.
 
+### Lean finite small-world metrics V23.2
+
+V23.2 supplies exact finite-network measurements for the V23.1 certificate.
+`NarrativeDynamics.Core.SmallWorldMetrics` enumerates each node's outgoing
+neighbors, the distinct ordered neighbor pairs, and the subset closed by an edge.
+Their rational cardinality ratio is the local clustering coefficient. A node with
+fewer than two distinct neighbors has denominator zero and coefficient zero;
+perfect local clustering with a nonempty candidate-pair set is proved to have
+coefficient one. For symmetric networks, ordered-pair duplication changes both
+counts equally and leaves the ratio unchanged.
+
+The same module defines exact shortest hop count and mesh diameter as the least
+natural numbers satisfying the existing `ReachWithin` and `GlobalHopBound`
+predicates. The specification theorems prove those minima are reachable, while the
+minimality theorems rule out any smaller witnessed bound. On finite node types,
+average shortest-path length is the rational mean over all ordered distinct node
+pairs, with empty and singleton types evaluating to zero.
+
+A `SmallWorldCertificate g limit` now proves both that the exact mesh diameter is
+at most `limit` and that the average shortest-path length is at most `limit`. These
+are deterministic consequences of supplied graph witnesses, not empirical
+estimates. V23.2 still does not sample a Watts--Strogatz network, prove an expected
+clustering/path-length law, construct a Barabasi--Albert process, or establish a
+power-law degree distribution.
+
 ### V21.2 typed simulation output and public journal
 
 V21.2 projects an accepted situated-network round into one deterministic typed batch.

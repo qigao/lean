@@ -84,6 +84,7 @@ jobs:
           lake env lean NarrativeDynamics/Tests/TypedGraph.lean
           lake env lean NarrativeDynamics/Tests/SocialMesh.lean
           lake env lean NarrativeDynamics/Tests/SmallWorld.lean
+          lake env lean NarrativeDynamics/Tests/SmallWorldMetrics.lean
           lake env lean NarrativeDynamics/Tests/TypedHypergraph.lean
           lake env lean NarrativeDynamics/Tests/TypedInference.lean
           lake env lean NarrativeDynamics/Tests/Closure.lean
