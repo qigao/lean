@@ -145,7 +145,7 @@ theorem cycleGraph_globalHopBound (nodeCount : Nat) :
   intro source target
   obtain ⟨walk, isPath⟩ :=
     (SimpleGraph.cycleGraph_preconnected source target).exists_isPath
-  refine ⟨walk.length, ?_, walk.ofSimpleGraphWalk⟩
+  refine ⟨walk.length, ?_, MeshWalk.ofSimpleGraphWalk walk⟩
   have lengthLt : walk.length < nodeCount := by
     simpa using isPath.length_lt
   omega
