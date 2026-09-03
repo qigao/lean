@@ -90,4 +90,75 @@ theorem WattsStrogatzParameters.globalHopBound
   wattsStrogatzRing_globalHopBound parameters.nodeCount parameters.radius
     parameters.radiusPositive
 
+/-- Add both orientations of one explicit shortcut while retaining every base
+edge. -/
+def addUndirectedShortcut {Node : Type*} (g : MeshGraph Node)
+    (left right : Node) : MeshGraph Node :=
+  fun source target => g source target ∨
+    (source = left ∧ target = right) ∨ (source = right ∧ target = left)
+
+/-- Shortcut augmentation contains the complete base mesh. -/
+theorem base_subgraph_addUndirectedShortcut {Node : Type*}
+    (g : MeshGraph Node) (left right : Node) :
+    MeshSubgraph g (addUndirectedShortcut g left right) := by
+  intro source target edge
+  exact Or.inl edge
+
+/-- Adding both shortcut orientations preserves mesh symmetry. -/
+theorem addUndirectedShortcut_symmetric {Node : Type*} {g : MeshGraph Node}
+    (symmetric : SymmetricMesh g) (left right : Node) :
+    SymmetricMesh (addUndirectedShortcut g left right) := by
+  intro source target edge
+  rcases edge with old | added | added
+  · exact Or.inl (symmetric old)
+  · exact Or.inr (Or.inr ⟨added.2, added.1⟩)
+  · exact Or.inr (Or.inl ⟨added.2, added.1⟩)
+
+/-- A shortcut between distinct endpoints preserves looplessness. -/
+theorem addUndirectedShortcut_loopless {Node : Type*} {g : MeshGraph Node}
+    (loopless : LooplessMesh g) {left right : Node} (distinct : left ≠ right) :
+    LooplessMesh (addUndirectedShortcut g left right) := by
+  intro node edge
+  rcases edge with old | added | added
+  · exact loopless node old
+  · exact distinct (added.1.symm.trans added.2)
+  · exact distinct (added.2.symm.trans added.1)
+
+/-- Retaining edges cannot increase the exact shortest hop count of any pair. -/
+theorem shortestHopCount_mono_edges {Node : Type*} {g h : MeshGraph Node}
+    (included : MeshSubgraph g h)
+    (gBounded : ∃ limit, GlobalHopBound g limit)
+    (hBounded : ∃ limit, GlobalHopBound h limit) (source target : Node) :
+    shortestHopCount h hBounded source target ≤
+      shortestHopCount g gBounded source target := by
+  apply shortestHopCount_minimal h hBounded
+  exact reachWithin_of_subgraph included
+    (shortestHopCount_spec g gBounded source target)
+
+/-- Retaining edges cannot increase the exact mesh diameter. -/
+theorem meshDiameter_mono_edges {Node : Type*} {g h : MeshGraph Node}
+    (included : MeshSubgraph g h)
+    (gBounded : ∃ limit, GlobalHopBound g limit)
+    (hBounded : ∃ limit, GlobalHopBound h limit) :
+    meshDiameter h hBounded ≤ meshDiameter g gBounded := by
+  apply meshDiameter_minimal h hBounded
+  exact globalHopBound_of_subgraph included (meshDiameter_spec g gBounded)
+
+/-- On a finite node type, retaining edges cannot increase average exact shortest
+path length. -/
+theorem averageShortestPathLength_mono_edges {Node : Type*}
+    [Fintype Node] [DecidableEq Node] {g h : MeshGraph Node}
+    (included : MeshSubgraph g h)
+    (gBounded : ∃ limit, GlobalHopBound g limit)
+    (hBounded : ∃ limit, GlobalHopBound h limit) :
+    averageShortestPathLength h hBounded ≤
+      averageShortestPathLength g gBounded := by
+  unfold averageShortestPathLength
+  apply div_le_div_of_nonneg_right
+  · apply Finset.sum_le_sum
+    intro pair _
+    exact_mod_cast shortestHopCount_mono_edges included gBounded hBounded
+      pair.1 pair.2
+  · positivity
+
 end NarrativeDynamics
