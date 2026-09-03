@@ -280,7 +280,7 @@ def orderedDistinctNodePairs (Node : Type*) [Fintype Node] [DecidableEq Node] :
 noncomputable def averageShortestPathLength {Node : Type*}
     [Fintype Node] [DecidableEq Node] (g : MeshGraph Node)
     (bounded : ∃ limit, GlobalHopBound g limit) : ℚ :=
-  (∑ pair in orderedDistinctNodePairs Node,
+  (∑ pair ∈ orderedDistinctNodePairs Node,
       (shortestHopCount g bounded pair.1 pair.2 : ℚ)) /
     ((orderedDistinctNodePairs Node).card : ℚ)
 
@@ -307,10 +307,10 @@ theorem SmallWorldCertificate.averageShortestPathLength_le {Node : Type*}
       exact_mod_cast cardPositiveNat
     apply (div_le_iff₀ cardPositiveRat).2
     calc
-      (∑ pair in orderedDistinctNodePairs Node,
+      (∑ pair ∈ orderedDistinctNodePairs Node,
           (shortestHopCount g ⟨limit, certificate.shortPaths⟩
             pair.1 pair.2 : ℚ))
-          ≤ ∑ _pair in orderedDistinctNodePairs Node, (limit : ℚ) := by
+          ≤ ∑ _pair ∈ orderedDistinctNodePairs Node, (limit : ℚ) := by
               apply Finset.sum_le_sum
               intro pair _
               exact_mod_cast shortestHopCount_minimal g

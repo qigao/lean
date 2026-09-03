@@ -116,4 +116,58 @@ theorem SmallWorldCertificate.meshDiameter_le {Node : Type*}
     meshDiameter g ⟨limit, certificate.shortPaths⟩ ≤ limit :=
   meshDiameter_minimal g ⟨limit, certificate.shortPaths⟩ certificate.shortPaths
 
+/-- Every ordered pair of distinct nodes in a finite node type. -/
+def orderedDistinctNodePairs (Node : Type*) [Fintype Node] [DecidableEq Node] :
+    Finset (Node × Node) :=
+  (Finset.univ.product Finset.univ).filter (fun pair => pair.1 ≠ pair.2)
+
+/-- The rational mean of exact shortest hop counts over ordered distinct node
+pairs. Empty and singleton node types have denominator zero and therefore mean
+zero under the rational-field convention. -/
+noncomputable def averageShortestPathLength {Node : Type*}
+    [Fintype Node] [DecidableEq Node] (g : MeshGraph Node)
+    (bounded : ∃ limit, GlobalHopBound g limit) : ℚ :=
+  (∑ pair ∈ orderedDistinctNodePairs Node,
+      (shortestHopCount g bounded pair.1 pair.2 : ℚ)) /
+    ((orderedDistinctNodePairs Node).card : ℚ)
+
+/-- A finite node type with no distinct ordered pairs has average path length
+zero. -/
+theorem averageShortestPathLength_eq_zero_of_no_pairs {Node : Type*}
+    [Fintype Node] [DecidableEq Node] (g : MeshGraph Node)
+    (bounded : ∃ limit, GlobalHopBound g limit)
+    (noPairs : orderedDistinctNodePairs Node = ∅) :
+    averageShortestPathLength g bounded = 0 := by
+  simp [averageShortestPathLength, noPairs]
+
+/-- The average exact shortest-path length cannot exceed a small-world
+certificate's uniform hop limit. -/
+theorem SmallWorldCertificate.averageShortestPathLength_le {Node : Type*}
+    [Fintype Node] [DecidableEq Node] {g : MeshGraph Node} {limit : Nat}
+    (certificate : SmallWorldCertificate g limit) :
+    averageShortestPathLength g ⟨limit, certificate.shortPaths⟩ ≤ limit := by
+  classical
+  by_cases noPairs : orderedDistinctNodePairs Node = ∅
+  · simp [averageShortestPathLength, noPairs]
+  · have pairNonempty : (orderedDistinctNodePairs Node).Nonempty :=
+      Finset.nonempty_iff_ne_empty.mpr noPairs
+    have cardPositiveNat : 0 < (orderedDistinctNodePairs Node).card :=
+      Finset.card_pos.mpr pairNonempty
+    have cardPositiveRat : (0 : ℚ) <
+        ((orderedDistinctNodePairs Node).card : ℚ) := by
+      exact_mod_cast cardPositiveNat
+    apply (div_le_iff₀ cardPositiveRat).2
+    calc
+      (∑ pair ∈ orderedDistinctNodePairs Node,
+          (shortestHopCount g ⟨limit, certificate.shortPaths⟩
+            pair.1 pair.2 : ℚ))
+          ≤ ∑ _pair ∈ orderedDistinctNodePairs Node, (limit : ℚ) := by
+              apply Finset.sum_le_sum
+              intro pair _
+              exact_mod_cast shortestHopCount_minimal g
+                ⟨limit, certificate.shortPaths⟩
+                (certificate.shortPaths pair.1 pair.2)
+      _ = ((orderedDistinctNodePairs Node).card : ℚ) * limit := by simp
+      _ = limit * ((orderedDistinctNodePairs Node).card : ℚ) := by ring
+
 end NarrativeDynamics
