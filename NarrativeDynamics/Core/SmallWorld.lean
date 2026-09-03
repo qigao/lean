@@ -123,4 +123,50 @@ theorem global_six_hop_bound {Agent Society : Type*}
     (cover.fromGateway target)
   simpa using routed
 
+/-- A mesh snapshot is symmetric when every edge can be traversed in reverse. -/
+def SymmetricMesh {Node : Type*} (g : MeshGraph Node) : Prop :=
+  ∀ {source target}, g source target → g target source
+
+/-- A strong qualitative clustering witness: every pair of distinct outgoing
+neighbors of one center is directly connected. -/
+def PerfectLocalClustering {Node : Type*} (g : MeshGraph Node) : Prop :=
+  ∀ {center left right}, left ≠ right → g center left → g center right → g left right
+
+/-- A deterministic small-world certificate combines undirected traversal, a
+uniform global hop bound, and perfect local wedge closure. -/
+structure SmallWorldCertificate {Node : Type*}
+    (g : MeshGraph Node) (limit : Nat) : Prop where
+  symmetric : SymmetricMesh g
+  shortPaths : GlobalHopBound g limit
+  clustered : PerfectLocalClustering g
+
+/-- The clustering component closes any distinct-neighbor wedge. -/
+theorem SmallWorldCertificate.closes_neighbor_wedge {Node : Type*}
+    {g : MeshGraph Node} {limit : Nat}
+    (certificate : SmallWorldCertificate g limit)
+    {center left right : Node} (different : left ≠ right)
+    (leftNeighbor : g center left) (rightNeighbor : g center right) :
+    g left right := by
+  exact certificate.clustered different leftNeighbor rightNeighbor
+
+/-- Adding shortcuts preserves the certificate's global hop bound. It need not
+preserve perfect clustering because a new edge can create an open wedge. -/
+theorem SmallWorldCertificate.short_paths_survive_edge_addition {Node : Type*}
+    {g h : MeshGraph Node} {limit : Nat}
+    (certificate : SmallWorldCertificate g limit)
+    (included : MeshSubgraph g h) : GlobalHopBound h limit := by
+  exact globalHopBound_of_subgraph included certificate.shortPaths
+
+/-- A one-hop Agent cover of a four-hop society mesh supplies the six-hop part of
+a deterministic small-world certificate; symmetry and clustering stay explicit. -/
+theorem smallWorld_of_gateway_cover {Agent Society : Type*}
+    {agentGraph : MeshGraph Agent} {societyGraph : MeshGraph Society}
+    (model : SocietyGatewayModel agentGraph societyGraph)
+    (cover : OneHopGatewayCover model)
+    (societyBound : GlobalHopBound societyGraph 4)
+    (symmetric : SymmetricMesh agentGraph)
+    (clustered : PerfectLocalClustering agentGraph) :
+    SmallWorldCertificate agentGraph 6 := by
+  exact ⟨symmetric, global_six_hop_bound model cover societyBound, clustered⟩
+
 end NarrativeDynamics
