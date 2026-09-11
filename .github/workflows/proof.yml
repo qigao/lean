@@ -84,6 +84,7 @@ jobs:
           lake env lean NarrativeDynamics/Tests/FitnessAttachment.lean
           lake env lean NarrativeDynamics/Tests/FitnessBirth.lean
           lake env lean NarrativeDynamics/Tests/FitnessValidation.lean
+          lake env lean NarrativeDynamics/Tests/FitnessReplay.lean
 
       - name: Lean theorem tests
         run: |
