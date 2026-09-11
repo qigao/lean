@@ -118,9 +118,10 @@ private theorem star_connected : starGraph.Connected where
   nonempty := inferInstance
 
 def star : State 4 where
-  snapshot := { graph := starGraph,
-    adjDec := fun u v => inferInstanceAs (Decidable (u ≠ v ∧ (u = 0 ∨ v = 0))),
-    fitness := fun _ => 1 }
+  snapshot :=
+    { graph := starGraph
+      adjDec := fun u v => inferInstanceAs (Decidable (u ≠ v ∧ (u = 0 ∨ v = 0)))
+      fitness := fun _ => 1 }
   valid := ⟨by decide, star_connected, by decide⟩
 
 def isolated : Snapshot 3 where
