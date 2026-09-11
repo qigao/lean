@@ -30,8 +30,10 @@ macro "prepareReplaySeed " raw:term " atSize " size:term : tactic =>
      have hf : positiveSeedFitness $raw := by decide
      have he : validSeedEdges $raw := by decide
      have hd : (($raw : RawSeed).edges.toList.map canonicalEdge).Nodup := by decide
-     have hc : ∀ b : Fin $size,
-         b ∈ reached (seedSnapshot $raw hs) (0 : Fin $size) ($size - 1) := by
+     have hc : ∀ b,
+         b ∈ reached (seedSnapshot $raw hs)
+           (⟨0, by have := hn; omega⟩ : Fin ($raw : RawSeed).nodeCount)
+           (($raw : RawSeed).nodeCount - 1) := by
        change ∀ b : Fin $size,
          b ∈ reached (seedSnapshot $raw rfl) (0 : Fin $size) ($size - 1)
        decide
@@ -45,8 +47,7 @@ set_option maxRecDepth 4096
 example : summaryOf (replay rawTriangle 2 []) =
     .ok (3, 3, [2, 2, 2], [1, 2, 4], 1) := by
   prepareReplaySeed rawTriangle atSize 3
-  trace_state
-  rfl
+  decide_cbv
 example : summaryOf (replay rawTriangle 2 [⟨3/2, #[2, 1]⟩]) =
     .ok (4, 5, [2, 3, 3, 2], [1, 2, 4, 3/2], 8/21) := by
   prepareReplaySeed rawTriangle atSize 3
