@@ -303,7 +303,8 @@ theorem coarseBound (t : Nat) : GlobalHopBound (graph t).Adj (2 * t + 1) := by
       · exact ⟨1, by omega, MeshWalk.single same⟩
   | succ t ih =>
       change GlobalHopBound (expandGraph (graph t)).Adj (2 * (t + 1) + 1)
-      convert Internal.expand_globalHopBound (graph t) ih using 1 <;> omega
+      convert Internal.expand_globalHopBound (graph t) ih using 1
+      omega
 
 theorem bounded (t : Nat) : ∃ k, GlobalHopBound (graph t).Adj k :=
   ⟨2 * t + 1, coarseBound t⟩
@@ -311,7 +312,7 @@ theorem bounded (t : Nat) : ∃ k, GlobalHopBound (graph t).Adj k :=
 /-- Convert the already-proved mesh walks into mathlib reachability; the seed
 vertex supplies the separate nonempty-carrier obligation. -/
 theorem graph_connected (t : Nat) : (graph t).Connected := by
-  refine ⟨?_, inferInstance⟩
+  refine { preconnected := ?_, nonempty := inferInstance }
   intro u v
   rcases coarseBound t u v with ⟨_, _, walk⟩
   induction walk with
