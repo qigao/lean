@@ -64,10 +64,12 @@ example : ¬ (expandGraph triangle).Adj (Sum.inl 2) (Sum.inr edge01) := by decid
 example : ¬ (expandGraph triangle).Adj (Sum.inr edge01) (Sum.inr edge01) := by decide
 
 -- Empty edge sets and isolated vertices must not invent newborns or paths.
-example : Fintype.card (ExpansionVertex (⊥ : SimpleGraph (Fin 3))) = 3 := by decide
+example : Fintype.card (ExpansionVertex (⊥ : SimpleGraph (Fin 3))) = 3 := by
+  simp [ExpansionVertex, Fintype.card_sum, SimpleGraph.edgeSet_bot]
 example : ¬ (expandGraph (⊥ : SimpleGraph (Fin 3))).Adj
     (Sum.inl 0) (Sum.inl 1) := by decide
-example : Fintype.card (ExpansionVertex (⊥ : SimpleGraph (Fin 0))) = 0 := by decide
+example : Fintype.card (ExpansionVertex (⊥ : SimpleGraph (Fin 0))) = 0 := by
+  simp [ExpansionVertex, Fintype.card_sum, SimpleGraph.edgeSet_bot]
 
 example {V : Type*} (G : SimpleGraph V) (u : V) :
     MeshWalk (expandGraph G).Adj 0 (oldVertex G u) (oldVertex G u) :=
