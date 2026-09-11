@@ -445,7 +445,7 @@ theorem expandEncoded_wellFormed (g : EncodedGraph) (hg : encodingWellFormed g) 
     have weak := List.pairwise_mergeSort' edgeLE (rawExpansionEdges g)
     have unique : ((rawExpansionEdges g).mergeSort
         (fun a b => decide (edgeLE a b))).Nodup := (rawExpansion_nodup g hg).mergeSort
-    apply (List.pairwise_and.mpr ⟨weak, unique⟩).imp
+    apply (weak.and unique).imp
     rintro ⟨a,b⟩ ⟨c,d⟩ ⟨le, ne⟩
     dsimp [edgeLE, edgeLT] at *
     simp only [ne_eq, Prod.mk.injEq] at ne
