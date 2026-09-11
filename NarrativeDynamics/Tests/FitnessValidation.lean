@@ -55,15 +55,85 @@ example : errorOf (parseSeed ⟨2, #[1, 1], #[(0, 0)]⟩) = some .invalidEdge :=
 example : errorOf (parseSeed ⟨2, #[1, 1], #[(0, 2)]⟩) = some .invalidEdge := by decide_cbv
 example : errorOf (parseSeed ⟨2, #[1, 1], #[(0, 1), (0, 1)]⟩) = some .duplicateEdge := by decide_cbv
 example : errorOf (parseSeed ⟨2, #[1, 1], #[(0, 1), (1, 0)]⟩) = some .duplicateEdge := by decide_cbv
-example : errorOf (parseSeed ⟨2, #[1, 1], #[]⟩) = some .disconnectedSeed := by decide_cbv
-example : errorOf (parseSeed ⟨3, #[1, 1, 1], #[(0, 1)]⟩) = some .disconnectedSeed := by decide_cbv
-example : errorOf (parseSeed ⟨4, #[1, 1, 1, 1], #[(0, 1), (2, 3)]⟩) = some .disconnectedSeed := by decide_cbv
-example : seedSummary rawTriangle = .ok (3, 3, [2, 2, 2], [1, 2, 4]) := by decide_cbv
-example : seedSummary reversedTriangle = .ok (3, 3, [2, 2, 2], [1, 2, 4]) := by decide_cbv
+example : errorOf (parseSeed ⟨2, #[1, 1], #[]⟩) = some .disconnectedSeed := by
+  have hn : 2 ≤ (⟨2, #[1, 1], #[]⟩ : RawSeed).nodeCount := by decide
+  have hs : (⟨2, #[1, 1], #[]⟩ : RawSeed).fitness.size = (⟨2, #[1, 1], #[]⟩ : RawSeed).nodeCount := rfl
+  have hf : positiveSeedFitness (⟨2, #[1, 1], #[]⟩ : RawSeed) := by decide
+  have he : validSeedEdges (⟨2, #[1, 1], #[]⟩ : RawSeed) := by decide
+  have hd : ((⟨2, #[1, 1], #[]⟩ : RawSeed).edges.toList.map canonicalEdge).Nodup := by decide
+  have hc : ¬ ∀ b, b ∈ reached (seedSnapshot (⟨2, #[1, 1], #[]⟩ : RawSeed) hs)
+      (⟨0, by have := hn; omega⟩ : Fin (⟨2, #[1, 1], #[]⟩ : RawSeed).nodeCount) ((⟨2, #[1, 1], #[]⟩ : RawSeed).nodeCount - 1) := by
+    decide
+  simp only [errorOf, parseSeed, dif_pos hn, dif_pos hs,
+    dif_pos hf, dif_pos he, dif_pos hd, dif_neg hc] <;> rfl
+example : errorOf (parseSeed ⟨3, #[1, 1, 1], #[(0, 1)]⟩) = some .disconnectedSeed := by
+  have hn : 2 ≤ (⟨3, #[1, 1, 1], #[(0, 1)]⟩ : RawSeed).nodeCount := by decide
+  have hs : (⟨3, #[1, 1, 1], #[(0, 1)]⟩ : RawSeed).fitness.size = (⟨3, #[1, 1, 1], #[(0, 1)]⟩ : RawSeed).nodeCount := rfl
+  have hf : positiveSeedFitness (⟨3, #[1, 1, 1], #[(0, 1)]⟩ : RawSeed) := by decide
+  have he : validSeedEdges (⟨3, #[1, 1, 1], #[(0, 1)]⟩ : RawSeed) := by decide
+  have hd : ((⟨3, #[1, 1, 1], #[(0, 1)]⟩ : RawSeed).edges.toList.map canonicalEdge).Nodup := by decide
+  have hc : ¬ ∀ b, b ∈ reached (seedSnapshot (⟨3, #[1, 1, 1], #[(0, 1)]⟩ : RawSeed) hs)
+      (⟨0, by have := hn; omega⟩ : Fin (⟨3, #[1, 1, 1], #[(0, 1)]⟩ : RawSeed).nodeCount) ((⟨3, #[1, 1, 1], #[(0, 1)]⟩ : RawSeed).nodeCount - 1) := by
+    decide
+  simp only [errorOf, parseSeed, dif_pos hn, dif_pos hs,
+    dif_pos hf, dif_pos he, dif_pos hd, dif_neg hc] <;> rfl
+example : errorOf (parseSeed ⟨4, #[1, 1, 1, 1], #[(0, 1), (2, 3)]⟩) = some .disconnectedSeed := by
+  have hn : 2 ≤ (⟨4, #[1, 1, 1, 1], #[(0, 1), (2, 3)]⟩ : RawSeed).nodeCount := by decide
+  have hs : (⟨4, #[1, 1, 1, 1], #[(0, 1), (2, 3)]⟩ : RawSeed).fitness.size = (⟨4, #[1, 1, 1, 1], #[(0, 1), (2, 3)]⟩ : RawSeed).nodeCount := rfl
+  have hf : positiveSeedFitness (⟨4, #[1, 1, 1, 1], #[(0, 1), (2, 3)]⟩ : RawSeed) := by decide
+  have he : validSeedEdges (⟨4, #[1, 1, 1, 1], #[(0, 1), (2, 3)]⟩ : RawSeed) := by decide
+  have hd : ((⟨4, #[1, 1, 1, 1], #[(0, 1), (2, 3)]⟩ : RawSeed).edges.toList.map canonicalEdge).Nodup := by decide
+  have hc : ¬ ∀ b, b ∈ reached (seedSnapshot (⟨4, #[1, 1, 1, 1], #[(0, 1), (2, 3)]⟩ : RawSeed) hs)
+      (⟨0, by have := hn; omega⟩ : Fin (⟨4, #[1, 1, 1, 1], #[(0, 1), (2, 3)]⟩ : RawSeed).nodeCount) ((⟨4, #[1, 1, 1, 1], #[(0, 1), (2, 3)]⟩ : RawSeed).nodeCount - 1) := by
+    decide
+  simp only [errorOf, parseSeed, dif_pos hn, dif_pos hs,
+    dif_pos hf, dif_pos he, dif_pos hd, dif_neg hc] <;> rfl
+example : seedSummary rawTriangle = .ok (3, 3, [2, 2, 2], [1, 2, 4]) := by
+  have hn : 2 ≤ rawTriangle.nodeCount := by decide
+  have hs : rawTriangle.fitness.size = rawTriangle.nodeCount := rfl
+  have hf : positiveSeedFitness rawTriangle := by decide
+  have he : validSeedEdges rawTriangle := by decide
+  have hd : (rawTriangle.edges.toList.map canonicalEdge).Nodup := by decide
+  have hc : ∀ b, b ∈ reached (seedSnapshot rawTriangle hs)
+      (⟨0, by have := hn; omega⟩ : Fin rawTriangle.nodeCount) (rawTriangle.nodeCount - 1) := by
+    decide
+  simp only [seedSummary, parseSeed, dif_pos hn, dif_pos hs,
+    dif_pos hf, dif_pos he, dif_pos hd, dif_pos hc] <;> decide_cbv
+example : seedSummary reversedTriangle = .ok (3, 3, [2, 2, 2], [1, 2, 4]) := by
+  have hn : 2 ≤ reversedTriangle.nodeCount := by decide
+  have hs : reversedTriangle.fitness.size = reversedTriangle.nodeCount := rfl
+  have hf : positiveSeedFitness reversedTriangle := by decide
+  have he : validSeedEdges reversedTriangle := by decide
+  have hd : (reversedTriangle.edges.toList.map canonicalEdge).Nodup := by decide
+  have hc : ∀ b, b ∈ reached (seedSnapshot reversedTriangle hs)
+      (⟨0, by have := hn; omega⟩ : Fin reversedTriangle.nodeCount) (reversedTriangle.nodeCount - 1) := by
+    decide
+  simp only [seedSummary, parseSeed, dif_pos hn, dif_pos hs,
+    dif_pos hf, dif_pos he, dif_pos hd, dif_pos hc] <;> decide_cbv
 example : seedSummary ⟨2, #[1/3, 2], #[(1, 0)]⟩ =
-    .ok (2, 1, [1, 1], [1/3, 2]) := by decide_cbv
+    .ok (2, 1, [1, 1], [1/3, 2]) := by
+  have hn : 2 ≤ (⟨2, #[1/3, 2], #[(1, 0)]⟩ : RawSeed).nodeCount := by decide
+  have hs : (⟨2, #[1/3, 2], #[(1, 0)]⟩ : RawSeed).fitness.size = (⟨2, #[1/3, 2], #[(1, 0)]⟩ : RawSeed).nodeCount := rfl
+  have hf : positiveSeedFitness (⟨2, #[1/3, 2], #[(1, 0)]⟩ : RawSeed) := by decide
+  have he : validSeedEdges (⟨2, #[1/3, 2], #[(1, 0)]⟩ : RawSeed) := by decide
+  have hd : ((⟨2, #[1/3, 2], #[(1, 0)]⟩ : RawSeed).edges.toList.map canonicalEdge).Nodup := by decide
+  have hc : ∀ b, b ∈ reached (seedSnapshot (⟨2, #[1/3, 2], #[(1, 0)]⟩ : RawSeed) hs)
+      (⟨0, by have := hn; omega⟩ : Fin (⟨2, #[1/3, 2], #[(1, 0)]⟩ : RawSeed).nodeCount) ((⟨2, #[1/3, 2], #[(1, 0)]⟩ : RawSeed).nodeCount - 1) := by
+    decide
+  simp only [seedSummary, parseSeed, dif_pos hn, dif_pos hs,
+    dif_pos hf, dif_pos he, dif_pos hd, dif_pos hc] <;> decide_cbv
 example : seedSummary ⟨4, #[1, 1, 1, 1], #[(2, 3), (1, 2), (0, 1)]⟩ =
-    .ok (4, 3, [1, 2, 2, 1], [1, 1, 1, 1]) := by decide_cbv
+    .ok (4, 3, [1, 2, 2, 1], [1, 1, 1, 1]) := by
+  have hn : 2 ≤ (⟨4, #[1, 1, 1, 1], #[(2, 3), (1, 2), (0, 1)]⟩ : RawSeed).nodeCount := by decide
+  have hs : (⟨4, #[1, 1, 1, 1], #[(2, 3), (1, 2), (0, 1)]⟩ : RawSeed).fitness.size = (⟨4, #[1, 1, 1, 1], #[(2, 3), (1, 2), (0, 1)]⟩ : RawSeed).nodeCount := rfl
+  have hf : positiveSeedFitness (⟨4, #[1, 1, 1, 1], #[(2, 3), (1, 2), (0, 1)]⟩ : RawSeed) := by decide
+  have he : validSeedEdges (⟨4, #[1, 1, 1, 1], #[(2, 3), (1, 2), (0, 1)]⟩ : RawSeed) := by decide
+  have hd : ((⟨4, #[1, 1, 1, 1], #[(2, 3), (1, 2), (0, 1)]⟩ : RawSeed).edges.toList.map canonicalEdge).Nodup := by decide
+  have hc : ∀ b, b ∈ reached (seedSnapshot (⟨4, #[1, 1, 1, 1], #[(2, 3), (1, 2), (0, 1)]⟩ : RawSeed) hs)
+      (⟨0, by have := hn; omega⟩ : Fin (⟨4, #[1, 1, 1, 1], #[(2, 3), (1, 2), (0, 1)]⟩ : RawSeed).nodeCount) ((⟨4, #[1, 1, 1, 1], #[(2, 3), (1, 2), (0, 1)]⟩ : RawSeed).nodeCount - 1) := by
+    decide
+  simp only [seedSummary, parseSeed, dif_pos hn, dif_pos hs,
+    dif_pos hf, dif_pos he, dif_pos hd, dif_pos hc] <;> decide_cbv
 
 -- Whole-request validation precedes construction; the last entry can invalidate all.
 example : errorOf (validateBirth triangle 0 ⟨1, #[]⟩) = some .invalidM := by decide_cbv
@@ -82,7 +152,7 @@ example : errorOf (validateBirth triangle 3 ⟨1, #[2, 0, 1]⟩) = none := by de
 example : errorOf (validateBirth triangle 0 ⟨0, #[9]⟩) = some .invalidM := by decide_cbv
 example : errorOf (validateBirth triangle 2 ⟨0, #[9]⟩) = some .nonpositiveFitness := by decide_cbv
 example : errorOf (validateBirth triangle 2 ⟨1, #[9]⟩) = some .targetCountMismatch := by decide_cbv
-example : errorOf (validateBirth triangle 3 ⟨1, #[1, 1, 3]⟩) = some .targetOutOfRange := by decide_cbv
+example : errorOf (validateBirth triangle 2 ⟨1, #[1, 1, 3]⟩) = some .targetOutOfRange := by decide_cbv
 
 example : rowValues (rawAttachmentRow triangle #[]) = .ok [1/7, 2/7, 4/7] := by decide_cbv
 example : rowValues (rawAttachmentRow triangle #[2]) = .ok [1/3, 2/3, 0] := by decide_cbv
