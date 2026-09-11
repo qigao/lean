@@ -436,8 +436,18 @@ The empty continuation has mass one, including after the last candidate is used.
 def traceMass {n : Nat} (w : Fin n → Rat) (S : Finset (Fin n)) : List (Fin n) → Rat
   | [] => 1
   | i :: xs =>
-    if i ∈ S ∨ total (remaining w S) ≤ 0 then 0
+    if i ∈ S then 0
+    else if total (remaining w S) ≤ 0 then 0
     else (w i / total (remaining w S)) * traceMass w (insert i S) xs
+
+/-- Splitting the executable guards leaves the original event recurrence unchanged. -/
+theorem traceMass_cons_eq {n : Nat} (w : Fin n → Rat) (S : Finset (Fin n))
+    (i : Fin n) (xs : List (Fin n)) :
+    traceMass w S (i :: xs) =
+      if i ∈ S ∨ total (remaining w S) ≤ 0 then 0
+      else (w i / total (remaining w S)) * traceMass w (insert i S) xs := by
+  by_cases hi : i ∈ S <;> by_cases hz : total (remaining w S) ≤ 0 <;>
+    simp [traceMass, hi, hz]
 
 /-- Legal continuations avoid the already-selected prefix as well as each other. -/
 abbrev Continuation (n m : Nat) (S : Finset (Fin n)) :=
@@ -521,7 +531,7 @@ theorem split_mass {n m : Nat} (w : Fin n → Rat) (hw : ∀ j, 0 < w j)
   have hz := remaining_pos_at w hw S z.1.val z.1.property
   change traceMass w S (List.ofFn (Fin.cons z.1.val z.2.val)) = _
   rw [List.ofFn_cons]
-  simp only [traceMass, z.1.property, false_or, not_le.mpr hz, if_false, Targets.ordered]
+  simp only [traceMass, z.1.property, not_le.mpr hz, if_false, Targets.ordered]
 
 /-- Every legal continuation has positive probability under positive weights. -/
 theorem continuation_pos {n : Nat} (w : Fin n → Rat) (hw : ∀ j, 0 < w j)
@@ -603,12 +613,12 @@ theorem traceMass_scale {n : Nat} (w : Fin n → Rat) (c : PosFitness)
     · simp [traceMass, hi]
     · by_cases hz : 0 < total (remaining w S)
       · have hz' := mul_pos c.property hz
-        simp only [traceMass, ht, hi, false_or, not_le.mpr hz,
+        simp only [traceMass, ht, hi, not_le.mpr hz,
           not_le.mpr hz', if_false]
         rw [mul_div_mul_left _ _ (ne_of_gt c.property), ih]
       · have hz0 := le_of_not_gt hz
         have hz0' := mul_nonpos_of_nonneg_of_nonpos c.property.le hz0
-        simp only [traceMass, ht, hi, false_or, hz0, hz0', if_true]
+        simp only [traceMass, ht, hi, hz0, hz0', if_false, if_true]
 
 end Internal
 
