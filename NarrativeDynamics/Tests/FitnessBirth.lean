@@ -45,11 +45,17 @@ theorem birth_degree_fixture : List.ofFn (degree BirthFixtures.after21.snapshot)
 example : List.ofFn BirthFixtures.after21.snapshot.fitness = [1, 2, 4, 3/2] := by
   decide_cbv
 example : ∀ i j : Fin 4, BirthFixtures.after21.snapshot.graph.Adj i j ↔
-    BirthFixtures.after12.snapshot.graph.Adj i j := by decide_cbv
+    BirthFixtures.after12.snapshot.graph.Adj i j := by
+  letI := BirthFixtures.after21.snapshot.adjDec
+  letI := BirthFixtures.after12.snapshot.adjDec
+  decide_cbv
 example : List.ofFn BirthFixtures.after21.snapshot.fitness =
     List.ofFn BirthFixtures.after12.snapshot.fitness := by decide_cbv
 example : ∀ i j : Fin 4, BirthFixtures.after21.snapshot.graph.Adj i j ↔
-    BirthFixtures.afterHigh.snapshot.graph.Adj i j := by decide_cbv
+    BirthFixtures.afterHigh.snapshot.graph.Adj i j := by
+  letI := BirthFixtures.after21.snapshot.adjDec
+  letI := BirthFixtures.afterHigh.snapshot.adjDec
+  decide_cbv
 example : List.ofFn (degree BirthFixtures.afterOne.snapshot) = [3, 2, 2, 1] := by
   decide_cbv
 example : actualEdgeCount BirthFixtures.afterOne.snapshot = 4 := by decide_cbv
@@ -145,4 +151,5 @@ example {n : Nat} (s : Snapshot n) :
 #print axioms birth_walk_lifts
 #print axioms birth_reachWithin_lifts
 #print axioms edgePairToUnordered_bijective
+#print axioms actualEdgeCount_eq_edgeSet_card
 #print axioms birth_degree_fixture
