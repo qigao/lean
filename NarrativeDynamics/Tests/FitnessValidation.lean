@@ -152,7 +152,7 @@ example : errorOf (validateBirth triangle 3 ⟨1, #[2, 0, 1]⟩) = none := by de
 example : errorOf (validateBirth triangle 0 ⟨0, #[9]⟩) = some .invalidM := by decide_cbv
 example : errorOf (validateBirth triangle 2 ⟨0, #[9]⟩) = some .nonpositiveFitness := by decide_cbv
 example : errorOf (validateBirth triangle 2 ⟨1, #[9]⟩) = some .targetCountMismatch := by decide_cbv
-example : errorOf (validateBirth triangle 2 ⟨1, #[1, 1, 3]⟩) = some .targetOutOfRange := by decide_cbv
+example : errorOf (validateBirth triangle 3 ⟨1, #[1, 1, 3]⟩) = some .targetOutOfRange := by decide_cbv
 
 example : rowValues (rawAttachmentRow triangle #[]) = .ok [1/7, 2/7, 4/7] := by decide_cbv
 example : rowValues (rawAttachmentRow triangle #[2]) = .ok [1/3, 2/3, 0] := by decide_cbv
@@ -280,13 +280,13 @@ section RawReductionWitnesses
 set_option maxRecDepth 4096
 private def isolatedPair : RawSeed := ⟨2, #[1, 1], #[]⟩
 example : (letI := seedAdjDec isolatedPair;
-    decide ((seedGraph isolatedPair).Adj 0 1)) = false := by decide_cbv
-example : reached (seedSnapshot isolatedPair rfl) 0 0 = {0} := by decide_cbv
-example : reached (seedSnapshot isolatedPair rfl) 0 1 = {0} := by decide_cbv
-example : ¬ (∀ b : Fin 2, b ∈ reached (seedSnapshot isolatedPair rfl) 0 1) := by
+    decide ((seedGraph isolatedPair).Adj (0 : Fin 2) (1 : Fin 2))) = false := by decide_cbv
+example : reached (seedSnapshot isolatedPair rfl) (0 : Fin 2) 0 = ({0} : Finset (Fin 2)) := by decide_cbv
+example : reached (seedSnapshot isolatedPair rfl) (0 : Fin 2) 1 = ({0} : Finset (Fin 2)) := by decide_cbv
+example : ¬ (∀ b : Fin 2, b ∈ reached (seedSnapshot isolatedPair rfl) (0 : Fin 2) 1) := by
   decide_cbv
 example : errorOf (parseSeed isolatedPair) = some .disconnectedSeed := by rfl
 example : (letI := seedAdjDec rawTriangle;
-    decide ((seedGraph rawTriangle).Adj 0 1)) = true := by decide_cbv
-example : reached (seedSnapshot rawTriangle rfl) 0 1 = Finset.univ := by decide_cbv
+    decide ((seedGraph rawTriangle).Adj (0 : Fin 3) (1 : Fin 3))) = true := by decide_cbv
+example : reached (seedSnapshot rawTriangle rfl) (0 : Fin 3) 1 = (Finset.univ : Finset (Fin 3)) := by decide_cbv
 end RawReductionWitnesses
