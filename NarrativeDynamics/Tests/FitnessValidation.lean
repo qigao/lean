@@ -1,0 +1,109 @@
+import NarrativeDynamics.Core.FitnessValidation
+
+open NarrativeDynamics NarrativeDynamics.FitnessAttachment
+open NarrativeDynamics.FitnessAttachment.Internal
+
+namespace NarrativeDynamics.FitnessAttachment.ValidationFixtures
+
+private theorem triangle_connected : (⊤ : SimpleGraph (Fin 3)).Connected where
+  preconnected := by
+    intro u v
+    by_cases h : u = v
+    · subst v; exact ⟨.nil⟩
+    · exact ⟨.cons h .nil⟩
+  nonempty := inferInstance
+
+def triangle : State 3 where
+  snapshot := { graph := ⊤, adjDec := inferInstance, fitness := ![1, 2, 4] }
+  valid := ⟨by decide, triangle_connected, by decide⟩
+
+def rawTriangle : RawSeed := ⟨3, #[1, 2, 4], #[(0, 1), (0, 2), (1, 2)]⟩
+def reversedTriangle : RawSeed := ⟨3, #[1, 2, 4], #[(2, 1), (2, 0), (1, 0)]⟩
+
+def errorOf {α : Type} : Except Error α → Option Error
+  | .error e => some e
+  | .ok _ => none
+
+def seedSummary (raw : RawSeed) : Except Error (Nat × Nat × List Nat × List Rat) :=
+  match parseSeed raw with
+  | .error e => .error e
+  | .ok s => .ok (actualNodeCount s.snapshot, actualEdgeCount s.snapshot,
+      List.ofFn (degree s.snapshot), List.ofFn s.snapshot.fitness)
+
+def stepSummary {n : Nat} (s : State n) (m : Nat) (raw : RawBirth) :
+    Except Error (Nat × Nat × List Nat × List Rat × Rat) :=
+  match step s m raw with
+  | .error e => .error e
+  | .ok (t, mass) => .ok (actualNodeCount t.snapshot, actualEdgeCount t.snapshot,
+      List.ofFn (degree t.snapshot), List.ofFn t.snapshot.fitness, mass)
+
+end NarrativeDynamics.FitnessAttachment.ValidationFixtures
+
+open NarrativeDynamics.FitnessAttachment.ValidationFixtures
+
+section ExactValidationFixtures
+set_option maxRecDepth 4096
+
+-- Ordered raw seed checks; no dimension default, edge deduplication, or repair.
+example : errorOf (parseSeed ⟨0, #[], #[]⟩) = some .invalidNodeCount := by decide_cbv
+example : errorOf (parseSeed ⟨1, #[1], #[]⟩) = some .invalidNodeCount := by decide_cbv
+example : errorOf (parseSeed ⟨3, #[1, 1], #[]⟩) = some .fitnessSizeMismatch := by decide_cbv
+example : errorOf (parseSeed ⟨2, #[1, 1, 1], #[(0, 1)]⟩) = some .fitnessSizeMismatch := by decide_cbv
+example : errorOf (parseSeed ⟨2, #[0, 1], #[(0, 1)]⟩) = some .nonpositiveFitness := by decide_cbv
+example : errorOf (parseSeed ⟨2, #[1, -1], #[(0, 1)]⟩) = some .nonpositiveFitness := by decide_cbv
+example : errorOf (parseSeed ⟨2, #[1, 1], #[(0, 0)]⟩) = some .invalidEdge := by decide_cbv
+example : errorOf (parseSeed ⟨2, #[1, 1], #[(0, 2)]⟩) = some .invalidEdge := by decide_cbv
+example : errorOf (parseSeed ⟨2, #[1, 1], #[(0, 1), (0, 1)]⟩) = some .duplicateEdge := by decide_cbv
+example : errorOf (parseSeed ⟨2, #[1, 1], #[(0, 1), (1, 0)]⟩) = some .duplicateEdge := by decide_cbv
+example : errorOf (parseSeed ⟨2, #[1, 1], #[]⟩) = some .disconnectedSeed := by decide_cbv
+example : errorOf (parseSeed ⟨3, #[1, 1, 1], #[(0, 1)]⟩) = some .disconnectedSeed := by decide_cbv
+example : errorOf (parseSeed ⟨4, #[1, 1, 1, 1], #[(0, 1), (2, 3)]⟩) = some .disconnectedSeed := by decide_cbv
+example : seedSummary rawTriangle = .ok (3, 3, [2, 2, 2], [1, 2, 4]) := by decide_cbv
+example : seedSummary reversedTriangle = .ok (3, 3, [2, 2, 2], [1, 2, 4]) := by decide_cbv
+example : seedSummary ⟨2, #[1/3, 2], #[(1, 0)]⟩ =
+    .ok (2, 1, [1, 1], [1/3, 2]) := by decide_cbv
+example : seedSummary ⟨4, #[1, 1, 1, 1], #[(2, 3), (1, 2), (0, 1)]⟩ =
+    .ok (4, 3, [1, 2, 2, 1], [1, 1, 1, 1]) := by decide_cbv
+
+-- Whole-request validation precedes construction; the last entry can invalidate all.
+example : errorOf (validateBirth triangle 0 ⟨1, #[]⟩) = some .invalidM := by decide_cbv
+example : errorOf (validateBirth triangle 4 ⟨1, #[0, 1, 2, 0]⟩) = some .invalidM := by decide_cbv
+example : errorOf (validateBirth triangle 2 ⟨0, #[1, 2]⟩) = some .nonpositiveFitness := by decide_cbv
+example : errorOf (validateBirth triangle 2 ⟨-1, #[1, 2]⟩) = some .nonpositiveFitness := by decide_cbv
+example : errorOf (validateBirth triangle 2 ⟨1, #[1]⟩) = some .targetCountMismatch := by decide_cbv
+example : errorOf (validateBirth triangle 2 ⟨1, #[0, 1, 2]⟩) = some .targetCountMismatch := by decide_cbv
+example : errorOf (validateBirth triangle 2 ⟨1, #[1, 1]⟩) = some .duplicateTarget := by decide_cbv
+example : errorOf (validateBirth triangle 2 ⟨1, #[1, 3]⟩) = some .targetOutOfRange := by decide_cbv
+example : errorOf (validateBirth triangle 3 ⟨1, #[0, 1, 99]⟩) = some .targetOutOfRange := by decide_cbv
+example : errorOf (validateBirth triangle 3 ⟨1, #[0, 1, 0]⟩) = some .duplicateTarget := by decide_cbv
+example : errorOf (validateBirth triangle 3 ⟨1, #[2, 0, 1]⟩) = none := by decide_cbv
+
+-- Error precedence is explicit, including a valid prefix followed by a bad entry.
+example : errorOf (validateBirth triangle 0 ⟨0, #[9]⟩) = some .invalidM := by decide_cbv
+example : errorOf (validateBirth triangle 2 ⟨0, #[9]⟩) = some .nonpositiveFitness := by decide_cbv
+example : errorOf (validateBirth triangle 2 ⟨1, #[9]⟩) = some .targetCountMismatch := by decide_cbv
+example : errorOf (validateBirth triangle 3 ⟨1, #[1, 1, 3]⟩) = some .targetOutOfRange := by decide_cbv
+
+example : rowValues (rawAttachmentRow triangle #[]) = .ok [1/7, 2/7, 4/7] := by decide_cbv
+example : rowValues (rawAttachmentRow triangle #[2]) = .ok [1/3, 2/3, 0] := by decide_cbv
+example : rowValues (rawAttachmentRow triangle #[2, 0]) = .ok [0, 1, 0] := by decide_cbv
+example : errorOf (rawAttachmentRow triangle #[2, 2]) = some .duplicateTarget := by decide_cbv
+example : errorOf (rawAttachmentRow triangle #[2, 3]) = some .targetOutOfRange := by decide_cbv
+example : errorOf (rawAttachmentRow triangle #[0, 1, 2]) = some .zeroMass := by decide_cbv
+example : errorOf (rawAttachmentRow triangle #[0, 0, 1, 2]) = some .duplicateTarget := by decide_cbv
+example : errorOf (rawAttachmentRow triangle #[0, 1, 2, 3]) = some .targetOutOfRange := by decide_cbv
+
+example : stepSummary triangle 2 ⟨3/2, #[2, 1]⟩ =
+    .ok (4, 5, [2, 3, 3, 2], [1, 2, 4, 3/2], 8/21) := by decide_cbv
+example : stepSummary triangle 2 ⟨3/2, #[1, 2]⟩ =
+    .ok (4, 5, [2, 3, 3, 2], [1, 2, 4, 3/2], 8/35) := by decide_cbv
+example : stepSummary triangle 3 ⟨1, #[0, 1, 2]⟩ =
+    .ok (4, 6, [3, 3, 3, 3], [1, 2, 4, 1], 1/21) := by decide_cbv
+example : stepSummary triangle 1 ⟨1, #[0]⟩ =
+    .ok (4, 4, [3, 2, 2, 1], [1, 2, 4, 1], 1/7) := by decide_cbv
+example : stepSummary triangle 3 ⟨1, #[0, 1, 0]⟩ = .error .duplicateTarget := by decide_cbv
+example : stepSummary triangle 3 ⟨1, #[0, 1, 3]⟩ = .error .targetOutOfRange := by decide_cbv
+example : stepSummary triangle 0 ⟨1, #[]⟩ = .error .invalidM := by decide_cbv
+example : List.ofFn triangle.snapshot.fitness = [1, 2, 4] := by decide_cbv
+
+end ExactValidationFixtures
