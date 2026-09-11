@@ -67,7 +67,7 @@ example : errorOf (parseSeed ⟨2, #[1, 1], #[]⟩) = some .disconnectedSeed := 
       (seedSnapshot (⟨2, #[1, 1], #[]⟩ : RawSeed) rfl) (0 : Fin 2) 1
     decide
   simp only [errorOf, parseSeed, dif_pos hn, dif_pos hs,
-    dif_pos hf, dif_pos he, dif_pos hd, dif_neg hc] <;> rfl
+    dif_pos hf, dif_pos he, dif_pos hd, dif_neg hc]
 example : errorOf (parseSeed ⟨3, #[1, 1, 1], #[(0, 1)]⟩) = some .disconnectedSeed := by
   have hn : 2 ≤ (⟨3, #[1, 1, 1], #[(0, 1)]⟩ : RawSeed).nodeCount := by decide
   have hs : (⟨3, #[1, 1, 1], #[(0, 1)]⟩ : RawSeed).fitness.size = (⟨3, #[1, 1, 1], #[(0, 1)]⟩ : RawSeed).nodeCount := rfl
@@ -80,7 +80,7 @@ example : errorOf (parseSeed ⟨3, #[1, 1, 1], #[(0, 1)]⟩) = some .disconnecte
       (seedSnapshot (⟨3, #[1, 1, 1], #[(0, 1)]⟩ : RawSeed) rfl) (0 : Fin 3) 2
     decide
   simp only [errorOf, parseSeed, dif_pos hn, dif_pos hs,
-    dif_pos hf, dif_pos he, dif_pos hd, dif_neg hc] <;> rfl
+    dif_pos hf, dif_pos he, dif_pos hd, dif_neg hc]
 example : errorOf (parseSeed ⟨4, #[1, 1, 1, 1], #[(0, 1), (2, 3)]⟩) = some .disconnectedSeed := by
   have hn : 2 ≤ (⟨4, #[1, 1, 1, 1], #[(0, 1), (2, 3)]⟩ : RawSeed).nodeCount := by decide
   have hs : (⟨4, #[1, 1, 1, 1], #[(0, 1), (2, 3)]⟩ : RawSeed).fitness.size = (⟨4, #[1, 1, 1, 1], #[(0, 1), (2, 3)]⟩ : RawSeed).nodeCount := rfl
@@ -93,7 +93,7 @@ example : errorOf (parseSeed ⟨4, #[1, 1, 1, 1], #[(0, 1), (2, 3)]⟩) = some .
       (seedSnapshot (⟨4, #[1, 1, 1, 1], #[(0, 1), (2, 3)]⟩ : RawSeed) rfl) (0 : Fin 4) 3
     decide
   simp only [errorOf, parseSeed, dif_pos hn, dif_pos hs,
-    dif_pos hf, dif_pos he, dif_pos hd, dif_neg hc] <;> rfl
+    dif_pos hf, dif_pos he, dif_pos hd, dif_neg hc]
 example : seedSummary rawTriangle = .ok (3, 3, [2, 2, 2], [1, 2, 4]) := by
   have hn : 2 ≤ rawTriangle.nodeCount := by decide
   have hs : rawTriangle.fitness.size = rawTriangle.nodeCount := rfl
@@ -106,7 +106,8 @@ example : seedSummary rawTriangle = .ok (3, 3, [2, 2, 2], [1, 2, 4]) := by
       (seedSnapshot rawTriangle rfl) (0 : Fin 3) 2
     decide
   simp only [seedSummary, parseSeed, dif_pos hn, dif_pos hs,
-    dif_pos hf, dif_pos he, dif_pos hd, dif_pos hc] <;> decide_cbv
+    dif_pos hf, dif_pos he, dif_pos hd, dif_pos hc]
+  decide_cbv
 example : seedSummary reversedTriangle = .ok (3, 3, [2, 2, 2], [1, 2, 4]) := by
   have hn : 2 ≤ reversedTriangle.nodeCount := by decide
   have hs : reversedTriangle.fitness.size = reversedTriangle.nodeCount := rfl
@@ -119,7 +120,8 @@ example : seedSummary reversedTriangle = .ok (3, 3, [2, 2, 2], [1, 2, 4]) := by
       (seedSnapshot reversedTriangle rfl) (0 : Fin 3) 2
     decide
   simp only [seedSummary, parseSeed, dif_pos hn, dif_pos hs,
-    dif_pos hf, dif_pos he, dif_pos hd, dif_pos hc] <;> decide_cbv
+    dif_pos hf, dif_pos he, dif_pos hd, dif_pos hc]
+  decide_cbv
 example : seedSummary ⟨2, #[1/3, 2], #[(1, 0)]⟩ =
     .ok (2, 1, [1, 1], [1/3, 2]) := by
   have hn : 2 ≤ (⟨2, #[1/3, 2], #[(1, 0)]⟩ : RawSeed).nodeCount := by decide
@@ -133,7 +135,8 @@ example : seedSummary ⟨2, #[1/3, 2], #[(1, 0)]⟩ =
       (seedSnapshot (⟨2, #[1/3, 2], #[(1, 0)]⟩ : RawSeed) rfl) (0 : Fin 2) 1
     decide
   simp only [seedSummary, parseSeed, dif_pos hn, dif_pos hs,
-    dif_pos hf, dif_pos he, dif_pos hd, dif_pos hc] <;> decide_cbv
+    dif_pos hf, dif_pos he, dif_pos hd, dif_pos hc]
+  decide_cbv
 example : seedSummary ⟨4, #[1, 1, 1, 1], #[(2, 3), (1, 2), (0, 1)]⟩ =
     .ok (4, 3, [1, 2, 2, 1], [1, 1, 1, 1]) := by
   have hn : 2 ≤ (⟨4, #[1, 1, 1, 1], #[(2, 3), (1, 2), (0, 1)]⟩ : RawSeed).nodeCount := by decide
@@ -147,7 +150,8 @@ example : seedSummary ⟨4, #[1, 1, 1, 1], #[(2, 3), (1, 2), (0, 1)]⟩ =
       (seedSnapshot (⟨4, #[1, 1, 1, 1], #[(2, 3), (1, 2), (0, 1)]⟩ : RawSeed) rfl) (0 : Fin 4) 3
     decide
   simp only [seedSummary, parseSeed, dif_pos hn, dif_pos hs,
-    dif_pos hf, dif_pos he, dif_pos hd, dif_pos hc] <;> decide_cbv
+    dif_pos hf, dif_pos he, dif_pos hd, dif_pos hc]
+  decide_cbv
 
 -- Whole-request validation precedes construction; the last entry can invalidate all.
 example : errorOf (validateBirth triangle 0 ⟨1, #[]⟩) = some .invalidM := by decide_cbv
@@ -303,7 +307,7 @@ example : ¬ (∀ b : Fin 2, b ∈ reached (seedSnapshot isolatedPair rfl) (0 : 
   intro allReached
   have missing := allReached (1 : Fin 2)
   rw [hr] at missing
-  simpa using missing
+  exact (by decide : (1 : Fin 2) ∉ ({0} : Finset (Fin 2))) missing
 example : errorOf (parseSeed isolatedPair) = some .disconnectedSeed := by rfl
 example : (letI := seedAdjDec rawTriangle;
     decide ((seedGraph rawTriangle).Adj (0 : Fin 3) (1 : Fin 3))) = true := by decide_cbv
