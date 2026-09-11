@@ -31,7 +31,10 @@ macro "prepareReplaySeed " raw:term " atSize " size:term : tactic =>
      have he : validSeedEdges $raw := by decide
      have hd : (($raw : RawSeed).edges.toList.map canonicalEdge).Nodup := by decide
      have hc : ∀ b : Fin $size,
-         b ∈ reached (seedSnapshot $raw hs) (0 : Fin $size) ($size - 1) := by decide
+         b ∈ reached (seedSnapshot $raw hs) (0 : Fin $size) ($size - 1) := by
+       change ∀ b : Fin $size,
+         b ∈ reached (seedSnapshot $raw rfl) (0 : Fin $size) ($size - 1)
+       decide
      simp only [replay, parseSeed, dif_pos hn, dif_pos hs, dif_pos hf,
        dif_pos he, dif_pos hd, dif_pos hc]))
 
