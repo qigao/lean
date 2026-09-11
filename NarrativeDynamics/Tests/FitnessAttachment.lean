@@ -1,6 +1,7 @@
 import NarrativeDynamics.Core.FitnessAttachment
 
 open NarrativeDynamics NarrativeDynamics.FitnessAttachment
+open scoped BigOperators
 open NarrativeDynamics.FitnessAttachment.Internal
 
 -- Exact values test the real normalizer, not a test-only arithmetic model.
