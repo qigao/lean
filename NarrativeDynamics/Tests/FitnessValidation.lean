@@ -94,13 +94,45 @@ example : errorOf (rawAttachmentRow triangle #[0, 0, 1, 2]) = some .duplicateTar
 example : errorOf (rawAttachmentRow triangle #[0, 1, 2, 3]) = some .targetOutOfRange := by decide_cbv
 
 example : stepSummary triangle 2 ⟨3/2, #[2, 1]⟩ =
-    .ok (4, 5, [2, 3, 3, 2], [1, 2, 4, 3/2], 8/21) := by decide_cbv
+    .ok (4, 5, [2, 3, 3, 2], [1, 2, 4, 3/2], 8/21) := by
+  have hm : 0 < 2 ∧ 2 ≤ 3 := by decide
+  have hf : 0 < (3/2 : Rat) := by norm_num
+  have hs : (#[2, 1] : Array Nat).size = 2 := rfl
+  have hb : targetsBounded 3 #[2, 1] := by decide
+  have hd : targetsDistinct #[2, 1] := by decide
+  simp only [stepSummary, step, validateBirth, dif_pos hm, dif_pos hf,
+    dif_pos hs, checkTargets, dif_pos hb, dif_pos hd]
+  decide_cbv
 example : stepSummary triangle 2 ⟨3/2, #[1, 2]⟩ =
-    .ok (4, 5, [2, 3, 3, 2], [1, 2, 4, 3/2], 8/35) := by decide_cbv
+    .ok (4, 5, [2, 3, 3, 2], [1, 2, 4, 3/2], 8/35) := by
+  have hm : 0 < 2 ∧ 2 ≤ 3 := by decide
+  have hf : 0 < (3/2 : Rat) := by norm_num
+  have hs : (#[1, 2] : Array Nat).size = 2 := rfl
+  have hb : targetsBounded 3 #[1, 2] := by decide
+  have hd : targetsDistinct #[1, 2] := by decide
+  simp only [stepSummary, step, validateBirth, dif_pos hm, dif_pos hf,
+    dif_pos hs, checkTargets, dif_pos hb, dif_pos hd]
+  decide_cbv
 example : stepSummary triangle 3 ⟨1, #[0, 1, 2]⟩ =
-    .ok (4, 6, [3, 3, 3, 3], [1, 2, 4, 1], 1/21) := by decide_cbv
+    .ok (4, 6, [3, 3, 3, 3], [1, 2, 4, 1], 1/21) := by
+  have hm : 0 < 3 ∧ 3 ≤ 3 := by decide
+  have hf : 0 < (1 : Rat) := by norm_num
+  have hs : (#[0, 1, 2] : Array Nat).size = 3 := rfl
+  have hb : targetsBounded 3 #[0, 1, 2] := by decide
+  have hd : targetsDistinct #[0, 1, 2] := by decide
+  simp only [stepSummary, step, validateBirth, dif_pos hm, dif_pos hf,
+    dif_pos hs, checkTargets, dif_pos hb, dif_pos hd]
+  decide_cbv
 example : stepSummary triangle 1 ⟨1, #[0]⟩ =
-    .ok (4, 4, [3, 2, 2, 1], [1, 2, 4, 1], 1/7) := by decide_cbv
+    .ok (4, 4, [3, 2, 2, 1], [1, 2, 4, 1], 1/7) := by
+  have hm : 0 < 1 ∧ 1 ≤ 3 := by decide
+  have hf : 0 < (1 : Rat) := by norm_num
+  have hs : (#[0] : Array Nat).size = 1 := rfl
+  have hb : targetsBounded 3 #[0] := by decide
+  have hd : targetsDistinct #[0] := by decide
+  simp only [stepSummary, step, validateBirth, dif_pos hm, dif_pos hf,
+    dif_pos hs, checkTargets, dif_pos hb, dif_pos hd]
+  decide_cbv
 example : stepSummary triangle 3 ⟨1, #[0, 1, 0]⟩ = .error .duplicateTarget := by decide_cbv
 example : stepSummary triangle 3 ⟨1, #[0, 1, 3]⟩ = .error .targetOutOfRange := by decide_cbv
 example : stepSummary triangle 0 ⟨1, #[]⟩ = .error .invalidM := by decide_cbv
@@ -173,3 +205,18 @@ theorem checked_step_has_positive_mass {n m : Nat} (s : State n) (raw : RawBirth
 #print axioms raw_seed_accepts_iff
 #print axioms raw_birth_accepts_iff
 #print axioms checked_step_has_positive_mass
+
+section RawReductionWitnesses
+set_option maxRecDepth 4096
+private def isolatedPair : RawSeed := ⟨2, #[1, 1], #[]⟩
+example : (letI := seedAdjDec isolatedPair;
+    decide ((seedGraph isolatedPair).Adj 0 1)) = false := by decide_cbv
+example : reached (seedSnapshot isolatedPair rfl) 0 0 = {0} := by decide_cbv
+example : reached (seedSnapshot isolatedPair rfl) 0 1 = {0} := by decide_cbv
+example : ¬ (∀ b : Fin 2, b ∈ reached (seedSnapshot isolatedPair rfl) 0 1) := by
+  decide_cbv
+example : errorOf (parseSeed isolatedPair) = some .disconnectedSeed := by rfl
+example : (letI := seedAdjDec rawTriangle;
+    decide ((seedGraph rawTriangle).Adj 0 1)) = true := by decide_cbv
+example : reached (seedSnapshot rawTriangle rfl) 0 1 = Finset.univ := by decide_cbv
+end RawReductionWitnesses
