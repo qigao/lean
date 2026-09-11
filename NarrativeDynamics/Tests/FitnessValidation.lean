@@ -63,6 +63,8 @@ example : errorOf (parseSeed ⟨2, #[1, 1], #[]⟩) = some .disconnectedSeed := 
   have hd : ((⟨2, #[1, 1], #[]⟩ : RawSeed).edges.toList.map canonicalEdge).Nodup := by decide
   have hc : ¬ ∀ b, b ∈ reached (seedSnapshot (⟨2, #[1, 1], #[]⟩ : RawSeed) hs)
       (⟨0, by have := hn; omega⟩ : Fin (⟨2, #[1, 1], #[]⟩ : RawSeed).nodeCount) ((⟨2, #[1, 1], #[]⟩ : RawSeed).nodeCount - 1) := by
+    change ¬ ∀ b : Fin 2, b ∈ reached
+      (seedSnapshot (⟨2, #[1, 1], #[]⟩ : RawSeed) rfl) (0 : Fin 2) 1
     decide
   simp only [errorOf, parseSeed, dif_pos hn, dif_pos hs,
     dif_pos hf, dif_pos he, dif_pos hd, dif_neg hc] <;> rfl
@@ -74,6 +76,8 @@ example : errorOf (parseSeed ⟨3, #[1, 1, 1], #[(0, 1)]⟩) = some .disconnecte
   have hd : ((⟨3, #[1, 1, 1], #[(0, 1)]⟩ : RawSeed).edges.toList.map canonicalEdge).Nodup := by decide
   have hc : ¬ ∀ b, b ∈ reached (seedSnapshot (⟨3, #[1, 1, 1], #[(0, 1)]⟩ : RawSeed) hs)
       (⟨0, by have := hn; omega⟩ : Fin (⟨3, #[1, 1, 1], #[(0, 1)]⟩ : RawSeed).nodeCount) ((⟨3, #[1, 1, 1], #[(0, 1)]⟩ : RawSeed).nodeCount - 1) := by
+    change ¬ ∀ b : Fin 3, b ∈ reached
+      (seedSnapshot (⟨3, #[1, 1, 1], #[(0, 1)]⟩ : RawSeed) rfl) (0 : Fin 3) 2
     decide
   simp only [errorOf, parseSeed, dif_pos hn, dif_pos hs,
     dif_pos hf, dif_pos he, dif_pos hd, dif_neg hc] <;> rfl
@@ -85,6 +89,8 @@ example : errorOf (parseSeed ⟨4, #[1, 1, 1, 1], #[(0, 1), (2, 3)]⟩) = some .
   have hd : ((⟨4, #[1, 1, 1, 1], #[(0, 1), (2, 3)]⟩ : RawSeed).edges.toList.map canonicalEdge).Nodup := by decide
   have hc : ¬ ∀ b, b ∈ reached (seedSnapshot (⟨4, #[1, 1, 1, 1], #[(0, 1), (2, 3)]⟩ : RawSeed) hs)
       (⟨0, by have := hn; omega⟩ : Fin (⟨4, #[1, 1, 1, 1], #[(0, 1), (2, 3)]⟩ : RawSeed).nodeCount) ((⟨4, #[1, 1, 1, 1], #[(0, 1), (2, 3)]⟩ : RawSeed).nodeCount - 1) := by
+    change ¬ ∀ b : Fin 4, b ∈ reached
+      (seedSnapshot (⟨4, #[1, 1, 1, 1], #[(0, 1), (2, 3)]⟩ : RawSeed) rfl) (0 : Fin 4) 3
     decide
   simp only [errorOf, parseSeed, dif_pos hn, dif_pos hs,
     dif_pos hf, dif_pos he, dif_pos hd, dif_neg hc] <;> rfl
@@ -96,6 +102,8 @@ example : seedSummary rawTriangle = .ok (3, 3, [2, 2, 2], [1, 2, 4]) := by
   have hd : (rawTriangle.edges.toList.map canonicalEdge).Nodup := by decide
   have hc : ∀ b, b ∈ reached (seedSnapshot rawTriangle hs)
       (⟨0, by have := hn; omega⟩ : Fin rawTriangle.nodeCount) (rawTriangle.nodeCount - 1) := by
+    change ∀ b : Fin 3, b ∈ reached
+      (seedSnapshot rawTriangle rfl) (0 : Fin 3) 2
     decide
   simp only [seedSummary, parseSeed, dif_pos hn, dif_pos hs,
     dif_pos hf, dif_pos he, dif_pos hd, dif_pos hc] <;> decide_cbv
@@ -107,6 +115,8 @@ example : seedSummary reversedTriangle = .ok (3, 3, [2, 2, 2], [1, 2, 4]) := by
   have hd : (reversedTriangle.edges.toList.map canonicalEdge).Nodup := by decide
   have hc : ∀ b, b ∈ reached (seedSnapshot reversedTriangle hs)
       (⟨0, by have := hn; omega⟩ : Fin reversedTriangle.nodeCount) (reversedTriangle.nodeCount - 1) := by
+    change ∀ b : Fin 3, b ∈ reached
+      (seedSnapshot reversedTriangle rfl) (0 : Fin 3) 2
     decide
   simp only [seedSummary, parseSeed, dif_pos hn, dif_pos hs,
     dif_pos hf, dif_pos he, dif_pos hd, dif_pos hc] <;> decide_cbv
@@ -114,11 +124,13 @@ example : seedSummary ⟨2, #[1/3, 2], #[(1, 0)]⟩ =
     .ok (2, 1, [1, 1], [1/3, 2]) := by
   have hn : 2 ≤ (⟨2, #[1/3, 2], #[(1, 0)]⟩ : RawSeed).nodeCount := by decide
   have hs : (⟨2, #[1/3, 2], #[(1, 0)]⟩ : RawSeed).fitness.size = (⟨2, #[1/3, 2], #[(1, 0)]⟩ : RawSeed).nodeCount := rfl
-  have hf : positiveSeedFitness (⟨2, #[1/3, 2], #[(1, 0)]⟩ : RawSeed) := by decide
+  have hf : positiveSeedFitness (⟨2, #[1/3, 2], #[(1, 0)]⟩ : RawSeed) := by decide_cbv
   have he : validSeedEdges (⟨2, #[1/3, 2], #[(1, 0)]⟩ : RawSeed) := by decide
   have hd : ((⟨2, #[1/3, 2], #[(1, 0)]⟩ : RawSeed).edges.toList.map canonicalEdge).Nodup := by decide
   have hc : ∀ b, b ∈ reached (seedSnapshot (⟨2, #[1/3, 2], #[(1, 0)]⟩ : RawSeed) hs)
       (⟨0, by have := hn; omega⟩ : Fin (⟨2, #[1/3, 2], #[(1, 0)]⟩ : RawSeed).nodeCount) ((⟨2, #[1/3, 2], #[(1, 0)]⟩ : RawSeed).nodeCount - 1) := by
+    change ∀ b : Fin 2, b ∈ reached
+      (seedSnapshot (⟨2, #[1/3, 2], #[(1, 0)]⟩ : RawSeed) rfl) (0 : Fin 2) 1
     decide
   simp only [seedSummary, parseSeed, dif_pos hn, dif_pos hs,
     dif_pos hf, dif_pos he, dif_pos hd, dif_pos hc] <;> decide_cbv
@@ -131,6 +143,8 @@ example : seedSummary ⟨4, #[1, 1, 1, 1], #[(2, 3), (1, 2), (0, 1)]⟩ =
   have hd : ((⟨4, #[1, 1, 1, 1], #[(2, 3), (1, 2), (0, 1)]⟩ : RawSeed).edges.toList.map canonicalEdge).Nodup := by decide
   have hc : ∀ b, b ∈ reached (seedSnapshot (⟨4, #[1, 1, 1, 1], #[(2, 3), (1, 2), (0, 1)]⟩ : RawSeed) hs)
       (⟨0, by have := hn; omega⟩ : Fin (⟨4, #[1, 1, 1, 1], #[(2, 3), (1, 2), (0, 1)]⟩ : RawSeed).nodeCount) ((⟨4, #[1, 1, 1, 1], #[(2, 3), (1, 2), (0, 1)]⟩ : RawSeed).nodeCount - 1) := by
+    change ∀ b : Fin 4, b ∈ reached
+      (seedSnapshot (⟨4, #[1, 1, 1, 1], #[(2, 3), (1, 2), (0, 1)]⟩ : RawSeed) rfl) (0 : Fin 4) 3
     decide
   simp only [seedSummary, parseSeed, dif_pos hn, dif_pos hs,
     dif_pos hf, dif_pos he, dif_pos hd, dif_pos hc] <;> decide_cbv
