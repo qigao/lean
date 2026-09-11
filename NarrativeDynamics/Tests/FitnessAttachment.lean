@@ -231,6 +231,11 @@ def t012 : Fin 3 ↪ Fin 3 := Function.Embedding.refl _
 
 end NarrativeDynamics.FitnessAttachment.Fixtures
 
+section ExactTargetFixtures
+-- These equation-checked finite enumerations need a deeper, still bounded stack.
+-- This setting does not apply to the old tests or to any generic proof below.
+set_option maxRecDepth 4096
+
 example : Fintype.card (Targets 3 2) = 6 := by decide
 example : Targets.ordered Fixtures.t21 = [2, 1] := by decide_cbv
 example : Targets.selected Fixtures.t21 = {1, 2} := by decide_cbv
@@ -262,6 +267,8 @@ example : traceMass (![2, 4, 8] : Fin 3 → Rat) {2} [2] = 0 := by decide_cbv
 example : traceMass (![2, 4, 8] : Fin 3 → Rat) Finset.univ [] = 1 := by decide_cbv
 example : traceMass (![2, 4, 8] : Fin 3 → Rat) Finset.univ [0] = 0 := by decide_cbv
 example : traceMass (![0, 0, 0] : Fin 3 → Rat) ∅ [0] = 0 := by decide_cbv
+
+end ExactTargetFixtures
 
 example {n m : Nat} (T : Targets n m) : T.selected.card = m := selected_card T
 example {n m : Nat} (s : State n) (T : Targets n m) : 0 < orderedMass s T :=
