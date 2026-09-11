@@ -314,7 +314,8 @@ vertex supplies the separate nonempty-carrier obligation. -/
 theorem graph_connected (t : Nat) : (graph t).Connected := by
   refine { preconnected := ?_, nonempty := inferInstance }
   intro u v
-  rcases coarseBound t u v with ⟨_, _, walk⟩
+  rcases coarseBound t u v with ⟨length, bound, walk⟩
+  clear bound
   induction walk with
   | refl => exact SimpleGraph.Reachable.refl _
   | step edge rest ih => exact edge.reachable.trans ih
