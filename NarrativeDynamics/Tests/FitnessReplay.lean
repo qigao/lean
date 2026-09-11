@@ -164,3 +164,36 @@ example {n : Nat} (s : State n) (m : Nat) (hm : 0 < m) (hb : m ≤ n)
 #print axioms replay_fitness_prefix
 #print axioms replay_probability_pos
 #print axioms continuationMass_one
+
+-- Whole-run laws use the same raw replay and preserve the exact supplied order.
+example (seed : RawSeed) (m : Nat) (bs : List RawBirth) (out : ReplayResult)
+    (c : PosFitness) (h : replay seed m bs = .ok out) :
+    replay (scaleSeed seed c) m (bs.map (fun raw => scaleBirth raw c)) =
+      .ok (scaleResult out c) := replay_scale seed m bs out c h
+
+example (seed : RawSeed) (m : Nat) (bs : List RawBirth) (out : ReplayResult)
+    (c : PosFitness) (h : replay seed m bs = .ok out) :
+    ∃ next, replay (scaleSeed seed c) m (bs.map (fun raw => scaleBirth raw c)) = .ok next ∧
+      next.final = scaleRunState out.final c := replay_scale_topology seed m bs out c h
+
+example (seed : RawSeed) (m : Nat) (bs : List RawBirth) (out : ReplayResult)
+    (c : PosFitness) (h : replay seed m bs = .ok out) :
+    ∃ next, replay (scaleSeed seed c) m (bs.map (fun raw => scaleBirth raw c)) = .ok next ∧
+      next.probability = out.probability := replay_scale_probability seed m bs out c h
+
+-- BA is the unit-fitness specialization, not a separately implemented generator.
+example (seed : RawSeed) (m : Nat) (bs : List RawBirth) (out : ReplayResult)
+    (c : PosFitness) (h : replay (unitSeed seed) m (bs.map unitBirth) = .ok out) :
+    ∃ next, replay (constantSeed seed c) m (bs.map (fun raw => constantBirth raw c)) = .ok next ∧
+      next.final = scaleRunState out.final c := replay_ba_topology seed m bs out c h
+
+example (seed : RawSeed) (m : Nat) (bs : List RawBirth) (out : ReplayResult)
+    (c : PosFitness) (h : replay (unitSeed seed) m (bs.map unitBirth) = .ok out) :
+    ∃ next, replay (constantSeed seed c) m (bs.map (fun raw => constantBirth raw c)) = .ok next ∧
+      next.probability = out.probability := replay_ba_probability seed m bs out c h
+
+#print axioms replay_scale
+#print axioms replay_scale_topology
+#print axioms replay_scale_probability
+#print axioms replay_ba_topology
+#print axioms replay_ba_probability
