@@ -16,6 +16,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Record checked revision
+        run: |
+          printf 'event=%s ref=%s requested_sha=%s run=%s attempt=%s\n' \
+            "$GITHUB_EVENT_NAME" "$GITHUB_REF" "$GITHUB_SHA" \
+            "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
+          git rev-parse HEAD
 
       - name: Cache Lean toolchain
         uses: actions/cache@v4
@@ -44,6 +50,9 @@ jobs:
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
           lake update
+          cat lean-toolchain
+          lake env lean --version
+          git -C .lake/packages/mathlib rev-parse HEAD
 
       - name: Lean Python conformance vectors
         run: |
@@ -68,6 +77,11 @@ jobs:
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
           lake build
+
+      - name: Fitness attachment contract tests
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          lake env lean NarrativeDynamics/Tests/FitnessAttachment.lean
 
       - name: Lean theorem tests
         run: |
@@ -124,5 +138,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Record checked revision
+        run: |
+          printf 'event=%s ref=%s requested_sha=%s run=%s attempt=%s\n' \
+            "$GITHUB_EVENT_NAME" "$GITHUB_REF" "$GITHUB_SHA" \
+            "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
+          git rev-parse HEAD
       - name: Python numerical tests
         run: python3 -m unittest discover -s tests -v
