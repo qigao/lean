@@ -400,3 +400,284 @@ theorem attachment_strict_mono {n : Nat} (s t : State n) (S : Finset (Fin n))
   nlinarith [mul_pos (sub_pos.mpr hw) hb]
 
 end NarrativeDynamics.FitnessAttachment
+
+namespace NarrativeDynamics.FitnessAttachment
+
+open Internal
+open scoped BigOperators
+
+/-- Ordered, distinct old targets; the finite instance enumerates actual embeddings. -/
+abbrev Targets (n m : Nat) := Fin m ↪ Fin n
+
+/-- The order matters to the conditional probability, even for the same target set. -/
+def Targets.ordered {n m : Nat} (T : Targets n m) : List (Fin n) := List.ofFn T
+
+/-- Forget order only when forming the corresponding unordered event. -/
+def Targets.selected {n m : Nat} (T : Targets n m) : Finset (Fin n) :=
+  Finset.univ.image T
+
+/-- Injectivity, not a separately assumed count, fixes the target-set cardinality. -/
+theorem selected_card {n m : Nat} (T : Targets n m) : T.selected.card = m := by
+  unfold Targets.selected
+  rw [Finset.card_image_of_injective _ T.injective]
+  simp
+
+namespace Internal
+
+/-- A finite mathematical event mass. Impossible draws have mass zero, not API success.
+The empty continuation has mass one, including after the last candidate is used. -/
+def traceMass {n : Nat} (w : Fin n → Rat) (S : Finset (Fin n)) : List (Fin n) → Rat
+  | [] => 1
+  | i :: xs =>
+    if i ∈ S ∨ total (remaining w S) ≤ 0 then 0
+    else (w i / total (remaining w S)) * traceMass w (insert i S) xs
+
+/-- Legal continuations avoid the already-selected prefix as well as each other. -/
+abbrev Continuation (n m : Nat) (S : Finset (Fin n)) :=
+  { T : Targets n m // ∀ j, T j ∉ S }
+
+/-- Exact first-choice/tail partition: no ordering is omitted or counted twice. -/
+def splitContinuation {n m : Nat} (S : Finset (Fin n)) :
+    Continuation n (m + 1) S ≃
+      (Σ i : { j : Fin n // j ∉ S }, Continuation n m (insert i.val S)) where
+  toFun T := ⟨⟨T.val 0, T.property 0⟩, ⟨Fin.Embedding.tail T.val, by
+    intro j hj
+    rcases Finset.mem_insert.mp hj with heq | hin
+    · exact Fin.succ_ne_zero j (T.val.injective heq)
+    · exact T.property j.succ hin⟩⟩
+  invFun z := ⟨Fin.Embedding.cons z.2.val (by
+    rintro ⟨j, hj⟩
+    exact z.2.property j (Finset.mem_insert.mpr (Or.inl hj))), by
+    intro j
+    refine Fin.cases ?_ ?_ j
+    · exact z.1.property
+    · intro k hk
+      exact z.2.property k (Finset.mem_insert_of_mem hk)⟩
+  left_inv T := by
+    apply Subtype.ext
+    ext j
+    refine Fin.cases ?_ ?_ j
+    · rfl
+    · intro k
+      rfl
+  right_inv := by
+    rintro ⟨i, T⟩
+    rfl
+
+private theorem remaining_pos_at {n : Nat} (w : Fin n → Rat)
+    (hw : ∀ j, 0 < w j) (S : Finset (Fin n)) (i : Fin n) (hi : i ∉ S) :
+    0 < total (remaining w S) := by
+  have hn : ∀ j, 0 ≤ remaining w S j := by
+    intro j
+    by_cases hj : j ∈ S
+    · simp [remaining, hj]
+    · simpa [remaining, hj] using (hw j).le
+  have hp : 0 < remaining w S i := by simpa [remaining, hi] using hw i
+  exact lt_of_lt_of_le hp
+    (Finset.single_le_sum (fun j _ => hn j) (Finset.mem_univ i))
+
+private theorem remaining_pos_proper {n : Nat} (w : Fin n → Rat)
+    (hw : ∀ j, 0 < w j) (S : Finset (Fin n)) (hS : S.card < n) :
+    0 < total (remaining w S) := by
+  have hex : ∃ i : Fin n, i ∉ S := by
+    by_contra! allIn
+    have hc := Finset.card_le_card (show Finset.univ ⊆ S from fun i _ => allIn i)
+    simp only [Finset.card_univ, Fintype.card_fin] at hc
+    omega
+  obtain ⟨i, hi⟩ := hex
+  exact remaining_pos_at w hw S i hi
+
+/-- Restricting the sum to eligible IDs is exactly the zero-mask sum. -/
+private theorem sum_eligible {n : Nat} (w : Fin n → Rat) (S : Finset (Fin n)) :
+    (∑ i : { j : Fin n // j ∉ S }, w i.val) = total (remaining w S) := by
+  have h := Fintype.sum_subtype_add_sum_subtype
+    (fun i : Fin n => i ∉ S) (remaining w S)
+  have good : (∑ i : { j : Fin n // j ∉ S }, remaining w S i.val) =
+      ∑ i : { j : Fin n // j ∉ S }, w i.val := by
+    apply Finset.sum_congr rfl
+    intro i _
+    exact if_neg i.property
+  have bad : (∑ i : { j : Fin n // ¬ j ∉ S }, remaining w S i.val) = 0 := by
+    apply Finset.sum_eq_zero
+    intro i _
+    exact if_pos (not_not.mp i.property)
+  rw [good, bad, add_zero] at h
+  exact h
+
+/-- The partition also preserves the actual conditional-product computation. -/
+theorem split_mass {n m : Nat} (w : Fin n → Rat) (hw : ∀ j, 0 < w j)
+    (S : Finset (Fin n))
+    (z : Σ i : { j : Fin n // j ∉ S }, Continuation n m (insert i.val S)) :
+    traceMass w S ((splitContinuation S).symm z).val.ordered =
+      (w z.1.val / total (remaining w S)) *
+        traceMass w (insert z.1.val S) z.2.val.ordered := by
+  have hz := remaining_pos_at w hw S z.1.val z.1.property
+  change traceMass w S (List.ofFn (Fin.cons z.1.val z.2.val)) = _
+  rw [List.ofFn_cons]
+  simp only [traceMass, z.1.property, false_or, not_le.mpr hz, if_false]
+
+/-- Every legal continuation has positive probability under positive weights. -/
+theorem continuation_pos {n : Nat} (w : Fin n → Rat) (hw : ∀ j, 0 < w j)
+    (m : Nat) (S : Finset (Fin n)) (T : Continuation n m S) :
+    0 < traceMass w S T.val.ordered := by
+  induction m generalizing S with
+  | zero => simp [Targets.ordered, traceMass]
+  | succ m ih =>
+    obtain ⟨z, rfl⟩ := (splitContinuation (m := m) S).symm.surjective T
+    rw [split_mass w hw S z]
+    exact mul_pos
+      (div_pos (hw z.1.val) (remaining_pos_at w hw S z.1.val z.1.property))
+      (ih (insert z.1.val S) z.2)
+
+/-- Complete normalization is proved by the head/tail bijection and prefix induction.
+The dimension bound is essential; the empty continuation does not normalize a row. -/
+theorem continuation_sum_one {n : Nat} (w : Fin n → Rat) (hw : ∀ j, 0 < w j)
+    (m : Nat) (S : Finset (Fin n)) (bound : S.card + m ≤ n) :
+    (∑ T : Continuation n m S, traceMass w S T.val.ordered) = 1 := by
+  induction m generalizing S with
+  | zero =>
+    let z : Continuation n 0 S :=
+      ⟨⟨Fin.elim0, by intro i; exact i.elim0⟩, by intro i; exact i.elim0⟩
+    letI : Subsingleton (Continuation n 0 S) := ⟨by
+      intro a b
+      apply Subtype.ext
+      ext i
+      exact i.elim0⟩
+    rw [Fintype.sum_subsingleton _ z]
+    simp [Targets.ordered, traceMass]
+  | succ m ih =>
+    have hS : S.card < n := by omega
+    let e := splitContinuation (n := n) (m := m) S
+    rw [← e.symm.sum_comp (fun T : Continuation n (m + 1) S =>
+      traceMass w S T.val.ordered)]
+    rw [Fintype.sum_sigma]
+    simp_rw [split_mass w hw S, ← Finset.mul_sum]
+    calc
+      (∑ i : { j : Fin n // j ∉ S },
+          w i.val / total (remaining w S) *
+            ∑ T : Continuation n m (insert i.val S),
+              traceMass w (insert i.val S) T.val.ordered) =
+          ∑ i : { j : Fin n // j ∉ S }, w i.val / total (remaining w S) := by
+        apply Finset.sum_congr rfl
+        intro i _
+        have hb : (insert i.val S).card + m ≤ n := by
+          rw [Finset.card_insert_of_notMem i.property]
+          omega
+        rw [ih (insert i.val S) hb, mul_one]
+      _ = 1 := by
+        rw [← Finset.sum_div, sum_eligible]
+        exact div_self (ne_of_gt (remaining_pos_proper w hw S hS))
+
+/-- At the empty prefix, every target embedding is a legal continuation. -/
+def emptyContinuationEquiv {n m : Nat} : Targets n m ≃ Continuation n m ∅ where
+  toFun T := ⟨T, by intro j; simp⟩
+  invFun T := T.val
+  left_inv _ := rfl
+  right_inv _ := rfl
+
+/-- Common positive scaling cancels at every conditional draw, not only the first. -/
+theorem traceMass_scale {n : Nat} (w : Fin n → Rat) (c : PosFitness)
+    (S : Finset (Fin n)) (xs : List (Fin n)) :
+    traceMass (fun i => c.val * w i) S xs = traceMass w S xs := by
+  induction xs generalizing S with
+  | nil => rfl
+  | cons i xs ih =>
+    have ht : total (remaining (fun j => c.val * w j) S) =
+        c.val * total (remaining w S) := by
+      unfold total
+      rw [Finset.mul_sum]
+      apply Finset.sum_congr rfl
+      intro j _
+      by_cases hj : j ∈ S <;> simp [remaining, hj]
+    by_cases hi : i ∈ S
+    · simp [traceMass, hi]
+    · by_cases hz : 0 < total (remaining w S)
+      · have hz' := mul_pos c.property hz
+        simp only [traceMass, ht, hi, false_or, not_le.mpr hz,
+          not_le.mpr hz', if_false]
+        rw [mul_div_mul_left _ _ (ne_of_gt c.property), ih]
+      · have hz0 := le_of_not_gt hz
+        have hz0' := mul_nonpos_of_nonneg_of_nonpos c.property.le hz0
+        simp only [traceMass, ht, hi, false_or, hz0, hz0', if_true]
+
+end Internal
+
+/-- The probability of this exact ordered target tuple on the frozen old graph. -/
+def orderedMass {n m : Nat} (s : State n) (T : Targets n m) : Rat :=
+  traceMass (weights s.snapshot) ∅ T.ordered
+
+/-- The mass of a set event sums all its orderings, including unequal ones. -/
+def setMass {n : Nat} (s : State n) (m : Nat) (A : Finset (Fin n)) : Rat :=
+  ∑ T : Targets n m, if T.selected = A then orderedMass s T else 0
+
+theorem orderedMass_pos {n m : Nat} (s : State n) (T : Targets n m) :
+    0 < orderedMass s T :=
+  continuation_pos (weights s.snapshot) (weight_pos s) m ∅
+    (emptyContinuationEquiv T)
+
+theorem orderedMass_sum_one {n m : Nat} (s : State n) (hm : m ≤ n) :
+    (∑ T : Targets n m, orderedMass s T) = 1 := by
+  calc
+    (∑ T : Targets n m, orderedMass s T) =
+        ∑ U : Continuation n m ∅, traceMass (weights s.snapshot) ∅ U.val.ordered :=
+      emptyContinuationEquiv.sum_comp _
+    _ = 1 := continuation_sum_one (weights s.snapshot) (weight_pos s) m ∅ (by simpa using hm)
+
+/-- Cardinality mismatches describe impossible events, never a renormalized law. -/
+theorem setMass_wrong_card {n m : Nat} (s : State n) (A : Finset (Fin n))
+    (hA : A.card ≠ m) : setMass s m A = 0 := by
+  unfold setMass
+  apply Finset.sum_eq_zero
+  intro T _
+  have hne : T.selected ≠ A := by
+    intro he
+    apply hA
+    rw [← he]
+    exact selected_card T
+  exact if_neg hne
+
+/-- Partitioning the complete ordered law by the selected set preserves mass one. -/
+theorem setMass_sum_one {n m : Nat} (s : State n) (hm : m ≤ n) :
+    (∑ A ∈ (Finset.univ : Finset (Fin n)).powersetCard m, setMass s m A) = 1 := by
+  unfold setMass
+  rw [Finset.sum_comm]
+  calc
+    (∑ T : Targets n m, ∑ A ∈ (Finset.univ : Finset (Fin n)).powersetCard m,
+        if T.selected = A then orderedMass s T else 0) =
+        ∑ T : Targets n m, orderedMass s T := by
+      apply Finset.sum_congr rfl
+      intro T _
+      have hmem : T.selected ∈ (Finset.univ : Finset (Fin n)).powersetCard m := by
+        simp [Finset.mem_powersetCard, selected_card]
+      rw [Finset.sum_eq_single T.selected]
+      · simp
+      · intro B _ hB
+        exact if_neg (Ne.symm hB)
+      · intro hnot
+        exact False.elim (hnot hmem)
+    _ = 1 := orderedMass_sum_one s hm
+
+/-- BA reduction holds for complete conditional products with constant fitness. -/
+theorem orderedMass_ba {n m : Nat} (s : State n) (T : Targets n m)
+    (c : PosFitness) (constant : ∀ i, s.snapshot.fitness i = c.val) :
+    orderedMass s T = orderedMass (asBA s) T := by
+  have hw : weights s.snapshot = fun i => c.val * weights (asBA s).snapshot i := by
+    funext i
+    change s.snapshot.fitness i * (degree s.snapshot i : Rat) =
+      c.val * (1 * (degree s.snapshot i : Rat))
+    rw [constant i, one_mul]
+  unfold orderedMass
+  rw [hw, traceMass_scale]
+
+/-- A common scale preserves every complete finite target law. -/
+theorem orderedMass_scale {n m : Nat} (s : State n) (T : Targets n m)
+    (c : PosFitness) : orderedMass (scaleFitness s c) T = orderedMass s T := by
+  have hw : weights (scaleFitness s c).snapshot = fun i => c.val * weights s.snapshot i := by
+    funext i
+    change (c.val * s.snapshot.fitness i) * (degree s.snapshot i : Rat) =
+      c.val * (s.snapshot.fitness i * (degree s.snapshot i : Rat))
+    exact mul_assoc _ _ _
+  unfold orderedMass
+  rw [hw, traceMass_scale]
+
+end NarrativeDynamics.FitnessAttachment
