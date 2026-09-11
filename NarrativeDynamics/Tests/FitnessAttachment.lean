@@ -268,6 +268,17 @@ example : traceMass (![2, 4, 8] : Fin 3 → Rat) Finset.univ [] = 1 := by decide
 example : traceMass (![2, 4, 8] : Fin 3 → Rat) Finset.univ [0] = 0 := by decide_cbv
 example : traceMass (![0, 0, 0] : Fin 3 → Rat) ∅ [0] = 0 := by decide_cbv
 
+-- Reduction diagnostics: isolate the sum, order comparison, and recursive call.
+#print traceMass
+example : total (remaining (![0, 0, 0] : Fin 3 → Rat) ∅) = 0 := by decide_cbv
+example : total (remaining (![0, 0, 0] : Fin 3 → Rat) ∅) ≤ 0 := by decide_cbv
+example : traceMass (![0, 0, 0] : Fin 3 → Rat) ∅ [0] = 0 := by decide
+example : orderedMass Fixtures.triangle Fixtures.t21 = 8/21 := by decide
+example : setMass Fixtures.triangle 2 {1, 2} = 64/105 := by decide
+example : traceMass (![0, 0, 0] : Fin 3 → Rat) ∅ [0] = 0 := by
+  simp only [traceMass]
+  decide_cbv
+
 end ExactTargetFixtures
 
 example {n m : Nat} (T : Targets n m) : T.selected.card = m := selected_card T
