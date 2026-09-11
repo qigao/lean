@@ -77,3 +77,41 @@ example {V : Type*} (G : SimpleGraph V) (u : V) :
 
 #print axioms old_walk_lifts
 #print axioms old_reachWithin_lifts
+
+-- Task 2: the recursive graph and carrier must travel together.
+example : family 0 = triangleStage := rfl
+example (t : Nat) : family (t + 1) = expandStage (family t) := rfl
+example (t : Nat) : Fintype (Vertex t) := inferInstance
+example (t : Nat) : DecidableEq (Vertex t) := inferInstance
+example (t : Nat) : DecidableRel (graph t).Adj := inferInstance
+example (t : Nat) : Nonempty (Vertex t) := inferInstance
+
+-- These definitional contracts forbid independent recurrence counters.
+example (t : Nat) : nodeCount t = Fintype.card (Vertex t) := rfl
+example (t : Nat) : edgeCount t = Fintype.card (graph t).edgeSet := rfl
+
+example : nodeCount 0 = 3 := nodeCount_zero
+example : edgeCount 0 = 3 := edgeCount_zero
+example (t : Nat) : nodeCount (t + 1) = nodeCount t + edgeCount t :=
+  nodeCount_succ t
+example (t : Nat) : edgeCount (t + 1) = 3 * edgeCount t := edgeCount_succ t
+example (t : Nat) : edgeCount t = 3 ^ (t + 1) := edgeCount_formula t
+example (t : Nat) : 2 * nodeCount t = 3 ^ (t + 1) + 3 := nodeCount_formula t
+
+-- Small concrete checks evaluate the actual finite graph, not the formulas.
+example : nodeCount 1 = 6 := by decide
+example : edgeCount 1 = 9 := by decide
+example : nodeCount 2 = 15 := by decide
+example : edgeCount 2 = 27 := by decide
+example : nodeCount 3 = 42 := by decide
+example : edgeCount 3 = 81 := by decide
+
+-- The bound is only an upper bound; it is not an exact diameter claim.
+example (t : Nat) : GlobalHopBound (graph t).Adj (2 * t + 1) := coarseBound t
+example (t : Nat) : ∃ k, GlobalHopBound (graph t).Adj k := bounded t
+example (t : Nat) : (graph t).Connected := graph_connected t
+
+#print axioms nodeCount_formula
+#print axioms edgeCount_formula
+#print axioms coarseBound
+#print axioms graph_connected
