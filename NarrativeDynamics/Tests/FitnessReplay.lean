@@ -45,7 +45,8 @@ set_option maxRecDepth 4096
 example : summaryOf (replay rawTriangle 2 []) =
     .ok (3, 3, [2, 2, 2], [1, 2, 4], 1) := by
   prepareReplaySeed rawTriangle atSize 3
-  decide_cbv
+  trace_state
+  rfl
 example : summaryOf (replay rawTriangle 2 [⟨3/2, #[2, 1]⟩]) =
     .ok (4, 5, [2, 3, 3, 2], [1, 2, 4, 3/2], 8/21) := by
   prepareReplaySeed rawTriangle atSize 3
