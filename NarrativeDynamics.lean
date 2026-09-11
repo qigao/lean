@@ -9,6 +9,7 @@ import NarrativeDynamics.Core.SocialMesh
 import NarrativeDynamics.Core.SmallWorld
 import NarrativeDynamics.Core.SmallWorldMetrics
 import NarrativeDynamics.Core.WattsStrogatz
+import NarrativeDynamics.Core.Pseudofractal
 import NarrativeDynamics.Core.TypedHypergraph
 import NarrativeDynamics.Core.TypedInference
 import NarrativeDynamics.Core.Closure
