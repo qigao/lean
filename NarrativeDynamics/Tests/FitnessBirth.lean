@@ -46,18 +46,19 @@ example : List.ofFn BirthFixtures.after21.snapshot.fitness = [1, 2, 4, 3/2] := b
   decide_cbv
 theorem birth_order_fixture : ∀ i j : Fin 4, BirthFixtures.after21.snapshot.graph.Adj i j ↔
     BirthFixtures.after12.snapshot.graph.Adj i j := by
-  letI := BirthFixtures.after21.snapshot.adjDec
-  letI := BirthFixtures.after12.snapshot.adjDec
+  have sameTargets : BirthFixtures.t21.selected = BirthFixtures.t12.selected := by
+    decide_cbv
   intro i j
-  fin_cases i <;> fin_cases j <;> decide_cbv
+  change birthAdj BirthFixtures.triangle.snapshot BirthFixtures.t21.selected i j ↔
+    birthAdj BirthFixtures.triangle.snapshot BirthFixtures.t12.selected i j
+  rw [sameTargets]
 example : List.ofFn BirthFixtures.after21.snapshot.fitness =
     List.ofFn BirthFixtures.after12.snapshot.fitness := by decide_cbv
 theorem birth_fitness_topology_fixture : ∀ i j : Fin 4, BirthFixtures.after21.snapshot.graph.Adj i j ↔
     BirthFixtures.afterHigh.snapshot.graph.Adj i j := by
-  letI := BirthFixtures.after21.snapshot.adjDec
-  letI := BirthFixtures.afterHigh.snapshot.adjDec
   intro i j
-  fin_cases i <;> fin_cases j <;> decide_cbv
+  -- The concrete graph fields are definitionally identical; stored fitness is not.
+  rfl
 example : List.ofFn (degree BirthFixtures.afterOne.snapshot) = [3, 2, 2, 1] := by
   decide_cbv
 example : actualEdgeCount BirthFixtures.afterOne.snapshot = 4 := by decide_cbv
