@@ -120,24 +120,24 @@ example (t : Nat) : (graph t).Connected := graph_connected t
 #print axioms graph_connected
 
 -- Task 3: the executable constructor has fixed IDs and sorted unordered edges.
--- Kernel reduction unfolds the well-founded sort in these concrete checks;
--- this is not native evaluation and introduces no compiler-result axiom.
+-- The well-founded sort is evaluated through proved equations by decide_cbv;
+-- this is proof-producing computation, not native evaluation.
 open NarrativeDynamics.Pseudofractal.Internal
 
 example : (encoded 0).nodeCount = 3 := by decide
 example : (encoded 0).edges = #[(0,1),(0,2),(1,2)] := by decide
 example : (encoded 1).nodeCount = 6 := by decide
 example : (encoded 1).edges =
-    #[(0,1),(0,2),(0,3),(0,4),(1,2),(1,3),(1,5),(2,4),(2,5)] := by decide +kernel
-example : (encoded 2).nodeCount = 15 := by decide +kernel
-example : (encoded 2).edges.size = 27 := by decide +kernel
-example : (encoded 3).nodeCount = 42 := by decide +kernel
-example : (encoded 3).edges.size = 81 := by decide +kernel
+    #[(0,1),(0,2),(0,3),(0,4),(1,2),(1,3),(1,5),(2,4),(2,5)] := by decide_cbv
+example : (encoded 2).nodeCount = 15 := by decide_cbv
+example : (encoded 2).edges.size = 27 := by decide_cbv
+example : (encoded 3).nodeCount = 42 := by decide_cbv
+example : (encoded 3).edges.size = 81 := by decide_cbv
 
 example : encodingWellFormed (encoded 0) := by decide
-example : encodingWellFormed (encoded 1) := by decide +kernel
-example : encodingWellFormed (encoded 2) := by decide +kernel
-example : encodingWellFormed (encoded 3) := by decide +kernel
+example : encodingWellFormed (encoded 1) := by decide_cbv
+example : encodingWellFormed (encoded 2) := by decide_cbv
+example : encodingWellFormed (encoded 3) := by decide_cbv
 example (t : Nat) : encodingWellFormed (encoded t) := encoded_wellFormed t
 
 -- Reject loops, reversed/out-of-range edges, duplicates and unsorted data.
