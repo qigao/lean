@@ -352,6 +352,7 @@ private theorem runBirths_scale (m index : Nat) (s : RunState) (bs : List RawBir
         have ht' := step_scale s.state raw next c ht
         have hr' := ih (index := index + 1) (s := ⟨s.nodeCount + 1, next.1⟩)
           (out := tail) hr
+        dsimp only [scaleRunState] at hr'
         simp only [List.map_cons, runBirths, scaleRunState, ht', hr', scaleResult]
 
 end Internal
@@ -363,7 +364,8 @@ theorem replay_scale (seed : RawSeed) (m : Nat) (bs : List RawBirth)
       .ok (scaleResult out c) := by
   obtain ⟨s, hs, hm, hr⟩ := replay_success seed m bs out h
   have hp := parseSeed_scale seed s c hs
-  simp only [replay, hp, if_pos hm]
+  have hms : 0 < m ∧ m ≤ (scaleSeed seed c).nodeCount := hm
+  simp only [replay, hp, if_pos hms]
   exact runBirths_scale m 0 ⟨seed.nodeCount, s⟩ bs out c hr
 
 /-- This is equality with the scaled full state, stronger than graph equality alone. -/
