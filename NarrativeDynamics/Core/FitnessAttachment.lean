@@ -2,10 +2,11 @@ import Mathlib
 import NarrativeDynamics.Core.SmallWorldMetrics
 
 /-!
-# Exact finite fitness-attachment normalization
+# Exact finite fitness attachment and target laws
 
 Checked rational rows and adjacency-derived, fixed-fitness attachment laws.
-Graph growth and target-sequence laws belong to subsequent tasks.
+Complete target laws use sequential selection without replacement.
+Graph growth and multi-birth replay belong to subsequent tasks.
 -/
 
 namespace NarrativeDynamics.FitnessAttachment.Internal
@@ -409,6 +410,12 @@ open scoped BigOperators
 /-- Ordered, distinct old targets; the finite instance enumerates actual embeddings. -/
 abbrev Targets (n m : Nat) := Fin m ↪ Fin n
 
+/-- Enumerate finite functions and retain exactly the injective ones, without choice.
+Mathlib's general embedding instance is noncomputable; these carriers have decidable equality. -/
+instance Targets.instFintype (n m : Nat) : Fintype (Targets n m) :=
+  Fintype.ofEquiv { f : Fin m → Fin n // Function.Injective f }
+    (Equiv.subtypeInjectiveEquivEmbedding (Fin m) (Fin n))
+
 /-- The order matters to the conditional probability, even for the same target set. -/
 def Targets.ordered {n m : Nat} (T : Targets n m) : List (Fin n) := List.ofFn T
 
@@ -514,7 +521,7 @@ theorem split_mass {n m : Nat} (w : Fin n → Rat) (hw : ∀ j, 0 < w j)
   have hz := remaining_pos_at w hw S z.1.val z.1.property
   change traceMass w S (List.ofFn (Fin.cons z.1.val z.2.val)) = _
   rw [List.ofFn_cons]
-  simp only [traceMass, z.1.property, false_or, not_le.mpr hz, if_false]
+  simp only [traceMass, z.1.property, false_or, not_le.mpr hz, if_false, Targets.ordered]
 
 /-- Every legal continuation has positive probability under positive weights. -/
 theorem continuation_pos {n : Nat} (w : Fin n → Rat) (hw : ∀ j, 0 < w j)
@@ -551,6 +558,9 @@ theorem continuation_sum_one {n : Nat} (w : Fin n → Rat) (hw : ∀ j, 0 < w j)
     rw [← e.symm.sum_comp (fun T : Continuation n (m + 1) S =>
       traceMass w S T.val.ordered)]
     rw [Fintype.sum_sigma]
+    change (∑ i : { j : Fin n // j ∉ S },
+      ∑ T : Continuation n m (insert i.val S),
+        traceMass w S ((splitContinuation S).symm ⟨i, T⟩).val.ordered) = 1
     simp_rw [split_mass w hw S, ← Finset.mul_sum]
     calc
       (∑ i : { j : Fin n // j ∉ S },
@@ -620,7 +630,8 @@ theorem orderedMass_sum_one {n m : Nat} (s : State n) (hm : m ≤ n) :
   calc
     (∑ T : Targets n m, orderedMass s T) =
         ∑ U : Continuation n m ∅, traceMass (weights s.snapshot) ∅ U.val.ordered :=
-      emptyContinuationEquiv.sum_comp _
+      (emptyContinuationEquiv (n := n) (m := m)).sum_comp
+        (fun U : Continuation n m ∅ => traceMass (weights s.snapshot) ∅ U.val.ordered)
     _ = 1 := continuation_sum_one (weights s.snapshot) (weight_pos s) m ∅ (by simpa using hm)
 
 /-- Cardinality mismatches describe impossible events, never a renormalized law. -/
