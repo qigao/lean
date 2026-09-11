@@ -18,10 +18,10 @@ example {V : Type*} (G : SimpleGraph V) (e f : G.edgeSet) :
 
 example {V : Type*} (G : SimpleGraph V) : SymmetricMesh (expandGraph G).Adj := by
   intro u v adjacent
-  exact (expandGraph G).symm adjacent
+  exact (expandGraph G).adj_symm adjacent
 
 example {V : Type*} (G : SimpleGraph V) (v : ExpansionVertex G) :
-    ¬ (expandGraph G).Adj v v := (expandGraph G).loopless v
+    ¬ (expandGraph G).Adj v v := (expandGraph G).irrefl
 
 -- No classical/noncomputable adjacency instance is allowed here.
 example {V : Type*} [DecidableEq V] (G : SimpleGraph V) [DecidableRel G.Adj] :
