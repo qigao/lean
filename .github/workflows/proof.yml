@@ -82,6 +82,7 @@ jobs:
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
           lake env lean NarrativeDynamics/Tests/FitnessAttachment.lean
+          lake env lean NarrativeDynamics/Tests/FitnessBirth.lean
 
       - name: Lean theorem tests
         run: |
