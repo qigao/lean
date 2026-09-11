@@ -388,13 +388,14 @@ theorem newEdge_injective (g : EncodedGraph) (hg : encodingWellFormed g) :
   subst j
   have endpoints := hg.1 _ (List.get_mem (edgeList g) i)
   have first := congrArg Prod.fst same
-  cases b <;> cases c <;> simp_all [newEdge] <;> omega
+  cases b <;> cases c <;> simp_all [newEdge]
 
 theorem rawExpansion_nodup (g : EncodedGraph) (hg : encodingWellFormed g) :
     (rawExpansionEdges g).Nodup := by
   apply List.Nodup.append (encoding_nodup g hg)
-  · exact (by simp : ((List.finRange (edgeList g).length).product
-      [false, true]).Nodup).map (newEdge_injective g hg)
+  · have indices : (List.finRange (edgeList g).length).Nodup := by simp
+    have sides : ([false, true] : List Bool).Nodup := by decide
+    exact (indices.product sides).map (newEdge_injective g hg)
   · apply List.disjoint_left.mpr
     intro p old fresh
     rcases List.mem_map.mp fresh with ⟨⟨i, side⟩, _, rfl⟩
@@ -429,17 +430,15 @@ theorem expandEncoded_wellFormed (g : EncodedGraph) (hg : encodingWellFormed g) 
     encodingWellFormed (expandEncoded g) := by
   constructor
   · rintro ⟨a,b⟩ hab
+    change a < b ∧ b < g.nodeCount + (edgeList g).length
     rcases (mem_expanded_edges g a b).mp hab with old | ⟨i, rfl, h | h⟩
     · have bounds := hg.1 _ old
-      dsimp [expandEncoded]
       omega
     · have bounds := hg.1 _ (List.get_mem (edgeList g) i)
       have hi := i.isLt
-      dsimp [expandEncoded]
       omega
     · have bounds := hg.1 _ (List.get_mem (edgeList g) i)
       have hi := i.isLt
-      dsimp [expandEncoded]
       omega
   · change (((rawExpansionEdges g).mergeSort _).toArray.toList).Pairwise edgeLT
     rw [List.toList_toArray]
@@ -539,7 +538,7 @@ def memberIndexEquiv {α : Type*} [DecidableEq α] (xs : List α) (h : xs.Nodup)
   invFun i := ⟨xs.get i, List.get_mem xs i⟩
   left_inv a := by
     apply Subtype.ext
-    exact List.getElem_idxOf a.property
+    exact List.getElem_idxOf (List.idxOf_lt_length_iff.mpr a.property)
   right_inv i := Fin.ext (List.get_idxOf h i)
 
 def edgeRankEquiv (g : EncodedGraph) (hg : encodingWellFormed g) :
@@ -583,7 +582,9 @@ def sumIndexEquiv (n m : Nat) : Fin n ⊕ Fin m ≃ Fin (n + m) where
     | inr j => simp
   right_inv := by
     intro k
-    split <;> apply Fin.ext <;> simp_all <;> omega
+    by_cases h : k.val < n
+    · simp [h]
+    · simp [h, Nat.add_sub_of_le (Nat.le_of_not_gt h)]
 
 def stepNumbering (g : EncodedGraph) (hg : encodingWellFormed g) :
     ExpansionVertex (toGraph g) ≃ Fin (expandEncoded g).nodeCount :=
