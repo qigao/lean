@@ -393,7 +393,7 @@ theorem newEdge_injective (g : EncodedGraph) (hg : encodingWellFormed g) :
 theorem rawExpansion_nodup (g : EncodedGraph) (hg : encodingWellFormed g) :
     (rawExpansionEdges g).Nodup := by
   apply List.Nodup.append (encoding_nodup g hg)
-  · have indices : (List.finRange (edgeList g).length).Nodup := by simp
+  · have indices := List.nodup_finRange (edgeList g).length
     have sides : ([false, true] : List Bool).Nodup := by decide
     exact (indices.product sides).map (newEdge_injective g hg)
   · apply List.disjoint_left.mpr
@@ -443,7 +443,8 @@ theorem expandEncoded_wellFormed (g : EncodedGraph) (hg : encodingWellFormed g) 
   · change (((rawExpansionEdges g).mergeSort _).toArray.toList).Pairwise edgeLT
     rw [List.toList_toArray]
     have weak := List.pairwise_mergeSort' edgeLE (rawExpansionEdges g)
-    have unique := (rawExpansion_nodup g hg).mergeSort
+    have unique : ((rawExpansionEdges g).mergeSort
+        (fun a b => decide (edgeLE a b))).Nodup := (rawExpansion_nodup g hg).mergeSort
     apply (List.pairwise_and.mpr ⟨weak, unique⟩).imp
     rintro ⟨a,b⟩ ⟨c,d⟩ ⟨le, ne⟩
     dsimp [edgeLE, edgeLT] at *
