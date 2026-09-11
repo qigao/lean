@@ -15,7 +15,7 @@ open scoped BigOperators
 
 /-- Existing finite IDs keep their numeric value in the extended carrier. -/
 def oldId (n : Nat) : Fin n ↪ Fin (n + 1) :=
-  ⟨Fin.castSucc, fun _ _ h => Fin.ext (congrArg Fin.val h)⟩
+  ⟨Fin.castSucc, fun _ _ h => Fin.ext (congrArg (fun x : Fin (n + 1) => x.val) h)⟩
 
 /-- The sole newborn ID is distinct from every embedded old ID. -/
 def newId (n : Nat) : Fin (n + 1) := Fin.last n
@@ -43,10 +43,10 @@ def birthGraph {n : Nat} (s : Snapshot n) (A : Finset (Fin n)) :
     intro u
     refine Fin.lastCases ?_ (fun i => ?_) u
     · simp [birthAdj]
-    · simpa [birthAdj] using s.graph.loopless.irrefl i⟩
+    · simpa only [birthAdj, Fin.lastCases_castSucc] using s.graph.loopless.irrefl i⟩
 
 /-- Decidable adjacency is constructed by finite cases, not classical choice. -/
-def birthAdjDec {n : Nat} (s : Snapshot n) (A : Finset (Fin n)) :
+@[reducible] def birthAdjDec {n : Nat} (s : Snapshot n) (A : Finset (Fin n)) :
     DecidableRel (birthGraph s A).Adj := by
   letI := s.adjDec
   intro u v
@@ -182,7 +182,8 @@ theorem actualEdgeCount_eq_edgeSet_card {n : Nat} (s : Snapshot n) :
     letI := s.adjDec
     actualEdgeCount s = Fintype.card s.graph.edgeSet := by
   letI := s.adjDec
-  simpa [actualEdgeCount] using Fintype.card_congr
+  change (edgePairs s).card = _
+  simpa only [Fintype.card_coe] using Fintype.card_congr
     (Equiv.ofBijective (edgePairToUnordered s) (edgePairToUnordered_bijective s))
 
 namespace Internal
@@ -191,13 +192,13 @@ private theorem degree_sum_indicator {n : Nat} (s : Snapshot n) (u : Fin n) :
     letI := s.adjDec
     degree s u = ∑ v, if s.graph.Adj u v then 1 else 0 := by
   letI := s.adjDec
-  simp [degree, NarrativeDynamics.neighborSet, Finset.card_filter]
+  simp only [degree, NarrativeDynamics.neighborSet, Finset.card_filter]
 
 private theorem edgeCount_sum_indicator {n : Nat} (s : Snapshot n) :
     letI := s.adjDec
     actualEdgeCount s = ∑ u, ∑ v, if u < v ∧ s.graph.Adj u v then 1 else 0 := by
   letI := s.adjDec
-  simp [actualEdgeCount, edgePairs, Finset.card_filter, Fintype.sum_prod_type]
+  simp only [actualEdgeCount, edgePairs, Finset.card_filter, Fintype.sum_prod_type]
 
 private theorem target_sum {n m : Nat} (T : Targets n m) :
     (∑ u : Fin n, if u ∈ T.selected then 1 else 0 : Nat) = m := by
@@ -239,7 +240,7 @@ theorem birth_edges {n m : Nat} (s : State n) (T : Targets n m)
   simp only [Fin.sum_univ_castSucc]
   have notLast (v : Fin (n + 1)) : ¬ Fin.last n < v := not_lt_of_ge (Fin.le_last v)
   simp [applyBirth, birthSnapshot, birthGraph, birthAdj, notLast,
-    Finset.sum_add_distrib, target_sum]
+    Finset.sum_add_distrib, selected_card]
 
 /-- Handshaking increment is derived from neighbor updates, not assumed. -/
 theorem birth_degree_sum {n m : Nat} (s : State n) (T : Targets n m)
