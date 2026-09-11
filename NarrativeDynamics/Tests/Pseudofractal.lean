@@ -69,7 +69,7 @@ example : Fintype.card (ExpansionVertex (⊥ : SimpleGraph (Fin 3))) = 3 := by
 example : ¬ (expandGraph (⊥ : SimpleGraph (Fin 3))).Adj
     (Sum.inl 0) (Sum.inl 1) := by decide
 example : Fintype.card (ExpansionVertex (⊥ : SimpleGraph (Fin 0))) = 0 := by
-  simp [ExpansionVertex, Fintype.card_sum, SimpleGraph.edgeSet_bot]
+  simp [ExpansionVertex, SimpleGraph.edgeSet_bot]
 
 example {V : Type*} (G : SimpleGraph V) (u : V) :
     MeshWalk (expandGraph G).Adj 0 (oldVertex G u) (oldVertex G u) :=
@@ -104,6 +104,9 @@ example : edgeCount 1 = 9 := by decide
 example : nodeCount 2 = 15 := by decide
 example : edgeCount 2 = 27 := by decide
 example : nodeCount 3 = 42 := by decide
+-- G3 unordered-edge enumeration needs more reduction depth than the default.
+-- Keep direct computation, with a finite budget local to this one check.
+set_option maxRecDepth 4096 in
 example : edgeCount 3 = 81 := by decide
 
 -- The bound is only an upper bound; it is not an exact diameter claim.
