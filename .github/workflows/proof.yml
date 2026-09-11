@@ -120,5 +120,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Python numerical tests
         run: python3 -m unittest discover -s tests -v

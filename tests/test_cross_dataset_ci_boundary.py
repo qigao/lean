@@ -17,36 +17,14 @@ from narrative_dynamics.cross_dataset_source import DatasetSourceManifest
 _DESIGN_BASE = "0378a40e934b3b241d6883df709aa056caec5f69"
 _APPROVED_BASE = "c979eafe650a506bf30f78ab5b35078742b54087"
 _ROOT = Path(__file__).resolve().parents[1]
-_EXPECTED_PHASE_A_PATHS = (
-    "docs/superpowers/plans/2026-08-30-narrative-cross-dataset-transfer-v1-governance-phase-a.md",
-    "narrative_dynamics/__init__.py",
-    "narrative_dynamics/cross_dataset_authorization.py",
-    "narrative_dynamics/cross_dataset_candidates.py",
-    "narrative_dynamics/cross_dataset_capabilities.py",
-    "narrative_dynamics/cross_dataset_inference.py",
-    "narrative_dynamics/cross_dataset_ledger.py",
-    "narrative_dynamics/cross_dataset_prediction.py",
-    "narrative_dynamics/cross_dataset_privacy.py",
-    "narrative_dynamics/cross_dataset_release.py",
-    "narrative_dynamics/cross_dataset_reporting.py",
-    "narrative_dynamics/cross_dataset_search.py",
-    "narrative_dynamics/cross_dataset_source.py",
-    "narrative_dynamics/studies/cross_dataset_transfer_locked_final.py",
-    "tests/cross_dataset_transfer_fixtures.py",
-    "tests/test_cross_dataset_authorization.py",
-    "tests/test_cross_dataset_candidates.py",
-    "tests/test_cross_dataset_capabilities.py",
-    "tests/test_cross_dataset_ci_boundary.py",
-    "tests/test_cross_dataset_inference.py",
-    "tests/test_cross_dataset_ledger.py",
-    "tests/test_cross_dataset_locked_final.py",
-    "tests/test_cross_dataset_prediction.py",
-    "tests/test_cross_dataset_privacy.py",
-    "tests/test_cross_dataset_public_api.py",
-    "tests/test_cross_dataset_release.py",
-    "tests/test_cross_dataset_reporting.py",
-    "tests/test_cross_dataset_search.py",
-    "tests/test_cross_dataset_source.py",
+# The only workflow delta permitted by this infrastructure correction.
+# Compare the complete file against the frozen design-base version below.
+_PYTHON_CHECKOUT = (
+    "  python-tests:\n"
+    "    name: Python tests\n"
+    "    runs-on: ubuntu-latest\n"
+    "    steps:\n"
+    "      - uses: actions/checkout@v4\n"
 )
 _FROZEN_FILE_DIGESTS = {
     "narrative_dynamics/adapters/narrative_two_stage.py": (
@@ -82,25 +60,35 @@ def _git_revision_available(revision: str) -> bool:
 
 def _phase_a_paths() -> tuple[str, ...]:
     if not _git_revision_available(_DESIGN_BASE):
-        return _EXPECTED_PHASE_A_PATHS
+        raise RuntimeError(
+            "BASE_REVISION_UNAVAILABLE: cannot prove Phase A changed-file scope"
+        )
+    try:
+        _git("merge-base", "--is-ancestor", _DESIGN_BASE, "HEAD")
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            "BASE_ANCESTRY_UNVERIFIED: cannot prove Phase A changed-file scope"
+        ) from exc
+    # Compare the exact approved base, never a substituted merge base. NUL
+    # delimiters preserve filenames; disabling renames keeps both endpoints.
     return tuple(
         path
         for path in _git(
-            "diff",
-            "--name-only",
-            f"{_DESIGN_BASE}...HEAD",
-        ).splitlines()
+            "diff", "--no-ext-diff", "--no-renames", "--name-only", "-z",
+            _DESIGN_BASE, "HEAD", "--",
+        ).split("\0")
         if path
     )
 
 
 class CrossDatasetCiBoundaryTests(unittest.TestCase):
-    def test_phase_a_paths_survive_shallow_checkout(self) -> None:
+    def test_phase_a_paths_reject_missing_base(self) -> None:
         with patch(
             f"{__name__}._git_revision_available",
             return_value=False,
         ):
-            self.assertEqual(_phase_a_paths(), _EXPECTED_PHASE_A_PATHS)
+            with self.assertRaisesRegex(RuntimeError, "BASE_REVISION_UNAVAILABLE"):
+                _phase_a_paths()
 
     def test_phase_a_has_no_real_source_or_network_workflow(self) -> None:
         forbidden_patterns = (
@@ -121,7 +109,24 @@ class CrossDatasetCiBoundaryTests(unittest.TestCase):
 
     def test_phase_a_adds_no_workflow_real_data_or_source_specific_module(self) -> None:
         paths = _phase_a_paths()
-        self.assertFalse(any(path.startswith(".github/workflows/") for path in paths))
+        workflow_paths = tuple(path for path in paths if path.startswith(".github/workflows/"))
+        proof_path = ".github/workflows/proof.yml"
+        self.assertIn(workflow_paths, ((), (proof_path,)))
+        if workflow_paths:
+            # No new workflow, trigger, command, permission or job is allowed.
+            # The existing Python checkout alone gains the required history.
+            baseline = _git("show", f"{_DESIGN_BASE}:{proof_path}")
+            self.assertEqual(baseline.count(_PYTHON_CHECKOUT), 1)
+            expected = baseline.replace(
+                _PYTHON_CHECKOUT,
+                _PYTHON_CHECKOUT + "        with:\n          fetch-depth: 0\n",
+            )
+            self.assertFalse((_ROOT / proof_path).is_symlink())
+            self.assertEqual((_ROOT / proof_path).read_bytes(), expected.encode("utf-8"))
+            self.assertEqual(
+                _git("ls-tree", _DESIGN_BASE, "--", proof_path).split()[:2],
+                _git("ls-tree", "HEAD", "--", proof_path).split()[:2],
+            )
         self.assertFalse(
             any(path.lower().endswith((".csv", ".tsv", ".parquet")) for path in paths)
         )
