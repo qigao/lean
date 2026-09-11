@@ -298,7 +298,12 @@ example : (letI := seedAdjDec isolatedPair;
 example : reached (seedSnapshot isolatedPair rfl) (0 : Fin 2) 0 = ({0} : Finset (Fin 2)) := by decide_cbv
 example : reached (seedSnapshot isolatedPair rfl) (0 : Fin 2) 1 = ({0} : Finset (Fin 2)) := by decide_cbv
 example : ¬ (∀ b : Fin 2, b ∈ reached (seedSnapshot isolatedPair rfl) (0 : Fin 2) 1) := by
-  decide_cbv
+  have hr : reached (seedSnapshot isolatedPair rfl) (0 : Fin 2) 1 =
+      ({0} : Finset (Fin 2)) := by decide_cbv
+  intro allReached
+  have missing := allReached (1 : Fin 2)
+  rw [hr] at missing
+  simpa using missing
 example : errorOf (parseSeed isolatedPair) = some .disconnectedSeed := by rfl
 example : (letI := seedAdjDec rawTriangle;
     decide ((seedGraph rawTriangle).Adj (0 : Fin 3) (1 : Fin 3))) = true := by decide_cbv
