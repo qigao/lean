@@ -1,3 +1,5 @@
+-- Direct decide checks need the body of mergeSort, not just its public API.
+import all Init.Data.List.Sort.Basic
 import NarrativeDynamics.Core.Pseudofractal
 
 open NarrativeDynamics NarrativeDynamics.Pseudofractal
