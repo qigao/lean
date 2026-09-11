@@ -131,11 +131,11 @@ private theorem replay_success (seed : RawSeed) (m : Nat) (bs : List RawBirth)
   cases hs : parseSeed seed with
   | error e => simp [hs] at h
   | ok s =>
-    rw [hs] at h
-    split at h
-    · rename_i hm
-      exact ⟨s, hs, hm, h⟩
-    · contradiction
+    simp only [hs] at h
+    by_cases hm : 0 < m ∧ m ≤ seed.nodeCount
+    · exact ⟨s, rfl, hm, by simpa only [if_pos hm] using h⟩
+    · simp only [if_neg hm] at h
+      contradiction
 
 /-- An empty accepted trace returns the parsed input and multiplicative identity. -/
 theorem replay_empty (seed : RawSeed) (m : Nat) (s : State seed.nodeCount)
