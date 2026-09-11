@@ -118,3 +118,46 @@ example (t : Nat) : (graph t).Connected := graph_connected t
 #print axioms edgeCount_formula
 #print axioms coarseBound
 #print axioms graph_connected
+
+-- Task 3: the executable constructor has fixed IDs and sorted unordered edges.
+open NarrativeDynamics.Pseudofractal.Internal
+
+example : (encoded 0).nodeCount = 3 := by decide
+example : (encoded 0).edges = #[(0,1),(0,2),(1,2)] := by decide
+example : (encoded 1).nodeCount = 6 := by decide
+example : (encoded 1).edges =
+    #[(0,1),(0,2),(0,3),(0,4),(1,2),(1,3),(1,5),(2,4),(2,5)] := by decide
+example : (encoded 2).nodeCount = 15 := by decide
+example : (encoded 2).edges.size = 27 := by decide
+example : (encoded 3).nodeCount = 42 := by decide
+example : (encoded 3).edges.size = 81 := by decide
+
+example : encodingWellFormed (encoded 0) := by decide
+example : encodingWellFormed (encoded 1) := by decide
+example : encodingWellFormed (encoded 2) := by decide
+example : encodingWellFormed (encoded 3) := by decide
+example (t : Nat) : encodingWellFormed (encoded t) := encoded_wellFormed t
+
+-- Reject loops, reversed/out-of-range edges, duplicates and unsorted data.
+example : ¬ encodingWellFormed (⟨3, #[(0,0)]⟩ : EncodedGraph) := by decide
+example : ¬ encodingWellFormed (⟨3, #[(1,0)]⟩ : EncodedGraph) := by decide
+example : ¬ encodingWellFormed (⟨3, #[(0,3)]⟩ : EncodedGraph) := by decide
+example : ¬ encodingWellFormed (⟨3, #[(0,1),(0,1)]⟩ : EncodedGraph) := by decide
+example : ¬ encodingWellFormed (⟨3, #[(1,2),(0,1)]⟩ : EncodedGraph) := by decide
+
+-- Both directions and both inverse equations are essential, not just counts.
+example (t : Nat) : graph t ≃g numberedGraph t := numberingIso t
+example (t : Nat) (u v : Vertex t) :
+    (numberedGraph t).Adj (numbering t u) (numbering t v) ↔
+      (graph t).Adj u v := numbered_adj_iff t u v
+example (t : Nat) (u : Vertex t) : (numbering t).symm (numbering t u) = u :=
+  (numbering t).symm_apply_apply u
+example (t : Nat) (i : Fin (encoded t).nodeCount) :
+    numbering t ((numbering t).symm i) = i := (numbering t).apply_symm_apply i
+example (t : Nat) : DecidableRel (numberedGraph t).Adj := inferInstance
+example (t : Nat) : ∃ k, GlobalHopBound (numberedGraph t).Adj k := numberedBounded t
+
+#print axioms encoded_wellFormed
+#print axioms numberingIso
+#print axioms numbered_adj_iff
+#print axioms numberedBounded
