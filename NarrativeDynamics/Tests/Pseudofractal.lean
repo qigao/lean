@@ -161,3 +161,49 @@ example (t : Nat) : ∃ k, GlobalHopBound (numberedGraph t).Adj k := numberedBou
 #print axioms numberingIso
 #print axioms numbered_adj_iff
 #print axioms numberedBounded
+
+-- Task 3 acceptance: cardinalities are transferred through the actual isomorphism.
+example (t : Nat) : nodeCount t = (encoded t).nodeCount := by
+  simpa [nodeCount] using Fintype.card_congr (numbering t)
+example (t : Nat) : edgeCount t = (encoded t).edges.size := by
+  simpa [edgeCount] using Fintype.card_congr
+    ((numberingIso t).mapEdgeSet.trans (edgeRankEquiv (encoded t) (encoded_wellFormed t)))
+
+-- Every old numeric identity is preserved definitionally at the next stage.
+example (t : Nat) (u : Vertex t) :
+    (numbering (t + 1) (Sum.inl u)).val = (numbering t u).val := rfl
+
+-- Instantiate the proved isomorphism, separately from executable checks.
+example : graph 0 ≃g numberedGraph 0 := numberingIso 0
+example : graph 1 ≃g numberedGraph 1 := numberingIso 1
+example : graph 2 ≃g numberedGraph 2 := numberingIso 2
+example : graph 3 ≃g numberedGraph 3 := numberingIso 3
+
+-- Native execution here is only a regression test, never a theorem premise.
+-- It checks every ordered pair, including nonedges and diagonal pairs.
+private def verifyNumberedGeneration (t : Nat) : IO (Nat × Nat) := do
+  let ids := List.finRange (encoded t).nodeCount
+  let mut pairs := 0
+  for i in ids do
+    let u := (numbering t).symm i
+    unless decide (numbering t u = i) do
+      throw (IO.userError s!"numbering round-trip failed at generation {t}, ID {i.val}")
+    unless decide ((numbering t).symm (numbering t u) = u) do
+      throw (IO.userError s!"inverse round-trip failed at generation {t}, ID {i.val}")
+    unless decide ((numbering (t + 1) (Sum.inl u)).val = i.val) do
+      throw (IO.userError s!"old ID changed at generation {t}, ID {i.val}")
+    for j in ids do
+      let v := (numbering t).symm j
+      unless decide ((numberedGraph t).Adj i j) == decide ((graph t).Adj u v) do
+        throw (IO.userError s!"adjacency mismatch at generation {t}, IDs {i.val}/{j.val}")
+      pairs := pairs + 1
+  pure (ids.length, pairs)
+
+#eval do
+  let mut vertices := 0
+  let mut pairs := 0
+  for t in [0, 1, 2, 3] do
+    let (n, p) ← verifyNumberedGeneration t
+    vertices := vertices + n
+    pairs := pairs + p
+  IO.println s!"Canonical numbering executable checks: {vertices} vertices, {pairs} ordered pairs."
