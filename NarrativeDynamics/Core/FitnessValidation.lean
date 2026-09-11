@@ -244,6 +244,22 @@ theorem parseSeed_graph (raw : RawSeed) (s : State raw.nodeCount)
   cases h
   rfl
 
+/-- Success preserves the full input-derived snapshot, including exact fitness values. -/
+theorem parseSeed_snapshot (raw : RawSeed) (s : State raw.nodeCount)
+    (h : parseSeed raw = .ok s) :
+    ∃ hs : raw.fitness.size = raw.nodeCount, s.snapshot = seedSnapshot raw hs := by
+  unfold parseSeed at h
+  split at h <;> try contradiction
+  split at h <;> try contradiction
+  rename_i hs
+  split at h <;> try contradiction
+  split at h <;> try contradiction
+  split at h <;> try contradiction
+  dsimp only at h
+  split at h <;> try contradiction
+  cases h
+  exact ⟨hs, rfl⟩
+
 namespace Internal
 
 /-- The original array remains authoritative for both order and numeric identity. -/
