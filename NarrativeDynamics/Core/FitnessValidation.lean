@@ -213,6 +213,7 @@ theorem parseSeed_sound (raw : RawSeed) (s : State raw.nodeCount)
   rename_i he
   split at h <;> try contradiction
   rename_i hd
+  dsimp only at h
   split at h <;> try contradiction
   rename_i hc
   exact ⟨hn, hs, hf, he, hd, connected_of_reached _ _ hc⟩
@@ -238,6 +239,7 @@ theorem parseSeed_graph (raw : RawSeed) (s : State raw.nodeCount)
   split at h <;> try contradiction
   split at h <;> try contradiction
   split at h <;> try contradiction
+  dsimp only at h
   split at h <;> try contradiction
   cases h
   rfl
@@ -256,7 +258,7 @@ instance (n : Nat) (xs : Array Nat) : Decidable (targetsBounded n xs) :=
 instance (xs : Array Nat) : Decidable (targetsDistinct xs) :=
   inferInstanceAs (Decidable (Function.Injective (fun i : Fin xs.size => xs[i.val])))
 
-structure CheckedTargets (n : Nat) (xs : Array Nat) where
+structure CheckedTargets (n : Nat) (xs : Array Nat) : Type where
   bounded : targetsBounded n xs
   distinct : targetsDistinct xs
 
@@ -332,8 +334,8 @@ theorem validateBirth_values {n m : Nat} (s : State n) (raw : RawBirth)
     exact ⟨rfl, rfl, fun _ => rfl⟩
 
 /-- A raw prefix is not a growth request: the empty prefix is legal, exhaustion is not. -/
-def rawAttachmentRow {n : Nat} (s : State n) (prefix : Array Nat) : Except Error (Row n) :=
-  match checkTargets n prefix with
+def rawAttachmentRow {n : Nat} (s : State n) (selectedPrefix : Array Nat) : Except Error (Row n) :=
+  match checkTargets n selectedPrefix with
   | .error e => .error e
   | .ok checked =>
     let T := checked.embedding
