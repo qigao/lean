@@ -107,3 +107,69 @@ example : stepSummary triangle 0 ⟨1, #[]⟩ = .error .invalidM := by decide_cb
 example : List.ofFn triangle.snapshot.fitness = [1, 2, 4] := by decide_cbv
 
 end ExactValidationFixtures
+
+-- Generic acceptance and output contracts; no local computation budget applies.
+example {n : Nat} (s : Snapshot n) (a b : Fin n) (k : Nat) :
+    b ∈ reached s a k ↔ ReachWithin s.graph.Adj k a b := reached_iff s a b k
+example {n : Nat} (s : State n) :
+    GlobalHopBound s.snapshot.graph.Adj (n - 1) := state_bounded s
+example (raw : RawSeed) (s : State raw.nodeCount) (h : parseSeed raw = .ok s) :
+    raw.Valid := parseSeed_sound raw s h
+example (raw : RawSeed) (h : raw.Valid) :
+    ∃ s, parseSeed raw = .ok s := parseSeed_complete raw h
+example (raw : RawSeed) (s : State raw.nodeCount) (h : parseSeed raw = .ok s) :
+    s.snapshot.graph = seedGraph raw := parseSeed_graph raw s h
+example (raw : RawSeed) (s : State raw.nodeCount) (h : parseSeed raw = .ok s) :
+    ∃ hs : raw.fitness.size = raw.nodeCount, s.snapshot = seedSnapshot raw hs :=
+  parseSeed_snapshot raw s h
+example {n m : Nat} (s : State n) (raw : RawBirth) (v : ValidatedBirth n m)
+    (h : validateBirth s m raw = .ok v) : raw.Valid n m := validateBirth_sound s raw v h
+example {n m : Nat} (s : State n) (raw : RawBirth) (h : raw.Valid n m) :
+    ∃ v, validateBirth s m raw = .ok v := validateBirth_complete s raw h
+example {n m : Nat} (s : State n) (raw : RawBirth) (v : ValidatedBirth n m)
+    (h : validateBirth s m raw = .ok v) :
+    v.fitness.val = raw.fitness ∧
+      ∃ hs : raw.targets.size = m, ∀ i : Fin raw.targets.size,
+        (v.targets (Fin.cast hs i)).val = raw.targets[i.val] := validateBirth_values s raw v h
+example {n m : Nat} (s : State n) (raw : RawBirth) (out : State (n + 1) × Rat) :
+    step s m raw = .ok out ↔
+      ∃ v : ValidatedBirth n m, validateBirth s m raw = .ok v ∧
+        out = (applyBirth s v.targets v.positive v.fitness, orderedMass s v.targets) :=
+  step_spec s raw out
+example {n m : Nat} (s : State n) (raw : RawBirth) (e : Error)
+    (h : validateBirth s m raw = .error e) : step s m raw = .error e := step_error s raw e h
+
+theorem raw_seed_accepts_iff (raw : RawSeed) :
+    (∃ s, parseSeed raw = .ok s) ↔ raw.Valid := by
+  constructor
+  · rintro ⟨s, hs⟩
+    exact parseSeed_sound raw s hs
+  · exact parseSeed_complete raw
+
+theorem raw_birth_accepts_iff {n m : Nat} (s : State n) (raw : RawBirth) :
+    (∃ v, validateBirth s m raw = .ok v) ↔ raw.Valid n m := by
+  constructor
+  · rintro ⟨v, hv⟩
+    exact validateBirth_sound s raw v hv
+  · exact validateBirth_complete s raw
+
+theorem checked_step_has_positive_mass {n m : Nat} (s : State n) (raw : RawBirth)
+    (out : State (n + 1) × Rat) (h : step s m raw = .ok out) : 0 < out.2 := by
+  obtain ⟨v, _, rfl⟩ := (step_spec s raw out).mp h
+  exact orderedMass_pos s v.targets
+
+#print axioms reached_iff
+#print axioms connected_bounded
+#print axioms state_bounded
+#print axioms parseSeed_sound
+#print axioms parseSeed_complete
+#print axioms parseSeed_graph
+#print axioms parseSeed_snapshot
+#print axioms validateBirth_sound
+#print axioms validateBirth_complete
+#print axioms validateBirth_values
+#print axioms step_spec
+#print axioms step_error
+#print axioms raw_seed_accepts_iff
+#print axioms raw_birth_accepts_iff
+#print axioms checked_step_has_positive_mass
