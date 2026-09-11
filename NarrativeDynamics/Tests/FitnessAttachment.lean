@@ -268,13 +268,15 @@ example : traceMass (![2, 4, 8] : Fin 3 → Rat) Finset.univ [] = 1 := by decide
 example : traceMass (![2, 4, 8] : Fin 3 → Rat) Finset.univ [0] = 0 := by decide_cbv
 example : traceMass (![0, 0, 0] : Fin 3 → Rat) ∅ [0] = 0 := by decide_cbv
 
--- Reduction diagnostics: isolate the sum, order comparison, and recursive call.
-#print traceMass
+-- Regression witnesses use equation-based evaluation, not native computation.
 example : total (remaining (![0, 0, 0] : Fin 3 → Rat) ∅) = 0 := by decide_cbv
 example : total (remaining (![0, 0, 0] : Fin 3 → Rat) ∅) ≤ 0 := by decide_cbv
-example : traceMass (![0, 0, 0] : Fin 3 → Rat) ∅ [0] = 0 := by decide
-example : orderedMass Fixtures.triangle Fixtures.t21 = 8/21 := by decide
-example : setMass Fixtures.triangle 2 {1, 2} = 64/105 := by decide
+theorem zero_trace_fixture : traceMass (![0, 0, 0] : Fin 3 → Rat) ∅ [0] = 0 := by
+  decide_cbv
+theorem bb_ordered_mass_fixture : orderedMass Fixtures.triangle Fixtures.t21 = 8/21 := by
+  decide_cbv
+theorem bb_set_mass_fixture : setMass Fixtures.triangle 2 {1, 2} = 64/105 := by
+  decide_cbv
 example : traceMass (![0, 0, 0] : Fin 3 → Rat) ∅ [0] = 0 := by
   simp only [traceMass]
   decide_cbv
@@ -304,3 +306,18 @@ example {n m : Nat} (s : State n) (A : Finset (Fin n)) (hA : A.card ≠ m) :
 #print axioms orderedMass_ba
 #print axioms orderedMass_scale
 #print axioms setMass_wrong_card
+
+example {n : Nat} (w : Fin n → Rat) (S : Finset (Fin n))
+    (i : Fin n) (xs : List (Fin n)) :
+    traceMass w S (i :: xs) =
+      if i ∈ S ∨ total (remaining w S) ≤ 0 then 0
+      else (w i / total (remaining w S)) * traceMass w (insert i S) xs :=
+  traceMass_cons_eq w S i xs
+
+#print axioms traceMass_cons_eq
+#print axioms split_mass
+#print axioms continuation_sum_one
+#print axioms traceMass_scale
+#print axioms zero_trace_fixture
+#print axioms bb_ordered_mass_fixture
+#print axioms bb_set_mass_fixture
