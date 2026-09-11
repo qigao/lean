@@ -118,8 +118,9 @@ private theorem star_connected : starGraph.Connected where
   nonempty := inferInstance
 
 def star : State 4 where
-  snapshot := { graph := starGraph, adjDec := fun _ _ => inferInstance,
-                fitness := fun _ => 1 }
+  snapshot := { graph := starGraph,
+    adjDec := fun u v => inferInstanceAs (Decidable (u ≠ v ∧ (u = 0 ∨ v = 0))),
+    fitness := fun _ => 1 }
   valid := ⟨by decide, star_connected, by decide⟩
 
 def isolated : Snapshot 3 where
@@ -135,6 +136,10 @@ example : List.ofFn (weights Fixtures.triangle.snapshot) = [2, 4, 8] := by decid
 example : List.ofFn (degree Fixtures.star.snapshot) = [3, 1, 1, 1] := by decide_cbv
 example : List.ofFn (weights Fixtures.isolated) = [0, 0, 0] := by decide_cbv
 example : rowValues (normalize (weights Fixtures.isolated)) = .error .zeroMass := by
+  have hw : weights Fixtures.isolated = (![0, 0, 0] : Fin 3 → Rat) := by
+    funext i
+    fin_cases i <;> decide_cbv
+  rw [hw]
   decide_cbv
 
 -- Fixed birth-time fitness and each prefix's remaining candidates determine the row.
