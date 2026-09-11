@@ -6,6 +6,8 @@ The projection-first direction was reviewed in the conversation and the user ask
 
 Build additively on PR #58 head `c268e5355b14fb408f30814ed1c2bee2f41f1144`, using a separate branch and stacked PR. Do not merge or modify #58 as part of this change. Its historical proof workflow is red; a new attempt was requested to distinguish baseline failures from V24 failures. A successful local-build statement in the older PR is not a replacement for current CI evidence.
 
+This commit is a design-review checkpoint. Implementation, new tests, and CI configuration changes are not included in the design-only diff.
+
 ## Goal
 
 Make the existing situated network available as an immutable, typed society mesh, with deterministic bounded-path witnesses. Preserve the authoritative scenario, story, cognition, social-memory, physical-placement, output, and checkpoint semantics.
@@ -55,11 +57,13 @@ A local society projection retains only its member nodes and internal effective 
 
 `MeshSnapshot.content_hash` uses the existing `stable_content_hash` convention over a schema tag, the complete source snapshot's content hash, sorted societies, and sorted bridge declarations. Source round and state identities are therefore transitively bound. There is no union across rounds and no mutable adjacency cache.
 
-`MeshPath` binds the mesh content hash, selected relation, optional society scope, and a nonempty ordered tuple of agent IDs. Its hop count is the tuple length minus one. A witness can be checked against a supplied mesh snapshot; changed source state, round, membership, bridges, scope, invalid endpoints, or missing selected edges must invalidate it.
+`MeshPath` binds the mesh content hash, selected relation, optional society scope, and a nonempty ordered tuple of agent IDs. Its hop count is the tuple length minus one.
 
 `find_mesh_path(snapshot, source, target, *, relation, max_hops, society_id=None)` returns a shortest witness within the inclusive budget or `None`. Known self-reachability has zero hops. Unknown endpoints/scopes are errors, not unreachable results. Hop budgets must be nonnegative integers and must reject booleans. Deterministic breadth-first search with lexically sorted neighbors resolves equal-length ties. Visited-node tracking bounds work even for a very large requested budget.
 
-`mesh_path_is_valid` optionally checks an inclusive hop budget. This is an executable witness checker, not a claim of formal verification of Python.
+`mesh_path_is_valid(snapshot, path, source, target, *, relation, max_hops, society_id=None)` checks the witness against the caller's requested query, not just the metadata supplied by the witness. It verifies the exact mesh hash, expected relation and society scope, requested endpoints, in-scope node membership, every selected directed edge, and the inclusive hop budget. A stale source state/round/configuration, mismatched query metadata, or invalid path returns false. Malformed query arguments use the same type/value errors as path search.
+
+A different walk that legitimately satisfies the same requested query is a valid witness, even if it is not the deterministic shortest result that search would return. Witness validation does not assert shortestness, authenticate an originating process, or provide cryptographic tamper protection. It is an executable checker of a stated bounded-reachability claim, not a claim of formal verification of Python.
 
 `is_closed_society` means no effective outgoing edge of the selected relation leaves the society. Incoming edges are permitted. Neither this predicate nor a social-path theorem proves complete information isolation across other channels.
 
@@ -89,9 +93,9 @@ No new Python dependency, NetworkX, transport, persistence backend, P2P, WebSock
 
 ## Acceptance and CI evidence
 
-Use GitHub CI for RED and GREEN evidence. Add a separately named focused mesh Python job so unrelated repository-suite failures cannot obscure whether the mesh tests execute. Preserve the existing full Python suite, Lean build, conformance-vector checks, and all theorem tests; do not suppress or reclassify failures as success.
+Use GitHub CI for RED and GREEN evidence. During implementation, add a separately named focused mesh Python job so unrelated repository-suite failures cannot obscure whether the mesh tests execute. Preserve the existing full Python suite, Lean build, conformance-vector checks, and all theorem tests; do not suppress or reclassify failures as success.
 
-Record the exact tested commit and distinguish PR-head checks from merge-ref checks. Keep baseline #58 and V24 runs separate. Do not label V24 merge-ready while a required check fails or is unresolved.
+Record the exact tested commit and distinguish PR-head checks from merge-ref checks. Keep baseline #58 and V24 runs separate. Do not label V24 merge-ready while a required check fails or is unresolved. The existing proof workflow ignores design/plan-only changes, so its absence on this design-only PR is not a test pass.
 
 Required executable cases:
 
@@ -102,7 +106,7 @@ Required executable cases:
 - Invalid and unbacked bridge declarations fail before a query runs.
 - Closure is outgoing-only and relation-specific; local outside zero-hop queries are rejected.
 - Unknown IDs, empty graphs, singleton/self paths, disconnected nodes, negative and boolean budgets, and deterministic equal-length tie-breaking have explicit behavior.
-- A path is bound to source snapshot, round, relation, society scope, and mesh configuration; changed snapshots or tampered witnesses are rejected.
+- A path is bound to source snapshot, round, requested endpoints, relation, society scope, and mesh configuration; stale snapshots and witnesses that do not satisfy the caller's query are rejected. Valid alternate walks are accepted without asserting shortestness.
 - Existing tests remain active. Any baseline failure is reported with its evidence rather than fixed opportunistically in this migration.
 
 ## Subsequent boundary
