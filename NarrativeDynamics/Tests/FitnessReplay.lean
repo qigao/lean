@@ -271,7 +271,7 @@ private theorem rawTriangleWeights :
 private theorem triangleBirth12Nodes (s : State rawTriangle.nodeCount)
     (v : ValidatedBirth rawTriangle.nodeCount 2) :
     actualNodeCount (applyBirth s v.targets v.positive v.fitness).snapshot = 4 := by
-  simp only [actualNodeCount, Fintype.card_fin, rawTriangle]
+  exact Fintype.card_fin (rawTriangle.nodeCount + 1)
 
 #print axioms triangleBirth12Nodes
 
@@ -340,6 +340,19 @@ private theorem triangleBirth12Summary (s : State rawTriangle.nodeCount)
     triangleBirth12Mass s v hseed hbirth⟩
 
 #print axioms triangleBirth12Summary
+
+/-- Audit the complete raw replay fixture, including its accepted witnesses. -/
+private theorem triangleReplay12Accepted :
+    summaryOf (replay rawTriangle 2 [⟨3/2, #[1, 2]⟩]) =
+      .ok (4, 5, [2, 3, 3, 2], [1, 2, 4, 3/2], 8/35) := by
+  obtain ⟨s, hseed⟩ := triangleSeedAccepted
+  obtain ⟨v, hbirth⟩ := triangleBirth12Accepted s
+  exact (congrArg summaryOf
+    (replayOneBirth (seed := rawTriangle) (m := 2)
+      (raw := (⟨3/2, #[1, 2]⟩ : RawBirth)) s v hseed (by decide) hbirth)).trans
+      (triangleBirth12Summary s v hseed hbirth)
+
+#print axioms triangleReplay12Accepted
 
 #print axioms runBirthsNil
 #print axioms summaryOk
@@ -507,10 +520,7 @@ example : summaryOf (replay rawTriangle 2 [⟨3/2, #[2, 1]⟩]) =
       ordered ([2, 1] : List (Fin 3)) massProof triangleTrace21)
 example : summaryOf (replay rawTriangle 2 [⟨3/2, #[1, 2]⟩]) =
     .ok (4, 5, [2, 3, 3, 2], [1, 2, 4, 3/2], 8/35) := by
-  obtain ⟨s, hseed⟩ := triangleSeedAccepted
-  obtain ⟨v, hbirth⟩ := triangleBirth12Accepted s
-  rw [replayOneBirth s v hseed (by decide) hbirth]
-  exact triangleBirth12Summary s v hseed hbirth
+  exact triangleReplay12Accepted
 example : summaryOf (replay rawTriangle 2 twoBirths) =
     .ok (5, 7, [2, 3, 4, 3, 2], [1, 2, 4, 3/2, 1/3], 24/805) := by
   prepareReplaySeed rawTriangle atSize 3
