@@ -84,7 +84,8 @@ jobs:
           lake env lean NarrativeDynamics/Tests/FitnessAttachment.lean
           lake env lean NarrativeDynamics/Tests/FitnessBirth.lean
           lake env lean NarrativeDynamics/Tests/FitnessValidation.lean
-          lake env lean NarrativeDynamics/Tests/FitnessReplay.lean
+          # Stop after confirmed errors; a successful run still checks every assertion.
+          lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FitnessReplay.lean
 
       - name: Lean theorem tests
         run: |
