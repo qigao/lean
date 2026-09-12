@@ -1,4 +1,4 @@
-"""Actual PyAV/YOLO-to-four-arm development smoke on generated data only."""
+"""Actual PyAV/YOLO-to-four-arm indexed development smoke on generated data only."""
 import hashlib
 import importlib
 
@@ -60,11 +60,9 @@ def test_actual_libraries_through_pinned_binding_and_all_four_arms(tmp_path, mon
             feature_spec=feature_spec, classes=CLASSES,
             expected_manifest_sha256=hashlib.sha256((output / "manifest.json").read_bytes()).hexdigest(),
             expected_encoder_hash=pose_encoder_hash(feature_spec))
-        # Generated fixtures pin after separate preparation, not a real-data freeze.
+        # Eager preparation is an independent reference oracle in this generated test only.
         prepared = load_pose_development(output, **options)
         assert set(prepared.train.observations.lengths.tolist()) == {1, 2, 3}
-        # Indexed reads are checked against the existing eager binding, not used
-        # to imply that the trainer itself is already streaming.
         from yolo_flywire.pose_index import index_development_bundle
         from yolo_flywire.pose_features import encode_timed_pose
         from yolo_flywire.pose_batches import collate_pose_features
@@ -88,7 +86,7 @@ def test_actual_libraries_through_pinned_binding_and_all_four_arms(tmp_path, mon
         indexed.verify()
         from yolo_flywire.pose_indexed_development import load_indexed_pose_development
         bound = load_indexed_pose_development(output, **options)
-        pin = bound.binding_sha256  # Retained independently for this generated fixture.
+        pin = bound.binding_sha256  # Independently retained runner input pin for this fixture.
         for split in ("train", "validation"):
             reference = getattr(prepared, split)
             for order in ((8, 0, 4), (9,)):
@@ -107,13 +105,14 @@ def test_actual_libraries_through_pinned_binding_and_all_four_arms(tmp_path, mon
                 bound.verify_partition(part, split=split, indices=order, expected_binding_sha256=pin)
         bound.verify(expected_binding_sha256=pin)
         reports.append(comparison.run_pose_comparison(output, **options, **graphs,
-            expected_binding_sha256=prepared.binding_sha256, config=config))
+            expected_binding_sha256=pin, config=config))
         prepared.verify()
-    assert len(decoded) == 40  # Runner/binding read only; no repeated inference.
+    assert len(decoded) == 40  # Runner/binding read sidecars only; no repeated RGB inference.
     assert reports[0] == reports[1]
     assert len(reports[0]["arms"]) == 4
     assert all(row["optimizer_steps"] == 6 for row in reports[0]["arms"])
+    assert reports[0]["execution"]["development_input_policy"] == "bound-indexed-minibatches; no-whole-partition-tensors"
     assert reports[0]["final_test_evaluated"] is False
     assert reports[0]["topology_claim_evaluated"] is False
-    print("Actual-library four-arm smoke: two generated video bundles, pinned input binding, "
+    print("Actual-library four-arm smoke: two generated video bundles, bound indexed minibatches, "
           "24 Adam steps per comparison; untrained YOLO and generated graph, NOT recognition evidence")
