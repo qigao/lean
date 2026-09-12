@@ -143,8 +143,16 @@ def test_real_untrained_model_and_extractor_are_repeatable_and_keep_test_sealed(
         assert not encoded[0][0, 102:119].any()
         for index in (0, 1):
             encoded_runs[index].append(encoded[index])
-    from yolo_flywire.pose_batches import collate_pose_features
+    from yolo_flywire.pose_batches import PoseBatch, collate_pose_features
+    from yolo_flywire.graphs import DirectedGraph
+    from yolo_flywire.models import GRUClassifier, GraphRecurrentClassifier
     import torch
+    from torch.nn import functional as F
+    # Fixture classifiers and a toy graph test ingestion, not the real four-arm study.
+    torch.manual_seed(203)
+    networks = (GRUClassifier(121, 4, 10), GraphRecurrentClassifier(
+        121, DirectedGraph(3, (0, 0, 1, 2), (0, 1, 2, 0), (.2, .4, .3, .5)), 2, 10,
+    ))
     for split in ("train", "validation"):
         indices = [i for i, sample in enumerate(bundles[0].samples) if sample.split == split]
         assert len(indices) == 10
@@ -162,5 +170,17 @@ def test_real_untrained_model_and_extractor_are_repeatable_and_keep_test_sealed(
             assert batch.time_mask[row].tolist() == [True] * count + [False] * (3 - count)
             np.testing.assert_array_equal(batch.features[row, :count].numpy(), source.astype(np.float32))
             assert not batch.features[row, count:].any().item()
+        extended = PoseBatch(F.pad(batch.features, (0, 0, 0, 5)), batch.lengths.clone(),
+                             F.pad(batch.time_mask, (0, 5), value=False))
+        with torch.no_grad():
+            for network in networks:
+                network.eval()
+                predictions = network.forward_padded(batch)
+                assert predictions.shape == (10, 10) and torch.isfinite(predictions).all()
+                torch.testing.assert_close(predictions, network.forward_padded(batches[1]), rtol=0, atol=0)
+                torch.testing.assert_close(predictions, network.forward_padded(extended), rtol=0, atol=0)
+                reference = torch.cat([network(batch.features[row:row+1, :count])
+                                       for row, count in enumerate(batch.lengths.tolist())])
+                torch.testing.assert_close(predictions, reference, rtol=1e-5, atol=1e-6)
     assert len(decoded) == 40
-    print("Real-library smoke: variable-length generated clips x 2, verified timed reads, COCO17 features and split-separated padded tensors; untrained checkpoint, NOT recognition evidence")
+    print("Real-library smoke: variable-length generated clips x 2, verified timed reads, COCO17 features, split-separated padded tensors and padding-aware GRU/graph predictions; untrained checkpoint, NOT recognition evidence")
