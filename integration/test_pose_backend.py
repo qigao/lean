@@ -96,14 +96,24 @@ def test_real_untrained_model_and_extractor_are_repeatable_and_keep_test_sealed(
         decoded.append(path.name)
         yield from actual_decode(path)
     monkeypatch.setattr(extraction, "decode_video", guarded_decode)
+    bundles = []
     for name in ("first", "second"):
         report = extract_development(root, manifest, weights, spec, tmp_path / name)
         assert report["final_test_decoded"] is False
         assert sum(row["frame_count"] for row in report["samples"]) == 40
-    assert len(decoded) == 40  # 20 development clips, decoded twice
+        from yolo_flywire.pose_bundle import load_development_bundle
+        bundles.append(load_development_bundle(
+            tmp_path / name, root=root, inventory=manifest, spec=spec,
+            expected_manifest_sha256=hashlib.sha256((tmp_path / name / "manifest.json").read_bytes()).hexdigest(),
+        ))
+        assert len(bundles[-1].samples) == 20
+        assert all(sample.timestamps == (Fraction(0), Fraction(1, 30)) for sample in bundles[-1].samples)
+        assert {sample.subject for sample in bundles[-1].samples} == {1, 14}
+    assert bundles[0] == bundles[1]
+    assert len(decoded) == 40  # 20 development clips, decoded twice; reader never decodes.
     for name in ("observations.jsonl", "timing.jsonl"):
         assert (tmp_path / "first" / name).read_bytes() == (tmp_path / "second" / name).read_bytes()
     rows = [json.loads(line) for line in (tmp_path / "first" / "observations.jsonl").read_text().splitlines()]
     assert len(rows) == 40
     assert all(len(row["body_keypoints"]) == 17 for row in rows)
-    print("Real-library smoke: 40 generated video frames x 2; untrained checkpoint, NOT recognition evidence")
+    print("Real-library smoke: 40 generated video frames x 2 with verified timed reads; untrained checkpoint, NOT recognition evidence")
