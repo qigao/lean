@@ -116,4 +116,22 @@ def test_real_untrained_model_and_extractor_are_repeatable_and_keep_test_sealed(
     rows = [json.loads(line) for line in (tmp_path / "first" / "observations.jsonl").read_text().splitlines()]
     assert len(rows) == 40
     assert all(len(row["body_keypoints"]) == 17 for row in rows)
-    print("Real-library smoke: 40 generated video frames x 2 with verified timed reads; untrained checkpoint, NOT recognition evidence")
+    from yolo_flywire.pose_features import PoseFeatureSpec, encode_timed_pose
+    def forbidden(*args, **kwargs):
+        raise AssertionError("timed encoding must not decode, infer or use the synthetic encoder")
+    monkeypatch.setattr(extraction, "decode_video", forbidden)
+    monkeypatch.setattr(extraction, "load_predictor", forbidden)
+    monkeypatch.setattr("yolo_flywire.features.encode_sequence", forbidden)
+    for first, second in zip(bundles[0].samples, bundles[1].samples, strict=True):
+        encoded = [encode_timed_pose(
+            sample.sequence, pts=sample.pts, time_bases=sample.time_bases,
+            detector_confidences=sample.detector_confidences, spec=PoseFeatureSpec(),
+        ) for sample in (first, second)]
+        np.testing.assert_array_equal(encoded[0], encoded[1])
+        assert encoded[0].shape == (2, 121) and encoded[0].dtype == np.float64
+        assert np.isfinite(encoded[0]).all()
+        np.testing.assert_array_equal(encoded[0][:, 120], [0., 1 / 30])
+        assert not encoded[0][0, 34:68].any()
+        assert not encoded[0][0, 102:119].any()
+    assert len(decoded) == 40
+    print("Real-library smoke: 40 generated frames x 2, verified timed reads and COCO17 features; untrained checkpoint, NOT recognition evidence")
