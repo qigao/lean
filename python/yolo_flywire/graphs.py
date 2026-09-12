@@ -131,3 +131,35 @@ def rewire_degree_preserving(
         dst=tuple(dst),
         weight=tuple(weight),
     )
+
+
+def lesion_graph(
+    graph: DirectedGraph,
+    *,
+    node_ids: tuple[int, ...] = (),
+    edge_indices: tuple[int, ...] = (),
+) -> DirectedGraph:
+    """Return a new graph with declared nodes and/or original edge indices removed."""
+    removed_nodes = set(node_ids)
+    removed_edges = set(edge_indices)
+    if any(node < 0 or node >= graph.num_nodes for node in removed_nodes):
+        raise ValueError("lesion node id is outside node range")
+    if any(index < 0 or index >= graph.num_edges for index in removed_edges):
+        raise ValueError("lesion edge index is outside edge range")
+    if len(removed_nodes) >= graph.num_nodes:
+        raise ValueError("lesion cannot remove every node")
+
+    surviving_nodes = [node for node in range(graph.num_nodes) if node not in removed_nodes]
+    remap = {node: index for index, node in enumerate(surviving_nodes)}
+    edges: list[tuple[int, int, float]] = []
+    for index, (source, target, weight) in enumerate(zip(graph.src, graph.dst, graph.weight)):
+        if index in removed_edges or source in removed_nodes or target in removed_nodes:
+            continue
+        edges.append((remap[source], remap[target], weight))
+
+    return DirectedGraph(
+        num_nodes=len(surviving_nodes),
+        src=tuple(source for source, _, _ in edges),
+        dst=tuple(target for _, target, _ in edges),
+        weight=tuple(weight for _, _, weight in edges),
+    )
