@@ -155,6 +155,30 @@ def _validate_frozen_protocol(config: dict[str, Any]) -> tuple[str, ...]:
                 "topology protocol must freeze required provenance before execution: "
                 + ", ".join(topology_missing)
             )
+
+        # Synthetic fixture runs exercise the evidence machinery only. Real-data
+        # topology claims require byte-level provenance so a branch/ref label or
+        # mutable external asset can never silently become confirmatory evidence.
+        if config.get("dataset_id") != "synthetic-v0":
+            real_provenance_required = (
+                "dataset_content_hash",
+                "ultralytics_package_version",
+                "yolo_weights_sha256",
+                "flywire_source_commit",
+                "flywire_connectivity_path",
+                "flywire_connectivity_git_blob_sha1",
+                "flywire_connectivity_sha256",
+                "selected_graph_fingerprint",
+            )
+            provenance_missing = [
+                name for name in real_provenance_required if config.get(name) is None
+            ]
+            if provenance_missing:
+                raise ValueError(
+                    "real topology protocol must freeze byte-level provenance before execution: "
+                    + ", ".join(provenance_missing)
+                )
+
         family_set = set(families)
         if "flywire" not in family_set or "rewired" not in family_set:
             raise ValueError("topology-specific claim requires matched flywire and rewired controls before training")
