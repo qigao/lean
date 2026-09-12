@@ -441,6 +441,14 @@ elab "rewriteReplayFacts" : tactic => Lean.Elab.Tactic.withMainContext do
       Lean.logInfo m!"replay-fixture field rewritten: {decl.userName.eraseMacroScopes}"
     catch _ => saved.restore
 
+/-- Numerical goals only retain their own dependencies before CBV preprocessing. -/
+elab "decideReplayValue" : tactic => Lean.Elab.Tactic.withMainContext do
+  let goal ← Lean.Elab.Tactic.getMainGoal
+  let next ← goal.tryClearMany (← Lean.getLCtx).getFVarIds
+  Lean.Elab.Tactic.replaceMainGoal [next]
+  Lean.logInfo m!"replay-fixture numeric context size: {(← next.getDecl).lctx.getFVarIds.size}"
+  Lean.Elab.Tactic.evalTactic (← `(tactic| decide_cbv))
+
 macro "prepareReplaySeed " raw:term " atSize " size:term : tactic =>
   `(tactic|
     (trace "replay-fixture seed: guards start"
@@ -522,7 +530,7 @@ macro "proveReplayProbability1 " "atSize " size:num " seedWeights " seedW:term :
     (trace "replay-fixture probability: seed weights rewrite"
      $rewriteSeed:tactic
      trace "replay-fixture probability: abstract targets evaluation"
-     decide_cbv))
+     decideReplayValue))
 
 macro "proveReplayProbability2 " "atSize " size:num " seedWeights " seedW:term
     " selected " selected:term " nextWeights " nextW:term : tactic => do
@@ -533,8 +541,8 @@ macro "proveReplayProbability2 " "atSize " size:num " seedWeights " seedW:term
       (hdeg := by rewriteReplayFacts; exact triangleSeedDegreeFn _ (by decide))
       (hsel := by
         rewriteReplayFacts
-        decide_cbv)
-      (hout := by funext v; rewriteReplayFacts; fin_cases v <;> decide_cbv)])
+        decideReplayValue)
+      (hout := by funext v; rewriteReplayFacts; fin_cases v <;> decideReplayValue)])
   else
     `(tactic| rewrite (transparency := .default) [birthWeightsVector
       (deg := (![1, 1] : Fin 2 → Nat))
@@ -542,8 +550,8 @@ macro "proveReplayProbability2 " "atSize " size:num " seedWeights " seedW:term
       (hdeg := by rewriteReplayFacts; exact edgeSeedDegreeFn _ (by decide))
       (hsel := by
         rewriteReplayFacts
-        decide_cbv)
-      (hout := by funext v; rewriteReplayFacts; fin_cases v <;> decide_cbv)])
+        decideReplayValue)
+      (hout := by funext v; rewriteReplayFacts; fin_cases v <;> decideReplayValue)])
   let rewriteSeed ← if size.getNat == 3 then
     `(tactic| rewrite (transparency := .default) [triangleSeedWeightsVector (out := $seedW)
       (h := by funext i; fin_cases i <;> decide_cbv)])
@@ -556,7 +564,7 @@ macro "proveReplayProbability2 " "atSize " size:num " seedWeights " seedW:term
      trace "replay-fixture probability: seed weights rewrite"
      $rewriteSeed:tactic
      trace "replay-fixture probability: numeric evaluation"
-     decide_cbv
+     decideReplayValue
      trace "replay-fixture probability: numeric evaluation done"))
 
 macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num
@@ -584,20 +592,19 @@ macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num
      · trace "replay-fixture result: edges"
        simp only [birth_edges]
        rewriteReplayFacts
-       decide_cbv
+       decideReplayValue
      · trace "replay-fixture result: degrees rewrite"
        $degrees:tactic
        rewriteReplayFacts
        first | rewrite (transparency := .default) [triangleSeedDegreeFn (hs := by decide)]
              | rewrite (transparency := .default) [edgeSeedDegreeFn (hs := by decide)]
        trace "replay-fixture result: degrees evaluation"
-       set_option pp.explicit true in trace_state
-       set_option diagnostics true in decide_cbv
+       decideReplayValue
      · trace "replay-fixture result: fitness rewrite"
        $fitnessTac:tactic
        rewriteReplayFacts
        trace "replay-fixture result: fitness evaluation"
-       decide_cbv
+       decideReplayValue
      · trace "replay-fixture result: probability"
        simp only [ReplayResult.probability, mul_one, orderedMass, checkedTargetsOrdered]
        rewriteReplayFacts
