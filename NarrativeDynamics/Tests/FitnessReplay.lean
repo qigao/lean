@@ -139,23 +139,23 @@ macro "prepareReplayBirth " n:term " withM " m:term
 -- must recognize its original Valid predicate and carrier at default transparency.
 macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num : tactic => do
   let degrees ← if rounds.getNat == 1 then
-    `(tactic| rewrite (transparency := .default) [birthDegreeFn (n := $n) (m := $m)])
+    `(tactic| rewrite (transparency := .default) [birthDegreeFn (n := $n) (m := $m) (hm := by decide)])
   else
     `(tactic|
-      (rewrite (transparency := .default) [birthDegreeFn (n := ($n + 1)) (m := $m)]
-       rewrite (transparency := .default) [birthDegreeFn (n := $n) (m := $m)]))
+      (rewrite (transparency := .default) [birthDegreeFn (n := ($n + 1)) (m := $m) (hm := by decide)]
+       rewrite (transparency := .default) [birthDegreeFn (n := $n) (m := $m) (hm := by decide)]))
   let fitnessTac ← if rounds.getNat == 1 then
-    `(tactic| rewrite (transparency := .default) [birthFitnessFn (n := $n) (m := $m)])
+    `(tactic| rewrite (transparency := .default) [birthFitnessFn (n := $n) (m := $m) (hm := by decide)])
   else
     `(tactic|
-      (rewrite (transparency := .default) [birthFitnessFn (n := ($n + 1)) (m := $m)]
-       rewrite (transparency := .default) [birthFitnessFn (n := $n) (m := $m)]))
+      (rewrite (transparency := .default) [birthFitnessFn (n := ($n + 1)) (m := $m) (hm := by decide)]
+       rewrite (transparency := .default) [birthFitnessFn (n := $n) (m := $m) (hm := by decide)]))
   let probability ← if rounds.getNat == 1 then
     `(tactic| decide_cbv)
   else
     `(tactic|
-      (rewrite (transparency := .default) [birthDegreeFn (n := $n) (m := $m)]
-       rewrite (transparency := .default) [birthFitnessFn (n := $n) (m := $m)]
+      (rewrite (transparency := .default) [birthDegreeFn (n := $n) (m := $m) (hm := by decide)]
+       rewrite (transparency := .default) [birthFitnessFn (n := $n) (m := $m) (hm := by decide)]
        decide_cbv))
   `(tactic|
     (trace "replay-fixture result: empty tail start"
