@@ -14,8 +14,9 @@ import torch
 
 from .eval import evaluate
 from .features import FeatureSpec, encode_sequence
-from .manifests import RunManifest
-from .models import GRUClassifier
+from .graphs import DirectedGraph, graph_fingerprint, random_sparse_graph, rewire_degree_preserving
+from .manifests import RunManifest, aggregate_topology_evidence
+from .models import GRUClassifier, GraphRecurrentClassifier
 from .synthetic import make_synthetic_dataset
 from .train import TrainConfig, train_model
 
@@ -160,6 +161,64 @@ def _validate_frozen_protocol(config: dict[str, Any]) -> tuple[str, ...]:
     return families
 
 
+def _fixture_graph(config: dict[str, Any]) -> DirectedGraph:
+    fixture = config.get("graph_fixture")
+    if not isinstance(fixture, dict):
+        raise ValueError("executable synthetic topology protocol requires graph_fixture")
+    return DirectedGraph(
+        num_nodes=int(fixture["num_nodes"]),
+        src=tuple(int(value) for value in fixture["src"]),
+        dst=tuple(int(value) for value in fixture["dst"]),
+        weight=tuple(float(value) for value in fixture["weight"]),
+    )
+
+
+def _rewired_graph(graph: DirectedGraph, seed: int) -> DirectedGraph:
+    target = max(1, min(5, graph.num_edges // 2))
+    for swaps in range(target, 0, -1):
+        try:
+            candidate = rewire_degree_preserving(graph, seed=seed, swaps=swaps)
+        except ValueError:
+            continue
+        if graph_fingerprint(candidate) != graph_fingerprint(graph):
+            return candidate
+    raise ValueError("could not construct a non-identical matched rewired control")
+
+
+def _model_for_family(
+    family: str,
+    *,
+    input_dim: int,
+    num_classes: int,
+    flywire_graph: DirectedGraph,
+    rewired_graph: DirectedGraph,
+    seed: int,
+) -> tuple[torch.nn.Module, str]:
+    if family == "gru":
+        return GRUClassifier(input_dim=input_dim, hidden_dim=12, num_classes=num_classes), "none"
+    if family == "flywire":
+        return (
+            GraphRecurrentClassifier(input_dim, flywire_graph, node_dim=4, num_classes=num_classes),
+            graph_fingerprint(flywire_graph),
+        )
+    if family == "rewired":
+        return (
+            GraphRecurrentClassifier(input_dim, rewired_graph, node_dim=4, num_classes=num_classes),
+            graph_fingerprint(rewired_graph),
+        )
+    if family == "random_graph":
+        random_graph = random_sparse_graph(
+            num_nodes=flywire_graph.num_nodes,
+            num_edges=flywire_graph.num_edges,
+            seed=seed,
+        )
+        return (
+            GraphRecurrentClassifier(input_dim, random_graph, node_dim=4, num_classes=num_classes),
+            graph_fingerprint(random_graph),
+        )
+    raise ValueError(f"unsupported comparison family: {family}")
+
+
 def compare(config_path: Path, output: Path) -> int:
     config = json.loads(config_path.read_text(encoding="utf-8"))
     if not isinstance(config, dict):
@@ -167,18 +226,95 @@ def compare(config_path: Path, output: Path) -> int:
     families = _validate_frozen_protocol(config)
     claim = config.get("claim", "temporal_model_useful")
 
-    # Task 9 freezes protocol boundaries before real final-test execution.
-    # This command records validation only; it does not claim empirical evidence.
+    # Non-executable real-data templates remain validation-only until their frozen
+    # external inputs are present. Synthetic fixture protocols exercise the entire
+    # evidence path without upgrading the result to real-data topology evidence.
+    if config.get("dataset_id") != "synthetic-v0" or "graph_fixture" not in config:
+        output.mkdir(parents=True, exist_ok=True)
+        record = {
+            "kind": "comparison_protocol_validation",
+            "claim": claim,
+            "arms": list(families),
+            "protocol_hash": _hash_json(config),
+            "execution_status": "protocol_validated_only",
+        }
+        _write_json(output / "manifest.json", record)
+        _write_json(output / "metrics.json", {})
+        return 0
+
     output.mkdir(parents=True, exist_ok=True)
-    record = {
-        "kind": "comparison_protocol_validation",
+    flywire_graph = _fixture_graph(config)
+    budget = config["budget"]
+    epochs = int(budget["epochs"])
+    parameter_ceiling = int(budget["parameter_ceiling"])
+    max_updates = int(budget["max_updates"])
+    all_rows: list[dict[str, Any]] = []
+    paired_metrics: dict[int, dict[str, float]] = {}
+
+    for raw_seed in config["seeds"]:
+        seed = int(raw_seed)
+        train, validation, test, _, _ = _synthetic_tensors(seed)
+        updates_per_epoch = math.ceil(train[0].shape[0] / 12)
+        if epochs * updates_per_epoch > max_updates:
+            raise ValueError("training budget max_updates would be exceeded")
+
+        rewired = _rewired_graph(flywire_graph, seed)
+        input_dim = int(train[0].shape[-1])
+        num_classes = int(torch.unique(train[1]).numel())
+        paired_metrics[seed] = {}
+
+        for family in families:
+            model, topology_fingerprint = _model_for_family(
+                family,
+                input_dim=input_dim,
+                num_classes=num_classes,
+                flywire_graph=flywire_graph,
+                rewired_graph=rewired,
+                seed=seed,
+            )
+            train_config = TrainConfig(
+                seed=seed,
+                epochs=epochs,
+                lr=0.03,
+                batch_size=12,
+                parameter_ceiling=parameter_ceiling,
+            )
+            trained = train_model(model, train, validation, train_config)
+            metrics = asdict(evaluate(trained.model, test))
+            primary = float(metrics[config["primary_metric"]])
+            paired_metrics[seed][family] = primary
+            all_rows.append(
+                {
+                    "seed": seed,
+                    "family": family,
+                    "split_hash": config["split_hash"],
+                    "observation_schema_hash": config["observation_schema_hash"],
+                    "budget": budget,
+                    "topology_fingerprint": topology_fingerprint,
+                    "metrics": metrics,
+                    "state_hash": trained.state_hash,
+                }
+            )
+
+    evidence = aggregate_topology_evidence(
+        seed_metrics=paired_metrics,
+        success_threshold=float(config["success_threshold"]),
+    )
+    aggregate = {
+        "kind": "synthetic_comparison_evidence",
         "claim": claim,
         "arms": list(families),
         "protocol_hash": _hash_json(config),
-        "execution_status": "protocol_validated_only",
+        "conclusion": evidence.conclusion,
+        "mean_paired_difference": evidence.mean_paired_difference,
+        "paired_differences": evidence.paired_differences,
+        "success_threshold": evidence.success_threshold,
+        "seed_results": all_rows,
+        "evidence_scope": "synthetic_harness_only",
     }
-    _write_json(output / "manifest.json", record)
-    _write_json(output / "metrics.json", {})
+    _write_json(output / "aggregate_report.json", aggregate)
+    _write_json(output / "manifest.json", {"protocol_hash": _hash_json(config), "arms": list(families)})
+    _write_json(output / "metrics.json", {"mean_paired_difference": evidence.mean_paired_difference})
     return 0
 
 
