@@ -17,7 +17,7 @@ class FlyWireEdge:
 
     def __post_init__(self) -> None:
         if self.pre_id == self.post_id:
-            raise ValueError("FlyWire self-loop edges are not supported in V0")
+            raise ValueError("FlyWire neuron-level autapse edges are not supported in V0")
         if self.synapse_count <= 0:
             raise ValueError("synapse_count must be positive")
 
@@ -114,7 +114,12 @@ def load_visual_type_graph(
     seed_types: tuple[str, ...],
     min_seed_synapses: int,
 ) -> VisualTypeGraphSelection:
-    """Load the frozen v783 type table and apply the predeclared motion-subgraph rule."""
+    """Load the frozen v783 type table and apply the predeclared motion-subgraph rule.
+
+    A diagonal edge in this type-level graph represents aggregate connectivity among
+    distinct neurons sharing a cell type. It is therefore retained and is not a
+    neuron-level autapse.
+    """
     if not seed_types or any(not seed.strip() for seed in seed_types):
         raise ValueError("seed_types must contain non-empty type names")
     if min_seed_synapses <= 0:
@@ -160,10 +165,6 @@ def load_visual_type_graph(
     for source_type, target_type, synapses in rows:
         if source_type not in selected or target_type not in selected or synapses <= 0:
             continue
-        if source_type == target_type:
-            raise ValueError(
-                "selected type graph contains type-self connectivity; V0 graph semantics must be resolved"
-            )
         key = (remap[source_type], remap[target_type])
         aggregate[key] = aggregate.get(key, 0.0) + float(synapses)
 
