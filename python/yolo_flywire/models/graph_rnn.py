@@ -4,6 +4,8 @@ import torch
 from torch import nn
 
 from ..graphs import DirectedGraph
+from ..pose_batches import PoseBatch
+from ._padded import validate_pose_batch
 
 
 class GraphRecurrentClassifier(nn.Module):
@@ -53,6 +55,24 @@ class GraphRecurrentClassifier(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.readout(self.encode(x))
+
+    def encode_padded(self, batch: PoseBatch) -> torch.Tensor:
+        """Run the original recurrence only for actual observed sample steps."""
+        validate_pose_batch(batch, input_dim=self.input_projection.in_features)
+        x = batch.features
+        state = x.new_zeros((x.shape[0], self.num_nodes, self.node_dim))
+        for time_index in range(int(batch.lengths.max().item())):
+            active = batch.time_mask[:, time_index].nonzero(as_tuple=False).flatten()
+            updated = self._step(
+                x[:, time_index, :].index_select(0, active),
+                state.index_select(0, active),
+            )
+            # Functional index_copy keeps finished states and the autograd graph.
+            state = state.index_copy(0, active, updated)
+        return state.mean(dim=1)
+
+    def forward_padded(self, batch: PoseBatch) -> torch.Tensor:
+        return self.readout(self.encode_padded(batch))
 
     def parameter_count(self) -> int:
         return sum(parameter.numel() for parameter in self.parameters())
