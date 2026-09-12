@@ -48,3 +48,30 @@ jobs:
 
       - name: Run Python tests
         run: python -m pytest tests -q
+
+  flywire-provenance:
+    name: Freeze FlyWire provenance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download pinned v783 type connectivity
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit=0d8574d46627ce7fadd968a3c5d602e837325373
+          path=data/type_to_type_connection_and_synapse_counts.csv
+          url="https://raw.githubusercontent.com/murthylab/visual-system-parts-list/${commit}/${path}"
+          curl --fail --location --silent --show-error "$url" --output flywire-connectivity.csv
+          {
+            echo "source_repo=murthylab/visual-system-parts-list"
+            echo "source_commit=${commit}"
+            echo "source_path=${path}"
+            echo "sha256=$(sha256sum flywire-connectivity.csv | cut -d' ' -f1)"
+            echo "bytes=$(wc -c < flywire-connectivity.csv | tr -d ' ')"
+          } | tee flywire-provenance.txt
+
+      - name: Upload provenance record
+        uses: actions/upload-artifact@v4
+        with:
+          name: flywire-v783-provenance
+          path: flywire-provenance.txt
+          if-no-files-found: error
