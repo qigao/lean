@@ -219,8 +219,11 @@ macro "proveReplayProbability1 " "atSize " size:num " seedWeights " seedW:term :
     `(tactic| rewrite (transparency := .default) [edgeSeedWeightsVector (out := $seedW)
       (h := by funext i; fin_cases i <;> decide_cbv)])
   `(tactic|
-    ($rewriteSeed:tactic
-     decide_cbv))
+    (trace "replay-fixture probability: seed weights rewrite"
+     $rewriteSeed:tactic
+     trace "replay-fixture probability: numeric evaluation"
+     decide_cbv
+     trace "replay-fixture probability: numeric evaluation done"))
 
 macro "proveReplayProbability2 " "atSize " size:num " seedWeights " seedW:term
     " selected " selected:term " nextWeights " nextW:term : tactic => do
@@ -249,9 +252,13 @@ macro "proveReplayProbability2 " "atSize " size:num " seedWeights " seedW:term
     `(tactic| rewrite (transparency := .default) [edgeSeedWeightsVector (out := $seedW)
       (h := by funext i; fin_cases i <;> decide_cbv)])
   `(tactic|
-    ($rewriteBirth:tactic
+    (trace "replay-fixture probability: successor weights rewrite"
+     $rewriteBirth:tactic
+     trace "replay-fixture probability: seed weights rewrite"
      $rewriteSeed:tactic
-     decide_cbv))
+     trace "replay-fixture probability: numeric evaluation"
+     decide_cbv
+     trace "replay-fixture probability: numeric evaluation done"))
 
 macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num
     " probability " probability:tactic : tactic => do

@@ -93,7 +93,8 @@ jobs:
           # A proof error or wall-clock timeout must fail the acceptance gate.
           /usr/bin/time -f 'FitnessReplay elapsed=%e s peak_rss=%M KiB' \
             timeout --kill-after=10s 240s \
-            lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FitnessReplay.lean
+            lake env lean -DmaxErrors=1 -DstderrAsMessages=false \
+              NarrativeDynamics/Tests/FitnessReplay.lean
 
       - name: Lean theorem tests
         run: |
