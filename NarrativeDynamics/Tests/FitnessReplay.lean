@@ -41,7 +41,8 @@ private theorem checkedBirthEquation {n m index : Nat} {s : State n}
       match runBirths m (index + 1) ⟨n + 1, next⟩ rest with
       | .error e => .error e
       | .ok out => .ok ⟨out.final, orderedMass s T * out.probability⟩ := by
-  rw [replay_step, checkedStep s m raw hm hf hs hb hd]
+  rewrite [replay_step, checkedStep s m raw hm hf hs hb hd]
+  rfl
 
 #print axioms checkedStep
 #print axioms checkedBirthEquation
@@ -71,6 +72,8 @@ macro "prepareReplaySeed " raw:term " atSize " size:term : tactic =>
 
 -- Prove concrete guards, then rewrite exactly one checked-step equation.
 -- Do not recursively simplify validators under unresolved continuation matches.
+-- `rewrite` deliberately leaves the goal open for `decide_cbv`; `rw` also
+-- attempts reflexivity, which can evaluate the entire remaining replay.
 macro "prepareReplayBirth " n:term " withM " m:term
     " fitness " eta:term " targets " xs:term : tactic =>
   `(tactic|
@@ -80,7 +83,7 @@ macro "prepareReplayBirth " n:term " withM " m:term
      have hb : targetsBounded $n $xs := by decide
      have hd : targetsDistinct $xs := by decide
      simp only [twoBirths, if_pos hm]
-     rw [checkedBirthEquation (n := $n) (m := $m) (raw := (⟨$eta, $xs⟩ : RawBirth))
+     rewrite [checkedBirthEquation (n := $n) (m := $m) (raw := (⟨$eta, $xs⟩ : RawBirth))
        hm hf hs hb hd]))
 
 section ExactReplayFixtures
