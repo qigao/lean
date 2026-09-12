@@ -28,5 +28,5 @@
   ],
   "success_threshold": null,
   "final_test_used_for_selection": false,
-  "evidence_scope": "non_executable_until_all_null_fields_are_frozen"
+  "evidence_scope": "generic_non_executable_template; see protocols/v0-real-ntu120-preflight.json for the frozen Phase 2 candidate"
 }
