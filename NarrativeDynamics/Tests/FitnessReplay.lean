@@ -354,6 +354,50 @@ private theorem triangleReplay12Accepted :
 
 #print axioms triangleReplay12Accepted
 
+/-- Read the checked request through its public value contract, keeping the validator
+result abstract. No concrete parser or validator proof enters trace evaluation. -/
+private theorem validatedTargetsData {n : Nat} (s : State n) (raw : RawBirth)
+    (v : ValidatedBirth n raw.targets.size)
+    (h : validateBirth s raw.targets.size raw = .ok v)
+    (hb : targetsBounded n raw.targets) :
+    v.targets.ordered =
+      List.ofFn (fun i : Fin raw.targets.size => (⟨raw.targets[i.val], hb i⟩ : Fin n)) ∧
+      v.fitness.val = raw.fitness := by
+  obtain ⟨hfitness, hs, hvalues⟩ := validateBirth_values s raw v h
+  have htargets : (v.targets : Fin raw.targets.size → Fin n) =
+      fun i => ⟨raw.targets[i.val], hb i⟩ := by
+    funext i
+    exact Fin.ext (hvalues i)
+  exact ⟨congrArg (fun f : Fin raw.targets.size → Fin n => List.ofFn f) htargets,
+    hfitness⟩
+
+/-- Compose a birth using an abstract validated result, as in replayOneBirth. -/
+private theorem validatedBirthEquation {n m index : Nat} (s : State n)
+    (raw : RawBirth) (rest : List RawBirth) (v : ValidatedBirth n m)
+    (h : validateBirth s m raw = .ok v) :
+    runBirths m index ⟨n, s⟩ (raw :: rest) =
+      match runBirths m (index + 1)
+          ⟨n + 1, applyBirth s v.targets v.positive v.fitness⟩ rest with
+      | .error e => .error e
+      | .ok out => .ok ⟨out.final, orderedMass s v.targets * out.probability⟩ := by
+  simp only [replay_step, step, h]
+
+private theorem rawEdgeConnected :
+    (seedGraph (⟨2, #[1, 1], #[(1, 0)]⟩ : RawSeed)).Connected where
+  preconnected := by
+    intro u v
+    by_cases h : u = v
+    · subst v
+      exact ⟨.nil⟩
+    · have huv : (seedGraph (⟨2, #[1, 1], #[(1, 0)]⟩ : RawSeed)).Adj u v := by
+        fin_cases u <;> fin_cases v <;> simp_all [seedGraph, canonicalEdge]
+      exact ⟨.cons huv .nil⟩
+  nonempty := ⟨⟨0, by decide⟩⟩
+
+#print axioms validatedTargetsData
+#print axioms validatedBirthEquation
+#print axioms rawEdgeConnected
+
 #print axioms runBirthsNil
 #print axioms summaryOk
 #print axioms birthDegreeFn
@@ -412,8 +456,36 @@ macro "prepareReplayBirth " n:term " withM " m:term
        hm hf hs hb hd]
      trace "replay-fixture birth: checked rewrite done"))
 
-macro "proveReplayProbability1 " "atSize " size:num " seedWeights " seedW:term
-    " ordered " ordered:term " massProof " massProof:term : tactic => do
+macro "prepareAcceptedReplaySeed " raw:term " atSize " size:num " as " s:ident : tactic => do
+  let connected ← if size.getNat == 3 then
+    `(tactic| exact rawTriangleConnected)
+  else
+    `(tactic| exact rawEdgeConnected)
+  `(tactic|
+    (have hvalid : ($raw : RawSeed).Valid := by
+       exact ⟨by decide, rfl, by decide, by decide, by decide, by $connected:tactic⟩
+     obtain ⟨$s, hseed⟩ := parseSeed_complete $raw hvalid
+     obtain ⟨hs, hsnapshot⟩ := parseSeed_snapshot $raw $s hseed
+     simp only [replay, hseed]))
+
+macro "prepareAcceptedReplayBirth " n:term " withM " m:term
+    " fitness " eta:term " targets " xs:term " from " s:term " as " v:ident : tactic =>
+  `(tactic|
+    (have hm : 0 < $m ∧ $m ≤ $n := by decide
+     have hf : 0 < ($eta : Rat) := by norm_num
+     have hs : ($xs : Array Nat).size = $m := rfl
+     have hb : targetsBounded $n $xs := by decide
+     have hd : targetsDistinct $xs := by decide
+     obtain ⟨$v, hbirth⟩ := validateBirth_complete $s (⟨$eta, $xs⟩ : RawBirth)
+       (show RawBirth.Valid (⟨$eta, $xs⟩ : RawBirth) $n $m from ⟨hm, hf, hs, hb, hd⟩)
+     obtain ⟨hordered, hfitness⟩ :=
+       validatedTargetsData $s (⟨$eta, $xs⟩ : RawBirth) $v hbirth hb
+     have hselected := (selected_eq_ordered_toFinset $v.targets).trans
+       (congrArg List.toFinset hordered)
+     simp only [twoBirths, if_pos hm]
+     rewrite [validatedBirthEquation $s (⟨$eta, $xs⟩ : RawBirth) _ $v hbirth]))
+
+macro "proveReplayProbability1 " "atSize " size:num " seedWeights " seedW:term : tactic => do
   let rewriteSeed ← if size.getNat == 3 then
     `(tactic| rewrite (transparency := .default) [triangleSeedWeightsVector (out := $seedW)
       (h := by funext i; fin_cases i <;> decide_cbv)])
@@ -423,10 +495,8 @@ macro "proveReplayProbability1 " "atSize " size:num " seedWeights " seedW:term
   `(tactic|
     (trace "replay-fixture probability: seed weights rewrite"
      $rewriteSeed:tactic
-     trace "replay-fixture probability: ordered target congruence"
-     refine (congrArg (traceMass $seedW ∅)
-       (show _ = $ordered from ?_)).trans $massProof
-     rfl))
+     trace "replay-fixture probability: abstract targets evaluation"
+     decide_cbv))
 
 macro "proveReplayProbability2 " "atSize " size:num " seedWeights " seedW:term
     " selected " selected:term " nextWeights " nextW:term : tactic => do
@@ -434,20 +504,20 @@ macro "proveReplayProbability2 " "atSize " size:num " seedWeights " seedW:term
     `(tactic| rewrite (transparency := .default) [birthWeightsVector
       (deg := (![2, 2, 2] : Fin 3 → Nat))
       (selected := $selected) (out := $nextW)
-      (hdeg := by exact triangleSeedDegreeFn _ (by decide))
+      (hdeg := by simp only [*]; exact triangleSeedDegreeFn _ (by decide))
       (hsel := by
-        rw [selected_eq_ordered_toFinset, checkedTargetsOrdered]
+        simp only [*]
         decide_cbv)
-      (hout := by funext v; fin_cases v <;> decide_cbv)])
+      (hout := by funext v; simp only [*]; fin_cases v <;> decide_cbv)])
   else
     `(tactic| rewrite (transparency := .default) [birthWeightsVector
       (deg := (![1, 1] : Fin 2 → Nat))
       (selected := $selected) (out := $nextW)
-      (hdeg := by exact edgeSeedDegreeFn _ (by decide))
+      (hdeg := by simp only [*]; exact edgeSeedDegreeFn _ (by decide))
       (hsel := by
-        rw [selected_eq_ordered_toFinset, checkedTargetsOrdered]
+        simp only [*]
         decide_cbv)
-      (hout := by funext v; fin_cases v <;> decide_cbv)])
+      (hout := by funext v; simp only [*]; fin_cases v <;> decide_cbv)])
   let rewriteSeed ← if size.getNat == 3 then
     `(tactic| rewrite (transparency := .default) [triangleSeedWeightsVector (out := $seedW)
       (h := by funext i; fin_cases i <;> decide_cbv)])
@@ -487,19 +557,23 @@ macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num
        simp only [actualNodeCount, Fintype.card_fin] <;> rfl
      · trace "replay-fixture result: edges"
        simp only [birth_edges]
+       simp only [*]
        decide_cbv
      · trace "replay-fixture result: degrees rewrite"
        $degrees:tactic
+       simp only [*]
        first | rewrite (transparency := .default) [triangleSeedDegreeFn (hs := by decide)]
              | rewrite (transparency := .default) [edgeSeedDegreeFn (hs := by decide)]
        trace "replay-fixture result: degrees evaluation"
        decide_cbv
      · trace "replay-fixture result: fitness rewrite"
        $fitnessTac:tactic
+       simp only [*]
        trace "replay-fixture result: fitness evaluation"
        decide_cbv
      · trace "replay-fixture result: probability"
        simp only [ReplayResult.probability, mul_one, orderedMass, checkedTargetsOrdered]
+       simp only [*]
        simp only [rawTriangle, unitTriangle]
        $probability:tactic))
 
@@ -512,22 +586,21 @@ example : summaryOf (replay rawTriangle 2 []) =
   decide_cbv
 example : summaryOf (replay rawTriangle 2 [⟨3/2, #[2, 1]⟩]) =
     .ok (4, 5, [2, 3, 3, 2], [1, 2, 4, 3/2], 8/21) := by
-  prepareReplaySeed rawTriangle atSize 3
-  prepareReplayBirth rawTriangle.nodeCount withM 2
-    fitness (3/2) targets #[2, 1]
+  prepareAcceptedReplaySeed rawTriangle atSize 3 as s0
+  prepareAcceptedReplayBirth rawTriangle.nodeCount withM 2
+    fitness (3/2) targets #[2, 1] from s0 as v1
   finishReplaySummary 3 withM 2 births 1 probability
-    (proveReplayProbability1 atSize 3 seedWeights (![2, 4, 8] : Fin 3 → Rat)
-      ordered ([2, 1] : List (Fin 3)) massProof triangleTrace21)
+    (proveReplayProbability1 atSize 3 seedWeights (![2, 4, 8] : Fin 3 → Rat))
 example : summaryOf (replay rawTriangle 2 [⟨3/2, #[1, 2]⟩]) =
     .ok (4, 5, [2, 3, 3, 2], [1, 2, 4, 3/2], 8/35) := by
   exact triangleReplay12Accepted
 example : summaryOf (replay rawTriangle 2 twoBirths) =
     .ok (5, 7, [2, 3, 4, 3, 2], [1, 2, 4, 3/2, 1/3], 24/805) := by
-  prepareReplaySeed rawTriangle atSize 3
-  prepareReplayBirth rawTriangle.nodeCount withM 2
-    fitness (3/2) targets #[2, 1]
-  prepareReplayBirth (rawTriangle.nodeCount + 1) withM 2
-    fitness (1/3) targets #[3, 2]
+  prepareAcceptedReplaySeed rawTriangle atSize 3 as s0
+  prepareAcceptedReplayBirth rawTriangle.nodeCount withM 2
+    fitness (3/2) targets #[2, 1] from s0 as v1
+  prepareAcceptedReplayBirth (rawTriangle.nodeCount + 1) withM 2
+    fitness (1/3) targets #[3, 2] from (applyBirth s0 v1.targets v1.positive v1.fitness) as v2
   finishReplaySummary 3 withM 2 births 2 probability
     (proveReplayProbability2 atSize 3 seedWeights (![2, 4, 8] : Fin 3 → Rat)
       selected ({1, 2} : Finset (Fin 3))
@@ -536,22 +609,22 @@ example : summaryOf (replay rawTriangle 2 twoBirths) =
 example : summaryOf (replay ⟨3, #[2, 4, 8], rawTriangle.edges⟩ 2
     [⟨3, #[2, 1]⟩, ⟨2/3, #[3, 2]⟩]) =
     .ok (5, 7, [2, 3, 4, 3, 2], [2, 4, 8, 3, 2/3], 24/805) := by
-  prepareReplaySeed (⟨3, #[2, 4, 8], rawTriangle.edges⟩ : RawSeed) atSize 3
-  prepareReplayBirth (⟨3, #[2, 4, 8], rawTriangle.edges⟩ : RawSeed).nodeCount withM 2
-    fitness (3) targets #[2, 1]
-  prepareReplayBirth ((⟨3, #[2, 4, 8], rawTriangle.edges⟩ : RawSeed).nodeCount + 1) withM 2
-    fitness (2/3) targets #[3, 2]
+  prepareAcceptedReplaySeed (⟨3, #[2, 4, 8], rawTriangle.edges⟩ : RawSeed) atSize 3 as s0
+  prepareAcceptedReplayBirth (⟨3, #[2, 4, 8], rawTriangle.edges⟩ : RawSeed).nodeCount withM 2
+    fitness (3) targets #[2, 1] from s0 as v1
+  prepareAcceptedReplayBirth ((⟨3, #[2, 4, 8], rawTriangle.edges⟩ : RawSeed).nodeCount + 1) withM 2
+    fitness (2/3) targets #[3, 2] from (applyBirth s0 v1.targets v1.positive v1.fitness) as v2
   finishReplaySummary 3 withM 2 births 2 probability
     (proveReplayProbability2 atSize 3 seedWeights (![4, 8, 16] : Fin 3 → Rat)
       selected ({1, 2} : Finset (Fin 3))
       nextWeights (![4, 12, 24, 6] : Fin 4 → Rat))
 example : summaryOf (replay ⟨3, #[2, 4, 8], rawTriangle.edges⟩ 2 twoBirths) =
     .ok (5, 7, [2, 3, 4, 3, 2], [2, 4, 8, 3/2, 1/3], 24/1505) := by
-  prepareReplaySeed (⟨3, #[2, 4, 8], rawTriangle.edges⟩ : RawSeed) atSize 3
-  prepareReplayBirth (⟨3, #[2, 4, 8], rawTriangle.edges⟩ : RawSeed).nodeCount withM 2
-    fitness (3/2) targets #[2, 1]
-  prepareReplayBirth ((⟨3, #[2, 4, 8], rawTriangle.edges⟩ : RawSeed).nodeCount + 1) withM 2
-    fitness (1/3) targets #[3, 2]
+  prepareAcceptedReplaySeed (⟨3, #[2, 4, 8], rawTriangle.edges⟩ : RawSeed) atSize 3 as s0
+  prepareAcceptedReplayBirth (⟨3, #[2, 4, 8], rawTriangle.edges⟩ : RawSeed).nodeCount withM 2
+    fitness (3/2) targets #[2, 1] from s0 as v1
+  prepareAcceptedReplayBirth ((⟨3, #[2, 4, 8], rawTriangle.edges⟩ : RawSeed).nodeCount + 1) withM 2
+    fitness (1/3) targets #[3, 2] from (applyBirth s0 v1.targets v1.positive v1.fitness) as v2
   finishReplaySummary 3 withM 2 births 2 probability
     (proveReplayProbability2 atSize 3 seedWeights (![4, 8, 16] : Fin 3 → Rat)
       selected ({1, 2} : Finset (Fin 3))
@@ -560,22 +633,22 @@ example : summaryOf (replay ⟨3, #[2, 4, 8], rawTriangle.edges⟩ 2 twoBirths) 
 example : summaryOf (replay ⟨3, #[3, 3, 3], rawTriangle.edges⟩ 2
     [⟨3, #[2, 1]⟩, ⟨3, #[3, 2]⟩]) =
     .ok (5, 7, [2, 3, 4, 3, 2], [3, 3, 3, 3, 3], 1/80) := by
-  prepareReplaySeed (⟨3, #[3, 3, 3], rawTriangle.edges⟩ : RawSeed) atSize 3
-  prepareReplayBirth (⟨3, #[3, 3, 3], rawTriangle.edges⟩ : RawSeed).nodeCount withM 2
-    fitness (3) targets #[2, 1]
-  prepareReplayBirth ((⟨3, #[3, 3, 3], rawTriangle.edges⟩ : RawSeed).nodeCount + 1) withM 2
-    fitness (3) targets #[3, 2]
+  prepareAcceptedReplaySeed (⟨3, #[3, 3, 3], rawTriangle.edges⟩ : RawSeed) atSize 3 as s0
+  prepareAcceptedReplayBirth (⟨3, #[3, 3, 3], rawTriangle.edges⟩ : RawSeed).nodeCount withM 2
+    fitness (3) targets #[2, 1] from s0 as v1
+  prepareAcceptedReplayBirth ((⟨3, #[3, 3, 3], rawTriangle.edges⟩ : RawSeed).nodeCount + 1) withM 2
+    fitness (3) targets #[3, 2] from (applyBirth s0 v1.targets v1.positive v1.fitness) as v2
   finishReplaySummary 3 withM 2 births 2 probability
     (proveReplayProbability2 atSize 3 seedWeights (![6, 6, 6] : Fin 3 → Rat)
       selected ({1, 2} : Finset (Fin 3))
       nextWeights (![6, 9, 9, 6] : Fin 4 → Rat))
 example : summaryOf (replay unitTriangle 2 [⟨1, #[2, 1]⟩, ⟨1, #[3, 2]⟩]) =
     .ok (5, 7, [2, 3, 4, 3, 2], [1, 1, 1, 1, 1], 1/80) := by
-  prepareReplaySeed unitTriangle atSize 3
-  prepareReplayBirth unitTriangle.nodeCount withM 2
-    fitness (1) targets #[2, 1]
-  prepareReplayBirth (unitTriangle.nodeCount + 1) withM 2
-    fitness (1) targets #[3, 2]
+  prepareAcceptedReplaySeed unitTriangle atSize 3 as s0
+  prepareAcceptedReplayBirth unitTriangle.nodeCount withM 2
+    fitness (1) targets #[2, 1] from s0 as v1
+  prepareAcceptedReplayBirth (unitTriangle.nodeCount + 1) withM 2
+    fitness (1) targets #[3, 2] from (applyBirth s0 v1.targets v1.positive v1.fitness) as v2
   finishReplaySummary 3 withM 2 births 2 probability
     (proveReplayProbability2 atSize 3 seedWeights (![2, 2, 2] : Fin 3 → Rat)
       selected ({1, 2} : Finset (Fin 3))
@@ -584,11 +657,11 @@ example : summaryOf (replay unitTriangle 2 [⟨1, #[2, 1]⟩, ⟨1, #[3, 2]⟩])
 example : summaryOf (replay ⟨2, #[1, 1], #[(1, 0)]⟩ 1
     [⟨1, #[1]⟩, ⟨1, #[2]⟩]) =
     .ok (4, 3, [1, 2, 2, 1], [1, 1, 1, 1], 1/8) := by
-  prepareReplaySeed (⟨2, #[1, 1], #[(1, 0)]⟩ : RawSeed) atSize 2
-  prepareReplayBirth (⟨2, #[1, 1], #[(1, 0)]⟩ : RawSeed).nodeCount withM 1
-    fitness (1) targets #[1]
-  prepareReplayBirth ((⟨2, #[1, 1], #[(1, 0)]⟩ : RawSeed).nodeCount + 1) withM 1
-    fitness (1) targets #[2]
+  prepareAcceptedReplaySeed (⟨2, #[1, 1], #[(1, 0)]⟩ : RawSeed) atSize 2 as s0
+  prepareAcceptedReplayBirth (⟨2, #[1, 1], #[(1, 0)]⟩ : RawSeed).nodeCount withM 1
+    fitness (1) targets #[1] from s0 as v1
+  prepareAcceptedReplayBirth ((⟨2, #[1, 1], #[(1, 0)]⟩ : RawSeed).nodeCount + 1) withM 1
+    fitness (1) targets #[2] from (applyBirth s0 v1.targets v1.positive v1.fitness) as v2
   finishReplaySummary 2 withM 1 births 2 probability
     (proveReplayProbability2 atSize 2 seedWeights (![1, 1] : Fin 2 → Rat)
       selected ({1} : Finset (Fin 2))
@@ -596,11 +669,11 @@ example : summaryOf (replay ⟨2, #[1, 1], #[(1, 0)]⟩ 1
 example : summaryOf (replay rawTriangle 3
     [⟨1, #[0, 1, 2]⟩, ⟨1, #[1, 2, 3]⟩]) =
     .ok (5, 9, [3, 4, 4, 4, 3], [1, 2, 4, 1, 1], 1/252) := by
-  prepareReplaySeed rawTriangle atSize 3
-  prepareReplayBirth rawTriangle.nodeCount withM 3
-    fitness (1) targets #[0, 1, 2]
-  prepareReplayBirth (rawTriangle.nodeCount + 1) withM 3
-    fitness (1) targets #[1, 2, 3]
+  prepareAcceptedReplaySeed rawTriangle atSize 3 as s0
+  prepareAcceptedReplayBirth rawTriangle.nodeCount withM 3
+    fitness (1) targets #[0, 1, 2] from s0 as v1
+  prepareAcceptedReplayBirth (rawTriangle.nodeCount + 1) withM 3
+    fitness (1) targets #[1, 2, 3] from (applyBirth s0 v1.targets v1.positive v1.fitness) as v2
   finishReplaySummary 3 withM 3 births 2 probability
     (proveReplayProbability2 atSize 3 seedWeights (![2, 4, 8] : Fin 3 → Rat)
       selected ({0, 1, 2} : Finset (Fin 3))
