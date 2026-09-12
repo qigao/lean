@@ -420,6 +420,25 @@ end NarrativeDynamics.FitnessAttachment.ReplayFixtures
 
 open NarrativeDynamics.FitnessAttachment.ReplayFixtures
 
+/-- Match local field equations at default transparency: fixture dimensions may be
+written as a raw seed's nodeCount or as a numeral. Every rewrite produces a checked
+equality proof; fields absent from the current goal are simply left for other goals. -/
+elab "rewriteReplayFacts" : tactic => Lean.Elab.Tactic.withMainContext do
+  let context ← Lean.getLCtx
+  for decl in context do
+    unless decl.type.isAppOfArity ``Eq 3 do continue
+    let lhs := decl.type.getArg! 1
+    unless lhs.isAppOf ``State.snapshot || lhs.isAppOf ``Targets.selected ||
+        lhs.isAppOf ``Targets.ordered || lhs.isAppOf ``Subtype.val do continue
+    let saved ← Lean.Elab.Tactic.saveState
+    try
+      let goal ← Lean.Elab.Tactic.getMainGoal
+      let result ← goal.rewrite (← goal.getType) decl.toExpr
+        (config := { transparency := .default })
+      let next ← goal.replaceTargetEq result.eNew result.eqProof
+      Lean.Elab.Tactic.replaceMainGoal (next :: result.mvarIds)
+    catch _ => saved.restore
+
 macro "prepareReplaySeed " raw:term " atSize " size:term : tactic =>
   `(tactic|
     (trace "replay-fixture seed: guards start"
@@ -451,7 +470,7 @@ macro "prepareReplayBirth " n:term " withM " m:term
      have hb : targetsBounded $n $xs := by decide
      have hd : targetsDistinct $xs := by decide
      trace "replay-fixture birth: prefix simplification start"
-     simp only [twoBirths, if_pos hm]
+     simp (config := { failIfUnchanged := false }) only [twoBirths, if_pos hm]
      trace "replay-fixture birth: checked rewrite start"
      rewrite [checkedBirthEquation (n := $n) (m := $m) (raw := (⟨$eta, $xs⟩ : RawBirth))
        hm hf hs hb hd]
@@ -486,7 +505,7 @@ macro "prepareAcceptedReplayBirth " n:term " withM " m:term
        validatedTargetsData $s (⟨$eta, $xs⟩ : RawBirth) $v hbirth hb
      have hselected := (selected_eq_ordered_toFinset ($v).targets).trans
        (congrArg List.toFinset hordered)
-     simp only [twoBirths, if_pos hm]
+     simp (config := { failIfUnchanged := false }) only [twoBirths, if_pos hm]
      rewrite [validatedBirthEquation $s (⟨$eta, $xs⟩ : RawBirth) _ $v hbirth]
      trace "replay-fixture birth: abstract witness done"))
 
@@ -509,20 +528,20 @@ macro "proveReplayProbability2 " "atSize " size:num " seedWeights " seedW:term
     `(tactic| rewrite (transparency := .default) [birthWeightsVector
       (deg := (![2, 2, 2] : Fin 3 → Nat))
       (selected := $selected) (out := $nextW)
-      (hdeg := by simp only [*]; exact triangleSeedDegreeFn _ (by decide))
+      (hdeg := by rewriteReplayFacts; exact triangleSeedDegreeFn _ (by decide))
       (hsel := by
-        simp only [*]
+        rewriteReplayFacts
         decide_cbv)
-      (hout := by funext v; simp only [*]; fin_cases v <;> decide_cbv)])
+      (hout := by funext v; rewriteReplayFacts; fin_cases v <;> decide_cbv)])
   else
     `(tactic| rewrite (transparency := .default) [birthWeightsVector
       (deg := (![1, 1] : Fin 2 → Nat))
       (selected := $selected) (out := $nextW)
-      (hdeg := by simp only [*]; exact edgeSeedDegreeFn _ (by decide))
+      (hdeg := by rewriteReplayFacts; exact edgeSeedDegreeFn _ (by decide))
       (hsel := by
-        simp only [*]
+        rewriteReplayFacts
         decide_cbv)
-      (hout := by funext v; simp only [*]; fin_cases v <;> decide_cbv)])
+      (hout := by funext v; rewriteReplayFacts; fin_cases v <;> decide_cbv)])
   let rewriteSeed ← if size.getNat == 3 then
     `(tactic| rewrite (transparency := .default) [triangleSeedWeightsVector (out := $seedW)
       (h := by funext i; fin_cases i <;> decide_cbv)])
@@ -562,31 +581,28 @@ macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num
        simp only [actualNodeCount, Fintype.card_fin] <;> rfl
      · trace "replay-fixture result: edges"
        simp only [birth_edges]
-       simp only [*]
+       rewriteReplayFacts
        decide_cbv
      · trace "replay-fixture result: degrees rewrite"
        $degrees:tactic
-       simp only [*]
+       rewriteReplayFacts
        first | rewrite (transparency := .default) [triangleSeedDegreeFn (hs := by decide)]
              | rewrite (transparency := .default) [edgeSeedDegreeFn (hs := by decide)]
        trace "replay-fixture result: degrees evaluation"
-       trace_state
        decide_cbv
      · trace "replay-fixture result: fitness rewrite"
        $fitnessTac:tactic
-       simp only [*]
+       rewriteReplayFacts
        trace "replay-fixture result: fitness evaluation"
        decide_cbv
      · trace "replay-fixture result: probability"
        simp only [ReplayResult.probability, mul_one, orderedMass, checkedTargetsOrdered]
-       simp only [*]
+       rewriteReplayFacts
        simp only [rawTriangle, unitTriangle]
        $probability:tactic))
 
 section ExactReplayFixtures
 set_option maxRecDepth 4096
-set_option maxErrors 10
-set_option diagnostics true
 
 example : summaryOf (replay rawTriangle 2 []) =
     .ok (3, 3, [2, 2, 2], [1, 2, 4], 1) := by
