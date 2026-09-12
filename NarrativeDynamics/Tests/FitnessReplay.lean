@@ -149,15 +149,15 @@ macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num : tac
        rewrite (transparency := .default) [birthFitnessFn (n := $n) (m := $m) (hm := by decide)]))
   let probability ← if rounds.getNat == 1 then
     `(tactic|
-      (try rewrite (transparency := .default) [triangleSeedDegreeFn (hs := by decide)]
-       try rewrite (transparency := .default) [edgeSeedDegreeFn (hs := by decide)]
+      (first | rewrite (transparency := .default) [triangleSeedDegreeFn (hs := by decide)]
+             | rewrite (transparency := .default) [edgeSeedDegreeFn (hs := by decide)]
        decide_cbv))
   else
     `(tactic|
       (rewrite (transparency := .default) [birthDegreeFn (n := $n) (m := $m) (hm := by decide)]
        rewrite (transparency := .default) [birthFitnessFn (n := $n) (m := $m) (hm := by decide)]
-       try rewrite (transparency := .default) [triangleSeedDegreeFn (hs := by decide)]
-       try rewrite (transparency := .default) [edgeSeedDegreeFn (hs := by decide)]
+       first | rewrite (transparency := .default) [triangleSeedDegreeFn (hs := by decide)]
+             | rewrite (transparency := .default) [edgeSeedDegreeFn (hs := by decide)]
        decide_cbv))
   `(tactic|
     (trace "replay-fixture result: empty tail start"
@@ -172,8 +172,8 @@ macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num : tac
        decide_cbv
      · trace "replay-fixture result: degrees rewrite"
        $degrees:tactic
-       try rewrite (transparency := .default) [triangleSeedDegreeFn (hs := by decide)]
-       try rewrite (transparency := .default) [edgeSeedDegreeFn (hs := by decide)]
+       first | rewrite (transparency := .default) [triangleSeedDegreeFn (hs := by decide)]
+             | rewrite (transparency := .default) [edgeSeedDegreeFn (hs := by decide)]
        trace "replay-fixture result: degrees evaluation"
        decide_cbv
      · trace "replay-fixture result: fitness rewrite"
