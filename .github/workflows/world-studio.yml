@@ -9,6 +9,9 @@ permissions:
 
 jobs:
   verify:
+    # BB branches exclude peripheral UI, WebSocket and browser integration tests.
+    # These jobs remain enabled on other branches; skipped does not mean tested.
+    if: ${{ !startsWith(github.head_ref, 'feature/fitness-') && !startsWith(github.ref, 'refs/heads/feature/fitness-') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:

@@ -137,6 +137,9 @@ jobs:
           lake env lean NarrativeDynamics/Tests/Testimony.lean
 
   python-tests:
+    # BB branches exclude peripheral discovery (Blender, providers and Studio).
+    # These jobs remain enabled on other branches; skipped does not mean tested.
+    if: ${{ !startsWith(github.head_ref, 'feature/fitness-') && !startsWith(github.ref, 'refs/heads/feature/fitness-') }}
     name: Python tests
     runs-on: ubuntu-latest
     steps:
