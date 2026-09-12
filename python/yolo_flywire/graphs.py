@@ -3,9 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import logging
 import random
 
 import numpy as np
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -99,6 +103,9 @@ def rewire_degree_preserving(
     max_attempts = max(max_attempt_factor * swaps, 1)
 
     while successful < swaps and attempts < max_attempts:
+        if attempts % 100_000 == 0:
+            _LOGGER.info("rewiring seed=%s accepted=%s/%s attempts=%s",
+                         seed, successful, swaps, attempts)
         attempts += 1
         i, j = rng.sample(eligible, 2)
         a, b = src[i], dst[i]
@@ -113,8 +120,12 @@ def rewire_degree_preserving(
 
         old_one = (a, b)
         old_two = (c, d)
-        occupied = edge_set - {old_one, old_two}
-        if proposed_one in occupied or proposed_two in occupied:
+        # Same collision predicate as E - {old_one, old_two}, without an O(E)
+        # allocation per proposal. Keep RNG calls and acceptance order unchanged.
+        if (
+            (proposed_one in edge_set and proposed_one != old_one and proposed_one != old_two)
+            or (proposed_two in edge_set and proposed_two != old_one and proposed_two != old_two)
+        ):
             continue
         if proposed_one == old_one and proposed_two == old_two:
             continue
@@ -127,6 +138,8 @@ def rewire_degree_preserving(
         edge_set.add(proposed_two)
         successful += 1
 
+    _LOGGER.info("rewiring seed=%s accepted=%s/%s attempts=%s complete=%s",
+                 seed, successful, swaps, attempts, successful == swaps)
     if successful != swaps:
         raise ValueError(
             f"could not complete {swaps} degree-preserving swaps within {max_attempts} attempts"
