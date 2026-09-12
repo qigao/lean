@@ -164,24 +164,31 @@ private theorem triangleTrace12 :
     traceMass (![2, 4, 8] : Fin 3 → Rat) ∅ [1, 2] = 8/35 := by
   decide_cbv
 
+/-- The raw triangle is connected independently of the parser's reachability check. -/
+private theorem rawTriangleConnected : (seedGraph rawTriangle).Connected where
+  preconnected := by
+    intro u v
+    by_cases h : u = v
+    · subst v
+      exact ⟨.nil⟩
+    · have huv : (seedGraph rawTriangle).Adj u v := by
+        fin_cases u <;> fin_cases v <;>
+          simp_all [seedGraph, rawTriangle, canonicalEdge]
+      exact ⟨.cons huv .nil⟩
+  nonempty := inferInstance
+
+#print axioms rawTriangleConnected
+
+/-- Package the semantic seed contract before invoking parser completeness. -/
+private theorem rawTriangleValid : rawTriangle.Valid := by
+  exact ⟨by decide, rfl, by decide, by decide, by decide, rawTriangleConnected⟩
+
+#print axioms rawTriangleValid
+
 /-- Seal the concrete parser proof before replay composition uses its dependent state. -/
 private theorem triangleSeedAccepted :
-    ∃ s : State rawTriangle.nodeCount, parseSeed rawTriangle = .ok s := by
-  have hn : 2 ≤ rawTriangle.nodeCount := by decide
-  have hs : rawTriangle.fitness.size = rawTriangle.nodeCount := rfl
-  have hf : positiveSeedFitness rawTriangle := by decide
-  have he : validSeedEdges rawTriangle := by decide
-  have hd : (rawTriangle.edges.toList.map canonicalEdge).Nodup := by decide
-  have hc : ∀ b,
-      b ∈ reached (seedSnapshot rawTriangle hs)
-        (⟨0, by have := hn; omega⟩ : Fin rawTriangle.nodeCount)
-        (rawTriangle.nodeCount - 1) := by
-    change ∀ b : Fin 3,
-      b ∈ reached (seedSnapshot rawTriangle rfl) (0 : Fin 3) 2
-    decide
-  refine ⟨_, ?_⟩
-  simp only [parseSeed, dif_pos hn, dif_pos hs, dif_pos hf,
-    dif_pos he, dif_pos hd, dif_pos hc]
+    ∃ s : State rawTriangle.nodeCount, parseSeed rawTriangle = .ok s :=
+  parseSeed_complete rawTriangle rawTriangleValid
 
 #print axioms triangleSeedAccepted
 
