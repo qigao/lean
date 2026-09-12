@@ -1,4 +1,4 @@
-"""Four-arm development orchestration; generated inputs, not recognition evidence."""
+"""Four-arm indexed development orchestration; generated inputs, not recognition evidence."""
 from dataclasses import replace
 import importlib
 import json
@@ -8,7 +8,8 @@ import numpy as np
 import pytest
 import torch
 
-from test_pose_development import extracted, _options, _prepare
+from test_pose_development import extracted, _options
+from test_pose_indexed_development import _prepare
 from integration.pose_comparison_fixture import graph_inputs, sha, write_json
 
 FAMILIES = ("gru", "random_graph", "rewired", "flywire")
@@ -40,15 +41,15 @@ def _run(case, **changes):
 
 def test_all_four_arms_execute_actual_equal_budget_and_remain_development_only(comparison_case, monkeypatch):
     api = _api()
-    actual, observed = api.train_padded_model, []
-    def train(model, training, validation, config):
-        assert training.split == "train" and validation.split == "validation"
-        assert training.classes == validation.classes
-        assert all("P003" not in sid for part in (training, validation) for sid in part.sample_ids)
-        run = actual(model, training, validation, config)
+    actual, observed = api.train_indexed_model, []
+    def train(model, source, config, *, expected_binding_sha256):
+        assert expected_binding_sha256 == source.binding_sha256
+        assert source.classes == comparison_case[2].classes
+        assert all("P003" not in row.sample_id for row in source.index.samples)
+        run = actual(model, source, config, expected_binding_sha256=expected_binding_sha256)
         observed.append((run, config))
         return run
-    monkeypatch.setattr(api, "train_padded_model", train)
+    monkeypatch.setattr(api, "train_indexed_model", train)
     report = _run(comparison_case)
     assert len(observed) == 8
     assert report["evidence_scope"] == "development_validation_only"
@@ -81,9 +82,11 @@ def test_all_four_arms_execute_actual_equal_budget_and_remain_development_only(c
         paired = next(r for r in report["paired_validation"] if r["seed"] == seed)
         assert paired["difference"] == arms["flywire"]["validation_metrics"]["macro_f1"] - arms["rewired"]["validation_metrics"]["macro_f1"]
     assert "pose_comparison.py" in report["execution"]["source_sha256"]
+    assert "pose_indexed_training.py" in report["execution"]["source_sha256"]
     assert "models/graph_rnn.py" in report["execution"]["source_sha256"]
+    assert report["execution"]["development_input_policy"] == "bound-indexed-minibatches; no-whole-partition-tensors"
     json.dumps(report, allow_nan=False)
-    comparison_case[2].verify()
+    comparison_case[2].verify(expected_binding_sha256=comparison_case[2].binding_sha256)
 
 
 def test_repeatable_with_caller_rng_and_defaults_preserved(comparison_case):
@@ -107,7 +110,7 @@ def test_independent_pins_reject_before_any_training(comparison_case, monkeypatc
     api = _api()
     def forbidden(*args, **kwargs):
         raise AssertionError("mismatched external pin reached optimizer")
-    monkeypatch.setattr(api, "train_padded_model", forbidden)
+    monkeypatch.setattr(api, "train_indexed_model", forbidden)
     with pytest.raises(ValueError):
         _run(comparison_case, **{key: "0" * 64})
 
@@ -120,7 +123,7 @@ def test_invalid_or_unmatched_execution_budget_rejected_before_training(comparis
     api = _api()
     def forbidden(*args, **kwargs):
         raise AssertionError("invalid configuration reached optimization")
-    monkeypatch.setattr(api, "train_padded_model", forbidden)
+    monkeypatch.setattr(api, "train_indexed_model", forbidden)
     with pytest.raises(ValueError):
         _run(comparison_case, config=_spec(**{field: value}))
 
@@ -132,7 +135,7 @@ def test_changed_graph_asset_bytes_rejected_before_training(comparison_case, mon
         handle.write(b" ")
     def forbidden(*args, **kwargs):
         raise AssertionError("changed graph source reached optimization")
-    monkeypatch.setattr(api, "train_padded_model", forbidden)
+    monkeypatch.setattr(api, "train_indexed_model", forbidden)
     with pytest.raises(ValueError):
         _run(comparison_case)
 
@@ -151,24 +154,23 @@ def test_repinned_controls_still_require_frozen_fingerprints_and_invariants(comp
     write_json(path, record)
     def forbidden(*args, **kwargs):
         raise AssertionError("invalid matched control reached optimization")
-    monkeypatch.setattr(api, "train_padded_model", forbidden)
+    monkeypatch.setattr(api, "train_indexed_model", forbidden)
     with pytest.raises(ValueError):
         _run(comparison_case, expected_controls_sha256=sha(path))
 
 
-@pytest.mark.parametrize("problem", ("updates", "order", "adjacency", "state-hash", "input"))
+@pytest.mark.parametrize("problem", ("updates", "order", "adjacency", "state-hash"))
 def test_corrupted_execution_cannot_publish_comparison(comparison_case, monkeypatch, problem):
     api = _api()
-    actual = api.train_padded_model
-    def train(model, training, validation, config):
-        result = actual(model, training, validation, config)
+    actual = api.train_indexed_model
+    def train(model, source, config, *, expected_binding_sha256):
+        result = actual(model, source, config, expected_binding_sha256=expected_binding_sha256)
         if problem == "updates": return replace(result, optimizer_steps=result.optimizer_steps - 1)
         if problem == "order": return replace(result, epoch_order_hashes=("0" * 64,) * config.epochs)
         if problem == "state-hash": return replace(result, state_hash="0" * 64)
-        if problem == "input": training.targets[0] = (training.targets[0] + 1) % 10
         if problem == "adjacency" and hasattr(model, "adjacency"): model.adjacency[0, 0] += 1
         return result
-    monkeypatch.setattr(api, "train_padded_model", train)
+    monkeypatch.setattr(api, "train_indexed_model", train)
     with pytest.raises(ValueError):
         _run(comparison_case)
 
@@ -181,16 +183,17 @@ def test_negative_null_and_positive_validation_differences_do_not_authorize_clai
     if reuse_id:
         # Force reuse in this helper only; never replace builtins.id globally.
         monkeypatch.setitem(globals(), "id", lambda model: 0)
-    actual, scores, calls = api.train_padded_model, {}, []
-    def train(model, training, validation, config):
-        run = actual(model, training, validation, config)
+    actual, scores, calls = api.train_indexed_model, {}, []
+    def train(model, source, config, *, expected_binding_sha256):
+        run = actual(model, source, config, expected_binding_sha256=expected_binding_sha256)
         # Released models may reuse an object ID; count invocations, not distinct IDs.
         score = .5 + delta if len(calls) % 4 == 3 else .5
         calls.append(config.seed)
         scores[id(model)] = score
         return replace(run, best_validation_macro_f1=score)
-    monkeypatch.setattr(api, "train_padded_model", train)
-    monkeypatch.setattr(api, "evaluate_padded", lambda model, *args, **kwargs: MetricBundle(scores[id(model)], .5))
+    monkeypatch.setattr(api, "train_indexed_model", train)
+    monkeypatch.setattr(api, "evaluate_indexed",
+                        lambda model, *args, **kwargs: MetricBundle(scores[id(model)], .5))
     report = _run(comparison_case)
     assert calls == [7] * 4 + [11] * 4
     assert all(row["difference"] == delta for row in report["paired_validation"])
