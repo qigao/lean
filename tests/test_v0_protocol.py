@@ -13,6 +13,24 @@ def _load(name: str):
     return json.loads((ROOT / "protocols" / name).read_text(encoding="utf-8"))
 
 
+def _run_compare(config: Path, output: Path):
+    return subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "yolo_flywire.cli",
+            "compare",
+            "--config",
+            str(config),
+            "--output",
+            str(output),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
 def test_frozen_synthetic_protocol_has_fixed_evaluation_boundary():
     protocol = _load("v0-synthetic.json")
     assert protocol["dataset_id"] == "synthetic-v0"
@@ -26,34 +44,45 @@ def test_frozen_synthetic_protocol_has_fixed_evaluation_boundary():
     assert protocol["success_threshold"] is not None
 
 
-def test_real_protocol_template_is_deliberately_non_executable(tmp_path: Path):
+def test_real_protocol_template_freezes_design_but_remains_non_executable(tmp_path: Path):
     template = ROOT / "protocols" / "v0-real-template.json"
     protocol = json.loads(template.read_text(encoding="utf-8"))
+
+    assert protocol["dataset_id"].startswith("NTU-RGB+D-120")
+    assert protocol["yolo_version"] == "ultralytics-yolo26n-pose"
+    assert protocol["flywire_release"] == "FAFB-v783"
+    assert protocol["flywire_source_commit"] == "0d8574d46627ce7fadd968a3c5d602e837325373"
+    assert protocol["flywire_connectivity_git_blob_sha1"] == "5183755ecbb41d5c8cee1a4a2d99b8eecba75c52"
+
     for field in (
-        "dataset_id",
-        "yolo_version",
         "split_hash",
         "observation_schema_hash",
-        "flywire_release",
-        "selection_rule",
-        "success_threshold",
+        "flywire_connectivity_sha256",
     ):
         assert protocol[field] is None
 
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "yolo_flywire.cli",
-            "compare",
-            "--config",
-            str(template),
-            "--output",
-            str(tmp_path),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+    result = _run_compare(template, tmp_path)
     assert result.returncode != 0
     assert "freeze" in result.stderr.lower() or "required" in result.stderr.lower()
+
+
+def test_real_topology_claim_rejects_missing_byte_level_flywire_provenance(tmp_path: Path):
+    protocol = _load("v0-real-ntu120-preflight.json")
+    protocol.update(
+        {
+            "dataset_content_hash": "dataset-sha256",
+            "ultralytics_package_version": "frozen-version",
+            "yolo_weights_sha256": "weights-sha256",
+            "split_hash": "split-sha256",
+            "observation_schema_hash": "schema-sha256",
+            "selected_graph_fingerprint": "graph-sha256",
+        }
+    )
+    protocol["flywire_connectivity_sha256"] = None
+
+    config = tmp_path / "missing-flywire-byte-provenance.json"
+    config.write_text(json.dumps(protocol), encoding="utf-8")
+    result = _run_compare(config, tmp_path / "out")
+
+    assert result.returncode != 0
+    assert "flywire_connectivity_sha256" in result.stderr
