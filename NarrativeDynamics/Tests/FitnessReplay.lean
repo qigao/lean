@@ -591,7 +591,8 @@ macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num
        first | rewrite (transparency := .default) [triangleSeedDegreeFn (hs := by decide)]
              | rewrite (transparency := .default) [edgeSeedDegreeFn (hs := by decide)]
        trace "replay-fixture result: degrees evaluation"
-       decide_cbv
+       set_option pp.explicit true in trace_state
+       set_option diagnostics true in decide_cbv
      · trace "replay-fixture result: fitness rewrite"
        $fitnessTac:tactic
        rewriteReplayFacts
