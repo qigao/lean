@@ -78,6 +78,9 @@ jobs:
           export PATH="$HOME/.elan/bin:$PATH"
           lake build
 
+      # Dedicated FitnessAttachment/FitnessBirth/FitnessValidation/FitnessReplay
+      # contract execution is intentionally out of this workflow scope.
+
       - name: Lean theorem tests
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
