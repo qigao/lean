@@ -55,11 +55,13 @@ open NarrativeDynamics.FitnessAttachment.ReplayFixtures
 -- and the entire multi-birth graph in one equation-reduction stack.
 macro "prepareReplaySeed " raw:term " atSize " size:term : tactic =>
   `(tactic|
-    (have hn : 2 ≤ ($raw : RawSeed).nodeCount := by decide
+    (trace "replay-fixture seed: guards start"
+     have hn : 2 ≤ ($raw : RawSeed).nodeCount := by decide
      have hs : ($raw : RawSeed).fitness.size = ($raw : RawSeed).nodeCount := rfl
      have hf : positiveSeedFitness $raw := by decide
      have he : validSeedEdges $raw := by decide
      have hd : (($raw : RawSeed).edges.toList.map canonicalEdge).Nodup := by decide
+     trace "replay-fixture seed: reachability guard start"
      have hc : ∀ b,
          b ∈ reached (seedSnapshot $raw hs)
            (⟨0, by have := hn; omega⟩ : Fin ($raw : RawSeed).nodeCount)
@@ -67,8 +69,10 @@ macro "prepareReplaySeed " raw:term " atSize " size:term : tactic =>
        change ∀ b : Fin $size,
          b ∈ reached (seedSnapshot $raw rfl) (0 : Fin $size) ($size - 1)
        decide
+     trace "replay-fixture seed: simplification start"
      simp only [replay, parseSeed, dif_pos hn, dif_pos hs, dif_pos hf,
-       dif_pos he, dif_pos hd, dif_pos hc]))
+       dif_pos he, dif_pos hd, dif_pos hc]
+     trace "replay-fixture seed: simplification done"))
 
 -- Prove concrete guards, then rewrite exactly one checked-step equation.
 -- Do not recursively simplify validators under unresolved continuation matches.
@@ -77,16 +81,22 @@ macro "prepareReplaySeed " raw:term " atSize " size:term : tactic =>
 macro "prepareReplayBirth " n:term " withM " m:term
     " fitness " eta:term " targets " xs:term : tactic =>
   `(tactic|
-    (have hm : 0 < $m ∧ $m ≤ $n := by decide
+    (trace "replay-fixture birth: guards start"
+     have hm : 0 < $m ∧ $m ≤ $n := by decide
      have hf : 0 < ($eta : Rat) := by norm_num
      have hs : ($xs : Array Nat).size = $m := rfl
      have hb : targetsBounded $n $xs := by decide
      have hd : targetsDistinct $xs := by decide
+     trace "replay-fixture birth: prefix simplification start"
      simp only [twoBirths, if_pos hm]
+     trace "replay-fixture birth: checked rewrite start"
      rewrite [checkedBirthEquation (n := $n) (m := $m) (raw := (⟨$eta, $xs⟩ : RawBirth))
-       hm hf hs hb hd]))
+       hm hf hs hb hd]
+     trace "replay-fixture birth: checked rewrite done"))
 
 section ExactReplayFixtures
+-- Report reduction hotspots without changing any proof or resource limit.
+set_option diagnostics true
 set_option maxRecDepth 4096
 
 -- Actual raw API output, including updated adjacency and the conditional product.
