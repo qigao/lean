@@ -98,7 +98,7 @@ def test_collation_is_repeatable_copies_storage_and_never_mutates_inputs():
     first.lengths.fill_(1)
     first.time_mask.fill_(False)
     np.testing.assert_array_equal(sequence, before)
-    sequence.fill_(0)
+    sequence.fill(0)
     np.testing.assert_array_equal(second.features[0].numpy(), before.astype(np.float32))
     assert second.lengths.tolist() == [3] and second.time_mask.all().item()
     with pytest.raises(FrozenInstanceError):
