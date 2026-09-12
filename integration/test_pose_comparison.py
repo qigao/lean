@@ -86,6 +86,26 @@ def test_actual_libraries_through_pinned_binding_and_all_four_arms(tmp_path, mon
                 assert torch.equal(batch.lengths, part.observations.lengths.index_select(0, rows))
                 assert torch.equal(batch.time_mask, part.observations.time_mask.index_select(0, rows)[:, :steps])
         indexed.verify()
+        from yolo_flywire.pose_indexed_development import load_indexed_pose_development
+        bound = load_indexed_pose_development(output, **options)
+        pin = bound.binding_sha256  # Retained independently for this generated fixture.
+        for split in ("train", "validation"):
+            reference = getattr(prepared, split)
+            for order in ((8, 0, 4), (9,)):
+                part = bound.read_partition(split=split, indices=order, expected_binding_sha256=pin)
+                rows = torch.tensor(order, dtype=torch.int64)
+                steps = int(part.observations.lengths.max().item())
+                assert part.sample_ids == tuple(reference.sample_ids[i] for i in order)
+                assert part.subjects == tuple(reference.subjects[i] for i in order)
+                assert part.classes == CLASSES and part.split == split
+                assert torch.equal(part.targets, reference.targets.index_select(0, rows))
+                assert torch.equal(part.observations.features,
+                                   reference.observations.features.index_select(0, rows)[:, :steps])
+                assert torch.equal(part.observations.lengths, reference.observations.lengths.index_select(0, rows))
+                assert torch.equal(part.observations.time_mask,
+                                   reference.observations.time_mask.index_select(0, rows)[:, :steps])
+                bound.verify_partition(part, split=split, indices=order, expected_binding_sha256=pin)
+        bound.verify(expected_binding_sha256=pin)
         reports.append(comparison.run_pose_comparison(output, **options, **graphs,
             expected_binding_sha256=prepared.binding_sha256, config=config))
         prepared.verify()
