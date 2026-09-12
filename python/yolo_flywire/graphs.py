@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import random
 
 import numpy as np
 
@@ -72,24 +73,26 @@ def rewire_degree_preserving(
     *,
     max_attempt_factor: int = 100,
 ) -> DirectedGraph:
-    """Directed double-edge swaps preserving degrees, weights, and diagonal-edge count.
+    """Directed double-edge swaps with exact diagonal population edges fixed.
 
-    A diagonal edge is valid for a type/population graph: it represents aggregate
-    connectivity among distinct neurons of the same cell type, not a neuron autapse.
-    Each accepted swap therefore preserves the number of diagonal edges in the
-    selected pair in addition to the directed in/out degree sequence.
+    Only off-diagonal edges are eligible for swapping. This preserves the directed
+    in/out degree sequence, the edge-weight multiset, and every diagonal edge with
+    its weight exactly. The standard-library RNG makes the rewired topology stable
+    across NumPy versions.
     """
     if swaps < 0:
         raise ValueError("swaps must be non-negative")
     if swaps == 0:
         return graph
-    if graph.num_edges < 2:
-        raise ValueError("at least two edges are required for rewiring")
 
-    rng = np.random.default_rng(seed)
     src = list(graph.src)
     dst = list(graph.dst)
     weight = list(graph.weight)
+    eligible = [index for index, (source, target) in enumerate(zip(src, dst)) if source != target]
+    if len(eligible) < 2:
+        raise ValueError("at least two off-diagonal edges are required for rewiring")
+
+    rng = random.Random(seed)
     edge_set = set(zip(src, dst))
     successful = 0
     attempts = 0
@@ -97,16 +100,13 @@ def rewire_degree_preserving(
 
     while successful < swaps and attempts < max_attempts:
         attempts += 1
-        first, second = rng.choice(graph.num_edges, size=2, replace=False)
-        i, j = int(first), int(second)
+        i, j = rng.sample(eligible, 2)
         a, b = src[i], dst[i]
         c, d = src[j], dst[j]
 
         proposed_one = (a, d)
         proposed_two = (c, b)
-        old_loop_count = int(a == b) + int(c == d)
-        new_loop_count = int(a == d) + int(c == b)
-        if new_loop_count != old_loop_count:
+        if proposed_one[0] == proposed_one[1] or proposed_two[0] == proposed_two[1]:
             continue
         if proposed_one == proposed_two:
             continue
