@@ -11,10 +11,6 @@ from test_pose_development import _options
 from test_pose_indexed_development import _prepare as _indexed_prepare
 
 
-def _forbidden(*args, **kwargs):
-    raise AssertionError("four-arm runner reached eager whole-partition preparation")
-
-
 @pytest.fixture
 def indexed_comparison_case(extracted, tmp_path):
     source = _indexed_prepare(extracted)
@@ -27,10 +23,10 @@ def indexed_comparison_case(extracted, tmp_path):
 
 
 def test_four_arm_runner_uses_bound_indexed_source_without_eager_partitions(
-    indexed_comparison_case, monkeypatch,
+    indexed_comparison_case,
 ):
     api = importlib.import_module("yolo_flywire.pose_comparison")
-    monkeypatch.setattr(api, "load_pose_development", _forbidden)
+    assert not hasattr(api, "load_pose_development")
     bundle, options, source = indexed_comparison_case
     config = api.PoseComparisonSpec(
         seeds=(7, 11), epochs=2, lr=.01, batch_size=4, max_updates=6,
