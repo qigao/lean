@@ -570,6 +570,7 @@ macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num
        first | rewrite (transparency := .default) [triangleSeedDegreeFn (hs := by decide)]
              | rewrite (transparency := .default) [edgeSeedDegreeFn (hs := by decide)]
        trace "replay-fixture result: degrees evaluation"
+       trace_state
        decide_cbv
      · trace "replay-fixture result: fitness rewrite"
        $fitnessTac:tactic
@@ -584,6 +585,8 @@ macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num
 
 section ExactReplayFixtures
 set_option maxRecDepth 4096
+set_option maxErrors 10
+set_option diagnostics true
 
 example : summaryOf (replay rawTriangle 2 []) =
     .ok (3, 3, [2, 2, 2], [1, 2, 4], 1) := by
