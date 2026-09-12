@@ -211,7 +211,8 @@ macro "prepareReplayBirth " n:term " withM " m:term
        hm hf hs hb hd]
      trace "replay-fixture birth: checked rewrite done"))
 
-macro "proveReplayProbability1 " "atSize " size:num " seedWeights " seedW:term : tactic => do
+macro "proveReplayProbability1 " "atSize " size:num " seedWeights " seedW:term
+    " ordered " ordered:term : tactic => do
   let rewriteSeed ← if size.getNat == 3 then
     `(tactic| rewrite (transparency := .default) [triangleSeedWeightsVector (out := $seedW)
       (h := by funext i; fin_cases i <;> decide_cbv)])
@@ -221,6 +222,8 @@ macro "proveReplayProbability1 " "atSize " size:num " seedWeights " seedW:term :
   `(tactic|
     (trace "replay-fixture probability: seed weights rewrite"
      $rewriteSeed:tactic
+     trace "replay-fixture probability: canonical target"
+     change traceMass $seedW ∅ $ordered = _
      trace "replay-fixture probability: numeric evaluation"
      decide_cbv
      trace "replay-fixture probability: numeric evaluation done"))
@@ -313,14 +316,16 @@ example : summaryOf (replay rawTriangle 2 [⟨3/2, #[2, 1]⟩]) =
   prepareReplayBirth rawTriangle.nodeCount withM 2
     fitness (3/2) targets #[2, 1]
   finishReplaySummary 3 withM 2 births 1 probability
-    (proveReplayProbability1 atSize 3 seedWeights (![2, 4, 8] : Fin 3 → Rat))
+    (proveReplayProbability1 atSize 3 seedWeights (![2, 4, 8] : Fin 3 → Rat)
+      ordered ([2, 1] : List (Fin 3)))
 example : summaryOf (replay rawTriangle 2 [⟨3/2, #[1, 2]⟩]) =
     .ok (4, 5, [2, 3, 3, 2], [1, 2, 4, 3/2], 8/35) := by
   prepareReplaySeed rawTriangle atSize 3
   prepareReplayBirth rawTriangle.nodeCount withM 2
     fitness (3/2) targets #[1, 2]
   finishReplaySummary 3 withM 2 births 1 probability
-    (proveReplayProbability1 atSize 3 seedWeights (![2, 4, 8] : Fin 3 → Rat))
+    (proveReplayProbability1 atSize 3 seedWeights (![2, 4, 8] : Fin 3 → Rat)
+      ordered ([1, 2] : List (Fin 3)))
 example : summaryOf (replay rawTriangle 2 twoBirths) =
     .ok (5, 7, [2, 3, 4, 3, 2], [1, 2, 4, 3/2, 1/3], 24/805) := by
   prepareReplaySeed rawTriangle atSize 3
