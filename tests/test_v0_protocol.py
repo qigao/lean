@@ -5,6 +5,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -44,26 +46,35 @@ def test_frozen_synthetic_protocol_has_fixed_evaluation_boundary():
     assert protocol["success_threshold"] is not None
 
 
-def test_real_protocol_template_freezes_design_but_remains_non_executable(tmp_path: Path):
-    template = ROOT / "protocols" / "v0-real-template.json"
-    protocol = json.loads(template.read_text(encoding="utf-8"))
+@pytest.mark.parametrize("protocol_name", ["v0-real-template.json", "v0-real-ntu120-preflight.json"])
+def test_real_protocol_freezes_design_but_remains_non_executable(tmp_path: Path, protocol_name: str):
+    config = ROOT / "protocols" / protocol_name
+    protocol = _load(protocol_name)
 
     assert protocol["dataset_id"].startswith("NTU-RGB+D-120")
     assert protocol["yolo_version"] == "ultralytics-yolo26n-pose"
     assert protocol["flywire_release"] == "FAFB-v783"
     assert protocol["flywire_source_commit"] == "0d8574d46627ce7fadd968a3c5d602e837325373"
     assert protocol["flywire_connectivity_git_blob_sha1"] == "5183755ecbb41d5c8cee1a4a2d99b8eecba75c52"
+    # These values were measured by the pinned-source provenance CI, not placeholders.
+    assert protocol["flywire_connectivity_sha256"] == "215cf7a65895f9f84768db34052964542f7ebbe986ce9864b7e9ed2976c55e38"
+    assert protocol["selected_graph_fingerprint"] == "a7088c8590aa10d6b204c2b11ad51d5f7889dc10ea25b68ffcf24794b06d692d"
+    assert protocol["selected_graph_num_nodes"] == 187
+    assert protocol["selected_graph_num_edges"] == 14542
+    assert protocol["selected_graph_num_diagonal_edges"] == 126
+    assert protocol["final_test_used_for_selection"] is False
 
-    for field in (
-        "split_hash",
-        "observation_schema_hash",
-        "flywire_connectivity_sha256",
-    ):
+    # Freezing FlyWire provenance does not supply the missing real-data inputs.
+    for field in ("split_hash", "observation_schema_hash"):
         assert protocol[field] is None
 
-    result = _run_compare(template, tmp_path)
+    output = tmp_path / "out"
+    result = _run_compare(config, output)
     assert result.returncode != 0
     assert "freeze" in result.stderr.lower() or "required" in result.stderr.lower()
+    assert "split_hash" in result.stderr
+    assert "observation_schema_hash" in result.stderr
+    assert not output.exists(), "rejected protocols must not emit evidence artifacts"
 
 
 def test_real_topology_claim_rejects_missing_byte_level_flywire_provenance(tmp_path: Path):
