@@ -342,10 +342,46 @@ theorem path8_positive_mass (out : ReplayResult)
     (h : replay pathSeed 1 pathBirths = .ok out) : 0 < out.probability :=
   replay_probability_pos pathSeed 1 pathBirths out h
 
-/-- Check all 64 ordered adjacency pairs of the actual replay successor. -/
+/-- Expose only the four adjacency cases, using the actual birth laws. -/
+private theorem birthAdjFn {n m : Nat} (s : State n) (T : Targets n m)
+    (hm : 0 < m) (eta : PosFitness) :
+    (applyBirth s T hm eta).snapshot.graph.Adj =
+      Fin.lastCases (Fin.lastCases False (fun v => v ∈ T.selected))
+        (fun u => Fin.lastCases (u ∈ T.selected) (fun v => s.snapshot.graph.Adj u v)) := by
+  funext u v
+  apply propext
+  refine Fin.lastCases ?_ (fun a => ?_) u
+  · refine Fin.lastCases ?_ (fun b => ?_) v
+    · simp only [Fin.lastCases_last]
+      exact ⟨(applyBirth s T hm eta).snapshot.graph.loopless.irrefl _, False.elim⟩
+    · simp only [Fin.lastCases_last, Fin.lastCases_castSucc]
+      exact birth_new_adj_iff_rev s T hm eta b
+  · refine Fin.lastCases ?_ (fun b => ?_) v
+    · simp only [Fin.lastCases_last, Fin.lastCases_castSucc]
+      exact birth_new_adj_iff s T hm eta a
+    · simp only [Fin.lastCases_castSucc]
+      exact birth_old_adj_iff s T hm eta a b
+
+private theorem lastTarget_selected (n : Nat) :
+    (lastTarget n).selected = {Fin.last n} := by
+  ext u
+  simp [Targets.selected, lastTarget]
+
+/-- The four seed pairs are checked once, independently of later proof records. -/
+private theorem path2AdjFn : path2State.snapshot.graph.Adj =
+    fun u v : Fin 2 => u.val + 1 = v.val ∨ v.val + 1 = u.val := by
+  funext u v
+  apply propext
+  letI := path2State.snapshot.adjDec
+  fin_cases u <;> fin_cases v <;> decide_cbv
+
+/-- Check all 64 ordered pairs after exposing the actual successor adjacency fields. -/
 theorem path8_adj (u v : Fin 8) : path8State.snapshot.graph.Adj u v ↔
     u.val + 1 = v.val ∨ v.val + 1 = u.val := by
-  letI := path8State.snapshot.adjDec
+  rw [path8State, birthAdjFn, path7State, birthAdjFn,
+    path6State, birthAdjFn, path5State, birthAdjFn,
+    path4State, birthAdjFn, path3State, birthAdjFn, path2AdjFn]
+  simp only [lastTarget_selected]
   fin_cases u <;> fin_cases v <;> decide_cbv
 
 theorem path8_walk_seven_exact :
@@ -379,7 +415,7 @@ theorem path8_no_six :
   have hlabel := path8_walk_label_bound walk
   omega
 
-def path8_bounded :
+theorem path8_bounded :
     ∃ limit, GlobalHopBound path8State.snapshot.graph.Adj limit :=
   ⟨7, by simpa using state_bounded path8State⟩
 
