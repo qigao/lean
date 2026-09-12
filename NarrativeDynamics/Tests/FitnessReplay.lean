@@ -211,33 +211,23 @@ private theorem triangleBirth12Accepted (s : State rawTriangle.nodeCount) :
 #print axioms triangleBirth12Accepted
 
 /-- Expose only the stable data preserved by the accepted `[1, 2]` request. -/
-private theorem triangleBirth12Data (s : State rawTriangle.nodeCount)
-    (v : ValidatedBirth rawTriangle.nodeCount 2)
+private theorem triangleBirth12Data (s : State 3)
+    (v : ValidatedBirth 3 2)
     (h : validateBirth s 2 (⟨3/2, #[1, 2]⟩ : RawBirth) = .ok v) :
     v.targets.ordered = ([1, 2] : List (Fin 3)) ∧
       v.targets.selected = ({1, 2} : Finset (Fin 3)) ∧
       v.fitness.val = 3/2 := by
-  have hm : 0 < 2 ∧ 2 ≤ rawTriangle.nodeCount := by decide
-  have hf : 0 < (3/2 : Rat) := by norm_num
-  have hs : (#[1, 2] : Array Nat).size = 2 := rfl
-  have hb : targetsBounded rawTriangle.nodeCount (#[1, 2] : Array Nat) := by decide
-  have hd : targetsDistinct (#[1, 2] : Array Nat) := by decide
-  let concrete : ValidatedBirth rawTriangle.nodeCount 2 :=
-    ⟨hs ▸ (⟨hb, hd⟩ : CheckedTargets rawTriangle.nodeCount
-      (#[1, 2] : Array Nat)).embedding, ⟨3/2, hf⟩, hm.1⟩
-  have hconcrete :
-      validateBirth s 2 (⟨3/2, #[1, 2]⟩ : RawBirth) = .ok concrete := by
-    simp only [validateBirth, dif_pos hm, dif_pos hf, dif_pos hs,
-      checkTargets, dif_pos hb, dif_pos hd, concrete]
-  have hv : v = concrete := Except.ok.inj (h.symm.trans hconcrete)
-  subst v
-  have hordered :
-      concrete.targets.ordered = ([1, 2] : List (Fin 3)) := by
-    dsimp only [concrete]
-    rw [checkedTargetsOrdered]
-    decide_cbv
-  refine ⟨hordered, ?_, rfl⟩
-  rw [selected_eq_ordered_toFinset, hordered]
+  obtain ⟨hfitness, hs, hvalues⟩ :=
+    validateBirth_values s (⟨3/2, #[1, 2]⟩ : RawBirth) v h
+  have htargets : (v.targets : Fin 2 → Fin 3) = ![1, 2] := by
+    funext i
+    fin_cases i
+    · exact Fin.ext (hvalues (0 : Fin 2))
+    · exact Fin.ext (hvalues (1 : Fin 2))
+  have hordered : v.targets.ordered = ([1, 2] : List (Fin 3)) :=
+    (congrArg (fun f : Fin 2 → Fin 3 => List.ofFn f) htargets).trans (by decide_cbv)
+  refine ⟨hordered, ?_, hfitness⟩
+  rewrite [selected_eq_ordered_toFinset, hordered]
   decide_cbv
 
 #print axioms triangleBirth12Data
@@ -281,7 +271,6 @@ private theorem rawTriangleWeights :
 private theorem triangleBirth12Nodes (s : State rawTriangle.nodeCount)
     (v : ValidatedBirth rawTriangle.nodeCount 2) :
     actualNodeCount (applyBirth s v.targets v.positive v.fitness).snapshot = 4 := by
-  rw [birth_nodes]
   simp only [actualNodeCount, Fintype.card_fin, rawTriangle]
 
 #print axioms triangleBirth12Nodes
@@ -290,7 +279,9 @@ private theorem triangleBirth12Edges (s : State rawTriangle.nodeCount)
     (v : ValidatedBirth rawTriangle.nodeCount 2)
     (hseed : parseSeed rawTriangle = .ok s) :
     actualEdgeCount (applyBirth s v.targets v.positive v.fitness).snapshot = 5 := by
-  rw [birth_edges, triangleSeedSnapshot s hseed, rawTriangleEdgeCount]
+  rewrite (transparency := .default)
+    [birth_edges, triangleSeedSnapshot s hseed, rawTriangleEdgeCount]
+  rfl
 
 #print axioms triangleBirth12Edges
 
@@ -301,7 +292,8 @@ private theorem triangleBirth12Degrees (s : State rawTriangle.nodeCount)
     List.ofFn (degree (applyBirth s v.targets v.positive v.fitness).snapshot) =
       [2, 3, 3, 2] := by
   obtain ⟨_, hselected, _⟩ := triangleBirth12Data s v hbirth
-  rw [birthDegreeFn, triangleSeedSnapshot s hseed, rawTriangleDegree, hselected]
+  rewrite (transparency := .default)
+    [birthDegreeFn, triangleSeedSnapshot s hseed, rawTriangleDegree, hselected]
   decide_cbv
 
 #print axioms triangleBirth12Degrees
@@ -313,7 +305,8 @@ private theorem triangleBirth12Fitness (s : State rawTriangle.nodeCount)
     List.ofFn (applyBirth s v.targets v.positive v.fitness).snapshot.fitness =
       [1, 2, 4, 3/2] := by
   obtain ⟨_, _, hfitness⟩ := triangleBirth12Data s v hbirth
-  rw [birthFitnessFn, triangleSeedSnapshot s hseed, hfitness]
+  rewrite (transparency := .default)
+    [birthFitnessFn, triangleSeedSnapshot s hseed, hfitness]
   decide_cbv
 
 #print axioms triangleBirth12Fitness
@@ -325,7 +318,8 @@ private theorem triangleBirth12Mass (s : State rawTriangle.nodeCount)
     orderedMass s v.targets = 8/35 := by
   obtain ⟨hordered, _, _⟩ := triangleBirth12Data s v hbirth
   unfold orderedMass
-  rw [triangleSeedSnapshot s hseed, rawTriangleWeights, hordered]
+  rewrite (transparency := .default)
+    [triangleSeedSnapshot s hseed, rawTriangleWeights, hordered]
   exact triangleTrace12
 
 #print axioms triangleBirth12Mass
