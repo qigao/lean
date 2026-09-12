@@ -31,6 +31,16 @@ class PointSequence:
         if any(len(frame.points) != expected for frame in self.frames[1:]):
             raise ValueError("keypoint count must remain constant across frames")
 
+    def shifted(self, dx: float, dy: float) -> "PointSequence":
+        return PointSequence(
+            frames=tuple(
+                KeypointFrame(
+                    points=tuple((x + dx, y + dy, confidence) for x, y, confidence in frame.points)
+                )
+                for frame in self.frames
+            )
+        )
+
 
 @dataclass(frozen=True)
 class LabeledSequence:
