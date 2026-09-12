@@ -40,6 +40,13 @@ macro "prepareReplaySeed " raw:term " atSize " size:term : tactic =>
      simp only [replay, parseSeed, dif_pos hn, dif_pos hs, dif_pos hf,
        dif_pos he, dif_pos hd, dif_pos hc]))
 
+-- Stage the same birth guards as the verified single-step fixtures. This
+-- rewrites actual validators before evaluating any proof-carrying successor.
+macro "prepareReplayBirths" : tactic =>
+  `(tactic|
+    simp (disch := decide_cbv) only
+      [twoBirths, runBirths, step, validateBirth, checkTargets, if_pos, dif_pos])
+
 section ExactReplayFixtures
 set_option maxRecDepth 4096
 
@@ -51,14 +58,17 @@ example : summaryOf (replay rawTriangle 2 []) =
 example : summaryOf (replay rawTriangle 2 [⟨3/2, #[2, 1]⟩]) =
     .ok (4, 5, [2, 3, 3, 2], [1, 2, 4, 3/2], 8/21) := by
   prepareReplaySeed rawTriangle atSize 3
+  prepareReplayBirths
   decide_cbv
 example : summaryOf (replay rawTriangle 2 [⟨3/2, #[1, 2]⟩]) =
     .ok (4, 5, [2, 3, 3, 2], [1, 2, 4, 3/2], 8/35) := by
   prepareReplaySeed rawTriangle atSize 3
+  prepareReplayBirths
   decide_cbv
 example : summaryOf (replay rawTriangle 2 twoBirths) =
     .ok (5, 7, [2, 3, 4, 3, 2], [1, 2, 4, 3/2, 1/3], 24/805) := by
   prepareReplaySeed rawTriangle atSize 3
+  prepareReplayBirths
   decide_cbv
 
 -- All fitness values, not only the seed, must receive the same scale.
@@ -66,10 +76,12 @@ example : summaryOf (replay ⟨3, #[2, 4, 8], rawTriangle.edges⟩ 2
     [⟨3, #[2, 1]⟩, ⟨2/3, #[3, 2]⟩]) =
     .ok (5, 7, [2, 3, 4, 3, 2], [2, 4, 8, 3, 2/3], 24/805) := by
   prepareReplaySeed (⟨3, #[2, 4, 8], rawTriangle.edges⟩ : RawSeed) atSize 3
+  prepareReplayBirths
   decide_cbv
 example : summaryOf (replay ⟨3, #[2, 4, 8], rawTriangle.edges⟩ 2 twoBirths) =
     .ok (5, 7, [2, 3, 4, 3, 2], [2, 4, 8, 3/2, 1/3], 24/1505) := by
   prepareReplaySeed (⟨3, #[2, 4, 8], rawTriangle.edges⟩ : RawSeed) atSize 3
+  prepareReplayBirths
   decide_cbv
 
 -- Constant fitness 3 and the unit-fitness BA specialization have equal laws.
@@ -77,10 +89,12 @@ example : summaryOf (replay ⟨3, #[3, 3, 3], rawTriangle.edges⟩ 2
     [⟨3, #[2, 1]⟩, ⟨3, #[3, 2]⟩]) =
     .ok (5, 7, [2, 3, 4, 3, 2], [3, 3, 3, 3, 3], 1/80) := by
   prepareReplaySeed (⟨3, #[3, 3, 3], rawTriangle.edges⟩ : RawSeed) atSize 3
+  prepareReplayBirths
   decide_cbv
 example : summaryOf (replay unitTriangle 2 [⟨1, #[2, 1]⟩, ⟨1, #[3, 2]⟩]) =
     .ok (5, 7, [2, 3, 4, 3, 2], [1, 1, 1, 1, 1], 1/80) := by
   prepareReplaySeed unitTriangle atSize 3
+  prepareReplayBirths
   decide_cbv
 
 -- Arbitrary valid seed and m equal to the INITIAL size across several births.
@@ -88,11 +102,13 @@ example : summaryOf (replay ⟨2, #[1, 1], #[(1, 0)]⟩ 1
     [⟨1, #[1]⟩, ⟨1, #[2]⟩]) =
     .ok (4, 3, [1, 2, 2, 1], [1, 1, 1, 1], 1/8) := by
   prepareReplaySeed (⟨2, #[1, 1], #[(1, 0)]⟩ : RawSeed) atSize 2
+  prepareReplayBirths
   decide_cbv
 example : summaryOf (replay rawTriangle 3
     [⟨1, #[0, 1, 2]⟩, ⟨1, #[1, 2, 3]⟩]) =
     .ok (5, 9, [3, 4, 4, 4, 3], [1, 2, 4, 1, 1], 1/252) := by
   prepareReplaySeed rawTriangle atSize 3
+  prepareReplayBirths
   decide_cbv
 
 -- Empty input is not a validation bypass; seed errors precede invalid initial m.
