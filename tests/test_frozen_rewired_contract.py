@@ -1,7 +1,6 @@
 """Freeze measured controls without treating graph provenance as recognition evidence."""
 from __future__ import annotations
 
-import copy
 import hashlib
 import json
 from pathlib import Path
@@ -174,4 +173,5 @@ def test_provenance_rejects_well_formed_but_wrong_fingerprints_without_output(tm
 
 def test_synthetic_contract_is_not_silently_upgraded_to_real_evidence():
     config = _load("v0-synthetic.json")
-    assert _validate_frozen_protocol(config) == ("gru", "random_graph", "rewired", "flywire")
+    assert config["claim"] == "temporal_model_useful"
+    assert _validate_frozen_protocol(config) == ("gru",)
