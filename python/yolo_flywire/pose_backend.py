@@ -19,7 +19,7 @@ def runtime_versions() -> dict[str, str]:
 
 
 def prediction_options() -> dict[str, Any]:
-    return {"imgsz": 640, "conf": 0.25, "iou": 0.7, "device": "cpu", "half": False,
+    return {"imgsz": 640, "conf": 0.25, "iou": 0.7, "device": "cpu", "quantize": 32,
             "batch": 1, "rect": False, "augment": False, "max_det": 300, "classes": [0],
             "save": False, "save_txt": False, "save_conf": False, "save_crop": False,
             "show": False, "visualize": False, "verbose": False, "stream": False}

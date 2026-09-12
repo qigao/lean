@@ -16,7 +16,9 @@ def offline(monkeypatch, tmp_path):
         raise AssertionError("integration fixtures must not download models or data")
     monkeypatch.setattr(socket.socket, "connect", forbidden)
     monkeypatch.setattr(socket.socket, "connect_ex", forbidden)
-    monkeypatch.setenv("YOLO_CONFIG_DIR", str(tmp_path / "ultralytics-config"))
+    config_dir = tmp_path / "ultralytics-config"
+    (config_dir / "Ultralytics").mkdir(parents=True)
+    monkeypatch.setenv("YOLO_CONFIG_DIR", str(config_dir))
     monkeypatch.setenv("YOLO_AUTOINSTALL", "false")
     monkeypatch.setenv("YOLO_OFFLINE", "true")
 
@@ -66,7 +68,12 @@ def test_real_untrained_model_and_extractor_are_repeatable_and_keep_test_sealed(
 
     # The YAML resolves within the installed package. Network access is blocked.
     weights = tmp_path / "yolo26n-pose.pt"
-    YOLO("yolo26n-pose.yaml", task="pose").save(str(weights))
+    fixture_model = YOLO("yolo26n-pose.yaml", task="pose")
+    # PoseTrainer.set_model_attributes supplies this metadata in trained checkpoints.
+    # Build a complete untrained fixture before hashing; never repair production inputs.
+    assert fixture_model.model.yaml["kpt_shape"] == [17, 3]
+    fixture_model.model.kpt_shape = [17, 3]
+    fixture_model.save(str(weights))
     versions = runtime_versions()
     spec = ExtractionSpec(
         weights_sha256=hashlib.sha256(weights.read_bytes()).hexdigest(),
