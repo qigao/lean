@@ -114,6 +114,15 @@ private theorem birthWeightsFn {n m : Nat} (s : State n) (T : Targets n m)
   unfold weights
   rw [birthFitnessFn s T hm eta, birthDegreeFn s T hm eta]
 
+/-- A checked request preserves the authoritative raw order without carrying size casts
+into the numerical trace. -/
+private theorem checkedTargetsOrdered {n m : Nat} (xs : Array Nat)
+    (hs : xs.size = m) (hb : targetsBounded n xs) (hd : targetsDistinct xs) :
+    Targets.ordered (hs ▸ (⟨hb, hd⟩ : CheckedTargets n xs).embedding) =
+      List.ofFn (fun i : Fin xs.size => ⟨xs[i.val], hb i⟩) := by
+  subst m
+  rfl
+
 #print axioms runBirthsNil
 #print axioms summaryOk
 #print axioms birthDegreeFn
@@ -123,6 +132,7 @@ private theorem birthWeightsFn {n m : Nat} (s : State n) (T : Targets n m)
 #print axioms triangleSeedWeightsFn
 #print axioms edgeSeedWeightsFn
 #print axioms birthWeightsFn
+#print axioms checkedTargetsOrdered
 
 end NarrativeDynamics.FitnessAttachment.ReplayFixtures
 
@@ -213,7 +223,7 @@ macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num : tac
        trace "replay-fixture result: fitness evaluation"
        decide_cbv
      · trace "replay-fixture result: probability"
-       simp only [ReplayResult.probability, mul_one, orderedMass]
+       simp only [ReplayResult.probability, mul_one, orderedMass, checkedTargetsOrdered]
        $probability:tactic))
 
 section ExactReplayFixtures
