@@ -214,8 +214,8 @@ private theorem triangleBirth12Accepted (s : State rawTriangle.nodeCount) :
 private theorem triangleBirth12Data (s : State rawTriangle.nodeCount)
     (v : ValidatedBirth rawTriangle.nodeCount 2)
     (h : validateBirth s 2 (⟨3/2, #[1, 2]⟩ : RawBirth) = .ok v) :
-    v.targets.ordered = ([1, 2] : List (Fin rawTriangle.nodeCount)) ∧
-      v.targets.selected = ({1, 2} : Finset (Fin rawTriangle.nodeCount)) ∧
+    v.targets.ordered = ([1, 2] : List (Fin 3)) ∧
+      v.targets.selected = ({1, 2} : Finset (Fin 3)) ∧
       v.fitness.val = 3/2 := by
   have hm : 0 < 2 ∧ 2 ≤ rawTriangle.nodeCount := by decide
   have hf : 0 < (3/2 : Rat) := by norm_num
@@ -232,7 +232,7 @@ private theorem triangleBirth12Data (s : State rawTriangle.nodeCount)
   have hv : v = concrete := Except.ok.inj (h.symm.trans hconcrete)
   subst v
   have hordered :
-      concrete.targets.ordered = ([1, 2] : List (Fin rawTriangle.nodeCount)) := by
+      concrete.targets.ordered = ([1, 2] : List (Fin 3)) := by
     dsimp only [concrete]
     rw [checkedTargetsOrdered]
     decide_cbv
