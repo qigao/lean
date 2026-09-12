@@ -74,7 +74,7 @@ jobs:
       - name: Install explicit extraction test dependencies
         run: python -m pip install --only-binary=av -e "./python[dev]" "ultralytics==8.4.146" "av==15.1.0"
       - name: Exercise actual decoder and untrained local model without network
-        run: python -m pytest integration/test_pose_backend.py -q -s
+        run: python -m pytest integration -q -s
 
   flywire-provenance:
     name: Freeze FlyWire provenance
