@@ -175,7 +175,7 @@ private theorem rawTriangleConnected : (seedGraph rawTriangle).Connected where
         fin_cases u <;> fin_cases v <;>
           simp_all [seedGraph, rawTriangle, canonicalEdge]
       exact ⟨.cons huv .nil⟩
-  nonempty := inferInstance
+  nonempty := ⟨⟨0, by decide⟩⟩
 
 #print axioms rawTriangleConnected
 
