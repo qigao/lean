@@ -164,6 +164,182 @@ private theorem triangleTrace12 :
     traceMass (![2, 4, 8] : Fin 3 → Rat) ∅ [1, 2] = 8/35 := by
   decide_cbv
 
+/-- Seal the concrete parser proof before replay composition uses its dependent state. -/
+private theorem triangleSeedAccepted :
+    ∃ s : State rawTriangle.nodeCount, parseSeed rawTriangle = .ok s := by
+  have hn : 2 ≤ rawTriangle.nodeCount := by decide
+  have hs : rawTriangle.fitness.size = rawTriangle.nodeCount := rfl
+  have hf : positiveSeedFitness rawTriangle := by decide
+  have he : validSeedEdges rawTriangle := by decide
+  have hd : (rawTriangle.edges.toList.map canonicalEdge).Nodup := by decide
+  have hc : ∀ b,
+      b ∈ reached (seedSnapshot rawTriangle hs)
+        (⟨0, by have := hn; omega⟩ : Fin rawTriangle.nodeCount)
+        (rawTriangle.nodeCount - 1) := by
+    change ∀ b : Fin 3,
+      b ∈ reached (seedSnapshot rawTriangle rfl) (0 : Fin 3) 2
+    decide
+  refine ⟨_, ?_⟩
+  simp only [parseSeed, dif_pos hn, dif_pos hs, dif_pos hf,
+    dif_pos he, dif_pos hd, dif_pos hc]
+
+#print axioms triangleSeedAccepted
+
+/-- Keep the accepted state abstract while exposing only its authoritative snapshot. -/
+private theorem triangleSeedSnapshot (s : State rawTriangle.nodeCount)
+    (h : parseSeed rawTriangle = .ok s) :
+    s.snapshot = seedSnapshot rawTriangle rfl := by
+  obtain ⟨hs, hsnapshot⟩ := parseSeed_snapshot rawTriangle s h
+  simpa using hsnapshot
+
+#print axioms triangleSeedSnapshot
+
+/-- Seal the concrete validator proof before its dependent target embedding is consumed. -/
+private theorem triangleBirth12Accepted (s : State rawTriangle.nodeCount) :
+    ∃ v : ValidatedBirth rawTriangle.nodeCount 2,
+      validateBirth s 2 (⟨3/2, #[1, 2]⟩ : RawBirth) = .ok v := by
+  apply validateBirth_complete
+  exact ⟨by decide, by norm_num, rfl, by decide, by decide⟩
+
+#print axioms triangleBirth12Accepted
+
+/-- Expose only the stable data preserved by the accepted `[1, 2]` request. -/
+private theorem triangleBirth12Data (s : State rawTriangle.nodeCount)
+    (v : ValidatedBirth rawTriangle.nodeCount 2)
+    (h : validateBirth s 2 (⟨3/2, #[1, 2]⟩ : RawBirth) = .ok v) :
+    v.targets.ordered = ([1, 2] : List (Fin rawTriangle.nodeCount)) ∧
+      v.targets.selected = ({1, 2} : Finset (Fin rawTriangle.nodeCount)) ∧
+      v.fitness.val = 3/2 := by
+  have hm : 0 < 2 ∧ 2 ≤ rawTriangle.nodeCount := by decide
+  have hf : 0 < (3/2 : Rat) := by norm_num
+  have hs : (#[1, 2] : Array Nat).size = 2 := rfl
+  have hb : targetsBounded rawTriangle.nodeCount (#[1, 2] : Array Nat) := by decide
+  have hd : targetsDistinct (#[1, 2] : Array Nat) := by decide
+  let concrete : ValidatedBirth rawTriangle.nodeCount 2 :=
+    ⟨hs ▸ (⟨hb, hd⟩ : CheckedTargets rawTriangle.nodeCount
+      (#[1, 2] : Array Nat)).embedding, ⟨3/2, hf⟩, hm.1⟩
+  have hconcrete :
+      validateBirth s 2 (⟨3/2, #[1, 2]⟩ : RawBirth) = .ok concrete := by
+    simp only [validateBirth, dif_pos hm, dif_pos hf, dif_pos hs,
+      checkTargets, dif_pos hb, dif_pos hd, concrete]
+  have hv : v = concrete := Except.ok.inj (h.symm.trans hconcrete)
+  subst v
+  have hordered :
+      concrete.targets.ordered = ([1, 2] : List (Fin rawTriangle.nodeCount)) := by
+    dsimp only [concrete]
+    rw [checkedTargetsOrdered]
+    decide_cbv
+  refine ⟨hordered, ?_, rfl⟩
+  rw [selected_eq_ordered_toFinset, hordered]
+  decide_cbv
+
+#print axioms triangleBirth12Data
+
+/-- Unfold raw replay once with abstract parser and validator witnesses. -/
+private theorem replayOneBirth {seed : RawSeed} {m : Nat} {raw : RawBirth}
+    (s : State seed.nodeCount) (v : ValidatedBirth seed.nodeCount m)
+    (hseed : parseSeed seed = .ok s)
+    (hm : 0 < m ∧ m ≤ seed.nodeCount)
+    (hbirth : validateBirth s m raw = .ok v) :
+    replay seed m [raw] =
+      .ok ⟨⟨seed.nodeCount + 1,
+        applyBirth s v.targets v.positive v.fitness⟩,
+        orderedMass s v.targets⟩ := by
+  simp only [replay, hseed, if_pos hm, runBirths, step, hbirth, mul_one]
+
+#print axioms replayOneBirth
+
+private theorem rawTriangleEdgeCount :
+    actualEdgeCount (seedSnapshot rawTriangle rfl) = 3 := by
+  decide_cbv
+
+#print axioms rawTriangleEdgeCount
+
+private theorem rawTriangleDegree :
+    degree (seedSnapshot rawTriangle rfl) = (![2, 2, 2] : Fin 3 → Nat) := by
+  simpa only [rawTriangle] using
+    (triangleSeedDegreeFn (#[1, 2, 4] : Array Rat) rfl)
+
+#print axioms rawTriangleDegree
+
+private theorem rawTriangleWeights :
+    weights (seedSnapshot rawTriangle rfl) = (![2, 4, 8] : Fin 3 → Rat) := by
+  simpa only [rawTriangle] using
+    (triangleSeedWeightsVector (fitness := (#[1, 2, 4] : Array Rat))
+      (hs := rfl) (out := (![2, 4, 8] : Fin 3 → Rat))
+      (h := by funext i; fin_cases i <;> decide_cbv))
+
+#print axioms rawTriangleWeights
+
+private theorem triangleBirth12Nodes (s : State rawTriangle.nodeCount)
+    (v : ValidatedBirth rawTriangle.nodeCount 2) :
+    actualNodeCount (applyBirth s v.targets v.positive v.fitness).snapshot = 4 := by
+  rw [birth_nodes]
+  simp only [actualNodeCount, Fintype.card_fin, rawTriangle]
+
+#print axioms triangleBirth12Nodes
+
+private theorem triangleBirth12Edges (s : State rawTriangle.nodeCount)
+    (v : ValidatedBirth rawTriangle.nodeCount 2)
+    (hseed : parseSeed rawTriangle = .ok s) :
+    actualEdgeCount (applyBirth s v.targets v.positive v.fitness).snapshot = 5 := by
+  rw [birth_edges, triangleSeedSnapshot s hseed, rawTriangleEdgeCount]
+
+#print axioms triangleBirth12Edges
+
+private theorem triangleBirth12Degrees (s : State rawTriangle.nodeCount)
+    (v : ValidatedBirth rawTriangle.nodeCount 2)
+    (hseed : parseSeed rawTriangle = .ok s)
+    (hbirth : validateBirth s 2 (⟨3/2, #[1, 2]⟩ : RawBirth) = .ok v) :
+    List.ofFn (degree (applyBirth s v.targets v.positive v.fitness).snapshot) =
+      [2, 3, 3, 2] := by
+  obtain ⟨_, hselected, _⟩ := triangleBirth12Data s v hbirth
+  rw [birthDegreeFn, triangleSeedSnapshot s hseed, rawTriangleDegree, hselected]
+  decide_cbv
+
+#print axioms triangleBirth12Degrees
+
+private theorem triangleBirth12Fitness (s : State rawTriangle.nodeCount)
+    (v : ValidatedBirth rawTriangle.nodeCount 2)
+    (hseed : parseSeed rawTriangle = .ok s)
+    (hbirth : validateBirth s 2 (⟨3/2, #[1, 2]⟩ : RawBirth) = .ok v) :
+    List.ofFn (applyBirth s v.targets v.positive v.fitness).snapshot.fitness =
+      [1, 2, 4, 3/2] := by
+  obtain ⟨_, _, hfitness⟩ := triangleBirth12Data s v hbirth
+  rw [birthFitnessFn, triangleSeedSnapshot s hseed, hfitness]
+  decide_cbv
+
+#print axioms triangleBirth12Fitness
+
+private theorem triangleBirth12Mass (s : State rawTriangle.nodeCount)
+    (v : ValidatedBirth rawTriangle.nodeCount 2)
+    (hseed : parseSeed rawTriangle = .ok s)
+    (hbirth : validateBirth s 2 (⟨3/2, #[1, 2]⟩ : RawBirth) = .ok v) :
+    orderedMass s v.targets = 8/35 := by
+  obtain ⟨hordered, _, _⟩ := triangleBirth12Data s v hbirth
+  unfold orderedMass
+  rw [triangleSeedSnapshot s hseed, rawTriangleWeights, hordered]
+  exact triangleTrace12
+
+#print axioms triangleBirth12Mass
+
+/-- Compose opaque field facts without rechecking concrete parser/validator terms. -/
+private theorem triangleBirth12Summary (s : State rawTriangle.nodeCount)
+    (v : ValidatedBirth rawTriangle.nodeCount 2)
+    (hseed : parseSeed rawTriangle = .ok s)
+    (hbirth : validateBirth s 2 (⟨3/2, #[1, 2]⟩ : RawBirth) = .ok v) :
+    summaryOf (.ok ⟨⟨rawTriangle.nodeCount + 1,
+      applyBirth s v.targets v.positive v.fitness⟩,
+      orderedMass s v.targets⟩) =
+      .ok (4, 5, [2, 3, 3, 2], [1, 2, 4, 3/2], 8/35) := by
+  apply (summaryOk _ _ _ _ _ _).mpr
+  exact ⟨triangleBirth12Nodes s v, triangleBirth12Edges s v hseed,
+    triangleBirth12Degrees s v hseed hbirth,
+    triangleBirth12Fitness s v hseed hbirth,
+    triangleBirth12Mass s v hseed hbirth⟩
+
+#print axioms triangleBirth12Summary
+
 #print axioms runBirthsNil
 #print axioms summaryOk
 #print axioms birthDegreeFn
@@ -330,12 +506,10 @@ example : summaryOf (replay rawTriangle 2 [⟨3/2, #[2, 1]⟩]) =
       ordered ([2, 1] : List (Fin 3)) massProof triangleTrace21)
 example : summaryOf (replay rawTriangle 2 [⟨3/2, #[1, 2]⟩]) =
     .ok (4, 5, [2, 3, 3, 2], [1, 2, 4, 3/2], 8/35) := by
-  prepareReplaySeed rawTriangle atSize 3
-  prepareReplayBirth rawTriangle.nodeCount withM 2
-    fitness (3/2) targets #[1, 2]
-  finishReplaySummary 3 withM 2 births 1 probability
-    (proveReplayProbability1 atSize 3 seedWeights (![2, 4, 8] : Fin 3 → Rat)
-      ordered ([1, 2] : List (Fin 3)) massProof triangleTrace12)
+  obtain ⟨s, hseed⟩ := triangleSeedAccepted
+  obtain ⟨v, hbirth⟩ := triangleBirth12Accepted s
+  rw [replayOneBirth s v hseed (by decide) hbirth]
+  exact triangleBirth12Summary s v hseed hbirth
 example : summaryOf (replay rawTriangle 2 twoBirths) =
     .ok (5, 7, [2, 3, 4, 3, 2], [1, 2, 4, 3/2, 1/3], 24/805) := by
   prepareReplaySeed rawTriangle atSize 3
