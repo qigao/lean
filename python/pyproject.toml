@@ -17,6 +17,7 @@ yolo-flywire = "yolo_flywire.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+pose = ["ultralytics==8.4.146", "av==15.1.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["../tests"]
