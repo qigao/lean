@@ -121,20 +121,54 @@ def _arm_family(arm: Any) -> str:
     raise ValueError("each protocol arm must be a family string or an object with a family field")
 
 
-def compare(config_path: Path, output: Path) -> int:
-    config = json.loads(config_path.read_text(encoding="utf-8"))
+def _validate_frozen_protocol(config: dict[str, Any]) -> tuple[str, ...]:
+    required = (
+        "dataset_id",
+        "split_hash",
+        "observation_schema_hash",
+        "seeds",
+        "budget",
+        "primary_metric",
+        "success_threshold",
+        "final_test_used_for_selection",
+    )
+    missing = [name for name in required if config.get(name) is None]
+    if missing:
+        raise ValueError("protocol must freeze required fields before execution: " + ", ".join(missing))
+    if config["final_test_used_for_selection"] is not False:
+        raise ValueError("final test must remain sealed from model selection")
+    seeds = config["seeds"]
+    if not isinstance(seeds, list) or not seeds:
+        raise ValueError("protocol requires an explicit non-empty seed list")
     arms = config.get("arms")
     if not isinstance(arms, list) or not arms:
         raise ValueError("comparison protocol requires an explicit non-empty arms list")
     families = tuple(_arm_family(arm) for arm in arms)
+
     claim = config.get("claim", "temporal_model_useful")
     if claim == "topology_specific_advantage":
+        topology_required = ("yolo_version", "flywire_release", "selection_rule", "rewiring_algorithm")
+        topology_missing = [name for name in topology_required if config.get(name) is None]
+        if topology_missing:
+            raise ValueError(
+                "topology protocol must freeze required provenance before execution: "
+                + ", ".join(topology_missing)
+            )
         family_set = set(families)
         if "flywire" not in family_set or "rewired" not in family_set:
             raise ValueError("topology-specific claim requires matched flywire and rewired controls before training")
+    return families
 
-    # Task 8 establishes the protocol boundary. Task 9 freezes executable V0
-    # protocol values before any real final-test comparison is permitted.
+
+def compare(config_path: Path, output: Path) -> int:
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    if not isinstance(config, dict):
+        raise ValueError("protocol config must be a JSON object")
+    families = _validate_frozen_protocol(config)
+    claim = config.get("claim", "temporal_model_useful")
+
+    # Task 9 freezes protocol boundaries before real final-test execution.
+    # This command records validation only; it does not claim empirical evidence.
     output.mkdir(parents=True, exist_ok=True)
     record = {
         "kind": "comparison_protocol_validation",
