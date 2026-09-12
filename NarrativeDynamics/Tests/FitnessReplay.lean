@@ -380,7 +380,8 @@ private theorem validatedBirthEquation {n m index : Nat} (s : State n)
           ⟨n + 1, applyBirth s v.targets v.positive v.fitness⟩ rest with
       | .error e => .error e
       | .ok out => .ok ⟨out.final, orderedMass s v.targets * out.probability⟩ := by
-  simp only [replay_step, step, h]
+  rewrite [replay_step, step, h]
+  rfl
 
 private theorem rawEdgeConnected :
     (seedGraph (⟨2, #[1, 1], #[(1, 0)]⟩ : RawSeed)).Connected where
@@ -462,16 +463,19 @@ macro "prepareAcceptedReplaySeed " raw:term " atSize " size:num " as " s:ident :
   else
     `(tactic| exact rawEdgeConnected)
   `(tactic|
-    (have hvalid : ($raw : RawSeed).Valid := by
+    (trace "replay-fixture seed: abstract witness start"
+     have hvalid : ($raw : RawSeed).Valid := by
        exact ⟨by decide, rfl, by decide, by decide, by decide, by $connected:tactic⟩
      obtain ⟨$s, hseed⟩ := parseSeed_complete $raw hvalid
      obtain ⟨hs, hsnapshot⟩ := parseSeed_snapshot $raw $s hseed
-     simp only [replay, hseed]))
+     simp only [replay, hseed]
+     trace "replay-fixture seed: abstract witness done"))
 
 macro "prepareAcceptedReplayBirth " n:term " withM " m:term
     " fitness " eta:term " targets " xs:term " from " s:term " as " v:ident : tactic =>
   `(tactic|
-    (have hm : 0 < $m ∧ $m ≤ $n := by decide
+    (trace "replay-fixture birth: abstract witness start"
+     have hm : 0 < $m ∧ $m ≤ $n := by decide
      have hf : 0 < ($eta : Rat) := by norm_num
      have hs : ($xs : Array Nat).size = $m := rfl
      have hb : targetsBounded $n $xs := by decide
@@ -480,10 +484,11 @@ macro "prepareAcceptedReplayBirth " n:term " withM " m:term
        (show RawBirth.Valid (⟨$eta, $xs⟩ : RawBirth) $n $m from ⟨hm, hf, hs, hb, hd⟩)
      obtain ⟨hordered, hfitness⟩ :=
        validatedTargetsData $s (⟨$eta, $xs⟩ : RawBirth) $v hbirth hb
-     have hselected := (selected_eq_ordered_toFinset $v.targets).trans
+     have hselected := (selected_eq_ordered_toFinset ($v).targets).trans
        (congrArg List.toFinset hordered)
      simp only [twoBirths, if_pos hm]
-     rewrite [validatedBirthEquation $s (⟨$eta, $xs⟩ : RawBirth) _ $v hbirth]))
+     rewrite [validatedBirthEquation $s (⟨$eta, $xs⟩ : RawBirth) _ $v hbirth]
+     trace "replay-fixture birth: abstract witness done"))
 
 macro "proveReplayProbability1 " "atSize " size:num " seedWeights " seedW:term : tactic => do
   let rewriteSeed ← if size.getNat == 3 then
