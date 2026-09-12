@@ -290,6 +290,7 @@ macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num
        decide_cbv
      · trace "replay-fixture result: probability"
        simp only [ReplayResult.probability, mul_one, orderedMass, checkedTargetsOrdered]
+       simp only [rawTriangle, unitTriangle]
        $probability:tactic))
 
 section ExactReplayFixtures
