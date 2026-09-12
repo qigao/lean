@@ -1,12 +1,17 @@
 {
   "protocol_id": "v0-real-template",
   "claim": "topology_specific_advantage",
-  "dataset_id": null,
-  "yolo_version": null,
+  "frozen_preflight": "protocols/v0-real-ntu120-preflight.json",
+  "dataset_id": "NTU-RGB+D-120:official-rosem-lab-release:RGB:10-class-motion-subset",
+  "yolo_version": "ultralytics-yolo26n-pose",
   "split_hash": null,
   "observation_schema_hash": null,
-  "flywire_release": null,
-  "selection_rule": null,
+  "flywire_release": "FAFB-v783",
+  "flywire_source_commit": "0d8574d46627ce7fadd968a3c5d602e837325373",
+  "flywire_connectivity_path": "data/type_to_type_connection_and_synapse_counts.csv",
+  "flywire_connectivity_git_blob_sha1": "5183755ecbb41d5c8cee1a4a2d99b8eecba75c52",
+  "flywire_connectivity_sha256": null,
+  "selection_rule": "type-level seeds T4a,T4b,T4c,T4d,T5a,T5b,T5c,T5d; add visual types with >=5 aggregate incoming synapses from any seed; induced directed graph; aggregate synapse-count weights; lexicographic node order",
   "seeds": [7, 11, 19, 23, 31],
   "budget": {
     "epochs": 20,
@@ -26,7 +31,7 @@
     "keypoint_noise_macro_f1",
     "keypoint_mask_macro_f1"
   ],
-  "success_threshold": null,
+  "success_threshold": 0.02,
   "final_test_used_for_selection": false,
-  "evidence_scope": "generic_non_executable_template; see protocols/v0-real-ntu120-preflight.json for the frozen Phase 2 candidate"
+  "evidence_scope": "non_executable_until_all_null_fields_are_frozen"
 }
