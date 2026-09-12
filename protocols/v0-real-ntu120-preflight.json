@@ -1,0 +1,55 @@
+{
+  "protocol_id": "v0-real-ntu120-preflight",
+  "claim": "topology_specific_advantage",
+  "dataset_id": "NTU-RGB+D-120:official-rosem-lab-release:RGB:10-class-motion-subset",
+  "dataset_content_hash": null,
+  "task_labels": [
+    "A8:sitting_down",
+    "A9:standing_up",
+    "A22:cheer_up",
+    "A23:hand_waving",
+    "A26:hopping",
+    "A27:jump_up",
+    "A31:pointing",
+    "A34:rub_two_hands_together",
+    "A35:nod_head_or_bow",
+    "A36:shake_head"
+  ],
+  "split_rule": "official-xsub120-outer-boundary; validation=deterministic-subject-hash-from-training-side-only",
+  "split_hash": null,
+  "yolo_version": "ultralytics-yolo26n-pose",
+  "ultralytics_package_version": null,
+  "yolo_weights": "yolo26n-pose.pt",
+  "yolo_weights_sha256": null,
+  "observation_schema": "coco17-xy-confidence+person-confidence; no-byte-track; no-depth; no-ntu-skeleton-input",
+  "observation_schema_hash": null,
+  "flywire_release": "FAFB-v783",
+  "flywire_source": "murthylab/visual-system-parts-list",
+  "flywire_source_commit": null,
+  "flywire_connectivity_sha256": null,
+  "selection_rule": "type-level seeds T4a,T4b,T4c,T4d,T5a,T5b,T5c,T5d; add visual types with >=5 aggregate incoming synapses from any seed; induced directed graph; aggregate synapse-count weights; lexicographic node order",
+  "selected_graph_fingerprint": null,
+  "seeds": [7, 11, 19, 23, 31],
+  "budget": {
+    "epochs": 20,
+    "max_updates": 40,
+    "parameter_ceiling": 50000
+  },
+  "arms": [
+    {"family": "gru", "topology": "dense"},
+    {"family": "random_graph", "topology": "random_sparse"},
+    {"family": "rewired", "topology": "rewired"},
+    {"family": "flywire", "topology": "connectome"}
+  ],
+  "rewiring_algorithm": "directed-double-edge-swap-v1",
+  "primary_metric": "macro_f1",
+  "secondary_metrics": [
+    "balanced_accuracy",
+    "keypoint_noise_macro_f1",
+    "keypoint_mask_macro_f1"
+  ],
+  "success_threshold": 0.02,
+  "success_rule": "mean paired flywire-minus-rewired macro_f1 >= 0.02 and positive paired difference in at least 4 of 5 seeds",
+  "final_test_used_for_selection": false,
+  "evidence_scope": "preflight_only_until_all_null_provenance_and_hash_fields_are_frozen"
+}
