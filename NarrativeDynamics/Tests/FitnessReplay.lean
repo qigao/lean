@@ -142,7 +142,7 @@ macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num : tac
     `(tactic|
       (rewrite [birthDegreeFn (n := ($n + 1)) (m := $m)]
        rewrite [birthDegreeFn (n := $n) (m := $m)]))
-  let fitness ← if rounds.getNat == 1 then
+  let fitnessTac ← if rounds.getNat == 1 then
     `(tactic| rewrite [birthFitnessFn (n := $n) (m := $m)])
   else
     `(tactic|
@@ -171,7 +171,7 @@ macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num : tac
        trace "replay-fixture result: degrees evaluation"
        decide_cbv
      · trace "replay-fixture result: fitness rewrite"
-       $fitness
+       $fitnessTac
        trace "replay-fixture result: fitness evaluation"
        decide_cbv
      · trace "replay-fixture result: probability"
