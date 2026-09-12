@@ -35,17 +35,21 @@ The learned equations, parameter names/counts, graph adjacency, edge orientation
 
 `PoseBatch` has frozen fields but mutable tensors. Each padded model call therefore checks the object, dense CPU tensor layouts, feature float32 / length int64 / mask bool dtypes, positive batch/time dimensions, 121 input channels matching the model, length bounds, and exact prefix-mask agreement. It also requires finite feature values and zero feature rows outside the observed mask. Wrong shapes, sparse/meta inputs, stale masks, interior mask holes, zero-length examples and dirty padding are rejected with `ValueError` before recurrence, rather than silently repaired or shortened. Dense noncontiguous feature views are accepted without detaching gradients.
 
+Every call also verifies that all model parameters and buffers are CPU float32, including the readout and nonpersistent graph adjacency. This applies to both padded methods, even when only a hidden representation is requested. A mismatched or subsequently mutated model raises `ValueError` before recurrent computation; the gate never casts parameters, transfers devices or replaces graph state.
+
 This shared check validates tensor structure and the padding boundary. It does **not** re-encode geometry, infer an encoder threshold from rounded confidences, verify file hashes, validate class targets, or establish split membership. Upstream bundle verification and feature/collation contracts remain required. Callers must not mutate batch tensors or model state concurrently with execution. Supporting other devices, mixed precision, compilation/export, distributed wrappers or model-level forward hooks through this explicit method is outside this verified slice.
 
 ## Verification and remaining work
 
 ```bash
-python -m pytest tests/test_padded_models.py -q -W error
+python -m pytest tests/test_padded_models.py tests/test_padded_model_state.py -q -W error
 python -m pytest tests -q
 python -m pytest integration/test_pose_backend.py -q -s
 ```
 
 The focused suite checks both classifier implementations against individual unpadded runs, caller permutation and batch companions, analytic nonzero missing-frame recurrence, padding-invariant forward/backward behavior, early malformed-batch rejection, graph active-step accounting and unchanged model/input state. The real-library smoke extends generated-video extraction, timed bundle reading, COCO17 encoding and split-separated collation through both padded classifier paths. Its YOLO checkpoint and classifiers are untrained, and the graph is a tiny fixture; this is not real NTU recognition or real FlyWire-versus-rewired evidence.
+
+Supplemental runtime tests cover whole-model and individual-component dtype/device mismatches, including changes after a valid call. Positive controls verify exact padding-invariant SGD and Adam parameter updates without replacing parameter objects, and verify that loading shared learned parameters does not replace the graph experimental condition. These bounded optimizer checks are not a real-data training run.
 
 The existing `forward(x)` and `encode(x)` remain the fixed-length V0/synthetic paths. They do not infer padding and are not a fallback from the padded API. The existing `train_model`/`evaluate`/real `compare` plumbing is **not** upgraded by these methods. A real development runner must explicitly carry complete batches, keep labels aligned and outside features, enforce common budgets/seeds, and use validation-only checkpoint selection. It must never pass only `batch.features` to the fixed-length training path and call that variable-length support.
 

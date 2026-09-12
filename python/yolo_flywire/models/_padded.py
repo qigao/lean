@@ -6,7 +6,7 @@ import torch
 from ..pose_batches import PoseBatch
 
 
-def validate_pose_batch(batch: PoseBatch, *, input_dim: int) -> None:
+def validate_pose_batch(batch: PoseBatch, *, input_dim: int, model: torch.nn.Module) -> None:
     """Reject malformed mutable tensors before recurrence; never infer lengths.
 
     This checks padding structure, not source provenance or the float64 encoder's
@@ -36,3 +36,8 @@ def validate_pose_batch(batch: PoseBatch, *, input_dim: int) -> None:
         raise ValueError("features must be finite, including padding")
     if torch.any(features[~mask] != 0).item():
         raise ValueError("feature rows outside the observed prefix must be zero padding")
+    # Model state is mutable too: check every parameter and buffer, including
+    # the readout and nonpersistent graph adjacency, before any recurrent work.
+    for tensor in (*model.parameters(), *model.buffers()):
+        if tensor.device.type != "cpu" or tensor.dtype != torch.float32:
+            raise ValueError("padded execution requires a CPU float32 model")

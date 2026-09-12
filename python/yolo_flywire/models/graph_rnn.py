@@ -58,7 +58,7 @@ class GraphRecurrentClassifier(nn.Module):
 
     def encode_padded(self, batch: PoseBatch) -> torch.Tensor:
         """Run the original recurrence only for actual observed sample steps."""
-        validate_pose_batch(batch, input_dim=self.input_projection.in_features)
+        validate_pose_batch(batch, input_dim=self.input_projection.in_features, model=self)
         x = batch.features
         state = x.new_zeros((x.shape[0], self.num_nodes, self.node_dim))
         for time_index in range(int(batch.lengths.max().item())):

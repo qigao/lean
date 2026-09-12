@@ -23,7 +23,7 @@ class GRUClassifier(nn.Module):
 
     def encode_padded(self, batch: PoseBatch) -> torch.Tensor:
         """Return the last observed state in caller order, without padding steps."""
-        validate_pose_batch(batch, input_dim=self.gru.input_size)
+        validate_pose_batch(batch, input_dim=self.gru.input_size, model=self)
         packed = pack_padded_sequence(
             batch.features, batch.lengths, batch_first=True, enforce_sorted=False,
         )
