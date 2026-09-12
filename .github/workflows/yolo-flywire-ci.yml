@@ -105,18 +105,6 @@ jobs:
           node_types = tuple(sorted(selected))
           remap = {name: index for index, name in enumerate(node_types)}
 
-          selected_self_rows = [
-              (src, dst, weight)
-              for src, dst, weight in rows
-              if src in selected and dst in selected and src == dst and weight > 0
-          ]
-          if selected_self_rows:
-              preview = selected_self_rows[:10]
-              raise SystemExit(
-                  "selected type graph contains type-self connectivity; "
-                  f"V0 graph semantics must be resolved before fingerprinting: {preview}"
-              )
-
           aggregate = {}
           for src, dst, weight in rows:
               if src not in selected or dst not in selected or weight <= 0:
@@ -128,6 +116,7 @@ jobs:
               (int(src), int(dst), float(weight))
               for (src, dst), weight in aggregate.items()
           )
+          diagonal_edges = sum(src == dst for src, dst, _ in canonical_edges)
           payload = {"num_nodes": len(node_types), "edges": canonical_edges}
           encoded = json.dumps(
               payload,
@@ -140,6 +129,8 @@ jobs:
               "node_types": node_types,
               "num_nodes": len(node_types),
               "num_edges": len(canonical_edges),
+              "num_diagonal_edges": diagonal_edges,
+              "diagonal_edge_semantics": "within-cell-type population connectivity, not neuron autapses",
               "graph_fingerprint": fingerprint,
               "seed_types": seeds,
               "min_seed_synapses": 5,
@@ -150,6 +141,7 @@ jobs:
           with open("flywire-provenance.txt", "a", encoding="utf-8") as handle:
               handle.write(f"selected_nodes={len(node_types)}\n")
               handle.write(f"selected_edges={len(canonical_edges)}\n")
+              handle.write(f"selected_diagonal_edges={diagonal_edges}\n")
               handle.write(f"selected_graph_fingerprint={fingerprint}\n")
           print(json.dumps(graph_record, indent=2))
           PY
