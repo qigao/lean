@@ -63,6 +63,29 @@ def test_actual_libraries_through_pinned_binding_and_all_four_arms(tmp_path, mon
         # Generated fixtures pin after separate preparation, not a real-data freeze.
         prepared = load_pose_development(output, **options)
         assert set(prepared.train.observations.lengths.tolist()) == {1, 2, 3}
+        # Indexed reads are checked against the existing eager binding, not used
+        # to imply that the trainer itself is already streaming.
+        from yolo_flywire.pose_index import index_development_bundle
+        from yolo_flywire.pose_features import encode_timed_pose
+        from yolo_flywire.pose_batches import collate_pose_features
+        import torch
+        indexed = index_development_bundle(output, root=root, inventory=inventory,
+            spec=extraction_spec, expected_manifest_sha256=options["expected_manifest_sha256"])
+        for split in ("train", "validation"):
+            part = getattr(prepared, split)
+            for order in ((7, 0, 4), (9,)):
+                samples = indexed.read_samples(split=split, indices=order)
+                assert tuple(sample.sample_id for sample in samples) == tuple(part.sample_ids[i] for i in order)
+                batch = collate_pose_features(tuple(encode_timed_pose(
+                    sample.sequence, pts=sample.pts, time_bases=sample.time_bases,
+                    detector_confidences=sample.detector_confidences, spec=feature_spec,
+                ) for sample in samples))
+                rows = torch.tensor(order, dtype=torch.int64)
+                steps = int(batch.lengths.max().item())
+                assert torch.equal(batch.features, part.observations.features.index_select(0, rows)[:, :steps])
+                assert torch.equal(batch.lengths, part.observations.lengths.index_select(0, rows))
+                assert torch.equal(batch.time_mask, part.observations.time_mask.index_select(0, rows)[:, :steps])
+        indexed.verify()
         reports.append(comparison.run_pose_comparison(output, **options, **graphs,
             expected_binding_sha256=prepared.binding_sha256, config=config))
         prepared.verify()
