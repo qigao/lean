@@ -569,6 +569,7 @@ macro "proveReplayProbability2 " "atSize " size:num " seedWeights " seedW:term
 
 macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num
     " probability " probability:tactic : tactic => do
+  let roundCount := Lean.quote rounds.getNat
   let degrees ← if rounds.getNat == 1 then
     `(tactic| rewrite (transparency := .default) [birthDegreeFn (n := $n) (m := $m) (hm := by decide)])
   else
@@ -594,6 +595,7 @@ macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num
        rewriteReplayFacts
        decideReplayValue
      · trace "replay-fixture result: degrees rewrite"
+       change List.ofFn (n := $n + $roundCount) _ = _
        $degrees:tactic
        rewriteReplayFacts
        first | rewrite (transparency := .default) [triangleSeedDegreeFn (hs := by decide)]
@@ -601,6 +603,7 @@ macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num
        trace "replay-fixture result: degrees evaluation"
        decideReplayValue
      · trace "replay-fixture result: fitness rewrite"
+       change List.ofFn (n := $n + $roundCount) _ = _
        $fitnessTac:tactic
        rewriteReplayFacts
        trace "replay-fixture result: fitness evaluation"
