@@ -1,4 +1,4 @@
-"""Model lifetime and eager equivalence on generated development fixtures only."""
+"""Model lifetime and indexed/eager equivalence on generated development fixtures only."""
 from dataclasses import asdict
 import gc
 import weakref
@@ -8,6 +8,8 @@ import torch
 
 from test_pose_comparison import comparison_case, extracted, _api, _run, _spec, FAMILIES
 from integration.pose_comparison_fixture import graph_inputs
+from yolo_flywire.pose_development import load_pose_development
+from yolo_flywire.pose_training import evaluate_padded, train_padded_model
 
 
 @pytest.mark.parametrize("seeds", ((7,), (7, 11), (7, 11, 19, 23, 31)))
@@ -44,9 +46,15 @@ def test_only_one_model_is_resident_independent_of_seed_count(comparison_case, t
 
 
 def _eager_reference_rows(case, config):
-    """Previous eager construction order, with the unmodified actual trainer/evaluator."""
+    """Previous eager training values as an independent oracle for the indexed runner."""
     api = _api()
-    _, options, prepared = case
+    bundle, options, indexed = case
+    prepared = load_pose_development(
+        bundle, root=options["root"], inventory=options["inventory"],
+        extraction_spec=options["extraction_spec"], feature_spec=options["feature_spec"],
+        classes=options["classes"], expected_manifest_sha256=options["expected_manifest_sha256"],
+        expected_encoder_hash=options["expected_encoder_hash"],
+    )
     selection, _, rewired = api._graph_inputs(
         options["topology_protocol"], options["connectivity"], options["controls"],
         options["expected_topology_sha256"], options["expected_controls_sha256"], config,
@@ -67,18 +75,19 @@ def _eager_reference_rows(case, config):
             pending.append((seed, family, model, training, fingerprint))
     rows = []
     for seed, family, model, training, fingerprint in pending:
-        run = api.train_padded_model(model, prepared.train, prepared.validation, training)
+        run = train_padded_model(model, prepared.train, prepared.validation, training)
         rows.append({
-            "seed": seed, "family": family, "input_binding_sha256": prepared.binding_sha256,
+            "seed": seed, "family": family, "input_binding_sha256": indexed.binding_sha256,
             "parameter_count": sum(p.numel() for p in model.parameters()),
             "topology_fingerprint": fingerprint, "adjacency_sha256": api._adjacency_hash(model),
             "state_hash": run.state_hash, "best_epoch": run.best_epoch,
-            "validation_metrics": asdict(api.evaluate_padded(
+            "validation_metrics": asdict(evaluate_padded(
                 model, prepared.validation, batch_size=config.batch_size)),
             "optimizer_steps": run.optimizer_steps, "epoch_order_hashes": list(run.epoch_order_hashes),
             "training_config": asdict(training), "training_config_hash": api._hash_json(asdict(training)),
         })
     prepared.verify()
+    indexed.verify(expected_binding_sha256=indexed.binding_sha256)
     return rows
 
 
@@ -106,7 +115,7 @@ def test_last_preflight_model_failure_still_prevents_all_training(comparison_cas
         raise AssertionError("late preflight failure must precede every optimization")
 
     monkeypatch.setattr(api.GraphRecurrentClassifier, "__init__", initialize)
-    monkeypatch.setattr(api, "train_padded_model", forbidden)
+    monkeypatch.setattr(api, "train_indexed_model", forbidden)
     with pytest.raises(ValueError):
         _run(comparison_case)
     assert len(constructions) == 6 and updates == []
@@ -130,7 +139,7 @@ def test_reconstruction_drift_is_rejected_before_affected_arm_training(
                         self.adjacency[0, 0] += 1
         return initialize
 
-    actual = api.train_padded_model
+    actual = api.train_indexed_model
     def train(*args, **kwargs):
         result = actual(*args, **kwargs)
         trained.append(1)
@@ -138,7 +147,7 @@ def test_reconstruction_drift_is_rejected_before_affected_arm_training(
 
     for kind in (api.GRUClassifier, api.GraphRecurrentClassifier):
         monkeypatch.setattr(kind, "__init__", alter(kind.__init__))
-    monkeypatch.setattr(api, "train_padded_model", train)
+    monkeypatch.setattr(api, "train_indexed_model", train)
     with pytest.raises(ValueError, match="preflight"):
         _run(comparison_case)
     assert len(trained) == completed_arms
