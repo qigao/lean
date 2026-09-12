@@ -213,10 +213,10 @@ macro "prepareReplayBirth " n:term " withM " m:term
 
 macro "proveReplayProbability1 " "atSize " size:num " seedWeights " seedW:term : tactic => do
   let rewriteSeed ← if size.getNat == 3 then
-    `(tactic| rewrite [triangleSeedWeightsVector (out := $seedW)
+    `(tactic| rewrite (transparency := .default) [triangleSeedWeightsVector (out := $seedW)
       (h := by funext i; fin_cases i <;> decide_cbv)])
   else
-    `(tactic| rewrite [edgeSeedWeightsVector (out := $seedW)
+    `(tactic| rewrite (transparency := .default) [edgeSeedWeightsVector (out := $seedW)
       (h := by funext i; fin_cases i <;> decide_cbv)])
   `(tactic|
     ($rewriteSeed:tactic
@@ -225,7 +225,7 @@ macro "proveReplayProbability1 " "atSize " size:num " seedWeights " seedW:term :
 macro "proveReplayProbability2 " "atSize " size:num " seedWeights " seedW:term
     " selected " selected:term " nextWeights " nextW:term : tactic => do
   let rewriteBirth ← if size.getNat == 3 then
-    `(tactic| rewrite [birthWeightsVector
+    `(tactic| rewrite (transparency := .default) [birthWeightsVector
       (deg := (![2, 2, 2] : Fin 3 → Nat))
       (selected := $selected) (out := $nextW)
       (hdeg := by exact triangleSeedDegreeFn _ (by decide))
@@ -234,7 +234,7 @@ macro "proveReplayProbability2 " "atSize " size:num " seedWeights " seedW:term
         decide_cbv)
       (hout := by funext v; fin_cases v <;> decide_cbv)])
   else
-    `(tactic| rewrite [birthWeightsVector
+    `(tactic| rewrite (transparency := .default) [birthWeightsVector
       (deg := (![1, 1] : Fin 2 → Nat))
       (selected := $selected) (out := $nextW)
       (hdeg := by exact edgeSeedDegreeFn _ (by decide))
@@ -243,10 +243,10 @@ macro "proveReplayProbability2 " "atSize " size:num " seedWeights " seedW:term
         decide_cbv)
       (hout := by funext v; fin_cases v <;> decide_cbv)])
   let rewriteSeed ← if size.getNat == 3 then
-    `(tactic| rewrite [triangleSeedWeightsVector (out := $seedW)
+    `(tactic| rewrite (transparency := .default) [triangleSeedWeightsVector (out := $seedW)
       (h := by funext i; fin_cases i <;> decide_cbv)])
   else
-    `(tactic| rewrite [edgeSeedWeightsVector (out := $seedW)
+    `(tactic| rewrite (transparency := .default) [edgeSeedWeightsVector (out := $seedW)
       (h := by funext i; fin_cases i <;> decide_cbv)])
   `(tactic|
     ($rewriteBirth:tactic
