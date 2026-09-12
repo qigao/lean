@@ -155,6 +155,15 @@ private theorem selected_eq_ordered_toFinset {n m : Nat} (T : Targets n m) :
   ext j
   simp [Targets.selected, Targets.ordered]
 
+/-- Keep concrete rational normalization behind an opaque kernel boundary. -/
+private theorem triangleTrace21 :
+    traceMass (![2, 4, 8] : Fin 3 → Rat) ∅ [2, 1] = 8/21 := by
+  decide_cbv
+
+private theorem triangleTrace12 :
+    traceMass (![2, 4, 8] : Fin 3 → Rat) ∅ [1, 2] = 8/35 := by
+  decide_cbv
+
 #print axioms runBirthsNil
 #print axioms summaryOk
 #print axioms birthDegreeFn
@@ -169,6 +178,8 @@ private theorem selected_eq_ordered_toFinset {n m : Nat} (T : Targets n m) :
 #print axioms birthWeightsVector
 #print axioms checkedTargetsOrdered
 #print axioms selected_eq_ordered_toFinset
+#print axioms triangleTrace21
+#print axioms triangleTrace12
 
 end NarrativeDynamics.FitnessAttachment.ReplayFixtures
 
@@ -212,7 +223,7 @@ macro "prepareReplayBirth " n:term " withM " m:term
      trace "replay-fixture birth: checked rewrite done"))
 
 macro "proveReplayProbability1 " "atSize " size:num " seedWeights " seedW:term
-    " ordered " ordered:term : tactic => do
+    " ordered " ordered:term " massProof " massProof:term : tactic => do
   let rewriteSeed ← if size.getNat == 3 then
     `(tactic| rewrite (transparency := .default) [triangleSeedWeightsVector (out := $seedW)
       (h := by funext i; fin_cases i <;> decide_cbv)])
@@ -224,9 +235,8 @@ macro "proveReplayProbability1 " "atSize " size:num " seedWeights " seedW:term
      $rewriteSeed:tactic
      trace "replay-fixture probability: canonical target"
      change traceMass $seedW ∅ $ordered = _
-     trace "replay-fixture probability: numeric evaluation"
-     decide_cbv
-     trace "replay-fixture probability: numeric evaluation done"))
+     trace "replay-fixture probability: opaque numeric proof"
+     exact $massProof))
 
 macro "proveReplayProbability2 " "atSize " size:num " seedWeights " seedW:term
     " selected " selected:term " nextWeights " nextW:term : tactic => do
@@ -317,7 +327,7 @@ example : summaryOf (replay rawTriangle 2 [⟨3/2, #[2, 1]⟩]) =
     fitness (3/2) targets #[2, 1]
   finishReplaySummary 3 withM 2 births 1 probability
     (proveReplayProbability1 atSize 3 seedWeights (![2, 4, 8] : Fin 3 → Rat)
-      ordered ([2, 1] : List (Fin 3)))
+      ordered ([2, 1] : List (Fin 3)) massProof triangleTrace21)
 example : summaryOf (replay rawTriangle 2 [⟨3/2, #[1, 2]⟩]) =
     .ok (4, 5, [2, 3, 3, 2], [1, 2, 4, 3/2], 8/35) := by
   prepareReplaySeed rawTriangle atSize 3
@@ -325,7 +335,7 @@ example : summaryOf (replay rawTriangle 2 [⟨3/2, #[1, 2]⟩]) =
     fitness (3/2) targets #[1, 2]
   finishReplaySummary 3 withM 2 births 1 probability
     (proveReplayProbability1 atSize 3 seedWeights (![2, 4, 8] : Fin 3 → Rat)
-      ordered ([1, 2] : List (Fin 3)))
+      ordered ([1, 2] : List (Fin 3)) massProof triangleTrace12)
 example : summaryOf (replay rawTriangle 2 twoBirths) =
     .ok (5, 7, [2, 3, 4, 3, 2], [1, 2, 4, 3/2, 1/3], 24/805) := by
   prepareReplaySeed rawTriangle atSize 3
