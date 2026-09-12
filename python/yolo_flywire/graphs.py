@@ -25,8 +25,6 @@ class DirectedGraph:
         for source, target in edges:
             if not (0 <= source < self.num_nodes and 0 <= target < self.num_nodes):
                 raise ValueError("edge endpoint is outside node range")
-            if source == target:
-                raise ValueError("self-loops are not allowed")
         if any(not np.isfinite(value) for value in self.weight):
             raise ValueError("edge weights must be finite")
 
@@ -74,6 +72,13 @@ def rewire_degree_preserving(
     *,
     max_attempt_factor: int = 100,
 ) -> DirectedGraph:
+    """Directed double-edge swaps preserving degrees, weights, and diagonal-edge count.
+
+    A diagonal edge is valid for a type/population graph: it represents aggregate
+    connectivity among distinct neurons of the same cell type, not a neuron autapse.
+    Each accepted swap therefore preserves the number of diagonal edges in the
+    selected pair in addition to the directed in/out degree sequence.
+    """
     if swaps < 0:
         raise ValueError("swaps must be non-negative")
     if swaps == 0:
@@ -99,7 +104,9 @@ def rewire_degree_preserving(
 
         proposed_one = (a, d)
         proposed_two = (c, b)
-        if proposed_one[0] == proposed_one[1] or proposed_two[0] == proposed_two[1]:
+        old_loop_count = int(a == b) + int(c == d)
+        new_loop_count = int(a == d) + int(c == b)
+        if new_loop_count != old_loop_count:
             continue
         if proposed_one == proposed_two:
             continue
