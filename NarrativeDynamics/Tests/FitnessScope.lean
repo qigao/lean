@@ -345,6 +345,7 @@ theorem path8_positive_mass (out : ReplayResult)
 /-- Check all 64 ordered adjacency pairs of the actual replay successor. -/
 theorem path8_adj (u v : Fin 8) : path8State.snapshot.graph.Adj u v ↔
     u.val + 1 = v.val ∨ v.val + 1 = u.val := by
+  letI := path8State.snapshot.adjDec
   fin_cases u <;> fin_cases v <;> decide_cbv
 
 theorem path8_walk_seven_exact :
