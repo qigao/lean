@@ -164,8 +164,42 @@ def _expected_orders(part: PosePartition, seed: int, epochs: int) -> tuple[str, 
         len(part.sample_ids), generator=generator, device="cpu").tolist()]) for _ in range(epochs))
 
 
+@dataclass(frozen=True)
+class _ArmPlan:
+    """Preflight evidence and reconstruction inputs; never model/tensor ownership."""
+
+    seed: int
+    family: str
+    graph: DirectedGraph | None
+    training: TrainConfig
+    orders: tuple[str, ...]
+    parameter_count: int
+    topology_fingerprint: str
+    adjacency_sha256: str | None
+    initial_state_hash: str
+
+
+def _construct_arm_model(family: str, graph: DirectedGraph | None,
+                         config: PoseComparisonSpec, classes: int, seed: int) -> PaddedModel:
+    with _seeded_cpu(seed), torch.device("cpu"):
+        if family == "gru" and graph is None:
+            return GRUClassifier(_INPUT_DIM, config.gru_hidden_dim, classes)
+        if family in _FAMILIES[1:] and type(graph) is DirectedGraph:
+            return GraphRecurrentClassifier(_INPUT_DIM, graph, config.graph_node_dim, classes)
+    raise ValueError("unsupported preflight arm construction")
+
+
+def _validate_arm_model(model: PaddedModel, prepared: PreparedPoseDevelopment,
+                        training: TrainConfig, parameter_count: int) -> None:
+    for role in ("train", "validation"):
+        _validate_partition(model, getattr(prepared, role), role)
+    _validate_config(model, training)
+    if sum(p.numel() for p in model.parameters()) != parameter_count:
+        raise ValueError("constructed model parameter count differs from the preflight architecture")
+
+
 def _preflight_models(prepared: PreparedPoseDevelopment, graph: DirectedGraph,
-                      rewired: dict[int, DirectedGraph], config: PoseComparisonSpec):
+                      rewired: dict[int, DirectedGraph], config: PoseComparisonSpec) -> tuple[_ArmPlan, ...]:
     size, classes = len(prepared.train.sample_ids), len(prepared.train.classes)
     updates = config.epochs * ((size + config.batch_size - 1) // config.batch_size)
     if config.max_updates != updates:
@@ -184,18 +218,57 @@ def _preflight_models(prepared: PreparedPoseDevelopment, graph: DirectedGraph,
                                batch_size=config.batch_size, parameter_ceiling=config.parameter_ceiling)
         orders = _expected_orders(prepared.train, seed, config.epochs)
         for family in _FAMILIES:
-            with _seeded_cpu(seed), torch.device("cpu"):
-                model = (GRUClassifier(_INPUT_DIM, h, classes) if family == "gru" else
-                         GraphRecurrentClassifier(_INPUT_DIM, variants[family], d, classes))
-            for role in ("train", "validation"):
-                _validate_partition(model, getattr(prepared, role), role)
-            _validate_config(model, training)
-            count = sum(p.numel() for p in model.parameters())
-            if count != counts["gru" if family == "gru" else "graph"]:
-                raise ValueError("constructed model parameter count differs from the declared architecture")
-            fingerprint = "none" if family == "gru" else graph_fingerprint(variants[family])
-            plans.append((seed, family, model, training, orders, count, fingerprint, _adjacency_hash(model)))
-    return plans
+            topology = None if family == "gru" else variants[family]
+            model = _construct_arm_model(family, topology, config, classes, seed)
+            count = counts["gru" if family == "gru" else "graph"]
+            _validate_arm_model(model, prepared, training, count)
+            fingerprint = "none" if family == "gru" else graph_fingerprint(topology)
+            plans.append(_ArmPlan(seed, family, topology, training, orders, count, fingerprint,
+                                  _adjacency_hash(model), _state_hash(model)))
+            # Do not keep the previous model alive while allocating the next one.
+            del model
+    return tuple(plans)
+
+
+def _execute_arm(plan: _ArmPlan, prepared: PreparedPoseDevelopment,
+                 config: PoseComparisonSpec, pin: str) -> dict[str, Any]:
+    """Keep each model and trained-run handle local to one completed arm."""
+    seed, family, training, orders = plan.seed, plan.family, plan.training, plan.orders
+    count, fingerprint, adjacency = (plan.parameter_count, plan.topology_fingerprint,
+                                      plan.adjacency_sha256)
+    model = _construct_arm_model(family, plan.graph, config, len(prepared.train.classes), seed)
+    _validate_arm_model(model, prepared, training, count)
+    if _state_hash(model) != plan.initial_state_hash or _adjacency_hash(model) != adjacency:
+        raise ValueError("reconstructed model differs from its preflight state or adjacency")
+    _LOGGER.info("seed=%s family=%s start epochs=%s updates=%s", seed, family,
+                 config.epochs, config.max_updates)
+    prepared.verify()
+    run = train_padded_model(model, prepared.train, prepared.validation, training)
+    prepared.verify()
+    if (run.model is not model or type(run.optimizer_steps) is not int
+            or run.optimizer_steps != config.max_updates or run.epoch_order_hashes != orders):
+        raise ValueError("arm execution differs from the required model/update/sample-order condition")
+    if type(run.best_epoch) is not int or not 1 <= run.best_epoch <= config.epochs:
+        raise ValueError("selected epoch is outside the full training budget")
+    if _state_hash(model) != run.state_hash or _adjacency_hash(model) != adjacency:
+        raise ValueError("selected learned state or fixed adjacency changed")
+    metrics = asdict(evaluate_padded(model, prepared.validation, batch_size=config.batch_size))
+    if (any(type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 1
+            for v in metrics.values()) or metrics["macro_f1"] != run.best_validation_macro_f1):
+        raise ValueError("selected checkpoint validation metrics are invalid or inconsistent")
+    prepared.verify()
+    if _state_hash(model) != run.state_hash or _adjacency_hash(model) != adjacency:
+        raise ValueError("validation changed selected learned state or fixed adjacency")
+    row = {
+        "seed": seed, "family": family, "input_binding_sha256": pin,
+        "parameter_count": count, "topology_fingerprint": fingerprint,
+        "adjacency_sha256": adjacency, "state_hash": run.state_hash,
+        "best_epoch": run.best_epoch, "validation_metrics": metrics,
+        "optimizer_steps": run.optimizer_steps, "epoch_order_hashes": list(run.epoch_order_hashes),
+        "training_config": asdict(training), "training_config_hash": _hash_json(asdict(training)),
+    }
+    _LOGGER.info("seed=%s family=%s completed updates=%s", seed, family, run.optimizer_steps)
+    return row
 
 
 def run_pose_comparison(
@@ -228,36 +301,7 @@ def run_pose_comparison(
     if prepared.binding_sha256 != pin:
         raise ValueError("prepared binding does not match the independent pin")
     plans = _preflight_models(prepared, selection.graph, rewired, config)
-    rows = []
-    for seed, family, model, training, orders, count, fingerprint, adjacency in plans:
-        _LOGGER.info("seed=%s family=%s start epochs=%s updates=%s", seed, family,
-                     config.epochs, config.max_updates)
-        prepared.verify()
-        run = train_padded_model(model, prepared.train, prepared.validation, training)
-        prepared.verify()
-        if (run.model is not model or type(run.optimizer_steps) is not int
-                or run.optimizer_steps != config.max_updates or run.epoch_order_hashes != orders):
-            raise ValueError("arm execution differs from the required model/update/sample-order condition")
-        if type(run.best_epoch) is not int or not 1 <= run.best_epoch <= config.epochs:
-            raise ValueError("selected epoch is outside the full training budget")
-        if _state_hash(model) != run.state_hash or _adjacency_hash(model) != adjacency:
-            raise ValueError("selected learned state or fixed adjacency changed")
-        metrics = asdict(evaluate_padded(model, prepared.validation, batch_size=config.batch_size))
-        if (any(type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 1
-                for v in metrics.values()) or metrics["macro_f1"] != run.best_validation_macro_f1):
-            raise ValueError("selected checkpoint validation metrics are invalid or inconsistent")
-        prepared.verify()
-        if _state_hash(model) != run.state_hash or _adjacency_hash(model) != adjacency:
-            raise ValueError("validation changed selected learned state or fixed adjacency")
-        rows.append({
-            "seed": seed, "family": family, "input_binding_sha256": pin,
-            "parameter_count": count, "topology_fingerprint": fingerprint,
-            "adjacency_sha256": adjacency, "state_hash": run.state_hash,
-            "best_epoch": run.best_epoch, "validation_metrics": metrics,
-            "optimizer_steps": run.optimizer_steps, "epoch_order_hashes": list(run.epoch_order_hashes),
-            "training_config": asdict(training), "training_config_hash": _hash_json(asdict(training)),
-        })
-        _LOGGER.info("seed=%s family=%s completed updates=%s", seed, family, run.optimizer_steps)
+    rows = [_execute_arm(plan, prepared, config, pin) for plan in plans]
     if _execution_identity() != execution:
         raise ValueError("execution source or runtime identity changed during comparison")
     paired = []
