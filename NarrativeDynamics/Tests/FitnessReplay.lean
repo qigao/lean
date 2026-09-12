@@ -181,7 +181,7 @@ macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num : tac
        trace "replay-fixture result: fitness evaluation"
        decide_cbv
      · trace "replay-fixture result: probability"
-       simp only [orderedMass, weights]
+       unfold orderedMass weights
        $probability:tactic))
 
 section ExactReplayFixtures
