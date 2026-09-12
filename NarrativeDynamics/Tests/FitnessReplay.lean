@@ -17,7 +17,6 @@ def summaryOf : Except ReplayError ReplayResult →
       List.ofFn (degree r.final.state.snapshot),
       List.ofFn r.final.state.snapshot.fitness, r.probability)
 
-/-- Establish one actual checked step without unfolding a concrete graph. -/
 private theorem checkedStep {n : Nat} (s : State n) (m : Nat) (raw : RawBirth)
     (hm : 0 < m ∧ m ≤ n) (hf : 0 < raw.fitness) (hs : raw.targets.size = m)
     (hb : targetsBounded n raw.targets) (hd : targetsDistinct raw.targets) :
@@ -28,7 +27,6 @@ private theorem checkedStep {n : Nat} (s : State n) (m : Nat) (raw : RawBirth)
   simp only [step, validateBirth, dif_pos hm, dif_pos hf, dif_pos hs,
     checkTargets, dif_pos hb, dif_pos hd]
 
-/-- Rewrite just the leading birth, leaving its entire continuation opaque. -/
 private theorem checkedBirthEquation {n m index : Nat} {s : State n}
     {raw : RawBirth} {rest : List RawBirth}
     (hm : 0 < m ∧ m ≤ n) (hf : 0 < raw.fitness)
@@ -47,11 +45,9 @@ private theorem checkedBirthEquation {n m index : Nat} {s : State n}
 #print axioms checkedStep
 #print axioms checkedBirthEquation
 
-/-- Finish only the empty continuation, without reopening a checked birth. -/
 private theorem runBirthsNil (m index : Nat) (s : RunState) :
     runBirths m index s [] = .ok ⟨s, 1⟩ := rfl
 
-/-- The complete original summary is equivalent to five separate field facts. -/
 private theorem summaryOk (r : ReplayResult) (nodes edges : Nat)
     (degrees : List Nat) (fitness : List Rat) (probability : Rat) :
     summaryOf (.ok r) = .ok (nodes, edges, degrees, fitness, probability) ↔
@@ -62,7 +58,6 @@ private theorem summaryOk (r : ReplayResult) (nodes edges : Nat)
       r.probability = probability := by
   simp only [summaryOf, Except.ok.injEq, Prod.mk.injEq]
 
-/-- Reuse proved neighbor updates, rather than enumerate each grown graph again. -/
 private theorem birthDegreeFn {n m : Nat} (s : State n) (T : Targets n m)
     (hm : 0 < m) (eta : PosFitness) :
     degree (applyBirth s T hm eta).snapshot =
@@ -74,21 +69,17 @@ private theorem birthDegreeFn {n m : Nat} (s : State n) (T : Targets n m)
   · rw [Fin.lastCases_castSucc]
     exact birth_degree_old s T hm eta u
 
-/-- Project the real birth's fitness without unfolding its graph or validity proof. -/
 private theorem birthFitnessFn {n m : Nat} (s : State n) (T : Targets n m)
     (hm : 0 < m) (eta : PosFitness) :
     (applyBirth s T hm eta).snapshot.fitness =
       Fin.lastCases eta.val s.snapshot.fitness := rfl
 
-/-- All triangle-based replay fixtures share this actual seed graph. Compute its
-base degrees once, independently of the supplied fitness vector. -/
 private theorem triangleSeedDegreeFn (fitness : Array Rat) (hs : fitness.size = 3) :
     degree (seedSnapshot ⟨3, fitness, rawTriangle.edges⟩ hs) =
       (![2, 2, 2] : Fin 3 → Nat) := by
   funext i
   fin_cases i <;> decide_cbv
 
-/-- The non-triangle replay fixture starts from one undirected two-node edge. -/
 private theorem edgeSeedDegreeFn (fitness : Array Rat) (hs : fitness.size = 2) :
     degree (seedSnapshot ⟨2, fitness, #[(1, 0)]⟩ hs) =
       (![1, 1] : Fin 2 → Nat) := by
@@ -106,8 +97,6 @@ end NarrativeDynamics.FitnessAttachment.ReplayFixtures
 
 open NarrativeDynamics.FitnessAttachment.ReplayFixtures
 
--- Prove the actual parser guards first; do not evaluate proof-carrying parsing
--- and the entire multi-birth graph in one equation-reduction stack.
 macro "prepareReplaySeed " raw:term " atSize " size:term : tactic =>
   `(tactic|
     (trace "replay-fixture seed: guards start"
@@ -129,7 +118,6 @@ macro "prepareReplaySeed " raw:term " atSize " size:term : tactic =>
        dif_pos he, dif_pos hd, dif_pos hc]
      trace "replay-fixture seed: simplification done"))
 
--- Prove concrete guards, then rewrite exactly one checked-step equation.
 macro "prepareReplayBirth " n:term " withM " m:term
     " fitness " eta:term " targets " xs:term : tactic =>
   `(tactic|
@@ -146,9 +134,6 @@ macro "prepareReplayBirth " n:term " withM " m:term
        hm hf hs hb hd]
      trace "replay-fixture birth: checked rewrite done"))
 
--- Bound field rewrites by the actual number of births, then replace the base
--- graph degree function with the once-proved seed degree theorem before any
--- concrete arithmetic evaluation.
 macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num : tactic => do
   let degrees ← if rounds.getNat == 1 then
     `(tactic| rewrite (transparency := .default) [birthDegreeFn (n := $n) (m := $m) (hm := by decide)])
@@ -164,15 +149,15 @@ macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num : tac
        rewrite (transparency := .default) [birthFitnessFn (n := $n) (m := $m) (hm := by decide)]))
   let probability ← if rounds.getNat == 1 then
     `(tactic|
-      (try rewrite (transparency := .default) [triangleSeedDegreeFn]
-       try rewrite (transparency := .default) [edgeSeedDegreeFn]
+      (try rewrite (transparency := .default) [triangleSeedDegreeFn (hs := by decide)]
+       try rewrite (transparency := .default) [edgeSeedDegreeFn (hs := by decide)]
        decide_cbv))
   else
     `(tactic|
       (rewrite (transparency := .default) [birthDegreeFn (n := $n) (m := $m) (hm := by decide)]
        rewrite (transparency := .default) [birthFitnessFn (n := $n) (m := $m) (hm := by decide)]
-       try rewrite (transparency := .default) [triangleSeedDegreeFn]
-       try rewrite (transparency := .default) [edgeSeedDegreeFn]
+       try rewrite (transparency := .default) [triangleSeedDegreeFn (hs := by decide)]
+       try rewrite (transparency := .default) [edgeSeedDegreeFn (hs := by decide)]
        decide_cbv))
   `(tactic|
     (trace "replay-fixture result: empty tail start"
@@ -187,8 +172,8 @@ macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num : tac
        decide_cbv
      · trace "replay-fixture result: degrees rewrite"
        $degrees:tactic
-       try rewrite (transparency := .default) [triangleSeedDegreeFn]
-       try rewrite (transparency := .default) [edgeSeedDegreeFn]
+       try rewrite (transparency := .default) [triangleSeedDegreeFn (hs := by decide)]
+       try rewrite (transparency := .default) [edgeSeedDegreeFn (hs := by decide)]
        trace "replay-fixture result: degrees evaluation"
        decide_cbv
      · trace "replay-fixture result: fitness rewrite"
@@ -202,7 +187,6 @@ macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num : tac
 section ExactReplayFixtures
 set_option maxRecDepth 4096
 
--- Actual raw API output, including updated adjacency and the conditional product.
 example : summaryOf (replay rawTriangle 2 []) =
     .ok (3, 3, [2, 2, 2], [1, 2, 4], 1) := by
   prepareReplaySeed rawTriangle atSize 3
@@ -228,7 +212,6 @@ example : summaryOf (replay rawTriangle 2 twoBirths) =
     fitness (1/3) targets #[3, 2]
   finishReplaySummary 3 withM 2 births 2
 
--- All fitness values, not only the seed, must receive the same scale.
 example : summaryOf (replay ⟨3, #[2, 4, 8], rawTriangle.edges⟩ 2
     [⟨3, #[2, 1]⟩, ⟨2/3, #[3, 2]⟩]) =
     .ok (5, 7, [2, 3, 4, 3, 2], [2, 4, 8, 3, 2/3], 24/805) := by
@@ -247,7 +230,6 @@ example : summaryOf (replay ⟨3, #[2, 4, 8], rawTriangle.edges⟩ 2 twoBirths) 
     fitness (1/3) targets #[3, 2]
   finishReplaySummary 3 withM 2 births 2
 
--- Constant fitness 3 and the unit-fitness BA specialization have equal laws.
 example : summaryOf (replay ⟨3, #[3, 3, 3], rawTriangle.edges⟩ 2
     [⟨3, #[2, 1]⟩, ⟨3, #[3, 2]⟩]) =
     .ok (5, 7, [2, 3, 4, 3, 2], [3, 3, 3, 3, 3], 1/80) := by
@@ -266,7 +248,6 @@ example : summaryOf (replay unitTriangle 2 [⟨1, #[2, 1]⟩, ⟨1, #[3, 2]⟩])
     fitness (1) targets #[3, 2]
   finishReplaySummary 3 withM 2 births 2
 
--- Arbitrary valid seed and m equal to the INITIAL size across several births.
 example : summaryOf (replay ⟨2, #[1, 1], #[(1, 0)]⟩ 1
     [⟨1, #[1]⟩, ⟨1, #[2]⟩]) =
     .ok (4, 3, [1, 2, 2, 1], [1, 1, 1, 1], 1/8) := by
@@ -286,7 +267,6 @@ example : summaryOf (replay rawTriangle 3
     fitness (1) targets #[1, 2, 3]
   finishReplaySummary 3 withM 3 births 2
 
--- Empty input is not a validation bypass; seed errors precede invalid initial m.
 example : summaryOf (replay rawTriangle 0 []) = .error .initialM := by
   prepareReplaySeed rawTriangle atSize 3
   decide_cbv
@@ -300,7 +280,6 @@ example : summaryOf (replay ⟨2, #[1], #[(0, 1)]⟩ 1 []) =
 example : summaryOf (replay ⟨2, #[0, 1], #[(0, 1)]⟩ 1 []) =
     .error (.seed .nonpositiveFitness) := by decide_cbv
 
--- First failure has a zero-based index and carries no partial result.
 example : summaryOf (replay rawTriangle 2 [⟨1, #[2, 2]⟩]) =
     .error (.atBirth 0 .duplicateTarget) := by
   prepareReplaySeed rawTriangle atSize 3
@@ -328,7 +307,6 @@ example : summaryOf (replay rawTriangle 2
 
 end ExactReplayFixtures
 
--- Generic laws bind the actual raw API result, not a separate test simulator.
 example (seed : RawSeed) (m : Nat) (bs : List RawBirth) (out : ReplayResult)
     (h : replay seed m bs = .ok out) :
     actualNodeCount out.final.state.snapshot = seed.nodeCount + bs.length :=
@@ -358,7 +336,6 @@ example {n : Nat} (s : State n) (m : Nat) (hm : 0 < m) (hb : m ≤ n)
 #print axioms replay_probability_pos
 #print axioms continuationMass_one
 
--- Whole-run laws use the same raw replay and preserve the exact supplied order.
 example (seed : RawSeed) (m : Nat) (bs : List RawBirth) (out : ReplayResult)
     (c : PosFitness) (h : replay seed m bs = .ok out) :
     replay (scaleSeed seed c) m (bs.map (fun raw => scaleBirth raw c)) =
@@ -374,7 +351,6 @@ example (seed : RawSeed) (m : Nat) (bs : List RawBirth) (out : ReplayResult)
     ∃ next, replay (scaleSeed seed c) m (bs.map (fun raw => scaleBirth raw c)) = .ok next ∧
       next.probability = out.probability := replay_scale_probability seed m bs out c h
 
--- BA is the unit-fitness specialization, not a separately implemented generator.
 example (seed : RawSeed) (m : Nat) (bs : List RawBirth) (out : ReplayResult)
     (c : PosFitness) (h : replay (unitSeed seed) m (bs.map unitBirth) = .ok out) :
     ∃ next, replay (constantSeed seed c) m (bs.map (fun raw => constantBirth raw c)) = .ok next ∧
