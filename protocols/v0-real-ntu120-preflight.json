@@ -30,7 +30,10 @@
   "flywire_connectivity_git_blob_sha1": "5183755ecbb41d5c8cee1a4a2d99b8eecba75c52",
   "flywire_connectivity_sha256": "215cf7a65895f9f84768db34052964542f7ebbe986ce9864b7e9ed2976c55e38",
   "selection_rule": "type-level seeds T4a,T4b,T4c,T4d,T5a,T5b,T5c,T5d; add visual types with >=5 aggregate incoming synapses from any seed; induced directed graph; retain diagonal type edges as within-cell-type population connectivity; aggregate synapse-count weights; lexicographic node order",
-  "selected_graph_fingerprint": null,
+  "selected_graph_num_nodes": 187,
+  "selected_graph_num_edges": 14542,
+  "selected_graph_num_diagonal_edges": 126,
+  "selected_graph_fingerprint": "a7088c8590aa10d6b204c2b11ad51d5f7889dc10ea25b68ffcf24794b06d692d",
   "seeds": [7, 11, 19, 23, 31],
   "budget": {
     "epochs": 20,
