@@ -1,0 +1,32 @@
+{
+  "protocol_id": "v0-real-template",
+  "claim": "topology_specific_advantage",
+  "dataset_id": null,
+  "yolo_version": null,
+  "split_hash": null,
+  "observation_schema_hash": null,
+  "flywire_release": null,
+  "selection_rule": null,
+  "seeds": [7, 11, 19, 23, 31],
+  "budget": {
+    "epochs": 20,
+    "max_updates": 40,
+    "parameter_ceiling": 50000
+  },
+  "arms": [
+    {"family": "gru", "topology": "dense"},
+    {"family": "random_graph", "topology": "random_sparse"},
+    {"family": "rewired", "topology": "rewired"},
+    {"family": "flywire", "topology": "connectome"}
+  ],
+  "rewiring_algorithm": "directed-double-edge-swap-v1",
+  "primary_metric": "macro_f1",
+  "secondary_metrics": [
+    "balanced_accuracy",
+    "keypoint_noise_macro_f1",
+    "keypoint_mask_macro_f1"
+  ],
+  "success_threshold": null,
+  "final_test_used_for_selection": false,
+  "evidence_scope": "non_executable_until_all_null_fields_are_frozen"
+}
