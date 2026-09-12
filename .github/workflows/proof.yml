@@ -100,7 +100,7 @@ jobs:
           export PATH="$HOME/.elan/bin:$PATH"
           /usr/bin/time -f 'FitnessScope elapsed=%e s peak_rss=%M KiB' \
             timeout --kill-after=10s 240s \
-              lake env lean -DmaxErrors=1 \
+              lake env lean -DmaxErrors=8 \
               NarrativeDynamics/Tests/FitnessScope.lean
 
       - name: Lean theorem tests

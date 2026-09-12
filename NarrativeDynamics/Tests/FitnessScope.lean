@@ -96,7 +96,7 @@ private theorem pathStep (n : Nat) (s : State (n + 1)) :
       fin_cases i
       simp
     · intro i j _
-      exact Subsingleton.elim i j
+      exact Subsingleton.elim (α := Fin 1) i j
   obtain ⟨v, hv⟩ := validateBirth_complete s (⟨1, #[n]⟩ : RawBirth) hvalid
   obtain ⟨hf, hs, hvalues⟩ := validateBirth_values s (⟨1, #[n]⟩ : RawBirth) v hv
   have ht : v.targets = lastTarget n := by
