@@ -426,10 +426,11 @@ equality proof; fields absent from the current goal are simply left for other go
 elab "rewriteReplayFacts" : tactic => Lean.Elab.Tactic.withMainContext do
   let context ← Lean.getLCtx
   for decl in context do
-    unless decl.type.isAppOfArity ``Eq 3 do continue
-    let lhs := decl.type.getArg! 1
-    unless lhs.isAppOf ``State.snapshot || lhs.isAppOf ``Targets.selected ||
-        lhs.isAppOf ``Targets.ordered || lhs.isAppOf ``Subtype.val do continue
+    let type ← Lean.instantiateMVars decl.type
+    let some (_, lhs, _) ← Lean.Meta.matchEq? type | continue
+    let head := (← Lean.instantiateMVars lhs).getAppFn'
+    unless head.isConstOf ``State.snapshot || head.isConstOf ``Targets.selected ||
+        head.isConstOf ``Targets.ordered || head.isConstOf ``Subtype.val do continue
     let saved ← Lean.Elab.Tactic.saveState
     try
       let goal ← Lean.Elab.Tactic.getMainGoal
@@ -437,6 +438,7 @@ elab "rewriteReplayFacts" : tactic => Lean.Elab.Tactic.withMainContext do
         (config := { transparency := .default })
       let next ← goal.replaceTargetEq result.eNew result.eqProof
       Lean.Elab.Tactic.replaceMainGoal (next :: result.mvarIds)
+      Lean.logInfo m!"replay-fixture field rewritten: {decl.userName.eraseMacroScopes}"
     catch _ => saved.restore
 
 macro "prepareReplaySeed " raw:term " atSize " size:term : tactic =>
