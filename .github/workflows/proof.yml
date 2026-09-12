@@ -94,6 +94,7 @@ jobs:
           /usr/bin/time -f 'FitnessReplay elapsed=%e s peak_rss=%M KiB' \
             timeout --kill-after=10s 240s \
             stdbuf -oL -eL lake env lean -DmaxErrors=1 -DstderrAsMessages=false \
+              -DElab.async=false \
               NarrativeDynamics/Tests/FitnessReplay.lean
 
       - name: Lean theorem tests
