@@ -181,8 +181,6 @@ macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num : tac
        $probability:tactic))
 
 section ExactReplayFixtures
--- Report reduction hotspots without changing any proof or resource limit.
-set_option diagnostics true
 set_option maxRecDepth 4096
 
 -- Actual raw API output, including updated adjacency and the conditional product.
