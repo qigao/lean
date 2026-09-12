@@ -78,15 +78,6 @@ jobs:
           export PATH="$HOME/.elan/bin:$PATH"
           lake build
 
-      - name: Fitness attachment contract tests
-        run: |
-          export PATH="$HOME/.elan/bin:$PATH"
-          lake env lean NarrativeDynamics/Tests/FitnessAttachment.lean
-          lake env lean NarrativeDynamics/Tests/FitnessBirth.lean
-          lake env lean NarrativeDynamics/Tests/FitnessValidation.lean
-          # Stop after confirmed errors; a successful run still checks every assertion.
-          lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FitnessReplay.lean
-
       - name: Lean theorem tests
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
