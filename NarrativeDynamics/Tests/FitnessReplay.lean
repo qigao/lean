@@ -162,7 +162,7 @@ macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num : tac
      apply (summaryOk _ _ _ _ _ _).mpr
      refine ⟨?_, ?_, ?_, ?_, ?_⟩
      · trace "replay-fixture result: nodes"
-       simp only [actualNodeCount, Fintype.card_fin]
+       simp only [actualNodeCount, Fintype.card_fin] <;> rfl
      · trace "replay-fixture result: edges"
        simp only [birth_edges]
        decide_cbv
