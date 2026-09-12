@@ -167,16 +167,16 @@ macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num : tac
        simp only [birth_edges]
        decide_cbv
      · trace "replay-fixture result: degrees rewrite"
-       $degrees
+       $degrees:tactic
        trace "replay-fixture result: degrees evaluation"
        decide_cbv
      · trace "replay-fixture result: fitness rewrite"
-       $fitnessTac
+       $fitnessTac:tactic
        trace "replay-fixture result: fitness evaluation"
        decide_cbv
      · trace "replay-fixture result: probability"
        simp only [orderedMass, weights]
-       $probability))
+       $probability:tactic))
 
 section ExactReplayFixtures
 -- Report reduction hotspots without changing any proof or resource limit.
