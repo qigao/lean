@@ -1,40 +1,29 @@
-# FlyWire V0 data contract
+# Data and provenance boundary
 
-V0 consumes a **local, user-supplied CSV export**. The runtime does not embed FlyWire credentials and does not silently query a remote service.
+This repository does not redistribute restricted or large external datasets. Real confirmatory execution requires locally mounted, legally acquired source data and byte-derived provenance hashes.
 
-Required columns:
+## NTU RGB+D 120
 
-- `pre_id`: presynaptic FlyWire neuron/root identifier
-- `post_id`: postsynaptic FlyWire neuron/root identifier
-- `synapse_count`: positive integer synapse count used as the directed edge weight
+The Phase 2 protocol uses RGB video from NTU RGB+D 120. Raw video and official skeleton files are not committed here. The model input is generated from RGB through the frozen YOLO/Pose extractor; official NTU skeleton data is allowed only as an extraction sanity check.
 
-Optional annotation columns:
+Before confirmatory final-test execution, record:
 
-- `region`
-- `cell_type`
+- dataset/archive content hash;
+- frozen X-Sub120-derived split hash;
+- exact Ultralytics package version;
+- `yolo26n-pose.pt` SHA-256;
+- observation-schema / encoder hash.
 
-Every experimental selection must record both:
+## FlyWire visual-system snapshot
 
-1. the exact FlyWire release/data identity (`release_id`), and
-2. the explicit extraction/selection rule (`selection_rule`).
+The FlyWire visual-system source is publicly reproducible and pinned independently of mutable branch names:
 
-These provenance strings are mandatory and must be carried into experiment manifests. Neuron identifiers are deterministically remapped by sorted original ID when constructing the model graph. Parallel rows for the same directed pair are aggregated by synapse count.
+- repository: `murthylab/visual-system-parts-list`
+- release/materialization: FAFB v783
+- commit: `0d8574d46627ce7fadd968a3c5d602e837325373`
+- connectivity path: `data/type_to_type_connection_and_synapse_counts.csv`
+- Git blob SHA-1: `5183755ecbb41d5c8cee1a4a2d99b8eecba75c52`
 
-For V0, prefer a bounded visual/motion-related subgraph that is small enough to train under the frozen compute budget. The selection rule must be fixed before final-test evaluation; do not choose neurons, regions, cell types, thresholds, or graph size using final-test results.
+CI downloads that exact path from that exact commit and produces a SHA-256 provenance record. The SHA-256 must be copied into the Phase 2 protocol before a real topology claim can execute.
 
-The topology-specific comparison requires a matched rewired control derived from the same selected graph. Rewiring must preserve node count, edge count, directed in/out degree sequence, and the edge-weight multiset while changing the graph fingerprint.
-
-## Frozen YOLO/Pose observations
-
-Model-comparison runs consume a pre-exported JSONL file; they do **not** invoke YOLO at training/evaluation time. Freeze and record the detector/Pose version before producing the comparison dataset.
-
-Each JSONL record represents one frame and requires:
-
-- `sample_id`: stable sequence identifier;
-- `frame_index`: non-negative frame index within the sequence;
-- `label`: dedicated target label only;
-- `body_keypoints`: ordered `[x, y, confidence]` triples.
-
-Optional fields are `hand_keypoints`, `bbox`, and `detector_confidence`. Their presence and keypoint counts are part of the frozen observation schema and must remain constant throughout one dataset. Missing or uncertain keypoints should be represented through their confidence values rather than by changing keypoint count or order.
-
-The loader sorts by `(sample_id, frame_index)`, rejects duplicate frame identities and schema drift, and computes an observation-schema hash from the declared field layout/counts rather than observation values. Unknown feature payloads are rejected so target labels cannot be copied into model inputs.
+No external source bytes are vendored merely to satisfy the protocol. Derived, small, license-compatible graph fingerprints and manifests may be committed once produced.
