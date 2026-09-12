@@ -11,8 +11,12 @@ def degrees(graph):
     return Counter(graph.src), Counter(graph.dst)
 
 
-def self_loop_count(graph):
-    return sum(source == target for source, target in zip(graph.src, graph.dst))
+def diagonal_edges(graph):
+    return {
+        (source, target, weight)
+        for source, target, weight in zip(graph.src, graph.dst, graph.weight)
+        if source == target
+    }
 
 
 def test_rewiring_preserves_directed_degree_sequence_and_weight_multiset():
@@ -35,10 +39,10 @@ def test_type_level_graph_allows_population_self_edges():
         dst=(0, 1, 2, 2),
         weight=(11.0, 2.0, 3.0, 7.0),
     )
-    assert self_loop_count(graph) == 2
+    assert len(diagonal_edges(graph)) == 2
 
 
-def test_rewiring_preserves_self_loop_count_for_type_level_controls():
+def test_rewiring_keeps_type_level_diagonal_edges_exactly_fixed():
     graph = DirectedGraph(
         num_nodes=6,
         src=(0, 0, 1, 1, 2, 2, 3, 4, 5, 5),
@@ -48,7 +52,7 @@ def test_rewiring_preserves_self_loop_count_for_type_level_controls():
     rewired = rewire_degree_preserving(graph, seed=13, swaps=2)
     assert degrees(rewired) == degrees(graph)
     assert sorted(rewired.weight) == sorted(graph.weight)
-    assert self_loop_count(rewired) == self_loop_count(graph)
+    assert diagonal_edges(rewired) == diagonal_edges(graph)
     assert set(zip(rewired.src, rewired.dst)) != set(zip(graph.src, graph.dst))
 
 
