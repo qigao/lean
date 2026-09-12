@@ -28,11 +28,14 @@ def extracted(tmp_path, monkeypatch):
 
 
 def _load(extracted, **kwargs):
+    module = _module()
     case, output = extracted
-    options = dict(root=case[1], inventory=case[2], spec=case[4],
-                   expected_manifest_sha256=_sha(output / "manifest.json"))
+    options = dict(root=case[1], inventory=case[2], spec=case[4])
+    # Explicit pins must reach the reader even when the manifest has been removed.
+    if "expected_manifest_sha256" not in kwargs:
+        options["expected_manifest_sha256"] = _sha(output / "manifest.json")
     options.update(kwargs)
-    return _module().load_development_bundle(output, **options)
+    return module.load_development_bundle(output, **options)
 
 
 def _rows(output, name):
