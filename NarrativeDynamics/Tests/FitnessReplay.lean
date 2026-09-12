@@ -86,12 +86,43 @@ private theorem edgeSeedDegreeFn (fitness : Array Rat) (hs : fitness.size = 2) :
   funext i
   fin_cases i <;> decide_cbv
 
+/-- Expose the complete seed weight function once, so traceMass never unfolds adjacency. -/
+private theorem triangleSeedWeightsFn (fitness : Array Rat) (hs : fitness.size = 3) :
+    weights (seedSnapshot ⟨3, fitness, rawTriangle.edges⟩ hs) =
+      fun i => (seedSnapshot ⟨3, fitness, rawTriangle.edges⟩ hs).fitness i *
+        ((![2, 2, 2] : Fin 3 → Nat) i : Rat) := by
+  funext i
+  unfold weights
+  rw [triangleSeedDegreeFn fitness hs]
+
+private theorem edgeSeedWeightsFn (fitness : Array Rat) (hs : fitness.size = 2) :
+    weights (seedSnapshot ⟨2, fitness, #[(1, 0)]⟩ hs) =
+      fun i => (seedSnapshot ⟨2, fitness, #[(1, 0)]⟩ hs).fitness i *
+        ((![1, 1] : Fin 2 → Nat) i : Rat) := by
+  funext i
+  unfold weights
+  rw [edgeSeedDegreeFn fitness hs]
+
+/-- Expose successor weights through the already-proved fitness/degree update laws. -/
+private theorem birthWeightsFn {n m : Nat} (s : State n) (T : Targets n m)
+    (hm : 0 < m) (eta : PosFitness) :
+    weights (applyBirth s T hm eta).snapshot =
+      fun v => (Fin.lastCases eta.val s.snapshot.fitness v) *
+        ((Fin.lastCases m
+          (fun u => degree s.snapshot u + if u ∈ T.selected then 1 else 0) v : Nat) : Rat) := by
+  funext v
+  unfold weights
+  rw [birthFitnessFn s T hm eta, birthDegreeFn s T hm eta]
+
 #print axioms runBirthsNil
 #print axioms summaryOk
 #print axioms birthDegreeFn
 #print axioms birthFitnessFn
 #print axioms triangleSeedDegreeFn
 #print axioms edgeSeedDegreeFn
+#print axioms triangleSeedWeightsFn
+#print axioms edgeSeedWeightsFn
+#print axioms birthWeightsFn
 
 end NarrativeDynamics.FitnessAttachment.ReplayFixtures
 
@@ -149,13 +180,14 @@ macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num : tac
        rewrite (transparency := .default) [birthFitnessFn (n := $n) (m := $m) (hm := by decide)]))
   let probability ← if rounds.getNat == 1 then
     `(tactic|
-      (first | rewrite (transparency := .default) [triangleSeedDegreeFn (hs := by decide)]
-             | rewrite (transparency := .default) [edgeSeedDegreeFn (hs := by decide)]
+      (first | rewrite (transparency := .default) [triangleSeedWeightsFn (hs := by decide)]
+             | rewrite (transparency := .default) [edgeSeedWeightsFn (hs := by decide)]
        decide_cbv))
   else
     `(tactic|
-      (rewrite (transparency := .default) [birthDegreeFn (n := $n) (m := $m) (hm := by decide)]
-       rewrite (transparency := .default) [birthFitnessFn (n := $n) (m := $m) (hm := by decide)]
+      (rewrite (transparency := .default) [birthWeightsFn (n := $n) (m := $m) (hm := by decide)]
+       first | rewrite (transparency := .default) [triangleSeedWeightsFn (hs := by decide)]
+             | rewrite (transparency := .default) [edgeSeedWeightsFn (hs := by decide)]
        first | rewrite (transparency := .default) [triangleSeedDegreeFn (hs := by decide)]
              | rewrite (transparency := .default) [edgeSeedDegreeFn (hs := by decide)]
        decide_cbv))
