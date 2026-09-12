@@ -47,6 +47,44 @@ private theorem checkedBirthEquation {n m index : Nat} {s : State n}
 #print axioms checkedStep
 #print axioms checkedBirthEquation
 
+/-- Finish only the empty continuation, without reopening a checked birth. -/
+private theorem runBirthsNil (m index : Nat) (s : RunState) :
+    runBirths m index s [] = .ok ⟨s, 1⟩ := rfl
+
+/-- The complete original summary is equivalent to five separate field facts. -/
+private theorem summaryOk (r : ReplayResult) (nodes edges : Nat)
+    (degrees : List Nat) (fitness : List Rat) (probability : Rat) :
+    summaryOf (.ok r) = .ok (nodes, edges, degrees, fitness, probability) ↔
+      actualNodeCount r.final.state.snapshot = nodes ∧
+      actualEdgeCount r.final.state.snapshot = edges ∧
+      List.ofFn (degree r.final.state.snapshot) = degrees ∧
+      List.ofFn r.final.state.snapshot.fitness = fitness ∧
+      r.probability = probability := by
+  simp only [summaryOf, Except.ok.injEq, Prod.mk.injEq]
+
+/-- Reuse proved neighbor updates, rather than enumerate each grown graph again. -/
+private theorem birthDegreeFn {n m : Nat} (s : State n) (T : Targets n m)
+    (hm : 0 < m) (eta : PosFitness) :
+    degree (applyBirth s T hm eta).snapshot =
+      Fin.lastCases m (fun u => degree s.snapshot u + if u ∈ T.selected then 1 else 0) := by
+  funext v
+  refine Fin.lastCases ?_ (fun u => ?_) v
+  · rw [Fin.lastCases_last]
+    exact birth_degree_new s T hm eta
+  · rw [Fin.lastCases_castSucc]
+    exact birth_degree_old s T hm eta u
+
+/-- Project the real birth's fitness without unfolding its graph or validity proof. -/
+private theorem birthFitnessFn {n m : Nat} (s : State n) (T : Targets n m)
+    (hm : 0 < m) (eta : PosFitness) :
+    (applyBirth s T hm eta).snapshot.fitness =
+      Fin.lastCases eta.val s.snapshot.fitness := rfl
+
+#print axioms runBirthsNil
+#print axioms summaryOk
+#print axioms birthDegreeFn
+#print axioms birthFitnessFn
+
 end NarrativeDynamics.FitnessAttachment.ReplayFixtures
 
 open NarrativeDynamics.FitnessAttachment.ReplayFixtures
@@ -94,6 +132,31 @@ macro "prepareReplayBirth " n:term " withM " m:term
        hm hf hs hb hd]
      trace "replay-fixture birth: checked rewrite done"))
 
+-- The observed failure was AFTER all checked-step rewrites. Reduce only the
+-- remaining empty tail, split the complete summary, and certify its fields.
+-- Birth laws remove repeated adjacency enumeration; they do not replace replay.
+macro "finishReplaySummary" : tactic =>
+  `(tactic|
+    (trace "replay-fixture result: empty tail start"
+     simp only [runBirthsNil]
+     trace "replay-fixture result: field split start"
+     apply (summaryOk _ _ _ _ _ _).mpr
+     refine ⟨?_, ?_, ?_, ?_, ?_⟩
+     · trace "replay-fixture result: nodes"
+       simp only [actualNodeCount, Fintype.card_fin]
+     · trace "replay-fixture result: edges"
+       simp only [birth_edges]
+       decide_cbv
+     · trace "replay-fixture result: degrees"
+       simp only [birthDegreeFn]
+       decide_cbv
+     · trace "replay-fixture result: fitness"
+       simp only [birthFitnessFn]
+       decide_cbv
+     · trace "replay-fixture result: probability"
+       simp only [orderedMass, weights, birthDegreeFn, birthFitnessFn]
+       decide_cbv))
+
 section ExactReplayFixtures
 -- Report reduction hotspots without changing any proof or resource limit.
 set_option diagnostics true
@@ -109,13 +172,13 @@ example : summaryOf (replay rawTriangle 2 [⟨3/2, #[2, 1]⟩]) =
   prepareReplaySeed rawTriangle atSize 3
   prepareReplayBirth rawTriangle.nodeCount withM 2
     fitness (3/2) targets #[2, 1]
-  decide_cbv
+  finishReplaySummary
 example : summaryOf (replay rawTriangle 2 [⟨3/2, #[1, 2]⟩]) =
     .ok (4, 5, [2, 3, 3, 2], [1, 2, 4, 3/2], 8/35) := by
   prepareReplaySeed rawTriangle atSize 3
   prepareReplayBirth rawTriangle.nodeCount withM 2
     fitness (3/2) targets #[1, 2]
-  decide_cbv
+  finishReplaySummary
 example : summaryOf (replay rawTriangle 2 twoBirths) =
     .ok (5, 7, [2, 3, 4, 3, 2], [1, 2, 4, 3/2, 1/3], 24/805) := by
   prepareReplaySeed rawTriangle atSize 3
@@ -123,7 +186,7 @@ example : summaryOf (replay rawTriangle 2 twoBirths) =
     fitness (3/2) targets #[2, 1]
   prepareReplayBirth (rawTriangle.nodeCount + 1) withM 2
     fitness (1/3) targets #[3, 2]
-  decide_cbv
+  finishReplaySummary
 
 -- All fitness values, not only the seed, must receive the same scale.
 example : summaryOf (replay ⟨3, #[2, 4, 8], rawTriangle.edges⟩ 2
@@ -134,7 +197,7 @@ example : summaryOf (replay ⟨3, #[2, 4, 8], rawTriangle.edges⟩ 2
     fitness (3) targets #[2, 1]
   prepareReplayBirth ((⟨3, #[2, 4, 8], rawTriangle.edges⟩ : RawSeed).nodeCount + 1) withM 2
     fitness (2/3) targets #[3, 2]
-  decide_cbv
+  finishReplaySummary
 example : summaryOf (replay ⟨3, #[2, 4, 8], rawTriangle.edges⟩ 2 twoBirths) =
     .ok (5, 7, [2, 3, 4, 3, 2], [2, 4, 8, 3/2, 1/3], 24/1505) := by
   prepareReplaySeed (⟨3, #[2, 4, 8], rawTriangle.edges⟩ : RawSeed) atSize 3
@@ -142,7 +205,7 @@ example : summaryOf (replay ⟨3, #[2, 4, 8], rawTriangle.edges⟩ 2 twoBirths) 
     fitness (3/2) targets #[2, 1]
   prepareReplayBirth ((⟨3, #[2, 4, 8], rawTriangle.edges⟩ : RawSeed).nodeCount + 1) withM 2
     fitness (1/3) targets #[3, 2]
-  decide_cbv
+  finishReplaySummary
 
 -- Constant fitness 3 and the unit-fitness BA specialization have equal laws.
 example : summaryOf (replay ⟨3, #[3, 3, 3], rawTriangle.edges⟩ 2
@@ -153,7 +216,7 @@ example : summaryOf (replay ⟨3, #[3, 3, 3], rawTriangle.edges⟩ 2
     fitness (3) targets #[2, 1]
   prepareReplayBirth ((⟨3, #[3, 3, 3], rawTriangle.edges⟩ : RawSeed).nodeCount + 1) withM 2
     fitness (3) targets #[3, 2]
-  decide_cbv
+  finishReplaySummary
 example : summaryOf (replay unitTriangle 2 [⟨1, #[2, 1]⟩, ⟨1, #[3, 2]⟩]) =
     .ok (5, 7, [2, 3, 4, 3, 2], [1, 1, 1, 1, 1], 1/80) := by
   prepareReplaySeed unitTriangle atSize 3
@@ -161,7 +224,7 @@ example : summaryOf (replay unitTriangle 2 [⟨1, #[2, 1]⟩, ⟨1, #[3, 2]⟩])
     fitness (1) targets #[2, 1]
   prepareReplayBirth (unitTriangle.nodeCount + 1) withM 2
     fitness (1) targets #[3, 2]
-  decide_cbv
+  finishReplaySummary
 
 -- Arbitrary valid seed and m equal to the INITIAL size across several births.
 example : summaryOf (replay ⟨2, #[1, 1], #[(1, 0)]⟩ 1
@@ -172,7 +235,7 @@ example : summaryOf (replay ⟨2, #[1, 1], #[(1, 0)]⟩ 1
     fitness (1) targets #[1]
   prepareReplayBirth ((⟨2, #[1, 1], #[(1, 0)]⟩ : RawSeed).nodeCount + 1) withM 1
     fitness (1) targets #[2]
-  decide_cbv
+  finishReplaySummary
 example : summaryOf (replay rawTriangle 3
     [⟨1, #[0, 1, 2]⟩, ⟨1, #[1, 2, 3]⟩]) =
     .ok (5, 9, [3, 4, 4, 4, 3], [1, 2, 4, 1, 1], 1/252) := by
@@ -181,7 +244,7 @@ example : summaryOf (replay rawTriangle 3
     fitness (1) targets #[0, 1, 2]
   prepareReplayBirth (rawTriangle.nodeCount + 1) withM 3
     fitness (1) targets #[1, 2, 3]
-  decide_cbv
+  finishReplaySummary
 
 -- Empty input is not a validation bypass; seed errors precede invalid initial m.
 example : summaryOf (replay rawTriangle 0 []) = .error .initialM := by
