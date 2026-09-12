@@ -69,6 +69,10 @@ def _validate_partition(model: PaddedModel, part: PosePartition, role: str) -> N
     input_dim = (model.gru.input_size if type(model) is GRUClassifier
                  else model.input_projection.in_features)
     validate_pose_batch(part.observations, input_dim=input_dim, model=model)
+    # Finite logits alone are insufficient: sigmoid/tanh can hide infinite state.
+    for value in (*model.parameters(), *model.buffers()):
+        if value.layout != torch.strided or not torch.isfinite(value).all().item():
+            raise ValueError("model parameters and buffers must be dense and finite")
     _strings(part.classes, "classes")
     _strings(part.sample_ids, "sample_ids")
     size = part.observations.features.shape[0]
@@ -98,6 +102,8 @@ def _validate_config(model: PaddedModel, config: TrainConfig) -> None:
         raise ValueError("lr must be finite and positive")
     if sum(p.numel() for p in model.parameters()) > config.parameter_ceiling:
         raise ValueError("model exceeds parameter ceiling")
+    if any(not parameter.requires_grad for parameter in model.parameters()):
+        raise ValueError("all learned parameters must be trainable in this training condition")
 
 
 def _copy_partition(part: PosePartition) -> PosePartition:
