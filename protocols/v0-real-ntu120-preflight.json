@@ -46,8 +46,10 @@
     {"family": "rewired", "topology": "rewired"},
     {"family": "flywire", "topology": "connectome"}
   ],
-  "rewiring_algorithm": "directed-double-edge-swap-v2-self-loop-matched",
-  "rewiring_invariants": "preserve node count, edge count, directed in/out degree sequence, edge-weight multiset, and diagonal-edge count",
+  "rewiring_algorithm": "directed-double-edge-swap-v2-diagonal-fixed",
+  "rewiring_successful_swaps_per_offdiagonal_edge": 10,
+  "rewiring_invariants": "preserve node count, edge count, directed in/out degree sequence, edge-weight multiset, and the exact diagonal edge+weight set; randomize only off-diagonal topology",
+  "rewired_graph_fingerprints": null,
   "primary_metric": "macro_f1",
   "secondary_metrics": [
     "balanced_accuracy",
