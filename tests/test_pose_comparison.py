@@ -173,19 +173,26 @@ def test_corrupted_execution_cannot_publish_comparison(comparison_case, monkeypa
         _run(comparison_case)
 
 
+@pytest.mark.parametrize("reuse_id", (False, True))
 @pytest.mark.parametrize("delta", (-.125, 0., .125))
-def test_negative_null_and_positive_validation_differences_do_not_authorize_claims(comparison_case, monkeypatch, delta):
+def test_negative_null_and_positive_validation_differences_do_not_authorize_claims(comparison_case, monkeypatch, delta, reuse_id):
     api = _api()
     from yolo_flywire.eval import MetricBundle
-    actual, scores = api.train_padded_model, {}
+    if reuse_id:
+        # Force reuse in this helper only; never replace builtins.id globally.
+        monkeypatch.setitem(globals(), "id", lambda model: 0)
+    actual, scores, calls = api.train_padded_model, {}, []
     def train(model, training, validation, config):
         run = actual(model, training, validation, config)
-        score = .5 + delta if len(scores) % 4 == 3 else .5
+        # Released models may reuse an object ID; count invocations, not distinct IDs.
+        score = .5 + delta if len(calls) % 4 == 3 else .5
+        calls.append(config.seed)
         scores[id(model)] = score
         return replace(run, best_validation_macro_f1=score)
     monkeypatch.setattr(api, "train_padded_model", train)
     monkeypatch.setattr(api, "evaluate_padded", lambda model, *args, **kwargs: MetricBundle(scores[id(model)], .5))
     report = _run(comparison_case)
+    assert calls == [7] * 4 + [11] * 4
     assert all(row["difference"] == delta for row in report["paired_validation"])
     assert report["topology_claim_evaluated"] is False
     assert report["final_test_evaluated"] is False
