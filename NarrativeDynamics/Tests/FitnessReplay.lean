@@ -80,10 +80,27 @@ private theorem birthFitnessFn {n m : Nat} (s : State n) (T : Targets n m)
     (applyBirth s T hm eta).snapshot.fitness =
       Fin.lastCases eta.val s.snapshot.fitness := rfl
 
+/-- All triangle-based replay fixtures share this actual seed graph. Compute its
+base degrees once, independently of the supplied fitness vector. -/
+private theorem triangleSeedDegreeFn (fitness : Array Rat) (hs : fitness.size = 3) :
+    degree (seedSnapshot ⟨3, fitness, rawTriangle.edges⟩ hs) =
+      (![2, 2, 2] : Fin 3 → Nat) := by
+  funext i
+  fin_cases i <;> decide_cbv
+
+/-- The non-triangle replay fixture starts from one undirected two-node edge. -/
+private theorem edgeSeedDegreeFn (fitness : Array Rat) (hs : fitness.size = 2) :
+    degree (seedSnapshot ⟨2, fitness, #[(1, 0)]⟩ hs) =
+      (![1, 1] : Fin 2 → Nat) := by
+  funext i
+  fin_cases i <;> decide_cbv
+
 #print axioms runBirthsNil
 #print axioms summaryOk
 #print axioms birthDegreeFn
 #print axioms birthFitnessFn
+#print axioms triangleSeedDegreeFn
+#print axioms edgeSeedDegreeFn
 
 end NarrativeDynamics.FitnessAttachment.ReplayFixtures
 
@@ -113,9 +130,6 @@ macro "prepareReplaySeed " raw:term " atSize " size:term : tactic =>
      trace "replay-fixture seed: simplification done"))
 
 -- Prove concrete guards, then rewrite exactly one checked-step equation.
--- Do not recursively simplify validators under unresolved continuation matches.
--- `rewrite` deliberately leaves the goal open for `decide_cbv`; `rw` also
--- attempts reflexivity, which can evaluate the entire remaining replay.
 macro "prepareReplayBirth " n:term " withM " m:term
     " fitness " eta:term " targets " xs:term : tactic =>
   `(tactic|
@@ -132,11 +146,9 @@ macro "prepareReplayBirth " n:term " withM " m:term
        hm hf hs hb hd]
      trace "replay-fixture birth: checked rewrite done"))
 
--- Bound field rewrites by the actual number of births. Recursive simp can
--- rematch reducible graph fields beneath Fin.lastCases and create congruence
--- metavariables; each birth equation must instead be used exactly once.
--- The parsed State carries unfolded validity evidence. These field rewrites
--- must recognize its original Valid predicate and carrier at default transparency.
+-- Bound field rewrites by the actual number of births, then replace the base
+-- graph degree function with the once-proved seed degree theorem before any
+-- concrete arithmetic evaluation.
 macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num : tactic => do
   let degrees ← if rounds.getNat == 1 then
     `(tactic| rewrite (transparency := .default) [birthDegreeFn (n := $n) (m := $m) (hm := by decide)])
@@ -151,11 +163,16 @@ macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num : tac
       (rewrite (transparency := .default) [birthFitnessFn (n := ($n + 1)) (m := $m) (hm := by decide)]
        rewrite (transparency := .default) [birthFitnessFn (n := $n) (m := $m) (hm := by decide)]))
   let probability ← if rounds.getNat == 1 then
-    `(tactic| decide_cbv)
+    `(tactic|
+      (try rewrite (transparency := .default) [triangleSeedDegreeFn]
+       try rewrite (transparency := .default) [edgeSeedDegreeFn]
+       decide_cbv))
   else
     `(tactic|
       (rewrite (transparency := .default) [birthDegreeFn (n := $n) (m := $m) (hm := by decide)]
        rewrite (transparency := .default) [birthFitnessFn (n := $n) (m := $m) (hm := by decide)]
+       try rewrite (transparency := .default) [triangleSeedDegreeFn]
+       try rewrite (transparency := .default) [edgeSeedDegreeFn]
        decide_cbv))
   `(tactic|
     (trace "replay-fixture result: empty tail start"
@@ -170,6 +187,8 @@ macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num : tac
        decide_cbv
      · trace "replay-fixture result: degrees rewrite"
        $degrees:tactic
+       try rewrite (transparency := .default) [triangleSeedDegreeFn]
+       try rewrite (transparency := .default) [edgeSeedDegreeFn]
        trace "replay-fixture result: degrees evaluation"
        decide_cbv
      · trace "replay-fixture result: fitness rewrite"
