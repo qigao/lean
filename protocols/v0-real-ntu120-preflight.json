@@ -49,7 +49,13 @@
   "rewiring_algorithm": "directed-double-edge-swap-v2-diagonal-fixed",
   "rewiring_successful_swaps_per_offdiagonal_edge": 10,
   "rewiring_invariants": "preserve node count, edge count, directed in/out degree sequence, edge-weight multiset, and the exact diagonal edge+weight set; randomize only off-diagonal topology",
-  "rewired_graph_fingerprints": null,
+  "rewired_graph_fingerprints": {
+    "7": "85a0a73e58a3ae9b1394cb59f7970538cd301fee03e04d22c2cf4af1dc38deda",
+    "11": "e88cdf1652e39d6a2ef75dcbff3d2b79c7ed9b703b5beae3cee92e13e7c10387",
+    "19": "aaae8ec540b26c1228916a3a24e08b8fe61a909c802f031b73ce659447e82231",
+    "23": "c6aad8f35dcf875730a08f6607e2e3c67bb4943ad2710f8677d329b6b5daaed4",
+    "31": "e80b997850d2ff16e024a4009cd7e66c0a86b2648caa81ce282ed59061e26469"
+  },
   "primary_metric": "macro_f1",
   "secondary_metrics": [
     "balanced_accuracy",

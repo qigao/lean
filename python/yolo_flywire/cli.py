@@ -17,6 +17,7 @@ from .features import FeatureSpec, encode_sequence
 from .graphs import DirectedGraph, graph_fingerprint, random_sparse_graph, rewire_degree_preserving
 from .manifests import RunManifest, aggregate_topology_evidence
 from .models import GRUClassifier, GraphRecurrentClassifier
+from .provenance import validate_rewiring_protocol
 from .synthetic import make_synthetic_dataset
 from .train import TrainConfig, train_model
 
@@ -178,6 +179,7 @@ def _validate_frozen_protocol(config: dict[str, Any]) -> tuple[str, ...]:
                     "real topology protocol must freeze byte-level provenance before execution: "
                     + ", ".join(provenance_missing)
                 )
+            validate_rewiring_protocol(config)
 
         family_set = set(families)
         if "flywire" not in family_set or "rewired" not in family_set:

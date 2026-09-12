@@ -28,6 +28,41 @@ _SEED_TYPES = ("T4a", "T4b", "T4c", "T4d", "T5a", "T5b", "T5c", "T5d")
 _ALGORITHM = "directed-double-edge-swap-v2-diagonal-fixed"
 
 
+def _is_sha256(value: Any) -> bool:
+    return (isinstance(value, str) and len(value) == 64
+            and all(character in "0123456789abcdef" for character in value))
+
+
+def validate_rewiring_protocol(config: dict[str, Any]) -> None:
+    """Check the frozen control contract, not empirical or byte-level validity.
+
+    A well-formed digest is only a declaration. The provenance command separately
+    verifies actual source and control graph bytes against these declared values.
+    """
+    seeds = config.get("seeds")
+    if (not isinstance(seeds, list) or not seeds
+            or any(type(seed) is not int for seed in seeds)
+            or len(set(seeds)) != len(seeds)):
+        raise ValueError("rewiring protocol requires unique integer seeds")
+    if config.get("rewiring_algorithm") != _ALGORITHM:
+        raise ValueError("unsupported rewiring algorithm; no compatibility fallback")
+    multiplier = config.get("rewiring_successful_swaps_per_offdiagonal_edge")
+    if type(multiplier) is not int or multiplier != 10:
+        raise ValueError("rewiring requires integer budget of ten successful swaps per off-diagonal edge")
+    original = config.get("selected_graph_fingerprint")
+    if not _is_sha256(original):
+        raise ValueError("selected_graph_fingerprint must be a canonical lowercase SHA-256")
+    fingerprints = config.get("rewired_graph_fingerprints")
+    if (not isinstance(fingerprints, dict)
+            or set(fingerprints) != {str(seed) for seed in seeds}):
+        raise ValueError("rewired_graph_fingerprints must cover exactly every declared seed")
+    for seed, fingerprint in fingerprints.items():
+        if not _is_sha256(fingerprint):
+            raise ValueError(f"rewired_graph_fingerprints[{seed}] must be a canonical lowercase SHA-256")
+        if fingerprint == original:
+            raise ValueError(f"rewired fingerprint for seed {seed} must differ from the original graph")
+
+
 def _hash_json(value: Any) -> str:
     raw = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
@@ -115,16 +150,13 @@ def verify_controls(bundle: dict[str, Any], graph: DirectedGraph,
 def _context(config: dict[str, Any], source: Path):
     from .flywire import load_visual_type_graph
 
+    validate_rewiring_protocol(config)
     raw = source.read_bytes()
     if hashlib.sha256(raw).hexdigest() != config["flywire_connectivity_sha256"]:
         raise ValueError("FlyWire source SHA-256 mismatch")
     blob = hashlib.sha1(f"blob {len(raw)}\0".encode() + raw).hexdigest()
     if blob != config["flywire_connectivity_git_blob_sha1"]:
         raise ValueError("FlyWire source Git blob mismatch")
-    if config["rewiring_algorithm"] != _ALGORITHM:
-        raise ValueError("unsupported rewiring algorithm; no compatibility fallback")
-    if config["rewiring_successful_swaps_per_offdiagonal_edge"] != 10:
-        raise ValueError("V0 requires ten successful swaps per off-diagonal edge")
     selection = load_visual_type_graph(source, seed_types=_SEED_TYPES, min_seed_synapses=5)
     graph = selection.graph
     stats = {"selected_graph_num_nodes": graph.num_nodes,
@@ -180,8 +212,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
         fingerprints = verify_controls(bundle, graph, identity)
-        frozen = config.get("rewired_graph_fingerprints")
-        if frozen is not None and fingerprints != frozen:
+        if fingerprints != config["rewired_graph_fingerprints"]:
             raise ValueError("rewired fingerprints do not match the frozen protocol")
         args.output.mkdir(parents=True, exist_ok=True)
         if args.mode == "generate":
