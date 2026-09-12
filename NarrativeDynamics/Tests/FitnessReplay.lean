@@ -123,6 +123,13 @@ private theorem checkedTargetsOrdered {n m : Nat} (xs : Array Nat)
   subst m
   rfl
 
+/-- Selected targets contain exactly the IDs in the ordered tuple, with no extra image
+computation left for numerical replay proofs. -/
+private theorem selected_eq_ordered_toFinset {n m : Nat} (T : Targets n m) :
+    T.selected = T.ordered.toFinset := by
+  ext j
+  simp [Targets.selected, Targets.ordered]
+
 #print axioms runBirthsNil
 #print axioms summaryOk
 #print axioms birthDegreeFn
@@ -133,6 +140,7 @@ private theorem checkedTargetsOrdered {n m : Nat} (xs : Array Nat)
 #print axioms edgeSeedWeightsFn
 #print axioms birthWeightsFn
 #print axioms checkedTargetsOrdered
+#print axioms selected_eq_ordered_toFinset
 
 end NarrativeDynamics.FitnessAttachment.ReplayFixtures
 
@@ -196,6 +204,7 @@ macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num : tac
   else
     `(tactic|
       (rewrite (transparency := .default) [birthWeightsFn (n := $n) (m := $m) (hm := by decide)]
+       simp only [selected_eq_ordered_toFinset, checkedTargetsOrdered]
        first | rewrite (transparency := .default) [triangleSeedWeightsFn (hs := by decide)]
              | rewrite (transparency := .default) [edgeSeedWeightsFn (hs := by decide)]
        first | rewrite (transparency := .default) [triangleSeedDegreeFn (hs := by decide)]
