@@ -17,6 +17,35 @@ def summaryOf : Except ReplayError ReplayResult →
       List.ofFn (degree r.final.state.snapshot),
       List.ofFn r.final.state.snapshot.fitness, r.probability)
 
+/-- Establish one actual checked step without unfolding a concrete graph. -/
+private theorem checkedStep {n : Nat} (s : State n) (m : Nat) (raw : RawBirth)
+    (hm : 0 < m ∧ m ≤ n) (hf : 0 < raw.fitness) (hs : raw.targets.size = m)
+    (hb : targetsBounded n raw.targets) (hd : targetsDistinct raw.targets) :
+    step s m raw = .ok
+      (applyBirth s (hs ▸ (⟨hb, hd⟩ : CheckedTargets n raw.targets).embedding)
+        hm.1 ⟨raw.fitness, hf⟩,
+       orderedMass s (hs ▸ (⟨hb, hd⟩ : CheckedTargets n raw.targets).embedding)) := by
+  simp only [step, validateBirth, dif_pos hm, dif_pos hf, dif_pos hs,
+    checkTargets, dif_pos hb, dif_pos hd]
+
+/-- Rewrite just the leading birth, leaving its entire continuation opaque. -/
+private theorem checkedBirthEquation {n m index : Nat} {s : State n}
+    {raw : RawBirth} {rest : List RawBirth}
+    (hm : 0 < m ∧ m ≤ n) (hf : 0 < raw.fitness)
+    (hs : raw.targets.size = m) (hb : targetsBounded n raw.targets)
+    (hd : targetsDistinct raw.targets) :
+    runBirths m index ⟨n, s⟩ (raw :: rest) =
+      let T : Targets n m :=
+        hs ▸ (⟨hb, hd⟩ : CheckedTargets n raw.targets).embedding
+      let next := applyBirth s T hm.1 ⟨raw.fitness, hf⟩
+      match runBirths m (index + 1) ⟨n + 1, next⟩ rest with
+      | .error e => .error e
+      | .ok out => .ok ⟨out.final, orderedMass s T * out.probability⟩ := by
+  rw [replay_step, checkedStep s m raw hm hf hs hb hd]
+
+#print axioms checkedStep
+#print axioms checkedBirthEquation
+
 end NarrativeDynamics.FitnessAttachment.ReplayFixtures
 
 open NarrativeDynamics.FitnessAttachment.ReplayFixtures
@@ -40,8 +69,8 @@ macro "prepareReplaySeed " raw:term " atSize " size:term : tactic =>
      simp only [replay, parseSeed, dif_pos hn, dif_pos hs, dif_pos hf,
        dif_pos he, dif_pos hd, dif_pos hc]))
 
--- Prove each concrete request's guards explicitly, as in Task 5. Avoid a
--- recursive simp discharger traversing dependent successor branches.
+-- Prove concrete guards, then rewrite exactly one checked-step equation.
+-- Do not recursively simplify validators under unresolved continuation matches.
 macro "prepareReplayBirth " n:term " withM " m:term
     " fitness " eta:term " targets " xs:term : tactic =>
   `(tactic|
@@ -50,8 +79,9 @@ macro "prepareReplayBirth " n:term " withM " m:term
      have hs : ($xs : Array Nat).size = $m := rfl
      have hb : targetsBounded $n $xs := by decide
      have hd : targetsDistinct $xs := by decide
-     simp only [twoBirths, runBirths, step, validateBirth, if_pos hm,
-       dif_pos hm, dif_pos hf, dif_pos hs, checkTargets, dif_pos hb, dif_pos hd]))
+     simp only [twoBirths, if_pos hm]
+     rw [checkedBirthEquation (n := $n) (m := $m) (raw := (⟨$eta, $xs⟩ : RawBirth))
+       hm hf hs hb hd]))
 
 section ExactReplayFixtures
 set_option maxRecDepth 4096
