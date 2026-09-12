@@ -14,13 +14,14 @@ from .graphs import DirectedGraph, graph_fingerprint, random_sparse_graph
 from .models import GRUClassifier, GraphRecurrentClassifier
 from .ntu_io import _canonical_json
 from .pose_bundle import _digest, _json
-from .pose_development import PreparedPoseDevelopment, _runtime, _tensor_record, load_pose_development
+from .pose_development import _runtime, _tensor_record
 from .pose_extract import ExtractionSpec
 from .pose_features import PoseFeatureSpec
-from .pose_training import (
-    PaddedModel, PosePartition, _positive_integer, _seeded_cpu,
-    _validate_config, _validate_partition, evaluate_padded, train_padded_model,
+from .pose_indexed_development import IndexedPoseDevelopment, load_indexed_pose_development
+from .pose_indexed_training import (
+    _validate_source_model, evaluate_indexed, train_indexed_model,
 )
+from .pose_training import PaddedModel, _positive_integer, _seeded_cpu, _validate_config
 from .provenance import _context, verify_controls
 from .train import TrainConfig, _state_hash
 
@@ -29,6 +30,7 @@ _FAMILIES = ("gru", "random_graph", "rewired", "flywire")
 _INPUT_DIM = 121
 _SOURCE_FILES = (
     "__init__.py", "pose_comparison.py", "pose_development.py", "pose_bundle.py",
+    "pose_index.py", "pose_indexed_development.py", "pose_indexed_training.py",
     "pose_extract.py", "pose_backend.py", "ntu_io.py", "schema.py",
     "pose_features.py", "pose_batches.py", "pose_training.py", "train.py", "eval.py",
     "graphs.py", "flywire.py", "provenance.py", "models/__init__.py",
@@ -115,7 +117,6 @@ def _graph_inputs(protocol_path: str | Path, source: str | Path, controls: str |
     if type(protocol) is not dict or type(bundle) is not dict:
         raise ValueError("topology protocol and control bundle must be JSON objects")
     budget = {name: getattr(config, name) for name in ("epochs", "max_updates", "parameter_ceiling")}
-    # Canonical comparison also rejects bool/int and float/int aliases.
     if (_canonical_json(protocol.get("seeds")) != _canonical_json(config.seeds)
             or _canonical_json(protocol.get("budget")) != _canonical_json(budget)):
         raise ValueError("execution seeds and budget must match the pinned topology protocol")
@@ -149,7 +150,8 @@ def _execution_identity() -> dict[str, Any]:
                                for name in _SOURCE_FILES}, "runtime": _runtime(),
             "device": "cpu", "dtype": "float32", "input_dim": _INPUT_DIM,
             "random_graph_policy": "loop-free-uniform-edge-sample; same-N-E; unit-weights; run-seed",
-            "graph_weight_policy": "original-recurrence; no-weight-normalization"}
+            "graph_weight_policy": "original-recurrence; no-weight-normalization",
+            "development_input_policy": "bound-indexed-minibatches; no-whole-partition-tensors"}
 
 
 def _adjacency_hash(model: PaddedModel) -> str | None:
@@ -158,10 +160,15 @@ def _adjacency_hash(model: PaddedModel) -> str | None:
     return _tensor_record(model.adjacency, torch.float32, "<f4")["sha256"]
 
 
-def _expected_orders(part: PosePartition, seed: int, epochs: int) -> tuple[str, ...]:
+def _train_rows(source: IndexedPoseDevelopment) -> tuple[object, ...]:
+    return tuple(entry for entry in source.index.samples if entry.split == "train")
+
+
+def _expected_orders(source: IndexedPoseDevelopment, seed: int, epochs: int) -> tuple[str, ...]:
+    rows = _train_rows(source)
     generator = torch.Generator(device="cpu").manual_seed(seed)
-    return tuple(_hash_json([part.sample_ids[i] for i in torch.randperm(
-        len(part.sample_ids), generator=generator, device="cpu").tolist()]) for _ in range(epochs))
+    return tuple(_hash_json([rows[i].sample_id for i in torch.randperm(
+        len(rows), generator=generator, device="cpu").tolist()]) for _ in range(epochs))
 
 
 @dataclass(frozen=True)
@@ -189,23 +196,22 @@ def _construct_arm_model(family: str, graph: DirectedGraph | None,
     raise ValueError("unsupported preflight arm construction")
 
 
-def _validate_arm_model(model: PaddedModel, prepared: PreparedPoseDevelopment,
-                        training: TrainConfig, parameter_count: int) -> None:
-    for role in ("train", "validation"):
-        _validate_partition(model, getattr(prepared, role), role)
+def _validate_arm_model(model: PaddedModel, source: IndexedPoseDevelopment,
+                        training: TrainConfig, parameter_count: int, pin: str) -> None:
+    _validate_source_model(model, source, expected_binding_sha256=pin)
     _validate_config(model, training)
     if sum(p.numel() for p in model.parameters()) != parameter_count:
         raise ValueError("constructed model parameter count differs from the preflight architecture")
 
 
-def _preflight_models(prepared: PreparedPoseDevelopment, graph: DirectedGraph,
-                      rewired: dict[int, DirectedGraph], config: PoseComparisonSpec) -> tuple[_ArmPlan, ...]:
-    size, classes = len(prepared.train.sample_ids), len(prepared.train.classes)
+def _preflight_models(source: IndexedPoseDevelopment, graph: DirectedGraph,
+                      rewired: dict[int, DirectedGraph], config: PoseComparisonSpec,
+                      pin: str) -> tuple[_ArmPlan, ...]:
+    size, classes = len(_train_rows(source)), len(source.classes)
     updates = config.epochs * ((size + config.batch_size - 1) // config.batch_size)
     if config.max_updates != updates:
         raise ValueError("max_updates must equal the complete-roster epoch/minibatch budget")
     h, d, n = config.gru_hidden_dim, config.graph_node_dim, graph.num_nodes
-    # Reject oversized widths before allocation; check constructed counts below too.
     counts = {"gru": 3 * h * (_INPUT_DIM + h + 2) + classes * (h + 1),
               "graph": n * d * (_INPUT_DIM + 1) + 2 * d * d + classes * (d + 1)}
     if max(counts.values()) > config.parameter_ceiling:
@@ -216,35 +222,34 @@ def _preflight_models(prepared: PreparedPoseDevelopment, graph: DirectedGraph,
                     "rewired": rewired[seed], "flywire": graph}
         training = TrainConfig(seed=seed, epochs=config.epochs, lr=config.lr,
                                batch_size=config.batch_size, parameter_ceiling=config.parameter_ceiling)
-        orders = _expected_orders(prepared.train, seed, config.epochs)
+        orders = _expected_orders(source, seed, config.epochs)
         for family in _FAMILIES:
             topology = None if family == "gru" else variants[family]
             model = _construct_arm_model(family, topology, config, classes, seed)
             count = counts["gru" if family == "gru" else "graph"]
-            _validate_arm_model(model, prepared, training, count)
+            _validate_arm_model(model, source, training, count, pin)
             fingerprint = "none" if family == "gru" else graph_fingerprint(topology)
             plans.append(_ArmPlan(seed, family, topology, training, orders, count, fingerprint,
                                   _adjacency_hash(model), _state_hash(model)))
-            # Do not keep the previous model alive while allocating the next one.
             del model
     return tuple(plans)
 
 
-def _execute_arm(plan: _ArmPlan, prepared: PreparedPoseDevelopment,
+def _execute_arm(plan: _ArmPlan, source: IndexedPoseDevelopment,
                  config: PoseComparisonSpec, pin: str) -> dict[str, Any]:
     """Keep each model and trained-run handle local to one completed arm."""
     seed, family, training, orders = plan.seed, plan.family, plan.training, plan.orders
     count, fingerprint, adjacency = (plan.parameter_count, plan.topology_fingerprint,
                                       plan.adjacency_sha256)
-    model = _construct_arm_model(family, plan.graph, config, len(prepared.train.classes), seed)
-    _validate_arm_model(model, prepared, training, count)
+    model = _construct_arm_model(family, plan.graph, config, len(source.classes), seed)
+    _validate_arm_model(model, source, training, count, pin)
     if _state_hash(model) != plan.initial_state_hash or _adjacency_hash(model) != adjacency:
         raise ValueError("reconstructed model differs from its preflight state or adjacency")
     _LOGGER.info("seed=%s family=%s start epochs=%s updates=%s", seed, family,
                  config.epochs, config.max_updates)
-    prepared.verify()
-    run = train_padded_model(model, prepared.train, prepared.validation, training)
-    prepared.verify()
+    source.verify(expected_binding_sha256=pin)
+    run = train_indexed_model(model, source, training, expected_binding_sha256=pin)
+    source.verify(expected_binding_sha256=pin)
     if (run.model is not model or type(run.optimizer_steps) is not int
             or run.optimizer_steps != config.max_updates or run.epoch_order_hashes != orders):
         raise ValueError("arm execution differs from the required model/update/sample-order condition")
@@ -252,11 +257,13 @@ def _execute_arm(plan: _ArmPlan, prepared: PreparedPoseDevelopment,
         raise ValueError("selected epoch is outside the full training budget")
     if _state_hash(model) != run.state_hash or _adjacency_hash(model) != adjacency:
         raise ValueError("selected learned state or fixed adjacency changed")
-    metrics = asdict(evaluate_padded(model, prepared.validation, batch_size=config.batch_size))
+    metrics = asdict(evaluate_indexed(
+        model, source, expected_binding_sha256=pin, batch_size=config.batch_size,
+    ))
     if (any(type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 1
             for v in metrics.values()) or metrics["macro_f1"] != run.best_validation_macro_f1):
         raise ValueError("selected checkpoint validation metrics are invalid or inconsistent")
-    prepared.verify()
+    source.verify(expected_binding_sha256=pin)
     if _state_hash(model) != run.state_hash or _adjacency_hash(model) != adjacency:
         raise ValueError("validation changed selected learned state or fixed adjacency")
     row = {
@@ -279,11 +286,11 @@ def run_pose_comparison(
     expected_topology_sha256: str, expected_controls_sha256: str,
     config: PoseComparisonSpec,
 ) -> dict[str, Any]:
-    """Execute all four development arms after checking every input and budget.
+    """Execute all four development arms from a verified indexed source.
 
-    Requires independently retained pins and private read-only source trees. This
-    materializes full partitions and is not hostile-Python or filesystem isolation.
-    No partial report, file publication, automatic retry or final-test access.
+    Requires independently retained pins and private read-only source trees. Each
+    optimizer/evaluation step requests only its current development minibatch;
+    there is no eager whole-partition fallback, automatic retry or final-test access.
     """
     _validate_spec(config)
     pin = _digest(expected_binding_sha256, "prepared binding SHA-256")
@@ -292,16 +299,16 @@ def run_pose_comparison(
         topology_protocol, connectivity, controls, expected_topology_sha256,
         expected_controls_sha256, config,
     )
-    prepared = load_pose_development(
+    source = load_indexed_pose_development(
         bundle, root=root, inventory=inventory, extraction_spec=extraction_spec,
         feature_spec=feature_spec, classes=classes,
         expected_manifest_sha256=expected_manifest_sha256, expected_encoder_hash=expected_encoder_hash,
     )
-    prepared.verify()
-    if prepared.binding_sha256 != pin:
+    source.verify(expected_binding_sha256=pin)
+    if source.binding_sha256 != pin:
         raise ValueError("prepared binding does not match the independent pin")
-    plans = _preflight_models(prepared, selection.graph, rewired, config)
-    rows = [_execute_arm(plan, prepared, config, pin) for plan in plans]
+    plans = _preflight_models(source, selection.graph, rewired, config, pin)
+    rows = [_execute_arm(plan, source, config, pin) for plan in plans]
     if _execution_identity() != execution:
         raise ValueError("execution source or runtime identity changed during comparison")
     paired = []
@@ -314,12 +321,11 @@ def run_pose_comparison(
     report = {
         "format_version": 1, "evidence_scope": "development_validation_only",
         "final_test_evaluated": False, "topology_claim_evaluated": False,
-        "prepared_binding_sha256": pin, "input_binding": prepared.descriptor(),
+        "prepared_binding_sha256": pin, "input_binding": source.descriptor(),
         "topology_protocol_sha256": expected_topology_sha256,
         "control_bundle_sha256": expected_controls_sha256,
         "graph_provenance": {"identity": identity, "node_types": list(selection.node_types)},
         "execution": execution, "config": asdict(config), "config_hash": _hash_json(asdict(config)),
         "arms": rows, "paired_validation": paired,
     }
-    # Return an independent JSON-compatible record, not model or tensor handles.
     return _json(_canonical_json(report).encode("utf-8"))
