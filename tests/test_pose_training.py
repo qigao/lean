@@ -1,5 +1,6 @@
 """Development training contracts; generated feature fixtures, not recognition evidence."""
 from copy import deepcopy
+from contextlib import nullcontext
 from dataclasses import replace
 import hashlib
 import importlib
@@ -97,10 +98,12 @@ def test_actual_training_is_repeatable_padding_invariant_and_budgeted(kind, monk
 
 
 @pytest.mark.parametrize("kind", ("gru", "graph"))
-def test_every_minibatch_keeps_targets_lengths_and_observed_rows_aligned(kind, monkeypatch):
+@pytest.mark.parametrize("device_context", (False, True))
+def test_every_minibatch_keeps_targets_lengths_and_observed_rows_aligned(kind, device_context, monkeypatch):
     api = _api()
     train, validation, model = _partition("train"), _partition("validation"), _model(kind)
     original_forward, original_loss = model.forward_padded, F.cross_entropy
+    original_step = torch.optim.Adam.step
     observed, updates = [], []
     def forward(batch):
         if model.training and torch.is_grad_enabled():
@@ -111,11 +114,19 @@ def test_every_minibatch_keeps_targets_lengths_and_observed_rows_aligned(kind, m
         return original_forward(batch)
     def loss(logits, targets, *args, **kwargs):
         assert torch.equal(targets, train.targets[observed])
-        updates.append(tuple(observed))
         return original_loss(logits, targets, *args, **kwargs)
+    def step(optimizer, *args, **kwargs):
+        result = original_step(optimizer, *args, **kwargs)
+        updates.append(tuple(observed))
+        return result
     monkeypatch.setattr(model, "forward_padded", forward)
     monkeypatch.setattr(F, "cross_entropy", loss)
-    api.train_padded_model(model, train, validation, _config())
+    monkeypatch.setattr(torch.optim.Adam, "step", step)
+    # TorchFunctionMode may re-enter the functional loss wrapper under a default
+    # device context. Count actual optimizer steps, not Python dispatch entries.
+    with torch.device("cpu") if device_context else nullcontext():
+        run = api.train_padded_model(model, train, validation, _config())
+    assert run.optimizer_steps == len(updates) == 9
     assert [len(i) for i in updates] == [3, 3, 1] * 3
     for start in (0, 3, 6):
         assert sorted(i for batch in updates[start:start+3] for i in batch) == list(range(7))
