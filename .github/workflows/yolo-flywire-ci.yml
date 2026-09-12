@@ -69,9 +69,96 @@ jobs:
             echo "bytes=$(wc -c < flywire-connectivity.csv | tr -d ' ')"
           } | tee flywire-provenance.txt
 
+      - name: Derive frozen T4/T5 type graph
+        shell: bash
+        run: |
+          python - <<'PY'
+          import csv
+          import hashlib
+          import json
+
+          seeds = ("T4a", "T4b", "T4c", "T4d", "T5a", "T5b", "T5c", "T5d")
+          rows = []
+          observed = set()
+          with open("flywire-connectivity.csv", newline="", encoding="utf-8") as handle:
+              reader = csv.DictReader(handle)
+              required = {"from type", "to type", "synapses total"}
+              if reader.fieldnames is None or not required.issubset(reader.fieldnames):
+                  raise SystemExit(f"missing required columns: {sorted(required)}")
+              for row in reader:
+                  src = row["from type"].strip()
+                  dst = row["to type"].strip()
+                  weight = int(row["synapses total"])
+                  observed.update((src, dst))
+                  rows.append((src, dst, weight))
+
+          missing_seeds = [seed for seed in seeds if seed not in observed]
+          if missing_seeds:
+              raise SystemExit(f"missing declared seed types: {missing_seeds}")
+
+          selected = set(seeds)
+          selected.update(
+              dst
+              for src, dst, weight in rows
+              if src in seeds and weight >= 5
+          )
+          node_types = tuple(sorted(selected))
+          remap = {name: index for index, name in enumerate(node_types)}
+
+          selected_self_rows = [
+              (src, dst, weight)
+              for src, dst, weight in rows
+              if src in selected and dst in selected and src == dst and weight > 0
+          ]
+          if selected_self_rows:
+              preview = selected_self_rows[:10]
+              raise SystemExit(
+                  "selected type graph contains type-self connectivity; "
+                  f"V0 graph semantics must be resolved before fingerprinting: {preview}"
+              )
+
+          aggregate = {}
+          for src, dst, weight in rows:
+              if src not in selected or dst not in selected or weight <= 0:
+                  continue
+              key = (remap[src], remap[dst])
+              aggregate[key] = aggregate.get(key, 0.0) + float(weight)
+
+          canonical_edges = sorted(
+              (int(src), int(dst), float(weight))
+              for (src, dst), weight in aggregate.items()
+          )
+          payload = {"num_nodes": len(node_types), "edges": canonical_edges}
+          encoded = json.dumps(
+              payload,
+              sort_keys=True,
+              separators=(",", ":"),
+              allow_nan=False,
+          ).encode("utf-8")
+          fingerprint = hashlib.sha256(encoded).hexdigest()
+          graph_record = {
+              "node_types": node_types,
+              "num_nodes": len(node_types),
+              "num_edges": len(canonical_edges),
+              "graph_fingerprint": fingerprint,
+              "seed_types": seeds,
+              "min_seed_synapses": 5,
+          }
+          with open("flywire-selected-graph.json", "w", encoding="utf-8") as handle:
+              json.dump(graph_record, handle, sort_keys=True, separators=(",", ":"))
+              handle.write("\n")
+          with open("flywire-provenance.txt", "a", encoding="utf-8") as handle:
+              handle.write(f"selected_nodes={len(node_types)}\n")
+              handle.write(f"selected_edges={len(canonical_edges)}\n")
+              handle.write(f"selected_graph_fingerprint={fingerprint}\n")
+          print(json.dumps(graph_record, indent=2))
+          PY
+
       - name: Upload provenance record
         uses: actions/upload-artifact@v4
         with:
           name: flywire-v783-provenance
-          path: flywire-provenance.txt
+          path: |
+            flywire-provenance.txt
+            flywire-selected-graph.json
           if-no-files-found: error
