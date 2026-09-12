@@ -42,6 +42,20 @@ class FlyWireSelection:
                 raise ValueError("edge references neuron outside selection")
 
 
+@dataclass(frozen=True)
+class VisualTypeGraphSelection:
+    node_types: tuple[str, ...]
+    graph: DirectedGraph
+
+    def __post_init__(self) -> None:
+        if not self.node_types:
+            raise ValueError("visual type graph selection must contain at least one type")
+        if self.node_types != tuple(sorted(self.node_types)):
+            raise ValueError("visual type node order must be lexicographic")
+        if len(self.node_types) != self.graph.num_nodes:
+            raise ValueError("node type count must match graph node count")
+
+
 def load_flywire_csv(
     path: str | Path,
     release_id: str,
@@ -92,3 +106,72 @@ def selection_to_graph(selection: FlyWireSelection) -> DirectedGraph:
         dst=tuple(dst for _, dst, _ in ordered),
         weight=tuple(weight for _, _, weight in ordered),
     )
+
+
+def load_visual_type_graph(
+    path: str | Path,
+    *,
+    seed_types: tuple[str, ...],
+    min_seed_synapses: int,
+) -> VisualTypeGraphSelection:
+    """Load the frozen v783 type table and apply the predeclared motion-subgraph rule."""
+    if not seed_types or any(not seed.strip() for seed in seed_types):
+        raise ValueError("seed_types must contain non-empty type names")
+    if min_seed_synapses <= 0:
+        raise ValueError("min_seed_synapses must be positive")
+    if len(set(seed_types)) != len(seed_types):
+        raise ValueError("seed_types must be unique")
+
+    source = Path(path)
+    rows: list[tuple[str, str, int]] = []
+    observed_types: set[str] = set()
+    with source.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        required = {"from type", "to type", "synapses total"}
+        if reader.fieldnames is None or not required.issubset(reader.fieldnames):
+            raise ValueError(
+                "FlyWire visual type CSV requires from type, to type, and synapses total columns"
+            )
+        for row in reader:
+            source_type = row["from type"].strip()
+            target_type = row["to type"].strip()
+            synapses = int(row["synapses total"])
+            if not source_type or not target_type:
+                raise ValueError("visual type rows require non-empty type names")
+            if synapses < 0:
+                raise ValueError("synapses total must be non-negative")
+            observed_types.update((source_type, target_type))
+            rows.append((source_type, target_type, synapses))
+
+    missing_seeds = sorted(set(seed_types) - observed_types)
+    if missing_seeds:
+        raise ValueError("missing declared seed type(s): " + ", ".join(missing_seeds))
+
+    selected = set(seed_types)
+    selected.update(
+        target_type
+        for source_type, target_type, synapses in rows
+        if source_type in seed_types and synapses >= min_seed_synapses
+    )
+    node_types = tuple(sorted(selected))
+    remap = {name: index for index, name in enumerate(node_types)}
+
+    aggregate: dict[tuple[int, int], float] = {}
+    for source_type, target_type, synapses in rows:
+        if source_type not in selected or target_type not in selected or synapses <= 0:
+            continue
+        if source_type == target_type:
+            raise ValueError(
+                "selected type graph contains type-self connectivity; V0 graph semantics must be resolved"
+            )
+        key = (remap[source_type], remap[target_type])
+        aggregate[key] = aggregate.get(key, 0.0) + float(synapses)
+
+    ordered = sorted((src, dst, weight) for (src, dst), weight in aggregate.items())
+    graph = DirectedGraph(
+        num_nodes=len(node_types),
+        src=tuple(src for src, _, _ in ordered),
+        dst=tuple(dst for _, dst, _ in ordered),
+        weight=tuple(weight for _, _, weight in ordered),
+    )
+    return VisualTypeGraphSelection(node_types=node_types, graph=graph)
