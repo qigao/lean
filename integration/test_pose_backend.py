@@ -182,5 +182,35 @@ def test_real_untrained_model_and_extractor_are_repeatable_and_keep_test_sealed(
                 reference = torch.cat([network(batch.features[row:row+1, :count])
                                        for row, count in enumerate(batch.lengths.tolist())])
                 torch.testing.assert_close(predictions, reference, rtol=1e-5, atol=1e-6)
+    from copy import deepcopy
+    from yolo_flywire.pose_training import PosePartition, evaluate_padded, train_padded_model
+    from yolo_flywire.train import TrainConfig
+    # Fixed fixture class map outside classifier observations; not a real-data freeze.
+    classes = tuple(sorted({sample.label for sample in bundles[0].samples}))
+    assert len(classes) == 10
+    class_index = {label: index for index, label in enumerate(classes)}
+    partitions = []
+    for bundle, encoded in zip(bundles, encoded_runs, strict=True):
+        pair = {}
+        for split in ("train", "validation"):
+            indices = [i for i, sample in enumerate(bundle.samples) if sample.split == split]
+            samples = tuple(bundle.samples[i] for i in indices)
+            pair[split] = PosePartition(
+                observations=collate_pose_features(tuple(encoded[i] for i in indices)),
+                targets=torch.tensor([class_index[s.label] for s in samples], dtype=torch.int64),
+                classes=classes, sample_ids=tuple(s.sample_id for s in samples),
+                subjects=tuple(s.subject for s in samples), split=split,
+            )
+        partitions.append(pair)
+    for network in networks:
+        runs = [train_padded_model(
+            deepcopy(network), pair["train"], pair["validation"],
+            TrainConfig(seed=7, epochs=2, lr=.01, batch_size=4, parameter_ceiling=10000),
+        ) for pair in partitions]
+        assert runs[0].state_hash == runs[1].state_hash
+        assert runs[0].epoch_order_hashes == runs[1].epoch_order_hashes
+        for run, pair in zip(runs, partitions, strict=True):
+            assert run.optimizer_steps == 6 and 1 <= run.best_epoch <= 2
+            assert evaluate_padded(run.model, pair["validation"], batch_size=4).macro_f1 == run.best_validation_macro_f1
     assert len(decoded) == 40
-    print("Real-library smoke: variable-length generated clips x 2, verified timed reads, COCO17 features, split-separated padded tensors and padding-aware GRU/graph predictions; untrained checkpoint, NOT recognition evidence")
+    print("Real-library smoke: variable-length generated clips x 2, verified timed reads, COCO17 features, split-separated padded tensors and repeatable padded GRU/graph training; untrained YOLO checkpoint, NOT recognition evidence")
