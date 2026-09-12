@@ -1,10 +1,6 @@
 name: proof
 
 on:
-  push:
-    paths-ignore:
-      - "docs/superpowers/specs/**"
-      - "docs/superpowers/plans/**"
   pull_request:
     paths-ignore:
       - "docs/superpowers/specs/**"
@@ -16,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - name: Record checked revision
         run: |
           printf 'event=%s ref=%s requested_sha=%s run=%s attempt=%s\n' \
@@ -94,7 +92,6 @@ jobs:
           /usr/bin/time -f 'FitnessReplay elapsed=%e s peak_rss=%M KiB' \
             timeout --kill-after=10s 240s \
             stdbuf -oL -eL lake env lean -DmaxErrors=1 -DstderrAsMessages=false \
-              -DElab.async=false \
               NarrativeDynamics/Tests/FitnessReplay.lean
 
       - name: Lean theorem tests

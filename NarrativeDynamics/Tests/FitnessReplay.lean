@@ -233,10 +233,10 @@ macro "proveReplayProbability1 " "atSize " size:num " seedWeights " seedW:term
   `(tactic|
     (trace "replay-fixture probability: seed weights rewrite"
      $rewriteSeed:tactic
-     trace "replay-fixture probability: canonical target"
-     change traceMass $seedW ∅ $ordered = _
-     trace "replay-fixture probability: opaque numeric proof"
-     exact $massProof))
+     trace "replay-fixture probability: ordered target congruence"
+     refine (congrArg (traceMass $seedW ∅)
+       (show _ = $ordered from ?_)).trans $massProof
+     rfl))
 
 macro "proveReplayProbability2 " "atSize " size:num " seedWeights " seedW:term
     " selected " selected:term " nextWeights " nextW:term : tactic => do
