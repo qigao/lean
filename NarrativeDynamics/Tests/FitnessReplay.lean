@@ -135,25 +135,27 @@ macro "prepareReplayBirth " n:term " withM " m:term
 -- Bound field rewrites by the actual number of births. Recursive simp can
 -- rematch reducible graph fields beneath Fin.lastCases and create congruence
 -- metavariables; each birth equation must instead be used exactly once.
+-- The parsed State carries unfolded validity evidence. These field rewrites
+-- must recognize its original Valid predicate and carrier at default transparency.
 macro "finishReplaySummary " n:term " withM " m:term " births " rounds:num : tactic => do
   let degrees ← if rounds.getNat == 1 then
-    `(tactic| rewrite [birthDegreeFn (n := $n) (m := $m)])
+    `(tactic| rewrite (transparency := .default) [birthDegreeFn (n := $n) (m := $m)])
   else
     `(tactic|
-      (rewrite [birthDegreeFn (n := ($n + 1)) (m := $m)]
-       rewrite [birthDegreeFn (n := $n) (m := $m)]))
+      (rewrite (transparency := .default) [birthDegreeFn (n := ($n + 1)) (m := $m)]
+       rewrite (transparency := .default) [birthDegreeFn (n := $n) (m := $m)]))
   let fitnessTac ← if rounds.getNat == 1 then
-    `(tactic| rewrite [birthFitnessFn (n := $n) (m := $m)])
+    `(tactic| rewrite (transparency := .default) [birthFitnessFn (n := $n) (m := $m)])
   else
     `(tactic|
-      (rewrite [birthFitnessFn (n := ($n + 1)) (m := $m)]
-       rewrite [birthFitnessFn (n := $n) (m := $m)]))
+      (rewrite (transparency := .default) [birthFitnessFn (n := ($n + 1)) (m := $m)]
+       rewrite (transparency := .default) [birthFitnessFn (n := $n) (m := $m)]))
   let probability ← if rounds.getNat == 1 then
     `(tactic| decide_cbv)
   else
     `(tactic|
-      (rewrite [birthDegreeFn (n := $n) (m := $m)]
-       rewrite [birthFitnessFn (n := $n) (m := $m)]
+      (rewrite (transparency := .default) [birthDegreeFn (n := $n) (m := $m)]
+       rewrite (transparency := .default) [birthFitnessFn (n := $n) (m := $m)]
        decide_cbv))
   `(tactic|
     (trace "replay-fixture result: empty tail start"
