@@ -1,163 +1,117 @@
-# Phase 2 real-data freeze: NTU RGB+D 120 × YOLO26 Pose × FlyWire v783
+# Phase 2 real-data freeze
 
-## Status
+## Scope
 
-This document freezes the **design choices** for the first real-data confirmatory experiment. It does not authorize a sealed final-test run until the byte-level dataset/extraction hashes in `protocols/v0-real-ntu120-preflight.json` have been filled and validated.
+Phase 2 moves the V0 harness from synthetic plumbing evidence to a real-data confirmatory comparison of temporal behavior recognition. The confirmatory claim remains narrowly topology-specific: under one frozen YOLO/Pose observation stream, split, feature encoder, training budget, seeds, and evaluation protocol, does the selected FlyWire topology outperform a matched rewired FlyWire control?
 
-## Confirmatory question
+Synthetic results, `FlyWire > YOLO`, or `FlyWire > GRU` alone are not sufficient evidence for a topology-specific advantage.
 
-Under one frozen RGB observation stream, split, point encoder, training budget, seed set, and evaluation protocol, does a FlyWire motion-subsystem topology improve temporal action recognition relative to a degree-/weight-matched rewired control?
+## Dataset and task
 
-The decisive topology comparison is:
+The real-data family is **NTU RGB+D 120**, using **RGB video only** as classifier input. The V0 confirmatory subset is frozen to 10 single-person actions chosen to emphasize whole-body motion and coarse upper-body gesture while minimizing dependence on object appearance:
 
-`FlyWire motion graph` vs `matched rewired FlyWire motion graph`.
+- A8 sitting down
+- A9 standing up
+- A22 cheer up
+- A23 hand waving
+- A26 hopping
+- A27 jump up
+- A31 pointing
+- A34 rub two hands together
+- A35 nod head / bow
+- A36 shake head
 
-GRU and random sparse graph are contextual baselines only.
+The outer benchmark boundary is the official X-Sub120 split. Validation is derived only from the official training side by a deterministic subject-hash rule. Final-test subjects remain sealed from model, graph, threshold, and hyperparameter selection.
 
-## Real dataset
+The repository must not redistribute NTU RGB+D 120 media. A legally acquired local copy is required for execution, and a content-derived dataset hash must be frozen before the final test.
 
-Dataset: **NTU RGB+D 120**, official ROSE Lab release.
+## YOLO/Pose observation stream
 
-V0 uses the RGB modality only for model input. Official Kinect skeleton data may be used only as an extraction sanity-check and must never be supplied to the classifier.
+The extractor is frozen to Ultralytics `yolo26n-pose.pt`, with its 17 COCO body keypoints. The exact installed Ultralytics package version and the model-weight SHA-256 must be recorded from the execution environment before extraction.
 
-The dataset is research-only / non-commercial and may not be redistributed or used to derive a redistributed dataset without permission. Repository code therefore consumes a locally supplied dataset and stores only identifiers, hashes, extraction metadata, and aggregate metrics.
+The classifier observation contains only:
 
-### Frozen action subset
+- 17 keypoints × `(x, y, confidence)`;
+- person confidence;
+- timestamps / frame order needed to preserve sequence timing.
 
-The first confirmatory task deliberately focuses on actions that should be explainable mainly from body/wrist motion and do not require fine finger topology or object appearance:
+No ByteTrack feature, depth estimate, optical-flow network output, RGB embedding, or NTU-provided skeleton coordinates are classifier inputs. NTU skeleton annotations may be used only as an extraction sanity check and must never enter training or evaluation features.
 
-- A8 `sitting down`
-- A9 `standing up (from sitting position)`
-- A22 `cheer up`
-- A23 `hand waving`
-- A26 `hopping (one foot jumping)`
-- A27 `jump up`
-- A31 `pointing to something with finger`
-- A34 `rub two hands together`
-- A35 `nod head/bow`
-- A36 `shake head`
+The normalized observation schema and encoder implementation must be hashed before the final-test run.
 
-This subset mixes pedestrian/body dynamics with coarse gestures while avoiding classes where RGB object identity is the principal discriminant.
+## FlyWire source and frozen topology rule
 
-## Split
+The FlyWire source is frozen to the static visual-system snapshot associated with **FAFB v783** and the Nature visual-system parts-list work. The immutable repository snapshot is:
 
-Use the official NTU RGB+D 120 **cross-subject** benchmark boundary as the outer train/final-test split. The official final-test side is sealed.
+- repository: `murthylab/visual-system-parts-list`
+- commit: `0d8574d46627ce7fadd968a3c5d602e837325373`
+- connectivity path: `data/type_to_type_connection_and_synapse_counts.csv`
+- Git blob SHA-1: `5183755ecbb41d5c8cee1a4a2d99b8eecba75c52`
 
-Create the validation split only from the official training side using a deterministic subject-level hash partition. The validation assignment algorithm and salt must be frozen before pose extraction metrics are inspected.
+The file SHA-256 must still be computed from the exact downloaded bytes and entered into the protocol. The Git blob identifier is an additional immutable provenance identifier, not a substitute for the requested SHA-256.
 
-No sample from a final-test subject may be used for checkpoint selection, feature-schema selection, graph selection, threshold selection, or failure-driven retries.
+The selected type-level subgraph rule is frozen before final-test inspection:
 
-## YOLO observation extractor
+1. Seed cell types are `T4a`, `T4b`, `T4c`, `T4d`, `T5a`, `T5b`, `T5c`, `T5d`.
+2. Add every visual type receiving at least **5 aggregate incoming synapses** from any seed type in the frozen type-to-type table.
+3. Form the induced directed graph over the resulting selected type set.
+4. Edge weights are aggregate synapse counts from the same frozen table.
+5. Node ordering is lexicographic by exact type name before serialization / fingerprinting.
+6. The resulting graph fingerprint must be frozen before confirmatory training.
 
-Freeze the pose extractor to:
+This intentionally targets the canonical motion-detecting T4/T5 families and their directly supported downstream visual partners instead of choosing a subgraph after inspecting behavior-recognition results.
 
-- family: Ultralytics YOLO26 Pose
-- weights: `yolo26n-pose.pt`
-- task: COCO human pose
-- keypoints: 17 COCO body keypoints
-- input: NTU RGB frames only
-- output per frame: `(x, y, confidence)` for every keypoint plus person detection confidence
-- no ByteTrack-derived identity feature
-- no depth input
-- no NTU skeleton input
+## Matched controls
 
-The exact Ultralytics package version and downloaded weights SHA-256 must be written into the executable protocol after acquisition.
+The confirmatory arms are:
 
-Missing/low-confidence points must remain explicit masks; they must not be silently interpolated before the frozen feature encoder unless an interpolation rule is separately frozen and hashed.
+- GRU baseline
+- random sparse graph baseline
+- FlyWire graph recurrent model
+- degree-/weight-matched rewired FlyWire graph recurrent model
 
-## Observation schema
+The rewired control uses `directed-double-edge-swap-v1`. It must preserve node count, edge count, directed in/out degree sequence, and the edge-weight multiset. FlyWire and rewired arms must share the same observation schema, split, parameter ceiling, optimizer/training budget, and seed list.
 
-Each single-person sequence is normalized by a body-centered transform derived only from detected 2-D keypoints. The feature encoder may use position, first temporal difference, second temporal difference, joint-relative distances/angles already defined by the V0 feature contract, and explicit confidence/missingness masks.
+## Frozen seeds and budget
 
-The encoder must not receive:
+Seeds: `7, 11, 19, 23, 31`.
 
-- RGB pixels after pose extraction;
-- depth maps;
-- Kinect 3-D skeleton coordinates;
-- action labels as input features;
-- tracker IDs;
-- object-class features.
+Training ceiling:
 
-This keeps the claim narrow: temporal structure over YOLO/Pose point motion.
+- 20 epochs
+- 40 maximum updates
+- 50,000 learnable parameters
 
-## FlyWire source
+Checkpoint selection uses validation only.
 
-Freeze the connectome source to the published **FlyWire FAFB v783** visual-system snapshot associated with the visual-system parts-list publication.
+## Metrics and decision rule
 
-Data identity must include:
-
-- FlyWire release: `783`;
-- static source repository/commit for `murthylab/visual-system-parts-list`;
-- hash of the connectivity table actually ingested;
-- edge weight definition: published synapse-count connectivity;
-- type identity from the same static snapshot.
-
-Do not silently switch to BANC, MAOL, a newer Codex materialization, or updated annotations during this experiment.
-
-## Frozen motion-subsystem selection rule
-
-The V0 graph is type-level rather than one node per biological neuron so that all comparison arms fit the fixed parameter ceiling.
-
-1. Seed cell types are exactly `T4a`, `T4b`, `T4c`, `T4d`, `T5a`, `T5b`, `T5c`, `T5d`.
-2. Add every visual-system cell type receiving at least 5 published synapses in aggregate from any seed type.
-3. Retain only types present in the v783 static visual-system connectivity table.
-4. Build the induced directed graph over the resulting type set.
-5. Edge weight is aggregate synapse count from source type to target type.
-6. Remove self-loops only if the same rule is applied to both FlyWire and rewired controls; record that choice in the graph fingerprint.
-7. Sort node IDs lexicographically by published type name before serialization.
-
-The rule is selected from prior biological knowledge about the motion subsystem and is frozen without inspecting final-test outcomes.
-
-## Rewired control
-
-Use `directed-double-edge-swap-v1` and preserve, to the extent guaranteed by the implementation and checked by tests:
-
-- node count;
-- edge count;
-- in/out degree sequence;
-- edge-weight multiset.
-
-Generate the rewired topology from the frozen FlyWire graph using the same per-run seed policy. The model architecture, input encoder, optimizer, training budget, and parameter ceiling must be identical between FlyWire and rewired arms.
-
-## Baselines
-
-Run the same frozen observation tensors through:
-
-- GRU;
-- random sparse graph matched in node/edge scale;
-- rewired FlyWire graph;
-- FlyWire graph.
-
-`FlyWire > GRU` or `FlyWire > random` alone is not topology evidence.
-
-## Metrics and success criterion
-
-Primary metric: macro F1 across the 10 frozen action classes.
+Primary metric: **macro F1**.
 
 Secondary metrics:
 
-- balanced accuracy;
-- macro F1 under frozen keypoint-coordinate noise;
-- macro F1 under frozen keypoint masking.
+- balanced accuracy
+- keypoint-noise macro F1
+- keypoint-mask macro F1
 
-Freeze the topology success criterion before final-test execution as:
+The predeclared practical-effect rule for a topology-specific V0 success is:
 
-- mean paired `(FlyWire macro_f1 - rewired macro_f1)` across the five declared seeds >= **0.02**;
-- and the paired difference must be positive for at least **4 of 5** seeds.
+- mean paired `(FlyWire - rewired)` macro F1 across the five seeds is at least **+0.02**; and
+- the paired difference is positive in at least **4 of 5** seeds.
 
-This is a predeclared practical-effect threshold, not a claim of statistical significance. A result below the threshold is reported as `topology_advantage_not_established` and is a valid outcome.
+A negative or null result is a valid outcome and must be retained as such. No topology selection, region selection, threshold change, or retry-based cherry-picking is permitted after inspecting the sealed final test.
 
-## Remaining preflight fields
+## Remaining byte-level freeze
 
-Before execution, the following byte-derived values still must be filled from the legally acquired local data and exact extractor installation:
+Before confirmatory final-test execution, all of the following must be non-null and validated:
 
-- dataset archive/content hash;
+- NTU dataset content/archive hash;
 - exact Ultralytics package version;
 - `yolo26n-pose.pt` SHA-256;
-- deterministic train/validation/final-test split hash;
-- observation-schema hash;
-- visual-system-parts-list source commit;
-- ingested connectivity-table SHA-256;
-- resulting selected graph fingerprint.
+- frozen split hash;
+- observation-schema / encoder hash;
+- FlyWire connectivity CSV SHA-256;
+- selected graph fingerprint;
+- matched rewired graph fingerprint.
 
-Until those values are present, Phase 2 remains a frozen **preflight design**, not a confirmatory run.
+Only after these values are frozen may the real final-test run be considered confirmatory evidence.
