@@ -53,6 +53,17 @@ jobs:
     name: Freeze FlyWire provenance
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install lightweight graph dependency
+        run: python -m pip install "numpy>=1.26"
+
       - name: Download pinned v783 type connectivity
         shell: bash
         run: |
@@ -69,80 +80,79 @@ jobs:
             echo "bytes=$(wc -c < flywire-connectivity.csv | tr -d ' ')"
           } | tee flywire-provenance.txt
 
-      - name: Derive frozen T4/T5 type graph
+      - name: Derive frozen T4/T5 graph and matched rewired controls
+        env:
+          PYTHONPATH: python
         shell: bash
         run: |
           python - <<'PY'
-          import csv
-          import hashlib
+          from collections import Counter
           import json
 
-          seeds = ("T4a", "T4b", "T4c", "T4d", "T5a", "T5b", "T5c", "T5d")
-          rows = []
-          observed = set()
-          with open("flywire-connectivity.csv", newline="", encoding="utf-8") as handle:
-              reader = csv.DictReader(handle)
-              required = {"from type", "to type", "synapses total"}
-              if reader.fieldnames is None or not required.issubset(reader.fieldnames):
-                  raise SystemExit(f"missing required columns: {sorted(required)}")
-              for row in reader:
-                  src = row["from type"].strip()
-                  dst = row["to type"].strip()
-                  weight = int(row["synapses total"])
-                  observed.update((src, dst))
-                  rows.append((src, dst, weight))
+          from yolo_flywire.flywire import load_visual_type_graph
+          from yolo_flywire.graphs import graph_fingerprint, rewire_degree_preserving
 
-          missing_seeds = [seed for seed in seeds if seed not in observed]
-          if missing_seeds:
-              raise SystemExit(f"missing declared seed types: {missing_seeds}")
-
-          selected = set(seeds)
-          selected.update(
-              dst
-              for src, dst, weight in rows
-              if src in seeds and weight >= 5
+          seed_types = ("T4a", "T4b", "T4c", "T4d", "T5a", "T5b", "T5c", "T5d")
+          training_seeds = (7, 11, 19, 23, 31)
+          selection = load_visual_type_graph(
+              "flywire-connectivity.csv",
+              seed_types=seed_types,
+              min_seed_synapses=5,
           )
-          node_types = tuple(sorted(selected))
-          remap = {name: index for index, name in enumerate(node_types)}
+          graph = selection.graph
+          fingerprint = graph_fingerprint(graph)
+          diagonal = {
+              (source, target, weight)
+              for source, target, weight in zip(graph.src, graph.dst, graph.weight)
+              if source == target
+          }
+          offdiagonal_count = graph.num_edges - len(diagonal)
+          swaps = 10 * offdiagonal_count
+          original_degrees = (Counter(graph.src), Counter(graph.dst))
+          original_weights = sorted(graph.weight)
 
-          aggregate = {}
-          for src, dst, weight in rows:
-              if src not in selected or dst not in selected or weight <= 0:
-                  continue
-              key = (remap[src], remap[dst])
-              aggregate[key] = aggregate.get(key, 0.0) + float(weight)
+          rewired_fingerprints = {}
+          for seed in training_seeds:
+              rewired = rewire_degree_preserving(graph, seed=seed, swaps=swaps)
+              rewired_diagonal = {
+                  (source, target, weight)
+                  for source, target, weight in zip(rewired.src, rewired.dst, rewired.weight)
+                  if source == target
+              }
+              if (Counter(rewired.src), Counter(rewired.dst)) != original_degrees:
+                  raise SystemExit(f"seed {seed}: directed degree sequence changed")
+              if sorted(rewired.weight) != original_weights:
+                  raise SystemExit(f"seed {seed}: weight multiset changed")
+              if rewired_diagonal != diagonal:
+                  raise SystemExit(f"seed {seed}: diagonal population edges changed")
+              rewired_fingerprints[str(seed)] = graph_fingerprint(rewired)
 
-          canonical_edges = sorted(
-              (int(src), int(dst), float(weight))
-              for (src, dst), weight in aggregate.items()
-          )
-          diagonal_edges = sum(src == dst for src, dst, _ in canonical_edges)
-          payload = {"num_nodes": len(node_types), "edges": canonical_edges}
-          encoded = json.dumps(
-              payload,
-              sort_keys=True,
-              separators=(",", ":"),
-              allow_nan=False,
-          ).encode("utf-8")
-          fingerprint = hashlib.sha256(encoded).hexdigest()
           graph_record = {
-              "node_types": node_types,
-              "num_nodes": len(node_types),
-              "num_edges": len(canonical_edges),
-              "num_diagonal_edges": diagonal_edges,
+              "node_types": selection.node_types,
+              "num_nodes": graph.num_nodes,
+              "num_edges": graph.num_edges,
+              "num_diagonal_edges": len(diagonal),
+              "num_offdiagonal_edges": offdiagonal_count,
               "diagonal_edge_semantics": "within-cell-type population connectivity, not neuron autapses",
               "graph_fingerprint": fingerprint,
-              "seed_types": seeds,
+              "seed_types": seed_types,
               "min_seed_synapses": 5,
+              "rewiring_algorithm": "directed-double-edge-swap-v2-diagonal-fixed",
+              "rewiring_successful_swaps_per_offdiagonal_edge": 10,
+              "rewiring_successful_swaps": swaps,
+              "rewired_graph_fingerprints": rewired_fingerprints,
           }
           with open("flywire-selected-graph.json", "w", encoding="utf-8") as handle:
               json.dump(graph_record, handle, sort_keys=True, separators=(",", ":"))
               handle.write("\n")
           with open("flywire-provenance.txt", "a", encoding="utf-8") as handle:
-              handle.write(f"selected_nodes={len(node_types)}\n")
-              handle.write(f"selected_edges={len(canonical_edges)}\n")
-              handle.write(f"selected_diagonal_edges={diagonal_edges}\n")
+              handle.write(f"selected_nodes={graph.num_nodes}\n")
+              handle.write(f"selected_edges={graph.num_edges}\n")
+              handle.write(f"selected_diagonal_edges={len(diagonal)}\n")
               handle.write(f"selected_graph_fingerprint={fingerprint}\n")
+              handle.write(f"rewiring_successful_swaps={swaps}\n")
+              for seed, value in rewired_fingerprints.items():
+                  handle.write(f"rewired_graph_fingerprint_seed_{seed}={value}\n")
           print(json.dumps(graph_record, indent=2))
           PY
 
