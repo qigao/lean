@@ -1,78 +1,71 @@
-# YOLO + FlyWire behavior recognition V0 readiness report
+# V0 readiness report
 
 ## Status
 
-The V0 research harness is **implementation-ready for a frozen real-data topology comparison**, but it does **not** yet support a claim that FlyWire topology improves pedestrian/gesture recognition.
+The V0 harness is ready for a real-data confirmatory phase, but it does **not** establish that FlyWire topology improves behavior recognition.
 
-This report distinguishes software/protocol evidence from empirical connectome-topology evidence.
+The validated harness includes:
 
-## Verified implementation gates
+- Lean protocol/claim contracts;
+- immutable point-sequence schema;
+- deterministic synthetic pose generation;
+- frozen feature extraction and missing-keypoint handling;
+- GRU and graph recurrent baselines;
+- random sparse and degree-preserving rewired graph controls;
+- FlyWire graph ingestion with provenance fields;
+- deterministic training and held-out evaluation;
+- canonical run manifests;
+- robustness hooks for keypoint noise and masking;
+- end-to-end four-arm comparison with paired FlyWire-vs-rewired evidence aggregation.
 
-GitHub Actions is the authoritative execution environment for this branch. The following RED→GREEN gates were verified on exact heads:
+Synthetic results remain plumbing evidence only.
 
-1. Experiment/evidence contract and package skeleton — GREEN run `34681741564` at `9920b8522f2c6a891bf267fd71b29f0c0470290d`.
-2. Synthetic point-sequence schema/generator — RED `34682156195`; GREEN `34682273631` at `1658e6cd19d5699853ee10a3a1201f3448a04852`.
-3. Frozen temporal pose features — RED `34682355335`; GREEN `34682449104` at `2c79976ba3b77259d0f8509c861f16bb42649794`.
-4. Graph controls and degree-preserving rewiring — RED `34682533141`; GREEN `34682621197` at `372860498f9cebfc64c7ac49c72c73c65d79bbb4`.
-5. GRU + fixed-topology graph recurrent models — RED `34682707957`; GREEN `34682814760` at `ff52769e86c6df7163e45fc998ec3ed39ce7d8ec`.
-6. Deterministic training/evaluation and evidence manifests — RED `34682907471`; GREEN `34683676790` at `d71c3df73c4018c154edac4d88d56544a209b656`.
-7. FlyWire local-CSV ingestion/provenance and matched rewired control — RED `34685420892`; GREEN `34685511872` at `11ba5a493cdec7fa630f0384520646608ca0f3ab`.
-8. Protocol-bound CLI — RED `34685610826`; GREEN `34685706709` at `c8159077a9c0456b4103b6777ddd2ecbf8894dd0`.
-9. Frozen evaluation boundary — RED `34685836083`; GREEN `34685968084` at `ec626eef49df6f86a2551f583693c4d9e4b119d4`.
-10. Robustness / graph-lesion utilities — RED `34686068210`; GREEN `34686182988` at `62dda08563890835dc89acc2a7736cc063f62ed0`.
-11. Frozen YOLO/Pose sequence ingestion — RED `34686280328`; GREEN `34686373327` at `7ce669c0bf49963035a83e4935896b1f5785d679`.
-12. Frozen YOLO/Pose data-contract documentation — GREEN run `34686381903` at `c073ce0d8ac58b80cd3b500c204abe4dc946024c`.
+## Phase 2 frozen choices
 
-## What is established
+The real-data preflight is now tracked in `protocols/v0-real-ntu120-preflight.json` and `docs/phase2-real-data-freeze.md`.
 
-The branch now establishes that:
+Frozen high-level choices are:
 
-- YOLO/Pose point sequences can be ingested under a frozen schema and transformed into the same temporal feature tensor for all model families.
-- A conventional GRU baseline and fixed-topology graph recurrent model share the same input/output contract.
-- Random, FlyWire-derived, and degree-preserving rewired graph conditions can be represented without silently learning or overwriting topology.
-- Rewired controls preserve directed in/out degree sequences and the edge-weight multiset while changing topology.
-- FlyWire graph ingestion requires explicit release identity and selection rule; V0 does not silently query remote services or embed credentials.
-- Training is seeded from one declared run seed, checkpoint selection uses validation only, and final-test evaluation is separate.
-- Manifests and Lean contracts reject a topology-specific claim that lacks a matched rewired FlyWire control.
-- Noise, missing-keypoint, and graph-lesion perturbations are deterministic and remain separate robustness evidence.
+- NTU RGB+D 120, RGB modality only;
+- 10-class motion / coarse-gesture subset;
+- official X-Sub120 outer boundary;
+- Ultralytics `yolo26n-pose.pt`, COCO-17 keypoints;
+- no ByteTrack, no depth, no NTU skeleton features;
+- FlyWire FAFB v783 visual-system snapshot;
+- T4/T5-seeded type-level motion subgraph rule;
+- matched degree-/weight-preserving rewiring;
+- five fixed seeds and equalized budget;
+- macro F1 primary metric;
+- predeclared +0.02 mean paired practical-effect threshold with 4/5 positive seeds.
 
-## What is not established
+## Immutable FlyWire provenance now pinned
 
-None of the verified gates above demonstrate that a FlyWire-derived topology is more accurate, more robust, or more sample-efficient than a matched rewired topology on real behavior data.
+The static source named by the v783 visual-system work is frozen to:
 
-The synthetic protocol is a plumbing/smoke protocol only. Its success threshold must not be cited as connectome evidence.
+- `murthylab/visual-system-parts-list`
+- commit `0d8574d46627ce7fadd968a3c5d602e837325373`
+- connectivity file `data/type_to_type_connection_and_synapse_counts.csv`
+- Git blob SHA-1 `5183755ecbb41d5c8cee1a4a2d99b8eecba75c52`
 
-No claim of replacing YOLO, ByteTrack, metric depth, re-identification, or human cognition is supported by V0.
+The Git blob identifier is recorded as immutable source provenance. A SHA-256 over the exact downloaded CSV bytes is still required before confirmatory execution.
 
-## Remaining frozen external inputs for the confirmatory real run
+## Remaining confirmatory blockers
 
-Before the sealed real-data test can run, the following must be supplied and frozen without consulting final-test outcomes:
+The following byte-derived values must be frozen before the sealed real final test:
 
-1. **Real labeled behavior/gesture dataset identity and immutable split**.
-2. **Exact YOLO/Pose extractor identity/version** and the exported point-sequence dataset matching the frozen ingestion contract.
-3. **Observation-schema hash** produced from the frozen preprocessing/features.
-4. **Exact FlyWire release/export identity**.
-5. **Explicit FlyWire visual/motion subgraph selection rule**, selected independently of final-test results.
-6. **Frozen success threshold** for the topology-specific primary metric.
-7. Any real-run training budget fields that differ from the template, frozen before final-test use.
+- NTU dataset content/archive hash;
+- exact Ultralytics package version;
+- `yolo26n-pose.pt` SHA-256;
+- split hash;
+- observation-schema / encoder hash;
+- FlyWire connectivity CSV SHA-256;
+- selected FlyWire graph fingerprint;
+- matched rewired graph fingerprint.
 
-`protocols/v0-real-template.json` intentionally remains non-executable until these fields are populated.
+The comparison CLI now treats these real-data provenance fields as execution gates. Missing values must cause rejection rather than a partially specified topology claim.
 
-## Confirmatory comparison
+## Evidence boundary
 
-The minimum topology experiment remains:
+A real topology-specific claim requires FlyWire and matched rewired arms under the same observations, split, seeds, training budget, parameter ceiling, and evaluation protocol. GRU and random-graph baselines provide context but do not replace the decisive FlyWire-vs-rewired comparison.
 
-- conventional temporal baseline (GRU),
-- random sparse graph,
-- degree-/weight-matched rewired FlyWire,
-- FlyWire-derived topology.
-
-All arms must share the same observation tensor, split, seeds, training budget, preprocessing, and metric definitions.
-
-The decisive comparison for a topology-specific claim is **FlyWire vs matched rewired FlyWire**, not FlyWire vs YOLO alone and not FlyWire vs GRU alone.
-
-## Decision boundary
-
-If FlyWire fails to beat the frozen matched rewired control under the predeclared threshold, V0 records a null/negative topology result. The topology, threshold, or final-test split must not be revised after seeing the outcome and then presented as confirmatory evidence.
-
-If the frozen criterion is met reproducibly, the permitted conclusion is limited to evidence that the selected FlyWire-derived topology supplied a useful inductive bias for the specified temporal behavior-recognition task under the frozen protocol.
+Null and negative results are valid. Final-test outcomes must not be used to choose the FlyWire subgraph, graph threshold, success threshold, model hyperparameters, or retry policy.
