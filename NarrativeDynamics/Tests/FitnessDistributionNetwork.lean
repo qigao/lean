@@ -157,24 +157,16 @@ private theorem edge4State11Degrees :
   funext i
   fin_cases i <;> decide_cbv
 
-private theorem edgeTrace00_final :
-    traceFinal edge2State 1 (by decide) (by decide)
-      twoBirthSchedule edgeTrace00 = ⟨4, edge4State00⟩ := by rfl
-
-private theorem edgeTrace11_final :
-    traceFinal edge2State 1 (by decide) (by decide)
-      twoBirthSchedule edgeTrace11 = ⟨4, edge4State11⟩ := by rfl
-
 private theorem edgeTrace00_center_degree :
     degree (traceFinal edge2State 1 (by decide) (by decide)
       twoBirthSchedule edgeTrace00).state.snapshot (0 : Fin 4) = 3 := by
-  rw [edgeTrace00_final]
+  change degree edge4State00.snapshot (0 : Fin 4) = 3
   simpa using congrFun edge4State00Degrees (0 : Fin 4)
 
 private theorem edgeTrace11_center_degree :
     degree (traceFinal edge2State 1 (by decide) (by decide)
       twoBirthSchedule edgeTrace11).state.snapshot (1 : Fin 4) = 3 := by
-  rw [edgeTrace11_final]
+  change degree edge4State11.snapshot (1 : Fin 4) = 3
   simpa using congrFun edge4State11Degrees (1 : Fin 4)
 
 /-- On four vertices, degree three forces adjacency to every other vertex. -/
@@ -219,9 +211,11 @@ private theorem globalBoundTwo_of_degree_three (s : Snapshot 4)
   by_cases hb : b = center
   · subst b
     exact ⟨1, by omega,
-      MeshWalk.single (s.graph.symm (adj_from_center_of_degree_three s center a hdeg ha))⟩
+      MeshWalk.single (s.graph.symm.symm center a
+        (adj_from_center_of_degree_three s center a hdeg ha))⟩
   · exact ⟨2, by omega,
-      MeshWalk.step (s.graph.symm (adj_from_center_of_degree_three s center a hdeg ha))
+      MeshWalk.step (s.graph.symm.symm center a
+        (adj_from_center_of_degree_three s center a hdeg ha))
         (MeshWalk.single (adj_from_center_of_degree_three s center b hdeg hb))⟩
 
 /-- A non-edge with no common one-hop intermediate cannot be reached within two hops. -/
@@ -386,10 +380,16 @@ example :
       twoBirthSchedule diameterAtMostTwo = 1 / 2 := by
   unfold eventProbability
   rw [edgeTrace_univ]
-  simp [edgeTrace00_diameter, edgeTrace01_diameter, edgeTrace02_diameter,
-    edgeTrace10_diameter, edgeTrace11_diameter, edgeTrace12_diameter,
-    edgeTrace00_mass, edgeTrace01_mass, edgeTrace02_mass,
-    edgeTrace10_mass, edgeTrace11_mass, edgeTrace12_mass]
+  rw [Finset.sum_insert (by decide)]
+  rw [Finset.sum_insert (by decide)]
+  rw [Finset.sum_insert (by decide)]
+  rw [Finset.sum_insert (by decide)]
+  rw [Finset.sum_insert (by decide)]
+  rw [Finset.sum_singleton]
+  rw [if_pos edgeTrace00_diameter, if_neg edgeTrace01_diameter,
+    if_neg edgeTrace02_diameter, if_neg edgeTrace10_diameter,
+    if_pos edgeTrace11_diameter, if_neg edgeTrace12_diameter]
+  rw [edgeTrace00_mass, edgeTrace11_mass]
   norm_num
 
 /-! ## One birth from a unit-fitness triangle, m = 2 -/
@@ -473,6 +473,12 @@ private theorem triangleTrace21_mass :
     traceProbability triangle3State 2 triangleHm triangleHb
       oneBirthSchedule triangleTrace21 = 1 / 6 := by decide_cbv
 
+private theorem oneBirth_traceProbability (T : Targets 3 2) :
+    traceProbability triangle3State 2 triangleHm triangleHb
+      oneBirthSchedule (T, PUnit.unit) = orderedMass triangle3State T := by
+  change orderedMass triangle3State T * 1 = orderedMass triangle3State T
+  simp
+
 /-- For one birth, newborn adjacency to IDs 1 and 2 is exactly selection of
     the unordered target set `{1,2}`. -/
 private theorem newbornAdjacentToOneTwo_iff_selected (T : Targets 3 2) :
@@ -518,13 +524,8 @@ private theorem triangle_eventProbability_eq_setMass :
   apply Finset.sum_congr rfl
   intro T _
   simp only [Fintype.sum_unique]
-  change
-    (if newbornAdjacentToOneTwo
-        (traceFinal triangle3State 2 triangleHm triangleHb
-          oneBirthSchedule (T, PUnit.unit))
-      then orderedMass triangle3State T else 0) =
-    if T.selected = ({1, 2} : Finset (Fin 3))
-      then orderedMass triangle3State T else 0
+  have hunit : (default : PUnit) = PUnit.unit := Subsingleton.elim _ _
+  rw [hunit, oneBirth_traceProbability T]
   have he := newbornAdjacentToOneTwo_iff_selected T
   by_cases h : T.selected = ({1, 2} : Finset (Fin 3))
   · rw [if_pos (he.mpr h), if_pos h]
