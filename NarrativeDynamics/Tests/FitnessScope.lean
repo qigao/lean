@@ -372,8 +372,18 @@ private theorem path2AdjFn : path2State.snapshot.graph.Adj =
     fun u v : Fin 2 => u.val + 1 = v.val ∨ v.val + 1 = u.val := by
   funext u v
   apply propext
-  letI := path2State.snapshot.adjDec
-  fin_cases u <;> fin_cases v <;> decide_cbv
+  fin_cases u <;> fin_cases v <;>
+    simp [path2State, seedSnapshot, seedGraph, pathSeed, canonicalEdge]
+
+/-- For a nondependent result, expose last-vertex cases as an ordinary bounds test.
+This avoids evaluating the reverse-induction implementation of `Fin.lastCases`. -/
+private theorem lastCasesValue {n : Nat} {α : Type*}
+    (fresh : α) (old : Fin n → α) (i : Fin (n + 1)) :
+    Fin.lastCases fresh old i =
+      if h : i.val < n then old ⟨i.val, h⟩ else fresh := by
+  refine Fin.lastCases ?_ (fun j => ?_) i
+  · simp only [Fin.lastCases_last, Fin.val_last, Nat.lt_irrefl, dif_neg]
+  · simp only [Fin.lastCases_castSucc, Fin.val_castSucc, dif_pos j.isLt]
 
 /-- Check all 64 ordered pairs after exposing the actual successor adjacency fields. -/
 theorem path8_adj (u v : Fin 8) : path8State.snapshot.graph.Adj u v ↔
@@ -382,7 +392,7 @@ theorem path8_adj (u v : Fin 8) : path8State.snapshot.graph.Adj u v ↔
     path6State, birthAdjFn, path5State, birthAdjFn,
     path4State, birthAdjFn, path3State, birthAdjFn, path2AdjFn]
   simp only [lastTarget_selected]
-  fin_cases u <;> fin_cases v <;> decide_cbv
+  fin_cases u <;> fin_cases v <;> norm_num [lastCasesValue, Fin.ext_iff]
 
 theorem path8_walk_seven_exact :
     MeshWalk path8State.snapshot.graph.Adj 7 (0 : Fin 8) 7 := by
