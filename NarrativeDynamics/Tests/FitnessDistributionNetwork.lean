@@ -31,7 +31,7 @@ def edge2State : State 2 :=
 
 private def twoBirthSchedule : List PosFitness := [unitFitness, unitFitness]
 
-/-- Executable finite closure for the existing bounded-walk diameter semantics. -/
+/-- Executable finite closure for the already-existing bounded-walk semantics. -/
 def diameterAtMostTwo : RunState → Prop
   | ⟨n, s⟩ => ∀ a b : Fin n, b ∈ reached s.snapshot a 2
 
@@ -119,11 +119,39 @@ private theorem edgeTrace12_mass :
     traceProbability edge2State 1 (by decide) (by decide)
       twoBirthSchedule edgeTrace12 = 1 / 8 := by decide_cbv
 
-/-- A star center gives every ordered pair a walk of length at most two. -/
-private theorem starBound {g : MeshGraph (Fin 4)} (center : Fin 4)
-    (edgeToCenter : ∀ v, v ≠ center → g v center)
-    (edgeFromCenter : ∀ v, v ≠ center → g center v) :
-    GlobalHopBound g 2 := by
+/-- On four vertices, a degree-three center is adjacent to every other vertex. -/
+private theorem neighborSet_eq_erase_of_degree_three (s : Snapshot 4)
+    (center : Fin 4) (hdeg : degree s center = 3) :
+    NarrativeDynamics.neighborSet s.graph.Adj center =
+      (Finset.univ : Finset (Fin 4)).erase center := by
+  letI := s.adjDec
+  apply Finset.eq_of_subset_of_card_le
+  · intro v hv
+    have hadj : s.graph.Adj center v := by
+      simpa [NarrativeDynamics.neighborSet] using hv
+    exact Finset.mem_erase.mpr ⟨by
+      intro h
+      subst v
+      exact s.graph.irrefl hadj,
+      Finset.mem_univ _⟩
+  · have hcard : (NarrativeDynamics.neighborSet s.graph.Adj center).card = 3 := by
+      simpa [degree] using hdeg
+    rw [hcard]
+    simp
+
+private theorem adj_from_center_of_degree_three (s : Snapshot 4)
+    (center v : Fin 4) (hdeg : degree s center = 3) (hv : v ≠ center) :
+    s.graph.Adj center v := by
+  letI := s.adjDec
+  have hm : v ∈ NarrativeDynamics.neighborSet s.graph.Adj center := by
+    rw [neighborSet_eq_erase_of_degree_three s center hdeg]
+    exact Finset.mem_erase.mpr ⟨hv, Finset.mem_univ _⟩
+  simpa [NarrativeDynamics.neighborSet] using hm
+
+/-- A degree-three center in a four-node simple graph supplies a two-hop global bound. -/
+private theorem globalBoundTwo_of_degree_three (s : Snapshot 4)
+    (center : Fin 4) (hdeg : degree s center = 3) :
+    GlobalHopBound s.graph.Adj 2 := by
   intro a b
   by_cases hab : a = b
   · subst b
@@ -133,13 +161,15 @@ private theorem starBound {g : MeshGraph (Fin 4)} (center : Fin 4)
     have hb : b ≠ center := by
       intro h
       exact hab h.symm
-    exact ⟨1, by omega, MeshWalk.single (edgeFromCenter b hb)⟩
+    exact ⟨1, by omega,
+      MeshWalk.single (adj_from_center_of_degree_three s center b hdeg hb)⟩
   by_cases hb : b = center
   · subst b
-    exact ⟨1, by omega, MeshWalk.single (edgeToCenter a ha)⟩
+    exact ⟨1, by omega,
+      MeshWalk.single (adj_from_center_of_degree_three s center a hdeg ha).symm⟩
   · exact ⟨2, by omega,
-      MeshWalk.step (edgeToCenter a ha)
-        (MeshWalk.single (edgeFromCenter b hb))⟩
+      MeshWalk.step (adj_from_center_of_degree_three s center a hdeg ha).symm
+        (MeshWalk.single (adj_from_center_of_degree_three s center b hdeg hb))⟩
 
 /-- A non-edge with no common one-hop intermediate cannot be reached within two hops. -/
 private theorem noReachWithinTwo {g : MeshGraph (Fin 4)}
@@ -162,33 +192,15 @@ private theorem noReachWithinTwo {g : MeshGraph (Fin 4)}
         cases rest'
         exact (hcommon _) ⟨edge, edge'⟩
 
-private theorem edgeTrace00_to_center (v : Fin 4) (hv : v ≠ (0 : Fin 4)) :
-    (traceFinal edge2State 1 (by decide) (by decide)
-      twoBirthSchedule edgeTrace00).state.snapshot.graph.Adj v (0 : Fin 4) := by
-  letI := (traceFinal edge2State 1 (by decide) (by decide)
-    twoBirthSchedule edgeTrace00).state.snapshot.adjDec
-  fin_cases v <;> simp_all <;> decide_cbv
+private theorem edgeTrace00_center_degree :
+    degree (traceFinal edge2State 1 (by decide) (by decide)
+      twoBirthSchedule edgeTrace00).state.snapshot (0 : Fin 4) = 3 := by
+  decide_cbv
 
-private theorem edgeTrace00_from_center (v : Fin 4) (hv : v ≠ (0 : Fin 4)) :
-    (traceFinal edge2State 1 (by decide) (by decide)
-      twoBirthSchedule edgeTrace00).state.snapshot.graph.Adj (0 : Fin 4) v := by
-  letI := (traceFinal edge2State 1 (by decide) (by decide)
-    twoBirthSchedule edgeTrace00).state.snapshot.adjDec
-  fin_cases v <;> simp_all <;> decide_cbv
-
-private theorem edgeTrace11_to_center (v : Fin 4) (hv : v ≠ (1 : Fin 4)) :
-    (traceFinal edge2State 1 (by decide) (by decide)
-      twoBirthSchedule edgeTrace11).state.snapshot.graph.Adj v (1 : Fin 4) := by
-  letI := (traceFinal edge2State 1 (by decide) (by decide)
-    twoBirthSchedule edgeTrace11).state.snapshot.adjDec
-  fin_cases v <;> simp_all <;> decide_cbv
-
-private theorem edgeTrace11_from_center (v : Fin 4) (hv : v ≠ (1 : Fin 4)) :
-    (traceFinal edge2State 1 (by decide) (by decide)
-      twoBirthSchedule edgeTrace11).state.snapshot.graph.Adj (1 : Fin 4) v := by
-  letI := (traceFinal edge2State 1 (by decide) (by decide)
-    twoBirthSchedule edgeTrace11).state.snapshot.adjDec
-  fin_cases v <;> simp_all <;> decide_cbv
+private theorem edgeTrace11_center_degree :
+    degree (traceFinal edge2State 1 (by decide) (by decide)
+      twoBirthSchedule edgeTrace11).state.snapshot (1 : Fin 4) = 3 := by
+  decide_cbv
 
 private theorem edgeTrace01_no_adj :
     ¬ (traceFinal edge2State 1 (by decide) (by decide)
@@ -261,7 +273,7 @@ private theorem edgeTrace00_diameter :
     (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace00).state.snapshot a 2
   intro a b
   apply (reached_iff _ a b 2).mpr
-  exact starBound (0 : Fin 4) edgeTrace00_to_center edgeTrace00_from_center a b
+  exact globalBoundTwo_of_degree_three _ (0 : Fin 4) edgeTrace00_center_degree a b
 
 private theorem edgeTrace01_diameter :
     ¬ diameterAtMostTwo
@@ -303,7 +315,7 @@ private theorem edgeTrace11_diameter :
     (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace11).state.snapshot a 2
   intro a b
   apply (reached_iff _ a b 2).mpr
-  exact starBound (1 : Fin 4) edgeTrace11_to_center edgeTrace11_from_center a b
+  exact globalBoundTwo_of_degree_three _ (1 : Fin 4) edgeTrace11_center_degree a b
 
 private theorem edgeTrace12_diameter :
     ¬ diameterAtMostTwo
@@ -415,6 +427,8 @@ def triangle3State : State 3 :=
     exact ⟨by decide, triangleSeedConnected, by decide⟩⟩
 
 private def oneBirthSchedule : List PosFitness := [unitFitness]
+private theorem triangleHm : 0 < 2 := by decide
+private theorem triangleHb : 2 ≤ 3 := by decide
 
 /-- Adjacency between stable numeric IDs, guarded by the run-state node count. -/
 def adjacentById : RunState → Nat → Nat → Prop
@@ -453,50 +467,55 @@ private def triangleTrace12 : TargetTrace 3 2 oneBirthSchedule.length := (target
 private def triangleTrace20 : TargetTrace 3 2 oneBirthSchedule.length := (target20, PUnit.unit)
 private def triangleTrace21 : TargetTrace 3 2 oneBirthSchedule.length := (target21, PUnit.unit)
 
+private theorem oneBirth_traceProbability (T : Targets 3 2) :
+    traceProbability triangle3State 2 triangleHm triangleHb
+      oneBirthSchedule (T, PUnit.unit) = orderedMass triangle3State T := by
+  simp [oneBirthSchedule, traceProbability]
+
 private theorem triangleTrace01_mass :
-    traceProbability triangle3State 2 (by decide) (by decide)
+    traceProbability triangle3State 2 triangleHm triangleHb
       oneBirthSchedule triangleTrace01 = 1 / 6 := by decide_cbv
 private theorem triangleTrace02_mass :
-    traceProbability triangle3State 2 (by decide) (by decide)
+    traceProbability triangle3State 2 triangleHm triangleHb
       oneBirthSchedule triangleTrace02 = 1 / 6 := by decide_cbv
 private theorem triangleTrace10_mass :
-    traceProbability triangle3State 2 (by decide) (by decide)
+    traceProbability triangle3State 2 triangleHm triangleHb
       oneBirthSchedule triangleTrace10 = 1 / 6 := by decide_cbv
 private theorem triangleTrace12_mass :
-    traceProbability triangle3State 2 (by decide) (by decide)
+    traceProbability triangle3State 2 triangleHm triangleHb
       oneBirthSchedule triangleTrace12 = 1 / 6 := by decide_cbv
 private theorem triangleTrace20_mass :
-    traceProbability triangle3State 2 (by decide) (by decide)
+    traceProbability triangle3State 2 triangleHm triangleHb
       oneBirthSchedule triangleTrace20 = 1 / 6 := by decide_cbv
 private theorem triangleTrace21_mass :
-    traceProbability triangle3State 2 (by decide) (by decide)
+    traceProbability triangle3State 2 triangleHm triangleHb
       oneBirthSchedule triangleTrace21 = 1 / 6 := by decide_cbv
 
 private theorem triangleTrace12_event :
     newbornAdjacentToOneTwo
-      (traceFinal triangle3State 2 (by decide) (by decide)
+      (traceFinal triangle3State 2 triangleHm triangleHb
         oneBirthSchedule triangleTrace12) := by decide_cbv
 private theorem triangleTrace21_event :
     newbornAdjacentToOneTwo
-      (traceFinal triangle3State 2 (by decide) (by decide)
+      (traceFinal triangle3State 2 triangleHm triangleHb
         oneBirthSchedule triangleTrace21) := by decide_cbv
 
 example :
-    traceProbability triangle3State 2 (by decide) (by decide) oneBirthSchedule triangleTrace01 = 1 / 6 ∧
-    traceProbability triangle3State 2 (by decide) (by decide) oneBirthSchedule triangleTrace02 = 1 / 6 ∧
-    traceProbability triangle3State 2 (by decide) (by decide) oneBirthSchedule triangleTrace10 = 1 / 6 ∧
-    traceProbability triangle3State 2 (by decide) (by decide) oneBirthSchedule triangleTrace12 = 1 / 6 ∧
-    traceProbability triangle3State 2 (by decide) (by decide) oneBirthSchedule triangleTrace20 = 1 / 6 ∧
-    traceProbability triangle3State 2 (by decide) (by decide) oneBirthSchedule triangleTrace21 = 1 / 6 :=
+    traceProbability triangle3State 2 triangleHm triangleHb oneBirthSchedule triangleTrace01 = 1 / 6 ∧
+    traceProbability triangle3State 2 triangleHm triangleHb oneBirthSchedule triangleTrace02 = 1 / 6 ∧
+    traceProbability triangle3State 2 triangleHm triangleHb oneBirthSchedule triangleTrace10 = 1 / 6 ∧
+    traceProbability triangle3State 2 triangleHm triangleHb oneBirthSchedule triangleTrace12 = 1 / 6 ∧
+    traceProbability triangle3State 2 triangleHm triangleHb oneBirthSchedule triangleTrace20 = 1 / 6 ∧
+    traceProbability triangle3State 2 triangleHm triangleHb oneBirthSchedule triangleTrace21 = 1 / 6 :=
   ⟨triangleTrace01_mass, triangleTrace02_mass, triangleTrace10_mass,
     triangleTrace12_mass, triangleTrace20_mass, triangleTrace21_mass⟩
 
 example :
     newbornAdjacentToOneTwo
-        (traceFinal triangle3State 2 (by decide) (by decide)
+        (traceFinal triangle3State 2 triangleHm triangleHb
           oneBirthSchedule triangleTrace12) ∧
       newbornAdjacentToOneTwo
-        (traceFinal triangle3State 2 (by decide) (by decide)
+        (traceFinal triangle3State 2 triangleHm triangleHb
           oneBirthSchedule triangleTrace21) :=
   ⟨triangleTrace12_event, triangleTrace21_event⟩
 
@@ -504,7 +523,7 @@ example :
     the unordered target set `{1,2}`. -/
 private theorem newbornAdjacentToOneTwo_iff_selected (T : Targets 3 2) :
     newbornAdjacentToOneTwo
-        (traceFinal triangle3State 2 (by decide) (by decide)
+        (traceFinal triangle3State 2 triangleHm triangleHb
           oneBirthSchedule (T, PUnit.unit)) ↔
       T.selected = ({1, 2} : Finset (Fin 3)) := by
   change
@@ -529,16 +548,16 @@ private theorem newbornAdjacentToOneTwo_iff_selected (T : Targets 3 2) :
     simp
 
 private theorem triangle_eventProbability_eq_setMass :
-    eventProbability triangle3State 2 (by decide) (by decide)
+    eventProbability triangle3State 2 triangleHm triangleHb
         oneBirthSchedule newbornAdjacentToOneTwo =
       setMass triangle3State 2 ({1, 2} : Finset (Fin 3)) := by
   unfold eventProbability setMass
   change
     (∑ trace : Targets 3 2 × PUnit,
       if newbornAdjacentToOneTwo
-          (traceFinal triangle3State 2 (by decide) (by decide)
+          (traceFinal triangle3State 2 triangleHm triangleHb
             oneBirthSchedule trace)
-      then traceProbability triangle3State 2 (by decide) (by decide)
+      then traceProbability triangle3State 2 triangleHm triangleHb
         oneBirthSchedule trace
       else 0) = _
   rw [Fintype.sum_prod_type]
@@ -546,23 +565,16 @@ private theorem triangle_eventProbability_eq_setMass :
   intro T _
   simp only [Fintype.sum_unique]
   have hunit : (default : PUnit) = PUnit.unit := rfl
-  rw [hunit]
+  rw [hunit, oneBirth_traceProbability T]
   have he := newbornAdjacentToOneTwo_iff_selected T
   by_cases h : T.selected = ({1, 2} : Finset (Fin 3))
-  · have hev := he.mpr h
-    rw [if_pos hev, if_pos h]
-    simp [oneBirthSchedule, traceProbability]
-  · have hnev : ¬ newbornAdjacentToOneTwo
-        (traceFinal triangle3State 2 (by decide) (by decide)
-          oneBirthSchedule (T, PUnit.unit)) := by
-      intro hev
-      exact h (he.mp hev)
-    rw [if_neg hnev, if_neg h]
+  · rw [if_pos (he.mpr h), if_pos h]
+  · rw [if_neg (fun hev => h (he.mp hev)), if_neg h]
 
 /-- Both target orders `(1,2)` and `(2,1)` contribute, so the final-graph event
     has exact probability `2/6 = 1/3`. -/
 example :
-    eventProbability triangle3State 2 (by decide) (by decide)
+    eventProbability triangle3State 2 triangleHm triangleHb
       oneBirthSchedule newbornAdjacentToOneTwo = 1 / 3 := by
   rw [triangle_eventProbability_eq_setMass]
   decide_cbv
