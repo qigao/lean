@@ -375,24 +375,51 @@ private theorem path2AdjFn : path2State.snapshot.graph.Adj =
   fin_cases u <;> fin_cases v <;>
     simp [path2State, seedSnapshot, seedGraph, pathSeed, canonicalEdge]
 
-/-- For a nondependent result, expose last-vertex cases as an ordinary bounds test.
-This avoids evaluating the reverse-induction implementation of `Fin.lastCases`. -/
-private theorem lastCasesValue {n : Nat} {α : Type*}
-    (fresh : α) (old : Fin n → α) (i : Fin (n + 1)) :
-    Fin.lastCases fresh old i =
-      if h : i.val < n then old ⟨i.val, h⟩ else fresh := by
-  refine Fin.lastCases ?_ (fun j => ?_) i
-  · simp only [Fin.lastCases_last, Fin.val_last, Nat.lt_irrefl, dif_neg]
-  · simp only [Fin.lastCases_castSucc, Fin.val_castSucc, dif_pos j.isLt]
+/-- Attaching the newborn to the old last vertex preserves consecutive-label adjacency.
+The four cases use the actual birth laws, without evaluating successor proof records. -/
+private theorem lastTarget_preservesAdj {n : Nat} (s : State (n + 1))
+    (hs : ∀ u v : Fin (n + 1), s.snapshot.graph.Adj u v ↔
+      u.val + 1 = v.val ∨ v.val + 1 = u.val)
+    (u v : Fin (n + 2)) :
+    (applyBirth s (lastTarget n) (by decide) unitFitness).snapshot.graph.Adj u v ↔
+      u.val + 1 = v.val ∨ v.val + 1 = u.val := by
+  refine Fin.lastCases ?_ (fun a => ?_) u
+  · refine Fin.lastCases ?_ (fun b => ?_) v
+    · constructor
+      · intro hedge
+        exact False.elim
+          ((applyBirth s (lastTarget n) (by decide) unitFitness).snapshot.graph.loopless.irrefl
+            (Fin.last (n + 1)) hedge)
+      · intro hlabel
+        simp only [Fin.val_last] at hlabel
+        omega
+    · refine (birth_new_adj_iff_rev s (lastTarget n) (by decide) unitFitness b).trans ?_
+      simp only [lastTarget_selected, Finset.mem_singleton, Fin.ext_iff,
+        Fin.val_last, Fin.val_castSucc]
+      have hb := b.isLt
+      omega
+  · refine Fin.lastCases ?_ (fun b => ?_) v
+    · refine (birth_new_adj_iff s (lastTarget n) (by decide) unitFitness a).trans ?_
+      simp only [lastTarget_selected, Finset.mem_singleton, Fin.ext_iff,
+        Fin.val_last, Fin.val_castSucc]
+      have ha := a.isLt
+      omega
+    · exact (birth_old_adj_iff s (lastTarget n) (by decide) unitFitness a b).trans (hs a b)
 
-/-- Check all 64 ordered pairs after exposing the actual successor adjacency fields. -/
+/-- Check all 64 ordered pairs using the characterization of the six actual births. -/
 theorem path8_adj (u v : Fin 8) : path8State.snapshot.graph.Adj u v ↔
     u.val + 1 = v.val ∨ v.val + 1 = u.val := by
-  rw [path8State, birthAdjFn, path7State, birthAdjFn,
-    path6State, birthAdjFn, path5State, birthAdjFn,
-    path4State, birthAdjFn, path3State, birthAdjFn, path2AdjFn]
-  simp only [lastTarget_selected]
-  fin_cases u <;> fin_cases v <;> norm_num [lastCasesValue, Fin.ext_iff]
+  have h2 : ∀ a b : Fin 2, path2State.snapshot.graph.Adj a b ↔
+      a.val + 1 = b.val ∨ b.val + 1 = a.val := by
+    intro a b
+    rw [path2AdjFn]
+  have h3 := lastTarget_preservesAdj path2State h2
+  have h4 := lastTarget_preservesAdj path3State h3
+  have h5 := lastTarget_preservesAdj path4State h4
+  have h6 := lastTarget_preservesAdj path5State h5
+  have h7 := lastTarget_preservesAdj path6State h6
+  have h8 := lastTarget_preservesAdj path7State h7
+  fin_cases u <;> fin_cases v <;> exact h8 _ _
 
 theorem path8_walk_seven_exact :
     MeshWalk path8State.snapshot.graph.Adj 7 (0 : Fin 8) 7 := by
