@@ -18,6 +18,7 @@ def test_hosted_real_workflow_is_manual_and_github_hosted():
     assert "runs-on: ubuntu-latest" in text
     assert "self-hosted" not in text
     assert "REQUIRED_FREE_GIB" not in text
+    assert "timeout-minutes: 720" not in text
 
 
 def test_hosted_real_workflow_uses_remote_manifest_and_yolo11_shards():
