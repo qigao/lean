@@ -36,6 +36,7 @@ env:
   PYTHONUNBUFFERED: "1"
   OMP_NUM_THREADS: "1"
   MKL_NUM_THREADS: "1"
+  YOLO11_POSE_URL: "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo11n-pose.pt"
 
 jobs:
   coordinator:
@@ -74,16 +75,14 @@ jobs:
       - name: Validate source and write URL-free scientific record
         run: python -m yolo_flywire.remote_rgb transport-manifest.json --public-output scientific-source.json
 
-      - name: Download official YOLO11n pose checkpoint
+      - name: Download official YOLO11n pose checkpoint from GitHub release
+        shell: bash
         run: |
-          python - <<'PY'
-          from pathlib import Path
-          from ultralytics import YOLO
-          YOLO("yolo11n-pose.pt")
-          path = Path("yolo11n-pose.pt")
-          if not path.is_file() or path.stat().st_size <= 0:
-              raise SystemExit("Ultralytics did not materialize yolo11n-pose.pt")
-          PY
+          set -euo pipefail
+          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+            "$YOLO11_POSE_URL" --output yolo11n-pose.pt
+          test -s yolo11n-pose.pt || { echo "empty YOLO11n pose checkpoint" >&2; exit 1; }
+          sha256sum yolo11n-pose.pt
 
       - name: Freeze hosted real-input protocol
         run: |
@@ -181,18 +180,22 @@ jobs:
               raise SystemExit("transport manifest changed during hosted experiment")
           PY
 
-      - name: Download and verify exact official YOLO11n checkpoint
+      - name: Download and verify exact official YOLO11n checkpoint from GitHub release
+        shell: bash
         run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+            "$YOLO11_POSE_URL" --output yolo11n-pose.pt
+          test -s yolo11n-pose.pt || { echo "empty YOLO11n pose checkpoint" >&2; exit 1; }
           python - <<'PY'
           import hashlib, json
           from pathlib import Path
-          from ultralytics import YOLO
-          YOLO("yolo11n-pose.pt")
           protocol = json.loads(Path("coordinator/frozen-hosted-protocol.json").read_text(encoding="utf-8"))
           path = Path("yolo11n-pose.pt")
           actual = hashlib.sha256(path.read_bytes()).hexdigest()
           if actual != protocol["yolo_weights_sha256"]:
               raise SystemExit("YOLO11n checkpoint differs from frozen coordinator SHA-256")
+          print(actual)
           PY
 
       - name: Stream one verified RGB clip at a time
