@@ -221,7 +221,7 @@ jobs:
     name: Aggregate hosted pose evidence and run four-arm development
     needs: [coordinator, extract]
     runs-on: ubuntu-latest
-    timeout-minutes: 720
+    timeout-minutes: 360
     env:
       NTU120_REMOTE_MANIFEST_URL: ${{ secrets.NTU120_REMOTE_MANIFEST_URL }}
       TRANSPORT_HASH: ${{ needs.coordinator.outputs.transport_hash }}
