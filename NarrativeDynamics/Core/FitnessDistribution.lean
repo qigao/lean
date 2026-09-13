@@ -303,4 +303,57 @@ theorem eventProbability_mono {n : Nat} (s : State n) (m : Nat)
     · simp [out, h₁, h₂, traceProbability_nonneg s m hm hb schedule trace]
     · simp [out, h₁, h₂]
 
+/-- Exact rational expectation of an observable of the authoritative final state. -/
+def expectation {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+    (observable : RunState → Rat) : Rat :=
+  ∑ trace : TargetTrace n m schedule.length,
+    traceProbability s m hm hb schedule trace *
+      observable (traceFinal s m hm hb schedule trace)
+
+/-- A constant observable has that same expectation. -/
+theorem expectation_const {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness) (c : Rat) :
+    expectation s m hm hb schedule (fun _ => c) = c := by
+  unfold expectation
+  rw [← Finset.sum_mul, traceProbability_sum_one]
+  simp
+
+/-- Exact expectation is additive. -/
+theorem expectation_add {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+    (f g : RunState → Rat) :
+    expectation s m hm hb schedule (fun out => f out + g out) =
+      expectation s m hm hb schedule f + expectation s m hm hb schedule g := by
+  unfold expectation
+  rw [← Finset.sum_add_distrib]
+  apply Finset.sum_congr rfl
+  intro trace _
+  ring
+
+/-- Exact expectation commutes with rational scalar multiplication. -/
+theorem expectation_smul {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+    (c : Rat) (f : RunState → Rat) :
+    expectation s m hm hb schedule (fun out => c * f out) =
+      c * expectation s m hm hb schedule f := by
+  unfold expectation
+  rw [Finset.mul_sum]
+  apply Finset.sum_congr rfl
+  intro trace _
+  ring
+
+/-- The expectation of an event indicator is exactly its event probability. -/
+theorem expectation_indicator {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+    (event : RunState → Prop) [DecidablePred event] :
+    expectation s m hm hb schedule (fun out => if event out then 1 else 0) =
+      eventProbability s m hm hb schedule event := by
+  unfold expectation eventProbability
+  apply Finset.sum_congr rfl
+  intro trace _
+  by_cases h : event (traceFinal s m hm hb schedule trace)
+  · simp [h]
+  · simp [h]
+
 end NarrativeDynamics.FitnessAttachment
