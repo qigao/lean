@@ -481,20 +481,26 @@ private theorem triangleTrace01_no_event :
     ¬ newbornAdjacentToOneTwo
       (traceFinal triangle3State 2 triangleHm triangleHb oneBirthSchedule triangleTrace01) := by
   intro h
-  have hs := (newbornAdjacentToOneTwo_iff_selected target01).mp (by simpa [triangleTrace01] using h)
-  decide_cbv at hs
+  have hs : target01.selected = ({1, 2} : Finset (Fin 3)) :=
+    (newbornAdjacentToOneTwo_iff_selected target01).mp (by simpa [triangleTrace01] using h)
+  have hne : target01.selected ≠ ({1, 2} : Finset (Fin 3)) := by decide_cbv
+  exact hne hs
 private theorem triangleTrace02_no_event :
     ¬ newbornAdjacentToOneTwo
       (traceFinal triangle3State 2 triangleHm triangleHb oneBirthSchedule triangleTrace02) := by
   intro h
-  have hs := (newbornAdjacentToOneTwo_iff_selected target02).mp (by simpa [triangleTrace02] using h)
-  decide_cbv at hs
+  have hs : target02.selected = ({1, 2} : Finset (Fin 3)) :=
+    (newbornAdjacentToOneTwo_iff_selected target02).mp (by simpa [triangleTrace02] using h)
+  have hne : target02.selected ≠ ({1, 2} : Finset (Fin 3)) := by decide_cbv
+  exact hne hs
 private theorem triangleTrace10_no_event :
     ¬ newbornAdjacentToOneTwo
       (traceFinal triangle3State 2 triangleHm triangleHb oneBirthSchedule triangleTrace10) := by
   intro h
-  have hs := (newbornAdjacentToOneTwo_iff_selected target10).mp (by simpa [triangleTrace10] using h)
-  decide_cbv at hs
+  have hs : target10.selected = ({1, 2} : Finset (Fin 3)) :=
+    (newbornAdjacentToOneTwo_iff_selected target10).mp (by simpa [triangleTrace10] using h)
+  have hne : target10.selected ≠ ({1, 2} : Finset (Fin 3)) := by decide_cbv
+  exact hne hs
 private theorem triangleTrace12_event :
     newbornAdjacentToOneTwo
       (traceFinal triangle3State 2 triangleHm triangleHb oneBirthSchedule triangleTrace12) := by
@@ -504,8 +510,10 @@ private theorem triangleTrace20_no_event :
     ¬ newbornAdjacentToOneTwo
       (traceFinal triangle3State 2 triangleHm triangleHb oneBirthSchedule triangleTrace20) := by
   intro h
-  have hs := (newbornAdjacentToOneTwo_iff_selected target20).mp (by simpa [triangleTrace20] using h)
-  decide_cbv at hs
+  have hs : target20.selected = ({1, 2} : Finset (Fin 3)) :=
+    (newbornAdjacentToOneTwo_iff_selected target20).mp (by simpa [triangleTrace20] using h)
+  have hne : target20.selected ≠ ({1, 2} : Finset (Fin 3)) := by decide_cbv
+  exact hne hs
 private theorem triangleTrace21_event :
     newbornAdjacentToOneTwo
       (traceFinal triangle3State 2 triangleHm triangleHb oneBirthSchedule triangleTrace21) := by
