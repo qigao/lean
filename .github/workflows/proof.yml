@@ -11,8 +11,54 @@ on:
       - "docs/superpowers/plans/**"
 
 jobs:
+  proof-event:
+    name: Select proof event
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      run: ${{ steps.select.outputs.result }}
+    steps:
+      - uses: actions/github-script@v8
+        id: select
+        with:
+          script: |
+            if (context.eventName !== 'push' || !context.ref.startsWith('refs/heads/')) {
+              return true;
+            }
+            const branch = context.ref.slice('refs/heads/'.length);
+            // A PR must actually have a proof run; an open PR alone is not coverage.
+            for (let attempt = 0; attempt < 3; attempt++) {
+              try {
+                const {data} = await github.rest.actions.listWorkflowRuns({
+                  ...context.repo, workflow_id: 'proof.yml', event: 'pull_request',
+                  head_sha: context.sha, branch, per_page: 100
+                });
+                const prRun = data.workflow_runs.find(run =>
+                  run.event === 'pull_request' && run.head_sha === context.sha &&
+                  run.head_branch === branch &&
+                  run.head_repository?.full_name === `${context.repo.owner}/${context.repo.repo}` &&
+                  ['queued', 'in_progress', 'completed'].includes(run.status) &&
+                  !['cancelled', 'skipped'].includes(run.conclusion));
+                if (prRun) {
+                  core.info(`PR proof run ${prRun.id} covers ${context.sha}; skipping duplicate push proof.`);
+                  return false;
+                }
+              } catch (error) {
+                core.warning(`Could not check PR coverage; keeping push proof: ${error.message}`);
+                return true;
+              }
+              // Push and PR events can register a few seconds apart.
+              if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 5000));
+            }
+            core.info('No matching PR proof run; keeping push proof.');
+            return true;
+
   lean-proof:
     name: Lean proof
+    needs: proof-event
+    # Preserve verification if the selector fails; never cancel an active proof.
+    if: ${{ !cancelled() && needs.proof-event.outputs.run != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
