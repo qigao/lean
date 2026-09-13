@@ -21,7 +21,7 @@ import numpy as np
 from .kth_source import _ACTIONS, _ARCHIVE_URLS, _MEMBER, parse_sequence_file
 from .ntu_io import _canonical_json, _hash_file, _hash_json, _publish_exclusive
 from .pose_backend import decode_video, prediction_options, runtime_versions
-from .pose_extract import _pose, _schema, _write_row
+from .pose_extract import _schema, _write_row
 from .pose_features import PoseFeatureSpec, pose_encoder_hash
 from .provenance import validate_rewiring_protocol
 
@@ -71,7 +71,7 @@ class KthExtractionSpec:
             "decoder": "pyav-avi-single-thread-all-frames",
             "sampling": "official-kth-list-order-identity; frame-membership-routing; overlaps-share-one-prediction",
             "partitions": ["train", "validation"],
-            "person_policy": "zero-mask-or-single-else-error",
+            "person_policy": "zero-mask-or-single-or-unique-largest-detector-bbox-else-error",
         }
 
 
@@ -168,7 +168,39 @@ def freeze_kth_runtime(protocol: dict[str, Any], *, sequence_file: str | Path,
     return json.loads(_canonical_json(frozen))
 
 
-def _load_predictor(weights: Path, spec: KthExtractionSpec) -> Callable[[np.ndarray], tuple[np.ndarray, np.ndarray]]:
+def _kth_pose(points: np.ndarray, scores: np.ndarray,
+              boxes: np.ndarray) -> tuple[list[list[float]], float]:
+    if (not isinstance(points, np.ndarray) or points.ndim != 3 or points.shape[1:] != (17, 3)
+            or not isinstance(scores, np.ndarray) or scores.shape != (points.shape[0],)
+            or not isinstance(boxes, np.ndarray) or boxes.shape != (points.shape[0], 4)):
+        raise ValueError("KTH pose prediction must have shapes [N,17,3], [N], and [N,4]")
+    if points.dtype.kind not in "fiu" or scores.dtype.kind not in "fiu" or boxes.dtype.kind not in "fiu":
+        raise ValueError("KTH pose predictions must be numeric arrays")
+    if not np.isfinite(points).all() or not np.isfinite(scores).all() or not np.isfinite(boxes).all():
+        raise ValueError("non-finite KTH pose prediction")
+    if np.any((points[..., 2] < 0) | (points[..., 2] > 1)) or np.any((scores < 0) | (scores > 1)):
+        raise ValueError("KTH pose confidence must be in [0,1]")
+    if not len(scores):
+        return [[0.0, 0.0, 0.0] for _ in range(17)], 0.0
+    widths = boxes[:, 2] - boxes[:, 0]
+    heights = boxes[:, 3] - boxes[:, 1]
+    if np.any(widths <= 0) or np.any(heights <= 0):
+        raise ValueError("KTH detector bbox must have positive area")
+    if len(scores) == 1:
+        index = 0
+    else:
+        areas = widths * heights
+        largest = areas.max()
+        winners = np.flatnonzero(areas == largest)
+        if len(winners) != 1:
+            raise ValueError("KTH multiple people have tied largest detector bbox")
+        index = int(winners[0])
+    return points[index].astype(float).tolist(), float(scores[index])
+
+
+def _load_predictor(
+    weights: Path, spec: KthExtractionSpec,
+) -> Callable[[np.ndarray], tuple[np.ndarray, np.ndarray, np.ndarray]]:
     if _weights_hash(weights) != spec.weights_sha256:
         raise ValueError("KTH YOLO11 bytes differ from frozen SHA-256")
     if runtime_versions() != spec.expected_versions():
@@ -185,7 +217,7 @@ def _load_predictor(weights: Path, spec: KthExtractionSpec) -> Callable[[np.ndar
         raise ValueError("KTH checkpoint is not an exact COCO17 pose model")
     model.model.float().eval()
 
-    def predict(image: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def predict(image: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         with torch.inference_mode():
             results = model.predict(source=image, **prediction_options())
         if len(results) != 1:
@@ -195,7 +227,11 @@ def _load_predictor(weights: Path, spec: KthExtractionSpec) -> Callable[[np.ndar
             raise ValueError("KTH pose result missing keypoints/boxes or contains tracking state")
         if not bool((result.boxes.cls == 0).all()):
             raise ValueError("KTH pose result contains non-person class")
-        return result.keypoints.data.detach().cpu().numpy(), result.boxes.conf.detach().cpu().numpy()
+        return (
+            result.keypoints.data.detach().cpu().numpy(),
+            result.boxes.conf.detach().cpu().numpy(),
+            result.boxes.xyxy.detach().cpu().numpy(),
+        )
 
     return predict
 
@@ -246,9 +282,11 @@ def _close_sample_handles(states: dict[str, dict[str, Any]]) -> None:
                 handle.close()
 
 
-def _extract_parent(clip: Path, video: dict[str, Any], sample_rows: list[dict[str, Any]],
-                    predictor: Callable[[np.ndarray], tuple[np.ndarray, np.ndarray]],
-                    samples_root: Path) -> list[dict[str, Any]]:
+def _extract_parent(
+    clip: Path, video: dict[str, Any], sample_rows: list[dict[str, Any]],
+    predictor: Callable[[np.ndarray], tuple[np.ndarray, np.ndarray, np.ndarray]],
+    samples_root: Path,
+) -> list[dict[str, Any]]:
     """Route decoded frames by membership while preserving official listed range identity."""
     if not sample_rows:
         raise ValueError("present KTH development video must have at least one official subsequence")
@@ -271,7 +309,7 @@ def _extract_parent(clip: Path, video: dict[str, Any], sample_rows: list[dict[st
                     raise ValueError("KTH decoded frame must be nonempty uint8 BGR")
                 timestamp = pts * base
                 shape = tuple(image.shape)
-                points, confidence = _pose(*predictor(image))
+                points, confidence = _kth_pose(*predictor(image))
                 for row in active:
                     state = states[row["sample_id"]]
                     if state["previous"] is not None and timestamp <= state["previous"]:
