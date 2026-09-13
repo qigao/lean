@@ -132,13 +132,15 @@ jobs:
           short="$(printf '%s%s' B A)"
           lower="$(printf '%s%s' b a)"
           full_ascii="$(printf '%s%s' 'Barabasi-' 'Albert')"
+          full_ascii_double="$(printf '%s%s' 'Barabasi--' 'Albert')"
+          full_accent_ascii="$(printf '%s%s' 'Barabási-' 'Albert')"
           full_unicode="$(printf '%s%s' 'Barabási–' 'Albert')"
           found=0
           if git grep -n -E "(^|[^[:alnum:]_])${short}([^[:alnum:]_]|$)" -- .; then
             found=1
           fi
           for term in \
-            "$full_ascii" "$full_unicode" \
+            "$full_ascii" "$full_ascii_double" "$full_accent_ascii" "$full_unicode" \
             "as${short}" "${lower}Row" \
             "attachment_${lower}" "orderedMass_${lower}" \
             "replay_${lower}_"; do
