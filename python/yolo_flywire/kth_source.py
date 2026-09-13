@@ -23,7 +23,7 @@ _SPLITS = {**{value: "train" for value in _TRAIN},
            **{value: "final_test" for value in _FINAL_TEST}}
 _LINE = re.compile(
     r"^(person(?P<subject>[0-9]{2})_(?P<action>boxing|handclapping|handwaving|jogging|running|walking)_d(?P<scenario>[1-4]))"
-    r"\s+frames\s+(?P<ranges>[0-9,-]+(?:\s*,?\s*[0-9]+-[0-9]+)*)\s*$"
+    r"\s+frames\s+(?P<ranges>.+?)\s*$"
 )
 _RANGE = re.compile(r"([0-9]+)-([0-9]+)")
 _MEMBER = re.compile(
@@ -62,9 +62,8 @@ def _parse_subject_list(text: str) -> tuple[int, ...]:
 def _ranges(text: str, video_key: str) -> tuple[tuple[int, int], ...]:
     """Preserve official list order, including documented overlaps/non-monotonic entries."""
     matches = tuple((int(a), int(b)) for a, b in _RANGE.findall(text))
-    compact = re.sub(r"\s+", "", text)
-    expected = ",".join(f"{a}-{b}" for a, b in matches)
-    if not matches or compact != expected:
+    residue = _RANGE.sub("", text)
+    if not matches or residue.replace(",", "").strip():
         raise ValueError(f"malformed KTH frame ranges: {video_key}")
     for start, end in matches:
         if start < 1 or end < start:
@@ -107,7 +106,12 @@ def parse_sequence_file(text: str) -> KthSequencePlan:
         for action in _ACTIONS for subject in range(1, 26) for scenario in range(1, 5)
     }
     if set(ranges_by_key) != expected_keys or len(ranges_by_key) != 600:
-        raise ValueError("KTH sequence file must describe exactly the frozen 600-video roster")
+        missing = sorted(expected_keys - set(ranges_by_key))
+        extra = sorted(set(ranges_by_key) - expected_keys)
+        raise ValueError(
+            f"KTH sequence file must describe exactly the frozen 600-video roster; "
+            f"missing={missing[:8]} extra={extra[:8]}"
+        )
 
     videos: list[dict[str, Any]] = []
     subsequences: list[dict[str, Any]] = []
@@ -130,7 +134,9 @@ def parse_sequence_file(text: str) -> KthSequencePlan:
                         "split": split,
                     })
     if len(subsequences) != 2391:
-        raise ValueError("KTH sequence file must describe exactly 2391 official subsequences")
+        raise ValueError(
+            f"KTH sequence file must describe exactly 2391 official subsequences; got {len(subsequences)}"
+        )
     return KthSequencePlan(tuple(videos), tuple(subsequences), _split_policy())
 
 
