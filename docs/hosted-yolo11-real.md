@@ -70,9 +70,15 @@ ultralytics = 8.4.146
 av = 15.1.0
 ```
 
-The workflow also pins the exact PyTorch, NumPy, and OpenCV versions used by extraction. The coordinator downloads the official YOLO11n pose checkpoint through Ultralytics, hashes it, and binds that SHA-256 into the frozen hosted protocol. Every extraction shard independently downloads the same checkpoint and refuses to run unless its SHA-256 matches the coordinator freeze.
+The checkpoint is downloaded explicitly from the official Ultralytics GitHub assets release:
 
-Model basename, checkpoint hash, pose task, 17x3 keypoint shape, prediction options, runtime versions, observation schema, and pose encoder are all bound explicitly. There is no alternate-model fallback.
+```text
+https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo11n-pose.pt
+```
+
+The workflow does not use `YOLO("yolo11n-pose.pt")` as a download mechanism. The coordinator fetches the fixed GitHub release asset with `curl`, hashes the downloaded bytes, and binds that SHA-256 into the frozen hosted protocol. Every extraction shard fetches the same official release asset independently and refuses to run unless its SHA-256 matches the coordinator freeze.
+
+The workflow also pins the exact PyTorch, NumPy, OpenCV, PyAV, and Ultralytics package versions used by extraction. Model basename, checkpoint hash, prediction options, runtime versions, observation schema, and pose encoder are all bound explicitly. There is no alternate-model fallback.
 
 ## Bounded GitHub-hosted execution
 
