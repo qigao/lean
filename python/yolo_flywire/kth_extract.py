@@ -68,7 +68,7 @@ class KthExtractionSpec:
             "identity": identity,
             "model": self.model,
             "predict": prediction_options(),
-            "decoder": "pyav-avi-single-thread-all-frames",
+            "decoder": "pyav-avi-single-thread-through-last-official-frame",
             "sampling": "official-kth-list-order-identity; frame-membership-routing; overlaps-share-one-prediction",
             "partitions": ["train", "validation"],
             "person_policy": "zero-mask-or-single-or-unique-largest-detector-bbox-else-error",
@@ -295,8 +295,10 @@ def _extract_parent(
     max_end = max(row["end_frame"] for row in range_rows)
     try:
         with closing(decode_video(clip)) as frames:
-            for frame_number, (pts, base, image) in enumerate(frames, 1):
-                if frame_number > max_end:
+            for frame_number in range(1, max_end + 1):
+                try:
+                    pts, base, image = next(frames)
+                except StopIteration:
                     break
                 active = [row for row in range_rows
                           if row["start_frame"] <= frame_number <= row["end_frame"]]
