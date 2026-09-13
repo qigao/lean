@@ -30,7 +30,7 @@
 | Path | Responsibility |
 | --- | --- |
 | `NarrativeDynamics/Core/FitnessAttachment.lean` | BB kernel; Task 1 removes legacy naming and exposes BB-native constant-fitness helpers. |
-| `NarrativeDynamics/Core/FitnessBirth.lean` | Existing graph transition; Task 4 may promote the birth fitness-list update theorem here so replay and distribution share it. |
+| `NarrativeDynamics/Core/FitnessBirth.lean` | Existing graph transition; Task 4 promotes the birth fitness-list update theorem so replay and distribution share it. |
 | `NarrativeDynamics/Core/FitnessReplay.lean` | Existing raw replay and `continuationMass`; Task 1 renames legacy public theorems, later tasks consume but do not duplicate the replay kernel. |
 | `NarrativeDynamics/Core/FitnessDistribution.lean` | New finite trace carrier, exact trace law, final-state evaluation, event probability, expectation, and BB distribution invariances. |
 | `NarrativeDynamics/Tests/FitnessAttachment.lean` | Task 1 regression updates for BB-only names. |
@@ -138,18 +138,24 @@ theorem attachment_constant_fitness {n : Nat} (s : State n)
   rw [constant j, one_mul]
 ```
 
-Rename the ordered-target law to the BB-native form and keep the same statement shape:
+Replace the ordered-target theorem with the BB-native form:
 
 ```lean
 theorem orderedMass_constant_fitness {n m : Nat} (s : State n)
     (T : Targets n m) (c : PosFitness)
     (constant : ∀ i, s.snapshot.fitness i = c.val) :
     orderedMass s T = orderedMass (unitFitnessState s) T := by
-  -- reuse the existing proof, replacing only the renamed helpers
-  ...
+  have hw : weights s.snapshot =
+      fun i => c.val * weights (unitFitnessState s).snapshot i := by
+    funext i
+    change s.snapshot.fitness i * (degree s.snapshot i : Rat) =
+      c.val * (1 * (degree s.snapshot i : Rat))
+    rw [constant i, one_mul]
+  unfold orderedMass
+  rw [hw, Internal.traceMass_scale]
 ```
 
-The executor must port the existing proof body; do not add a second target-mass algorithm.
+Do not add a second target-mass algorithm.
 
 - [ ] **Step 4: Rename replay-level constant-fitness theorems without aliases**
 
@@ -360,14 +366,17 @@ Add test-local connected states and singleton targets:
 ```lean
 namespace DistributionFixtures
 
-private theorem edgeConnected : (seedGraph (⟨2, #[1, 1], #[(0, 1)]⟩ : RawSeed)).Connected := by
-  -- use the same two-vertex connectedness proof pattern as FitnessScope
-  constructor
-  · intro u v
+private theorem edgeConnected :
+    (seedGraph (⟨2, #[1, 1], #[(0, 1)]⟩ : RawSeed)).Connected where
+  preconnected := by
+    intro u v
     by_cases h : u = v
-    · subst v; exact ⟨.nil⟩
-    · exact ⟨.cons (by fin_cases u <;> fin_cases v <;> simp_all [seedGraph, canonicalEdge]) .nil⟩
-  · exact ⟨0⟩
+    · subst v
+      exact ⟨.nil⟩
+    · have huv : (seedGraph (⟨2, #[1, 1], #[(0, 1)]⟩ : RawSeed)).Adj u v := by
+        fin_cases u <;> fin_cases v <;> simp_all [seedGraph, canonicalEdge]
+      exact ⟨.cons huv .nil⟩
+  nonempty := ⟨⟨0, by decide⟩⟩
 
 def edge : State 2 :=
   ⟨seedSnapshot (⟨2, #[1, 1], #[(0, 1)]⟩ : RawSeed) rfl,
@@ -423,7 +432,7 @@ Prove positivity by induction using `orderedMass_pos` and `mul_pos`.
 
 - [ ] **Step 4: Prove the finite trace sum is exactly the existing continuation mass**
 
-Required statement:
+Required statements:
 
 ```lean
 theorem traceProbability_sum_continuationMass {n : Nat}
@@ -435,26 +444,23 @@ theorem traceProbability_sum_continuationMass {n : Nat}
   induction schedule generalizing n with
   | nil => simp [TargetTrace, traceProbability, continuationMass]
   | cons eta rest ih =>
-      -- Rewrite the product carrier sum as Σ T, Σ tail.
       simp only [List.length_cons, TargetTrace, traceProbability, continuationMass]
       rw [Fintype.sum_prod_type]
       apply Finset.sum_congr rfl
       intro T _
       rw [Finset.mul_sum]
       simp [ih]
-```
 
-If the pinned mathlib names the product-sum lemma differently, inspect the available finite-sum API and use the equivalent theorem; do not replace this with list enumeration or a second normalization algorithm.
-
-Then derive:
-
-```lean
-theorem traceProbability_sum_one ... :
+theorem traceProbability_sum_one {n : Nat}
+    (s : State n) (m : Nat) (hm : 0 < m) (hb : m ≤ n)
+    (schedule : List PosFitness) :
     (∑ t : TargetTrace n m schedule.length,
       traceProbability s m hm hb schedule t) = 1 := by
   rw [traceProbability_sum_continuationMass]
   exact continuationMass_one s m hm hb schedule
 ```
+
+If the pinned mathlib names the product-sum lemma differently, inspect the available finite-sum API and use the equivalent theorem; do not replace this with list enumeration or a second normalization algorithm.
 
 Derive `traceProbability_nonneg` from positivity and `traceProbability_le_one` by bounding one nonnegative summand by the sum-one total.
 
@@ -538,7 +544,7 @@ theorem birth_fitness_list {n m : Nat} (s : State n) (T : Targets n m)
 
 Delete the duplicate private theorem from `FitnessReplay.lean` and let `runBirths_properties` use this public birth theorem.
 
-- [ ] **Step 4: Implement final-state evaluation**
+- [ ] **Step 4: Implement final-state evaluation and the exact structural theorem signatures**
 
 ```lean
 def traceFinal {n : Nat} (s : State n) (m : Nat)
@@ -548,27 +554,56 @@ def traceFinal {n : Nat} (s : State n) (m : Nat)
   | eta :: rest, (T, tail) =>
       traceFinal (applyBirth s T hm eta) m hm
         (Nat.le_trans hb (Nat.le_succ n)) rest tail
+
+theorem traceFinal_nodes {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+    (trace : TargetTrace n m schedule.length) :
+    (traceFinal s m hm hb schedule trace).nodeCount = n + schedule.length := by
+  induction schedule generalizing n with
+  | nil => simp [traceFinal]
+  | cons eta rest ih =>
+      rcases trace with ⟨T, tail⟩
+      simpa [traceFinal, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+        ih (applyBirth s T hm eta) tail
+
+theorem traceFinal_edges {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+    (trace : TargetTrace n m schedule.length) :
+    actualEdgeCount (traceFinal s m hm hb schedule trace).state.snapshot =
+      actualEdgeCount s.snapshot + m * schedule.length := by
+  induction schedule generalizing n with
+  | nil => simp [traceFinal]
+  | cons eta rest ih =>
+      rcases trace with ⟨T, tail⟩
+      rw [show traceFinal s m hm hb (eta :: rest) (T, tail) =
+        traceFinal (applyBirth s T hm eta) m hm
+          (Nat.le_trans hb (Nat.le_succ n)) rest tail from rfl]
+      rw [ih, birth_edges]
+      omega
+
+theorem traceFinal_fitness {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+    (trace : TargetTrace n m schedule.length) :
+    List.ofFn (traceFinal s m hm hb schedule trace).state.snapshot.fitness =
+      List.ofFn s.snapshot.fitness ++ schedule.map Subtype.val := by
+  induction schedule generalizing n with
+  | nil => simp [traceFinal]
+  | cons eta rest ih =>
+      rcases trace with ⟨T, tail⟩
+      rw [show traceFinal s m hm hb (eta :: rest) (T, tail) =
+        traceFinal (applyBirth s T hm eta) m hm
+          (Nat.le_trans hb (Nat.le_succ n)) rest tail from rfl]
+      rw [ih, birth_fitness_list]
+      simp [List.append_assoc]
+
+theorem traceFinal_valid {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+    (trace : TargetTrace n m schedule.length) :
+    (traceFinal s m hm hb schedule trace).state.snapshot.Valid :=
+  (traceFinal s m hm hb schedule trace).state.valid
 ```
 
-Prove by induction:
-
-```lean
-traceFinal_nodes:
-  (traceFinal s m hm hb schedule trace).nodeCount = n + schedule.length
-
-traceFinal_edges:
-  actualEdgeCount (traceFinal ...).state.snapshot =
-    actualEdgeCount s.snapshot + m * schedule.length
-
-traceFinal_fitness:
-  List.ofFn (traceFinal ...).state.snapshot.fitness =
-    List.ofFn s.snapshot.fitness ++ schedule.map Subtype.val
-
-traceFinal_valid:
-  (traceFinal ...).state.snapshot.Valid
-```
-
-Use `birth_edges` and `birth_fitness_list`; do not store counts or fitness redundantly in `TargetTrace`.
+The exact induction invocation may require explicit `hb` arguments after elaboration; preserve these theorem statements even if proof syntax needs adjustment on Lean 4.32.0.
 
 - [ ] **Step 5: GREEN verification and audit**
 
@@ -580,7 +615,7 @@ lake build
 git diff --check
 ```
 
-Print axioms for the new generic trace-final theorems.
+Print axioms for `birth_fitness_list`, `traceFinal_nodes`, `traceFinal_edges`, `traceFinal_fitness`, and `traceFinal_valid`.
 
 - [ ] **Step 6: Commit**
 
@@ -651,11 +686,36 @@ def eventProbability {n : Nat} (s : State n) (m : Nat)
 
 - [ ] **Step 4: Prove the finite event laws from sum-one/nonnegativity**
 
-Prove true/false by simplification. Prove nonnegativity termwise. Prove the complement law by partitioning each trace's mass between `event` and `¬ event` and rewriting the combined sum to `traceProbability_sum_one`. Prove upper bound by nonnegative complement. Prove monotonicity termwise under:
+Use these exact theorem statements:
 
 ```lean
-hEF : ∀ r, event r → larger r
+theorem eventProbability_true {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness) :
+    eventProbability s m hm hb schedule (fun _ => True) = 1 := by
+  simp [eventProbability, traceProbability_sum_one]
+
+theorem eventProbability_false {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness) :
+    eventProbability s m hm hb schedule (fun _ => False) = 0 := by
+  simp [eventProbability]
+
+theorem eventProbability_compl {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+    (event : RunState → Prop) [DecidablePred event] :
+    eventProbability s m hm hb schedule event +
+      eventProbability s m hm hb schedule (fun r => ¬ event r) = 1 := by
+  rw [← Finset.sum_add_distrib]
+  calc
+    _ = ∑ trace : TargetTrace n m schedule.length,
+        traceProbability s m hm hb schedule trace := by
+      apply Finset.sum_congr rfl
+      intro trace _
+      by_cases h : event (traceFinal s m hm hb schedule trace) <;>
+        simp [eventProbability, h]
+    _ = 1 := traceProbability_sum_one s m hm hb schedule
 ```
+
+Prove `eventProbability_nonneg` termwise from `traceProbability_nonneg`; derive `eventProbability_le_one` from complement nonnegativity; prove `eventProbability_mono` by finite-sum termwise comparison under `hEF : ∀ r, event r → larger r`.
 
 Do not quotient/deduplicate final states.
 
@@ -689,7 +749,7 @@ Stop for review.
 
 **Interfaces:**
 - Consumes: `traceProbability`, `traceFinal`, `eventProbability`.
-- Produces: `expectation`, `expectation_const`, `expectation_add`, `expectation_smul`, `expectation_indicator`.
+- Produces: `expectation`, `expectation_const`, `expectation_add`, `expectation_smul`, `indicator`, `expectation_indicator`.
 
 - [ ] **Step 1: Add RED expectation fixtures**
 
@@ -727,35 +787,50 @@ def expectation {n : Nat} (s : State n) (m : Nat)
       observable (traceFinal s m hm hb schedule trace)
 ```
 
-- [ ] **Step 4: Prove the algebraic base**
-
-Required theorem shapes:
+- [ ] **Step 4: Prove the algebraic base with fixed signatures**
 
 ```lean
-theorem expectation_const ... (q : Rat) :
-    expectation s m hm hb schedule (fun _ => q) = q
+theorem expectation_const {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness) (q : Rat) :
+    expectation s m hm hb schedule (fun _ => q) = q := by
+  unfold expectation
+  rw [← Finset.sum_mul]
+  rw [traceProbability_sum_one]
+  simp
 
-theorem expectation_add ... (f g : RunState → Rat) :
+theorem expectation_add {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+    (f g : RunState → Rat) :
     expectation s m hm hb schedule (fun r => f r + g r) =
-      expectation s m hm hb schedule f + expectation s m hm hb schedule g
+      expectation s m hm hb schedule f + expectation s m hm hb schedule g := by
+  simp only [expectation, mul_add, Finset.sum_add_distrib]
 
-theorem expectation_smul ... (q : Rat) (f : RunState → Rat) :
+theorem expectation_smul {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+    (q : Rat) (f : RunState → Rat) :
     expectation s m hm hb schedule (fun r => q * f r) =
-      q * expectation s m hm hb schedule f
-```
+      q * expectation s m hm hb schedule f := by
+  unfold expectation
+  rw [Finset.mul_sum]
+  apply Finset.sum_congr rfl
+  intro trace _
+  ring
 
-For indicator equivalence use:
-
-```lean
 def indicator (event : RunState → Prop) [DecidablePred event] (r : RunState) : Rat :=
   if event r then 1 else 0
 
-theorem expectation_indicator ... :
-  expectation s m hm hb schedule (indicator event) =
-    eventProbability s m hm hb schedule event
+theorem expectation_indicator {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+    (event : RunState → Prop) [DecidablePred event] :
+    expectation s m hm hb schedule (indicator event) =
+      eventProbability s m hm hb schedule event := by
+  unfold expectation eventProbability indicator
+  apply Finset.sum_congr rfl
+  intro trace _
+  by_cases h : event (traceFinal s m hm hb schedule trace) <;> simp [h]
 ```
 
-Use finite-sum distributivity and `traceProbability_sum_one`; do not import real-analysis expectation APIs.
+Do not import real-analysis expectation APIs.
 
 - [ ] **Step 5: GREEN verification and audit**
 
@@ -812,7 +887,7 @@ example :
   exact traceProbability_scale _ _ _ _ _ _ _
 ```
 
-Also retain the existing replay negative fixture showing that scaling only part of the fitness schedule changes a multi-birth probability; do not weaken it.
+Retain the existing replay negative fixture showing that scaling only part of the fitness schedule changes a multi-birth probability; do not weaken it.
 
 - [ ] **Step 2: Run RED**
 
@@ -832,28 +907,55 @@ def scaleSchedule (c : PosFitness) (schedule : List PosFitness) : List PosFitnes
 
 Update replay scaling internals to reuse `scalePosFitness`; do not keep a duplicate private constructor.
 
-- [ ] **Step 4: Prove trace probability and final-state scaling by induction**
+- [ ] **Step 4: Prove trace probability scaling with an explicit trace cast**
 
-Required forms:
+Use this statement:
 
 ```lean
-theorem traceProbability_scale ... :
-  traceProbability (scaleFitness s c) m hm hb (scaleSchedule c schedule)
+theorem traceProbability_scale {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+    (trace : TargetTrace n m schedule.length) (c : PosFitness) :
+    traceProbability (scaleFitness s c) m hm hb (scaleSchedule c schedule)
       (by simpa [scaleSchedule] using trace) =
-    traceProbability s m hm hb schedule trace
+    traceProbability s m hm hb schedule trace := by
+  induction schedule generalizing n with
+  | nil => simp [traceProbability, scaleSchedule]
+  | cons eta rest ih =>
+      rcases trace with ⟨T, tail⟩
+      simp only [scaleSchedule, List.map_cons, traceProbability]
+      rw [orderedMass_scale]
+      rw [ih]
 ```
 
-and a final-state theorem showing the scaled run has the same graph and all fitness values multiplied by `c`. Reuse the existing `applyBirth_scale`/ordered-mass scaling proof; if `applyBirth_scale` is private in replay, move the minimal shared typed helper to the appropriate core module rather than reproving a parallel theorem in Distribution.
+If the dependent cast blocks the direct `rcases`, introduce a local equivalence between `TargetTrace n m (scaleSchedule c schedule).length` and `TargetTrace n m schedule.length` using `List.length_map`; do not change carrier semantics.
+
+For `traceFinal_scale`, prove by induction that the final graph is identical and the final fitness vector is pointwise multiplied by `c`. Move the existing typed `applyBirth` scaling theorem out of replay-private scope if needed so both replay and distribution consume one theorem.
 
 - [ ] **Step 5: Lift scaling to topology-only event probability**
 
-Use an explicit event invariance premise:
+Use an explicit event invariance premise and exact theorem statement:
 
 ```lean
-scaleInvariantEvent : ∀ r, event (scaleRunState r c) ↔ event r
+theorem eventProbability_scale {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+    (event : RunState → Prop) [DecidablePred event]
+    (c : PosFitness)
+    (eventScale : ∀ r, event (scaleRunState r c) ↔ event r) :
+    eventProbability (scaleFitness s c) m hm hb (scaleSchedule c schedule) event =
+      eventProbability s m hm hb schedule event := by
+  unfold eventProbability
+  apply Finset.sum_bij
+    (fun trace _ => by simpa [scaleSchedule] using trace)
+    (fun trace _ => by simpa [scaleSchedule])
+    (fun trace _ => by
+      rw [traceProbability_scale]
+      rw [traceFinal_scale]
+      rw [eventScale])
+    (fun trace _ => ⟨by simpa [scaleSchedule] using trace, by simp⟩)
+    (fun trace _ => by simp)
 ```
 
-Then prove equality of event probabilities by finite-sum congruence and `traceProbability_scale`/`traceFinal_scale`.
+If the pinned `Finset.sum_bij` argument order differs, use the same bijection proof with the local trace-length equivalence; preserve this theorem statement and the one-to-one sum correspondence.
 
 State constant-fitness normalization only as a corollary of common scaling between two positive common values. Do not create another model namespace or compatibility family.
 
@@ -933,9 +1035,9 @@ This is `1/6 + 1/6`, not one representative trace.
 
 - [ ] **Step 3: Re-run the exact expectation fixture**
 
-Keep and verify:
+Keep and verify the already specified theorem-sized fixture:
 
-```lean
+```text
 E[final degree of stable vertex 0] = 15/8
 ```
 
