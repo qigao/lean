@@ -4,6 +4,7 @@ from pathlib import Path
 from zipfile import ZipFile
 
 import numpy as np
+import pytest
 
 import yolo_flywire.kth_extract as kth_extract
 from yolo_flywire.kth_extract import KthExtractionSpec, extract_action_shard
@@ -17,16 +18,64 @@ def _sequence_text() -> str:
         "Validation: person19, 20, 21, 23, 24, 25, 01, 04",
         "Test:       person22, 02, 03, 05, 06, 07, 08, 09, 10",
     ]
-    reduced = 9
+    reduced = 5
     for subject in range(1, 26):
         for action in _ACTIONS:
             for scenario in range(1, 5):
+                key = f"person{subject:02d}_{action}_d{scenario}"
+                if key == "person13_handclapping_d3":
+                    lines.append(f"{key} *missing*")
+                    continue
                 ranges = ["1-2", "3-4", "5-6", "7-8"]
                 if reduced:
                     ranges.pop()
                     reduced -= 1
-                lines.append(f"person{subject:02d}_{action}_d{scenario} frames " + ", ".join(ranges))
+                lines.append(key + " frames " + ", ".join(ranges))
     return "\n".join(lines) + "\n"
+
+
+def _spec(weights: Path, versions: dict[str, str]) -> KthExtractionSpec:
+    return KthExtractionSpec(
+        weights_sha256=hashlib.sha256(weights.read_bytes()).hexdigest(),
+        ultralytics_version=versions["ultralytics"], torch_version=versions["torch"],
+        numpy_version=versions["numpy"], av_version=versions["av"],
+        opencv_version=versions["opencv-python"],
+    )
+
+
+def test_kth_person_policy_is_frozen_as_unique_largest_detector_bbox():
+    spec = KthExtractionSpec(
+        weights_sha256="0" * 64,
+        ultralytics_version="8.4.146", torch_version="2.14.0", numpy_version="2.4.6",
+        av_version="15.1.0", opencv_version="5.0.0.93",
+    )
+    assert spec.descriptor()["person_policy"] == (
+        "zero-mask-or-single-or-unique-largest-detector-bbox-else-error"
+    )
+
+
+def test_kth_pose_selects_unique_largest_detector_bbox_not_highest_confidence():
+    points = np.zeros((2, 17, 3), dtype=np.float32)
+    points[0, :, 0] = 10.0
+    points[1, :, 0] = 20.0
+    points[..., 2] = 0.8
+    scores = np.array([0.95, 0.75], dtype=np.float32)
+    boxes = np.array([[0.0, 0.0, 10.0, 10.0], [0.0, 0.0, 30.0, 20.0]], dtype=np.float32)
+
+    body, confidence = kth_extract._kth_pose(points, scores, boxes)
+
+    assert np.array_equal(np.asarray(body, dtype=np.float32), points[1])
+    assert confidence == pytest.approx(0.75)
+
+
+def test_kth_pose_rejects_tied_largest_detector_bbox():
+    points = np.zeros((2, 17, 3), dtype=np.float32)
+    points[..., 2] = 0.8
+    scores = np.array([0.9, 0.8], dtype=np.float32)
+    boxes = np.array([[0.0, 0.0, 10.0, 20.0], [5.0, 5.0, 25.0, 15.0]], dtype=np.float32)
+
+    with pytest.raises(ValueError, match="largest detector bbox"):
+        kth_extract._kth_pose(points, scores, boxes)
 
 
 def test_kth_action_shard_never_decodes_final_test_subjects(tmp_path, monkeypatch):
@@ -48,12 +97,7 @@ def test_kth_action_shard_never_decodes_final_test_subjects(tmp_path, monkeypatc
         "ultralytics": "8.4.146", "torch": "2.14.0", "numpy": "2.4.6",
         "av": "15.1.0", "opencv-python": "5.0.0.93",
     }
-    spec = KthExtractionSpec(
-        weights_sha256=hashlib.sha256(weights.read_bytes()).hexdigest(),
-        ultralytics_version=versions["ultralytics"], torch_version=versions["torch"],
-        numpy_version=versions["numpy"], av_version=versions["av"],
-        opencv_version=versions["opencv-python"],
-    )
+    spec = _spec(weights, versions)
     protocol = {
         "sequence_file_sha256": hashlib.sha256(raw_sequence).hexdigest(),
         "extraction_spec": spec.descriptor(),
@@ -72,7 +116,9 @@ def test_kth_action_shard_never_decodes_final_test_subjects(tmp_path, monkeypatc
     def fake_predict(_image):
         points = np.zeros((1, 17, 3), dtype=np.float32)
         points[..., 2] = 0.8
-        return points, np.array([0.9], dtype=np.float32)
+        scores = np.array([0.9], dtype=np.float32)
+        boxes = np.array([[0.0, 0.0, 100.0, 100.0]], dtype=np.float32)
+        return points, scores, boxes
 
     monkeypatch.setattr(kth_extract, "_load_predictor", lambda _weights, _spec: fake_predict)
     output = tmp_path / "shard"
