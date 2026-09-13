@@ -130,13 +130,29 @@ The freeze hashes final-test files only for input identity. It does **not** deco
 
 The four-arm development runner is no longer eager: optimization/evaluation consumes `IndexedPoseDevelopment` through bound minibatches, preserving the complete seeded roster, batch boundaries, optimizer-step budget, validation-only checkpoint selection, and one-model residency. Generated actual-library tests establish plumbing equivalence only; they are not real NTU recognition evidence.
 
+The repository also provides a single fail-closed development orchestrator:
+
+```text
+python -m yolo_flywire.real_development run \
+  --protocol <frozen-protocol.json> --protocol-sha256 <sha256> \
+  --root <ntu-rgb-root> --inventory <verified-inventory.json> \
+  --weights <yolo26n-pose.pt> --execution-config <development-config.json> \
+  --connectivity <pinned-flywire.csv> \
+  --controls <verified-controls.json> --controls-sha256 <sha256> \
+  --output <new-development-output-directory>
+```
+
+Before decoding any video, this command verifies the independently pinned protocol and control bytes, requires the execution seed list and `epochs` / `max_updates` / `parameter_ceiling` to equal the frozen protocol, and reruns the real-input freeze against the supplied NTU and YOLO bytes. It then performs train/validation extraction, derives and verifies the indexed development binding, and invokes the existing four-arm comparison under that binding. The development-selectable learning rate, batch size, and model dimensions are explicit in the execution config and are hashed into the resulting report; they are not silently treated as preselected final-test hyperparameters.
+
+There is deliberately no `--test`, `--final-test`, or final-test selector in this command. The extractor remains restricted to train/validation rows, and the indexed source exposes no final-test partition. `development_report.json` is published only after byte revalidation, extraction, binding verification, and the validation-only comparison all succeed. A partial output directory without that final report is incomplete evidence, not a successful run.
+
 The remaining real-data gate is therefore concrete rather than architectural:
 
 1. provide a legally acquired local NTU RGB+D 120 RGB corpus and trusted local `yolo26n-pose.pt`;
 2. run the inventory + real-input freeze documented in `docs/real-input-freeze.md`;
-3. execute development extraction with that exact frozen extraction specification;
-4. run the five-seed four-arm development comparison under the frozen 20-epoch / 40-update budget;
-5. review all provenance and validation-only selection evidence;
-6. only then introduce/run a separate sealed final-test confirmatory command.
+3. choose the explicit development execution configuration while preserving the frozen five seeds and 20-epoch / 40-update / 50,000-parameter budget;
+4. run `python -m yolo_flywire.real_development run` against the independently pinned frozen protocol, FlyWire source, and matched controls;
+5. review the resulting provenance, development metrics, robustness metrics, and validation-only selection evidence;
+6. only after the development configuration and evidence are frozen, introduce/run a separate sealed final-test confirmatory command.
 
-Populating hashes alone is not a completed confirmatory experiment. Graph-only CI, real-input freeze, synthetic evidence, and generated-video integration do not establish a FlyWire recognition advantage. The confirmatory conclusion remains unknown until the real development and sealed final-test protocol is executed faithfully.
+Populating hashes alone is not a completed confirmatory experiment. Graph-only CI, real-input freeze, synthetic evidence, generated-video integration, and a development orchestration smoke test do not establish a FlyWire recognition advantage. The confirmatory conclusion remains unknown until the real development and sealed final-test protocol is executed faithfully.
