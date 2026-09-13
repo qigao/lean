@@ -119,107 +119,10 @@ private theorem edgeTrace12_mass :
     traceProbability edge2State 1 (by decide) (by decide)
       twoBirthSchedule edgeTrace12 = 1 / 8 := by decide_cbv
 
-private theorem snapshot_ext {n : Nat} (s t : Snapshot n)
-    (hg : s.graph = t.graph) (hf : s.fitness = t.fitness) : s = t := by
-  rcases s with ⟨sg, sd, sf⟩
-  rcases t with ⟨tg, td, tf⟩
-  dsimp only at hg hf
-  cases hg
-  cases hf
-  have hd : sd = td := Subsingleton.elim _ _
-  cases hd
-  rfl
-
-/-- Explicit tiny graphs decouple closure evaluation from the two-birth evaluator. -/
-private def edgeFinal00 : RawSeed := ⟨4, #[1, 1, 1, 1], #[(0, 1), (0, 2), (0, 3)]⟩
-private def edgeFinal01 : RawSeed := ⟨4, #[1, 1, 1, 1], #[(0, 1), (0, 2), (1, 3)]⟩
-private def edgeFinal02 : RawSeed := ⟨4, #[1, 1, 1, 1], #[(0, 1), (0, 2), (2, 3)]⟩
-private def edgeFinal10 : RawSeed := ⟨4, #[1, 1, 1, 1], #[(0, 1), (1, 2), (0, 3)]⟩
-private def edgeFinal11 : RawSeed := ⟨4, #[1, 1, 1, 1], #[(0, 1), (1, 2), (1, 3)]⟩
-private def edgeFinal12 : RawSeed := ⟨4, #[1, 1, 1, 1], #[(0, 1), (1, 2), (2, 3)]⟩
-
-private def edgeSnapshot00 : Snapshot 4 := seedSnapshot edgeFinal00 rfl
-private def edgeSnapshot01 : Snapshot 4 := seedSnapshot edgeFinal01 rfl
-private def edgeSnapshot02 : Snapshot 4 := seedSnapshot edgeFinal02 rfl
-private def edgeSnapshot10 : Snapshot 4 := seedSnapshot edgeFinal10 rfl
-private def edgeSnapshot11 : Snapshot 4 := seedSnapshot edgeFinal11 rfl
-private def edgeSnapshot12 : Snapshot 4 := seedSnapshot edgeFinal12 rfl
-
-private theorem edgeTrace00_snapshot :
-    (traceFinal edge2State 1 (by decide) (by decide)
-      twoBirthSchedule edgeTrace00).state.snapshot = edgeSnapshot00 := by
-  apply snapshot_ext
-  · letI := (traceFinal edge2State 1 (by decide) (by decide)
-      twoBirthSchedule edgeTrace00).state.snapshot.adjDec
-    letI := edgeSnapshot00.adjDec
-    ext u v
-    fin_cases u <;> fin_cases v <;> decide_cbv
-  · funext u
-    fin_cases u <;> decide_cbv
-
-private theorem edgeTrace01_snapshot :
-    (traceFinal edge2State 1 (by decide) (by decide)
-      twoBirthSchedule edgeTrace01).state.snapshot = edgeSnapshot01 := by
-  apply snapshot_ext
-  · letI := (traceFinal edge2State 1 (by decide) (by decide)
-      twoBirthSchedule edgeTrace01).state.snapshot.adjDec
-    letI := edgeSnapshot01.adjDec
-    ext u v
-    fin_cases u <;> fin_cases v <;> decide_cbv
-  · funext u
-    fin_cases u <;> decide_cbv
-
-private theorem edgeTrace02_snapshot :
-    (traceFinal edge2State 1 (by decide) (by decide)
-      twoBirthSchedule edgeTrace02).state.snapshot = edgeSnapshot02 := by
-  apply snapshot_ext
-  · letI := (traceFinal edge2State 1 (by decide) (by decide)
-      twoBirthSchedule edgeTrace02).state.snapshot.adjDec
-    letI := edgeSnapshot02.adjDec
-    ext u v
-    fin_cases u <;> fin_cases v <;> decide_cbv
-  · funext u
-    fin_cases u <;> decide_cbv
-
-private theorem edgeTrace10_snapshot :
-    (traceFinal edge2State 1 (by decide) (by decide)
-      twoBirthSchedule edgeTrace10).state.snapshot = edgeSnapshot10 := by
-  apply snapshot_ext
-  · letI := (traceFinal edge2State 1 (by decide) (by decide)
-      twoBirthSchedule edgeTrace10).state.snapshot.adjDec
-    letI := edgeSnapshot10.adjDec
-    ext u v
-    fin_cases u <;> fin_cases v <;> decide_cbv
-  · funext u
-    fin_cases u <;> decide_cbv
-
-private theorem edgeTrace11_snapshot :
-    (traceFinal edge2State 1 (by decide) (by decide)
-      twoBirthSchedule edgeTrace11).state.snapshot = edgeSnapshot11 := by
-  apply snapshot_ext
-  · letI := (traceFinal edge2State 1 (by decide) (by decide)
-      twoBirthSchedule edgeTrace11).state.snapshot.adjDec
-    letI := edgeSnapshot11.adjDec
-    ext u v
-    fin_cases u <;> fin_cases v <;> decide_cbv
-  · funext u
-    fin_cases u <;> decide_cbv
-
-private theorem edgeTrace12_snapshot :
-    (traceFinal edge2State 1 (by decide) (by decide)
-      twoBirthSchedule edgeTrace12).state.snapshot = edgeSnapshot12 := by
-  apply snapshot_ext
-  · letI := (traceFinal edge2State 1 (by decide) (by decide)
-      twoBirthSchedule edgeTrace12).state.snapshot.adjDec
-    letI := edgeSnapshot12.adjDec
-    ext u v
-    fin_cases u <;> fin_cases v <;> decide_cbv
-  · funext u
-    fin_cases u <;> decide_cbv
-
-private theorem starBound {s : Snapshot 4} (center : Fin 4)
-    (edgeToCenter : ∀ v, v ≠ center → s.graph.Adj v center) :
-    GlobalHopBound s.graph.Adj 2 := by
+/-- A star center gives every ordered pair a walk of length at most two. -/
+private theorem starBound {g : MeshGraph (Fin 4)} (center : Fin 4)
+    (edgeToCenter : ∀ v, v ≠ center → g v center) :
+    GlobalHopBound g 2 := by
   intro a b
   by_cases hab : a = b
   · subst b
@@ -228,8 +131,8 @@ private theorem starBound {s : Snapshot 4} (center : Fin 4)
   · subst a
     have hb : b ≠ center := by
       intro h
-      exact hab h
-    exact ⟨1, by omega, MeshWalk.single (edgeToCenter b hb).symm⟩
+      exact hab h.symm
+    exact ⟨1, by omega, MeshWalk.single (edgeToCenter b hb)⟩
   by_cases hb : b = center
   · subst b
     exact ⟨1, by omega, MeshWalk.single (edgeToCenter a ha)⟩
@@ -237,25 +140,93 @@ private theorem starBound {s : Snapshot 4} (center : Fin 4)
       MeshWalk.step (edgeToCenter a ha)
         (MeshWalk.single (edgeToCenter b hb).symm)⟩
 
-private theorem edgeSnapshot00_to_center (v : Fin 4) (hv : v ≠ (0 : Fin 4)) :
-    edgeSnapshot00.graph.Adj v (0 : Fin 4) := by
-  letI := edgeSnapshot00.adjDec
+/-- A non-edge with no common one-hop intermediate cannot be reached within two hops. -/
+private theorem noReachWithinTwo {g : MeshGraph (Fin 4)}
+    (source target : Fin 4) (hne : source ≠ target)
+    (hnotAdj : ¬ g source target)
+    (hcommon : ∀ middle, ¬ (g source middle ∧ g middle target)) :
+    ¬ ReachWithin g 2 source target := by
+  rintro ⟨length, hlength, walk⟩
+  interval_cases length
+  · cases walk
+    exact hne rfl
+  · cases walk with
+    | step edge rest =>
+      cases rest
+      exact hnotAdj edge
+  · cases walk with
+    | step edge rest =>
+      cases rest with
+      | step edge' rest' =>
+        cases rest'
+        exact (hcommon _) ⟨edge, edge'⟩
+
+private theorem edgeTrace00_to_center (v : Fin 4) (hv : v ≠ (0 : Fin 4)) :
+    (traceFinal edge2State 1 (by decide) (by decide)
+      twoBirthSchedule edgeTrace00).state.snapshot.graph.Adj v (0 : Fin 4) := by
   fin_cases v <;> simp_all <;> decide_cbv
 
-private theorem edgeSnapshot11_to_center (v : Fin 4) (hv : v ≠ (1 : Fin 4)) :
-    edgeSnapshot11.graph.Adj v (1 : Fin 4) := by
-  letI := edgeSnapshot11.adjDec
+private theorem edgeTrace11_to_center (v : Fin 4) (hv : v ≠ (1 : Fin 4)) :
+    (traceFinal edge2State 1 (by decide) (by decide)
+      twoBirthSchedule edgeTrace11).state.snapshot.graph.Adj v (1 : Fin 4) := by
   fin_cases v <;> simp_all <;> decide_cbv
+
+private theorem edgeTrace01_no_adj :
+    ¬ (traceFinal edge2State 1 (by decide) (by decide)
+      twoBirthSchedule edgeTrace01).state.snapshot.graph.Adj (2 : Fin 4) (3 : Fin 4) := by
+  decide_cbv
+
+private theorem edgeTrace01_no_common (middle : Fin 4) :
+    ¬ ((traceFinal edge2State 1 (by decide) (by decide)
+        twoBirthSchedule edgeTrace01).state.snapshot.graph.Adj (2 : Fin 4) middle ∧
+      (traceFinal edge2State 1 (by decide) (by decide)
+        twoBirthSchedule edgeTrace01).state.snapshot.graph.Adj middle (3 : Fin 4)) := by
+  fin_cases middle <;> decide_cbv
+
+private theorem edgeTrace02_no_adj :
+    ¬ (traceFinal edge2State 1 (by decide) (by decide)
+      twoBirthSchedule edgeTrace02).state.snapshot.graph.Adj (1 : Fin 4) (3 : Fin 4) := by
+  decide_cbv
+
+private theorem edgeTrace02_no_common (middle : Fin 4) :
+    ¬ ((traceFinal edge2State 1 (by decide) (by decide)
+        twoBirthSchedule edgeTrace02).state.snapshot.graph.Adj (1 : Fin 4) middle ∧
+      (traceFinal edge2State 1 (by decide) (by decide)
+        twoBirthSchedule edgeTrace02).state.snapshot.graph.Adj middle (3 : Fin 4)) := by
+  fin_cases middle <;> decide_cbv
+
+private theorem edgeTrace10_no_adj :
+    ¬ (traceFinal edge2State 1 (by decide) (by decide)
+      twoBirthSchedule edgeTrace10).state.snapshot.graph.Adj (2 : Fin 4) (3 : Fin 4) := by
+  decide_cbv
+
+private theorem edgeTrace10_no_common (middle : Fin 4) :
+    ¬ ((traceFinal edge2State 1 (by decide) (by decide)
+        twoBirthSchedule edgeTrace10).state.snapshot.graph.Adj (2 : Fin 4) middle ∧
+      (traceFinal edge2State 1 (by decide) (by decide)
+        twoBirthSchedule edgeTrace10).state.snapshot.graph.Adj middle (3 : Fin 4)) := by
+  fin_cases middle <;> decide_cbv
+
+private theorem edgeTrace12_no_adj :
+    ¬ (traceFinal edge2State 1 (by decide) (by decide)
+      twoBirthSchedule edgeTrace12).state.snapshot.graph.Adj (0 : Fin 4) (3 : Fin 4) := by
+  decide_cbv
+
+private theorem edgeTrace12_no_common (middle : Fin 4) :
+    ¬ ((traceFinal edge2State 1 (by decide) (by decide)
+        twoBirthSchedule edgeTrace12).state.snapshot.graph.Adj (0 : Fin 4) middle ∧
+      (traceFinal edge2State 1 (by decide) (by decide)
+        twoBirthSchedule edgeTrace12).state.snapshot.graph.Adj middle (3 : Fin 4)) := by
+  fin_cases middle <;> decide_cbv
 
 private theorem edgeTrace00_diameter :
     diameterAtMostTwo
       (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace00) := by
   change ∀ a b : Fin 4, b ∈ reached
     (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace00).state.snapshot a 2
-  rw [edgeTrace00_snapshot]
   intro a b
-  exact (reached_iff edgeSnapshot00 a b 2).mpr
-    (starBound (0 : Fin 4) edgeSnapshot00_to_center a b)
+  apply (reached_iff _ a b 2).mpr
+  exact starBound (0 : Fin 4) edgeTrace00_to_center a b
 
 private theorem edgeTrace01_diameter :
     ¬ diameterAtMostTwo
@@ -263,10 +234,10 @@ private theorem edgeTrace01_diameter :
   intro h
   change ∀ a b : Fin 4, b ∈ reached
     (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace01).state.snapshot a 2 at h
-  rw [edgeTrace01_snapshot] at h
-  have hbad := h (2 : Fin 4) (3 : Fin 4)
-  have hnot : ¬ ((3 : Fin 4) ∈ reached edgeSnapshot01 (2 : Fin 4) 2) := by decide_cbv
-  exact hnot hbad
+  have hreach := (reached_iff _ (2 : Fin 4) (3 : Fin 4) 2).mp
+    (h (2 : Fin 4) (3 : Fin 4))
+  exact (noReachWithinTwo (2 : Fin 4) (3 : Fin 4) (by decide)
+    edgeTrace01_no_adj edgeTrace01_no_common) hreach
 
 private theorem edgeTrace02_diameter :
     ¬ diameterAtMostTwo
@@ -274,10 +245,10 @@ private theorem edgeTrace02_diameter :
   intro h
   change ∀ a b : Fin 4, b ∈ reached
     (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace02).state.snapshot a 2 at h
-  rw [edgeTrace02_snapshot] at h
-  have hbad := h (1 : Fin 4) (3 : Fin 4)
-  have hnot : ¬ ((3 : Fin 4) ∈ reached edgeSnapshot02 (1 : Fin 4) 2) := by decide_cbv
-  exact hnot hbad
+  have hreach := (reached_iff _ (1 : Fin 4) (3 : Fin 4) 2).mp
+    (h (1 : Fin 4) (3 : Fin 4))
+  exact (noReachWithinTwo (1 : Fin 4) (3 : Fin 4) (by decide)
+    edgeTrace02_no_adj edgeTrace02_no_common) hreach
 
 private theorem edgeTrace10_diameter :
     ¬ diameterAtMostTwo
@@ -285,20 +256,19 @@ private theorem edgeTrace10_diameter :
   intro h
   change ∀ a b : Fin 4, b ∈ reached
     (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace10).state.snapshot a 2 at h
-  rw [edgeTrace10_snapshot] at h
-  have hbad := h (2 : Fin 4) (3 : Fin 4)
-  have hnot : ¬ ((3 : Fin 4) ∈ reached edgeSnapshot10 (2 : Fin 4) 2) := by decide_cbv
-  exact hnot hbad
+  have hreach := (reached_iff _ (2 : Fin 4) (3 : Fin 4) 2).mp
+    (h (2 : Fin 4) (3 : Fin 4))
+  exact (noReachWithinTwo (2 : Fin 4) (3 : Fin 4) (by decide)
+    edgeTrace10_no_adj edgeTrace10_no_common) hreach
 
 private theorem edgeTrace11_diameter :
     diameterAtMostTwo
       (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace11) := by
   change ∀ a b : Fin 4, b ∈ reached
     (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace11).state.snapshot a 2
-  rw [edgeTrace11_snapshot]
   intro a b
-  exact (reached_iff edgeSnapshot11 a b 2).mpr
-    (starBound (1 : Fin 4) edgeSnapshot11_to_center a b)
+  apply (reached_iff _ a b 2).mpr
+  exact starBound (1 : Fin 4) edgeTrace11_to_center a b
 
 private theorem edgeTrace12_diameter :
     ¬ diameterAtMostTwo
@@ -306,10 +276,10 @@ private theorem edgeTrace12_diameter :
   intro h
   change ∀ a b : Fin 4, b ∈ reached
     (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace12).state.snapshot a 2 at h
-  rw [edgeTrace12_snapshot] at h
-  have hbad := h (0 : Fin 4) (3 : Fin 4)
-  have hnot : ¬ ((3 : Fin 4) ∈ reached edgeSnapshot12 (0 : Fin 4) 2) := by decide_cbv
-  exact hnot hbad
+  have hreach := (reached_iff _ (0 : Fin 4) (3 : Fin 4) 2).mp
+    (h (0 : Fin 4) (3 : Fin 4))
+  exact (noReachWithinTwo (0 : Fin 4) (3 : Fin 4) (by decide)
+    edgeTrace12_no_adj edgeTrace12_no_common) hreach
 
 private theorem edgeTrace00_event :
     oldStarCenter
@@ -448,6 +418,11 @@ private def triangleTrace12 : TargetTrace 3 2 oneBirthSchedule.length := (target
 private def triangleTrace20 : TargetTrace 3 2 oneBirthSchedule.length := (target20, PUnit.unit)
 private def triangleTrace21 : TargetTrace 3 2 oneBirthSchedule.length := (target21, PUnit.unit)
 
+private theorem oneBirth_traceProbability (T : Targets 3 2) :
+    traceProbability triangle3State 2 (by decide) (by decide)
+      oneBirthSchedule (T, PUnit.unit) = orderedMass triangle3State T := by
+  simp [oneBirthSchedule, traceProbability]
+
 private theorem triangleTrace01_mass :
     traceProbability triangle3State 2 (by decide) (by decide)
       oneBirthSchedule triangleTrace01 = 1 / 6 := by decide_cbv
@@ -540,13 +515,8 @@ private theorem triangle_eventProbability_eq_setMass :
   apply Finset.sum_congr rfl
   intro T _
   simp only [Fintype.sum_unique]
-  change
-    (if newbornAdjacentToOneTwo
-        (traceFinal triangle3State 2 (by decide) (by decide)
-          oneBirthSchedule (T, PUnit.unit))
-      then orderedMass triangle3State T else 0) =
-    if T.selected = ({1, 2} : Finset (Fin 3))
-      then orderedMass triangle3State T else 0
+  have hunit : (default : PUnit) = PUnit.unit := rfl
+  rw [hunit, oneBirth_traceProbability T]
   have he := newbornAdjacentToOneTwo_iff_selected T
   by_cases h : T.selected = ({1, 2} : Finset (Fin 3))
   · rw [if_pos (he.mpr h), if_pos h]
