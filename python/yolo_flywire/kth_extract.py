@@ -18,7 +18,7 @@ from zipfile import BadZipFile, ZipFile
 
 import numpy as np
 
-from .kth_source import _ACTIONS, _ARCHIVE_URLS, _MEMBER, _SPLITS, parse_sequence_file
+from .kth_source import _ACTIONS, _ARCHIVE_URLS, _MEMBER, parse_sequence_file
 from .ntu_io import _canonical_json, _hash_file, _hash_json, _publish_exclusive
 from .pose_backend import decode_video, prediction_options, runtime_versions
 from .pose_extract import _pose, _schema, _write_row
@@ -69,7 +69,7 @@ class KthExtractionSpec:
             "model": self.model,
             "predict": prediction_options(),
             "decoder": "pyav-avi-single-thread-all-frames",
-            "sampling": "official-kth-subsequence-frame-ranges-only",
+            "sampling": "official-kth-list-order-identity; frame-membership-routing; overlaps-share-one-prediction",
             "partitions": ["train", "validation"],
             "person_policy": "zero-mask-or-single-else-error",
         }
@@ -248,45 +248,46 @@ def _close_sample_handles(states: dict[str, dict[str, Any]]) -> None:
 def _extract_parent(clip: Path, video: dict[str, Any], sample_rows: list[dict[str, Any]],
                     predictor: Callable[[np.ndarray], tuple[np.ndarray, np.ndarray]],
                     samples_root: Path) -> list[dict[str, Any]]:
+    """Route decoded frames by membership while preserving official listed range identity."""
     states = _open_sample_handles(samples_root, sample_rows)
     range_rows = sorted(sample_rows, key=lambda row: row["range_index"])
-    pointer = 0
+    max_end = max(row["end_frame"] for row in range_rows)
     try:
         with closing(decode_video(clip)) as frames:
             for frame_number, (pts, base, image) in enumerate(frames, 1):
-                while pointer < len(range_rows) and frame_number > range_rows[pointer]["end_frame"]:
-                    pointer += 1
-                if pointer >= len(range_rows):
-                    continue
-                row = range_rows[pointer]
-                if frame_number < row["start_frame"]:
+                if frame_number > max_end:
+                    break
+                active = [row for row in range_rows
+                          if row["start_frame"] <= frame_number <= row["end_frame"]]
+                if not active:
                     continue
                 if type(pts) is not int or not isinstance(base, Fraction) or base <= 0:
                     raise ValueError("KTH decoder returned invalid PTS/time base")
                 if (not isinstance(image, np.ndarray) or image.dtype != np.uint8
                         or image.ndim != 3 or image.shape[2] != 3 or min(image.shape[:2]) <= 0):
                     raise ValueError("KTH decoded frame must be nonempty uint8 BGR")
-                state = states[row["sample_id"]]
                 timestamp = pts * base
-                if state["previous"] is not None and timestamp <= state["previous"]:
-                    raise ValueError("KTH subsequence timestamps must strictly increase")
-                state["previous"] = timestamp
                 shape = tuple(image.shape)
-                if state["shape"] is not None and state["shape"] != shape:
-                    raise ValueError("KTH video dimensions changed within subsequence")
-                state["shape"] = shape
                 points, confidence = _pose(*predictor(image))
-                index = state["count"]
-                key = {"sample_id": row["sample_id"], "frame_index": index}
-                _write_row(state["geometry"], {
-                    **key, "label": row["label"], "body_keypoints": points,
-                    "detector_confidence": confidence,
-                })
-                _write_row(state["timing"], {
-                    **key, "pts": pts, "time_base": [base.numerator, base.denominator],
-                })
-                state["count"] += 1
-                state["missing"] += int(confidence == 0.0)
+                for row in active:
+                    state = states[row["sample_id"]]
+                    if state["previous"] is not None and timestamp <= state["previous"]:
+                        raise ValueError("KTH subsequence timestamps must strictly increase")
+                    state["previous"] = timestamp
+                    if state["shape"] is not None and state["shape"] != shape:
+                        raise ValueError("KTH video dimensions changed within subsequence")
+                    state["shape"] = shape
+                    index = state["count"]
+                    key = {"sample_id": row["sample_id"], "frame_index": index}
+                    _write_row(state["geometry"], {
+                        **key, "label": row["label"], "body_keypoints": points,
+                        "detector_confidence": confidence,
+                    })
+                    _write_row(state["timing"], {
+                        **key, "pts": pts, "time_base": [base.numerator, base.denominator],
+                    })
+                    state["count"] += 1
+                    state["missing"] += int(confidence == 0.0)
         _close_sample_handles(states)
         reports = []
         for row in range_rows:
@@ -408,7 +409,7 @@ def extract_action_shard(action: str, archive: str | Path, *, sequence_file: str
         }
         _publish_exclusive(destination / "shard-report.json", report)
         return json.loads(_canonical_json(report))
-    except (BadZipFile, BaseException):
+    except BaseException:
         if scratch.exists():
             shutil.rmtree(scratch, ignore_errors=True)
         raise
