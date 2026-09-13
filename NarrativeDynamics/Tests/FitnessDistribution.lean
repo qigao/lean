@@ -163,6 +163,43 @@ example :
   exact traceFinal_valid edge2State 1 (by decide) (by decide)
     twoBirthSchedule zeroZeroTrace
 
+private def stableZeroDegreeAtLeastTwo : RunState → Prop
+  | ⟨0, _⟩ => False
+  | ⟨n + 1, s⟩ => 2 ≤ degree s.snapshot (0 : Fin (n + 1))
+
+private instance stableZeroDegreeAtLeastTwoDecidable :
+    DecidablePred stableZeroDegreeAtLeastTwo := by
+  intro out
+  rcases out with ⟨n, s⟩
+  cases n with
+  | zero =>
+      simp [stableZeroDegreeAtLeastTwo]
+  | succ n =>
+      change Decidable (2 ≤ degree s.snapshot (0 : Fin (n + 1)))
+      infer_instance
+
+example :
+    eventProbability edge2State 1 (by decide) (by decide)
+      twoBirthSchedule (fun _ => True) = 1 := by
+  exact eventProbability_true edge2State 1 (by decide) (by decide) twoBirthSchedule
+
+example :
+    eventProbability edge2State 1 (by decide) (by decide)
+      twoBirthSchedule (fun _ => False) = 0 := by
+  exact eventProbability_false edge2State 1 (by decide) (by decide) twoBirthSchedule
+
+example :
+    eventProbability edge2State 1 (by decide) (by decide)
+      twoBirthSchedule stableZeroDegreeAtLeastTwo = 5 / 8 := by
+  decide_cbv
+
+example :
+    eventProbability edge2State 1 (by decide) (by decide)
+      twoBirthSchedule (fun out => ¬ stableZeroDegreeAtLeastTwo out) = 3 / 8 := by
+  rw [eventProbability_compl]
+  norm_num [show eventProbability edge2State 1 (by decide) (by decide)
+    twoBirthSchedule stableZeroDegreeAtLeastTwo = 5 / 8 by decide_cbv]
+
 #print axioms NarrativeDynamics.FitnessAttachment.traceProbability_pos
 #print axioms NarrativeDynamics.FitnessAttachment.traceProbability_sum_continuationMass
 #print axioms NarrativeDynamics.FitnessAttachment.traceProbability_sum_one
@@ -171,5 +208,11 @@ example :
 #print axioms NarrativeDynamics.FitnessAttachment.traceFinal_edges
 #print axioms NarrativeDynamics.FitnessAttachment.traceFinal_fitness
 #print axioms NarrativeDynamics.FitnessAttachment.traceFinal_valid
+#print axioms NarrativeDynamics.FitnessAttachment.eventProbability_true
+#print axioms NarrativeDynamics.FitnessAttachment.eventProbability_false
+#print axioms NarrativeDynamics.FitnessAttachment.eventProbability_nonneg
+#print axioms NarrativeDynamics.FitnessAttachment.eventProbability_le_one
+#print axioms NarrativeDynamics.FitnessAttachment.eventProbability_compl
+#print axioms NarrativeDynamics.FitnessAttachment.eventProbability_mono
 
 end NarrativeDynamics.FitnessAttachment.DistributionFixtures
