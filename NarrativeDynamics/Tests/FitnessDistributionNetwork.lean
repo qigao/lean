@@ -119,7 +119,6 @@ private theorem edgeTrace12_mass :
     traceProbability edge2State 1 (by decide) (by decide)
       twoBirthSchedule edgeTrace12 = 1 / 8 := by decide_cbv
 
-/-- Extensional snapshot equality ignores proof-field implementation details. -/
 private theorem snapshot_ext {n : Nat} (s t : Snapshot n)
     (hg : s.graph = t.graph) (hf : s.fitness = t.fitness) : s = t := by
   rcases s with ⟨sg, sd, sf⟩
@@ -150,7 +149,10 @@ private theorem edgeTrace00_snapshot :
     (traceFinal edge2State 1 (by decide) (by decide)
       twoBirthSchedule edgeTrace00).state.snapshot = edgeSnapshot00 := by
   apply snapshot_ext
-  · ext u v
+  · letI := (traceFinal edge2State 1 (by decide) (by decide)
+      twoBirthSchedule edgeTrace00).state.snapshot.adjDec
+    letI := edgeSnapshot00.adjDec
+    ext u v
     fin_cases u <;> fin_cases v <;> decide_cbv
   · funext u
     fin_cases u <;> decide_cbv
@@ -159,7 +161,10 @@ private theorem edgeTrace01_snapshot :
     (traceFinal edge2State 1 (by decide) (by decide)
       twoBirthSchedule edgeTrace01).state.snapshot = edgeSnapshot01 := by
   apply snapshot_ext
-  · ext u v
+  · letI := (traceFinal edge2State 1 (by decide) (by decide)
+      twoBirthSchedule edgeTrace01).state.snapshot.adjDec
+    letI := edgeSnapshot01.adjDec
+    ext u v
     fin_cases u <;> fin_cases v <;> decide_cbv
   · funext u
     fin_cases u <;> decide_cbv
@@ -168,7 +173,10 @@ private theorem edgeTrace02_snapshot :
     (traceFinal edge2State 1 (by decide) (by decide)
       twoBirthSchedule edgeTrace02).state.snapshot = edgeSnapshot02 := by
   apply snapshot_ext
-  · ext u v
+  · letI := (traceFinal edge2State 1 (by decide) (by decide)
+      twoBirthSchedule edgeTrace02).state.snapshot.adjDec
+    letI := edgeSnapshot02.adjDec
+    ext u v
     fin_cases u <;> fin_cases v <;> decide_cbv
   · funext u
     fin_cases u <;> decide_cbv
@@ -177,7 +185,10 @@ private theorem edgeTrace10_snapshot :
     (traceFinal edge2State 1 (by decide) (by decide)
       twoBirthSchedule edgeTrace10).state.snapshot = edgeSnapshot10 := by
   apply snapshot_ext
-  · ext u v
+  · letI := (traceFinal edge2State 1 (by decide) (by decide)
+      twoBirthSchedule edgeTrace10).state.snapshot.adjDec
+    letI := edgeSnapshot10.adjDec
+    ext u v
     fin_cases u <;> fin_cases v <;> decide_cbv
   · funext u
     fin_cases u <;> decide_cbv
@@ -186,7 +197,10 @@ private theorem edgeTrace11_snapshot :
     (traceFinal edge2State 1 (by decide) (by decide)
       twoBirthSchedule edgeTrace11).state.snapshot = edgeSnapshot11 := by
   apply snapshot_ext
-  · ext u v
+  · letI := (traceFinal edge2State 1 (by decide) (by decide)
+      twoBirthSchedule edgeTrace11).state.snapshot.adjDec
+    letI := edgeSnapshot11.adjDec
+    ext u v
     fin_cases u <;> fin_cases v <;> decide_cbv
   · funext u
     fin_cases u <;> decide_cbv
@@ -195,10 +209,43 @@ private theorem edgeTrace12_snapshot :
     (traceFinal edge2State 1 (by decide) (by decide)
       twoBirthSchedule edgeTrace12).state.snapshot = edgeSnapshot12 := by
   apply snapshot_ext
-  · ext u v
+  · letI := (traceFinal edge2State 1 (by decide) (by decide)
+      twoBirthSchedule edgeTrace12).state.snapshot.adjDec
+    letI := edgeSnapshot12.adjDec
+    ext u v
     fin_cases u <;> fin_cases v <;> decide_cbv
   · funext u
     fin_cases u <;> decide_cbv
+
+private theorem starBound {s : Snapshot 4} (center : Fin 4)
+    (edgeToCenter : ∀ v, v ≠ center → s.graph.Adj v center) :
+    GlobalHopBound s.graph.Adj 2 := by
+  intro a b
+  by_cases hab : a = b
+  · subst b
+    exact ⟨0, by omega, MeshWalk.refl _⟩
+  by_cases ha : a = center
+  · subst a
+    have hb : b ≠ center := by
+      intro h
+      exact hab h
+    exact ⟨1, by omega, MeshWalk.single (edgeToCenter b hb).symm⟩
+  by_cases hb : b = center
+  · subst b
+    exact ⟨1, by omega, MeshWalk.single (edgeToCenter a ha)⟩
+  · exact ⟨2, by omega,
+      MeshWalk.step (edgeToCenter a ha)
+        (MeshWalk.single (edgeToCenter b hb).symm)⟩
+
+private theorem edgeSnapshot00_to_center (v : Fin 4) (hv : v ≠ (0 : Fin 4)) :
+    edgeSnapshot00.graph.Adj v (0 : Fin 4) := by
+  letI := edgeSnapshot00.adjDec
+  fin_cases v <;> simp_all <;> decide_cbv
+
+private theorem edgeSnapshot11_to_center (v : Fin 4) (hv : v ≠ (1 : Fin 4)) :
+    edgeSnapshot11.graph.Adj v (1 : Fin 4) := by
+  letI := edgeSnapshot11.adjDec
+  fin_cases v <;> simp_all <;> decide_cbv
 
 private theorem edgeTrace00_diameter :
     diameterAtMostTwo
@@ -207,7 +254,8 @@ private theorem edgeTrace00_diameter :
     (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace00).state.snapshot a 2
   rw [edgeTrace00_snapshot]
   intro a b
-  fin_cases a <;> fin_cases b <;> decide_cbv
+  exact (reached_iff edgeSnapshot00 a b 2).mpr
+    (starBound (0 : Fin 4) edgeSnapshot00_to_center a b)
 
 private theorem edgeTrace01_diameter :
     ¬ diameterAtMostTwo
@@ -217,7 +265,8 @@ private theorem edgeTrace01_diameter :
     (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace01).state.snapshot a 2 at h
   rw [edgeTrace01_snapshot] at h
   have hbad := h (2 : Fin 4) (3 : Fin 4)
-  decide_cbv at hbad
+  have hnot : ¬ ((3 : Fin 4) ∈ reached edgeSnapshot01 (2 : Fin 4) 2) := by decide_cbv
+  exact hnot hbad
 
 private theorem edgeTrace02_diameter :
     ¬ diameterAtMostTwo
@@ -227,7 +276,8 @@ private theorem edgeTrace02_diameter :
     (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace02).state.snapshot a 2 at h
   rw [edgeTrace02_snapshot] at h
   have hbad := h (1 : Fin 4) (3 : Fin 4)
-  decide_cbv at hbad
+  have hnot : ¬ ((3 : Fin 4) ∈ reached edgeSnapshot02 (1 : Fin 4) 2) := by decide_cbv
+  exact hnot hbad
 
 private theorem edgeTrace10_diameter :
     ¬ diameterAtMostTwo
@@ -237,7 +287,8 @@ private theorem edgeTrace10_diameter :
     (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace10).state.snapshot a 2 at h
   rw [edgeTrace10_snapshot] at h
   have hbad := h (2 : Fin 4) (3 : Fin 4)
-  decide_cbv at hbad
+  have hnot : ¬ ((3 : Fin 4) ∈ reached edgeSnapshot10 (2 : Fin 4) 2) := by decide_cbv
+  exact hnot hbad
 
 private theorem edgeTrace11_diameter :
     diameterAtMostTwo
@@ -246,7 +297,8 @@ private theorem edgeTrace11_diameter :
     (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace11).state.snapshot a 2
   rw [edgeTrace11_snapshot]
   intro a b
-  fin_cases a <;> fin_cases b <;> decide_cbv
+  exact (reached_iff edgeSnapshot11 a b 2).mpr
+    (starBound (1 : Fin 4) edgeSnapshot11_to_center a b)
 
 private theorem edgeTrace12_diameter :
     ¬ diameterAtMostTwo
@@ -256,7 +308,8 @@ private theorem edgeTrace12_diameter :
     (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace12).state.snapshot a 2 at h
   rw [edgeTrace12_snapshot] at h
   have hbad := h (0 : Fin 4) (3 : Fin 4)
-  decide_cbv at hbad
+  have hnot : ¬ ((3 : Fin 4) ∈ reached edgeSnapshot12 (0 : Fin 4) 2) := by decide_cbv
+  exact hnot hbad
 
 private theorem edgeTrace00_event :
     oldStarCenter
