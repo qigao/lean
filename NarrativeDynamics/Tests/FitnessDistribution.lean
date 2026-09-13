@@ -201,6 +201,27 @@ example :
   norm_num [show eventProbability edge2State 1 (by decide) (by decide)
     twoBirthSchedule stableZeroDegreeAtLeastTwo = 5 / 8 by decide_cbv]
 
+private def stableZeroDegree : RunState → Rat
+  | ⟨0, _⟩ => 0
+  | ⟨n + 1, s⟩ => (degree s.snapshot (0 : Fin (n + 1)) : Rat)
+
+example :
+    expectation edge2State 1 (by decide) (by decide)
+      twoBirthSchedule (fun _ => (7 / 3 : Rat)) = 7 / 3 := by
+  exact expectation_const edge2State 1 (by decide) (by decide)
+    twoBirthSchedule (7 / 3)
+
+example :
+    expectation edge2State 1 (by decide) (by decide)
+      twoBirthSchedule stableZeroDegree = 15 / 8 := by
+  decide_cbv
+
+example :
+    expectation edge2State 1 (by decide) (by decide)
+      twoBirthSchedule (fun out => if stableZeroDegreeAtLeastTwo out then 1 else 0) = 5 / 8 := by
+  rw [expectation_indicator]
+  decide_cbv
+
 #print axioms NarrativeDynamics.FitnessAttachment.traceProbability_pos
 #print axioms NarrativeDynamics.FitnessAttachment.traceProbability_sum_continuationMass
 #print axioms NarrativeDynamics.FitnessAttachment.traceProbability_sum_one
@@ -215,5 +236,9 @@ example :
 #print axioms NarrativeDynamics.FitnessAttachment.eventProbability_le_one
 #print axioms NarrativeDynamics.FitnessAttachment.eventProbability_compl
 #print axioms NarrativeDynamics.FitnessAttachment.eventProbability_mono
+#print axioms NarrativeDynamics.FitnessAttachment.expectation_const
+#print axioms NarrativeDynamics.FitnessAttachment.expectation_add
+#print axioms NarrativeDynamics.FitnessAttachment.expectation_smul
+#print axioms NarrativeDynamics.FitnessAttachment.expectation_indicator
 
 end NarrativeDynamics.FitnessAttachment.DistributionFixtures
