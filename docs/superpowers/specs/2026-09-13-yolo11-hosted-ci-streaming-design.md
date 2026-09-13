@@ -52,12 +52,15 @@ Each row records exactly:
 - SHA-256;
 - an opaque authorized download URL or provider locator needed by the workflow.
 
-The manifest also records the same split policy descriptor and ordered task labels as the local inventory format. URLs/locators are transport metadata and are excluded from scientific dataset identity hashes so expiring signed URLs can be rotated only by producing a separately verified transport manifest that maps to the same frozen sample bytes. Scientific identity is computed from canonical sample metadata, size and SHA-256, never from URL text.
+The manifest also records the same split policy descriptor and ordered task labels as the local inventory format. URLs/locators are transport metadata and are excluded from scientific dataset identity hashes. Expiring signed URLs may be rotated only by producing a separately verified transport manifest that maps to the exact same frozen sample identities, sizes and SHA-256 values.
 
-Two digests are required:
+Three digests are distinct:
 
 1. `dataset_content_hash`: same canonical content identity rule as the local NTU inventory — ordered `{sample_id,size_bytes,sha256}` records;
-2. `split_hash`: same canonical task-label, split-policy and sample-assignment rule as the local inventory.
+2. `split_hash`: same canonical task-label, split-policy and sample-assignment rule as the local inventory;
+3. `source_manifest_hash`: canonical scientific source manifest hash over all non-transport fields, excluding URL/provider locator text.
+
+The current run also records `transport_manifest_hash` over the complete private transport manifest, including the opaque locators. `transport_manifest_hash` is run provenance only: it is not part of scientific protocol identity and may change when signed URLs rotate while `dataset_content_hash`, `split_hash` and `source_manifest_hash` remain unchanged.
 
 The remote manifest must fail closed on malformed NTU names, duplicate sample IDs, duplicate content hashes, missing classes in any required partition, split drift, unexpected labels, non-canonical hashes, non-positive sizes, or any mismatch between parsed filename identity and declared row fields.
 
@@ -82,24 +85,26 @@ Execution has four stages.
 
 ### 1. Freeze/validate transport and protocol identity
 
-A lightweight coordinator job loads the private authorized remote manifest and validates its complete roster, split policy, ten-class coverage, dataset hash and split hash. It downloads the official `yolo11n-pose.pt`, records its SHA-256 and verifies the exact pose task / 17-keypoint model contract under the pinned Ultralytics runtime.
+A lightweight coordinator job loads the private authorized remote manifest and validates its complete roster, split policy, ten-class coverage, `dataset_content_hash`, `split_hash` and `source_manifest_hash`. It separately records `transport_manifest_hash` for the current authorized locator set. It downloads the official `yolo11n-pose.pt`, records its SHA-256 and verifies the exact pose task / 17-keypoint model contract under the pinned Ultralytics runtime.
 
 The coordinator produces a frozen hosted real-input protocol snapshot that binds:
 
-- remote dataset content hash;
-- split hash;
-- transport-manifest identity hash;
+- remote `dataset_content_hash`;
+- `split_hash`;
+- `source_manifest_hash` with transport fields excluded;
 - YOLO11n checkpoint hash;
 - extraction/runtime descriptor and hash;
 - observation schema hash;
 - pose encoder hash;
 - existing graph/control design fields.
 
+The current `transport_manifest_hash` is stored in run evidence beside the frozen protocol, not folded into the protocol's scientific identity.
+
 The coordinator never decodes NTU media and never runs a classifier.
 
 ### 2. Matrix extraction shards
 
-The workflow deterministically partitions the complete remote roster into bounded shards. Shard membership is a pure function of the frozen manifest and workflow shard count; changing shard count may change scheduling but must not change scientific sample order or source identity.
+The workflow deterministically partitions the complete remote roster into bounded shards. Shard membership is a pure function of the frozen scientific source manifest and workflow shard count; changing shard count may change scheduling but must not change scientific sample order or source identity.
 
 Each shard processes one clip at a time:
 
@@ -124,11 +129,11 @@ An aggregation job downloads only shard evidence/pose artifacts. It verifies tha
 - per-sample source SHA-256 equals the frozen remote manifest;
 - shard extraction spec/schema/encoder/runtime identities all equal the frozen protocol;
 - all sidecar byte hashes match shard reports;
-- sample order is reconstructed from the frozen manifest, never artifact arrival order.
+- sample order is reconstructed from the frozen source manifest, never artifact arrival order.
 
 The aggregator emits the same logical development pose bundle contract used by downstream indexing, but its source provenance is `remote_manifest_verified` rather than `local_root_verified`.
 
-A remote-source indexed loader verifies the frozen remote manifest and the aggregated pose bundle directly. It must not call `verify_rgb_manifest` or require deleted RGB files. It reuses the existing pose row/schema/geometry/timing validators and indexed batching/training logic. There is no local-root fallback inside this loader.
+A remote-source indexed loader verifies the frozen source manifest and the aggregated pose bundle directly. It must not call `verify_rgb_manifest` or require deleted RGB files. It reuses the existing pose row/schema/geometry/timing validators and indexed batching/training logic. There is no local-root fallback inside this loader.
 
 ### 4. Four-arm development comparison
 
@@ -160,7 +165,7 @@ A separate future confirmatory design is required before any final-test decode o
 
 The hosted workflow downloads `yolo11n-pose.pt` from the official Ultralytics mechanism under an exact pinned Ultralytics package version. After download, it computes the checkpoint SHA-256 and binds it into the hosted freeze snapshot.
 
-Subsequent shard jobs do not trust an unfrozen filename. They must either download the exact official checkpoint and verify it against the frozen SHA-256 or consume a private workflow artifact containing only the checkpoint if licensing allows. The preferred implementation is independent official download plus SHA verification, avoiding repository artifact retention of model assets.
+Subsequent shard jobs do not trust an unfrozen filename. They must independently download the official checkpoint and verify it against the frozen SHA-256. Model bytes are not retained as repository artifacts or caches.
 
 Every shard must use the same exact versions for Ultralytics, PyTorch, NumPy, PyAV and OpenCV. Runtime drift is a hard failure.
 
@@ -171,11 +176,12 @@ Never upload or cache:
 - NTU RGB clips or archives;
 - authorized URLs or provider credentials;
 - final-test pose observations;
-- unverified model bytes.
+- model bytes.
 
 Allowed workflow artifacts are restricted to:
 
 - frozen protocol/hash records with transport URLs redacted or excluded;
+- run-level `transport_manifest_hash` without locator contents;
 - development pose geometry/timing sidecars for train/validation only;
 - per-shard source verification reports containing sample IDs, sizes and hashes but no URLs;
 - extraction manifests/index/binding records;
@@ -188,7 +194,7 @@ Artifacts are evidence, not authorization tokens.
 
 All execution is fail-closed. There is no automatic source substitution, alternate model, reduced sample roster, reduced frame sampling, relaxed hash check, different split, lower rewiring budget, shorter training budget or final-test compatibility path.
 
-A shard retry may repeat the same deterministic shard against the same frozen protocol/manifest. The retry must re-download and re-verify every clip in that shard; it may not trust partial prior files. Aggregation accepts exactly one successful evidence record per frozen sample and rejects duplicates with different identities.
+A shard retry may repeat the same deterministic shard against the same frozen protocol/source manifest. The retry must re-download and re-verify every clip in that shard; it may not trust partial prior files. Aggregation accepts exactly one successful evidence record per frozen sample and rejects duplicates with different identities.
 
 If one shard fails, the experiment has no complete development evidence and the comparison stage must not run.
 
@@ -205,7 +211,8 @@ Generated NTU-style fixture bytes must test:
 - duplicate sample/content rejection;
 - split/label/name mismatch rejection;
 - incomplete class coverage rejection;
-- transport URL exclusion from scientific identity hashes.
+- transport URL exclusion from `dataset_content_hash`, `split_hash` and `source_manifest_hash`;
+- URL rotation changes `transport_manifest_hash` but leaves all scientific source hashes unchanged.
 
 ### Streaming extraction tests
 
@@ -244,10 +251,11 @@ The design is implemented only when all of the following are true:
 1. Existing YOLO26 protocol/workflow behavior remains unchanged and green.
 2. A separate YOLO11n hosted protocol validates exact model/runtime/source identity.
 3. Remote and equivalent local manifests produce identical scientific dataset/split hashes.
-4. Hosted shards use `ubuntu-latest` and bounded one-clip-at-a-time materialization.
-5. Final-test clips are byte-verified but never decoded and never produce pose observations.
-6. Aggregation reconstructs the exact frozen development roster independent of shard/artifact order.
-7. Remote indexed loading verifies source and pose evidence without requiring deleted RGB bytes.
-8. Existing indexed trainer/four-arm comparison code is reused with no compatibility fallback.
-9. Ordinary fixture CI is fully green without real NTU access.
-10. The manual hosted real workflow can run from authorized remote per-clip access without a self-hosted runner or full-corpus local disk.
+4. Signed URL rotation changes only transport provenance, not scientific source identity.
+5. Hosted shards use `ubuntu-latest` and bounded one-clip-at-a-time materialization.
+6. Final-test clips are byte-verified but never decoded and never produce pose observations.
+7. Aggregation reconstructs the exact frozen development roster independent of shard/artifact order.
+8. Remote indexed loading verifies source and pose evidence without requiring deleted RGB bytes.
+9. Existing indexed trainer/four-arm comparison code is reused with no compatibility fallback.
+10. Ordinary fixture CI is fully green without real NTU access.
+11. The manual hosted real workflow can run from authorized remote per-clip access without a self-hosted runner or full-corpus local disk.
