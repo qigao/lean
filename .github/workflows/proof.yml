@@ -1,6 +1,10 @@
 name: proof
 
 on:
+  push:
+    paths-ignore:
+      - "docs/superpowers/specs/**"
+      - "docs/superpowers/plans/**"
   pull_request:
     paths-ignore:
       - "docs/superpowers/specs/**"
@@ -13,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Record checked revision
         run: |
           printf 'event=%s ref=%s requested_sha=%s run=%s attempt=%s\n' \
