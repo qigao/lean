@@ -27,7 +27,7 @@ The repository must not redistribute NTU RGB+D 120 media. A legally acquired loc
 
 ## YOLO/Pose observation stream
 
-The extractor family is frozen to Ultralytics `yolo26n-pose.pt`, with its 17 COCO body keypoints. The exact installed Ultralytics package version and the model-weight SHA-256 must be recorded from the execution environment before extraction.
+The extractor family is frozen to Ultralytics `yolo26n-pose.pt`, with its 17 COCO body keypoints. The package version is now fixed to **Ultralytics `8.4.146`**. The local model-weight SHA-256, PyTorch/NumPy/PyAV/OpenCV runtime versions, and extraction specification must be bound from the actual execution environment before real development extraction.
 
 The classifier observation contains only:
 
@@ -37,7 +37,9 @@ The classifier observation contains only:
 
 No ByteTrack feature, depth estimate, optical-flow network output, RGB embedding, or NTU-provided skeleton coordinates are classifier inputs. NTU skeleton annotations may be used only as an extraction sanity check and must never enter training or evaluation features.
 
-The normalized observation schema and encoder implementation must be hashed before the final-test run. The 17-point body schema supports coarse body/wrist gestures; it does not provide finger-joint observations for fine hand gestures.
+The feature policy is fixed to `confidence_threshold=0.05` and `scale_epsilon=1e-6`. Its timed COCO17 encoder produces the existing 121-dimensional per-frame representation. The observation schema, feature policy, encoder implementation, checkpoint bytes, and extraction runtime are all bound by the byte-backed real-input freeze described in `docs/real-input-freeze.md`.
+
+The 17-point body schema supports coarse body/wrist gestures; it does not provide finger-joint observations for fine hand gestures.
 
 ## FlyWire source and frozen topology rule
 
@@ -77,7 +79,7 @@ The rewired control uses **`directed-double-edge-swap-v2-diagonal-fixed`**. It p
 
 The frozen budget is **10 successful swaps per off-diagonal edge**, or **144,160 successful swaps per seed**. Exhausting the attempt budget is an error, not permission to reduce the requested swaps. FlyWire and rewired arms must share the same observation schema, split, parameter ceiling, optimizer/training budget, and seed list.
 
-The following full-budget fingerprints were independently identical in original CI #71 / run `34687807859` and optimized CI #73 / run `34689088871` artifacts. They are now stored in both real protocols:
+The following full-budget fingerprints were independently identical in original CI #71 / run `34687807859` and optimized CI #73 / run `34689088871` artifacts. They are stored in both real protocols:
 
 | Seed | Rewired graph SHA-256 |
 | --- | --- |
@@ -120,16 +122,21 @@ The predeclared practical-effect rule for a topology-specific V0 success is:
 
 A negative or null result is a valid outcome and must be retained as such. No topology selection, region selection, threshold change, or retry-based cherry-picking is permitted after inspecting the sealed final test.
 
-## Remaining byte-level freeze and execution boundary
+## Real-input freeze and execution boundary
 
-Graph provenance is not behavior-recognition evidence. The unresolved real-data fields remain null in both protocols:
+The repository now has a byte-backed freeze boundary. `python -m yolo_flywire.real_freeze freeze` re-verifies a local NTU RGB inventory and binds the actual `dataset_content_hash`, `split_hash`, full inventory hash, local `yolo26n-pose.pt` SHA-256, observation-schema hash, pose-encoder hash, and exact extraction/runtime specification into a fresh canonical protocol snapshot. It refuses conflicting pins, changed RGB bytes, a wrong/empty/symlink checkpoint, a different Ultralytics package version, malformed feature policy, and output overwrite.
 
-- NTU dataset content/archive hash;
-- exact Ultralytics package version;
-- `yolo26n-pose.pt` SHA-256;
-- frozen split hash;
-- observation-schema / encoder hash.
+The freeze hashes final-test files only for input identity. It does **not** decode them, construct a predictor, train a classifier, compare the four arms, or grant final-test authorization. A frozen snapshot records `final_test_decoded=false` and `classifier_evaluated=false`.
 
-The real-data extraction and training/evaluation runner must also be implemented and verified. The current real `compare` branch is **protocol-validation-only**: even a structurally complete configuration does not cause it to train the four real-data arms. Populating hashes alone is therefore not a completed confirmatory experiment.
+The four-arm development runner is no longer eager: optimization/evaluation consumes `IndexedPoseDevelopment` through bound minibatches, preserving the complete seeded roster, batch boundaries, optimizer-step budget, validation-only checkpoint selection, and one-model residency. Generated actual-library tests establish plumbing equivalence only; they are not real NTU recognition evidence.
 
-Final-test execution requires verified real input bytes, a completely frozen protocol, a verified runner that enforces those inputs and budgets, and validation-only model selection. Neither graph-only CI success nor a `protocol_validated_only` record establishes a FlyWire recognition advantage.
+The remaining real-data gate is therefore concrete rather than architectural:
+
+1. provide a legally acquired local NTU RGB+D 120 RGB corpus and trusted local `yolo26n-pose.pt`;
+2. run the inventory + real-input freeze documented in `docs/real-input-freeze.md`;
+3. execute development extraction with that exact frozen extraction specification;
+4. run the five-seed four-arm development comparison under the frozen 20-epoch / 40-update budget;
+5. review all provenance and validation-only selection evidence;
+6. only then introduce/run a separate sealed final-test confirmatory command.
+
+Populating hashes alone is not a completed confirmatory experiment. Graph-only CI, real-input freeze, synthetic evidence, and generated-video integration do not establish a FlyWire recognition advantage. The confirmatory conclusion remains unknown until the real development and sealed final-test protocol is executed faithfully.
