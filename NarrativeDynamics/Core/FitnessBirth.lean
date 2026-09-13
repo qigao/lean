@@ -122,6 +122,14 @@ def applyBirth {n m : Nat} (s : State n) (T : Targets n m) (hm : 0 < m)
     (applyBirth s T hm eta).snapshot.fitness (newId n) = eta.val := by
   simp [applyBirth, birthSnapshot, newId]
 
+/-- Stable-ID fitness values are extended by exactly the newborn value. -/
+theorem birth_fitness_list {n m : Nat} (s : State n) (T : Targets n m)
+    (hm : 0 < m) (eta : PosFitness) :
+    List.ofFn (applyBirth s T hm eta).snapshot.fitness =
+      List.ofFn s.snapshot.fitness ++ [eta.val] := by
+  rw [List.ofFn_succ']
+  simp [applyBirth, birthSnapshot, List.concat_eq_append]
+
 /-- Count the actual finite vertex carrier. -/
 def actualNodeCount {n : Nat} (_s : Snapshot n) : Nat := Fintype.card (Fin n)
 
