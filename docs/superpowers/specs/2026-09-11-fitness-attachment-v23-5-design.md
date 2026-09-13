@@ -1,129 +1,120 @@
-# Fitness Attachment V23.5 — BA-compatible BB foundation
+# Fitness Attachment V23.5 — BB foundation (archival current-tree summary)
 
-Status: design for review; no BB implementation or new theorem verification is claimed.
-User direction: “ok，升级模型” approves adding the fitness model discussed in the conversation, while retaining the deterministic pseudofractal benchmark.
+Status: implemented and verified in the V23.5 line. This maintained copy records the resulting BB contract after the repository vocabulary was simplified to one attachment-model identity. The original review wording remains available in Git history.
 
-## 1. Decision and repository boundary
+## 1. Model boundary
 
-Add a separate finite Bianconi–Barabási (BB) attachment foundation. Recover Barabási–Albert (BA) by constant fitness; do not keep two independently evolving implementations.
+V23.5 defines one finite BB attachment model in `NarrativeDynamics.FitnessAttachment`. It is an undirected simple-graph growth model over `Fin n` with immutable, strictly positive rational fitness. Degree is always computed from actual graph adjacency; there is no independent authoritative degree counter.
 
-Start `feature/fitness-attachment-v23-5` from `feature/mesh-feasibility-v23` at `c268e5355b14fb408f30814ed1c2bee2f41f1144` (#58). This is a sibling of #59 and #60, not stacked on their unfinished work. Do not modify, close, merge, or rebase those PRs. A later integration can reconcile additive root imports and workflow steps explicitly.
+A valid seed is connected, has at least two vertices, and assigns positive fitness to every vertex. A growth trace fixes `m` with `1 <= m <= n0`. Each birth supplies one positive newborn fitness and an ordered list of `m` distinct existing targets.
 
-The inspected #58 describes a deterministic Watts–Strogatz foundation and explicitly excludes a BA/power-law claim. Its core tree contains no dedicated BA/BB foundation. This change adds a model with a BA compatibility theorem, not an in-place migration of an established BA runtime.
+The model is finite and exact. It does not define a PRNG, entropy source, continuous fitness sampler, infinite process, asymptotic degree law, condensation classification, or universal small-world guarantee.
 
-#60 remains the deterministic pseudofractal proof line. Its numbered representation is in `Pseudofractal.Internal`; do not import that internal representation into this model or inherit its formulas. Existing `MeshWalk`, `ReachWithin`, and `SmallWorldMetrics` semantics remain unchanged. In particular, do not weaken `SmallWorldCertificate` or use it as a mandatory fitness-model invariant.
+## 2. Exact attachment kernel
 
-Alternatives considered: replace the pseudofractal constructor (reject: changes the proof object); add time-varying fitness plus closure and society policies immediately (defer: conflates independent mechanisms); add a fixed-fitness, finite BB layer with explicit BA reduction (selected).
+For a frozen current state and a selected-prefix set `S`, the eligible weight of vertex `i` is
 
-## 2. Exact model profile
+```text
+0                       when i is already in S
+fitness(i) * degree(i)  otherwise
+```
 
-The first profile is a finite, undirected, simple-graph BB specialization with positive rational fitness and sequential weighted selection without replacement. It is not asserted to be every multigraph or replacement convention used in the literature.
+The next target probability is that weight divided by the sum of all remaining weights. The row is normalized after each selected target, so an ordered target tuple is a product of conditional rows, not independent draws from the initial row.
 
-A state contains a finite graph `G : SimpleGraph (Fin n)`, computable adjacency, and fitness `eta : Fin n -> Rat`. Degree is computed from actual adjacency; there is no independent authoritative degree counter. Stored fitness is strictly positive and immutable for an existing vertex. Arbitrary-precision rational arithmetic avoids floating-point normalization and comparison in the model contract.
+Low-level normalization accepts nonnegative finite weights, assigns zero probability to zero-weight entries, and returns an explicit error for an all-zero or negative-weight request. Valid connected BB states with positive fitness guarantee positive remaining mass while a legal target remains.
 
-A valid growth seed is connected, has `n0 >= 2`, and has positive fitness at every vertex. Fix `m` with `1 <= m <= n0` for a growth trace. These assumptions imply positive old degrees and enough eligible targets at every step. A two-node edge is valid; the triangle is the default small fixture, not a compulsory seed.
+`Targets n m` is an ordered injective embedding. `orderedMass` gives exact rational mass to one ordered target tuple. `setMass` sums all orderings whose selected set is the requested unordered event. Complete ordered mass and complete unordered-event mass both normalize to one when `m <= n`.
 
-The incoming fitness is an explicit positive rational input at each birth. The foundation conditions on these inputs; it does not claim that arbitrary supplied fitness traces are independent samples from a continuous distribution. No real-valued fitness distribution is silently rounded. An eventual discrete sampler must identify its distribution and quantization separately.
+## 3. Atomic graph growth
 
-## 3. Attachment kernel
+`applyBirth` validates the complete typed target object before constructing the successor. One successful birth:
 
-Freeze the old graph, its degrees, and its fitness before selecting targets. For an ordered prefix of already selected distinct old vertices with underlying set S, define
+- adds exactly one new vertex with stable ID `n`;
+- adds exactly `m` undirected edges from the newborn to the selected old vertices;
+- preserves every old adjacency;
+- preserves every old fitness value exactly;
+- stores only the supplied positive newborn fitness at the new vertex;
+- keeps the graph connected;
+- gives the newborn degree `m`;
+- increases each selected old degree by one and leaves every unselected old degree unchanged.
 
-    w_i(G, eta, S) = 0                     if i is in S
-                  = eta_i * degree_G(i)    otherwise
-    Z(G, eta, S) = sum_i w_i
-    p_i(G, eta, S) = w_i / Z               only when Z > 0.
+Actual node and edge counts therefore evolve as `N_t = N_0 + t` and `E_t = E_0 + m*t`. Existing bounded walks between old vertices lift through growth without increasing their hop budget.
 
-Every draw is from remaining old vertices. The newborn is never eligible during its own birth. Its fitness affects its attractiveness on later births, not its fixed initial degree m or its own choice of targets.
+## 4. Raw validation and deterministic replay
 
-The kernel is normalized separately after each selection. It is not m independent draws from the initial distribution, and probabilities must not be multiplied without conditioning on the prefix. Freezing degrees is explicit: only already selected old targets would have their degree increased, and they are excluded from later draws in this birth.
+The raw boundary validates seed data, fixed `m`, fitness positivity, target count, bounds, and distinctness before each transition. Failure returns the first zero-based birth index and cause and never returns a partially updated graph or partial probability.
 
-The low-level normalization helper may accept nonnegative finite weights with some zero entries. A zero entry receives zero mass. All-zero weights produce an explicit error, never a zero-sum “probability distribution” or a uniform fallback. Negative weights, invalid indices, or duplicate prefixes are errors. The valid connected positive-fitness growth state rules out zero normalization before all m draws finish.
+`replay` is deterministic over a supplied raw birth trace. It returns the authoritative final state plus the exact product of the real conditional `orderedMass` values encountered on the evolving graph. Every accepted finite trace has strictly positive probability.
 
-## 4. Finite stochastic semantics, separate from entropy
+`continuationMass` sums the exact law over every legal future target choice for a fixed positive fitness schedule, using the updated successor state at every level. `continuationMass_one` proves this complete finite conditional mass is exactly one.
 
-Use an exact finite rational probability row with nonnegativity and sum-one evidence. Prove these fields from the raw weights and positivity of Z, rather than assuming the normalized answer in an input record. This is a finite kernel contract; an infinite random-process construction is not required for this slice.
+## 5. BB invariance laws
 
-For an ordered distinct target tuple (i_1,...,i_m), its probability is the product of the conditional rows. Prove total probability one over all ordered distinct m-tuples under the seed conditions. An unordered target set's probability is the sum over its orderings, not one selected ordering's product.
+V23.5 proves BB-native invariances rather than maintaining a second attachment-model identity.
 
-The executable boundary is deterministic replay of a supplied target trace, accompanied by its exact conditional probability. It is not yet a random network simulator. A PRNG, uniform-ticket implementation, seed format, and entropy-quality claims are out of scope. BA reduction guarantees equal conditional laws and equal replayed graph updates for the same target trace; it does not claim identical bits from unspecified random generators.
+- Replacing one common positive constant fitness value by unit fitness leaves the conditional target law unchanged.
+- Multiplying every current fitness value by one positive constant leaves each conditional row and complete ordered target mass unchanged.
+- Whole-replay scaling requires scaling both the seed fitness values and every future newborn fitness value; under that complete scaling, graph topology and trace probability are unchanged while stored fitness is scaled.
+- Scaling only the seed while leaving future newborn fitness unchanged is deliberately not an invariance. The two-birth regression fixture changes from `24/805` to `24/1505`.
+- For eligible vertices, probability odds follow the exact ratio of `fitness * degree` weights.
+- Raising one eligible vertex fitness cannot reduce its probability; strict increase requires positive competing mass.
 
-## 5. Atomic graph growth and stable identity
+These are finite exact laws. They do not assert an asymptotic exponent, condensation threshold, or empirical fit.
 
-After all m targets have been validated, add exactly one vertex with ID n and exactly the m undirected edges from n to those targets. Old IDs are included naturally in `Fin (n+1)`. Old fitness values are retained exactly, and only vertex n receives the incoming fitness.
+## 6. Acceptance fixtures
 
-For the old-ID embedding e, the constructed adjacency must satisfy all four cases:
+For a triangle with degrees `(2,2,2)` and fitness `(1,2,4)`, the first weights are `(2,4,8)`. With `m=2`:
 
-    G'.Adj (e u) (e v) <-> G.Adj u v
-    G'.Adj (e u) new   <-> u is a selected target
-    G'.Adj new (e v)   <-> v is a selected target
-    not (G'.Adj new new).
+```text
+P[(2,1)] = 8/21
+P[(1,2)] = 8/35
+P[{1,2}] = 64/105
+```
 
-Validate the entire request before producing a successor. Invalid fitness, m=0, m>n, wrong target count, duplicate targets, out-of-range IDs, or a disconnected/degenerate raw seed are rejected. No partial graph or partially extended fitness vector is committed on failure. Typed valid-state operations can exclude these cases by construction; a raw finite-ID adapter must return explicit errors.
+The two orderings can produce the same final graph while carrying different ordered-trace probabilities. Under one common constant fitness value, the six ordered target pairs are uniform; this is treated only as an internal BB normalization property.
 
-Prove symmetry, looplessness, no repeated undirected edges, exact old-induced-subgraph preservation, and connectedness. Prove actual vertex count increases by one and actual undirected edge count by m, using the construction, not independent recurrence fields. The newborn has degree m; each selected old vertex gains one; each unselected old vertex keeps its degree. Consequently degree sum increases by 2m.
+Raw replay fixtures cover empty replay, one and two births, full `m=n` selection, common scaling, partial-scaling failure, duplicate targets, out-of-range targets, wrong target counts, nonpositive newborn fitness, invalid seed dimensions, invalid seed fitness, and invalid `m`.
 
-By iterating valid steps derive N_t = N_0 + t and E_t = E_0 + m*t. These formulas are for this growth profile, not the exponential-generation pseudofractal formulas. Existing exact and bounded walks lift through the old-ID embedding without increasing their budgets.
+## 7. Positive-probability seven-hop scope counterexample
 
-## 6. Compatibility and attractiveness laws
+A two-node edge with unit positive fitness and `m=1`, followed by births targeting the current endpoint `[1]`, `[2]`, `[3]`, `[4]`, `[5]`, `[6]`, yields the actual eight-vertex path
 
-Prove the following generic contracts before any distribution fitting:
+```text
+0 - 1 - 2 - 3 - 4 - 5 - 6 - 7
+```
 
-- Nonnegative probability, total mass one, and exact support on positive remaining weights.
-- Constant positive fitness c reduces each conditional row to degree-only BA on the same candidate set. With constant fitness for every birth, the complete finite target-trace law and graph replay reduce to the corresponding BA profile.
-- Multiplying all old fitness values by the same positive rational c leaves probabilities unchanged. Common rescaling changes representation, not the law.
-- For positive eligible weights, p_i / p_j = (eta_i*k_i)/(eta_j*k_j). A less connected vertex can have higher selection probability when its fitness advantage exceeds the degree disadvantage.
-- Raising one eligible vertex's fitness with graph, prefix, and other fitness values fixed cannot decrease its selection probability. Strict increase requires positive competing mass; with only one eligible vertex its probability remains one.
-- Changing only the newborn's incoming fitness does not change the attachment row for that birth. Existing fitness values never change in a successor state.
+with seven edges, degree list `[1,2,2,2,2,2,2,1]`, and exact trace probability
 
-These are local, exact properties. They do not prove that a particular late arrival eventually overtakes an incumbent, or establish a universal degree exponent or condensation theorem.
+```text
+(1/2)*(1/4)*(1/6)*(1/8)*(1/10)*(1/12) = 1/46080 > 0.
+```
 
-## 7. Small-world and epistemic boundaries
+The verified proof establishes adjacency exactly between consecutive labels, constructs a seven-edge endpoint walk, proves every walk can change the label by at most one per edge, excludes every route of at most six hops, and concludes endpoint shortest-hop count `7` and mesh diameter `7`.
 
-Generation, topology, and delivery remain separate. A BB-generated snapshot may be measured with existing finite mesh metrics, but no declared fitness vector is a six-hop certificate. Do not add hypothetical shortcut edges to a realized-transmission relation.
+Therefore the finite BB model does not by itself imply a universal six-hop property. Typical, expected, high-probability, or asymptotic distance statements require an additional probability-analysis layer.
 
-Include a negative scope fixture: start from a two-node edge, take m=1 and positive fitness, and repeatedly attach to the current endpoint until there are eight vertices. Every selected endpoint has positive probability; the resulting path has endpoints at distance seven, refuting a universal six-hop guarantee for this profile. The implementation must check both a seven-hop witness and the absence of a shorter route, not infer shortestness from a supplied walk alone.
+## 8. Trust and resource boundary
 
-No high-clustering guarantee, pure power-law exponent, logarithmic distance asymptotic, universal six-hop bound, condensation classification, or guaranteed local navigability is claimed. Adding triangle closure, aging, capacity constraints, deletion, directed edges, multiple relation types, or society preferences requires a separately identified extension and fresh validation.
+The implementation is checked with Lean 4.32.0 and pinned mathlib revision `81a5d257c8e410db227a6665ed08f64fea08e997`.
 
-Fitness means attractiveness for this attachment relation. It is not truth, evidence quality, observation permission, physical access, or permission to update another Agent's beliefs. This foundation neither changes Python social state nor connects itself automatically to V24 societies.
+Generic proofs may use ordinary logical dependencies such as `propext`, `Classical.choice`, and `Quot.sound`, and their actual axiom reports are audited. The model does not use `sorry`, `admit`, new user axioms, `native_decide` as a proof oracle, unsafe bypasses, silent normalization fallback, or unlimited resource settings.
 
-## 8. Acceptance examples and adversarial checks
+Concrete finite arithmetic may use equation-based `decide_cbv`. Replay and scope acceptance remain under bounded wall-clock gates. The model does not weaken `MeshWalk`, `ReachWithin`, `SmallWorldMetrics`, Story, Testimony, or unrelated narrative semantics.
 
-For a triangle with IDs 0,1,2, degrees (2,2,2), and fitness (1,2,4), the exact weights are (2,4,8) and the first row is (1/7,2/7,4/7). After selecting 2, the second row is (1/3,2/3,0). For m=2,
+## 9. Current-tree architectural role
 
-    P[(2,1)] = (4/7)*(2/3) = 8/21
-    P[(1,2)] = (2/7)*(4/5) = 8/35
-    P[{1,2}] = 8/21 + 8/35 = 64/105.
+V23.5 is the authoritative BB kernel/replay layer consumed by V23.6. The maintained public story is:
 
-Enumerating all six ordered pairs must sum to one. For this seed with constant fitness, the first row is uniform and every ordered pair has probability 1/6. Rescaling (1,2,4) by 3/2 must retain every conditional probability.
+```text
+actual graph + positive fitness
+        ↓
+exact BB conditional target law
+        ↓
+atomic applyBirth
+        ↓
+deterministic replay + exact trace mass
+        ↓
+continuationMass = 1
+```
 
-Replaying targets (2,1) with newborn fitness 3/2 yields four vertices, five edges, degrees (2,3,3,2), and fitness (1,2,4,3/2). The old triangle and old fitness are identical to the input. Changing the order to (1,2) yields the same graph but a different trace probability; graph output must not depend on selection order once the set is fixed.
-
-Required negative tests cover all-zero normalization, zero/negative raw fitness, duplicate or out-of-range target IDs, wrong m/target dimensions, selecting the newborn, and invalid raw seeds. Cover m=1 and m=n, a one-positive-weight row, and a zero-degree candidate in the low-level kernel. Never add epsilon to degree or fitness as an undocumented repair.
-
-A weighted-vector example with degrees (100,20) and fitness (1/10,1) gives p=(1/3,2/3), versus BA's (5/6,1/6). This is a kernel arithmetic fixture, not a purported two-vertex simple graph with those degrees.
-
-## 9. Implementation surfaces and review boundaries
-
-Proposed production module: `NarrativeDynamics/Core/FitnessAttachment.lean`, namespace `NarrativeDynamics.FitnessAttachment`. Keep finite-row and raw-validation helpers under `Internal`; do not introduce a general probability framework. Test module: `NarrativeDynamics/Tests/FitnessAttachment.lean`.
-
-Implementation may add a root import and a named `Fitness attachment contract tests` workflow step. It must retain every existing Lean and Python check and record actual checkout SHA, event, run attempt, toolchain, and mathlib revision. No pinned dependency or research-lock edits belong to this model change.
-
-The implementation plan follows review of this committed design. It should separate kernel normalization/BA reduction, conditional tuple law, atomic graph extension/invariants, and finite replay/counterexample verification into reviewable RED/GREEN units. This document is not approval to skip that review boundary or overwrite ongoing #60 changes.
-
-## 10. Verification and trust statement
-
-Use the repository's pinned Lean 4.32.0 and mathlib v4.32.0. Expected mathematical REDs are missing new declarations or violated model contracts; dependency failures and unrelated Python failures are not BB REDs. Require exact-head root build, named fitness tests, all pre-existing Lean regressions, conformance comparison, and axiom reports before marking an implementation unit complete.
-
-Generic proofs must not use `sorry`, `admit`, new user axioms, `native_decide`, or unsafe escape hatches. Audit actual axiom dependencies; do not advertise ordinary classical proofs as axiom-free. Concrete tests should prefer ordinary kernel-checked proofs or equation-based `decide_cbv`; do not replace a failure with native evaluation without an explicit trust-boundary review. An executable replay check alone is not a generic theorem.
-
-The existing proof workflow ignores spec/plan-only diffs. A missing run on this design is not a test pass. Any independent Python or World Studio failure remains visible; the BB change does not repair or suppress it. Keep the PR draft; no merge or auto-merge is authorized.
-
-## 11. Sources and mathematical claims
-
-[1] G. Bianconi and A.-L. Barabasi, “Competition and multiscaling in evolving networks,” Europhysics Letters 54, 436–442 (2001), DOI 10.1209/epl/i2001-00260-6; arXiv cond-mat/0011029. Source for fitness-weighted preferential attachment and heterogeneous growth; not a proof of the finite implementation.
-
-[2] G. Bianconi and A.-L. Barabasi, “Bose-Einstein Condensation in Complex Networks,” Physical Review Letters 86, 5632–5635 (2001), DOI 10.1103/PhysRevLett.86.5632. Source for the need to distinguish fitness growth regimes; no condensation theorem is imported by this design.
-
-[3] Inspected repository base: #58 at c268e5355b14fb408f30814ed1c2bee2f41f1144, especially `Core/SmallWorldMetrics.lean` and `.github/workflows/proof.yml`. Exact finite probabilities, graph-update identities, and the path counterexample above are proposed derivations/acceptance targets, not empirical fit claims or already machine-checked BB theorems.
+V23.6 may expose the complete finite trace distribution, event probabilities, and exact expectations, but it must reuse `orderedMass`, `applyBirth`, and `continuationMass` rather than introducing another stochastic kernel.
