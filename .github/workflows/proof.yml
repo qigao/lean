@@ -11,11 +11,59 @@ on:
       - "docs/superpowers/plans/**"
 
 jobs:
+  proof-event:
+    name: Select proof event
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      run: ${{ steps.select.outputs.result }}
+    steps:
+      - uses: actions/github-script@v8
+        id: select
+        with:
+          script: |
+            if (context.eventName !== 'push' || !context.ref.startsWith('refs/heads/')) {
+              return true;
+            }
+            const branch = context.ref.slice('refs/heads/'.length);
+            // A PR must actually have a proof run; an open PR alone is not coverage.
+            for (let attempt = 0; attempt < 3; attempt++) {
+              try {
+                const {data} = await github.rest.actions.listWorkflowRuns({
+                  ...context.repo, workflow_id: 'proof.yml', event: 'pull_request',
+                  head_sha: context.sha, branch, per_page: 100
+                });
+                const prRun = data.workflow_runs.find(run =>
+                  run.event === 'pull_request' && run.head_sha === context.sha &&
+                  run.head_branch === branch &&
+                  run.head_repository?.full_name === `${context.repo.owner}/${context.repo.repo}` &&
+                  ['queued', 'in_progress', 'completed'].includes(run.status) &&
+                  !['cancelled', 'skipped'].includes(run.conclusion));
+                if (prRun) {
+                  core.info(`PR proof run ${prRun.id} covers ${context.sha}; skipping duplicate push proof.`);
+                  return false;
+                }
+              } catch (error) {
+                core.warning(`Could not check PR coverage; keeping push proof: ${error.message}`);
+                return true;
+              }
+              // Push and PR events can register a few seconds apart.
+              if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 5000));
+            }
+            core.info('No matching PR proof run; keeping push proof.');
+            return true;
+
   lean-proof:
     name: Lean proof
+    needs: proof-event
+    # Preserve verification if the selector fails; never cancel an active proof.
+    if: ${{ !cancelled() && needs.proof-event.outputs.run != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Record checked revision
         run: |
           printf 'event=%s ref=%s requested_sha=%s run=%s attempt=%s\n' \
@@ -79,11 +127,31 @@ jobs:
           lake build
 
       - name: Fitness attachment contract tests
+        timeout-minutes: 5
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
           lake env lean NarrativeDynamics/Tests/FitnessAttachment.lean
           lake env lean NarrativeDynamics/Tests/FitnessBirth.lean
           lake env lean NarrativeDynamics/Tests/FitnessValidation.lean
+
+      - name: Fitness replay acceptance
+        timeout-minutes: 5
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          # A proof error or wall-clock timeout must fail the acceptance gate.
+          /usr/bin/time -f 'FitnessReplay elapsed=%e s peak_rss=%M KiB' \
+            timeout --kill-after=10s 240s \
+            stdbuf -oL -eL lake env lean -DmaxErrors=1 -DstderrAsMessages=false \
+              NarrativeDynamics/Tests/FitnessReplay.lean
+
+      - name: Fitness scope counterexample
+        timeout-minutes: 5
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          /usr/bin/time -f 'FitnessScope elapsed=%e s peak_rss=%M KiB' \
+            timeout --kill-after=10s 240s \
+              lake env lean -DmaxErrors=8 \
+              NarrativeDynamics/Tests/FitnessScope.lean
 
       - name: Lean theorem tests
         run: |
@@ -136,6 +204,9 @@ jobs:
           lake env lean NarrativeDynamics/Tests/Testimony.lean
 
   python-tests:
+    # BB branches exclude peripheral discovery (Blender, providers and Studio).
+    # These jobs remain enabled on other branches; skipped does not mean tested.
+    if: ${{ !startsWith(github.head_ref, 'feature/fitness-') && !startsWith(github.ref, 'refs/heads/feature/fitness-') }}
     name: Python tests
     runs-on: ubuntu-latest
     steps:
