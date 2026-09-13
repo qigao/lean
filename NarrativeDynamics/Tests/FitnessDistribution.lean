@@ -173,7 +173,8 @@ private instance stableZeroDegreeAtLeastTwoDecidable :
   rcases out with ⟨n, s⟩
   cases n with
   | zero =>
-      simp [stableZeroDegreeAtLeastTwo]
+      change Decidable False
+      exact isFalse id
   | succ n =>
       change Decidable (2 ≤ degree s.snapshot (0 : Fin (n + 1)))
       infer_instance
