@@ -201,8 +201,46 @@ jobs:
       - name: Fitness distribution contract tests
         timeout-minutes: 5
         run: |
+          set -euo pipefail
           export PATH="$HOME/.elan/bin:$PATH"
-          lake env lean NarrativeDynamics/Tests/FitnessDistribution.lean
+          log="$(mktemp)"
+          trap 'rm -f "$log"' EXIT
+          lake env lean NarrativeDynamics/Tests/FitnessDistribution.lean 2>&1 | tee "$log"
+          if grep -q 'sorryAx' "$log"; then
+            echo 'FitnessDistribution theorem output depends on sorryAx'
+            exit 1
+          fi
+
+      - name: Fitness distribution network-event tests
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.elan/bin:$PATH"
+          log="$(mktemp)"
+          trap 'rm -f "$log"' EXIT
+          lake env lean NarrativeDynamics/Tests/FitnessDistributionNetwork.lean 2>&1 | tee "$log"
+          if grep -q 'sorryAx' "$log"; then
+            echo 'FitnessDistributionNetwork theorem output depends on sorryAx'
+            exit 1
+          fi
+
+      - name: Fitness distribution trust audit
+        run: |
+          set -euo pipefail
+          files=(
+            NarrativeDynamics/Core/FitnessDistribution.lean
+            NarrativeDynamics/Core/FitnessDistributionInvariance.lean
+            NarrativeDynamics/Tests/FitnessDistribution.lean
+            NarrativeDynamics/Tests/FitnessDistributionNetwork.lean
+          )
+          if git grep -n -E '(^|[^[:alnum:]_])(sorry|admit|native_decide)([^[:alnum:]_]|$)' -- "${files[@]}"; then
+            echo 'forbidden proof escape found in finite BB distribution surface'
+            exit 1
+          fi
+          if git grep -n -E '^[[:space:]]*(axiom|unsafe)[[:space:]]' -- "${files[@]}"; then
+            echo 'new axiom or unsafe declaration found in finite BB distribution surface'
+            exit 1
+          fi
 
       - name: Lean theorem tests
         run: |
