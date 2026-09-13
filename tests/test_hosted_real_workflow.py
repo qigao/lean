@@ -24,7 +24,10 @@ def test_hosted_real_workflow_is_manual_and_github_hosted():
 def test_hosted_real_workflow_uses_remote_manifest_and_yolo11_shards():
     text = _workflow()
     assert "NTU120_REMOTE_MANIFEST_URL: ${{ secrets.NTU120_REMOTE_MANIFEST_URL }}" in text
-    assert "yolo11n-pose.pt" in text
+    assert 'YOLO11_POSE_URL: "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo11n-pose.pt"' in text
+    assert 'YOLO("yolo11n-pose.pt")' not in text
+    assert '"$YOLO11_POSE_URL" --output yolo11n-pose.pt' in text
+    assert "sha256sum yolo11n-pose.pt" in text
     assert "strategy:" in text and "matrix:" in text
     assert "python -m yolo_flywire.hosted_extract shard" in text
     assert "python -m yolo_flywire.hosted_aggregate" in text
