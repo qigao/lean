@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .kth_extract import _spec_from_protocol, kth_extractor_code_hash
-from .kth_source import _ACTIONS
+from .kth_source import _ACTIONS, _MISSING_VIDEO_KEY
 from .ntu_io import _canonical_json, _hash_json
 from .pose_bundle import _bundle_state, _digest, _frame, _json, _row
 from .pose_extract import _schema
@@ -24,12 +24,24 @@ def verify_kth_source(source: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("KTH source manifest kind invalid")
     if source.get("format_version") != 1 or source.get("classes") != list(_ACTIONS):
         raise ValueError("KTH source manifest class/version invalid")
-    videos, subsequences = source.get("videos"), source.get("subsequences")
-    if type(videos) is not list or len(videos) != 600 or type(subsequences) is not list or len(subsequences) != 2391:
-        raise ValueError("KTH source manifest roster cardinality invalid")
+    videos = source.get("videos")
+    missing_videos = source.get("missing_videos")
+    subsequences = source.get("subsequences")
+    expected_missing = [{
+        "video_key": _MISSING_VIDEO_KEY,
+        "filename": _MISSING_VIDEO_KEY + "_uncomp.avi",
+        "action": "handclapping", "subject": 13, "scenario": 3, "split": "train",
+    }]
+    if (type(videos) is not list or len(videos) != 599
+            or missing_videos != expected_missing
+            or type(subsequences) is not list or len(subsequences) != 2391):
+        raise ValueError("KTH source manifest present/missing/subsequence cardinality invalid")
+    if _MISSING_VIDEO_KEY in {row.get("video_key") for row in videos}:
+        raise ValueError("KTH missing parent video cannot appear in present byte roster")
     dataset_hash = _hash_json({
         "sequence_file_sha256": source.get("sequence_file_sha256"),
         "videos": [{key: row[key] for key in ("video_key", "size_bytes", "sha256")} for row in videos],
+        "missing_videos": missing_videos,
     })
     _same(source.get("dataset_content_hash"), dataset_hash, "dataset_content_hash")
     split_hash = _hash_json({
@@ -43,7 +55,7 @@ def verify_kth_source(source: dict[str, Any]) -> dict[str, Any]:
     _same(source.get("source_manifest_hash"), _hash_json(base), "source_manifest_hash")
     inventory_hash = _hash_json({
         "sequence_file_sha256": source.get("sequence_file_sha256"),
-        "videos": videos, "subsequences": subsequences,
+        "videos": videos, "missing_videos": missing_videos, "subsequences": subsequences,
     })
     _same(source.get("input_inventory_hash"), inventory_hash, "input_inventory_hash")
     return source
