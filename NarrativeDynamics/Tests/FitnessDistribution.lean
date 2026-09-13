@@ -39,6 +39,9 @@ private def zeroTarget3 : Targets 3 1 :=
 def edge3State : State 3 :=
   applyBirth edge2State zeroTarget2 (by decide) unitFitness
 
+def edge4State : State 4 :=
+  applyBirth edge3State zeroTarget3 (by decide) unitFitness
+
 private theorem birthDegreeFn {n m : Nat} (s : State n) (T : Targets n m)
     (hm : 0 < m) (eta : PosFitness) :
     degree (applyBirth s T hm eta).snapshot =
@@ -64,6 +67,14 @@ private theorem edge2Fitness :
     edge2State.snapshot.fitness = (![1, 1] : Fin 2 → Rat) := by
   funext i
   fin_cases i <;> decide_cbv
+
+private theorem edge2FitnessList :
+    List.ofFn edge2State.snapshot.fitness = [1, 1] := by
+  rw [edge2Fitness]
+  decide_cbv
+
+private theorem edge2Edges : actualEdgeCount edge2State.snapshot = 1 := by
+  decide_cbv
 
 private theorem edge2Weights :
     weights edge2State.snapshot = (![1, 1] : Fin 2 → Rat) := by
@@ -120,9 +131,45 @@ example :
         twoBirthSchedule trace) = 1 := by
   exact traceProbability_sum_one edge2State 1 (by decide) (by decide) twoBirthSchedule
 
+example :
+    traceFinal edge2State 1 (by decide) (by decide)
+      twoBirthSchedule zeroZeroTrace = ⟨4, edge4State⟩ := by
+  rfl
+
+example :
+    actualNodeCount
+        (traceFinal edge2State 1 (by decide) (by decide)
+          twoBirthSchedule zeroZeroTrace).state.snapshot = 4 := by
+  rw [traceFinal_nodes]
+  simp [actualNodeCount]
+
+example :
+    actualEdgeCount
+        (traceFinal edge2State 1 (by decide) (by decide)
+          twoBirthSchedule zeroZeroTrace).state.snapshot = 3 := by
+  rw [traceFinal_edges, edge2Edges]
+  norm_num [twoBirthSchedule]
+
+example :
+    List.ofFn
+        (traceFinal edge2State 1 (by decide) (by decide)
+          twoBirthSchedule zeroZeroTrace).state.snapshot.fitness = [1, 1, 1, 1] := by
+  rw [traceFinal_fitness, edge2FitnessList]
+  rfl
+
+example :
+    (traceFinal edge2State 1 (by decide) (by decide)
+      twoBirthSchedule zeroZeroTrace).state.snapshot.Valid := by
+  exact traceFinal_valid edge2State 1 (by decide) (by decide)
+    twoBirthSchedule zeroZeroTrace
+
 #print axioms NarrativeDynamics.FitnessAttachment.traceProbability_pos
 #print axioms NarrativeDynamics.FitnessAttachment.traceProbability_sum_continuationMass
 #print axioms NarrativeDynamics.FitnessAttachment.traceProbability_sum_one
 #print axioms NarrativeDynamics.FitnessAttachment.traceProbability_le_one
+#print axioms NarrativeDynamics.FitnessAttachment.traceFinal_nodes
+#print axioms NarrativeDynamics.FitnessAttachment.traceFinal_edges
+#print axioms NarrativeDynamics.FitnessAttachment.traceFinal_fitness
+#print axioms NarrativeDynamics.FitnessAttachment.traceFinal_valid
 
 end NarrativeDynamics.FitnessAttachment.DistributionFixtures
