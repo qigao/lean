@@ -929,7 +929,25 @@ theorem traceProbability_scale {n : Nat} (s : State n) (m : Nat)
 
 If the dependent cast blocks the direct `rcases`, introduce a local equivalence between `TargetTrace n m (scaleSchedule c schedule).length` and `TargetTrace n m schedule.length` using `List.length_map`; do not change carrier semantics.
 
-For `traceFinal_scale`, prove by induction that the final graph is identical and the final fitness vector is pointwise multiplied by `c`. Move the existing typed `applyBirth` scaling theorem out of replay-private scope if needed so both replay and distribution consume one theorem.
+For `traceFinal_scale`, use this exact statement:
+
+```lean
+theorem traceFinal_scale {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+    (trace : TargetTrace n m schedule.length) (c : PosFitness) :
+    traceFinal (scaleFitness s c) m hm hb (scaleSchedule c schedule)
+      (by simpa [scaleSchedule] using trace) =
+    scaleRunState (traceFinal s m hm hb schedule trace) c := by
+  induction schedule generalizing n with
+  | nil => rfl
+  | cons eta rest ih =>
+      rcases trace with ⟨T, tail⟩
+      simp only [scaleSchedule, List.map_cons, traceFinal]
+      rw [applyBirth_scale]
+      exact ih (applyBirth s T hm eta) tail c
+```
+
+Move the existing typed `applyBirth_scale` theorem out of replay-private scope if needed so replay and distribution consume one theorem.
 
 - [ ] **Step 5: Lift scaling to topology-only event probability**
 
@@ -944,20 +962,23 @@ theorem eventProbability_scale {n : Nat} (s : State n) (m : Nat)
     eventProbability (scaleFitness s c) m hm hb (scaleSchedule c schedule) event =
       eventProbability s m hm hb schedule event := by
   unfold eventProbability
-  apply Finset.sum_bij
-    (fun trace _ => by simpa [scaleSchedule] using trace)
-    (fun trace _ => by simpa [scaleSchedule])
-    (fun trace _ => by
-      rw [traceProbability_scale]
-      rw [traceFinal_scale]
-      rw [eventScale])
-    (fun trace _ => ⟨by simpa [scaleSchedule] using trace, by simp⟩)
-    (fun trace _ => by simp)
+  classical
+  let castTrace : TargetTrace n m schedule.length →
+      TargetTrace n m (scaleSchedule c schedule).length := fun trace =>
+        by simpa [scaleSchedule] using trace
+  apply Finset.sum_bij castTrace
+  · intro trace _
+    rw [traceProbability_scale]
+    rw [traceFinal_scale]
+    by_cases h : event (traceFinal s m hm hb schedule trace) <;>
+      simp [h, (eventScale _).mpr h, (eventScale _).not.mpr h]
+  · intro a _ b _ h
+    simpa [castTrace] using h
+  · intro b _
+    refine ⟨by simpa [scaleSchedule] using b, by simp [castTrace]⟩
 ```
 
-If the pinned `Finset.sum_bij` argument order differs, use the same bijection proof with the local trace-length equivalence; preserve this theorem statement and the one-to-one sum correspondence.
-
-State constant-fitness normalization only as a corollary of common scaling between two positive common values. Do not create another model namespace or compatibility family.
+If the pinned `Finset.sum_bij` argument order differs, keep the same `castTrace` bijection and adapt only the API call. State constant-fitness normalization only as a corollary of common scaling between two positive common values. Do not create another model namespace or compatibility family.
 
 - [ ] **Step 6: GREEN verification and audit**
 
@@ -971,7 +992,7 @@ lake build
 git diff --check
 ```
 
-Print axioms for distribution scaling and constant-fitness corollaries.
+Print axioms for `traceProbability_scale`, `traceFinal_scale`, `eventProbability_scale`, and the constant-fitness corollaries.
 
 - [ ] **Step 7: Commit**
 
