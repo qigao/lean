@@ -134,8 +134,11 @@ jobs:
           full_ascii="$(printf '%s%s' 'Barabasi-' 'Albert')"
           full_unicode="$(printf '%s%s' 'Barabási–' 'Albert')"
           found=0
+          if git grep -n -E "(^|[^[:alnum:]_])${short}([^[:alnum:]_]|$)" -- .; then
+            found=1
+          fi
           for term in \
-            "$short" "$full_ascii" "$full_unicode" \
+            "$full_ascii" "$full_unicode" \
             "as${short}" "${lower}Row" \
             "attachment_${lower}" "orderedMass_${lower}" \
             "replay_${lower}_"; do
