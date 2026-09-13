@@ -25,397 +25,61 @@
 - Keep PR #70 Draft throughout plan execution until a later explicit review/merge authorization.
 - No RNG, Monte Carlo, random fitness generation, asymptotics, power-law fitting, condensation classification, concentration inequality, or six-hop probability claim belongs to this plan.
 
-## File map
+## Task sequence
 
-| Path | Responsibility |
-| --- | --- |
-| `NarrativeDynamics/Core/FitnessAttachment.lean` | BB kernel; Task 1 removes legacy naming and exposes BB-native constant-fitness helpers. |
-| `NarrativeDynamics/Core/FitnessBirth.lean` | Existing graph transition; Task 4 promotes the birth fitness-list update theorem so replay and distribution share it. |
-| `NarrativeDynamics/Core/FitnessReplay.lean` | Existing raw replay and `continuationMass`; Task 1 renames legacy public theorems, later tasks consume but do not duplicate the replay kernel. |
-| `NarrativeDynamics/Core/FitnessDistribution.lean` | New finite trace carrier, exact trace law, final-state evaluation, event probability, expectation, and BB distribution invariances. |
-| `NarrativeDynamics/Tests/FitnessAttachment.lean` | Task 1 regression updates for BB-only names. |
-| `NarrativeDynamics/Tests/FitnessReplay.lean` | Task 1 replay regression updates for BB-only names. |
-| `NarrativeDynamics/Tests/FitnessDistribution.lean` | New exhaustive finite-distribution contracts and network-event fixtures. |
-| `NarrativeDynamics.lean` | Add the distribution core import only after the new module exists. |
-| `.github/workflows/proof.yml` | BB-only static naming audit plus a named distribution contract step; preserve exact-head dedup behavior. |
-| `README.md` | Remove the legacy model identity in Task 1; document the verified finite distribution only after Task 8 GREEN. |
-| `docs/superpowers/specs/2026-09-11-fitness-attachment-v23-5-design.md` | Rewrite maintained terminology to BB-only in Task 1 without changing historical Git commits. |
-| `docs/superpowers/plans/2026-09-11-fitness-attachment-v23-5.md` | Rewrite maintained terminology to BB-only in Task 1. |
-| `docs/superpowers/specs/2026-09-13-fitness-distribution-v23-6-design.md` | Remove the literal legacy model token while retaining the BB-only invariant in Task 1. |
+1. Enforce repository-wide BB-only naming and remove compatibility aliases.
+2. Add finite executable `TargetTrace` carrier and the named distribution CI gate.
+3. Define exact `traceProbability` and prove the trace sum equals existing `continuationMass = 1`.
+4. Define `traceFinal` from real `applyBirth` transitions and prove node/edge/fitness/validity invariants.
+5. Define exact finite `eventProbability` and prove true/false/nonnegativity/complement/monotonicity laws.
+6. Define exact rational `expectation` and prove constant/addition/scalar/indicator laws.
+7. Lift BB common scaling and constant-fitness normalization to the full trace distribution.
+8. Verify small exact network events/expectations and complete trust, naming, README, and exact-head CI audits.
 
----
+## Task 1 acceptance boundary
 
-### Task 1: Enforce the repository-wide BB-only model surface
+Task 1 is a semantic-preserving naming cleanup. The current tree must expose only BB vocabulary. Replace the legacy state/row/replay public names with:
 
-**Files:**
-- Modify: `NarrativeDynamics/Core/FitnessAttachment.lean`
-- Modify: `NarrativeDynamics/Core/FitnessReplay.lean`
-- Modify: `NarrativeDynamics/Tests/FitnessAttachment.lean`
-- Modify: `NarrativeDynamics/Tests/FitnessReplay.lean`
-- Modify: `README.md`
-- Modify: `docs/superpowers/specs/2026-09-11-fitness-attachment-v23-5-design.md`
-- Modify: `docs/superpowers/plans/2026-09-11-fitness-attachment-v23-5.md`
-- Modify: `docs/superpowers/specs/2026-09-13-fitness-distribution-v23-6-design.md`
-- Modify: `.github/workflows/proof.yml`
-
-**Interfaces:**
-- Consumes: current BB state/kernel/replay APIs at branch base `21fed4ca07cc69fce7d2cdc3115a571cd1e663f4`.
-- Produces: `unitFitnessState`, `unitFitnessRow`, `attachment_constant_fitness`, `orderedMass_constant_fitness`, `replay_constant_fitness_topology`, `replay_constant_fitness_probability`, plus an exact current-tree naming audit. Existing `scaleFitness`, `orderedMass_scale`, `replay_scale*`, `unitSeed`, `unitBirth`, `constantSeed`, and `constantBirth` remain available.
-
-- [ ] **Step 1: Add a failing BB-only static naming audit before changing source names**
-
-Add a named step after checkout/provenance and before the fitness contract tests. Construct forbidden strings at runtime so the audit implementation does not itself contain them literally:
-
-```yaml
-      - name: BB-only naming audit
-        run: |
-          set -euo pipefail
-          short="$(printf '%s%s' B A)"
-          lower="$(printf '%s%s' b a)"
-          full_ascii="$(printf '%s%s' 'Barabasi-' 'Albert')"
-          full_unicode="$(printf '%s%s' 'Barabási–' 'Albert')"
-          found=0
-          for term in \
-            "$short" "$full_ascii" "$full_unicode" \
-            "as${short}" "${lower}Row" \
-            "attachment_${lower}" "orderedMass_${lower}" \
-            "replay_${lower}_"; do
-            if git grep -n -F "$term" -- .; then
-              found=1
-            fi
-          done
-          if [ "$found" -ne 0 ]; then
-            echo 'legacy attachment-model surface remains'
-            exit 1
-          fi
+```text
+unitFitnessState
+unitFitnessRow
+attachment_constant_fitness
+orderedMass_constant_fitness
+replay_constant_fitness_topology
+replay_constant_fitness_probability
 ```
 
-Do not exclude docs, plans, tests, README, or workflow files from this search. Closed PR discussions and historical Git commits are outside the checked-out tree and therefore outside this audit.
+Keep `scaleFitness`, `orderedMass_scale`, `replay_scale*`, `unitSeed`, `unitBirth`, `constantSeed`, and `constantBirth`. Do not leave aliases under removed names.
 
-- [ ] **Step 2: Push the audit-only RED and verify the expected failure**
+Add a workflow static audit that constructs forbidden legacy strings at runtime and searches the complete checked-out tree, including source, tests, README, current specs, current plans, and workflow files. Historical commits and already-closed PR discussions are not rewritten.
 
-Run locally if a worktree is available:
+Task 1 RED is specifically the new naming audit failing on the existing surface. Task 1 GREEN requires the renamed Lean tests, root build, and complete naming audit to pass on the same exact head.
 
-```bash
-short="$(printf '%s%s' B A)"
-git grep -n -F "$short" -- .
-```
+## Task 2 acceptance boundary
 
-Then commit/push the audit-only change:
-
-```bash
-git add .github/workflows/proof.yml
-git commit -m "test(lean): require BB-only attachment naming"
-git push
-```
-
-Expected RED: `BB-only naming audit` fails by reporting the known legacy identifiers/docs. The root build and pre-existing Lean checks must not be treated as the RED; this task's intended failure is specifically the new static naming gate.
-
-- [ ] **Step 3: Replace the legacy state/row compatibility surface with BB-native constant-fitness names**
-
-In `FitnessAttachment.lean`, use one unit-fitness projection and one row helper:
+Create:
 
 ```lean
-def unitFitnessState {n : Nat} (s : State n) : State n where
-  snapshot := { s.snapshot with fitness := fun _ => 1 }
-  valid := ⟨s.valid.1, s.valid.2.1, fun _ => by norm_num⟩
-
-/-- Unit fitness is only a normalization of the same BB state. -/
-def unitFitnessRow {n : Nat} (s : State n)
-    (S : Finset (Fin n)) (hS : S.card < n) : Internal.Row n :=
-  attachmentRow (unitFitnessState s) S hS
-
-/-- A common constant fitness value cancels from one BB attachment row. -/
-theorem attachment_constant_fitness {n : Nat} (s : State n)
-    (S : Finset (Fin n)) (hS : S.card < n)
-    (c : PosFitness) (constant : ∀ j, s.snapshot.fitness j = c.val)
-    (i : Fin n) :
-    (attachmentRow s S hS).mass i = (unitFitnessRow s S hS).mass i := by
-  apply attachment_proportional (unitFitnessState s) s S hS c
-  intro j
-  change s.snapshot.fitness j * (degree s.snapshot j : Rat) =
-    c.val * (1 * (degree s.snapshot j : Rat))
-  rw [constant j, one_mul]
-```
-
-Replace the ordered-target theorem with the BB-native form:
-
-```lean
-theorem orderedMass_constant_fitness {n m : Nat} (s : State n)
-    (T : Targets n m) (c : PosFitness)
-    (constant : ∀ i, s.snapshot.fitness i = c.val) :
-    orderedMass s T = orderedMass (unitFitnessState s) T := by
-  have hw : weights s.snapshot =
-      fun i => c.val * weights (unitFitnessState s).snapshot i := by
-    funext i
-    change s.snapshot.fitness i * (degree s.snapshot i : Rat) =
-      c.val * (1 * (degree s.snapshot i : Rat))
-    rw [constant i, one_mul]
-  unfold orderedMass
-  rw [hw, Internal.traceMass_scale]
-```
-
-Do not add a second target-mass algorithm.
-
-- [ ] **Step 4: Rename replay-level constant-fitness theorems without aliases**
-
-Keep the existing private common-scaling derivation and expose only BB-native public names:
-
-```lean
-theorem replay_constant_fitness_topology
-    (seed : RawSeed) (m : Nat) (bs : List RawBirth)
-    (out : ReplayResult) (c : PosFitness)
-    (h : replay (unitSeed seed) m (bs.map unitBirth) = .ok out) :
-    ∃ next,
-      replay (constantSeed seed c) m (bs.map (fun raw => constantBirth raw c)) = .ok next ∧
-      next.final = scaleRunState out.final c := by
-  exact ⟨scaleResult out c, replay_constant seed m bs out c h, rfl⟩
-
-theorem replay_constant_fitness_probability
-    (seed : RawSeed) (m : Nat) (bs : List RawBirth)
-    (out : ReplayResult) (c : PosFitness)
-    (h : replay (unitSeed seed) m (bs.map unitBirth) = .ok out) :
-    ∃ next,
-      replay (constantSeed seed c) m (bs.map (fun raw => constantBirth raw c)) = .ok next ∧
-      next.probability = out.probability := by
-  exact ⟨scaleResult out c, replay_constant seed m bs out c h, rfl⟩
-```
-
-Do not keep deprecated aliases under the old names.
-
-- [ ] **Step 5: Update the existing Lean fixtures and axiom audits to the new BB-native surface**
-
-Replace row fixtures with `unitFitnessRow`; replace generic theorem applications with `attachment_constant_fitness`, `orderedMass_constant_fitness`, `replay_constant_fitness_topology`, and `replay_constant_fitness_probability`. Preserve every existing numerical expectation, including the common-scaling positive fixture and the seed-only-scaling negative fixture.
-
-Required examples include:
-
-```lean
-example : rowValues (.ok (unitFitnessRow Fixtures.star ∅ (by decide))) =
-    .ok [1/2, 1/6, 1/6, 1/6] := by decide_cbv
-
-example {n m : Nat} (s : State n) (T : Targets n m) (c : PosFitness)
-    (constant : ∀ i, s.snapshot.fitness i = c.val) :
-    orderedMass s T = orderedMass (unitFitnessState s) T :=
-  orderedMass_constant_fitness s T c constant
-```
-
-Print the renamed theorem axioms explicitly.
-
-- [ ] **Step 6: Rewrite maintained prose and the revised V23.6 spec to contain only BB vocabulary**
-
-In README/spec/plan prose, describe constant positive fitness as a BB normalization/scaling property. Do not describe a recovered, compatible, baseline, or special-case second attachment model. The revised V23.6 spec itself must pass the static naming audit; refer to the removed surface only as “legacy alternate-model vocabulary.”
-
-- [ ] **Step 7: Run Task 1 GREEN verification**
-
-Run:
-
-```bash
-export PATH="$HOME/.elan/bin:$PATH"
-lake env lean NarrativeDynamics/Tests/FitnessAttachment.lean
-lake env lean NarrativeDynamics/Tests/FitnessReplay.lean
-lake build
-short="$(printf '%s%s' B A)"
-! git grep -n -F "$short" -- .
-git diff --check
-```
-
-Also run the workflow's full BB-only audit loop, not just the short token check. Expected: no matches; all renamed Lean fixtures pass; no compatibility alias remains.
-
-- [ ] **Step 8: Commit the BB-only surface**
-
-```bash
-git add NarrativeDynamics/Core/FitnessAttachment.lean \
-        NarrativeDynamics/Core/FitnessReplay.lean \
-        NarrativeDynamics/Tests/FitnessAttachment.lean \
-        NarrativeDynamics/Tests/FitnessReplay.lean \
-        README.md docs/superpowers .github/workflows/proof.yml
-git commit -m "refactor(lean): make BB the only attachment model surface"
-git push
-```
-
-Stop for review. Do not start the distribution carrier until exact-head GREEN and the BB-only audit are confirmed.
-
----
-
-### Task 2: Add the finite target-trace carrier and named distribution gate
-
-**Files:**
-- Create: `NarrativeDynamics/Core/FitnessDistribution.lean`
-- Create: `NarrativeDynamics/Tests/FitnessDistribution.lean`
-- Modify: `NarrativeDynamics.lean`
-- Modify: `.github/workflows/proof.yml`
-
-**Interfaces:**
-- Consumes: `Targets n m` and its computable `Fintype` instance from `FitnessAttachment`.
-- Produces: `TargetTrace (n m steps : Nat)`, recursive executable `Fintype`, and test-local finite cardinality fixtures. Later tasks use `TargetTrace n m schedule.length`.
-
-The plan deliberately indexes `TargetTrace` by the number of future births, not by the schedule values. Fitness values do not affect carrier shape, and the `Nat` index avoids unnecessary transports when common scaling changes schedule values.
-
-- [ ] **Step 1: Add the distribution test file and workflow step before the core module exists**
-
-Create `NarrativeDynamics/Tests/FitnessDistribution.lean`:
-
-```lean
-import NarrativeDynamics.Core.FitnessDistribution
-
-open NarrativeDynamics NarrativeDynamics.FitnessAttachment
-open NarrativeDynamics.FitnessAttachment.Internal
-
-private def one : PosFitness := ⟨1, by norm_num⟩
-
-example : Fintype.card (TargetTrace 3 2 0) = 1 := by decide
-example : Fintype.card (TargetTrace 3 2 1) = 6 := by decide
-example : Fintype.card (TargetTrace 2 1 2) = 6 := by decide
-```
-
-Add after the replay/scope gates:
-
-```yaml
-      - name: Fitness distribution contract tests
-        timeout-minutes: 5
-        run: |
-          export PATH="$HOME/.elan/bin:$PATH"
-          timeout --kill-after=10s 240s \
-            lake env lean -DmaxErrors=8 NarrativeDynamics/Tests/FitnessDistribution.lean
-```
-
-- [ ] **Step 2: Push and record the intended missing-module RED**
-
-```bash
-git add NarrativeDynamics/Tests/FitnessDistribution.lean .github/workflows/proof.yml
-git commit -m "test(lean): specify finite BB target trace carrier"
-git push
-```
-
-Expected RED: the distribution contract step fails because `NarrativeDynamics.Core.FitnessDistribution` does not exist. The prior root build and fitness checks must remain green.
-
-- [ ] **Step 3: Implement the schedule-length-indexed carrier and computable finite instance**
-
-Create `NarrativeDynamics/Core/FitnessDistribution.lean`:
-
-```lean
-import NarrativeDynamics.Core.FitnessReplay
-
-namespace NarrativeDynamics.FitnessAttachment
-
-open Internal
-open scoped BigOperators
-
-/-- All legal ordered BB target choices for exactly `steps` future births. -/
 def TargetTrace (n m : Nat) : Nat → Type
   | 0 => PUnit
   | steps + 1 => Targets n m × TargetTrace (n + 1) m steps
-
-instance instFintypeTargetTrace (n m : Nat) :
-    (steps : Nat) → Fintype (TargetTrace n m steps)
-  | 0 => inferInstanceAs (Fintype PUnit)
-  | steps + 1 =>
-      letI := instFintypeTargetTrace (n + 1) m steps
-      inferInstanceAs (Fintype (Targets n m × TargetTrace (n + 1) m steps))
-
-end NarrativeDynamics.FitnessAttachment
 ```
 
-Do not use `Fintype.ofFinite`.
+and a recursive executable `Fintype` instance built from the existing computable `Fintype (Targets n m)`. Do not use `Fintype.ofFinite`.
 
-- [ ] **Step 4: Add the root import and verify carrier GREEN**
+Minimum exact cardinality fixtures:
 
-Append:
-
-```lean
-import NarrativeDynamics.Core.FitnessDistribution
+```text
+card(TargetTrace 3 2 0) = 1
+card(TargetTrace 3 2 1) = 6
+card(TargetTrace 2 1 2) = 6
 ```
 
-to `NarrativeDynamics.lean`, then run:
+Add `NarrativeDynamics/Core/FitnessDistribution.lean`, `NarrativeDynamics/Tests/FitnessDistribution.lean`, a root import only after the module exists, and a `Fitness distribution contract tests` workflow step.
 
-```bash
-lake env lean NarrativeDynamics/Tests/FitnessDistribution.lean
-lake build
-git diff --check
-```
+## Task 3 acceptance boundary
 
-Expected cardinalities: `1`, `6`, and `6` as above.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add NarrativeDynamics/Core/FitnessDistribution.lean \
-        NarrativeDynamics/Tests/FitnessDistribution.lean NarrativeDynamics.lean
-git commit -m "feat(lean): add finite BB target trace carrier"
-git push
-```
-
-Stop for review.
-
----
-
-### Task 3: Define exact trace probability and prove normalization through `continuationMass`
-
-**Files:**
-- Modify: `NarrativeDynamics/Core/FitnessDistribution.lean`
-- Modify: `NarrativeDynamics/Tests/FitnessDistribution.lean`
-
-**Interfaces:**
-- Consumes: `TargetTrace`, `orderedMass`, `orderedMass_pos`, `applyBirth`, `continuationMass`, `continuationMass_one`.
-- Produces: `traceProbability`, `traceProbability_pos`, `traceProbability_nonneg`, `traceProbability_sum_continuationMass`, `traceProbability_sum_one`, `traceProbability_le_one`.
-
-- [ ] **Step 1: Add RED tests for concrete trace masses and total mass**
-
-Add test-local connected states and singleton targets:
-
-```lean
-namespace DistributionFixtures
-
-private theorem edgeConnected :
-    (seedGraph (⟨2, #[1, 1], #[(0, 1)]⟩ : RawSeed)).Connected where
-  preconnected := by
-    intro u v
-    by_cases h : u = v
-    · subst v
-      exact ⟨.nil⟩
-    · have huv : (seedGraph (⟨2, #[1, 1], #[(0, 1)]⟩ : RawSeed)).Adj u v := by
-        fin_cases u <;> fin_cases v <;> simp_all [seedGraph, canonicalEdge]
-      exact ⟨.cons huv .nil⟩
-  nonempty := ⟨⟨0, by decide⟩⟩
-
-def edge : State 2 :=
-  ⟨seedSnapshot (⟨2, #[1, 1], #[(0, 1)]⟩ : RawSeed) rfl,
-    ⟨by decide, edgeConnected, by decide⟩⟩
-
-def one : PosFitness := ⟨1, by norm_num⟩
-
-def singletonTarget {n : Nat} (i : Fin n) : Targets n 1 :=
-  ⟨fun _ => i, fun _ _ _ => Subsingleton.elim _ _⟩
-
-def trace00 : TargetTrace 2 1 2 :=
-  (singletonTarget 0, (singletonTarget 0, PUnit.unit))
-
-end DistributionFixtures
-```
-
-Add intended contracts:
-
-```lean
-example : traceProbability DistributionFixtures.edge 1 (by decide) (by decide)
-    [DistributionFixtures.one, DistributionFixtures.one]
-    DistributionFixtures.trace00 = 1/4 := by decide_cbv
-
-example :
-    (∑ t : TargetTrace 2 1 2,
-      traceProbability DistributionFixtures.edge 1 (by decide) (by decide)
-        [DistributionFixtures.one, DistributionFixtures.one] t) = 1 := by
-  exact traceProbability_sum_one _ _ _ _ _
-```
-
-- [ ] **Step 2: Run RED**
-
-```bash
-lake env lean NarrativeDynamics/Tests/FitnessDistribution.lean
-```
-
-Expected: missing `traceProbability` / normalization theorem declarations.
-
-- [ ] **Step 3: Implement recursive trace probability from the actual evolving state**
+Define:
 
 ```lean
 def traceProbability {n : Nat} (s : State n) (m : Nat)
@@ -428,474 +92,93 @@ def traceProbability {n : Nat} (s : State n) (m : Nat)
           (Nat.le_trans hb (Nat.le_succ n)) rest tail
 ```
 
-Prove positivity by induction using `orderedMass_pos` and `mul_pos`.
+Prove:
 
-- [ ] **Step 4: Prove the finite trace sum is exactly the existing continuation mass**
-
-Required statements:
-
-```lean
-theorem traceProbability_sum_continuationMass {n : Nat}
-    (s : State n) (m : Nat) (hm : 0 < m) (hb : m ≤ n)
-    (schedule : List PosFitness) :
-    (∑ t : TargetTrace n m schedule.length,
-      traceProbability s m hm hb schedule t) =
-      continuationMass s m hm hb schedule := by
-  induction schedule generalizing n with
-  | nil => simp [TargetTrace, traceProbability, continuationMass]
-  | cons eta rest ih =>
-      simp only [List.length_cons, TargetTrace, traceProbability, continuationMass]
-      rw [Fintype.sum_prod_type]
-      apply Finset.sum_congr rfl
-      intro T _
-      rw [Finset.mul_sum]
-      simp [ih]
-
-theorem traceProbability_sum_one {n : Nat}
-    (s : State n) (m : Nat) (hm : 0 < m) (hb : m ≤ n)
-    (schedule : List PosFitness) :
-    (∑ t : TargetTrace n m schedule.length,
-      traceProbability s m hm hb schedule t) = 1 := by
-  rw [traceProbability_sum_continuationMass]
-  exact continuationMass_one s m hm hb schedule
+```text
+traceProbability_pos
+traceProbability_nonneg
+traceProbability_sum_continuationMass
+traceProbability_sum_one
+traceProbability_le_one
 ```
 
-If the pinned mathlib names the product-sum lemma differently, inspect the available finite-sum API and use the equivalent theorem; do not replace this with list enumeration or a second normalization algorithm.
+The normalization theorem must identify the finite trace sum with the existing `continuationMass`, then use `continuationMass_one`. Do not create a second normalization algorithm.
 
-Derive `traceProbability_nonneg` from positivity and `traceProbability_le_one` by bounding one nonnegative summand by the sum-one total.
+Concrete fixture: the two-node edge, `m=1`, two unit-fitness births, target 0 then target 0 has exact mass `1/4`.
 
-- [ ] **Step 5: Audit and run GREEN**
+## Task 4 acceptance boundary
 
-Append:
-
-```lean
-#print axioms traceProbability_pos
-#print axioms traceProbability_sum_continuationMass
-#print axioms traceProbability_sum_one
-#print axioms traceProbability_le_one
-```
-
-Run:
-
-```bash
-lake env lean NarrativeDynamics/Tests/FitnessDistribution.lean
-lake env lean NarrativeDynamics/Tests/FitnessReplay.lean
-lake build
-git diff --check
-```
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add NarrativeDynamics/Core/FitnessDistribution.lean NarrativeDynamics/Tests/FitnessDistribution.lean
-git commit -m "feat(lean): prove normalized finite BB trace law"
-git push
-```
-
-Stop for review.
-
----
-
-### Task 4: Evaluate traces to authoritative final BB states and prove structural invariants
-
-**Files:**
-- Modify: `NarrativeDynamics/Core/FitnessBirth.lean`
-- Modify: `NarrativeDynamics/Core/FitnessReplay.lean`
-- Modify: `NarrativeDynamics/Core/FitnessDistribution.lean`
-- Modify: `NarrativeDynamics/Tests/FitnessDistribution.lean`
-
-**Interfaces:**
-- Consumes: `TargetTrace`, `applyBirth`, `birth_edges`, existing birth fitness semantics.
-- Produces: public `birth_fitness_list`, `traceFinal`, `traceFinal_nodes`, `traceFinal_edges`, `traceFinal_fitness`, `traceFinal_valid`.
-
-- [ ] **Step 1: Add RED final-state contracts**
-
-Add:
-
-```lean
-example : (traceFinal DistributionFixtures.edge 1 (by decide) (by decide)
-    [DistributionFixtures.one, DistributionFixtures.one]
-    DistributionFixtures.trace00).nodeCount = 4 := by decide_cbv
-
-example : actualEdgeCount
-    (traceFinal DistributionFixtures.edge 1 (by decide) (by decide)
-      [DistributionFixtures.one, DistributionFixtures.one]
-      DistributionFixtures.trace00).state.snapshot = 3 := by decide_cbv
-```
-
-Add generic theorem applications for node count, edge count, and fitness list.
-
-- [ ] **Step 2: Run RED**
-
-Expected missing `traceFinal` and structural theorem declarations.
-
-- [ ] **Step 3: Promote the existing birth fitness-list helper to the birth module**
-
-Move the replay-private theorem into `FitnessBirth.lean` as:
-
-```lean
-theorem birth_fitness_list {n m : Nat} (s : State n) (T : Targets n m)
-    (hm : 0 < m) (eta : PosFitness) :
-    List.ofFn (applyBirth s T hm eta).snapshot.fitness =
-      List.ofFn s.snapshot.fitness ++ [eta.val] := by
-  rw [List.ofFn_succ']
-  simp [applyBirth, birthSnapshot, List.concat_eq_append]
-```
-
-Delete the duplicate private theorem from `FitnessReplay.lean` and let `runBirths_properties` use this public birth theorem.
-
-- [ ] **Step 4: Implement final-state evaluation and the exact structural theorem signatures**
+Promote one shared birth fitness-list theorem into `FitnessBirth.lean` and delete the replay-private duplicate. Define:
 
 ```lean
 def traceFinal {n : Nat} (s : State n) (m : Nat)
     (hm : 0 < m) (hb : m ≤ n) :
     (schedule : List PosFitness) → TargetTrace n m schedule.length → RunState
-  | [], _ => ⟨n, s⟩
-  | eta :: rest, (T, tail) =>
-      traceFinal (applyBirth s T hm eta) m hm
-        (Nat.le_trans hb (Nat.le_succ n)) rest tail
-
-theorem traceFinal_nodes {n : Nat} (s : State n) (m : Nat)
-    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
-    (trace : TargetTrace n m schedule.length) :
-    (traceFinal s m hm hb schedule trace).nodeCount = n + schedule.length := by
-  induction schedule generalizing n with
-  | nil => simp [traceFinal]
-  | cons eta rest ih =>
-      rcases trace with ⟨T, tail⟩
-      simpa [traceFinal, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
-        ih (applyBirth s T hm eta) tail
-
-theorem traceFinal_edges {n : Nat} (s : State n) (m : Nat)
-    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
-    (trace : TargetTrace n m schedule.length) :
-    actualEdgeCount (traceFinal s m hm hb schedule trace).state.snapshot =
-      actualEdgeCount s.snapshot + m * schedule.length := by
-  induction schedule generalizing n with
-  | nil => simp [traceFinal]
-  | cons eta rest ih =>
-      rcases trace with ⟨T, tail⟩
-      rw [show traceFinal s m hm hb (eta :: rest) (T, tail) =
-        traceFinal (applyBirth s T hm eta) m hm
-          (Nat.le_trans hb (Nat.le_succ n)) rest tail from rfl]
-      rw [ih, birth_edges]
-      omega
-
-theorem traceFinal_fitness {n : Nat} (s : State n) (m : Nat)
-    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
-    (trace : TargetTrace n m schedule.length) :
-    List.ofFn (traceFinal s m hm hb schedule trace).state.snapshot.fitness =
-      List.ofFn s.snapshot.fitness ++ schedule.map Subtype.val := by
-  induction schedule generalizing n with
-  | nil => simp [traceFinal]
-  | cons eta rest ih =>
-      rcases trace with ⟨T, tail⟩
-      rw [show traceFinal s m hm hb (eta :: rest) (T, tail) =
-        traceFinal (applyBirth s T hm eta) m hm
-          (Nat.le_trans hb (Nat.le_succ n)) rest tail from rfl]
-      rw [ih, birth_fitness_list]
-      simp [List.append_assoc]
-
-theorem traceFinal_valid {n : Nat} (s : State n) (m : Nat)
-    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
-    (trace : TargetTrace n m schedule.length) :
-    (traceFinal s m hm hb schedule trace).state.snapshot.Valid :=
-  (traceFinal s m hm hb schedule trace).state.valid
 ```
 
-The exact induction invocation may require explicit `hb` arguments after elaboration; preserve these theorem statements even if proof syntax needs adjustment on Lean 4.32.0.
+by recursively applying the real `applyBirth` transition. Prove:
 
-- [ ] **Step 5: GREEN verification and audit**
-
-```bash
-lake env lean NarrativeDynamics/Tests/FitnessBirth.lean
-lake env lean NarrativeDynamics/Tests/FitnessReplay.lean
-lake env lean NarrativeDynamics/Tests/FitnessDistribution.lean
-lake build
-git diff --check
+```text
+traceFinal_nodes
+traceFinal_edges
+traceFinal_fitness
+traceFinal_valid
 ```
 
-Print axioms for `birth_fitness_list`, `traceFinal_nodes`, `traceFinal_edges`, `traceFinal_fitness`, and `traceFinal_valid`.
+with final node count `n + schedule.length`, edge count increase `m * schedule.length`, and fitness extended by schedule values in order.
 
-- [ ] **Step 6: Commit**
+## Task 5 acceptance boundary
 
-```bash
-git add NarrativeDynamics/Core/FitnessBirth.lean NarrativeDynamics/Core/FitnessReplay.lean \
-        NarrativeDynamics/Core/FitnessDistribution.lean NarrativeDynamics/Tests/FitnessDistribution.lean
-git commit -m "feat(lean): evaluate BB traces to authoritative final states"
-git push
-```
-
-Stop for review.
-
----
-
-### Task 5: Add exact finite event probabilities and probability laws
-
-**Files:**
-- Modify: `NarrativeDynamics/Core/FitnessDistribution.lean`
-- Modify: `NarrativeDynamics/Tests/FitnessDistribution.lean`
-
-**Interfaces:**
-- Consumes: normalized `traceProbability`, `traceFinal`.
-- Produces: `eventProbability`, `eventProbability_true`, `eventProbability_false`, `eventProbability_nonneg`, `eventProbability_le_one`, `eventProbability_compl`, `eventProbability_mono`.
-
-- [ ] **Step 1: Add RED event-law tests**
-
-Define one stable-ID degree predicate for the two-birth edge experiment:
+Define:
 
 ```lean
-def oldZeroDegree (r : RunState) : Nat :=
-  degree r.state.snapshot ⟨0, by have := r.state.valid.1; omega⟩
-
-def zeroDegreeAtLeastTwo (r : RunState) : Prop := 2 ≤ oldZeroDegree r
-
-instance : DecidablePred zeroDegreeAtLeastTwo := fun _ => inferInstance
-```
-
-Add:
-
-```lean
-example : eventProbability DistributionFixtures.edge 1 (by decide) (by decide)
-    [DistributionFixtures.one, DistributionFixtures.one]
-    (fun _ => True) = 1 := by
-  exact eventProbability_true _ _ _ _ _
-
-example : eventProbability DistributionFixtures.edge 1 (by decide) (by decide)
-    [DistributionFixtures.one, DistributionFixtures.one]
-    zeroDegreeAtLeastTwo = 5/8 := by decide_cbv
-```
-
-The `5/8` fixture is independent arithmetic over the six typed traces: masses are `1/4, 1/8, 1/8, 1/8, 1/4, 1/8`, and the matching traces contribute `1/4 + 1/8 + 1/8 + 1/8`.
-
-- [ ] **Step 2: Run RED**
-
-Expected missing `eventProbability` declarations.
-
-- [ ] **Step 3: Implement exact event mass**
-
-```lean
-def eventProbability {n : Nat} (s : State n) (m : Nat)
-    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+def eventProbability ...
     (event : RunState → Prop) [DecidablePred event] : Rat :=
-  ∑ trace : TargetTrace n m schedule.length,
-    if event (traceFinal s m hm hb schedule trace)
-    then traceProbability s m hm hb schedule trace
+  ∑ trace,
+    if event (traceFinal ... trace)
+    then traceProbability ... trace
     else 0
 ```
 
-- [ ] **Step 4: Prove the finite event laws from sum-one/nonnegativity**
-
-Use these exact theorem statements:
-
-```lean
-theorem eventProbability_true {n : Nat} (s : State n) (m : Nat)
-    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness) :
-    eventProbability s m hm hb schedule (fun _ => True) = 1 := by
-  simp [eventProbability, traceProbability_sum_one]
-
-theorem eventProbability_false {n : Nat} (s : State n) (m : Nat)
-    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness) :
-    eventProbability s m hm hb schedule (fun _ => False) = 0 := by
-  simp [eventProbability]
-
-theorem eventProbability_compl {n : Nat} (s : State n) (m : Nat)
-    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
-    (event : RunState → Prop) [DecidablePred event] :
-    eventProbability s m hm hb schedule event +
-      eventProbability s m hm hb schedule (fun r => ¬ event r) = 1 := by
-  rw [← Finset.sum_add_distrib]
-  calc
-    _ = ∑ trace : TargetTrace n m schedule.length,
-        traceProbability s m hm hb schedule trace := by
-      apply Finset.sum_congr rfl
-      intro trace _
-      by_cases h : event (traceFinal s m hm hb schedule trace) <;>
-        simp [eventProbability, h]
-    _ = 1 := traceProbability_sum_one s m hm hb schedule
-```
-
-Prove `eventProbability_nonneg` termwise from `traceProbability_nonneg`; derive `eventProbability_le_one` from complement nonnegativity; prove `eventProbability_mono` by finite-sum termwise comparison under `hEF : ∀ r, event r → larger r`.
-
-Do not quotient/deduplicate final states.
-
-- [ ] **Step 5: GREEN verification and audit**
-
-Print axioms for all generic event laws and run:
-
-```bash
-lake env lean NarrativeDynamics/Tests/FitnessDistribution.lean
-lake build
-git diff --check
-```
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add NarrativeDynamics/Core/FitnessDistribution.lean NarrativeDynamics/Tests/FitnessDistribution.lean
-git commit -m "feat(lean): prove exact BB event probabilities"
-git push
-```
-
-Stop for review.
-
----
-
-### Task 6: Add exact rational expectations and linearity
-
-**Files:**
-- Modify: `NarrativeDynamics/Core/FitnessDistribution.lean`
-- Modify: `NarrativeDynamics/Tests/FitnessDistribution.lean`
-
-**Interfaces:**
-- Consumes: `traceProbability`, `traceFinal`, `eventProbability`.
-- Produces: `expectation`, `expectation_const`, `expectation_add`, `expectation_smul`, `indicator`, `expectation_indicator`.
-
-- [ ] **Step 1: Add RED expectation fixtures**
-
-Add:
-
-```lean
-example : expectation DistributionFixtures.edge 1 (by decide) (by decide)
-    [DistributionFixtures.one, DistributionFixtures.one]
-    (fun r => (oldZeroDegree r : Rat)) = 15/8 := by decide_cbv
-
-example : expectation DistributionFixtures.edge 1 (by decide) (by decide)
-    [DistributionFixtures.one, DistributionFixtures.one]
-    (fun _ => (7/3 : Rat)) = 7/3 := by
-  exact expectation_const _ _ _ _ _ _
-```
-
-The explicit degree expectation is:
+Prove:
 
 ```text
-3*(1/4) + 2*(1/8+1/8+1/8) + 1*(1/4+1/8) = 15/8.
+eventProbability_true
+eventProbability_false
+eventProbability_nonneg
+eventProbability_le_one
+eventProbability_compl
+eventProbability_mono
 ```
 
-- [ ] **Step 2: Run RED**
+Do not quotient or deduplicate final states: different ordered traces that reach the same graph contribute separately.
 
-Expected missing expectation declarations.
+Concrete two-birth edge fixture: event “stable vertex 0 has final degree at least 2” has exact probability `5/8`.
 
-- [ ] **Step 3: Implement expectation**
+## Task 6 acceptance boundary
+
+Define exact rational expectation:
 
 ```lean
-def expectation {n : Nat} (s : State n) (m : Nat)
-    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
-    (observable : RunState → Rat) : Rat :=
-  ∑ trace : TargetTrace n m schedule.length,
-    traceProbability s m hm hb schedule trace *
-      observable (traceFinal s m hm hb schedule trace)
+def expectation ... (observable : RunState → Rat) : Rat :=
+  ∑ trace,
+    traceProbability ... trace * observable (traceFinal ... trace)
 ```
 
-- [ ] **Step 4: Prove the algebraic base with fixed signatures**
+Prove:
 
-```lean
-theorem expectation_const {n : Nat} (s : State n) (m : Nat)
-    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness) (q : Rat) :
-    expectation s m hm hb schedule (fun _ => q) = q := by
-  unfold expectation
-  rw [← Finset.sum_mul]
-  rw [traceProbability_sum_one]
-  simp
-
-theorem expectation_add {n : Nat} (s : State n) (m : Nat)
-    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
-    (f g : RunState → Rat) :
-    expectation s m hm hb schedule (fun r => f r + g r) =
-      expectation s m hm hb schedule f + expectation s m hm hb schedule g := by
-  simp only [expectation, mul_add, Finset.sum_add_distrib]
-
-theorem expectation_smul {n : Nat} (s : State n) (m : Nat)
-    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
-    (q : Rat) (f : RunState → Rat) :
-    expectation s m hm hb schedule (fun r => q * f r) =
-      q * expectation s m hm hb schedule f := by
-  unfold expectation
-  rw [Finset.mul_sum]
-  apply Finset.sum_congr rfl
-  intro trace _
-  ring
-
-def indicator (event : RunState → Prop) [DecidablePred event] (r : RunState) : Rat :=
-  if event r then 1 else 0
-
-theorem expectation_indicator {n : Nat} (s : State n) (m : Nat)
-    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
-    (event : RunState → Prop) [DecidablePred event] :
-    expectation s m hm hb schedule (indicator event) =
-      eventProbability s m hm hb schedule event := by
-  unfold expectation eventProbability indicator
-  apply Finset.sum_congr rfl
-  intro trace _
-  by_cases h : event (traceFinal s m hm hb schedule trace) <;> simp [h]
+```text
+expectation_const
+expectation_add
+expectation_smul
+expectation_indicator
 ```
 
-Do not import real-analysis expectation APIs.
+Concrete fixture: expected final degree of stable vertex 0 in the two-birth edge experiment is exactly `15/8`.
 
-- [ ] **Step 5: GREEN verification and audit**
+## Task 7 acceptance boundary
 
-```bash
-lake env lean NarrativeDynamics/Tests/FitnessDistribution.lean
-lake build
-git diff --check
-```
-
-Print axioms for all expectation laws.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add NarrativeDynamics/Core/FitnessDistribution.lean NarrativeDynamics/Tests/FitnessDistribution.lean
-git commit -m "feat(lean): add exact rational BB expectations"
-git push
-```
-
-Stop for review.
-
----
-
-### Task 7: Lift common fitness scaling and constant-fitness normalization to the full distribution
-
-**Files:**
-- Modify: `NarrativeDynamics/Core/FitnessAttachment.lean`
-- Modify: `NarrativeDynamics/Core/FitnessReplay.lean`
-- Modify: `NarrativeDynamics/Core/FitnessDistribution.lean`
-- Modify: `NarrativeDynamics/Tests/FitnessDistribution.lean`
-
-**Interfaces:**
-- Consumes: Task 1 BB-native constant-fitness names, `scaleFitness`, `orderedMass_scale`, replay scaling, trace law/event law.
-- Produces: `scalePosFitness`, `scaleSchedule`, `traceProbability_scale`, `traceFinal_scale`, `eventProbability_scale` under a scale-invariant event premise, and constant-fitness normalization corollaries stated only as BB properties.
-
-- [ ] **Step 1: Add RED distribution-invariance tests**
-
-Define a positive scale:
-
-```lean
-private def two : PosFitness := ⟨2, by norm_num⟩
-```
-
-Require the same target trace to retain its probability when the entire typed experiment is scaled:
-
-```lean
-example :
-    traceProbability (scaleFitness DistributionFixtures.edge two) 1 (by decide) (by decide)
-      (scaleSchedule two [DistributionFixtures.one, DistributionFixtures.one])
-      (by simpa [scaleSchedule] using DistributionFixtures.trace00) =
-    traceProbability DistributionFixtures.edge 1 (by decide) (by decide)
-      [DistributionFixtures.one, DistributionFixtures.one]
-      DistributionFixtures.trace00 := by
-  exact traceProbability_scale _ _ _ _ _ _ _
-```
-
-Retain the existing replay negative fixture showing that scaling only part of the fitness schedule changes a multi-birth probability; do not weaken it.
-
-- [ ] **Step 2: Run RED**
-
-Expected missing typed schedule scaling / distribution invariance declarations.
-
-- [ ] **Step 3: Expose one shared positive-fitness scaling helper**
-
-Move the replay-private constructor to a public BB helper:
+Expose one shared positive-fitness scaling helper and schedule map:
 
 ```lean
 def scalePosFitness (c eta : PosFitness) : PosFitness :=
@@ -905,263 +188,74 @@ def scaleSchedule (c : PosFitness) (schedule : List PosFitness) : List PosFitnes
   schedule.map (scalePosFitness c)
 ```
 
-Update replay scaling internals to reuse `scalePosFitness`; do not keep a duplicate private constructor.
-
-- [ ] **Step 4: Prove trace probability scaling with an explicit trace cast**
-
-Use this statement:
-
-```lean
-theorem traceProbability_scale {n : Nat} (s : State n) (m : Nat)
-    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
-    (trace : TargetTrace n m schedule.length) (c : PosFitness) :
-    traceProbability (scaleFitness s c) m hm hb (scaleSchedule c schedule)
-      (by simpa [scaleSchedule] using trace) =
-    traceProbability s m hm hb schedule trace := by
-  induction schedule generalizing n with
-  | nil => simp [traceProbability, scaleSchedule]
-  | cons eta rest ih =>
-      rcases trace with ⟨T, tail⟩
-      simp only [scaleSchedule, List.map_cons, traceProbability]
-      rw [orderedMass_scale]
-      rw [ih]
-```
-
-If the dependent cast blocks the direct `rcases`, introduce a local equivalence between `TargetTrace n m (scaleSchedule c schedule).length` and `TargetTrace n m schedule.length` using `List.length_map`; do not change carrier semantics.
-
-For `traceFinal_scale`, use this exact statement:
-
-```lean
-theorem traceFinal_scale {n : Nat} (s : State n) (m : Nat)
-    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
-    (trace : TargetTrace n m schedule.length) (c : PosFitness) :
-    traceFinal (scaleFitness s c) m hm hb (scaleSchedule c schedule)
-      (by simpa [scaleSchedule] using trace) =
-    scaleRunState (traceFinal s m hm hb schedule trace) c := by
-  induction schedule generalizing n with
-  | nil => rfl
-  | cons eta rest ih =>
-      rcases trace with ⟨T, tail⟩
-      simp only [scaleSchedule, List.map_cons, traceFinal]
-      rw [applyBirth_scale]
-      exact ih (applyBirth s T hm eta) tail c
-```
-
-Move the existing typed `applyBirth_scale` theorem out of replay-private scope if needed so replay and distribution consume one theorem.
-
-- [ ] **Step 5: Lift scaling to topology-only event probability**
-
-Use an explicit event invariance premise and exact theorem statement:
-
-```lean
-theorem eventProbability_scale {n : Nat} (s : State n) (m : Nat)
-    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
-    (event : RunState → Prop) [DecidablePred event]
-    (c : PosFitness)
-    (eventScale : ∀ r, event (scaleRunState r c) ↔ event r) :
-    eventProbability (scaleFitness s c) m hm hb (scaleSchedule c schedule) event =
-      eventProbability s m hm hb schedule event := by
-  unfold eventProbability
-  classical
-  let castTrace : TargetTrace n m schedule.length →
-      TargetTrace n m (scaleSchedule c schedule).length := fun trace =>
-        by simpa [scaleSchedule] using trace
-  apply Finset.sum_bij castTrace
-  · intro trace _
-    rw [traceProbability_scale]
-    rw [traceFinal_scale]
-    by_cases h : event (traceFinal s m hm hb schedule trace) <;>
-      simp [h, (eventScale _).mpr h, (eventScale _).not.mpr h]
-  · intro a _ b _ h
-    simpa [castTrace] using h
-  · intro b _
-    refine ⟨by simpa [scaleSchedule] using b, by simp [castTrace]⟩
-```
-
-If the pinned `Finset.sum_bij` argument order differs, keep the same `castTrace` bijection and adapt only the API call. State constant-fitness normalization only as a corollary of common scaling between two positive common values. Do not create another model namespace or compatibility family.
-
-- [ ] **Step 6: GREEN verification and audit**
-
-Run all four fitness layers plus the naming audit:
-
-```bash
-lake env lean NarrativeDynamics/Tests/FitnessAttachment.lean
-lake env lean NarrativeDynamics/Tests/FitnessReplay.lean
-lake env lean NarrativeDynamics/Tests/FitnessDistribution.lean
-lake build
-git diff --check
-```
-
-Print axioms for `traceProbability_scale`, `traceFinal_scale`, `eventProbability_scale`, and the constant-fitness corollaries.
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add NarrativeDynamics/Core/FitnessAttachment.lean NarrativeDynamics/Core/FitnessReplay.lean \
-        NarrativeDynamics/Core/FitnessDistribution.lean NarrativeDynamics/Tests/FitnessDistribution.lean
-git commit -m "feat(lean): lift BB fitness invariance to finite distributions"
-git push
-```
-
-Stop for review.
-
----
-
-### Task 8: Prove small exact network-event fixtures and complete the trust/CI audit
-
-**Files:**
-- Modify: `NarrativeDynamics/Tests/FitnessDistribution.lean`
-- Modify: `README.md`
-- Modify: `.github/workflows/proof.yml` only if the final gate needs ordering/comment clarification; do not weaken checks.
-
-**Interfaces:**
-- Consumes: complete V23.6 finite law, existing `state_bounded`, `meshDiameter`, `ReachWithin`, degree/edge metrics.
-- Produces: exact small-network event/expectation demonstrations, final axiom audit, README scope statement, exact-head GREEN evidence.
-
-- [ ] **Step 1: Add a test-local final-diameter event using existing metrics**
-
-For a `RunState r`, obtain boundedness from `state_bounded r.state`; do not define a second distance metric. Define a decidable event equivalent to final diameter at most `2` for the two-birth edge experiment.
-
-The six trace masses/outcomes are:
+Prove full-distribution invariance:
 
 ```text
-first target 0, second 0 : mass 1/4, diameter 2
-first target 0, second 1 : mass 1/8, diameter 3
-first target 0, second 2 : mass 1/8, diameter 3
-first target 1, second 0 : mass 1/8, diameter 3
-first target 1, second 1 : mass 1/4, diameter 2
-first target 1, second 2 : mass 1/8, diameter 3
-```
-
-Required exact event:
-
-```lean
-example : eventProbability DistributionFixtures.edge 1 (by decide) (by decide)
-    [DistributionFixtures.one, DistributionFixtures.one]
-    diameterAtMostTwo = 1/2 := by decide_cbv
-```
-
-If direct reduction of `meshDiameter` is expensive, prove the six final-state diameter facts as small opaque lemmas and let `eventProbability` sum those results; do not raise global resource limits.
-
-- [ ] **Step 2: Add one one-birth triangle event showing ordered traces are not deduplicated**
-
-Construct the unit-fitness triangle fixture and the event “the newborn is adjacent to both stable IDs 1 and 2.” Both target orders satisfy the same final graph event, so the exact mass is:
-
-```lean
-example : eventProbability unitTriangle 2 (by decide) (by decide)
-    [DistributionFixtures.one] newbornAdjacentToOneAndTwo = 1/3 := by decide_cbv
-```
-
-This is `1/6 + 1/6`, not one representative trace.
-
-- [ ] **Step 3: Re-run the exact expectation fixture**
-
-Keep and verify the already specified theorem-sized fixture:
-
-```text
-E[final degree of stable vertex 0] = 15/8
-```
-
-for the two-birth edge experiment. This demonstrates that the event and expectation layers observe the authoritative final graph.
-
-- [ ] **Step 4: Complete the generic axiom audit**
-
-Ensure `#print axioms` covers at least:
-
-```text
-traceProbability_pos
-traceProbability_sum_continuationMass
-traceProbability_sum_one
-traceFinal_edges
-traceFinal_fitness
-eventProbability_compl
-eventProbability_mono
-expectation_const
-expectation_add
-expectation_indicator
 traceProbability_scale
+traceFinal_scale
 eventProbability_scale
 ```
 
-Review actual output. Accept only the repository's ordinary logical dependencies already seen in this line; reject `sorryAx`, new user axioms, or native-oracle dependencies.
+`traceFinal_scale` must show the scaled experiment equals `scaleRunState` of the original final state. `eventProbability_scale` requires an explicit premise that the event is invariant under `scaleRunState`. Constant-fitness normalization remains a BB scaling corollary only.
 
-- [ ] **Step 5: Update README with only verified V23.6 scope**
+Retain the existing negative replay fixture proving that scaling only part of the fitness schedule changes a multi-birth probability.
 
-Document:
+## Task 8 acceptance boundary
+
+Use existing graph metrics; do not define alternate distance/diameter semantics.
+
+For the two-birth unit-fitness edge experiment, the six traces have exact masses/outcomes:
 
 ```text
-fixed valid BB seed + fixed positive fitness schedule
-        ↓
-all legal ordered target traces
-        ↓
-exact positive Rat mass per trace
-        ↓
-total mass = 1
-        ↓
-exact final-state event probabilities
-        ↓
-exact rational expectations
+(0,0): 1/4, diameter 2
+(0,1): 1/8, diameter 3
+(0,2): 1/8, diameter 3
+(1,0): 1/8, diameter 3
+(1,1): 1/4, diameter 2
+(1,2): 1/8, diameter 3
 ```
 
-State explicitly that this remains finite and conditional on the supplied fitness schedule, has no sampler, and makes no asymptotic/high-probability six-hop claim. Keep the repository model vocabulary BB-only.
+Therefore exact `P(diameter ≤ 2) = 1/2`.
 
-- [ ] **Step 6: Run full exact-head verification**
+For one birth from a unit-fitness triangle with `m=2`, the six ordered traces each have mass `1/6`. The final-graph event “newborn adjacent to stable IDs 1 and 2” has mass `1/3` because both target orders contribute.
 
-Before claiming completion, run/inspect the full proof workflow on the exact branch head. Required successful Lean steps:
+Keep the exact expectation `15/8`, add `#print axioms` for the new generic laws, update README only after verified GREEN, and run the full exact-head proof workflow.
+
+Final required Lean gates:
 
 ```text
-Lean/Python conformance vectors
+conformance vectors
 full root build
 BB-only naming audit
-Fitness attachment/birth/validation contracts
-Fitness replay acceptance
-Fitness scope counterexample
-Fitness distribution contract tests
-general Lean theorem tests
+Fitness attachment/birth/validation
+Fitness replay
+Fitness scope
+Fitness distribution
+general theorem tests
 Story
 Testimony
 ```
 
-Python discovery and World Studio remain intentionally skipped by the existing fitness-branch policy and must be reported as exclusions.
+Python discovery and World Studio remain explicit scope exclusions under the existing fitness-branch policy.
 
-Also run source checks:
+## RED/GREEN and review protocol
 
-```bash
-git diff --check
-short="$(printf '%s%s' B A)"
-! git grep -n -F "$short" -- .
+Every task is test/contract first:
+
+```text
+write the new contract
+→ observe the task-specific expected RED
+→ implement the minimum BB-native change
+→ run focused GREEN
+→ run required prior regressions
+→ commit/push
+→ inspect exact-head CI
+→ stop for review
 ```
 
-Then run the complete workflow audit loop from Task 1 to catch full-name and identifier variants.
+A dependency outage, unrelated workflow failure, or skipped peripheral job is not a valid RED/GREEN result.
 
-- [ ] **Step 7: Commit the final acceptance layer**
-
-```bash
-git add NarrativeDynamics/Tests/FitnessDistribution.lean README.md .github/workflows/proof.yml
-git commit -m "test(lean): verify finite BB distribution events and trust boundary"
-git push
-```
-
-Stop for final review with PR #70 still Draft. Do not merge or enable auto-merge.
-
----
-
-## Coverage checklist
-
-| Revised spec requirement | Plan task |
-| --- | --- |
-| BB-only maintained model surface; no compatibility aliases | Task 1, re-audited Task 8 |
-| Finite executable trace carrier | Task 2 |
-| Exact positive trace probabilities | Task 3 |
-| Sum over traces equals existing `continuationMass` and one | Task 3 |
-| Authoritative final BB state and structural invariants | Task 4 |
-| Exact decidable event probabilities and finite probability laws | Task 5 |
-| Exact rational expectations and linearity | Task 6 |
-| Whole-experiment common fitness scaling / constant-fitness normalization | Task 7 |
-| Existing graph metrics lifted as events/observables | Task 8 |
-| Ordered traces with same final graph are summed, not deduplicated | Task 8 triangle fixture |
-| No RNG/PMF/Measure/asymptotics | Global constraints, every task |
-| Trust/resource/axiom audit and exact-head CI | Tasks 1–8, final gate Task 8 |
+Generic proofs must be audited with `#print axioms`. Reject `sorryAx`, new user axioms, or native-oracle dependencies.
 
 ## Plan Review Gate
 
