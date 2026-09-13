@@ -27,7 +27,9 @@ jobs:
               return true;
             }
             const branch = context.ref.slice('refs/heads/'.length);
-            // A PR must actually have a proof run; an open PR alone is not coverage.
+            // A PR run only covers this SHA after GitHub has instantiated a real
+            // non-skipped Lean proof job. A startup_failure with zero jobs must
+            // leave the push proof enabled as the exact-head fallback.
             for (let attempt = 0; attempt < 3; attempt++) {
               try {
                 const {data} = await github.rest.actions.listWorkflowRuns({
@@ -41,17 +43,33 @@ jobs:
                   ['queued', 'in_progress', 'completed'].includes(run.status) &&
                   !['cancelled', 'skipped'].includes(run.conclusion));
                 if (prRun) {
-                  core.info(`PR proof run ${prRun.id} covers ${context.sha}; skipping duplicate push proof.`);
-                  return false;
+                  const {data: jobData} = await github.rest.actions.listJobsForWorkflowRun({
+                    ...context.repo, run_id: prRun.id, filter: 'latest', per_page: 100
+                  });
+                  const proofJob = jobData.jobs.find(job =>
+                    job.name === 'Lean proof' &&
+                    !['cancelled', 'skipped'].includes(job.conclusion));
+                  if (proofJob) {
+                    core.info(
+                      `PR proof run ${prRun.id} has Lean proof job ${proofJob.id} ` +
+                      `(${proofJob.status}/${proofJob.conclusion ?? 'pending'}); ` +
+                      `skipping duplicate push proof for ${context.sha}.`
+                    );
+                    return false;
+                  }
+                  core.info(
+                    `PR proof run ${prRun.id} has no non-skipped Lean proof job yet; ` +
+                    `push proof remains eligible for ${context.sha}.`
+                  );
                 }
               } catch (error) {
                 core.warning(`Could not check PR coverage; keeping push proof: ${error.message}`);
                 return true;
               }
-              // Push and PR events can register a few seconds apart.
+              // Push and PR events can register and instantiate jobs a few seconds apart.
               if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 5000));
             }
-            core.info('No matching PR proof run; keeping push proof.');
+            core.info('No matching PR Lean proof job; keeping push proof.');
             return true;
 
   lean-proof:
