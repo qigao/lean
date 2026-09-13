@@ -103,6 +103,7 @@ theorem traceProbability_sum_continuationMass {n : Nat} (s : State n) (m : Nat)
       rw [Fintype.sum_prod_type]
       apply Finset.sum_congr rfl
       intro T _
+      simp only [Prod.fst, Prod.snd]
       rw [← Finset.mul_sum, ih]
 
 /-- The complete finite typed trace law is normalized exactly to one. -/
