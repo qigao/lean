@@ -47,6 +47,8 @@ def _split_policy() -> dict[str, Any]:
         "validation_subjects": list(_VALIDATION),
         "final_test_subjects": list(_FINAL_TEST),
         "source": "KTH:00sequences.txt:Schuldt-Laptev-Caputo-ICPR2004",
+        "range_index_policy": "preserve-official-list-order",
+        "range_routing_policy": "frame-membership; overlapping official intervals share one predictor result",
     }
 
 
@@ -58,16 +60,15 @@ def _parse_subject_list(text: str) -> tuple[int, ...]:
 
 
 def _ranges(text: str, video_key: str) -> tuple[tuple[int, int], ...]:
+    """Preserve official list order, including documented overlaps/non-monotonic entries."""
     matches = tuple((int(a), int(b)) for a, b in _RANGE.findall(text))
     compact = re.sub(r"\s+", "", text)
     expected = ",".join(f"{a}-{b}" for a, b in matches)
     if not matches or compact != expected:
         raise ValueError(f"malformed KTH frame ranges: {video_key}")
-    previous = 0
     for start, end in matches:
-        if start < 1 or end < start or start <= previous:
-            raise ValueError(f"invalid or overlapping KTH frame ranges: {video_key}")
-        previous = end
+        if start < 1 or end < start:
+            raise ValueError(f"invalid KTH frame range: {video_key}")
     return matches
 
 
