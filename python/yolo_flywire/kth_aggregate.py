@@ -8,8 +8,8 @@ import os
 from pathlib import Path
 from typing import Any
 
-from .kth_extract import KthExtractionSpec, _spec_from_protocol, kth_extractor_code_hash
-from .kth_source import _ACTIONS, _canonical_json, _hash_json, parse_sequence_file
+from .kth_extract import _spec_from_protocol, kth_extractor_code_hash
+from .kth_source import _ACTIONS, _MISSING_VIDEO_KEY, _canonical_json, _hash_json, parse_sequence_file
 from .ntu_io import _hash_file, _publish_exclusive
 from .pose_extract import _schema
 
@@ -45,14 +45,23 @@ def _verify_sidecar(sample_dir: Path, record: dict[str, Any]) -> None:
 
 
 def _source_record(plan, sequence_sha: str, archive_records: list[dict[str, Any]],
-                   video_records: list[dict[str, Any]]) -> dict[str, Any]:
+                   video_records: list[dict[str, Any]], missing_records: list[dict[str, Any]]) -> dict[str, Any]:
     videos = sorted(video_records, key=lambda row: (_ACTIONS.index(row["action"]), row["subject"], row["scenario"]))
-    if len(videos) != 600:
-        raise ValueError("KTH source evidence must cover exactly 600 parent videos")
+    if len(videos) != 599:
+        raise ValueError("KTH source evidence must cover exactly 599 present parent videos")
+    missing = sorted(missing_records, key=lambda row: row["video_key"])
+    expected_missing = [{
+        "video_key": _MISSING_VIDEO_KEY,
+        "filename": _MISSING_VIDEO_KEY + "_uncomp.avi",
+        "action": "handclapping", "subject": 13, "scenario": 3, "split": "train",
+    }]
+    if missing != expected_missing:
+        raise ValueError("KTH source evidence missing-video record changed")
     subsequences = [dict(row) for row in plan.subsequences]
     dataset_content_hash = _hash_json({
         "sequence_file_sha256": sequence_sha,
         "videos": [{key: row[key] for key in ("video_key", "size_bytes", "sha256")} for row in videos],
+        "missing_videos": missing,
     })
     split_hash = _hash_json({
         "dataset_content_hash": dataset_content_hash, "classes": list(_ACTIONS),
@@ -66,12 +75,13 @@ def _source_record(plan, sequence_sha: str, archive_records: list[dict[str, Any]
         "classes": list(_ACTIONS), "split_policy": plan.split_policy,
         "sequence_file_sha256": sequence_sha,
         "archives": sorted(archive_records, key=lambda row: _ACTIONS.index(row["action"])),
-        "videos": videos, "subsequences": subsequences,
+        "videos": videos, "missing_videos": missing, "subsequences": subsequences,
         "dataset_content_hash": dataset_content_hash, "split_hash": split_hash,
     }
     record["source_manifest_hash"] = _hash_json(record)
     record["input_inventory_hash"] = _hash_json({
-        "sequence_file_sha256": sequence_sha, "videos": videos, "subsequences": subsequences,
+        "sequence_file_sha256": sequence_sha, "videos": videos,
+        "missing_videos": missing, "subsequences": subsequences,
     })
     return json.loads(_canonical_json(record))
 
@@ -90,6 +100,7 @@ def aggregate_kth_shards(sequence_file: str | Path, *, protocol: dict[str, Any],
 
     reports: dict[str, tuple[Path, dict[str, Any]]] = {}
     all_videos: dict[str, dict[str, Any]] = {}
+    all_missing: dict[str, dict[str, Any]] = {}
     all_samples: dict[str, tuple[dict[str, Any], Path]] = {}
     archive_records: list[dict[str, Any]] = []
     python_version = platform_name = None
@@ -130,10 +141,20 @@ def aggregate_kth_shards(sequence_file: str | Path, *, protocol: dict[str, Any],
             raise ValueError("KTH archive SHA evidence invalid")
         archive_records.append({"action": action, **archive})
 
-        expected_videos = [row for row in plan.videos if row["action"] == action]
+        logical_videos = [row for row in plan.videos if row["action"] == action]
+        expected_videos = [row for row in logical_videos if not row["missing"]]
+        expected_missing = [
+            {key: row[key] for key in ("video_key", "filename", "action", "subject", "scenario", "split")}
+            for row in logical_videos if row["missing"]
+        ]
         videos = report.get("videos")
-        if type(videos) is not list or len(videos) != 100:
-            raise ValueError("KTH action shard must report exactly 100 parent videos")
+        if type(videos) is not list or len(videos) != len(expected_videos):
+            raise ValueError(f"KTH {action} shard present-video count mismatch")
+        _same(report.get("missing_videos"), expected_missing, f"shard {action} missing_videos")
+        for missing in expected_missing:
+            if missing["video_key"] in all_missing:
+                raise ValueError("duplicate KTH missing-video evidence")
+            all_missing[missing["video_key"]] = missing
         for expected, actual in zip(expected_videos, videos, strict=True):
             for name in ("video_key", "filename", "action", "subject", "scenario", "split"):
                 _same(actual.get(name), expected[name], f"video {expected['video_key']} {name}")
@@ -181,13 +202,18 @@ def aggregate_kth_shards(sequence_file: str | Path, *, protocol: dict[str, Any],
             raise ValueError("KTH action shard contains unexpected/missing pose directories")
         reports[action] = (path, report)
 
-    if set(reports) != set(_ACTIONS) or set(all_videos) != {row["video_key"] for row in plan.videos}:
-        raise ValueError("KTH aggregation requires all six actions and 600 parent videos")
+    expected_present_keys = {row["video_key"] for row in plan.videos if not row["missing"]}
+    expected_missing_keys = {row["video_key"] for row in plan.videos if row["missing"]}
+    if (set(reports) != set(_ACTIONS) or set(all_videos) != expected_present_keys
+            or set(all_missing) != expected_missing_keys or len(all_videos) != 599):
+        raise ValueError("KTH aggregation requires six actions, 599 present videos and one missing slot")
     expected_development = [row for row in plan.subsequences if row["split"] != "final_test"]
     if set(all_samples) != {row["sample_id"] for row in expected_development}:
         raise ValueError("KTH aggregation requires complete development subsequence evidence")
 
-    source = _source_record(plan, sequence_sha, archive_records, list(all_videos.values()))
+    source = _source_record(
+        plan, sequence_sha, archive_records, list(all_videos.values()), list(all_missing.values())
+    )
     frozen = json.loads(_canonical_json(protocol))
     for name in ("dataset_content_hash", "input_inventory_hash", "source_manifest_hash", "split_hash"):
         if frozen.get(name) is not None:
