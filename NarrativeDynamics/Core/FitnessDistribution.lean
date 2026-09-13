@@ -129,4 +129,90 @@ theorem traceProbability_le_one {n : Nat} (s : State n) (m : Nat)
         (Finset.mem_univ trace)
     _ = 1 := traceProbability_sum_one s m hm hb schedule
 
+/-- Evaluate one typed target trace through the authoritative BB birth transition. -/
+def traceFinal {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) :
+    (schedule : List PosFitness) → TargetTrace n m schedule.length → RunState
+  | [], _ => ⟨n, s⟩
+  | eta :: rest, (T, tail) =>
+      traceFinal (applyBirth s T hm eta) m hm
+        (Nat.le_trans hb (Nat.le_succ n)) rest tail
+
+/-- The existential run-state index follows the one-vertex-per-birth carrier growth. -/
+theorem traceFinal_nodeCount {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+    (trace : TargetTrace n m schedule.length) :
+    (traceFinal s m hm hb schedule trace).nodeCount = n + schedule.length := by
+  induction schedule generalizing n with
+  | nil =>
+      cases trace
+      rfl
+  | cons eta rest ih =>
+      rcases trace with ⟨T, tail⟩
+      change
+        (traceFinal (applyBirth s T hm eta) m hm
+          (Nat.le_trans hb (Nat.le_succ n)) rest tail).nodeCount =
+        n + (rest.length + 1)
+      rw [ih (s := applyBirth s T hm eta)
+        (hb := Nat.le_trans hb (Nat.le_succ n)) (trace := tail)]
+      omega
+
+/-- Actual final node count is derived from the real state carrier, not stored separately. -/
+theorem traceFinal_nodes {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+    (trace : TargetTrace n m schedule.length) :
+    actualNodeCount (traceFinal s m hm hb schedule trace).state.snapshot =
+      actualNodeCount s.snapshot + schedule.length := by
+  simpa [actualNodeCount] using traceFinal_nodeCount s m hm hb schedule trace
+
+/-- Every birth contributes exactly m actual edges along the evaluated trace. -/
+theorem traceFinal_edges {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+    (trace : TargetTrace n m schedule.length) :
+    actualEdgeCount (traceFinal s m hm hb schedule trace).state.snapshot =
+      actualEdgeCount s.snapshot + m * schedule.length := by
+  induction schedule generalizing n with
+  | nil =>
+      cases trace
+      simp [traceFinal]
+  | cons eta rest ih =>
+      rcases trace with ⟨T, tail⟩
+      change
+        actualEdgeCount
+            (traceFinal (applyBirth s T hm eta) m hm
+              (Nat.le_trans hb (Nat.le_succ n)) rest tail).state.snapshot =
+          actualEdgeCount s.snapshot + m * (rest.length + 1)
+      rw [ih (s := applyBirth s T hm eta)
+        (hb := Nat.le_trans hb (Nat.le_succ n)) (trace := tail), birth_edges]
+      rw [Nat.mul_add, Nat.mul_one]
+      omega
+
+/-- Final stable-ID fitness values are exactly the seed values followed by the schedule. -/
+theorem traceFinal_fitness {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+    (trace : TargetTrace n m schedule.length) :
+    List.ofFn (traceFinal s m hm hb schedule trace).state.snapshot.fitness =
+      List.ofFn s.snapshot.fitness ++ schedule.map (fun eta => eta.val) := by
+  induction schedule generalizing n with
+  | nil =>
+      cases trace
+      simp [traceFinal]
+  | cons eta rest ih =>
+      rcases trace with ⟨T, tail⟩
+      change
+        List.ofFn
+            (traceFinal (applyBirth s T hm eta) m hm
+              (Nat.le_trans hb (Nat.le_succ n)) rest tail).state.snapshot.fitness =
+          List.ofFn s.snapshot.fitness ++ eta.val :: rest.map (fun x => x.val)
+      rw [ih (s := applyBirth s T hm eta)
+        (hb := Nat.le_trans hb (Nat.le_succ n)) (trace := tail), birth_fitness_list]
+      simp only [List.append_assoc, List.singleton_append]
+
+/-- The evaluated final state is valid because every transition is `applyBirth`. -/
+theorem traceFinal_valid {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+    (trace : TargetTrace n m schedule.length) :
+    (traceFinal s m hm hb schedule trace).state.snapshot.Valid :=
+  (traceFinal s m hm hb schedule trace).state.valid
+
 end NarrativeDynamics.FitnessAttachment
