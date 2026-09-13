@@ -38,3 +38,4 @@ import NarrativeDynamics.Core.FitnessBirth
 import NarrativeDynamics.Core.FitnessValidation
 import NarrativeDynamics.Core.FitnessReplay
 import NarrativeDynamics.Core.FitnessDistribution
+import NarrativeDynamics.Core.FitnessDistributionInvariance
