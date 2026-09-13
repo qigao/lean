@@ -33,9 +33,8 @@ def _ready_fixture():
     config = _load()
     # Test-only stand-ins: these are never written to a repository protocol.
     for field in ("dataset_content_hash", "yolo_weights_sha256", "split_hash",
-                  "observation_schema_hash"):
+                  "observation_schema_hash", "pose_encoder_hash", "extraction_spec_hash"):
         config[field] = hashlib.sha256(("fixture:" + field).encode()).hexdigest()
-    config["ultralytics_package_version"] = "fixture-version"
     config["rewiring_algorithm"] = ALGORITHM
     config["rewiring_successful_swaps_per_offdiagonal_edge"] = 10
     config["rewired_graph_fingerprints"] = dict(MEASURED)
@@ -49,9 +48,10 @@ def test_real_protocols_freeze_all_measured_controls(name):
     assert config["seeds"] == SEEDS
     assert config["rewiring_algorithm"] == ALGORITHM
     assert config["rewiring_successful_swaps_per_offdiagonal_edge"] == 10
+    assert config["ultralytics_package_version"] == "8.4.146"
     assert config["final_test_used_for_selection"] is False
-    for field in ("dataset_content_hash", "ultralytics_package_version", "yolo_weights_sha256",
-                  "split_hash", "observation_schema_hash"):
+    for field in ("dataset_content_hash", "yolo_weights_sha256", "split_hash",
+                  "observation_schema_hash", "pose_encoder_hash", "extraction_spec_hash"):
         assert config[field] is None
 
 
