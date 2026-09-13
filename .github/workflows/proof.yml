@@ -126,6 +126,28 @@ jobs:
           export PATH="$HOME/.elan/bin:$PATH"
           lake build
 
+      - name: BB-only naming audit
+        run: |
+          set -euo pipefail
+          short="$(printf '%s%s' B A)"
+          lower="$(printf '%s%s' b a)"
+          full_ascii="$(printf '%s%s' 'Barabasi-' 'Albert')"
+          full_unicode="$(printf '%s%s' 'Barabási–' 'Albert')"
+          found=0
+          for term in \
+            "$short" "$full_ascii" "$full_unicode" \
+            "as${short}" "${lower}Row" \
+            "attachment_${lower}" "orderedMass_${lower}" \
+            "replay_${lower}_"; do
+            if git grep -n -F "$term" -- .; then
+              found=1
+            fi
+          done
+          if [ "$found" -ne 0 ]; then
+            echo 'legacy attachment-model surface remains'
+            exit 1
+          fi
+
       - name: Fitness attachment contract tests
         timeout-minutes: 5
         run: |
