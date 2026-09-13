@@ -180,6 +180,12 @@ jobs:
               lake env lean -DmaxErrors=8 \
               NarrativeDynamics/Tests/FitnessScope.lean
 
+      - name: Fitness distribution contract tests
+        timeout-minutes: 5
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          lake env lean NarrativeDynamics/Tests/FitnessDistribution.lean
+
       - name: Lean theorem tests
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
