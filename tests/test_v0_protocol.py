@@ -53,6 +53,8 @@ def test_real_protocol_freezes_design_but_remains_non_executable(tmp_path: Path,
 
     assert protocol["dataset_id"].startswith("NTU-RGB+D-120")
     assert protocol["yolo_version"] == "ultralytics-yolo26n-pose"
+    assert protocol["ultralytics_package_version"] == "8.4.146"
+    assert protocol["pose_feature_spec"] == {"confidence_threshold": 0.05, "scale_epsilon": 1e-6}
     assert protocol["flywire_release"] == "FAFB-v783"
     assert protocol["flywire_source_commit"] == "0d8574d46627ce7fadd968a3c5d602e837325373"
     assert protocol["flywire_connectivity_git_blob_sha1"] == "5183755ecbb41d5c8cee1a4a2d99b8eecba75c52"
@@ -64,16 +66,16 @@ def test_real_protocol_freezes_design_but_remains_non_executable(tmp_path: Path,
     assert protocol["selected_graph_num_diagonal_edges"] == 126
     assert protocol["final_test_used_for_selection"] is False
 
-    # Freezing FlyWire provenance does not supply the missing real-data inputs.
-    for field in ("split_hash", "observation_schema_hash"):
+    # Freezing graph/design provenance does not supply byte-backed real input identities.
+    for field in ("split_hash", "observation_schema_hash", "pose_encoder_hash", "extraction_spec_hash"):
         assert protocol[field] is None
 
     output = tmp_path / "out"
     result = _run_compare(config, output)
     assert result.returncode != 0
     assert "freeze" in result.stderr.lower() or "required" in result.stderr.lower()
-    assert "split_hash" in result.stderr
-    assert "observation_schema_hash" in result.stderr
+    for field in ("split_hash", "observation_schema_hash", "pose_encoder_hash", "extraction_spec_hash"):
+        assert field in result.stderr
     assert not output.exists(), "rejected protocols must not emit evidence artifacts"
 
 
@@ -82,10 +84,12 @@ def test_real_topology_claim_rejects_missing_byte_level_flywire_provenance(tmp_p
     protocol.update(
         {
             "dataset_content_hash": "dataset-sha256",
-            "ultralytics_package_version": "frozen-version",
+            "ultralytics_package_version": "8.4.146",
             "yolo_weights_sha256": "weights-sha256",
             "split_hash": "split-sha256",
             "observation_schema_hash": "schema-sha256",
+            "pose_encoder_hash": "encoder-sha256",
+            "extraction_spec_hash": "extraction-sha256",
             "selected_graph_fingerprint": "graph-sha256",
         }
     )
