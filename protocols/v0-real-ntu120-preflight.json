@@ -18,11 +18,17 @@
   "split_rule": "official-xsub120-outer-boundary; validation=deterministic-subject-hash-from-training-side-only",
   "split_hash": null,
   "yolo_version": "ultralytics-yolo26n-pose",
-  "ultralytics_package_version": null,
+  "ultralytics_package_version": "8.4.146",
   "yolo_weights": "yolo26n-pose.pt",
   "yolo_weights_sha256": null,
   "observation_schema": "coco17-xy-confidence+person-confidence; no-byte-track; no-depth; no-ntu-skeleton-input",
   "observation_schema_hash": null,
+  "pose_feature_spec": {
+    "confidence_threshold": 0.05,
+    "scale_epsilon": 1e-06
+  },
+  "pose_encoder_hash": null,
+  "extraction_spec_hash": null,
   "flywire_release": "FAFB-v783",
   "flywire_source": "murthylab/visual-system-parts-list",
   "flywire_source_commit": "0d8574d46627ce7fadd968a3c5d602e837325373",
