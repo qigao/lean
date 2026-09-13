@@ -1163,6 +1163,6 @@ Stop for final review with PR #70 still Draft. Do not merge or enable auto-merge
 | No RNG/PMF/Measure/asymptotics | Global constraints, every task |
 | Trust/resource/axiom audit and exact-head CI | Tasks 1–8, final gate Task 8 |
 
-## Execution handoff
+## Plan Review Gate
 
-Plan execution begins only after this committed plan is reviewed. Recommended execution is one fresh worker/reviewer context per task because Tasks 1, 3, 4, and 7 each change proof interfaces that later tasks depend on. Inline execution is acceptable if every task still stops at its explicit review gate.
+This plan is review-only. Production implementation has not started. The approved execution order is Task 1 through Task 8, with an exact-head review checkpoint after every task. PR #70 remains Draft and unmerged until an explicit later merge authorization.
