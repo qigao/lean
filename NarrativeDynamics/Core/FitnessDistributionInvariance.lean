@@ -115,19 +115,16 @@ private theorem eventProbability_cons {n : Nat} (s : State n) (m : Nat)
         eventProbability (applyBirth s T hm eta) m hm
           (Nat.le_trans hb (Nat.le_succ n)) rest event := by
   unfold eventProbability
-  rw [Fintype.sum_prod_type]
-  apply Finset.sum_congr rfl
-  intro T _
   change
-    (∑ tail : TargetTrace (n + 1) m rest.length,
+    (∑ trace : Targets n m × TargetTrace (n + 1) m rest.length,
       if event
-          (traceFinal (applyBirth s T hm eta) m hm
-            (Nat.le_trans hb (Nat.le_succ n)) rest tail)
-      then orderedMass s T *
-        traceProbability (applyBirth s T hm eta) m hm
-          (Nat.le_trans hb (Nat.le_succ n)) rest tail
+          (traceFinal (applyBirth s trace.1 hm eta) m hm
+            (Nat.le_trans hb (Nat.le_succ n)) rest trace.2)
+      then orderedMass s trace.1 *
+        traceProbability (applyBirth s trace.1 hm eta) m hm
+          (Nat.le_trans hb (Nat.le_succ n)) rest trace.2
       else 0) =
-      orderedMass s T *
+      ∑ T : Targets n m, orderedMass s T *
         (∑ tail : TargetTrace (n + 1) m rest.length,
           if event
               (traceFinal (applyBirth s T hm eta) m hm
@@ -135,6 +132,9 @@ private theorem eventProbability_cons {n : Nat} (s : State n) (m : Nat)
           then traceProbability (applyBirth s T hm eta) m hm
             (Nat.le_trans hb (Nat.le_succ n)) rest tail
           else 0)
+  rw [Fintype.sum_prod_type]
+  apply Finset.sum_congr rfl
+  intro T _
   rw [Finset.mul_sum]
   apply Finset.sum_congr rfl
   intro tail _
@@ -156,10 +156,10 @@ theorem eventProbability_scale {n : Nat} (s : State n) (m : Nat)
   | nil =>
       simp only [scaleSchedule, List.map_nil]
       unfold eventProbability
-      simp only [TargetTrace, Fintype.sum_unique, traceFinal, traceProbability]
+      simp only [traceFinal, traceProbability]
       by_cases h : event ⟨n, s⟩
       · have hs : event ⟨n, scaleFitness s c⟩ := (hinv ⟨n, s⟩).2 h
-        simp [h, hs, scaleRunState]
+        simp [h, hs]
       · have hs : ¬ event ⟨n, scaleFitness s c⟩ := by
           intro hs
           exact h ((hinv ⟨n, s⟩).1 (by simpa [scaleRunState] using hs))
@@ -169,8 +169,16 @@ theorem eventProbability_scale {n : Nat} (s : State n) (m : Nat)
       rw [eventProbability_cons, eventProbability_cons]
       apply Finset.sum_congr rfl
       intro T _
-      rw [orderedMass_scale, applyBirth_scale_distribution,
-        ih (s := applyBirth s T hm eta)
-          (hb := Nat.le_trans hb (Nat.le_succ n))]
+      rw [orderedMass_scale, applyBirth_scale_distribution]
+      change
+        orderedMass s T *
+            eventProbability (scaleFitness (applyBirth s T hm eta) c)
+              m hm (Nat.le_trans hb (Nat.le_succ n))
+              (scaleSchedule c rest) event =
+          orderedMass s T *
+            eventProbability (applyBirth s T hm eta) m hm
+              (Nat.le_trans hb (Nat.le_succ n)) rest event
+      rw [ih (s := applyBirth s T hm eta)
+        (hb := Nat.le_trans hb (Nat.le_succ n))]
 
 end NarrativeDynamics.FitnessAttachment
