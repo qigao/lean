@@ -215,4 +215,92 @@ theorem traceFinal_valid {n : Nat} (s : State n) (m : Nat)
     (traceFinal s m hm hb schedule trace).state.snapshot.Valid :=
   (traceFinal s m hm hb schedule trace).state.valid
 
+/-- Exact finite probability of a decidable property of the authoritative final state.
+    Distinct ordered traces are summed separately even when they reach the same graph. -/
+def eventProbability {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+    (event : RunState → Prop) [DecidablePred event] : Rat :=
+  ∑ trace : TargetTrace n m schedule.length,
+    if event (traceFinal s m hm hb schedule trace)
+    then traceProbability s m hm hb schedule trace
+    else 0
+
+/-- The certain event has the complete normalized mass. -/
+theorem eventProbability_true {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness) :
+    eventProbability s m hm hb schedule (fun _ => True) = 1 := by
+  simp [eventProbability, traceProbability_sum_one]
+
+/-- The impossible event has zero mass. -/
+theorem eventProbability_false {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness) :
+    eventProbability s m hm hb schedule (fun _ => False) = 0 := by
+  simp [eventProbability]
+
+/-- Event mass is nonnegative because it is a finite sum of retained trace masses. -/
+theorem eventProbability_nonneg {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+    (event : RunState → Prop) [DecidablePred event] :
+    0 ≤ eventProbability s m hm hb schedule event := by
+  unfold eventProbability
+  apply Finset.sum_nonneg
+  intro trace _
+  by_cases h : event (traceFinal s m hm hb schedule trace)
+  · simp [h, traceProbability_nonneg s m hm hb schedule trace]
+  · simp [h]
+
+/-- Filtering the normalized trace law cannot increase total mass above one. -/
+theorem eventProbability_le_one {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+    (event : RunState → Prop) [DecidablePred event] :
+    eventProbability s m hm hb schedule event ≤ 1 := by
+  calc
+    eventProbability s m hm hb schedule event ≤
+        ∑ trace : TargetTrace n m schedule.length,
+          traceProbability s m hm hb schedule trace := by
+      unfold eventProbability
+      apply Finset.sum_le_sum
+      intro trace _
+      by_cases h : event (traceFinal s m hm hb schedule trace)
+      · simp [h]
+      · simp [h, traceProbability_nonneg s m hm hb schedule trace]
+    _ = 1 := traceProbability_sum_one s m hm hb schedule
+
+/-- A decidable event and its complement partition the complete finite trace mass. -/
+theorem eventProbability_compl {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+    (event : RunState → Prop) [DecidablePred event] :
+    eventProbability s m hm hb schedule (fun out => ¬ event out) =
+      1 - eventProbability s m hm hb schedule event := by
+  have hsum :
+      eventProbability s m hm hb schedule event +
+          eventProbability s m hm hb schedule (fun out => ¬ event out) = 1 := by
+    rw [← traceProbability_sum_one s m hm hb schedule]
+    unfold eventProbability
+    rw [← Finset.sum_add_distrib]
+    apply Finset.sum_congr rfl
+    intro trace _
+    by_cases h : event (traceFinal s m hm hb schedule trace)
+    · simp [h]
+    · simp [h]
+  linarith
+
+/-- Event inclusion gives monotonicity of exact finite event probability. -/
+theorem eventProbability_mono {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+    (event₁ event₂ : RunState → Prop) [DecidablePred event₁] [DecidablePred event₂]
+    (hsub : ∀ out, event₁ out → event₂ out) :
+    eventProbability s m hm hb schedule event₁ ≤
+      eventProbability s m hm hb schedule event₂ := by
+  unfold eventProbability
+  apply Finset.sum_le_sum
+  intro trace _
+  let out := traceFinal s m hm hb schedule trace
+  by_cases h₁ : event₁ out
+  · have h₂ : event₂ out := hsub out h₁
+    simp [out, h₁, h₂]
+  · by_cases h₂ : event₂ out
+    · simp [out, h₁, h₂, traceProbability_nonneg s m hm hb schedule trace]
+    · simp [out, h₁, h₂]
+
 end NarrativeDynamics.FitnessAttachment
