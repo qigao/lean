@@ -2084,7 +2084,7 @@ membership remains a relation, formally permitting one Agent to belong to multip
 societies without occupying multiple physical worlds.
 
 This proof layer does not yet formalize Watts--Strogatz clustering or expected path
-length, Barabasi--Albert preferential attachment or power-law asymptotics, temporal
+length, alternate attachment-model preferential attachment or power-law asymptotics, temporal
 mesh transitions, automatic community formation, Python execution, NetworkX, P2P,
 WSS, or Raft. Those models can be added only after their assumptions and required
 invariants are stated explicitly.
@@ -2110,7 +2110,7 @@ new open wedges.
 All conclusions remain conditional on explicit graph witnesses. V23.1 does not
 claim that real societies satisfy six degrees, calculate a numerical clustering
 coefficient or average shortest path, sample a Watts--Strogatz distribution, or
-prove Barabasi--Albert preferential attachment and power-law asymptotics. Those
+prove an alternate attachment-model preferential-attachment or power-law asymptotic theorem. Those
 finite-metric and probabilistic results remain separate proof phases.
 
 ### Lean finite small-world metrics V23.2
@@ -2135,7 +2135,7 @@ A `SmallWorldCertificate g limit` now proves both that the exact mesh diameter i
 at most `limit` and that the average shortest-path length is at most `limit`. These
 are deterministic consequences of supplied graph witnesses, not empirical
 estimates. V23.2 still does not sample a Watts--Strogatz network, prove an expected
-clustering/path-length law, construct a Barabasi--Albert process, or establish a
+clustering/path-length law, construct an alternate attachment process, or establish a
 power-law degree distribution.
 
 ### Lean Watts--Strogatz foundation V23.3
@@ -2164,7 +2164,7 @@ open wedge even while shortening paths.
 
 V23.3 is still not the random WS model: it defines no probability space, rewiring
 sampler, expectation, concentration bound, or asymptotic small-world theorem. It
-also makes no Barabasi--Albert or power-law claim.
+also makes no alternate attachment-model or power-law claim.
 
 ### Lean finite fitness attachment and replay V23.5
 
@@ -2181,7 +2181,7 @@ Lean proves normalization, support, ordered and unordered target-mass laws, and
 preservation of connectivity through actual graph updates. Each birth adds one
 vertex and the specified number of undirected edges while preserving old edges
 and stored fitness. Common fitness gives the finite degree-weighted
-Barabási–Albert law with selection without replacement. Multiplying all seed and
+constant-fitness BB law with selection without replacement. Multiplying all seed and
 newborn fitness values by one positive factor preserves the topology and trace
 probabilities.
 
