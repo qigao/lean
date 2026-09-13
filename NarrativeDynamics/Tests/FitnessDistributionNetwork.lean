@@ -59,6 +59,60 @@ theorem executableDiameterAtMostTwo_iff_meshDiameter_le_two {n : Nat} (s : State
     exact reachWithin_mono
       (meshDiameter_spec s.snapshot.graph.Adj ⟨n - 1, state_bounded s⟩ a b) h
 
+/-- A cheap topology signature for this four-vertex tree fixture: one of the two
+    stable seed vertices is adjacent to all other vertices. -/
+def oldStarCenter : RunState → Prop
+  | ⟨0, _⟩ => False
+  | ⟨1, _⟩ => False
+  | ⟨n + 2, s⟩ =>
+      degree s.snapshot (0 : Fin (n + 2)) = 3 ∨
+        degree s.snapshot (1 : Fin (n + 2)) = 3
+
+instance oldStarCenterDecidable : DecidablePred oldStarCenter := by
+  intro out
+  rcases out with ⟨n, s⟩
+  cases n with
+  | zero => exact isFalse id
+  | succ n =>
+      cases n with
+      | zero => exact isFalse id
+      | succ n =>
+          change Decidable
+            (degree s.snapshot (0 : Fin (n + 3)) = 3 ∨
+              degree s.snapshot (1 : Fin (n + 3)) = 3)
+          infer_instance
+
+/-- Events that agree on every final state reached by this typed experiment have
+    identical exact probability. -/
+private theorem eventProbability_congr_on_traceFinal {n : Nat} (s : State n) (m : Nat)
+    (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
+    (event₁ event₂ : RunState → Prop) [DecidablePred event₁] [DecidablePred event₂]
+    (h : ∀ trace : TargetTrace n m schedule.length,
+      event₁ (traceFinal s m hm hb schedule trace) ↔
+        event₂ (traceFinal s m hm hb schedule trace)) :
+    eventProbability s m hm hb schedule event₁ =
+      eventProbability s m hm hb schedule event₂ := by
+  unfold eventProbability
+  apply Finset.sum_congr rfl
+  intro trace _
+  by_cases h₁ : event₁ (traceFinal s m hm hb schedule trace)
+  · have h₂ := (h trace).mp h₁
+    simp [h₁, h₂]
+  · have h₂ : ¬ event₂ (traceFinal s m hm hb schedule trace) := by
+      intro h₂
+      exact h₁ ((h trace).mpr h₂)
+    simp [h₁, h₂]
+
+/-- For each of the six concrete traces, the cheap star signature is equivalent
+    to the executable form of the official diameter-at-most-two event. -/
+private theorem oldStarCenter_iff_diameterAtMostTwo_trace
+    (trace : TargetTrace 2 1 twoBirthSchedule.length) :
+    oldStarCenter
+        (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule trace) ↔
+      diameterAtMostTwo
+        (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule trace) := by
+  fin_cases trace <;> decide_cbv
+
 /-- Exhaustive six-trace classification: the two diameter-two outcomes have mass
     1/4 each; the other four outcomes have mass 1/8 each. -/
 example :
@@ -71,14 +125,24 @@ example :
           (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule trace) ∧
         traceProbability edge2State 1 (by decide) (by decide)
           twoBirthSchedule trace = 1 / 8) := by
-  decide_cbv
+  intro trace
+  fin_cases trace <;> decide_cbv
 
 /-- Therefore the exact finite BB probability of final mesh diameter at most two
-    is one half. -/
+    is one half. The expensive reachability predicate is transferred tracewise
+    to the equivalent star signature before the finite probability sum is reduced. -/
 example :
     eventProbability edge2State 1 (by decide) (by decide)
       twoBirthSchedule diameterAtMostTwo = 1 / 2 := by
-  decide_cbv
+  calc
+    eventProbability edge2State 1 (by decide) (by decide)
+        twoBirthSchedule diameterAtMostTwo =
+      eventProbability edge2State 1 (by decide) (by decide)
+        twoBirthSchedule oldStarCenter :=
+      eventProbability_congr_on_traceFinal edge2State 1 (by decide) (by decide)
+        twoBirthSchedule diameterAtMostTwo oldStarCenter
+        (fun trace => (oldStarCenter_iff_diameterAtMostTwo_trace trace).symm)
+    _ = 1 / 2 := by decide_cbv
 
 /-! ## One birth from a unit-fitness triangle, m = 2 -/
 
@@ -128,12 +192,13 @@ instance newbornAdjacentToOneTwoDecidable : DecidablePred newbornAdjacentToOneTw
   infer_instance
 
 /-- All six ordered target traces from the symmetric unit-fitness triangle have
-    exact mass 1/6. -/
+    exact mass 1/6. Each trace is reduced separately to keep normal proof limits. -/
 example :
     ∀ trace : TargetTrace 3 2 oneBirthSchedule.length,
       traceProbability triangle3State 2 (by decide) (by decide)
         oneBirthSchedule trace = 1 / 6 := by
-  decide_cbv
+  intro trace
+  fin_cases trace <;> decide_cbv
 
 /-- The unordered target-set event {1,2} receives both orders (1,2) and (2,1),
     hence exact mass 2/6 = 1/3. -/
