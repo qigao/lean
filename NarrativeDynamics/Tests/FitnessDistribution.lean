@@ -1,4 +1,4 @@
-import NarrativeDynamics.Core.FitnessDistribution
+import NarrativeDynamics.Core.FitnessDistributionInvariance
 
 open NarrativeDynamics
 open NarrativeDynamics.FitnessAttachment
@@ -222,6 +222,46 @@ example :
   rw [expectation_indicator]
   decide_cbv
 
+private def tripleFitness : PosFitness := ⟨3, by norm_num⟩
+
+private theorem stableZeroDegreeAtLeastTwo_scale (out : RunState) :
+    stableZeroDegreeAtLeastTwo (scaleRunState out tripleFitness) ↔
+      stableZeroDegreeAtLeastTwo out := by
+  rcases out with ⟨n, s⟩
+  cases n with
+  | zero => rfl
+  | succ n =>
+      change
+        2 ≤ degree (scaleFitness s tripleFitness).snapshot (0 : Fin (n + 1)) ↔
+          2 ≤ degree s.snapshot (0 : Fin (n + 1))
+      rfl
+
+example :
+    traceProbability (scaleFitness edge2State tripleFitness) 1 (by decide) (by decide)
+      (scaleSchedule tripleFitness twoBirthSchedule)
+      (scaleTargetTrace tripleFitness twoBirthSchedule zeroZeroTrace) = 1 / 4 := by
+  rw [traceProbability_scale]
+  change orderedMass edge2State zeroTarget2 *
+    (orderedMass edge3State zeroTarget3 * 1) = 1 / 4
+  rw [edge2Mass, edge3Mass]
+  norm_num
+
+example :
+    traceFinal (scaleFitness edge2State tripleFitness) 1 (by decide) (by decide)
+      (scaleSchedule tripleFitness twoBirthSchedule)
+      (scaleTargetTrace tripleFitness twoBirthSchedule zeroZeroTrace) =
+        scaleRunState ⟨4, edge4State⟩ tripleFitness := by
+  rw [traceFinal_scale]
+  rfl
+
+/-- Scaling the unit-fitness experiment by three is also the constant-fitness
+    normalization case: all initial and scheduled fitness values become three. -/
+example :
+    eventProbability (scaleFitness edge2State tripleFitness) 1 (by decide) (by decide)
+      (scaleSchedule tripleFitness twoBirthSchedule) stableZeroDegreeAtLeastTwo = 5 / 8 := by
+  rw [eventProbability_scale (hinv := stableZeroDegreeAtLeastTwo_scale)]
+  decide_cbv
+
 #print axioms NarrativeDynamics.FitnessAttachment.traceProbability_pos
 #print axioms NarrativeDynamics.FitnessAttachment.traceProbability_sum_continuationMass
 #print axioms NarrativeDynamics.FitnessAttachment.traceProbability_sum_one
@@ -240,5 +280,8 @@ example :
 #print axioms NarrativeDynamics.FitnessAttachment.expectation_add
 #print axioms NarrativeDynamics.FitnessAttachment.expectation_smul
 #print axioms NarrativeDynamics.FitnessAttachment.expectation_indicator
+#print axioms NarrativeDynamics.FitnessAttachment.traceProbability_scale
+#print axioms NarrativeDynamics.FitnessAttachment.traceFinal_scale
+#print axioms NarrativeDynamics.FitnessAttachment.eventProbability_scale
 
 end NarrativeDynamics.FitnessAttachment.DistributionFixtures
