@@ -44,14 +44,6 @@ def runBirths (m index : Nat) (s : RunState) (births : List RawBirth) :
       | .ok result => .ok ⟨result.final, next.2 * result.probability⟩
 termination_by structural births
 
-/-- A stable-ID fitness list is extended by precisely the supplied new value. -/
-private theorem birth_fitness_list {n m : Nat} (s : State n) (T : Targets n m)
-    (hm : 0 < m) (eta : PosFitness) :
-    List.ofFn (applyBirth s T hm eta).snapshot.fitness =
-      List.ofFn s.snapshot.fitness ++ [eta.val] := by
-  rw [List.ofFn_succ']
-  simp [applyBirth, birthSnapshot, List.concat_eq_append]
-
 /-- Counts, stored values and mass follow from each actual checked step. -/
 theorem runBirths_properties (m index : Nat) (s : RunState) (bs : List RawBirth)
     (out : ReplayResult) (h : runBirths m index s bs = .ok out) :
