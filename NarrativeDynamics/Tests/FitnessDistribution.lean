@@ -141,7 +141,7 @@ example :
         (traceFinal edge2State 1 (by decide) (by decide)
           twoBirthSchedule zeroZeroTrace).state.snapshot = 4 := by
   rw [traceFinal_nodes]
-  norm_num [twoBirthSchedule]
+  norm_num [actualNodeCount, twoBirthSchedule]
 
 example :
     actualEdgeCount
