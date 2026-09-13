@@ -10,6 +10,7 @@ probability reuses the existing `orderedMass`, `applyBirth`, and
 
 namespace NarrativeDynamics.FitnessAttachment
 
+open Internal
 open scoped BigOperators
 
 /-- A finite sequence of legal ordered target choices whose node type grows after
