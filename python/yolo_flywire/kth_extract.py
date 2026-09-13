@@ -142,7 +142,8 @@ def freeze_kth_runtime(protocol: dict[str, Any], *, sequence_file: str | Path,
         raise ValueError("KTH sequence file must be regular")
     sequence_raw = sequence_path.read_bytes()
     plan = parse_sequence_file(sequence_raw.decode("utf-8"))
-    if len(plan.videos) != 600 or len(plan.subsequences) != 2391:
+    if (len(plan.videos) != 600 or sum(not row["missing"] for row in plan.videos) != 599
+            or len(plan.subsequences) != 2391):
         raise ValueError("KTH sequence plan cardinality mismatch")
     versions = runtime_versions()
     if set(versions) != {"ultralytics", "torch", "numpy", "av", "opencv-python"}:
@@ -249,6 +250,8 @@ def _extract_parent(clip: Path, video: dict[str, Any], sample_rows: list[dict[st
                     predictor: Callable[[np.ndarray], tuple[np.ndarray, np.ndarray]],
                     samples_root: Path) -> list[dict[str, Any]]:
     """Route decoded frames by membership while preserving official listed range identity."""
+    if not sample_rows:
+        raise ValueError("present KTH development video must have at least one official subsequence")
     states = _open_sample_handles(samples_root, sample_rows)
     range_rows = sorted(sample_rows, key=lambda row: row["range_index"])
     max_end = max(row["end_frame"] for row in range_rows)
@@ -347,7 +350,12 @@ def extract_action_shard(action: str, archive: str | Path, *, sequence_file: str
     scratch = destination / ".scratch"
     scratch.mkdir()
     samples_root = destination / "samples"
-    videos = [row for row in plan.videos if row["action"] == action]
+    logical_videos = [row for row in plan.videos if row["action"] == action]
+    videos = [row for row in logical_videos if not row["missing"]]
+    missing_videos = [
+        {key: row[key] for key in ("video_key", "filename", "action", "subject", "scenario", "split")}
+        for row in logical_videos if row["missing"]
+    ]
     subsequences_by_video: dict[str, list[dict[str, Any]]] = {}
     for row in plan.subsequences:
         if row["label"] == action:
@@ -360,8 +368,11 @@ def extract_action_shard(action: str, archive: str | Path, *, sequence_file: str
             entries = [entry for entry in zipped.infolist() if not entry.is_dir()]
             names = [entry.filename for entry in entries]
             expected_names = {row["filename"] for row in videos}
-            if len(names) != len(set(names)) or set(names) != expected_names or len(names) != 100:
-                raise ValueError(f"KTH {action} ZIP roster differs from exact 100 official videos")
+            if len(names) != len(set(names)) or set(names) != expected_names or len(names) != len(expected_names):
+                raise ValueError(
+                    f"KTH {action} ZIP roster differs from official present-video set; "
+                    f"expected={len(expected_names)} actual={len(names)}"
+                )
             by_name = {entry.filename: entry for entry in entries}
             for name in names:
                 pure = PurePosixPath(name)
@@ -377,10 +388,12 @@ def extract_action_shard(action: str, archive: str | Path, *, sequence_file: str
                 if split == "final_test":
                     decoded = False
                 else:
+                    rows = subsequences_by_video.get(video["video_key"], [])
+                    if not rows:
+                        raise ValueError("present KTH development parent lacks official subsequences")
                     if predictor is None:
                         predictor = _load_predictor(checkpoint, spec)
                     samples_root.mkdir(exist_ok=True)
-                    rows = subsequences_by_video[video["video_key"]]
                     sample_records.extend(_extract_parent(clip, video, rows, predictor, samples_root))
                     decoded = True
                 clip.unlink()
@@ -405,7 +418,7 @@ def extract_action_shard(action: str, archive: str | Path, *, sequence_file: str
             "platform": platform.platform(), "extractor_code_hash": kth_extractor_code_hash(),
             "extraction_spec": descriptor, "extraction_spec_hash": _hash_json(descriptor),
             "observation_schema": _schema(), "observation_schema_hash": _hash_json(_schema()),
-            "videos": video_records, "samples": sample_records,
+            "videos": video_records, "missing_videos": missing_videos, "samples": sample_records,
         }
         _publish_exclusive(destination / "shard-report.json", report)
         return json.loads(_canonical_json(report))
@@ -458,6 +471,7 @@ def main(argv: list[str] | None = None) -> int:
                 weights=args.weights, output=args.output,
             )
             print(_canonical_json({"action": result["action"], "videos": len(result["videos"]),
+                                   "missing_videos": len(result["missing_videos"]),
                                    "samples": len(result["samples"]), "final_test_decoded": False}))
         return 0
     except (OSError, ValueError, TypeError, ImportError, RuntimeError, UnicodeError) as exc:
