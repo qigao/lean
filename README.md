@@ -2166,6 +2166,46 @@ V23.3 is still not the random WS model: it defines no probability space, rewirin
 sampler, expectation, concentration bound, or asymptotic small-world theorem. It
 also makes no Barabasi--Albert or power-law claim.
 
+### Lean finite fitness attachment and replay V23.5
+
+V23.5 formalizes a finite Bianconi–Barabási fitness-attachment model in
+`NarrativeDynamics.Core.FitnessAttachment`, `FitnessBirth`, `FitnessValidation`,
+and `FitnessReplay`. States contain connected simple graphs with at least two
+vertices and immutable, strictly positive rational fitness. Degrees are computed
+from actual adjacency. For a fixed positive attachment count bounded by the seed
+size, each birth selects an ordered list of distinct existing targets. All choices
+within one birth use the same old graph and degrees. Each choice masks the selected targets and renormalizes the remaining fitness-times-degree
+weights. The newborn becomes eligible in subsequent births.
+
+Lean proves normalization, support, ordered and unordered target-mass laws, and
+preservation of connectivity through actual graph updates. Each birth adds one
+vertex and the specified number of undirected edges while preserving old edges
+and stored fitness. Common fitness gives the finite degree-weighted
+Barabási–Albert law with selection without replacement. Multiplying all seed and
+newborn fitness values by one positive factor preserves the topology and trace
+probabilities.
+
+The raw API validates seed data and every supplied birth before applying it.
+Finite replay returns the actual final state and exact rational probability of
+the supplied ordered trace; it draws no random numbers. A failed birth reports
+its first zero-based index and cause without returning partial state or
+probability. Successful replay preserves stable vertex IDs, extends the complete
+fitness list, and has positive trace probability. The finite continuation law
+sums to one for a fixed schedule of newborn fitness values.
+
+`NarrativeDynamics.Tests.FitnessScope` checks an eight-vertex path obtained through
+six actual checked births from a two-vertex edge, with unit fitness and one target
+per birth. The supplied target sequence has probability `1 / 46080`. Its actual
+graph has seven edges and degrees `[1, 2, 2, 2, 2, 2, 2, 1]`; Lean proves endpoint
+shortest distance seven, absence of a six-hop route, and diameter seven. The lower
+bound follows by induction on every possible walk, using the fact that each edge
+changes the vertex label by one.
+
+This positive-probability example rules out an unconditional six-hop guarantee
+for the model. Power-law statistics, typical distances, and asymptotic
+small-world behavior require separate probabilistic analysis; further six-hop
+results require additional assumptions and proofs.
+
 ### V21.2 typed simulation output and public journal
 
 V21.2 projects an accepted situated-network round into one deterministic typed batch.
