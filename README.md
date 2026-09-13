@@ -2449,3 +2449,34 @@ python3 -m unittest discover -s tests -v
 ```
 
 The formal and simulation layers follow a RED → GREEN workflow. See `docs/superpowers/specs/2026-08-22-simulation-calibration-boundary-design.md` for the current design and modeling limitations.
+
+### Lean exact finite BB trace distribution V23.6
+
+V23.6 lifts the finite Bianconi–Barabási replay kernel into an executable exact
+probability law over all legal ordered target traces for a fixed typed initial
+state, attachment count, and positive newborn-fitness schedule.
+`NarrativeDynamics.Core.FitnessDistribution` defines the finite `TargetTrace`
+carrier, exact rational `traceProbability`, authoritative `traceFinal`, finite
+`eventProbability`, and exact rational `expectation`. The trace law is normalized
+through the existing `continuationMass = 1` theorem rather than a second stochastic
+kernel. `FitnessDistributionInvariance` proves that common positive fitness scaling
+preserves every trace probability and final topology, and therefore preserves any
+explicitly topology-invariant event probability.
+
+The exact finite network fixtures connect this distribution back to the existing
+small-world metrics. Starting from a two-node unit-fitness edge with `m = 1` and two
+births, the six ordered traces have masses `1/4, 1/8, 1/8, 1/8, 1/4, 1/8`; exactly
+the two star outcomes have final mesh diameter at most two, so
+`P(meshDiameter ≤ 2) = 1/2`. Starting from a unit-fitness triangle with `m = 2`, all
+six ordered one-birth traces have mass `1/6`. The final-graph event that the newborn
+is adjacent to stable IDs 1 and 2 has probability `1/3` because the distinct ordered
+traces `(1,2)` and `(2,1)` each contribute `1/6`; final states are not quotient- or
+deduplicated. The two-birth edge experiment also retains the exact result
+`E[degree(0)] = 15/8`.
+
+The V23.6 proof workflow includes dedicated distribution, network-event, BB-only
+naming, and trust gates. The maintained implementation adds no RNG, Monte Carlo,
+PMF/Measure migration, random-fitness generator, asymptotic power-law or condensation
+claim, or empirical/high-probability six-hop claim. The trust audit rejects
+`sorry`/`admit`, `native_decide`, new user axioms, unsafe escape hatches, skipped
+proof gates, and unlimited proof-resource settings.
