@@ -46,6 +46,20 @@ def test_kth_real_workflow_executes_real_extract_aggregate_and_existing_comparis
     assert "timeout-minutes: 720" not in text
 
 
+def test_kth_real_workflow_keeps_all_shards_and_diagnoses_boxing_decode_failures():
+    text = _workflow()
+    assert "fail-fast: false" in text
+    assert "Diagnose boxing decoder boundary on failure" in text
+    assert "if: failure() && matrix.action == 'boxing'" in text
+    assert "person01_boxing_d4_uncomp.avi" in text
+    assert "KTH_PYAV_DIAGNOSTIC" in text
+    assert "successful_frames=" in text
+    assert "last_pts=" in text
+    assert "exception_type=" in text
+    assert "exception_repr=" in text
+    assert "kth-decoder-diagnostic" not in text
+
+
 def test_kth_real_workflow_never_uploads_rgb_model_or_final_test_observations():
     text = _workflow()
     final_upload = text.split("Upload real KTH development report", 1)[1]
