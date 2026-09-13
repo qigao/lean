@@ -123,30 +123,61 @@ private theorem edgeTrace12_mass :
     traceProbability edge2State 1 (by decide) (by decide)
       twoBirthSchedule edgeTrace12 = 1 / 8 := by decide_cbv
 
+/-- Split the finite all-pairs diameter checks into tiny goals rather than asking
+    one `decide_cbv` proof term to normalize the whole quantified predicate. -/
 private theorem edgeTrace00_diameter :
     diameterAtMostTwo
       (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace00) := by
-  decide_cbv
+  change ∀ a b : Fin 4, b ∈ reached _ a 2
+  intro a b
+  fin_cases a <;> fin_cases b <;> decide_cbv
+
 private theorem edgeTrace01_diameter :
     ¬ diameterAtMostTwo
       (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace01) := by
-  decide_cbv
+  intro h
+  change ∀ a b : Fin 4, b ∈ reached _ a 2 at h
+  have hbad := h (2 : Fin 4) (3 : Fin 4)
+  exact (by decide_cbv : ¬ ((3 : Fin 4) ∈ reached
+    (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace01).state.snapshot
+    (2 : Fin 4) 2)) hbad
+
 private theorem edgeTrace02_diameter :
     ¬ diameterAtMostTwo
       (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace02) := by
-  decide_cbv
+  intro h
+  change ∀ a b : Fin 4, b ∈ reached _ a 2 at h
+  have hbad := h (1 : Fin 4) (3 : Fin 4)
+  exact (by decide_cbv : ¬ ((3 : Fin 4) ∈ reached
+    (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace02).state.snapshot
+    (1 : Fin 4) 2)) hbad
+
 private theorem edgeTrace10_diameter :
     ¬ diameterAtMostTwo
       (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace10) := by
-  decide_cbv
+  intro h
+  change ∀ a b : Fin 4, b ∈ reached _ a 2 at h
+  have hbad := h (2 : Fin 4) (3 : Fin 4)
+  exact (by decide_cbv : ¬ ((3 : Fin 4) ∈ reached
+    (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace10).state.snapshot
+    (2 : Fin 4) 2)) hbad
+
 private theorem edgeTrace11_diameter :
     diameterAtMostTwo
       (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace11) := by
-  decide_cbv
+  change ∀ a b : Fin 4, b ∈ reached _ a 2
+  intro a b
+  fin_cases a <;> fin_cases b <;> decide_cbv
+
 private theorem edgeTrace12_diameter :
     ¬ diameterAtMostTwo
       (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace12) := by
-  decide_cbv
+  intro h
+  change ∀ a b : Fin 4, b ∈ reached _ a 2 at h
+  have hbad := h (0 : Fin 4) (3 : Fin 4)
+  exact (by decide_cbv : ¬ ((3 : Fin 4) ∈ reached
+    (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace12).state.snapshot
+    (0 : Fin 4) 2)) hbad
 
 private theorem edgeTrace00_event :
     oldStarCenter
@@ -173,8 +204,6 @@ private theorem edgeTrace12_event :
       (traceFinal edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace12) := by
   decide_cbv
 
-/-- The six concrete traces are now explicit proof commands, so each exact
-    mass/outcome check stays within the ordinary deterministic heartbeat bound. -/
 example :
     traceProbability edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace00 = 1 / 4 ∧
     traceProbability edge2State 1 (by decide) (by decide) twoBirthSchedule edgeTrace01 = 1 / 8 ∧
@@ -185,8 +214,6 @@ example :
   ⟨edgeTrace00_mass, edgeTrace01_mass, edgeTrace02_mass,
     edgeTrace10_mass, edgeTrace11_mass, edgeTrace12_mass⟩
 
-/-- Events that agree on every final state reached by this typed experiment have
-    identical exact probability. -/
 private theorem eventProbability_congr_on_traceFinal {n : Nat} (s : State n) (m : Nat)
     (hm : 0 < m) (hb : m ≤ n) (schedule : List PosFitness)
     (event₁ event₂ : RunState → Prop) [DecidablePred event₁] [DecidablePred event₂]
@@ -221,9 +248,7 @@ private theorem oldStarCenter_iff_diameterAtMostTwo_trace
   · exact ⟨fun _ => edgeTrace11_diameter, fun _ => edgeTrace11_event⟩
   · exact ⟨False.elim ∘ edgeTrace12_event, False.elim ∘ edgeTrace12_diameter⟩
 
-/-- Therefore the exact finite BB probability of final mesh diameter at most two
-    is one half. The official metric event is transferred tracewise to the cheap
-    but equivalent star signature before the finite probability sum is reduced. -/
+/-- Exact finite probability of final mesh diameter at most two is one half. -/
 example :
     eventProbability edge2State 1 (by decide) (by decide)
       twoBirthSchedule diameterAtMostTwo = 1 / 2 := by
@@ -326,7 +351,6 @@ private theorem triangleTrace21_event :
       (traceFinal triangle3State 2 (by decide) (by decide)
         oneBirthSchedule triangleTrace21) := by decide_cbv
 
-/-- All six ordered traces are present separately, and each carries exact mass 1/6. -/
 example :
     traceProbability triangle3State 2 (by decide) (by decide) oneBirthSchedule triangleTrace01 = 1 / 6 ∧
     traceProbability triangle3State 2 (by decide) (by decide) oneBirthSchedule triangleTrace02 = 1 / 6 ∧
@@ -337,7 +361,6 @@ example :
   ⟨triangleTrace01_mass, triangleTrace02_mass, triangleTrace10_mass,
     triangleTrace12_mass, triangleTrace20_mass, triangleTrace21_mass⟩
 
-/-- Both orders selecting stable IDs 1 and 2 satisfy the same final-graph event. -/
 example :
     newbornAdjacentToOneTwo
         (traceFinal triangle3State 2 (by decide) (by decide)
@@ -347,11 +370,65 @@ example :
           oneBirthSchedule triangleTrace21) :=
   ⟨triangleTrace12_event, triangleTrace21_event⟩
 
-/-- The unordered target-set event {1,2} receives both orders (1,2) and (2,1),
-    hence exact mass 2/6 = 1/3. -/
+/-- In one birth, the final adjacency event is exactly the unordered target-set
+    event `{1,2}`. This bridges `eventProbability` to the existing `setMass`. -/
+private theorem newbornAdjacentToOneTwo_iff_selected (T : Targets 3 2) :
+    newbornAdjacentToOneTwo
+        (traceFinal triangle3State 2 (by decide) (by decide)
+          oneBirthSchedule (T, PUnit.unit)) ↔
+      T.selected = ({1, 2} : Finset (Fin 3)) := by
+  change
+    ((1 : Fin 3) ∈ T.selected ∧ (2 : Fin 3) ∈ T.selected) ↔
+      T.selected = ({1, 2} : Finset (Fin 3))
+  constructor
+  · rintro ⟨h1, h2⟩
+    have hsub : ({1, 2} : Finset (Fin 3)) ⊆ T.selected := by
+      simpa using And.intro h1 h2
+    have hcard : T.selected.card = ({1, 2} : Finset (Fin 3)).card := by
+      rw [selected_card]
+      decide
+    exact Finset.Subset.antisymm
+      (fun i hi => by
+        fin_cases i <;> simp_all)
+      hsub
+  · intro h
+    rw [h]
+    simp
+
+private theorem triangle_eventProbability_eq_setMass :
+    eventProbability triangle3State 2 (by decide) (by decide)
+        oneBirthSchedule newbornAdjacentToOneTwo =
+      setMass triangle3State 2 ({1, 2} : Finset (Fin 3)) := by
+  unfold eventProbability setMass
+  change
+    (∑ trace : Targets 3 2 × PUnit,
+      if newbornAdjacentToOneTwo
+          (traceFinal triangle3State 2 (by decide) (by decide)
+            oneBirthSchedule trace)
+      then traceProbability triangle3State 2 (by decide) (by decide)
+        oneBirthSchedule trace
+      else 0) = _
+  rw [Fintype.sum_prod_type]
+  apply Finset.sum_congr rfl
+  intro T _
+  simp only [Fintype.sum_unique]
+  have he := newbornAdjacentToOneTwo_iff_selected T
+  by_cases h : T.selected = ({1, 2} : Finset (Fin 3))
+  · have hev := he.mpr h
+    simp [h, hev, oneBirthSchedule, traceProbability]
+  · have hnev : ¬ newbornAdjacentToOneTwo
+        (traceFinal triangle3State 2 (by decide) (by decide)
+          oneBirthSchedule (T, PUnit.unit)) := by
+      intro hev
+      exact h (he.mp hev)
+    simp [h, hnev]
+
+/-- The unordered target-set event `{1,2}` receives both ordered traces `(1,2)`
+    and `(2,1)`, hence exact mass `2/6 = 1/3`. -/
 example :
     eventProbability triangle3State 2 (by decide) (by decide)
       oneBirthSchedule newbornAdjacentToOneTwo = 1 / 3 := by
+  rw [triangle_eventProbability_eq_setMass]
   decide_cbv
 
 #print axioms NarrativeDynamics.FitnessAttachment.DistributionNetworkFixtures.executableDiameterAtMostTwo_iff_meshDiameter_le_two
