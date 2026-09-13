@@ -52,6 +52,7 @@ def test_kth_person_policy_is_frozen_as_unique_largest_detector_bbox():
     assert spec.descriptor()["person_policy"] == (
         "zero-mask-or-single-or-unique-largest-detector-bbox-else-error"
     )
+    assert spec.descriptor()["decoder"] == "pyav-avi-single-thread-through-last-official-frame"
 
 
 def test_kth_pose_selects_unique_largest_detector_bbox_not_highest_confidence():
@@ -76,6 +77,40 @@ def test_kth_pose_rejects_tied_largest_detector_bbox():
 
     with pytest.raises(ValueError, match="largest detector bbox"):
         kth_extract._kth_pose(points, scores, boxes)
+
+
+def test_kth_parent_never_requests_frame_after_last_official_interval(tmp_path, monkeypatch):
+    image = np.zeros((120, 160, 3), dtype=np.uint8)
+
+    def fake_decode(_path):
+        yield 0, Fraction(1, 25), image
+        yield 1, Fraction(1, 25), image
+        raise ValueError("decoder advanced beyond last official frame")
+
+    monkeypatch.setattr(kth_extract, "decode_video", fake_decode)
+
+    def fake_predict(_image):
+        points = np.zeros((1, 17, 3), dtype=np.float32)
+        points[..., 2] = 0.8
+        scores = np.array([0.9], dtype=np.float32)
+        boxes = np.array([[0.0, 0.0, 100.0, 100.0]], dtype=np.float32)
+        return points, scores, boxes
+
+    rows = [{
+        "sample_id": "person11_boxing_d1#01",
+        "video_key": "person11_boxing_d1",
+        "split": "train",
+        "label": "boxing",
+        "subject": 11,
+        "scenario": 1,
+        "range_index": 1,
+        "start_frame": 1,
+        "end_frame": 2,
+    }]
+    reports = kth_extract._extract_parent(
+        tmp_path / "clip.avi", {}, rows, fake_predict, tmp_path / "samples"
+    )
+    assert reports[0]["frame_count"] == 2
 
 
 def test_kth_action_shard_never_decodes_final_test_subjects(tmp_path, monkeypatch):
