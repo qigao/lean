@@ -507,6 +507,21 @@ private theorem newbornAdjacentToOneTwo_iff_selected (T : Targets 3 2) :
     rw [h]
     simp
 
+private theorem oneBirth_event_term (T : Targets 3 2) :
+    (if newbornAdjacentToOneTwo
+        (traceFinal triangle3State 2 triangleHm triangleHb
+          oneBirthSchedule (T, PUnit.unit))
+      then traceProbability triangle3State 2 triangleHm triangleHb
+        oneBirthSchedule (T, PUnit.unit)
+      else 0) =
+    if T.selected = ({1, 2} : Finset (Fin 3))
+      then orderedMass triangle3State T else 0 := by
+  rw [oneBirth_traceProbability T]
+  have he := newbornAdjacentToOneTwo_iff_selected T
+  by_cases h : T.selected = ({1, 2} : Finset (Fin 3))
+  · rw [if_pos (he.mpr h), if_pos h]
+  · rw [if_neg (fun hev => h (he.mp hev)), if_neg h]
+
 private theorem triangle_eventProbability_eq_setMass :
     eventProbability triangle3State 2 triangleHm triangleHb
         oneBirthSchedule newbornAdjacentToOneTwo =
@@ -524,12 +539,7 @@ private theorem triangle_eventProbability_eq_setMass :
   apply Finset.sum_congr rfl
   intro T _
   simp only [Fintype.sum_unique]
-  have hunit : (default : PUnit) = PUnit.unit := Subsingleton.elim _ _
-  rw [hunit, oneBirth_traceProbability T]
-  have he := newbornAdjacentToOneTwo_iff_selected T
-  by_cases h : T.selected = ({1, 2} : Finset (Fin 3))
-  · rw [if_pos (he.mpr h), if_pos h]
-  · rw [if_neg (fun hev => h (he.mp hev)), if_neg h]
+  simpa using oneBirth_event_term T
 
 /-- Both target orders `(1,2)` and `(2,1)` contribute, so the final-graph event
     has exact probability `2/6 = 1/3`. -/
