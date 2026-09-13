@@ -381,7 +381,7 @@ theorem replay_scale_probability (seed : RawSeed) (m : Nat) (bs : List RawBirth)
       next.probability = out.probability :=
   ⟨scaleResult out c, replay_scale seed m bs out c h, rfl⟩
 
-/-- Constant positive fitness is the scaled unit-fitness BA specialization of the same replay. -/
+/-- Constant positive fitness is the scaled unit-fitness normalization of the same BB replay. -/
 private theorem replay_constant (seed : RawSeed) (m : Nat) (bs : List RawBirth)
     (out : ReplayResult) (c : PosFitness)
     (h : replay (unitSeed seed) m (bs.map unitBirth) = .ok out) :
@@ -394,14 +394,14 @@ private theorem replay_constant (seed : RawSeed) (m : Nat) (bs : List RawBirth)
   simpa only [hs, List.map_map, Function.comp_def, hb] using
     replay_scale (unitSeed seed) m (bs.map unitBirth) out c h
 
-theorem replay_ba_topology (seed : RawSeed) (m : Nat) (bs : List RawBirth)
+theorem replay_constant_fitness_topology (seed : RawSeed) (m : Nat) (bs : List RawBirth)
     (out : ReplayResult) (c : PosFitness)
     (h : replay (unitSeed seed) m (bs.map unitBirth) = .ok out) :
     ∃ next, replay (constantSeed seed c) m (bs.map (fun raw => constantBirth raw c)) = .ok next ∧
       next.final = scaleRunState out.final c :=
   ⟨scaleResult out c, replay_constant seed m bs out c h, rfl⟩
 
-theorem replay_ba_probability (seed : RawSeed) (m : Nat) (bs : List RawBirth)
+theorem replay_constant_fitness_probability (seed : RawSeed) (m : Nat) (bs : List RawBirth)
     (out : ReplayResult) (c : PosFitness)
     (h : replay (unitSeed seed) m (bs.map unitBirth) = .ok out) :
     ∃ next, replay (constantSeed seed c) m (bs.map (fun raw => constantBirth raw c)) = .ok next ∧
