@@ -21,9 +21,14 @@ _FINAL_TEST = (22, 2, 3, 5, 6, 7, 8, 9, 10)
 _SPLITS = {**{value: "train" for value in _TRAIN},
            **{value: "validation" for value in _VALIDATION},
            **{value: "final_test" for value in _FINAL_TEST}}
+_MISSING_VIDEO_KEY = "person13_handclapping_d3"
 _LINE = re.compile(
     r"^(person(?P<subject>[0-9]{2})_(?P<action>boxing|handclapping|handwaving|jogging|running|walking)_d(?P<scenario>[1-4]))"
     r"\s+frames\s+(?P<ranges>.+?)\s*$"
+)
+_MISSING_LINE = re.compile(
+    r"^(person(?P<subject>[0-9]{2})_(?P<action>boxing|handclapping|handwaving|jogging|running|walking)_d(?P<scenario>[1-4]))"
+    r"\s+\*missing\*\s*$"
 )
 _RANGE = re.compile(r"([0-9]+)-([0-9]+)")
 _MEMBER = re.compile(
@@ -47,6 +52,7 @@ def _split_policy() -> dict[str, Any]:
         "validation_subjects": list(_VALIDATION),
         "final_test_subjects": list(_FINAL_TEST),
         "source": "KTH:00sequences.txt:Schuldt-Laptev-Caputo-ICPR2004",
+        "missing_video_key": _MISSING_VIDEO_KEY,
         "range_index_policy": "preserve-official-list-order",
         "range_routing_policy": "frame-membership; overlapping official intervals share one predictor result",
     }
@@ -71,31 +77,43 @@ def _ranges(text: str, video_key: str) -> tuple[tuple[int, int], ...]:
     return matches
 
 
+def _identity(match: re.Match[str]) -> tuple[str, int, str, int]:
+    key = match.group(1)
+    subject = int(match.group("subject"))
+    action = match.group("action")
+    scenario = int(match.group("scenario"))
+    if subject not in _SPLITS or action not in _ACTIONS or not 1 <= scenario <= 4:
+        raise ValueError(f"unexpected KTH sequence identity: {key}")
+    return key, subject, action, scenario
+
+
 def parse_sequence_file(text: str) -> KthSequencePlan:
-    """Parse the complete official KTH sequence roster and frozen subject split."""
+    """Parse all 600 logical KTH slots, including the one official missing parent video."""
     if type(text) is not str or not text.strip():
         raise ValueError("KTH sequence text must be nonempty")
     declared: dict[str, tuple[int, ...]] = {}
     ranges_by_key: dict[str, tuple[tuple[int, int], ...]] = {}
+    missing_keys: set[str] = set()
     for raw_line in text.splitlines():
         line = raw_line.strip()
         split_match = _SPLIT_LINE.fullmatch(line)
         if split_match:
             declared[split_match.group(1)] = _parse_subject_list(split_match.group(2))
             continue
+        missing_match = _MISSING_LINE.fullmatch(line)
+        if missing_match:
+            key, _, _, _ = _identity(missing_match)
+            if key in ranges_by_key:
+                raise ValueError(f"duplicate KTH video key: {key}")
+            ranges_by_key[key] = ()
+            missing_keys.add(key)
+            continue
         match = _LINE.fullmatch(line)
         if not match:
             continue
-        subject = int(match.group("subject"))
-        action = match.group("action")
-        scenario = int(match.group("scenario"))
-        if subject not in _SPLITS:
-            raise ValueError("KTH sequence references subject outside 1..25")
-        key = match.group(1)
+        key, _, _, _ = _identity(match)
         if key in ranges_by_key:
             raise ValueError(f"duplicate KTH video key: {key}")
-        if action not in _ACTIONS or not 1 <= scenario <= 4:
-            raise ValueError(f"unexpected KTH action/scenario: {key}")
         ranges_by_key[key] = _ranges(match.group("ranges"), key)
 
     expected_declared = {"Training": _TRAIN, "Validation": _VALIDATION, "Test": _FINAL_TEST}
@@ -109,9 +127,11 @@ def parse_sequence_file(text: str) -> KthSequencePlan:
         missing = sorted(expected_keys - set(ranges_by_key))
         extra = sorted(set(ranges_by_key) - expected_keys)
         raise ValueError(
-            f"KTH sequence file must describe exactly the frozen 600-video roster; "
+            f"KTH sequence file must describe exactly 600 logical video slots; "
             f"missing={missing[:8]} extra={extra[:8]}"
         )
+    if missing_keys != {_MISSING_VIDEO_KEY}:
+        raise ValueError(f"KTH official missing-video set changed: {sorted(missing_keys)}")
 
     videos: list[dict[str, Any]] = []
     subsequences: list[dict[str, Any]] = []
@@ -121,9 +141,11 @@ def parse_sequence_file(text: str) -> KthSequencePlan:
             for scenario in range(1, 5):
                 key = f"person{subject:02d}_{action}_d{scenario}"
                 ranges = ranges_by_key[key]
+                is_missing = key == _MISSING_VIDEO_KEY
                 videos.append({
                     "video_key": key, "filename": key + "_uncomp.avi", "action": action,
                     "subject": subject, "scenario": scenario, "split": split,
+                    "missing": is_missing,
                     "ranges": [[start, end] for start, end in ranges],
                 })
                 for index, (start, end) in enumerate(ranges, 1):
@@ -133,6 +155,8 @@ def parse_sequence_file(text: str) -> KthSequencePlan:
                         "label": action, "subject": subject, "scenario": scenario,
                         "split": split,
                     })
+    if sum(not row["missing"] for row in videos) != 599:
+        raise ValueError("KTH must contain exactly 599 present parent videos")
     if len(subsequences) != 2391:
         raise ValueError(
             f"KTH sequence file must describe exactly 2391 official subsequences; got {len(subsequences)}"
@@ -148,7 +172,7 @@ def _member_digest(handle: Any) -> str:
 
 
 def build_kth_source(archives: dict[str, str | Path], sequence_file: str | Path) -> dict[str, Any]:
-    """Bind six official archive bytes and the official sequence file without decoding RGB."""
+    """Bind six official archive bytes, 599 present AVIs, one missing slot and official metadata."""
     if type(archives) is not dict or set(archives) != set(_ACTIONS):
         raise ValueError("KTH source requires exactly the six official action archives")
     seq_path = Path(sequence_file).absolute()
@@ -165,6 +189,10 @@ def build_kth_source(archives: dict[str, str | Path], sequence_file: str | Path)
     video_plan = {row["video_key"]: row for row in plan.videos}
     archive_records: list[dict[str, Any]] = []
     video_records: list[dict[str, Any]] = []
+    missing_records = [
+        {key: row[key] for key in ("video_key", "filename", "action", "subject", "scenario", "split")}
+        for row in plan.videos if row["missing"]
+    ]
     for action in _ACTIONS:
         archive = Path(archives[action]).absolute()
         info = archive.lstat() if archive.exists() else None
@@ -172,10 +200,8 @@ def build_kth_source(archives: dict[str, str | Path], sequence_file: str | Path)
                 or info.st_size <= 0):
             raise ValueError(f"KTH archive must be a nonempty regular file: {action}")
         archive_size, archive_sha256, _ = _hash_file(archive)
-        expected_names = {
-            f"person{subject:02d}_{action}_d{scenario}_uncomp.avi"
-            for subject in range(1, 26) for scenario in range(1, 5)
-        }
+        expected_names = {row["filename"] for row in plan.videos
+                          if row["action"] == action and not row["missing"]}
         try:
             with ZipFile(archive, "r") as zipped:
                 infos = [entry for entry in zipped.infolist() if not entry.is_dir()]
@@ -186,8 +212,11 @@ def build_kth_source(archives: dict[str, str | Path], sequence_file: str | Path)
                     pure = PurePosixPath(name)
                     if pure.is_absolute() or ".." in pure.parts or len(pure.parts) != 1:
                         raise ValueError(f"unsafe KTH ZIP member path: {name}")
-                if set(names) != expected_names or len(names) != 100:
-                    raise ValueError(f"KTH {action} archive must contain the exact 100-video roster")
+                if set(names) != expected_names or len(names) != len(expected_names):
+                    raise ValueError(
+                        f"KTH {action} archive roster differs from official present-video set; "
+                        f"expected={len(expected_names)} actual={len(names)}"
+                    )
                 by_name = {entry.filename: entry for entry in infos}
                 for name in sorted(expected_names):
                     match = _MEMBER.fullmatch(name)
@@ -213,10 +242,17 @@ def build_kth_source(archives: dict[str, str | Path], sequence_file: str | Path)
         })
 
     videos = sorted(video_records, key=lambda row: (_ACTIONS.index(row["action"]), row["subject"], row["scenario"]))
+    if len(videos) != 599 or missing_records != [{
+        "video_key": _MISSING_VIDEO_KEY,
+        "filename": _MISSING_VIDEO_KEY + "_uncomp.avi",
+        "action": "handclapping", "subject": 13, "scenario": 3, "split": "train",
+    }]:
+        raise ValueError("KTH present/missing parent-video roster changed")
     subsequences = [dict(row) for row in plan.subsequences]
     dataset_content_hash = _hash_json({
         "sequence_file_sha256": sequence_sha256,
         "videos": [{key: row[key] for key in ("video_key", "size_bytes", "sha256")} for row in videos],
+        "missing_videos": missing_records,
     })
     split_hash = _hash_json({
         "dataset_content_hash": dataset_content_hash,
@@ -230,13 +266,15 @@ def build_kth_source(archives: dict[str, str | Path], sequence_file: str | Path)
         "archive_urls": [_ARCHIVE_URLS[action] for action in _ACTIONS],
         "sequence_url": _SEQUENCE_URL, "classes": list(_ACTIONS),
         "split_policy": plan.split_policy, "sequence_file_sha256": sequence_sha256,
-        "archives": archive_records, "videos": videos, "subsequences": subsequences,
+        "archives": archive_records, "videos": videos, "missing_videos": missing_records,
+        "subsequences": subsequences,
         "dataset_content_hash": dataset_content_hash, "split_hash": split_hash,
     }
     source_payload = {key: value for key, value in inventory.items() if key != "source_manifest_hash"}
     inventory["source_manifest_hash"] = _hash_json(source_payload)
     inventory["input_inventory_hash"] = _hash_json({
-        "sequence_file_sha256": sequence_sha256, "videos": videos, "subsequences": subsequences,
+        "sequence_file_sha256": sequence_sha256, "videos": videos,
+        "missing_videos": missing_records, "subsequences": subsequences,
     })
     return json.loads(_canonical_json(inventory))
 
