@@ -124,6 +124,7 @@ def _arm_family(arm: Any) -> str:
 
 
 def _validate_frozen_protocol(config: dict[str, Any]) -> tuple[str, ...]:
+    claim = config.get("claim", "temporal_model_useful")
     required = (
         "dataset_id",
         "split_hash",
@@ -134,6 +135,8 @@ def _validate_frozen_protocol(config: dict[str, Any]) -> tuple[str, ...]:
         "success_threshold",
         "final_test_used_for_selection",
     )
+    if claim == "topology_specific_advantage" and config.get("dataset_id") != "synthetic-v0":
+        required += ("pose_encoder_hash", "extraction_spec_hash")
     missing = [name for name in required if config.get(name) is None]
     if missing:
         raise ValueError("protocol must freeze required fields before execution: " + ", ".join(missing))
@@ -147,7 +150,6 @@ def _validate_frozen_protocol(config: dict[str, Any]) -> tuple[str, ...]:
         raise ValueError("comparison protocol requires an explicit non-empty arms list")
     families = tuple(_arm_family(arm) for arm in arms)
 
-    claim = config.get("claim", "temporal_model_useful")
     if claim == "topology_specific_advantage":
         topology_required = ("yolo_version", "flywire_release", "selection_rule", "rewiring_algorithm")
         topology_missing = [name for name in topology_required if config.get(name) is None]
@@ -165,6 +167,8 @@ def _validate_frozen_protocol(config: dict[str, Any]) -> tuple[str, ...]:
                 "dataset_content_hash",
                 "ultralytics_package_version",
                 "yolo_weights_sha256",
+                "pose_encoder_hash",
+                "extraction_spec_hash",
                 "flywire_source_commit",
                 "flywire_connectivity_path",
                 "flywire_connectivity_git_blob_sha1",
