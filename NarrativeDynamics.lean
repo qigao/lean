@@ -35,3 +35,7 @@ import NarrativeDynamics.Core.StoryState
 import NarrativeDynamics.Core.Testimony
 import NarrativeDynamics.Core.FitnessAttachment
 import NarrativeDynamics.Core.FitnessBirth
+import NarrativeDynamics.Core.FitnessValidation
+import NarrativeDynamics.Core.FitnessReplay
+import NarrativeDynamics.Core.FitnessDistribution
+import NarrativeDynamics.Core.FitnessDistributionInvariance
