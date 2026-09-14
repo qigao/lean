@@ -303,7 +303,6 @@ private theorem incoming0 :
     · intro hi
       subst i
       exact ⟨0, rfl⟩
-  have inactive : decide ((1 / 2 : Rat) ≤ 0) ≠ true := by decide
   have h0 : (0 : Nat) < 2 := by decide
   have h1 : (1 : Nat) < 2 := by decide
   have h2 : ¬ (2 : Nat) < 2 := by decide
@@ -315,9 +314,7 @@ private theorem incoming0 :
       lastCases_eq_if, initial, seedNetwork, extendPopulation,
       birthData, one, selected0, broadcasting, top2_adj]
      simp only [h0, h1, h2, dif_pos, dif_neg (show ¬ False from fun h => h)] <;>
-       first
-       | exact iff_of_false (fun h => inactive h.2) (by decide)
-       | decide_cbv)
+       norm_num [Fin.ext_iff])
 
 private theorem incoming1 :
     let s := grow (initial one) targets1 positiveM birthData
