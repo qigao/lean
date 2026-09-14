@@ -153,9 +153,9 @@ example : rowValues (.ok (attachmentRow Fixtures.triangle {0, 2} (by decide))) =
     .ok [0, 1, 0] := by decide_cbv
 example : rowValues (.ok (attachmentRow Fixtures.constantTriangle ∅ (by decide))) =
     .ok [1/3, 1/3, 1/3] := by decide_cbv
-example : rowValues (.ok (baRow Fixtures.star ∅ (by decide))) =
+example : rowValues (.ok (unitFitnessRow Fixtures.star ∅ (by decide))) =
     .ok [1/2, 1/6, 1/6, 1/6] := by decide_cbv
-example : rowValues (.ok (baRow Fixtures.star {0} (by decide))) =
+example : rowValues (.ok (unitFitnessRow Fixtures.star {0} (by decide))) =
     .ok [0, 1/3, 1/3, 1/3] := by decide_cbv
 example : rowValues (.ok (attachmentRow
     (scaleFitness Fixtures.triangle ⟨3/2, by norm_num⟩) {2} (by decide))) =
@@ -187,8 +187,8 @@ example {n : Nat} (s : State n) (S : Finset (Fin n)) (hS : S.card < n) :
     (∑ i, (attachmentRow s S hS).mass i) = 1 := (attachmentRow s S hS).total_one
 example {n : Nat} (s : State n) (S : Finset (Fin n)) (hS : S.card < n)
     (c : PosFitness) (constant : ∀ j, s.snapshot.fitness j = c.val) (i : Fin n) :
-    (attachmentRow s S hS).mass i = (baRow s S hS).mass i :=
-  attachment_ba s S hS c constant i
+    (attachmentRow s S hS).mass i = (unitFitnessRow s S hS).mass i :=
+  attachment_constant_fitness s S hS c constant i
 example {n : Nat} (s : State n) (S : Finset (Fin n)) (hS : S.card < n)
     (c : PosFitness) (i : Fin n) :
     (attachmentRow (scaleFitness s c) S hS).mass i = (attachmentRow s S hS).mass i :=
@@ -215,7 +215,7 @@ example {n : Nat} (s t : State n) (S : Finset (Fin n)) (hS : S.card < n)
 #print axioms remaining_total_pos
 #print axioms attachment_mass
 #print axioms attachment_support
-#print axioms attachment_ba
+#print axioms attachment_constant_fitness
 #print axioms attachment_scale
 #print axioms attachment_ratio
 #print axioms attachment_mono
@@ -293,7 +293,8 @@ example {n m : Nat} (s : State n) (hm : m ≤ n) :
   setMass_sum_one s hm
 example {n m : Nat} (s : State n) (T : Targets n m) (c : PosFitness)
     (constant : ∀ i, s.snapshot.fitness i = c.val) :
-    orderedMass s T = orderedMass (asBA s) T := orderedMass_ba s T c constant
+    orderedMass s T = orderedMass (unitFitnessState s) T :=
+  orderedMass_constant_fitness s T c constant
 example {n m : Nat} (s : State n) (T : Targets n m) (c : PosFitness) :
     orderedMass (scaleFitness s c) T = orderedMass s T := orderedMass_scale s T c
 example {n m : Nat} (s : State n) (A : Finset (Fin n)) (hA : A.card ≠ m) :
@@ -303,7 +304,7 @@ example {n m : Nat} (s : State n) (A : Finset (Fin n)) (hA : A.card ≠ m) :
 #print axioms orderedMass_pos
 #print axioms orderedMass_sum_one
 #print axioms setMass_sum_one
-#print axioms orderedMass_ba
+#print axioms orderedMass_constant_fitness
 #print axioms orderedMass_scale
 #print axioms setMass_wrong_card
 

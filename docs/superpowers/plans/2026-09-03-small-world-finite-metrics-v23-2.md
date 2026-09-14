@@ -15,7 +15,7 @@
 - Continue on `feature/mesh-feasibility-v23` and update PR #58 without force-push.
 - Use finite ordered pairs and rational-valued ratios.
 - Reuse `ReachWithin` and `GlobalHopBound`; do not introduce another walk relation.
-- Keep stochastic WS/BA claims out of V23.2.
+- Keep stochastic WS or alternate attachment-model claims out of V23.2.
 - Add no `sorry`, `admit`, axiom, or unsafe declaration.
 
 ---
@@ -348,7 +348,7 @@ Import `NarrativeDynamics.Core.SmallWorldMetrics` after `SmallWorld` and execute
 
 Explain ordered-pair clustering, zero-denominator convention, minimum hop/diameter,
 average shortest path, certificate bounds, and the continued exclusion of
-stochastic WS/BA claims.
+stochastic WS or alternate attachment-model claims.
 
 - [ ] **Step 3: Run fresh verification**
 

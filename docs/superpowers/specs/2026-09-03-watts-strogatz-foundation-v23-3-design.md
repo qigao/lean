@@ -61,7 +61,7 @@ create a new neighbor and therefore a new open wedge.
 - No independent per-edge rewiring sampler.
 - No expectation or concentration theorem.
 - No proof of the classic WS asymptotic regime.
-- No BA preferential attachment or power-law result.
+- No alternate attachment-model preferential-attachment or power-law result.
 - No Python or NetworkX runtime implementation.
 
 ## Acceptance

@@ -68,7 +68,7 @@ separately.
 ## Non-goals
 
 - No stochastic Watts--Strogatz generator or expectation theorem.
-- No Barabasi--Albert process or power-law asymptotics.
+- No alternate attachment-model process or power-law asymptotics.
 - No empirical estimator, confidence interval, or calibration claim.
 - No Python/NetworkX implementation.
 - No mutation of runtime Agent or world state.

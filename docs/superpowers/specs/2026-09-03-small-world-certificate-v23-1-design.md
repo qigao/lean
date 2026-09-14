@@ -92,7 +92,7 @@ perfect local clustering.
 - No random graph generator or NetworkX dependency.
 - No Watts--Strogatz probability distribution or expected-value theorem.
 - No numerical clustering coefficient or average shortest-path implementation.
-- No Barabasi--Albert preferential attachment or power-law asymptotics.
+- No alternate attachment-model preferential attachment or power-law asymptotics.
 - No temporal rewiring, distributed placement, P2P, WSS, or Raft behavior.
 - No change to Python runtime simulation semantics.
 

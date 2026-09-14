@@ -14,7 +14,7 @@ declared bridge edges compose local paths into bounded global paths, including a
 six-degree corollary.
 
 This is a feasibility result for the mesh representation. It does not claim that
-an empirical society is necessarily a Watts--Strogatz or Barabasi--Albert graph.
+an empirical society is necessarily a Watts--Strogatz or alternate attachment-model graph.
 
 ## Mathematical boundary
 

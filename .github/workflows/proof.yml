@@ -11,11 +11,77 @@ on:
       - "docs/superpowers/plans/**"
 
 jobs:
+  proof-event:
+    name: Select proof event
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      run: ${{ steps.select.outputs.result }}
+    steps:
+      - uses: actions/github-script@v8
+        id: select
+        with:
+          script: |
+            if (context.eventName !== 'push' || !context.ref.startsWith('refs/heads/')) {
+              return true;
+            }
+            const branch = context.ref.slice('refs/heads/'.length);
+            // A PR run only covers this SHA after GitHub has instantiated a real
+            // non-skipped Lean proof job. A startup_failure with zero jobs must
+            // leave the push proof enabled as the exact-head fallback.
+            for (let attempt = 0; attempt < 3; attempt++) {
+              try {
+                const {data} = await github.rest.actions.listWorkflowRuns({
+                  ...context.repo, workflow_id: 'proof.yml', event: 'pull_request',
+                  head_sha: context.sha, branch, per_page: 100
+                });
+                const prRun = data.workflow_runs.find(run =>
+                  run.event === 'pull_request' && run.head_sha === context.sha &&
+                  run.head_branch === branch &&
+                  run.head_repository?.full_name === `${context.repo.owner}/${context.repo.repo}` &&
+                  ['queued', 'in_progress', 'completed'].includes(run.status) &&
+                  !['cancelled', 'skipped'].includes(run.conclusion));
+                if (prRun) {
+                  const {data: jobData} = await github.rest.actions.listJobsForWorkflowRun({
+                    ...context.repo, run_id: prRun.id, filter: 'latest', per_page: 100
+                  });
+                  const proofJob = jobData.jobs.find(job =>
+                    job.name === 'Lean proof' &&
+                    !['cancelled', 'skipped'].includes(job.conclusion));
+                  if (proofJob) {
+                    core.info(
+                      `PR proof run ${prRun.id} has Lean proof job ${proofJob.id} ` +
+                      `(${proofJob.status}/${proofJob.conclusion ?? 'pending'}); ` +
+                      `skipping duplicate push proof for ${context.sha}.`
+                    );
+                    return false;
+                  }
+                  core.info(
+                    `PR proof run ${prRun.id} has no non-skipped Lean proof job yet; ` +
+                    `push proof remains eligible for ${context.sha}.`
+                  );
+                }
+              } catch (error) {
+                core.warning(`Could not check PR coverage; keeping push proof: ${error.message}`);
+                return true;
+              }
+              // Push and PR events can register and instantiate jobs a few seconds apart.
+              if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 5000));
+            }
+            core.info('No matching PR Lean proof job; keeping push proof.');
+            return true;
+
   lean-proof:
     name: Lean proof
+    needs: proof-event
+    # Preserve verification if the selector fails; never cancel an active proof.
+    if: ${{ !cancelled() && needs.proof-event.outputs.run != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Record checked revision
         run: |
           printf 'event=%s ref=%s requested_sha=%s run=%s attempt=%s\n' \
@@ -73,15 +139,115 @@ jobs:
             exit 1
           fi
 
+      - name: Fitness trust audit regression tests
+        run: python3 -m unittest tests.test_fitness_trust_audit -v
+
       - name: Build Lean library
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
           lake build
 
+      - name: BB-only naming audit
+        run: |
+          set -euo pipefail
+          short="$(printf '%s%s' B A)"
+          lower="$(printf '%s%s' b a)"
+          full_ascii="$(printf '%s%s' 'Barabasi-' 'Albert')"
+          full_ascii_double="$(printf '%s%s' 'Barabasi--' 'Albert')"
+          full_accent_ascii="$(printf '%s%s' 'Barabási-' 'Albert')"
+          full_unicode="$(printf '%s%s' 'Barabási–' 'Albert')"
+          found=0
+          if git grep -n -E "(^|[^[:alnum:]_])${short}([^[:alnum:]_]|$)" -- .; then
+            found=1
+          fi
+          for term in \
+            "$full_ascii" "$full_ascii_double" "$full_accent_ascii" "$full_unicode" \
+            "as${short}" "${lower}Row" \
+            "attachment_${lower}" "orderedMass_${lower}" \
+            "replay_${lower}_"; do
+            if git grep -n -F "$term" -- .; then
+              found=1
+            fi
+          done
+          if [ "$found" -ne 0 ]; then
+            echo 'legacy attachment-model surface remains'
+            exit 1
+          fi
+
       - name: Fitness attachment contract tests
+        timeout-minutes: 5
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
           lake env lean NarrativeDynamics/Tests/FitnessAttachment.lean
+          lake env lean NarrativeDynamics/Tests/FitnessBirth.lean
+          lake env lean NarrativeDynamics/Tests/FitnessValidation.lean
+
+      - name: Fitness replay acceptance
+        timeout-minutes: 5
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          # A proof error or wall-clock timeout must fail the acceptance gate.
+          /usr/bin/time -f 'FitnessReplay elapsed=%e s peak_rss=%M KiB' \
+            timeout --kill-after=10s 240s \
+            stdbuf -oL -eL lake env lean -DmaxErrors=1 -DstderrAsMessages=false \
+              NarrativeDynamics/Tests/FitnessReplay.lean
+
+      - name: Fitness scope counterexample
+        timeout-minutes: 5
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          /usr/bin/time -f 'FitnessScope elapsed=%e s peak_rss=%M KiB' \
+            timeout --kill-after=10s 240s \
+              lake env lean -DmaxErrors=8 \
+              NarrativeDynamics/Tests/FitnessScope.lean
+
+      - name: Fitness distribution contract tests
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.elan/bin:$PATH"
+          log="$(mktemp)"
+          trap 'rm -f "$log"' EXIT
+          lake env lean NarrativeDynamics/Tests/FitnessDistribution.lean 2>&1 | tee "$log"
+          python3 tools/audit_fitness_trust.py log "$log" \
+            --require NarrativeDynamics.FitnessAttachment.traceProbability_pos \
+            --require NarrativeDynamics.FitnessAttachment.traceProbability_sum_continuationMass \
+            --require NarrativeDynamics.FitnessAttachment.traceProbability_sum_one \
+            --require NarrativeDynamics.FitnessAttachment.traceProbability_le_one \
+            --require NarrativeDynamics.FitnessAttachment.traceFinal_nodes \
+            --require NarrativeDynamics.FitnessAttachment.traceFinal_edges \
+            --require NarrativeDynamics.FitnessAttachment.traceFinal_fitness \
+            --require NarrativeDynamics.FitnessAttachment.traceFinal_valid \
+            --require NarrativeDynamics.FitnessAttachment.eventProbability_true \
+            --require NarrativeDynamics.FitnessAttachment.eventProbability_false \
+            --require NarrativeDynamics.FitnessAttachment.eventProbability_nonneg \
+            --require NarrativeDynamics.FitnessAttachment.eventProbability_le_one \
+            --require NarrativeDynamics.FitnessAttachment.eventProbability_compl \
+            --require NarrativeDynamics.FitnessAttachment.eventProbability_mono \
+            --require NarrativeDynamics.FitnessAttachment.expectation_const \
+            --require NarrativeDynamics.FitnessAttachment.expectation_add \
+            --require NarrativeDynamics.FitnessAttachment.expectation_smul \
+            --require NarrativeDynamics.FitnessAttachment.expectation_indicator \
+            --require NarrativeDynamics.FitnessAttachment.traceProbability_scale \
+            --require NarrativeDynamics.FitnessAttachment.traceFinal_scale \
+            --require NarrativeDynamics.FitnessAttachment.eventProbability_scale
+
+      - name: Fitness distribution network-event tests
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.elan/bin:$PATH"
+          log="$(mktemp)"
+          trap 'rm -f "$log"' EXIT
+          lake env lean NarrativeDynamics/Tests/FitnessDistributionNetwork.lean 2>&1 | tee "$log"
+          python3 tools/audit_fitness_trust.py log "$log" \
+            --require NarrativeDynamics.FitnessAttachment.DistributionNetworkFixtures.executableDiameterAtMostTwo_iff_meshDiameter_le_two
+
+      - name: Fitness distribution trust audit
+        run: |
+          python3 tools/audit_fitness_trust.py source \
+            NarrativeDynamics/Core/Fitness*.lean \
+            NarrativeDynamics/Tests/Fitness*.lean
 
       - name: Lean theorem tests
         run: |
@@ -134,15 +300,27 @@ jobs:
           lake env lean NarrativeDynamics/Tests/Testimony.lean
 
   python-tests:
+    # BB branches exclude peripheral discovery (Blender, providers and Studio).
+    # These jobs remain enabled on other branches; skipped does not mean tested.
+    if: ${{ !startsWith(github.head_ref, 'feature/fitness-') && !startsWith(github.ref, 'refs/heads/feature/fitness-') }}
     name: Python tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Record checked revision
         run: |
           printf 'event=%s ref=%s requested_sha=%s run=%s attempt=%s\n' \
             "$GITHUB_EVENT_NAME" "$GITHUB_REF" "$GITHUB_SHA" \
             "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
           git rev-parse HEAD
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-world-studio.txt
+      - name: Install locked Python test dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements-world-studio.txt
       - name: Python numerical tests
-        run: python3 -m unittest discover -s tests -v
+        run: python -m unittest discover -s tests -v

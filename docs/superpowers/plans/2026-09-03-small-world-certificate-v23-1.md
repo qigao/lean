@@ -14,7 +14,7 @@
 
 - Stay on `feature/mesh-feasibility-v23`; do not create another branch or worktree.
 - Reuse the V23.0 directed `MeshGraph`, exact `MeshWalk`, and inclusive `ReachWithin` semantics.
-- Keep all results conditional; do not claim empirical six degrees, WS expectations, or BA power laws.
+- Keep all results conditional; do not claim empirical six degrees, WS expectations, or alternate attachment-model power laws.
 - Do not add Python, NetworkX, stochastic, transport, or distributed-runtime dependencies.
 - Add no `sorry`, `admit`, axiom, or unsafe declaration.
 
@@ -363,7 +363,7 @@ lake env lean NarrativeDynamics/Tests/SmallWorld.lean
 Add a `Lean deterministic small-world certificate V23.1` README section explaining
 the gateway lifting theorem, the conditional `1 + 4 + 1 = 6` result, perfect local
 clustering, shortcut reachability monotonicity, and the exclusion of stochastic
-WS/BA claims.
+WS or alternate attachment-model claims.
 
 - [ ] **Step 4: Run fresh verification**
 
