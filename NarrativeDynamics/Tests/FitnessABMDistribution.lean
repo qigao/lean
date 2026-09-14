@@ -138,9 +138,6 @@ private def firstRound (weighted : Bool) (i : Fin 2) : JointState 3 where
     · intro j
       fin_cases i <;> fin_cases j <;> norm_num [AgentState.Valid]
 
-private theorem top2_adj (i j : Fin 2) :
-    (⊤ : SimpleGraph (Fin 2)).Adj i j ↔ i ≠ j := Iff.rfl
-
 private theorem first_incoming (weighted : Bool) (i : Fin 2) :
     let s := grow (seedFor weighted) (target i) (by decide) birthOne
     letI := s.network.snapshot.adjDec
@@ -156,7 +153,7 @@ private theorem first_incoming (weighted : Bool) (i : Fin 2) :
   cases weighted <;> fin_cases i <;> fin_cases a <;> fin_cases b <;>
     (simp only [seedFor, seedWeighted, seed2, grow, applyBirth, birthSnapshot,
        birthGraph, birthAdj, lastCases_eq_if, extendPopulation,
-       birthOne, target_selected, broadcasting, top2_adj]
+       birthOne, target_selected, broadcasting]
      simp only [h0, h1, h2, dif_pos, dif_neg (show ¬ False from fun h => h)]
      norm_num [Fin.ext_iff])
 
@@ -251,7 +248,7 @@ private theorem idle_incoming (i : Fin 2) :
   fin_cases i <;> fin_cases a <;> fin_cases b <;>
     (simp only [firstRound, seedFor, seed2, grow, applyBirth, birthSnapshot,
        birthGraph, birthAdj, lastCases_eq_if, birthOne,
-       target_selected, broadcasting, top2_adj]
+       target_selected, broadcasting]
      simp only [h0, h1, h2, dif_pos, dif_neg (show ¬ False from fun h => h)]
      norm_num [Fin.ext_iff])
 
@@ -354,14 +351,15 @@ private theorem one_diameter (i : Fin 2) :
     meshDiameter_minimal _ _ (by simpa using state_bounded s)
   have noEdge : ¬ s.snapshot.graph.Adj
       (if i = 0 then (1 : Fin 3) else 0) 2 := by
-    have h0 : (0 : Nat) < 2 := by decide
-    have h1 : (1 : Nat) < 2 := by decide
-    have h2 : ¬ (2 : Nat) < 2 := by decide
-    fin_cases i <;>
-      (simp only [s, firstRound, seedFor, seed2, grow, applyBirth, birthSnapshot,
-         birthGraph, birthAdj, lastCases_eq_if, target_selected, top2_adj]
-       simp only [h0, h1, h2, dif_pos, dif_neg (show ¬ False from fun h => h)]
-       norm_num [Fin.ext_iff])
+    fin_cases i
+    · change ¬ (applyBirth seed2.network (target 0) (by decide) birthOne.fitness).snapshot.graph.Adj
+        (oldId 2 (1 : Fin 2)) (newId 2)
+      rw [birth_new_adj_iff, target_selected]
+      decide
+    · change ¬ (applyBirth seed2.network (target 1) (by decide) birthOne.fitness).snapshot.graph.Adj
+        (oldId 2 (0 : Fin 2)) (newId 2)
+      rw [birth_new_adj_iff, target_selected]
+      decide
   have different : (if i = 0 then (1 : Fin 3) else 0) ≠ 2 := by
     fin_cases i <;> decide
   have noOne : ¬ ReachWithin s.snapshot.graph.Adj 1
