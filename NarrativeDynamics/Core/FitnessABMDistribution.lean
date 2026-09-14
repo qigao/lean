@@ -74,9 +74,11 @@ private theorem probability_bridge {n : Nat} (s : JointState n) (m : Nat)
               (runTyped (advance (grow s T hm data)) hm
                 (Nat.le_trans hb (Nat.le_succ n))
                 (scheduleOfTrace rest tail) (roundIndex + 1)).probability
-          rw [ih (s := advance (grow s T hm data))
+          have h := ih (s := advance (grow s T hm data))
             (hb := Nat.le_trans hb (Nat.le_succ n)) (trace := tail)
-            (roundIndex := roundIndex + 1)]
+            (roundIndex := roundIndex + 1)
+          simpa only [advance_projection, grow_projection] using
+            congrArg (fun mass => orderedMass s.network T * mass) h
 
 /-- The trace law agrees with the mass returned by the actual composed run. -/
 theorem jointProbability_eq_runTyped {n : Nat} (s : JointState n) (m : Nat)
