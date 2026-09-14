@@ -7,7 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from .kth_extract import _spec_from_protocol, kth_extractor_code_hash
-from .kth_source import _ACTIONS, _MISSING_VIDEO_KEY
+from .kth_source import (
+    _ACTIONS, _MISSING_VIDEO_KEY, development_subsequences, expected_source_exclusions,
+)
 from .ntu_io import _canonical_json, _hash_json
 from .pose_bundle import _bundle_state, _digest, _frame, _json, _row
 from .pose_extract import _schema
@@ -27,6 +29,7 @@ def verify_kth_source(source: dict[str, Any]) -> dict[str, Any]:
     videos = source.get("videos")
     missing_videos = source.get("missing_videos")
     subsequences = source.get("subsequences")
+    source_exclusions = source.get("source_exclusions")
     expected_missing = [{
         "video_key": _MISSING_VIDEO_KEY,
         "filename": _MISSING_VIDEO_KEY + "_uncomp.avi",
@@ -36,8 +39,20 @@ def verify_kth_source(source: dict[str, Any]) -> dict[str, Any]:
             or missing_videos != expected_missing
             or type(subsequences) is not list or len(subsequences) != 2391):
         raise ValueError("KTH source manifest present/missing/subsequence cardinality invalid")
+    expected_exclusions = expected_source_exclusions()
+    if _canonical_json(source_exclusions) != _canonical_json(expected_exclusions):
+        raise ValueError("KTH source exclusion identity changed")
     if _MISSING_VIDEO_KEY in {row.get("video_key") for row in videos}:
         raise ValueError("KTH missing parent video cannot appear in present byte roster")
+    exclusion = expected_exclusions[0]
+    archives = source.get("archives")
+    if type(archives) is not list:
+        raise ValueError("KTH source archive evidence malformed")
+    boxing = next((row for row in archives if row.get("action") == "boxing"), None)
+    parent = next((row for row in videos if row.get("video_key") == exclusion["video_key"]), None)
+    if (type(boxing) is not dict or boxing.get("sha256") != exclusion["archive_sha256"]
+            or type(parent) is not dict or parent.get("sha256") != exclusion["member_sha256"]):
+        raise ValueError("KTH source exclusion is not bound to exact official archive/member bytes")
     dataset_hash = _hash_json({
         "sequence_file_sha256": source.get("sequence_file_sha256"),
         "videos": [{key: row[key] for key in ("video_key", "size_bytes", "sha256")} for row in videos],
@@ -48,6 +63,7 @@ def verify_kth_source(source: dict[str, Any]) -> dict[str, Any]:
         "dataset_content_hash": dataset_hash, "classes": list(_ACTIONS),
         "policy": source.get("split_policy"),
         "assignments": [{"sample_id": row["sample_id"], "split": row["split"]} for row in subsequences],
+        "source_exclusions": source_exclusions,
     })
     _same(source.get("split_hash"), split_hash, "split_hash")
     base = {key: value for key, value in source.items()
@@ -56,6 +72,7 @@ def verify_kth_source(source: dict[str, Any]) -> dict[str, Any]:
     inventory_hash = _hash_json({
         "sequence_file_sha256": source.get("sequence_file_sha256"),
         "videos": videos, "missing_videos": missing_videos, "subsequences": subsequences,
+        "source_exclusions": source_exclusions,
     })
     _same(source.get("input_inventory_hash"), inventory_hash, "input_inventory_hash")
     return source
@@ -88,6 +105,7 @@ def _validate_manifest(report: dict[str, Any], source: dict[str, Any], protocol:
         "dataset_content_hash": source["dataset_content_hash"],
         "split_hash": source["split_hash"], "input_inventory_hash": source["input_inventory_hash"],
         "source_manifest_hash": source["source_manifest_hash"],
+        "source_exclusions": source["source_exclusions"],
         "sequence_file_sha256": source["sequence_file_sha256"],
         "archive_sha256": protocol["archive_sha256"],
         "versions": spec.expected_versions(), "extractor_code_hash": kth_extractor_code_hash(),
@@ -104,7 +122,7 @@ def _validate_manifest(report: dict[str, Any], source: dict[str, Any], protocol:
         raise ValueError("KTH manifest output hashes malformed")
     for value in outputs.values():
         _digest(value, "KTH pose output SHA-256")
-    expected_samples = [row for row in source["subsequences"] if row["split"] != "final_test"]
+    expected_samples = development_subsequences(source["subsequences"], source["source_exclusions"])
     samples = report.get("samples")
     if type(samples) is not list or len(samples) != len(expected_samples):
         raise ValueError("KTH manifest sample roster incomplete")
