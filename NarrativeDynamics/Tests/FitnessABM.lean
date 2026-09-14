@@ -37,7 +37,8 @@ def newbornZero : NewAgent :=
     beliefValid := by norm_num }
 def birthOne : BirthData := ⟨⟨1, by norm_num⟩, newbornZero⟩
 def target1 : Targets 2 1 := ⟨![1], by decide⟩
-def joined := grow seed2 target1 (by decide) birthOne
+private theorem one_pos : 0 < (1 : Nat) := by decide
+def joined := grow seed2 target1 one_pos birthOne
 
 -- Equality of data fields transports the already checked validity proofs.
 private theorem joint_eq {n : Nat} (s t : JointState n)
@@ -93,7 +94,10 @@ private theorem round1_incoming :
   funext i
   ext j
   simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
-  fin_cases i <;> fin_cases j <;> decide_cbv
+  fin_cases i <;> fin_cases j <;>
+    norm_num [joined, grow, applyBirth, birthSnapshot, birthGraph, birthAdj,
+      Fin.lastCases, seed2, extendPopulation, birthOne, newbornZero,
+      target1, Targets.selected, broadcasting]
 
 private theorem round1_step : advance (joined) = round1 := by
   apply joint_eq
@@ -104,10 +108,13 @@ private theorem round1_step : advance (joined) = round1 := by
     funext i
     fin_cases i <;> decide_cbv
 
+private theorem round1_birth_step :
+    advance (grow seed2 target1 one_pos birthOne) = round1 := round1_step
+
 private def target2 : Targets 3 1 := ⟨![2], by decide⟩
 
 private def round2 : JointState 4 where
-  network := (grow round1 target2 (by decide) birthOne).network
+  network := (grow round1 target2 one_pos birthOne).network
   population := ⟨fun _ => ⟨1, 1/2⟩, ![⟨1,1⟩, ⟨1,2⟩, ⟨1,1⟩, ⟨0,0⟩]⟩
   populationValid := by
     constructor
@@ -117,21 +124,24 @@ private def round2 : JointState 4 where
       fin_cases i <;> norm_num [AgentState.Valid]
 
 private theorem round2_incoming :
-    letI := (grow round1 target2 (by decide) birthOne).network.snapshot.adjDec
-    incoming (grow round1 target2 (by decide) birthOne).network.snapshot.graph.Adj (grow round1 target2 (by decide) birthOne).population =
+    letI := (grow round1 target2 one_pos birthOne).network.snapshot.adjDec
+    incoming (grow round1 target2 one_pos birthOne).network.snapshot.graph.Adj (grow round1 target2 one_pos birthOne).population =
       (![{1}, {0}, {1}, ∅] : Fin 4 → Finset (Fin 4)) := by
-  letI := (grow round1 target2 (by decide) birthOne).network.snapshot.adjDec
+  letI := (grow round1 target2 one_pos birthOne).network.snapshot.adjDec
   funext i
   ext j
   simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
-  fin_cases i <;> fin_cases j <;> decide_cbv
+  fin_cases i <;> fin_cases j <;>
+    norm_num [round1, joined, grow, applyBirth, birthSnapshot, birthGraph, birthAdj,
+      Fin.lastCases, seed2, extendPopulation, birthOne, newbornZero,
+      target1, target2, Targets.selected, broadcasting]
 
-private theorem round2_step : advance (grow round1 target2 (by decide) birthOne) = round2 := by
+private theorem round2_step : advance (grow round1 target2 one_pos birthOne) = round2 := by
   apply joint_eq
   · rfl
   · funext i
     fin_cases i <;> decide_cbv
-  · rw [advance_agents (grow round1 target2 (by decide) birthOne) _ round2_incoming]
+  · rw [advance_agents (grow round1 target2 one_pos birthOne) _ round2_incoming]
     funext i
     fin_cases i <;> decide_cbv
 
@@ -153,7 +163,10 @@ private theorem round3_incoming :
   funext i
   ext j
   simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
-  fin_cases i <;> fin_cases j <;> decide_cbv
+  fin_cases i <;> fin_cases j <;>
+    norm_num [round2, round1, joined, grow, applyBirth, birthSnapshot, birthGraph,
+      birthAdj, Fin.lastCases, seed2, extendPopulation, birthOne, newbornZero,
+      target1, target2, Targets.selected, broadcasting]
 
 private theorem round3_step : advance (round2) = round3 := by
   apply joint_eq
@@ -186,9 +199,10 @@ private theorem seed_mass : orderedMass seed2.network target1 = 1/2 := by decide
 private theorem round1_mass : orderedMass round1.network target2 = 1/4 := by decide_cbv
 
 private theorem twoBirths_result : twoBirths = ⟨⟨4, 2, round2⟩, 1/8⟩ := by
-  unfold twoBirths successiveBirths
+  change runTyped seed2 one_pos (by decide)
+    (.birth target1 birthOne (.birth target2 birthOne .nil)) 0 = _
   simp only [runTyped]
-  rw [round1_step, round2_step, seed_mass, round1_mass]
+  rw [round1_birth_step, round2_step, seed_mass, round1_mass]
   norm_num
 
 -- Catches stale attachment weights, omitted rounds, and asynchronous forwarding.
@@ -217,9 +231,10 @@ def birthThenIdle : Schedule 2 1 :=
 def thirdRound := runTyped seed2 (by decide) (by decide) birthThenIdle
 
 private theorem thirdRound_result : thirdRound = ⟨⟨4, 3, round3⟩, 1/8⟩ := by
-  unfold thirdRound birthThenIdle
+  change runTyped seed2 one_pos (by decide)
+    (.birth target1 birthOne (.birth target2 birthOne (.idle .nil))) 0 = _
   simp only [runTyped]
-  rw [round1_step, round2_step, round3_step, seed_mass, round1_mass]
+  rw [round1_birth_step, round2_step, round3_step, seed_mass, round1_mass]
   norm_num
 
 -- The last newborn receives on the following round; idle adds no probability.
@@ -243,7 +258,7 @@ def immediate := tick seed2 (by decide) (by decide)
   (.birth target1 broadcastingBirth)
 
 private def immediateState : JointState 3 where
-  network := (grow seed2 target1 (by decide) broadcastingBirth).network
+  network := (grow seed2 target1 one_pos broadcastingBirth).network
   population := ⟨fun _ => ⟨1, 1/2⟩, ![⟨1,0⟩, ⟨1,2⟩, ⟨1,0⟩]⟩
   populationValid := by
     constructor
@@ -253,21 +268,24 @@ private def immediateState : JointState 3 where
       fin_cases i <;> norm_num [AgentState.Valid]
 
 private theorem immediateState_incoming :
-    letI := (grow seed2 target1 (by decide) broadcastingBirth).network.snapshot.adjDec
-    incoming (grow seed2 target1 (by decide) broadcastingBirth).network.snapshot.graph.Adj (grow seed2 target1 (by decide) broadcastingBirth).population =
+    letI := (grow seed2 target1 one_pos broadcastingBirth).network.snapshot.adjDec
+    incoming (grow seed2 target1 one_pos broadcastingBirth).network.snapshot.graph.Adj (grow seed2 target1 one_pos broadcastingBirth).population =
       (![∅, {0,2}, ∅] : Fin 3 → Finset (Fin 3)) := by
-  letI := (grow seed2 target1 (by decide) broadcastingBirth).network.snapshot.adjDec
+  letI := (grow seed2 target1 one_pos broadcastingBirth).network.snapshot.adjDec
   funext i
   ext j
   simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
-  fin_cases i <;> fin_cases j <;> decide_cbv
+  fin_cases i <;> fin_cases j <;>
+    norm_num [grow, applyBirth, birthSnapshot, birthGraph, birthAdj, Fin.lastCases,
+      seed2, extendPopulation, broadcastingBirth, newbornOne, newbornZero,
+      target1, Targets.selected, broadcasting]
 
-private theorem immediateState_step : advance (grow seed2 target1 (by decide) broadcastingBirth) = immediateState := by
+private theorem immediateState_step : advance (grow seed2 target1 one_pos broadcastingBirth) = immediateState := by
   apply joint_eq
   · rfl
   · funext i
     fin_cases i <;> decide_cbv
-  · rw [advance_agents (grow seed2 target1 (by decide) broadcastingBirth) _ immediateState_incoming]
+  · rw [advance_agents (grow seed2 target1 one_pos broadcastingBirth) _ immediateState_incoming]
     funext i
     fin_cases i <;> decide_cbv
 
