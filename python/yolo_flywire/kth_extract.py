@@ -14,11 +14,20 @@ import re
 import shutil
 import stat
 from typing import Any, Callable
-from zipfile import BadZipFile, ZipFile
+from zipfile import ZipFile
 
 import numpy as np
 
-from .kth_source import _ACTIONS, _ARCHIVE_URLS, _MEMBER, parse_sequence_file
+from .kth_source import (
+    _ACTIONS,
+    _ARCHIVE_URLS,
+    _CORRUPT_BOXING_ARCHIVE_SHA256,
+    _CORRUPT_BOXING_MEMBER_SHA256,
+    _CORRUPT_BOXING_VIDEO_KEY,
+    _MEMBER,
+    _partition_source_corrupt_rows,
+    parse_sequence_file,
+)
 from .ntu_io import _canonical_json, _hash_file, _hash_json, _publish_exclusive
 from .pose_backend import decode_video, prediction_options, runtime_versions
 from .pose_extract import _schema, _write_row
@@ -72,6 +81,7 @@ class KthExtractionSpec:
             "sampling": "official-kth-list-order-identity; frame-membership-routing; overlaps-share-one-prediction",
             "partitions": ["train", "validation"],
             "person_policy": "zero-mask-or-single-or-unique-largest-detector-bbox-else-error",
+            "source_exclusion_policy": "exact-official-byte-bound-corrupt-interval-only",
         }
 
 
@@ -128,7 +138,7 @@ def _spec_from_protocol(protocol: dict[str, Any]) -> KthExtractionSpec:
         spec = KthExtractionSpec(**identity)
     except (KeyError, TypeError) as exc:
         raise ValueError("KTH frozen protocol missing extraction spec") from exc
-    if descriptor.get("model") != _MODEL or _hash_json(spec.descriptor()) != protocol.get("extraction_spec_hash"):
+    if descriptor != spec.descriptor() or _hash_json(spec.descriptor()) != protocol.get("extraction_spec_hash"):
         raise ValueError("KTH extraction descriptor/hash mismatch")
     return spec
 
@@ -402,6 +412,7 @@ def extract_action_shard(action: str, archive: str | Path, *, sequence_file: str
             subsequences_by_video.setdefault(row["video_key"], []).append(row)
     video_records: list[dict[str, Any]] = []
     sample_records: list[dict[str, Any]] = []
+    source_exclusions: list[dict[str, Any]] = []
     predictor = None
     try:
         with ZipFile(archive_path, "r") as zipped:
@@ -431,6 +442,17 @@ def extract_action_shard(action: str, archive: str | Path, *, sequence_file: str
                     rows = subsequences_by_video.get(video["video_key"], [])
                     if not rows:
                         raise ValueError("present KTH development parent lacks official subsequences")
+                    if video["video_key"] == _CORRUPT_BOXING_VIDEO_KEY and (
+                        archive_sha == _CORRUPT_BOXING_ARCHIVE_SHA256
+                        or source_sha == _CORRUPT_BOXING_MEMBER_SHA256
+                    ):
+                        rows, exclusions = _partition_source_corrupt_rows(
+                            video["video_key"], archive_sha256=archive_sha,
+                            member_sha256=source_sha, sample_rows=rows,
+                        )
+                        if source_exclusions:
+                            raise ValueError("duplicate KTH corrupt-source exclusion")
+                        source_exclusions.extend(exclusions)
                     if predictor is None:
                         predictor = _load_predictor(checkpoint, spec)
                     samples_root.mkdir(exist_ok=True)
@@ -458,7 +480,8 @@ def extract_action_shard(action: str, archive: str | Path, *, sequence_file: str
             "platform": platform.platform(), "extractor_code_hash": kth_extractor_code_hash(),
             "extraction_spec": descriptor, "extraction_spec_hash": _hash_json(descriptor),
             "observation_schema": _schema(), "observation_schema_hash": _hash_json(_schema()),
-            "videos": video_records, "missing_videos": missing_videos, "samples": sample_records,
+            "videos": video_records, "missing_videos": missing_videos,
+            "source_exclusions": source_exclusions, "samples": sample_records,
         }
         _publish_exclusive(destination / "shard-report.json", report)
         return json.loads(_canonical_json(report))
@@ -512,6 +535,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(_canonical_json({"action": result["action"], "videos": len(result["videos"]),
                                    "missing_videos": len(result["missing_videos"]),
+                                   "source_exclusions": len(result["source_exclusions"]),
                                    "samples": len(result["samples"]), "final_test_decoded": False}))
         return 0
     except (OSError, ValueError, TypeError, ImportError, RuntimeError, UnicodeError) as exc:
