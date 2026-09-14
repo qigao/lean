@@ -9,9 +9,6 @@ open NarrativeDynamics.FitnessABM
 open NarrativeDynamics.Conformance.BBRuntime
 open scoped BigOperators
 
--- Temporary diagnostic channel; removed with the traversal checkpoints.
-set_option stderrAsMessages false
-
 def summary (input : RuntimeCaseInput) :
     Except JointError (Nat × Nat × Nat × List Rat × List Nat × Rat) :=
   (FitnessABM.replay input.seed input.m input.agents input.ticks).map fun out =>
@@ -20,12 +17,6 @@ def summary (input : RuntimeCaseInput) :
       List.ofFn (fun i => (out.final.state.population.agents i).belief),
       List.ofFn (fun i => (out.final.state.population.agents i).exposures),
       out.probability)
-
--- Temporary diagnostic, removed after locating the interrupted reduction.
-run_cmd do
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: fixture started"
-  out.flush
 
 private theorem summary_result_ok (out : Result) (nodes rounds edges : Nat)
     (beliefs : List Rat) (exposures : List Nat) (mass : Rat) :
@@ -472,12 +463,6 @@ private theorem default_growth_agents (eta : PosFitness) (target : Fin 2) :
   funext i
   fin_cases target <;> fin_cases i <;> decide_cbv
 
-run_cmd do
-  let _ ← Lean.collectAxioms ``default_growth_agents
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed default_growth_agents"
-  out.flush
-
 private theorem relay_idle_incoming (eta : PosFitness) :
     let s := advance (grow (initial eta agentsRaw rfl empty_agents_valid)
       (singletonTarget (1 : Fin 2)) positiveM (newbornData 0 (by norm_num)))
@@ -508,12 +493,6 @@ private theorem relay_idle_agents (eta : PosFitness) :
     default_profiles]
   funext i
   fin_cases i <;> decide_cbv
-
-run_cmd do
-  let _ ← Lean.collectAxioms ``relay_idle_agents
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed relay_idle_agents"
-  out.flush
 
 private theorem successive_incoming :
     let s := grow (advance (grow (initial one agentsRaw rfl empty_agents_valid)
@@ -552,12 +531,6 @@ private theorem successive_agents :
   funext i
   fin_cases i <;> decide_cbv
 
-run_cmd do
-  let _ ← Lean.collectAxioms ``successive_agents
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed successive_agents"
-  out.flush
-
 private theorem successive_idle_incoming :
     let s := advance (grow (advance (grow (initial one agentsRaw rfl empty_agents_valid)
       (singletonTarget (1 : Fin 2)) positiveM (newbornData 0 (by norm_num))))
@@ -594,12 +567,6 @@ private theorem successive_idle_agents :
     default_profiles]
   funext i
   fin_cases i <;> decide_cbv
-run_cmd do
-  let _ ← Lean.collectAxioms ``successive_idle_agents
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed successive_idle_agents"
-  out.flush
-
 
 private theorem zeroReceptive_initial_profiles :
     (initial one #[⟨1, 1/2, 1, 0⟩, ⟨0, 1/2, 0, 0⟩] rfl zeroReceptive_agents_valid).population.profiles = ![⟨1, 1/2⟩, ⟨0, 1/2⟩] := by
@@ -640,12 +607,6 @@ private theorem zeroReceptive_step_agents :
   funext i
   fin_cases i <;> decide_cbv
 
-run_cmd do
-  let _ ← Lean.collectAxioms ``zeroReceptive_step_agents
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed zeroReceptive_step_agents"
-  out.flush
-
 private theorem silent_initial_profiles :
     (initial one #[⟨1, 1/2, 0, 0⟩, ⟨1, 1/2, 0, 0⟩] rfl silent_agents_valid).population.profiles = ![⟨1, 1/2⟩, ⟨1, 1/2⟩] := by
   funext i
@@ -684,12 +645,6 @@ private theorem silent_step_agents :
   simp only [grow_agents, grow_profiles, silent_initial_profiles, silent_initial_agents]
   funext i
   fin_cases i <;> decide_cbv
-
-run_cmd do
-  let _ ← Lean.collectAxioms ``silent_step_agents
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed silent_step_agents"
-  out.flush
 
 private theorem zeroThreshold_initial_profiles :
     (initial one #[⟨1, 0, 0, 0⟩, ⟨1, 1/2, 0, 0⟩] rfl zeroThreshold_agents_valid).population.profiles = ![⟨1, 0⟩, ⟨1, 1/2⟩] := by
@@ -730,12 +685,6 @@ private theorem zeroThreshold_step_agents :
   funext i
   fin_cases i <;> decide_cbv
 
-run_cmd do
-  let _ ← Lean.collectAxioms ``zeroThreshold_step_agents
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed zeroThreshold_step_agents"
-  out.flush
-
 private theorem broadcastNewborn_incoming :
     let s := grow (initial one agentsRaw rfl empty_agents_valid)
       (singletonTarget (1 : Fin 2)) positiveM (newbornData 1 (by norm_num))
@@ -764,12 +713,6 @@ private theorem broadcastNewborn_step_agents :
   simp only [grow_agents, grow_profiles, default_profiles, default_agents]
   funext i
   fin_cases i <;> decide_cbv
-
-run_cmd do
-  let _ ← Lean.collectAxioms ``broadcastNewborn_step_agents
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed broadcastNewborn_step_agents"
-  out.flush
 
 private theorem retainedExposures_initial_profiles :
     (initial one #[⟨1, 1/2, 1, 7⟩, ⟨1, 1/2, 0, 3⟩] rfl retainedExposures_agents_valid).population.profiles = ![⟨1, 1/2⟩, ⟨1, 1/2⟩] := by
@@ -810,12 +753,6 @@ private theorem retainedExposures_step_agents :
   funext i
   fin_cases i <;> decide_cbv
 
-run_cmd do
-  let _ ← Lean.collectAxioms ``retainedExposures_step_agents
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed retainedExposures_step_agents"
-  out.flush
-
 private theorem halfReceptive_initial_profiles :
     (initial one #[⟨1, 1/2, 1, 0⟩, ⟨1/2, 1/2, 0, 0⟩] rfl halfReceptive_agents_valid).population.profiles = ![⟨1, 1/2⟩, ⟨1/2, 1/2⟩] := by
   funext i
@@ -855,12 +792,6 @@ private theorem halfReceptive_step_agents :
   funext i
   fin_cases i <;> decide_cbv
 
-run_cmd do
-  let _ ← Lean.collectAxioms ``halfReceptive_step_agents
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed halfReceptive_step_agents"
-  out.flush
-
 private theorem targets01_selected : targets01.selected = {0, 1} := by decide_cbv
 private theorem targets10_selected : targets10.selected = {0, 1} := by decide_cbv
 
@@ -895,25 +826,12 @@ private theorem both_growth_agents (eta : PosFitness) (targets : Targets 2 2)
   funext i
   fin_cases i <;> decide_cbv
 
-run_cmd do
-  let _ ← Lean.collectAxioms ``both_growth_agents
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed both_growth_agents"
-  out.flush
-
 private theorem empty_literal : summary empty =
     .ok (2, 0, 1, [1, 0], [0, 0], 1) := by
   unfold summary
   rw [replay_input empty one rfl rfl empty_agents_valid (by decide)]
   dsimp only [empty]
   decide_cbv
-
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``empty_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed empty_literal"
-  out.flush
 
 private theorem idleTwo_literal : summary idleTwo =
     .ok (2, 2, 1, [1, 1], [1, 2], 1) := by
@@ -922,13 +840,6 @@ private theorem idleTwo_literal : summary idleTwo =
   dsimp only [idleTwo, empty]
   simp only [runInputs]
   decide_cbv
-
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``idleTwo_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed idleTwo_literal"
-  out.flush
 
 private theorem attachSource_literal : summary attachSource =
     .ok (3, 1, 2, [1, 1, 1], [0, 1, 1], 1/2) := by
@@ -947,13 +858,6 @@ private theorem attachSource_literal : summary attachSource =
     decide_cbv
   · decide_cbv
 
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``attachSource_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed attachSource_literal"
-  out.flush
-
 private theorem attachRelay_literal : summary attachRelay =
     .ok (3, 1, 2, [1, 1, 0], [0, 1, 0], 1/2) := by
   unfold summary
@@ -970,13 +874,6 @@ private theorem attachRelay_literal : summary attachRelay =
   · rw [default_growth_agents]
     decide_cbv
   · decide_cbv
-
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``attachRelay_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed attachRelay_literal"
-  out.flush
 
 private theorem relayIdle_literal : summary relayIdle =
     .ok (3, 2, 2, [1, 1, 1], [1, 2, 1], 1/2) := by
@@ -995,13 +892,6 @@ private theorem relayIdle_literal : summary relayIdle =
     decide_cbv
   · decide_cbv
 
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``relayIdle_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed relayIdle_literal"
-  out.flush
-
 private theorem successiveBirths_literal : summary successiveBirths =
     .ok (4, 2, 3, [1, 1, 1, 0], [1, 2, 1, 0], 1/8) := by
   unfold summary
@@ -1018,13 +908,6 @@ private theorem successiveBirths_literal : summary successiveBirths =
     decide_cbv
   · decide_cbv
 
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``successiveBirths_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed successiveBirths_literal"
-  out.flush
-
 private theorem successiveIdle_literal : summary successiveIdle =
     .ok (4, 3, 3, [1, 1, 1, 1], [2, 4, 2, 1], 1/8) := by
   unfold summary
@@ -1040,13 +923,6 @@ private theorem successiveIdle_literal : summary successiveIdle =
   · rw [successive_idle_agents]
     decide_cbv
   · decide_cbv
-
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``successiveIdle_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed successiveIdle_literal"
-  out.flush
 
 private theorem weightedSource_literal : summary weightedSource =
     .ok (3, 1, 2, [1, 1, 1], [0, 1, 1], 1/4) := by
@@ -1065,13 +941,6 @@ private theorem weightedSource_literal : summary weightedSource =
     decide_cbv
   · decide_cbv
 
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``weightedSource_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed weightedSource_literal"
-  out.flush
-
 private theorem ordered01_literal : summary ordered01 =
     .ok (3, 1, 3, [1, 1, 1], [0, 1, 1], 1/4) := by
   unfold summary
@@ -1088,13 +957,6 @@ private theorem ordered01_literal : summary ordered01 =
   · rw [both_growth_agents three targets01 targets01_selected]
     decide_cbv
   · decide_cbv
-
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``ordered01_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed ordered01_literal"
-  out.flush
 
 private theorem ordered10_literal : summary ordered10 =
     .ok (3, 1, 3, [1, 1, 1], [0, 1, 1], 3/4) := by
@@ -1113,13 +975,6 @@ private theorem ordered10_literal : summary ordered10 =
     decide_cbv
   · decide_cbv
 
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``ordered10_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed ordered10_literal"
-  out.flush
-
 private theorem zeroReceptive_literal : summary zeroReceptive =
     .ok (3, 1, 2, [1, 0, 1], [0, 1, 1], 1/2) := by
   unfold summary
@@ -1136,13 +991,6 @@ private theorem zeroReceptive_literal : summary zeroReceptive =
   · rw [zeroReceptive_step_agents]
     decide_cbv
   · decide_cbv
-
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``zeroReceptive_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed zeroReceptive_literal"
-  out.flush
 
 private theorem silent_literal : summary silent =
     .ok (3, 1, 2, [0, 0, 0], [0, 0, 0], 1/2) := by
@@ -1161,13 +1009,6 @@ private theorem silent_literal : summary silent =
     decide_cbv
   · decide_cbv
 
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``silent_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed silent_literal"
-  out.flush
-
 private theorem zeroThreshold_literal : summary zeroThreshold =
     .ok (3, 1, 2, [0, 0, 0], [0, 1, 1], 1/2) := by
   unfold summary
@@ -1184,13 +1025,6 @@ private theorem zeroThreshold_literal : summary zeroThreshold =
   · rw [zeroThreshold_step_agents]
     decide_cbv
   · decide_cbv
-
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``zeroThreshold_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed zeroThreshold_literal"
-  out.flush
 
 private theorem broadcastNewborn_literal : summary broadcastNewborn =
     .ok (3, 1, 2, [1, 1, 1], [0, 2, 0], 1/2) := by
@@ -1209,13 +1043,6 @@ private theorem broadcastNewborn_literal : summary broadcastNewborn =
     decide_cbv
   · decide_cbv
 
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``broadcastNewborn_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed broadcastNewborn_literal"
-  out.flush
-
 private theorem retainedExposures_literal : summary retainedExposures =
     .ok (3, 1, 2, [1, 1, 0], [7, 4, 0], 1/2) := by
   unfold summary
@@ -1232,13 +1059,6 @@ private theorem retainedExposures_literal : summary retainedExposures =
   · rw [retainedExposures_step_agents]
     decide_cbv
   · decide_cbv
-
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``retainedExposures_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed retainedExposures_literal"
-  out.flush
 
 private theorem halfReceptive_literal : summary halfReceptive =
     .ok (3, 1, 2, [1, 1/2, 1], [0, 1, 1], 1/2) := by
@@ -1257,67 +1077,25 @@ private theorem halfReceptive_literal : summary halfReceptive =
     decide_cbv
   · decide_cbv
 
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``halfReceptive_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed halfReceptive_literal"
-  out.flush
-
 private theorem seedNodes_literal : summary seedNodes =
     .error (.seedNetwork .invalidNodeCount) := by
   decide_cbv
-
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``seedNodes_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed seedNodes_literal"
-  out.flush
 
 private theorem seedSize_literal : summary seedSize =
     .error (.seedNetwork .fitnessSizeMismatch) := by
   decide_cbv
 
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``seedSize_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed seedSize_literal"
-  out.flush
-
 private theorem seedFitness_literal : summary seedFitness =
     .error (.seedNetwork .nonpositiveFitness) := by
   decide_cbv
-
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``seedFitness_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed seedFitness_literal"
-  out.flush
 
 private theorem seedEdge_literal : summary seedEdge =
     .error (.seedNetwork .invalidEdge) := by
   decide_cbv
 
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``seedEdge_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed seedEdge_literal"
-  out.flush
-
 private theorem seedDuplicate_literal : summary seedDuplicate =
     .error (.seedNetwork .duplicateEdge) := by
   decide_cbv
-
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``seedDuplicate_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed seedDuplicate_literal"
-  out.flush
 
 private theorem seedDisconnected_literal : summary seedDisconnected =
     .error (.seedNetwork .disconnectedSeed) := by
@@ -1339,13 +1117,6 @@ private theorem seedDisconnected_literal : summary seedDisconnected =
   rw [parsed]
   rfl
 
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``seedDisconnected_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed seedDisconnected_literal"
-  out.flush
-
 private theorem initialMZero_literal : summary initialMZero =
     .error (.initialM) := by
   unfold summary
@@ -1353,13 +1124,6 @@ private theorem initialMZero_literal : summary initialMZero =
   unfold FitnessABM.replay
   rw [parsed_unit]
   decide_cbv
-
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``initialMZero_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed initialMZero_literal"
-  out.flush
 
 private theorem initialMTooLarge_literal : summary initialMTooLarge =
     .error (.initialM) := by
@@ -1369,13 +1133,6 @@ private theorem initialMTooLarge_literal : summary initialMTooLarge =
   rw [parsed_unit]
   decide_cbv
 
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``initialMTooLarge_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed initialMTooLarge_literal"
-  out.flush
-
 private theorem seedAgentCount_literal : summary seedAgentCount =
     .error (.seedAgentCount 2 1) := by
   unfold summary
@@ -1383,13 +1140,6 @@ private theorem seedAgentCount_literal : summary seedAgentCount =
   unfold FitnessABM.replay
   rw [parsed_unit]
   decide_cbv
-
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``seedAgentCount_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed seedAgentCount_literal"
-  out.flush
 
 private theorem seedAgentR_literal : summary seedAgentR =
     .error (.seedAgent 0 .receptivity) := by
@@ -1399,13 +1149,6 @@ private theorem seedAgentR_literal : summary seedAgentR =
   rw [parsed_unit]
   decide_cbv
 
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``seedAgentR_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed seedAgentR_literal"
-  out.flush
-
 private theorem seedAgentThreshold_literal : summary seedAgentThreshold =
     .error (.seedAgent 0 .threshold) := by
   unfold summary
@@ -1413,13 +1156,6 @@ private theorem seedAgentThreshold_literal : summary seedAgentThreshold =
   unfold FitnessABM.replay
   rw [parsed_unit]
   decide_cbv
-
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``seedAgentThreshold_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed seedAgentThreshold_literal"
-  out.flush
 
 private theorem seedAgentBelief_literal : summary seedAgentBelief =
     .error (.seedAgent 1 .belief) := by
@@ -1429,26 +1165,12 @@ private theorem seedAgentBelief_literal : summary seedAgentBelief =
   rw [parsed_unit]
   decide_cbv
 
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``seedAgentBelief_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed seedAgentBelief_literal"
-  out.flush
-
 private theorem birthFitness_literal : summary birthFitness =
     .error (.tickNetwork 0 0 .nonpositiveFitness) := by
   unfold summary
   rw [replay_input birthFitness one rfl rfl empty_agents_valid (by decide)]
   dsimp only [birthFitness, empty]
   decide_cbv
-
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``birthFitness_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed birthFitness_literal"
-  out.flush
 
 private theorem birthTargetCount_literal : summary birthTargetCount =
     .error (.tickNetwork 0 0 .targetCountMismatch) := by
@@ -1457,26 +1179,12 @@ private theorem birthTargetCount_literal : summary birthTargetCount =
   dsimp only [birthTargetCount, empty]
   decide_cbv
 
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``birthTargetCount_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed birthTargetCount_literal"
-  out.flush
-
 private theorem birthTargetRange_literal : summary birthTargetRange =
     .error (.tickNetwork 0 0 .targetOutOfRange) := by
   unfold summary
   rw [replay_input birthTargetRange one rfl rfl empty_agents_valid (by decide)]
   dsimp only [birthTargetRange, empty]
   decide_cbv
-
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``birthTargetRange_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed birthTargetRange_literal"
-  out.flush
 
 private theorem birthTargetDuplicate_literal : summary birthTargetDuplicate =
     .error (.tickNetwork 0 0 .duplicateTarget) := by
@@ -1485,26 +1193,12 @@ private theorem birthTargetDuplicate_literal : summary birthTargetDuplicate =
   dsimp only [birthTargetDuplicate, birthTargetCount, empty]
   decide_cbv
 
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``birthTargetDuplicate_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed birthTargetDuplicate_literal"
-  out.flush
-
 private theorem birthAgentThreshold_literal : summary birthAgentThreshold =
     .error (.tickAgent 0 0 .threshold) := by
   unfold summary
   rw [replay_input birthAgentThreshold one rfl rfl empty_agents_valid (by decide)]
   dsimp only [birthAgentThreshold, empty]
   decide_cbv
-
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``birthAgentThreshold_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed birthAgentThreshold_literal"
-  out.flush
 
 private theorem lateBirth_literal : summary lateBirth =
     .error (.tickNetwork 3 1 .targetOutOfRange) := by
@@ -1513,13 +1207,6 @@ private theorem lateBirth_literal : summary lateBirth =
   dsimp only [lateBirth, empty]
   decide_cbv
 
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``lateBirth_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed lateBirth_literal"
-  out.flush
-
 private theorem firstFailure_literal : summary firstFailure =
     .error (.tickAgent 0 0 .threshold) := by
   unfold summary
@@ -1527,26 +1214,12 @@ private theorem firstFailure_literal : summary firstFailure =
   dsimp only [firstFailure, empty]
   decide_cbv
 
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``firstFailure_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed firstFailure_literal"
-  out.flush
-
 private theorem lateFirstBirth_literal : summary lateFirstBirth =
     .error (.tickNetwork 2 0 .targetOutOfRange) := by
   unfold summary
   rw [replay_input lateFirstBirth one rfl rfl empty_agents_valid (by decide)]
   dsimp only [lateFirstBirth, empty]
   decide_cbv
-
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``lateFirstBirth_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed lateFirstBirth_literal"
-  out.flush
 
 private theorem successive_growth_literal :
     (observeTransition successiveBirths ⟨1, by decide⟩).map
@@ -1557,16 +1230,8 @@ private theorem successive_growth_literal :
   dsimp only [successiveBirths, empty, List.take]
   rw [runInputs, checked1]
   simp only [runInputs]
-  dsimp only
   rw [checked2]
   decide_cbv
-
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``successive_growth_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed successive_growth_literal"
-  out.flush
 
 private theorem retained_growth_literal :
     (observeTransition retainedExposures ⟨0, by decide⟩).map
@@ -1575,16 +1240,8 @@ private theorem retained_growth_literal :
   rw [prefix_start retainedExposures one rfl rfl retainedExposures_agents_valid (by decide)]
   dsimp only [retainedExposures, attachRelay, empty, List.take]
   simp only [runInputs]
-  dsimp only
   rw [checked1]
   decide_cbv
-
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``retained_growth_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed retained_growth_literal"
-  out.flush
 
 private theorem newborn_transmissions_literal :
     (observeTransition broadcastNewborn ⟨0, by decide⟩).map
@@ -1593,16 +1250,8 @@ private theorem newborn_transmissions_literal :
   rw [prefix_start broadcastNewborn one rfl rfl empty_agents_valid (by decide)]
   dsimp only [broadcastNewborn, attachRelay, empty, List.take]
   simp only [runInputs]
-  dsimp only
   rw [checked_broadcast]
   decide_cbv
-
--- Temporary diagnostic: traverse this proof before flushing a location marker.
-run_cmd do
-  let _ ← Lean.collectAxioms ``newborn_transmissions_literal
-  let out ← IO.getStderr
-  out.putStrLn "BB runtime diagnostic: traversed newborn_transmissions_literal"
-  out.flush
 
 theorem success_literals :
   summary empty = .ok (2, 0, 1, [1, 0], [0, 0], 1) ∧
