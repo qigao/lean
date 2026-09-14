@@ -22,6 +22,10 @@ _SPLITS = {**{value: "train" for value in _TRAIN},
            **{value: "validation" for value in _VALIDATION},
            **{value: "final_test" for value in _FINAL_TEST}}
 _MISSING_VIDEO_KEY = "person13_handclapping_d3"
+_CORRUPT_BOXING_VIDEO_KEY = "person01_boxing_d4"
+_CORRUPT_BOXING_SAMPLE_ID = "person01_boxing_d4#04"
+_CORRUPT_BOXING_ARCHIVE_SHA256 = "09437744bd760b3ba628d0315d12e2b6a7f86f5fbd41a316583bb4e3d5f09f20"
+_CORRUPT_BOXING_MEMBER_SHA256 = "9c6a972f1268aab20ee3aca6609c5686d6170a92b03a362deaa6b5c7920689d1"
 _LINE = re.compile(
     r"^(person(?P<subject>[0-9]{2})_(?P<action>boxing|handclapping|handwaving|jogging|running|walking)_d(?P<scenario>[1-4]))"
     r"\s+frames\s+(?P<ranges>.+?)\s*$"
@@ -43,6 +47,82 @@ class KthSequencePlan:
     videos: tuple[dict[str, Any], ...]
     subsequences: tuple[dict[str, Any], ...]
     split_policy: dict[str, Any]
+
+
+def expected_source_exclusions() -> list[dict[str, Any]]:
+    """Return the one source-level exclusion proven against the pinned official boxing bytes."""
+    return [{
+        "kind": "kth_source_corrupt_subsequence_exclusion",
+        "sample_id": _CORRUPT_BOXING_SAMPLE_ID,
+        "video_key": _CORRUPT_BOXING_VIDEO_KEY,
+        "member_filename": _CORRUPT_BOXING_VIDEO_KEY + "_uncomp.avi",
+        "action": "boxing",
+        "subject": 1,
+        "scenario": 4,
+        "split": "validation",
+        "range_index": 4,
+        "official_range": [246, 370],
+        "archive_sha256": _CORRUPT_BOXING_ARCHIVE_SHA256,
+        "member_sha256": _CORRUPT_BOXING_MEMBER_SHA256,
+        "declared_frames": 370,
+        "strict_decodable_frames": 304,
+        "nonstrict_decodable_frames": 305,
+        "reason": "official KTH AVI is truncated inside the fourth listed subsequence; no tested decoder recovers frames 306-370",
+    }]
+
+
+def _validate_source_exclusions(exclusions: Any) -> list[dict[str, Any]]:
+    if type(exclusions) is not list:
+        raise ValueError("KTH source exclusions must be a JSON array")
+    if _canonical_json(exclusions) != _canonical_json(expected_source_exclusions()):
+        raise ValueError("KTH source exclusion identity changed")
+    return exclusions
+
+
+def _partition_source_corrupt_rows(
+    video_key: str, *, archive_sha256: str, member_sha256: str,
+    sample_rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Exclude only the unrecoverable official fourth boxing interval, bound to exact source bytes."""
+    if video_key != _CORRUPT_BOXING_VIDEO_KEY:
+        return list(sample_rows), []
+    if archive_sha256 != _CORRUPT_BOXING_ARCHIVE_SHA256:
+        raise ValueError("KTH corrupt-source exclusion archive SHA changed")
+    if member_sha256 != _CORRUPT_BOXING_MEMBER_SHA256:
+        raise ValueError("KTH corrupt-source exclusion member SHA changed")
+    expected = [
+        ("person01_boxing_d4#01", 1, 1, 106),
+        ("person01_boxing_d4#02", 2, 107, 170),
+        ("person01_boxing_d4#03", 3, 171, 245),
+        ("person01_boxing_d4#04", 4, 246, 370),
+    ]
+    actual = [
+        (row.get("sample_id"), row.get("range_index"), row.get("start_frame"), row.get("end_frame"))
+        for row in sample_rows
+    ]
+    if actual != expected:
+        raise ValueError("KTH corrupt-source exclusion official ranges changed")
+    kept = [row for row in sample_rows if row["sample_id"] != _CORRUPT_BOXING_SAMPLE_ID]
+    if len(kept) != 3:
+        raise ValueError("KTH corrupt-source exclusion did not remove exactly one subsequence")
+    return kept, expected_source_exclusions()
+
+
+def development_subsequences(
+    subsequences: Any, source_exclusions: Any,
+) -> list[dict[str, Any]]:
+    """Return the exact usable development roster after source exclusions; final test stays sealed."""
+    if not isinstance(subsequences, (list, tuple)):
+        raise ValueError("KTH subsequences must be an ordered sequence")
+    exclusions = _validate_source_exclusions(source_exclusions)
+    excluded = {row["sample_id"] for row in exclusions}
+    rows = [dict(row) for row in subsequences
+            if row.get("split") != "final_test" and row.get("sample_id") not in excluded]
+    if excluded != {_CORRUPT_BOXING_SAMPLE_ID}:
+        raise ValueError("KTH source exclusion sample set changed")
+    if _CORRUPT_BOXING_SAMPLE_ID in {row.get("sample_id") for row in rows}:
+        raise ValueError("KTH corrupt subsequence remained in development roster")
+    return rows
 
 
 def _split_policy() -> dict[str, Any]:
@@ -249,6 +329,11 @@ def build_kth_source(archives: dict[str, str | Path], sequence_file: str | Path)
     }]:
         raise ValueError("KTH present/missing parent-video roster changed")
     subsequences = [dict(row) for row in plan.subsequences]
+    boxing_archive = next(row for row in archive_records if row["action"] == "boxing")
+    corrupt_parent = next(row for row in videos if row["video_key"] == _CORRUPT_BOXING_VIDEO_KEY)
+    source_exclusions = (expected_source_exclusions()
+                         if boxing_archive["sha256"] == _CORRUPT_BOXING_ARCHIVE_SHA256
+                         and corrupt_parent["sha256"] == _CORRUPT_BOXING_MEMBER_SHA256 else [])
     dataset_content_hash = _hash_json({
         "sequence_file_sha256": sequence_sha256,
         "videos": [{key: row[key] for key in ("video_key", "size_bytes", "sha256")} for row in videos],
@@ -258,6 +343,7 @@ def build_kth_source(archives: dict[str, str | Path], sequence_file: str | Path)
         "dataset_content_hash": dataset_content_hash,
         "classes": list(_ACTIONS), "policy": plan.split_policy,
         "assignments": [{"sample_id": row["sample_id"], "split": row["split"]} for row in subsequences],
+        "source_exclusions": source_exclusions,
     })
     inventory = {
         "format_version": 1, "kind": "kth_rgb_source_manifest",
@@ -267,7 +353,7 @@ def build_kth_source(archives: dict[str, str | Path], sequence_file: str | Path)
         "sequence_url": _SEQUENCE_URL, "classes": list(_ACTIONS),
         "split_policy": plan.split_policy, "sequence_file_sha256": sequence_sha256,
         "archives": archive_records, "videos": videos, "missing_videos": missing_records,
-        "subsequences": subsequences,
+        "subsequences": subsequences, "source_exclusions": source_exclusions,
         "dataset_content_hash": dataset_content_hash, "split_hash": split_hash,
     }
     source_payload = {key: value for key, value in inventory.items() if key != "source_manifest_hash"}
@@ -275,6 +361,7 @@ def build_kth_source(archives: dict[str, str | Path], sequence_file: str | Path)
     inventory["input_inventory_hash"] = _hash_json({
         "sequence_file_sha256": sequence_sha256, "videos": videos,
         "missing_videos": missing_records, "subsequences": subsequences,
+        "source_exclusions": source_exclusions,
     })
     return json.loads(_canonical_json(inventory))
 
