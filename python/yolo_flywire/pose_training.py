@@ -15,12 +15,14 @@ import torch
 from torch.nn import functional as F
 
 from .eval import MetricBundle
-from .models import GRUClassifier, GraphRecurrentClassifier
+from .models import GRUClassifier, GraphDiagnosticClassifier, GraphRecurrentClassifier
 from .models._padded import validate_pose_batch
 from .pose_batches import PoseBatch
 from .train import TrainConfig, _reset_parameters, _state_hash
 
-PaddedModel = GRUClassifier | GraphRecurrentClassifier
+PaddedModel = GRUClassifier | GraphRecurrentClassifier | GraphDiagnosticClassifier
+_GRAPH_MODELS = (GraphRecurrentClassifier, GraphDiagnosticClassifier)
+_SUPPORTED_MODELS = (GRUClassifier, *_GRAPH_MODELS)
 
 
 @dataclass(frozen=True)
@@ -62,14 +64,13 @@ def _strings(values: tuple[str, ...], name: str) -> None:
 
 
 def _validate_partition(model: PaddedModel, part: PosePartition, role: str) -> None:
-    if type(model) not in (GRUClassifier, GraphRecurrentClassifier):
+    if type(model) not in _SUPPORTED_MODELS:
         raise ValueError("expected an explicit supported padded model")
     if type(part) is not PosePartition or type(part.split) is not str or part.split != role:
         raise ValueError(f"expected a {role} PosePartition; no final-test access")
     input_dim = (model.gru.input_size if type(model) is GRUClassifier
                  else model.input_projection.in_features)
     validate_pose_batch(part.observations, input_dim=input_dim, model=model)
-    # Finite logits alone are insufficient: sigmoid/tanh can hide infinite state.
     for value in (*model.parameters(), *model.buffers()):
         if value.layout != torch.strided or not torch.isfinite(value).all().item():
             raise ValueError("model parameters and buffers must be dense and finite")
@@ -242,7 +243,7 @@ def train_padded_model(
             if score > best_score:
                 best_score, best_epoch = score, epoch
                 best_state = deepcopy(model.state_dict())
-        assert best_state is not None  # A positive epoch budget produces a finite score.
+        assert best_state is not None
         model.load_state_dict(best_state)
         model.zero_grad(set_to_none=True)
         model.eval()
