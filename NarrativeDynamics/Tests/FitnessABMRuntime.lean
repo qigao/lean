@@ -178,8 +178,8 @@ private theorem checked_single {n : Nat} (s : JointState n) (j : Fin n)
         · norm_num [AgentProfile.Valid]
         · exact hb⟩ := by
     simp only [parseAgent,
-      dif_pos (show (0 : Rat) ≤ 1 ∧ 1 ≤ 1 from by norm_num),
-      dif_pos (show (0 : Rat) ≤ 1/2 ∧ 1/2 ≤ 1 from by norm_num), dif_pos hb]
+      dif_pos (show (0 : Rat) ≤ 1 ∧ (1 : Rat) ≤ 1 from by norm_num),
+      dif_pos (show (0 : Rat) ≤ 1/2 ∧ (1/2 : Rat) ≤ 1 from by norm_num), dif_pos hb]
   refine ⟨⟨singletonTarget j, one, positiveM⟩, _, ?_, hp, rfl⟩
   simp only [validateBirth, dif_pos hm, dif_pos (show (0 : Rat) < 1 from by norm_num),
     dif_pos (show (#[j.val] : Array Nat).size = 1 from rfl),
