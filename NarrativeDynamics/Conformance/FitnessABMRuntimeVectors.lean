@@ -228,10 +228,10 @@ private def stateJson (state : StateObservation) : Lean.Json :=
     ("exposures", listJson natJson state.exposures),
     ("broadcasting", listJson Lean.Json.bool state.broadcasting)]
 
-private def prefixJson (prefix : PrefixObservation) : Lean.Json :=
+private def prefixJson (observation : PrefixObservation) : Lean.Json :=
   Lean.Json.mkObj [
-    ("state", stateJson prefix.state), ("tick_count", natJson prefix.tickCount),
-    ("birth_count", natJson prefix.birthCount), ("trace_mass", ratJson prefix.traceMass)]
+    ("state", stateJson observation.state), ("tick_count", natJson observation.tickCount),
+    ("birth_count", natJson observation.birthCount), ("trace_mass", ratJson observation.traceMass)]
 
 private def transitionJson (transition : TransitionObservation) : Lean.Json :=
   Lean.Json.mkObj [
