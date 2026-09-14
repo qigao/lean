@@ -1,6 +1,6 @@
 # BB-driven ABM Evolution V1 Design
 
-Status: proposed design for written review. Implementation and the implementation plan have not started.
+Status: approved for implementation planning by the user's subsequent `go`. The implementation plan is `docs/superpowers/plans/2026-09-14-bb-abm-evolution-v1.md`; implementation has not started.
 
 Base: `proof/narrative-dynamics-v0` at `0a41462a37064a2a3ded3676ebdfb24b9243fc8c`.
 
