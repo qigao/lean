@@ -44,14 +44,6 @@ def runBirths (m index : Nat) (s : RunState) (births : List RawBirth) :
       | .ok result => .ok ⟨result.final, next.2 * result.probability⟩
 termination_by structural births
 
-/-- A stable-ID fitness list is extended by precisely the supplied new value. -/
-private theorem birth_fitness_list {n m : Nat} (s : State n) (T : Targets n m)
-    (hm : 0 < m) (eta : PosFitness) :
-    List.ofFn (applyBirth s T hm eta).snapshot.fitness =
-      List.ofFn s.snapshot.fitness ++ [eta.val] := by
-  rw [List.ofFn_succ']
-  simp [applyBirth, birthSnapshot, List.concat_eq_append]
-
 /-- Counts, stored values and mass follow from each actual checked step. -/
 theorem runBirths_properties (m index : Nat) (s : RunState) (bs : List RawBirth)
     (out : ReplayResult) (h : runBirths m index s bs = .ok out) :
@@ -381,7 +373,7 @@ theorem replay_scale_probability (seed : RawSeed) (m : Nat) (bs : List RawBirth)
       next.probability = out.probability :=
   ⟨scaleResult out c, replay_scale seed m bs out c h, rfl⟩
 
-/-- Constant positive fitness is the scaled unit-fitness BA specialization of the same replay. -/
+/-- Constant positive fitness is the scaled unit-fitness normalization of the same BB replay. -/
 private theorem replay_constant (seed : RawSeed) (m : Nat) (bs : List RawBirth)
     (out : ReplayResult) (c : PosFitness)
     (h : replay (unitSeed seed) m (bs.map unitBirth) = .ok out) :
@@ -394,14 +386,14 @@ private theorem replay_constant (seed : RawSeed) (m : Nat) (bs : List RawBirth)
   simpa only [hs, List.map_map, Function.comp_def, hb] using
     replay_scale (unitSeed seed) m (bs.map unitBirth) out c h
 
-theorem replay_ba_topology (seed : RawSeed) (m : Nat) (bs : List RawBirth)
+theorem replay_constant_fitness_topology (seed : RawSeed) (m : Nat) (bs : List RawBirth)
     (out : ReplayResult) (c : PosFitness)
     (h : replay (unitSeed seed) m (bs.map unitBirth) = .ok out) :
     ∃ next, replay (constantSeed seed c) m (bs.map (fun raw => constantBirth raw c)) = .ok next ∧
       next.final = scaleRunState out.final c :=
   ⟨scaleResult out c, replay_constant seed m bs out c h, rfl⟩
 
-theorem replay_ba_probability (seed : RawSeed) (m : Nat) (bs : List RawBirth)
+theorem replay_constant_fitness_probability (seed : RawSeed) (m : Nat) (bs : List RawBirth)
     (out : ReplayResult) (c : PosFitness)
     (h : replay (unitSeed seed) m (bs.map unitBirth) = .ok out) :
     ∃ next, replay (constantSeed seed c) m (bs.map (fun raw => constantBirth raw c)) = .ok next ∧

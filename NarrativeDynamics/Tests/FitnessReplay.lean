@@ -803,15 +803,17 @@ example (seed : RawSeed) (m : Nat) (bs : List RawBirth) (out : ReplayResult)
 example (seed : RawSeed) (m : Nat) (bs : List RawBirth) (out : ReplayResult)
     (c : PosFitness) (h : replay (unitSeed seed) m (bs.map unitBirth) = .ok out) :
     ∃ next, replay (constantSeed seed c) m (bs.map (fun raw => constantBirth raw c)) = .ok next ∧
-      next.final = scaleRunState out.final c := replay_ba_topology seed m bs out c h
+      next.final = scaleRunState out.final c :=
+  replay_constant_fitness_topology seed m bs out c h
 
 example (seed : RawSeed) (m : Nat) (bs : List RawBirth) (out : ReplayResult)
     (c : PosFitness) (h : replay (unitSeed seed) m (bs.map unitBirth) = .ok out) :
     ∃ next, replay (constantSeed seed c) m (bs.map (fun raw => constantBirth raw c)) = .ok next ∧
-      next.probability = out.probability := replay_ba_probability seed m bs out c h
+      next.probability = out.probability :=
+  replay_constant_fitness_probability seed m bs out c h
 
 #print axioms replay_scale
 #print axioms replay_scale_topology
 #print axioms replay_scale_probability
-#print axioms replay_ba_topology
-#print axioms replay_ba_probability
+#print axioms replay_constant_fitness_topology
+#print axioms replay_constant_fitness_probability

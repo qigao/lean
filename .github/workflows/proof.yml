@@ -27,7 +27,9 @@ jobs:
               return true;
             }
             const branch = context.ref.slice('refs/heads/'.length);
-            // A PR must actually have a proof run; an open PR alone is not coverage.
+            // A PR run only covers this SHA after GitHub has instantiated a real
+            // non-skipped Lean proof job. A startup_failure with zero jobs must
+            // leave the push proof enabled as the exact-head fallback.
             for (let attempt = 0; attempt < 3; attempt++) {
               try {
                 const {data} = await github.rest.actions.listWorkflowRuns({
@@ -41,17 +43,33 @@ jobs:
                   ['queued', 'in_progress', 'completed'].includes(run.status) &&
                   !['cancelled', 'skipped'].includes(run.conclusion));
                 if (prRun) {
-                  core.info(`PR proof run ${prRun.id} covers ${context.sha}; skipping duplicate push proof.`);
-                  return false;
+                  const {data: jobData} = await github.rest.actions.listJobsForWorkflowRun({
+                    ...context.repo, run_id: prRun.id, filter: 'latest', per_page: 100
+                  });
+                  const proofJob = jobData.jobs.find(job =>
+                    job.name === 'Lean proof' &&
+                    !['cancelled', 'skipped'].includes(job.conclusion));
+                  if (proofJob) {
+                    core.info(
+                      `PR proof run ${prRun.id} has Lean proof job ${proofJob.id} ` +
+                      `(${proofJob.status}/${proofJob.conclusion ?? 'pending'}); ` +
+                      `skipping duplicate push proof for ${context.sha}.`
+                    );
+                    return false;
+                  }
+                  core.info(
+                    `PR proof run ${prRun.id} has no non-skipped Lean proof job yet; ` +
+                    `push proof remains eligible for ${context.sha}.`
+                  );
                 }
               } catch (error) {
                 core.warning(`Could not check PR coverage; keeping push proof: ${error.message}`);
                 return true;
               }
-              // Push and PR events can register a few seconds apart.
+              // Push and PR events can register and instantiate jobs a few seconds apart.
               if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 5000));
             }
-            core.info('No matching PR proof run; keeping push proof.');
+            core.info('No matching PR Lean proof job; keeping push proof.');
             return true;
 
   lean-proof:
@@ -126,6 +144,33 @@ jobs:
           export PATH="$HOME/.elan/bin:$PATH"
           lake build
 
+      - name: BB-only naming audit
+        run: |
+          set -euo pipefail
+          short="$(printf '%s%s' B A)"
+          lower="$(printf '%s%s' b a)"
+          full_ascii="$(printf '%s%s' 'Barabasi-' 'Albert')"
+          full_ascii_double="$(printf '%s%s' 'Barabasi--' 'Albert')"
+          full_accent_ascii="$(printf '%s%s' 'Barabási-' 'Albert')"
+          full_unicode="$(printf '%s%s' 'Barabási–' 'Albert')"
+          found=0
+          if git grep -n -E "(^|[^[:alnum:]_])${short}([^[:alnum:]_]|$)" -- .; then
+            found=1
+          fi
+          for term in \
+            "$full_ascii" "$full_ascii_double" "$full_accent_ascii" "$full_unicode" \
+            "as${short}" "${lower}Row" \
+            "attachment_${lower}" "orderedMass_${lower}" \
+            "replay_${lower}_"; do
+            if git grep -n -F "$term" -- .; then
+              found=1
+            fi
+          done
+          if [ "$found" -ne 0 ]; then
+            echo 'legacy attachment-model surface remains'
+            exit 1
+          fi
+
       - name: Fitness attachment contract tests
         timeout-minutes: 5
         run: |
@@ -152,6 +197,50 @@ jobs:
             timeout --kill-after=10s 240s \
               lake env lean -DmaxErrors=8 \
               NarrativeDynamics/Tests/FitnessScope.lean
+
+      - name: Fitness distribution contract tests
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.elan/bin:$PATH"
+          log="$(mktemp)"
+          trap 'rm -f "$log"' EXIT
+          lake env lean NarrativeDynamics/Tests/FitnessDistribution.lean 2>&1 | tee "$log"
+          if grep -q 'sorryAx' "$log"; then
+            echo 'FitnessDistribution theorem output depends on sorryAx'
+            exit 1
+          fi
+
+      - name: Fitness distribution network-event tests
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.elan/bin:$PATH"
+          log="$(mktemp)"
+          trap 'rm -f "$log"' EXIT
+          lake env lean NarrativeDynamics/Tests/FitnessDistributionNetwork.lean 2>&1 | tee "$log"
+          if grep -q 'sorryAx' "$log"; then
+            echo 'FitnessDistributionNetwork theorem output depends on sorryAx'
+            exit 1
+          fi
+
+      - name: Fitness distribution trust audit
+        run: |
+          set -euo pipefail
+          files=(
+            NarrativeDynamics/Core/FitnessDistribution.lean
+            NarrativeDynamics/Core/FitnessDistributionInvariance.lean
+            NarrativeDynamics/Tests/FitnessDistribution.lean
+            NarrativeDynamics/Tests/FitnessDistributionNetwork.lean
+          )
+          if git grep -n -E '(^|[^[:alnum:]_])(sorry|admit|native_decide)([^[:alnum:]_]|$)' -- "${files[@]}"; then
+            echo 'forbidden proof escape found in finite BB distribution surface'
+            exit 1
+          fi
+          if git grep -n -E '^[[:space:]]*(axiom|unsafe)[[:space:]]' -- "${files[@]}"; then
+            echo 'new axiom or unsafe declaration found in finite BB distribution surface'
+            exit 1
+          fi
 
       - name: Lean theorem tests
         run: |

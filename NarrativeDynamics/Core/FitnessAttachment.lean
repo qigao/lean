@@ -259,8 +259,8 @@ theorem attachment_support {n : Nat} (s : State n) (S : Finset (Fin n))
   · simp [remaining, hi]
   · simp [remaining, hi, weight_pos s i]
 
-/-- BA is the same model with unit fitness, retaining the very same graph. -/
-def asBA {n : Nat} (s : State n) : State n where
+/-- Unit fitness is a normalization of the same BB state. -/
+def unitFitnessState {n : Nat} (s : State n) : State n where
   snapshot := { s.snapshot with fitness := fun _ => 1 }
   valid := ⟨s.valid.1, s.valid.2.1, fun _ => by norm_num⟩
 
@@ -269,9 +269,9 @@ def scaleFitness {n : Nat} (s : State n) (c : PosFitness) : State n where
   snapshot := { s.snapshot with fitness := fun i => c.val * s.snapshot.fitness i }
   valid := ⟨s.valid.1, s.valid.2.1, fun i => mul_pos c.property (s.valid.2.2 i)⟩
 
-/-- Degree-only BA uses the BB constructor, not a second normalization algorithm. -/
-def baRow {n : Nat} (s : State n) (S : Finset (Fin n)) (hS : S.card < n) : Row n :=
-  attachmentRow (asBA s) S hS
+/-- The unit-fitness row is the same BB kernel with normalized fitness values. -/
+def unitFitnessRow {n : Nat} (s : State n) (S : Finset (Fin n)) (hS : S.card < n) : Row n :=
+  attachmentRow (unitFitnessState s) S hS
 
 private theorem attachment_proportional {n : Nat} (s t : State n)
     (S : Finset (Fin n)) (hS : S.card < n) (c : PosFitness)
@@ -291,12 +291,12 @@ private theorem attachment_proportional {n : Nat} (s t : State n)
   rw [attachment_mass, attachment_mass, hw i, ht]
   exact mul_div_mul_left _ _ (ne_of_gt c.property)
 
-/-- Every constant positive fitness profile reduces to BA on the same candidates. -/
-theorem attachment_ba {n : Nat} (s : State n) (S : Finset (Fin n))
+/-- A common constant fitness value cancels from one BB attachment row. -/
+theorem attachment_constant_fitness {n : Nat} (s : State n) (S : Finset (Fin n))
     (hS : S.card < n) (c : PosFitness)
     (constant : ∀ j, s.snapshot.fitness j = c.val) (i : Fin n) :
-    (attachmentRow s S hS).mass i = (baRow s S hS).mass i := by
-  apply attachment_proportional (asBA s) s S hS c
+    (attachmentRow s S hS).mass i = (unitFitnessRow s S hS).mass i := by
+  apply attachment_proportional (unitFitnessState s) s S hS c
   intro j
   change s.snapshot.fitness j * (degree s.snapshot j : Rat) =
     c.val * (1 * (degree s.snapshot j : Rat))
@@ -678,11 +678,11 @@ theorem setMass_sum_one {n m : Nat} (s : State n) (hm : m ≤ n) :
         exact False.elim (hnot hmem)
     _ = 1 := orderedMass_sum_one s hm
 
-/-- BA reduction holds for complete conditional products with constant fitness. -/
-theorem orderedMass_ba {n m : Nat} (s : State n) (T : Targets n m)
+/-- Constant positive fitness is only a normalization property of the BB target law. -/
+theorem orderedMass_constant_fitness {n m : Nat} (s : State n) (T : Targets n m)
     (c : PosFitness) (constant : ∀ i, s.snapshot.fitness i = c.val) :
-    orderedMass s T = orderedMass (asBA s) T := by
-  have hw : weights s.snapshot = fun i => c.val * weights (asBA s).snapshot i := by
+    orderedMass s T = orderedMass (unitFitnessState s) T := by
+  have hw : weights s.snapshot = fun i => c.val * weights (unitFitnessState s).snapshot i := by
     funext i
     change s.snapshot.fitness i * (degree s.snapshot i : Rat) =
       c.val * (1 * (degree s.snapshot i : Rat))
