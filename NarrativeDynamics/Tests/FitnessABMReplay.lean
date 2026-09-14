@@ -69,21 +69,25 @@ private theorem network_eq {n : Nat} (s t : FitnessAttachment.State n)
 private theorem raw_graph (eta : PosFitness) :
     seedGraph ⟨2, #[1, eta.val], #[(0, 1)]⟩ = (⊤ : SimpleGraph (Fin 2)) := by
   ext i j
-  fin_cases i <;> fin_cases j <;> decide_cbv
+  fin_cases i <;> fin_cases j <;> norm_num [seedGraph, canonicalEdge, Fin.ext_iff]
 
 private theorem parsed_seed (eta : PosFitness) :
     parseSeed ⟨2, #[1, eta.val], #[(0, 1)]⟩ = .ok (seedNetwork eta) := by
   let raw : RawSeed := ⟨2, #[1, eta.val], #[(0, 1)]⟩
   have valid : raw.Valid :=
-    { nodes := by decide
+    { nodes := by change 2 ≤ (2 : Nat); decide
       size := rfl
       fitness := by
         intro i
         fin_cases i
         · norm_num [raw]
         · exact eta.property
-      edges := by decide_cbv
-      distinct := by decide_cbv
+      edges := by
+        dsimp only [validSeedEdges, raw]
+        decide_cbv
+      distinct := by
+        dsimp only [raw]
+        decide_cbv
       connected := by change (seedGraph _).Connected; rw [raw_graph]; exact top2_connected }
   obtain ⟨s, hs⟩ := parseSeed_complete raw valid
   have he : s = seedNetwork eta := by
@@ -124,9 +128,9 @@ private theorem parsed_agents :
 
 private theorem replay_start (eta : PosFitness) (m : Nat) (hm : 0 < m ∧ m ≤ 2)
     (ticks : List RawTick) :
-    replay ⟨2, #[1, eta.val], #[(0, 1)]⟩ m agentsRaw ticks =
+    FitnessABM.replay ⟨2, #[1, eta.val], #[(0, 1)]⟩ m agentsRaw ticks =
       runInputs m 0 0 ⟨2, 0, initial eta⟩ ticks := by
-  simp only [replay, parsed_seed, if_pos hm, parsed_agents]
+  simp only [FitnessABM.replay, parsed_seed, if_pos hm, parsed_agents]
   rfl
 
 private def targets0 : Targets 2 1 := ⟨![0], by decide⟩
@@ -138,7 +142,7 @@ private def birthData : BirthData :=
 
 private theorem parsed_newborn : parseAgent ⟨1, 1/2, 0, 0⟩ =
     .ok ⟨(⟨1, 1/2⟩, ⟨0, 0⟩), by norm_num [AgentProfile.Valid, AgentState.Valid]⟩ := by
-  simp [parseAgent]
+  norm_num [parseAgent]
 
 private theorem checked0 (eta : PosFitness) :
     checkedBirth (initial eta) 1 attach0 = .ok
@@ -155,7 +159,8 @@ private theorem checked0 (eta : PosFitness) :
       targets0 := by
     apply Function.Embedding.ext
     intro i
-    fin_cases i <;> rfl
+    fin_cases i
+    rfl
   simp only [validateBirth, dif_pos hm, dif_pos hf, dif_pos hs,
     checkTargets, dif_pos hb, dif_pos hd]
   rw [he]
@@ -176,7 +181,8 @@ private theorem checked1 (eta : PosFitness) :
       targets1 := by
     apply Function.Embedding.ext
     intro i
-    fin_cases i <;> rfl
+    fin_cases i
+    rfl
   simp only [validateBirth, dif_pos hm, dif_pos hf, dif_pos hs,
     checkTargets, dif_pos hb, dif_pos hd]
   rw [he]
@@ -306,110 +312,110 @@ private theorem round2_step : advance round1 = round2 := by
 private theorem mass0 : orderedMass (initial one).network targets0 = 1/2 := by decide_cbv
 private theorem mass1 : orderedMass (initial one).network targets1 = 1/2 := by decide_cbv
 
-private theorem replay0 : replay seedRaw 1 agentsRaw [some attach0] =
+private theorem replay0 : FitnessABM.replay seedRaw 1 agentsRaw [some attach0] =
     .ok ⟨⟨3, 1, round0⟩, 1/2⟩ := by
   rw [show seedRaw = ⟨2, #[1, one.val], #[(0, 1)]⟩ from rfl,
     replay_start one 1 (by decide), runInputs, checked0]
   simp only [runInputs, round0_step, mass0, mul_one]
 
-private theorem replay1 : replay seedRaw 1 agentsRaw [some attach1] =
+private theorem replay1 : FitnessABM.replay seedRaw 1 agentsRaw [some attach1] =
     .ok ⟨⟨3, 1, round1⟩, 1/2⟩ := by
   rw [show seedRaw = ⟨2, #[1, one.val], #[(0, 1)]⟩ from rfl,
     replay_start one 1 (by decide), runInputs, checked1]
   simp only [runInputs, round1_step, mass1, mul_one]
 
-private theorem replay2 : replay seedRaw 1 agentsRaw [some attach1, none] =
+private theorem replay2 : FitnessABM.replay seedRaw 1 agentsRaw [some attach1, none] =
     .ok ⟨⟨3, 2, round2⟩, 1/2⟩ := by
   rw [show seedRaw = ⟨2, #[1, one.val], #[(0, 1)]⟩ from rfl,
     replay_start one 1 (by decide), runInputs, checked1]
   simp only [runInputs, round1_step, round2_step, mass1, mul_one]
 
 -- Exact original RED observations, with symbolic rounds before finite reduction.
-example : summary (replay seedRaw 1 agentsRaw [some attach0]) =
+example : summary (FitnessABM.replay seedRaw 1 agentsRaw [some attach0]) =
     .ok (3, 1, 2, [1, 1, 1], [0, 1, 1], 1/2) := by
   rw [replay0]
   decide_cbv
 
-example : summary (replay seedRaw 1 agentsRaw [some attach1]) =
+example : summary (FitnessABM.replay seedRaw 1 agentsRaw [some attach1]) =
     .ok (3, 1, 2, [1, 1, 0], [0, 1, 0], 1/2) := by
   rw [replay1]
   decide_cbv
 
-example : summary (replay seedRaw 1 agentsRaw [some attach1, none]) =
+example : summary (FitnessABM.replay seedRaw 1 agentsRaw [some attach1, none]) =
     .ok (3, 2, 2, [1, 1, 1], [1, 2, 1], 1/2) := by
   rw [replay2]
   decide_cbv
 
-example : summary (replay seedRaw 1 agentsRaw []) =
+example : summary (FitnessABM.replay seedRaw 1 agentsRaw []) =
     .ok (2, 0, 1, [1, 0], [0, 0], 1) := by
   rw [show seedRaw = ⟨2, #[1, one.val], #[(0, 1)]⟩ from rfl,
     replay_start one 1 (by decide)]
   decide_cbv
 
 -- Errors remain observable without asking for decidable equality of graph functions.
-example : summary (replay ⟨0, #[], #[]⟩ 1 #[⟨-1, 2, 2, 0⟩] []) =
+example : summary (FitnessABM.replay ⟨0, #[], #[]⟩ 1 #[⟨-1, 2, 2, 0⟩] []) =
     .error (.seedNetwork .invalidNodeCount) := by decide_cbv
 
-example : summary (replay seedRaw 0 agentsRaw []) = .error .initialM := by
-  unfold replay seedRaw
+example : summary (FitnessABM.replay seedRaw 0 agentsRaw []) = .error .initialM := by
+  unfold FitnessABM.replay seedRaw
   rw [parsed_seed one]
   decide_cbv
 
-example : summary (replay seedRaw 3 agentsRaw []) = .error .initialM := by
-  unfold replay seedRaw
+example : summary (FitnessABM.replay seedRaw 3 agentsRaw []) = .error .initialM := by
+  unfold FitnessABM.replay seedRaw
   rw [parsed_seed one]
   decide_cbv
 
-example : summary (replay seedRaw 1 #[⟨1, 1/2, 1, 0⟩] []) =
+example : summary (FitnessABM.replay seedRaw 1 #[⟨1, 1/2, 1, 0⟩] []) =
     .error (.seedAgentCount 2 1) := by
-  unfold replay seedRaw
+  unfold FitnessABM.replay seedRaw
   rw [parsed_seed one]
   decide_cbv
 
-example : summary (replay seedRaw 1 #[⟨-1, 2, 1, 0⟩, ⟨1, 1/2, 0, 0⟩] []) =
+example : summary (FitnessABM.replay seedRaw 1 #[⟨-1, 2, 1, 0⟩, ⟨1, 1/2, 0, 0⟩] []) =
     .error (.seedAgent 0 .receptivity) := by
-  unfold replay seedRaw
+  unfold FitnessABM.replay seedRaw
   rw [parsed_seed one]
   decide_cbv
 
-example : summary (replay seedRaw 1 #[⟨1, 1/2, 1, 0⟩, ⟨1, 1/2, 2, 0⟩] []) =
+example : summary (FitnessABM.replay seedRaw 1 #[⟨1, 1/2, 1, 0⟩, ⟨1, 1/2, 2, 0⟩] []) =
     .error (.seedAgent 1 .belief) := by
-  unfold replay seedRaw
+  unfold FitnessABM.replay seedRaw
   rw [parsed_seed one]
   decide_cbv
 
 private theorem start_one (m : Nat) (hm : 0 < m ∧ m ≤ 2) (ticks : List RawTick) :
-    replay seedRaw m agentsRaw ticks = runInputs m 0 0 ⟨2, 0, initial one⟩ ticks :=
+    FitnessABM.replay seedRaw m agentsRaw ticks = runInputs m 0 0 ⟨2, 0, initial one⟩ ticks :=
   replay_start one m hm ticks
 
-example : summary (replay seedRaw 1 agentsRaw [some ⟨⟨0, #[0]⟩, 1, 1/2, 2⟩]) =
+example : summary (FitnessABM.replay seedRaw 1 agentsRaw [some ⟨⟨0, #[0]⟩, 1, 1/2, 2⟩]) =
     .error (.tickNetwork 0 0 .nonpositiveFitness) := by
   rw [start_one 1 (by decide)]
   decide_cbv
 
-example : summary (replay seedRaw 1 agentsRaw [some ⟨⟨1, #[0]⟩, 1, 2, 2⟩]) =
+example : summary (FitnessABM.replay seedRaw 1 agentsRaw [some ⟨⟨1, #[0]⟩, 1, 2, 2⟩]) =
     .error (.tickAgent 0 0 .threshold) := by
   rw [start_one 1 (by decide)]
   decide_cbv
 
-example : summary (replay seedRaw 1 agentsRaw [some ⟨⟨1, #[0, 0]⟩, 1, 1/2, 0⟩]) =
+example : summary (FitnessABM.replay seedRaw 1 agentsRaw [some ⟨⟨1, #[0, 0]⟩, 1, 1/2, 0⟩]) =
     .error (.tickNetwork 0 0 .targetCountMismatch) := by
   rw [start_one 1 (by decide)]
   decide_cbv
 
-example : summary (replay seedRaw 2 agentsRaw [some ⟨⟨1, #[0, 0]⟩, 1, 1/2, 0⟩]) =
+example : summary (FitnessABM.replay seedRaw 2 agentsRaw [some ⟨⟨1, #[0, 0]⟩, 1, 1/2, 0⟩]) =
     .error (.tickNetwork 0 0 .duplicateTarget) := by
   rw [start_one 2 (by decide)]
   decide_cbv
 
-example : summary (replay seedRaw 1 agentsRaw [some ⟨⟨1, #[2]⟩, 1, 1/2, 0⟩]) =
+example : summary (FitnessABM.replay seedRaw 1 agentsRaw [some ⟨⟨1, #[2]⟩, 1, 1/2, 0⟩]) =
     .error (.tickNetwork 0 0 .targetOutOfRange) := by
   rw [start_one 1 (by decide)]
   decide_cbv
 
 private def bad : RawBirthInput := ⟨⟨1, #[3]⟩, 1, 1/2, 0⟩
 
-example : summary (replay seedRaw 1 agentsRaw [none, some attach1, none, some bad]) =
+example : summary (FitnessABM.replay seedRaw 1 agentsRaw [none, some attach1, none, some bad]) =
     .error (.tickNetwork 3 1 .targetOutOfRange) := by
   rw [start_one 1 (by decide)]
   decide_cbv
@@ -418,7 +424,7 @@ example : summary (replay seedRaw 1 agentsRaw [none, some attach1, none, some ba
 private def badAgent : RawBirthInput := ⟨⟨1, #[0]⟩, 1, 2, 0⟩
 private def badFitness : RawBirthInput := ⟨⟨0, #[0]⟩, 1, 1/2, 0⟩
 
-example : summary (replay seedRaw 1 agentsRaw [some badAgent, some badFitness]) =
+example : summary (FitnessABM.replay seedRaw 1 agentsRaw [some badAgent, some badFitness]) =
     .error (.tickAgent 0 0 .threshold) := by
   rw [start_one 1 (by decide)]
   have hp : runInputs 1 0 0 ⟨2, 0, initial one⟩ [some badAgent] =
@@ -427,13 +433,13 @@ example : summary (replay seedRaw 1 agentsRaw [some badAgent, some badFitness]) 
     runInputs_append_error 1 0 0 _ _ _ _ hp]
   rfl
 
-example : summary (replay seedRaw 1 agentsRaw [some badFitness, some badAgent]) =
+example : summary (FitnessABM.replay seedRaw 1 agentsRaw [some badFitness, some badAgent]) =
     .error (.tickNetwork 0 0 .nonpositiveFitness) := by
   rw [start_one 1 (by decide)]
   decide_cbv
 
 -- Idle-only successful replay projects to exactly the empty BB replay.
-example (out : Result) (h : replay seedRaw 1 agentsRaw [none, none] = .ok out) :
+example (out : Result) (h : FitnessABM.replay seedRaw 1 agentsRaw [none, none] = .ok out) :
     ∃ bb, FitnessAttachment.replay seedRaw 1 [] = .ok bb ∧
       bb.final = ⟨out.final.nodeCount, out.final.state.network⟩ ∧
       ∃ hn : out.final.nodeCount = bb.final.nodeCount,
@@ -444,7 +450,7 @@ example (out : Result) (h : replay seedRaw 1 agentsRaw [none, none] = .ok out) :
         out.probability = bb.probability :=
   replay_projection seedRaw 1 agentsRaw [none, none] out h
 
-example : ∃ out, replay seedRaw 1 agentsRaw [none, none] = .ok out := by
+example : ∃ out, FitnessABM.replay seedRaw 1 agentsRaw [none, none] = .ok out := by
   rw [start_one 1 (by decide)]
   exact ⟨_, rfl⟩
 
@@ -533,32 +539,32 @@ private theorem order_same : grow (initial three) targets10 two_pos birthData =
 private theorem mass01 : orderedMass (initial three).network targets01 = 1/4 := by decide_cbv
 private theorem mass10 : orderedMass (initial three).network targets10 = 3/4 := by decide_cbv
 
-private theorem replay01 : replay weightedSeed 2 agentsRaw [some attach01] =
+private theorem replay01 : FitnessABM.replay weightedSeed 2 agentsRaw [some attach01] =
     .ok ⟨⟨3, 1, roundBoth⟩, 1/4⟩ := by
   rw [show weightedSeed = ⟨2, #[1, three.val], #[(0, 1)]⟩ from rfl,
     replay_start three 2 (by decide), runInputs, checked01]
   simp only [runInputs, roundBoth_step, mass01, mul_one]
 
-private theorem replay10 : replay weightedSeed 2 agentsRaw [some attach10] =
+private theorem replay10 : FitnessABM.replay weightedSeed 2 agentsRaw [some attach10] =
     .ok ⟨⟨3, 1, roundBoth⟩, 3/4⟩ := by
   rw [show weightedSeed = ⟨2, #[1, three.val], #[(0, 1)]⟩ from rfl,
     replay_start three 2 (by decide), runInputs, checked10]
   simp only [runInputs, order_same, roundBoth_step, mass10, mul_one]
 
 -- Both original orders are replayed, with identical complete grown states.
-example : summary (replay weightedSeed 2 agentsRaw [some attach01]) =
+example : summary (FitnessABM.replay weightedSeed 2 agentsRaw [some attach01]) =
     .ok (3, 1, 3, [1, 1, 1], [0, 1, 1], 1/4) := by
   rw [replay01]
   decide_cbv
 
-example : summary (replay weightedSeed 2 agentsRaw [some attach10]) =
+example : summary (FitnessABM.replay weightedSeed 2 agentsRaw [some attach10]) =
     .ok (3, 1, 3, [1, 1, 1], [0, 1, 1], 3/4) := by
   rw [replay10]
   decide_cbv
 
 example : ∃ final,
-    replay weightedSeed 2 agentsRaw [some attach01] = .ok ⟨final, 1/4⟩ ∧
-    replay weightedSeed 2 agentsRaw [some attach10] = .ok ⟨final, 3/4⟩ :=
+    FitnessABM.replay weightedSeed 2 agentsRaw [some attach01] = .ok ⟨final, 1/4⟩ ∧
+    FitnessABM.replay weightedSeed 2 agentsRaw [some attach10] = .ok ⟨final, 3/4⟩ :=
   ⟨_, replay01, replay10⟩
 
 end FiniteReplayFixtures
