@@ -303,7 +303,9 @@ private theorem incoming0 :
       lastCases_eq_if, initial, seedNetwork, extendPopulation,
       birthData, one, targets0, Targets.selected, broadcasting, top2_adj]
      simp only [h0, h1, h2, dif_pos, dif_neg (show ¬ False from fun h => h)] <;>
-       decide_cbv)
+       first
+       | exact iff_of_false (fun h => h.1) (by decide)
+       | decide_cbv)
 
 private theorem incoming1 :
     let s := grow (initial one) targets1 positiveM birthData
