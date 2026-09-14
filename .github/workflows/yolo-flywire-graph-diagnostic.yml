@@ -87,7 +87,6 @@ jobs:
           test -f prepared/aggregate/bundle/manifest.json
           test -f prepared/execution-config.json
           test -f prepared/flywire-connectivity.csv
-          test -f prepared/controls/control-bundle.json
           test -f prepared/controls/flywire-selected-graph.json
 
       - name: Trace raw and normalized graph dynamics on real KTH clips
@@ -96,29 +95,29 @@ jobs:
           from __future__ import annotations
           import hashlib
           import json
-          import math
           from pathlib import Path
           import statistics
 
           import torch
 
-          from yolo_flywire.graphs import diagnostic_graph, random_sparse_graph
+          from yolo_flywire.flywire import load_visual_type_graph
+          from yolo_flywire.graphs import diagnostic_graph, graph_fingerprint, random_sparse_graph
           from yolo_flywire.kthreuse import _prepare_source
           from yolo_flywire.models.graph_rnn import (
               GraphDiagnosticClassifier,
               GraphRecurrentClassifier,
               diagnose_graph_recurrence,
           )
-          from yolo_flywire.pose_comparison import _graph_inputs
           from yolo_flywire.pose_training import _seeded_cpu
 
           root = Path("prepared")
           protocol_path = root / "aggregate/frozen-protocol.json"
           source_manifest = json.loads((root / "aggregate/source-manifest.json").read_text(encoding="utf-8"))
           execution_config = json.loads((root / "execution-config.json").read_text(encoding="utf-8"))
+          selected_graph_record = json.loads(
+              (root / "controls/flywire-selected-graph.json").read_text(encoding="utf-8")
+          )
           protocol_sha = hashlib.sha256(protocol_path.read_bytes()).hexdigest()
-          controls_path = root / "controls/control-bundle.json"
-          controls_sha = hashlib.sha256(controls_path.read_bytes()).hexdigest()
 
           (protocol_path, protocol_pin, frozen, source_record, config, prepared_source,
            binding_pin, manifest_pin) = _prepare_source(
@@ -128,15 +127,41 @@ jobs:
               bundle=root / "aggregate/bundle",
               execution_config=execution_config,
           )
-          selection, identity, rewired = _graph_inputs(
-              protocol_path,
-              root / "flywire-connectivity.csv",
-              controls_path,
-              protocol_pin,
-              controls_sha,
-              config,
-          )
           prepared_source.verify(expected_binding_sha256=binding_pin)
+
+          connectivity_path = root / "flywire-connectivity.csv"
+          connectivity_sha = hashlib.sha256(connectivity_path.read_bytes()).hexdigest()
+          if connectivity_sha != frozen.get("flywire_connectivity_sha256"):
+              raise SystemExit("diagnostic FlyWire connectivity differs from frozen SHA-256")
+          seed_types = tuple(selected_graph_record["seed_types"])
+          min_seed_synapses = int(selected_graph_record["min_seed_synapses"])
+          selection = load_visual_type_graph(
+              connectivity_path,
+              seed_types=seed_types,
+              min_seed_synapses=min_seed_synapses,
+          )
+          selected_fingerprint = graph_fingerprint(selection.graph)
+          expected_fingerprint = selected_graph_record["graph_fingerprint"]
+          if selected_fingerprint != expected_fingerprint or selected_fingerprint != frozen.get("selected_graph_fingerprint"):
+              raise SystemExit("reconstructed selected graph fingerprint differs from frozen graph")
+          if list(selection.node_types) != selected_graph_record["node_types"]:
+              raise SystemExit("reconstructed selected graph node roster differs from frozen graph")
+          for name, actual in (
+              ("num_nodes", selection.graph.num_nodes),
+              ("num_edges", selection.graph.num_edges),
+              ("num_diagonal_edges", sum(a == b for a, b in zip(selection.graph.src, selection.graph.dst))),
+          ):
+              if actual != selected_graph_record[name]:
+                  raise SystemExit(f"reconstructed selected graph {name} differs from frozen graph")
+          graph_identity = {
+              "source_sha256": connectivity_sha,
+              "selected_graph_fingerprint": selected_fingerprint,
+              "seed_types": list(seed_types),
+              "min_seed_synapses": min_seed_synapses,
+              "num_nodes": selection.graph.num_nodes,
+              "num_edges": selection.graph.num_edges,
+              "num_diagonal_edges": selected_graph_record["num_diagonal_edges"],
+          }
 
           train = tuple(entry for entry in prepared_source.index.samples if entry.split == "train")
           selected_indices = []
@@ -242,10 +267,6 @@ jobs:
               for name in variants
           }
 
-          selected_graph_record = json.loads(
-              (root / "controls/flywire-selected-graph.json").read_text(encoding="utf-8")
-          )
-          seed_types = tuple(selected_graph_record["seed_types"])
           node_types = tuple(selection.node_types)
           seed_node_indices = tuple(node_types.index(name) for name in seed_types)
           with _seeded_cpu(config.seeds[0]):
@@ -286,7 +307,7 @@ jobs:
               "aggregate_manifest_sha256": manifest_pin,
               "seeds": list(config.seeds),
               "samples": selected_samples,
-              "graph_identity": identity,
+              "graph_identity": graph_identity,
               "graph_stats": graph_stats,
               "architecture": {
                   "num_nodes": selection.graph.num_nodes,
