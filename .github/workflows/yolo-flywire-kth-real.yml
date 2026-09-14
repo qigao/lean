@@ -102,7 +102,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     strategy:
-      fail-fast: true
+      fail-fast: false
       max-parallel: 6
       matrix:
         action:
@@ -154,6 +154,51 @@ jobs:
             --protocol coordinator/frozen-runtime-protocol.json \
             --weights yolo11n-pose.pt \
             --output shard
+
+      - name: Diagnose boxing decoder boundary on failure
+        if: failure() && matrix.action == 'boxing'
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from tempfile import TemporaryDirectory
+          from zipfile import ZipFile
+          import av
+
+          archive = Path("boxing.zip")
+          member = "person01_boxing_d4_uncomp.avi"
+          successful_frames = 0
+          last_pts = None
+          last_time_base = None
+          print("KTH_PYAV_DIAGNOSTIC member=" + member)
+          with TemporaryDirectory(prefix="kth-boxing-d4-") as temporary:
+              clip = Path(temporary) / member
+              with ZipFile(archive, "r") as zipped:
+                  with zipped.open(member, "r") as source, clip.open("wb") as target:
+                      while chunk := source.read(1024 * 1024):
+                          target.write(chunk)
+              try:
+                  with clip.open("rb") as handle, av.open(handle, mode="r", format="avi") as container:
+                      stream = container.streams.video[0]
+                      stream.codec_context.thread_count = 1
+                      stream.codec_context.options = {"err_detect": "explode"}
+                      print(f"KTH_PYAV_DIAGNOSTIC declared_stream_frames={stream.frames}")
+                      for frame in container.decode(stream):
+                          successful_frames += 1
+                          last_pts = frame.pts
+                          last_time_base = frame.time_base
+              except BaseException as exc:
+                  print(f"KTH_PYAV_DIAGNOSTIC successful_frames={successful_frames}")
+                  print(f"KTH_PYAV_DIAGNOSTIC last_pts={last_pts}")
+                  print(f"KTH_PYAV_DIAGNOSTIC last_time_base={last_time_base}")
+                  print(f"KTH_PYAV_DIAGNOSTIC exception_type={type(exc).__module__}.{type(exc).__name__}")
+                  print(f"KTH_PYAV_DIAGNOSTIC exception_repr={exc!r}")
+              else:
+                  print(f"KTH_PYAV_DIAGNOSTIC successful_frames={successful_frames}")
+                  print(f"KTH_PYAV_DIAGNOSTIC last_pts={last_pts}")
+                  print(f"KTH_PYAV_DIAGNOSTIC last_time_base={last_time_base}")
+                  print("KTH_PYAV_DIAGNOSTIC exception_type=None")
+                  print("KTH_PYAV_DIAGNOSTIC exception_repr=None")
+          PY
 
       - name: Remove KTH RGB archive and model before artifact publication
         if: always()
