@@ -18,7 +18,7 @@ def summary (input : RuntimeCaseInput) :
       List.ofFn (fun i => (out.final.state.population.agents i).exposures),
       out.probability)
 
-private instance {α : Type} [DecidableEq α] : DecidableEq (Except JointError α) :=
+private def exceptDecidableEq {α : Type} [DecidableEq α] : DecidableEq (Except JointError α) :=
   fun x y => match x, y with
   | .error x, .error y =>
       if h : x = y then .isTrue (by cases h; rfl)
@@ -28,6 +28,17 @@ private instance {α : Type} [DecidableEq α] : DecidableEq (Except JointError �
       else .isFalse (fun he => h (Except.ok.inj he))
   | .error _, .ok _ => .isFalse (by intro h; cases h)
   | .ok _, .error _ => .isFalse (by intro h; cases h)
+
+-- Register only the finite observable result types used by these literals.
+private instance : DecidableEq
+    (Except JointError (Nat × Nat × Nat × List Rat × List Nat × Rat)) :=
+  exceptDecidableEq
+private instance : DecidableEq
+    (Except JointError (List Rat × List Nat × Rat × List (Nat × Nat × Rat))) :=
+  exceptDecidableEq
+private instance : DecidableEq (Except JointError (List Nat)) := exceptDecidableEq
+private instance : DecidableEq (Except JointError (List (Nat × Nat × Rat))) :=
+  exceptDecidableEq
 
 section FiniteLiterals
 set_option maxRecDepth 4096
