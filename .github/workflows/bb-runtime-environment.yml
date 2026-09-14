@@ -112,4 +112,5 @@ jobs:
         with:
           name: bb-runtime-development-output
           path: .bb-ci-out/
+          include-hidden-files: true
           retention-days: 3
