@@ -17,9 +17,16 @@ jobs:
             https://github.com/leanprover/lean4/releases/download/v4.32.0/lean-4.32.0-linux.tar.zst \
             --output "$RUNNER_TEMP/lean-4.32.0-linux.tar.zst"
           sha256sum "$RUNNER_TEMP/lean-4.32.0-linux.tar.zst"
+          split --bytes=300M --numeric-suffixes=0 "$RUNNER_TEMP/lean-4.32.0-linux.tar.zst" "$RUNNER_TEMP/lean-part-"
       - uses: actions/upload-artifact@v4
         with:
-          name: lean-4.32.0-linux
-          path: ${{ runner.temp }}/lean-4.32.0-linux.tar.zst
+          name: lean-4.32.0-linux-part-00
+          path: ${{ runner.temp }}/lean-part-00
+          compression-level: 0
+          retention-days: 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lean-4.32.0-linux-part-01
+          path: ${{ runner.temp }}/lean-part-01
           compression-level: 0
           retention-days: 1
