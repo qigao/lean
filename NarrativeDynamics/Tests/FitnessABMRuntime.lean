@@ -9,6 +9,9 @@ open NarrativeDynamics.FitnessABM
 open NarrativeDynamics.Conformance.BBRuntime
 open scoped BigOperators
 
+-- Temporary diagnostic channel; removed with the traversal checkpoints.
+set_option stderrAsMessages false
+
 def summary (input : RuntimeCaseInput) :
     Except JointError (Nat × Nat × Nat × List Rat × List Nat × Rat) :=
   (FitnessABM.replay input.seed input.m input.agents input.ticks).map fun out =>
@@ -20,7 +23,7 @@ def summary (input : RuntimeCaseInput) :
 
 -- Temporary diagnostic, removed after locating the interrupted reduction.
 run_cmd do
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: fixture started"
   out.flush
 
@@ -356,7 +359,7 @@ private theorem empty_literal : summary empty =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``empty_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed empty_literal"
   out.flush
 
@@ -371,7 +374,7 @@ private theorem idleTwo_literal : summary idleTwo =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``idleTwo_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed idleTwo_literal"
   out.flush
 
@@ -393,7 +396,7 @@ private theorem attachSource_literal : summary attachSource =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``attachSource_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed attachSource_literal"
   out.flush
 
@@ -415,7 +418,7 @@ private theorem attachRelay_literal : summary attachRelay =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``attachRelay_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed attachRelay_literal"
   out.flush
 
@@ -437,7 +440,7 @@ private theorem relayIdle_literal : summary relayIdle =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``relayIdle_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed relayIdle_literal"
   out.flush
 
@@ -460,7 +463,7 @@ private theorem successiveBirths_literal : summary successiveBirths =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``successiveBirths_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed successiveBirths_literal"
   out.flush
 
@@ -483,7 +486,7 @@ private theorem successiveIdle_literal : summary successiveIdle =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``successiveIdle_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed successiveIdle_literal"
   out.flush
 
@@ -505,7 +508,7 @@ private theorem weightedSource_literal : summary weightedSource =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``weightedSource_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed weightedSource_literal"
   out.flush
 
@@ -527,7 +530,7 @@ private theorem ordered01_literal : summary ordered01 =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``ordered01_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed ordered01_literal"
   out.flush
 
@@ -549,7 +552,7 @@ private theorem ordered10_literal : summary ordered10 =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``ordered10_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed ordered10_literal"
   out.flush
 
@@ -571,7 +574,7 @@ private theorem zeroReceptive_literal : summary zeroReceptive =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``zeroReceptive_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed zeroReceptive_literal"
   out.flush
 
@@ -593,7 +596,7 @@ private theorem silent_literal : summary silent =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``silent_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed silent_literal"
   out.flush
 
@@ -615,7 +618,7 @@ private theorem zeroThreshold_literal : summary zeroThreshold =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``zeroThreshold_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed zeroThreshold_literal"
   out.flush
 
@@ -637,7 +640,7 @@ private theorem broadcastNewborn_literal : summary broadcastNewborn =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``broadcastNewborn_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed broadcastNewborn_literal"
   out.flush
 
@@ -659,7 +662,7 @@ private theorem retainedExposures_literal : summary retainedExposures =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``retainedExposures_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed retainedExposures_literal"
   out.flush
 
@@ -681,7 +684,7 @@ private theorem halfReceptive_literal : summary halfReceptive =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``halfReceptive_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed halfReceptive_literal"
   out.flush
 
@@ -692,7 +695,7 @@ private theorem seedNodes_literal : summary seedNodes =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``seedNodes_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed seedNodes_literal"
   out.flush
 
@@ -703,7 +706,7 @@ private theorem seedSize_literal : summary seedSize =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``seedSize_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed seedSize_literal"
   out.flush
 
@@ -714,7 +717,7 @@ private theorem seedFitness_literal : summary seedFitness =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``seedFitness_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed seedFitness_literal"
   out.flush
 
@@ -725,7 +728,7 @@ private theorem seedEdge_literal : summary seedEdge =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``seedEdge_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed seedEdge_literal"
   out.flush
 
@@ -736,7 +739,7 @@ private theorem seedDuplicate_literal : summary seedDuplicate =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``seedDuplicate_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed seedDuplicate_literal"
   out.flush
 
@@ -747,7 +750,7 @@ private theorem seedDisconnected_literal : summary seedDisconnected =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``seedDisconnected_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed seedDisconnected_literal"
   out.flush
 
@@ -762,7 +765,7 @@ private theorem initialMZero_literal : summary initialMZero =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``initialMZero_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed initialMZero_literal"
   out.flush
 
@@ -777,7 +780,7 @@ private theorem initialMTooLarge_literal : summary initialMTooLarge =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``initialMTooLarge_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed initialMTooLarge_literal"
   out.flush
 
@@ -792,7 +795,7 @@ private theorem seedAgentCount_literal : summary seedAgentCount =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``seedAgentCount_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed seedAgentCount_literal"
   out.flush
 
@@ -807,7 +810,7 @@ private theorem seedAgentR_literal : summary seedAgentR =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``seedAgentR_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed seedAgentR_literal"
   out.flush
 
@@ -822,7 +825,7 @@ private theorem seedAgentThreshold_literal : summary seedAgentThreshold =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``seedAgentThreshold_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed seedAgentThreshold_literal"
   out.flush
 
@@ -837,7 +840,7 @@ private theorem seedAgentBelief_literal : summary seedAgentBelief =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``seedAgentBelief_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed seedAgentBelief_literal"
   out.flush
 
@@ -851,7 +854,7 @@ private theorem birthFitness_literal : summary birthFitness =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``birthFitness_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed birthFitness_literal"
   out.flush
 
@@ -865,7 +868,7 @@ private theorem birthTargetCount_literal : summary birthTargetCount =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``birthTargetCount_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed birthTargetCount_literal"
   out.flush
 
@@ -879,7 +882,7 @@ private theorem birthTargetRange_literal : summary birthTargetRange =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``birthTargetRange_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed birthTargetRange_literal"
   out.flush
 
@@ -893,7 +896,7 @@ private theorem birthTargetDuplicate_literal : summary birthTargetDuplicate =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``birthTargetDuplicate_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed birthTargetDuplicate_literal"
   out.flush
 
@@ -907,7 +910,7 @@ private theorem birthAgentThreshold_literal : summary birthAgentThreshold =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``birthAgentThreshold_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed birthAgentThreshold_literal"
   out.flush
 
@@ -921,7 +924,7 @@ private theorem lateBirth_literal : summary lateBirth =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``lateBirth_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed lateBirth_literal"
   out.flush
 
@@ -935,7 +938,7 @@ private theorem firstFailure_literal : summary firstFailure =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``firstFailure_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed firstFailure_literal"
   out.flush
 
@@ -949,7 +952,7 @@ private theorem lateFirstBirth_literal : summary lateFirstBirth =
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``lateFirstBirth_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed lateFirstBirth_literal"
   out.flush
 
@@ -969,7 +972,7 @@ private theorem successive_growth_literal :
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``successive_growth_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed successive_growth_literal"
   out.flush
 
@@ -987,7 +990,7 @@ private theorem retained_growth_literal :
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``retained_growth_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed retained_growth_literal"
   out.flush
 
@@ -1005,7 +1008,7 @@ private theorem newborn_transmissions_literal :
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
   let _ ← Lean.collectAxioms ``newborn_transmissions_literal
-  let out ← IO.getStdout
+  let out ← IO.getStderr
   out.putStrLn "BB runtime diagnostic: traversed newborn_transmissions_literal"
   out.flush
 
