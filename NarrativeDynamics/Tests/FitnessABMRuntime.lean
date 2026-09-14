@@ -144,6 +144,28 @@ private theorem replay_start (eta : PosFitness) (raw : Array RawAgent)
   simp only [FitnessABM.replay, parsed_seed, if_pos hm, parsed_roster raw hs hv]
   rfl
 
+private theorem parsed_unit : parseSeed unitSeed = .ok (seedNetwork one) :=
+  parsed_seed one
+
+private theorem replay_input (input : RuntimeCaseInput) (eta : PosFitness)
+    (hn : input.seed = ⟨2, #[1, eta.val], #[(0, 1)]⟩)
+    (hs : input.agents.size = 2) (hv : ∀ a ∈ input.agents.toList, a.Valid)
+    (hm : 0 < input.m ∧ input.m ≤ 2) :
+    FitnessABM.replay input.seed input.m input.agents input.ticks =
+      runInputs input.m 0 0 ⟨2, 0, initial eta input.agents hs hv⟩ input.ticks := by
+  rw [hn]
+  exact replay_start eta input.agents hs hv input.m hm input.ticks
+
+private theorem prefix_start (input : RuntimeCaseInput) (eta : PosFitness)
+    (hn : input.seed = ⟨2, #[1, eta.val], #[(0, 1)]⟩)
+    (hs : input.agents.size = 2) (hv : ∀ a ∈ input.agents.toList, a.Valid)
+    (hm : 0 < input.m ∧ input.m ≤ 2) (count : Nat) :
+    replayPrefix input count =
+      runInputs input.m 0 0 ⟨2, 0, initial eta input.agents hs hv⟩ (input.ticks.take count) := by
+  unfold replayPrefix
+  rw [hn]
+  exact replay_start eta input.agents hs hv input.m hm _
+
 private def singletonTarget {n : Nat} (j : Fin n) : Targets n 1 :=
   ⟨fun _ => j, fun a b _ => Subsingleton.elim a b⟩
 
@@ -186,6 +208,27 @@ private theorem checked_single {n : Nat} (s : JointState n) (j : Fin n)
     checkTargets, dif_pos bound, dif_pos distinct]
   rw [he]
   rfl
+
+private theorem checked0 (s : JointState 2) : checkedBirth s 1 (birth 0) = .ok
+    (grow s (singletonTarget (0 : Fin 2)) positiveM (newbornData 0 (by norm_num)),
+      orderedMass s.network (singletonTarget (0 : Fin 2))) :=
+  checked_single s (0 : Fin 2) 0 (by norm_num)
+
+private theorem checked1 (s : JointState 2) : checkedBirth s 1 (birth 1) = .ok
+    (grow s (singletonTarget (1 : Fin 2)) positiveM (newbornData 0 (by norm_num)),
+      orderedMass s.network (singletonTarget (1 : Fin 2))) :=
+  checked_single s (1 : Fin 2) 0 (by norm_num)
+
+private theorem checked2 (s : JointState 3) : checkedBirth s 1 (birth 2) = .ok
+    (grow s (singletonTarget (2 : Fin 3)) positiveM (newbornData 0 (by norm_num)),
+      orderedMass s.network (singletonTarget (2 : Fin 3))) :=
+  checked_single s (2 : Fin 3) 0 (by norm_num)
+
+private theorem checked_broadcast (s : JointState 2) :
+    checkedBirth s 1 ⟨⟨1, #[1]⟩, 1, 1/2, 1⟩ = .ok
+      (grow s (singletonTarget (1 : Fin 2)) positiveM (newbornData 1 (by norm_num)),
+        orderedMass s.network (singletonTarget (1 : Fin 2))) :=
+  checked_single s (1 : Fin 2) 1 (by norm_num)
 
 private def targets01 : Targets 2 2 := ⟨![0, 1], by decide⟩
 private def targets10 : Targets 2 2 := ⟨![1, 0], by decide⟩
@@ -271,79 +314,79 @@ private theorem halfReceptive_agents_valid : ∀ a ∈ halfReceptive.agents.toLi
 private theorem empty_literal : summary empty =
     .ok (2, 0, 1, [1, 0], [0, 0], 1) := by
   unfold summary
-  dsimp only [empty, empty, idleTwo, attachSource, attachRelay]
-  rw [replay_start one empty.agents rfl empty_agents_valid 1 (by decide)]
+  rw [replay_input empty one rfl rfl empty_agents_valid (by decide)]
+  dsimp only [empty]
   decide_cbv
 
 private theorem idleTwo_literal : summary idleTwo =
     .ok (2, 2, 1, [1, 1], [1, 2], 1) := by
   unfold summary
-  dsimp only [idleTwo, empty, idleTwo, attachSource, attachRelay]
-  rw [replay_start one empty.agents rfl empty_agents_valid 1 (by decide)]
+  rw [replay_input idleTwo one rfl rfl empty_agents_valid (by decide)]
+  dsimp only [idleTwo, empty]
   simp only [runInputs]
   decide_cbv
 
 private theorem attachSource_literal : summary attachSource =
     .ok (3, 1, 2, [1, 1, 1], [0, 1, 1], 1/2) := by
   unfold summary
-  dsimp only [attachSource, empty, idleTwo, attachSource, attachRelay]
-  rw [replay_start one empty.agents rfl empty_agents_valid 1 (by decide)]
-  rw [runInputs, checked_single _ (0 : Fin 2) 0 (by norm_num)]
+  rw [replay_input attachSource one rfl rfl empty_agents_valid (by decide)]
+  dsimp only [attachSource, empty]
+  rw [runInputs, checked0]
   simp only [runInputs]
   decide_cbv
 
 private theorem attachRelay_literal : summary attachRelay =
     .ok (3, 1, 2, [1, 1, 0], [0, 1, 0], 1/2) := by
   unfold summary
-  dsimp only [attachRelay, empty, idleTwo, attachSource, attachRelay]
-  rw [replay_start one empty.agents rfl empty_agents_valid 1 (by decide)]
-  rw [runInputs, checked_single _ (1 : Fin 2) 0 (by norm_num)]
+  rw [replay_input attachRelay one rfl rfl empty_agents_valid (by decide)]
+  dsimp only [attachRelay, empty]
+  rw [runInputs, checked1]
   simp only [runInputs]
   decide_cbv
 
 private theorem relayIdle_literal : summary relayIdle =
     .ok (3, 2, 2, [1, 1, 1], [1, 2, 1], 1/2) := by
   unfold summary
-  dsimp only [relayIdle, empty, idleTwo, attachSource, attachRelay]
-  rw [replay_start one empty.agents rfl empty_agents_valid 1 (by decide)]
-  rw [runInputs, checked_single _ (1 : Fin 2) 0 (by norm_num)]
+  rw [replay_input relayIdle one rfl rfl empty_agents_valid (by decide)]
+  dsimp only [relayIdle, empty]
+  rw [runInputs, checked1]
   simp only [runInputs]
   decide_cbv
 
 private theorem successiveBirths_literal : summary successiveBirths =
     .ok (4, 2, 3, [1, 1, 1, 0], [1, 2, 1, 0], 1/8) := by
   unfold summary
-  dsimp only [successiveBirths, empty, idleTwo, attachSource, attachRelay]
-  rw [replay_start one empty.agents rfl empty_agents_valid 1 (by decide)]
-  rw [runInputs, checked_single _ (1 : Fin 2) 0 (by norm_num)]
-  rw [runInputs, checked_single _ (2 : Fin 3) 0 (by norm_num)]
+  rw [replay_input successiveBirths one rfl rfl empty_agents_valid (by decide)]
+  dsimp only [successiveBirths, empty]
+  rw [runInputs, checked1]
+  rw [runInputs, checked2]
   simp only [runInputs]
   decide_cbv
 
 private theorem successiveIdle_literal : summary successiveIdle =
     .ok (4, 3, 3, [1, 1, 1, 1], [2, 4, 2, 1], 1/8) := by
   unfold summary
-  dsimp only [successiveIdle, empty, idleTwo, attachSource, attachRelay]
-  rw [replay_start one empty.agents rfl empty_agents_valid 1 (by decide)]
-  rw [runInputs, checked_single _ (1 : Fin 2) 0 (by norm_num)]
-  rw [runInputs, checked_single _ (2 : Fin 3) 0 (by norm_num)]
+  rw [replay_input successiveIdle one rfl rfl empty_agents_valid (by decide)]
+  dsimp only [successiveIdle, empty]
+  rw [runInputs, checked1]
+  rw [runInputs, checked2]
   simp only [runInputs]
   decide_cbv
 
 private theorem weightedSource_literal : summary weightedSource =
     .ok (3, 1, 2, [1, 1, 1], [0, 1, 1], 1/4) := by
   unfold summary
-  dsimp only [weightedSource, empty, idleTwo, attachSource, attachRelay]
-  rw [replay_start three empty.agents rfl empty_agents_valid 1 (by decide)]
-  rw [runInputs, checked_single _ (0 : Fin 2) 0 (by norm_num)]
+  rw [replay_input weightedSource three rfl rfl empty_agents_valid (by decide)]
+  dsimp only [weightedSource, attachSource, empty]
+  rw [runInputs, checked0]
   simp only [runInputs]
   decide_cbv
 
 private theorem ordered01_literal : summary ordered01 =
     .ok (3, 1, 3, [1, 1, 1], [0, 1, 1], 1/4) := by
   unfold summary
-  dsimp only [ordered01, empty, idleTwo, attachSource, attachRelay]
-  rw [replay_start three empty.agents rfl empty_agents_valid 2 (by decide)]
+  rw [replay_input ordered01 three rfl rfl empty_agents_valid (by decide)]
+  dsimp only [ordered01, empty]
   rw [runInputs, checked01]
   simp only [runInputs]
   decide_cbv
@@ -351,8 +394,8 @@ private theorem ordered01_literal : summary ordered01 =
 private theorem ordered10_literal : summary ordered10 =
     .ok (3, 1, 3, [1, 1, 1], [0, 1, 1], 3/4) := by
   unfold summary
-  dsimp only [ordered10, empty, idleTwo, attachSource, attachRelay]
-  rw [replay_start three empty.agents rfl empty_agents_valid 2 (by decide)]
+  rw [replay_input ordered10 three rfl rfl empty_agents_valid (by decide)]
+  dsimp only [ordered10, empty]
   rw [runInputs, checked10]
   simp only [runInputs]
   decide_cbv
@@ -360,54 +403,54 @@ private theorem ordered10_literal : summary ordered10 =
 private theorem zeroReceptive_literal : summary zeroReceptive =
     .ok (3, 1, 2, [1, 0, 1], [0, 1, 1], 1/2) := by
   unfold summary
-  dsimp only [zeroReceptive, empty, idleTwo, attachSource, attachRelay]
-  rw [replay_start one zeroReceptive.agents rfl zeroReceptive_agents_valid 1 (by decide)]
-  rw [runInputs, checked_single _ (0 : Fin 2) 0 (by norm_num)]
+  rw [replay_input zeroReceptive one rfl rfl zeroReceptive_agents_valid (by decide)]
+  dsimp only [zeroReceptive, attachSource, empty]
+  rw [runInputs, checked0]
   simp only [runInputs]
   decide_cbv
 
 private theorem silent_literal : summary silent =
     .ok (3, 1, 2, [0, 0, 0], [0, 0, 0], 1/2) := by
   unfold summary
-  dsimp only [silent, empty, idleTwo, attachSource, attachRelay]
-  rw [replay_start one silent.agents rfl silent_agents_valid 1 (by decide)]
-  rw [runInputs, checked_single _ (0 : Fin 2) 0 (by norm_num)]
+  rw [replay_input silent one rfl rfl silent_agents_valid (by decide)]
+  dsimp only [silent, attachSource, empty]
+  rw [runInputs, checked0]
   simp only [runInputs]
   decide_cbv
 
 private theorem zeroThreshold_literal : summary zeroThreshold =
     .ok (3, 1, 2, [0, 0, 0], [0, 1, 1], 1/2) := by
   unfold summary
-  dsimp only [zeroThreshold, empty, idleTwo, attachSource, attachRelay]
-  rw [replay_start one zeroThreshold.agents rfl zeroThreshold_agents_valid 1 (by decide)]
-  rw [runInputs, checked_single _ (0 : Fin 2) 0 (by norm_num)]
+  rw [replay_input zeroThreshold one rfl rfl zeroThreshold_agents_valid (by decide)]
+  dsimp only [zeroThreshold, attachSource, empty]
+  rw [runInputs, checked0]
   simp only [runInputs]
   decide_cbv
 
 private theorem broadcastNewborn_literal : summary broadcastNewborn =
     .ok (3, 1, 2, [1, 1, 1], [0, 2, 0], 1/2) := by
   unfold summary
-  dsimp only [broadcastNewborn, empty, idleTwo, attachSource, attachRelay]
-  rw [replay_start one empty.agents rfl empty_agents_valid 1 (by decide)]
-  rw [runInputs, checked_single _ (1 : Fin 2) 1 (by norm_num)]
+  rw [replay_input broadcastNewborn one rfl rfl empty_agents_valid (by decide)]
+  dsimp only [broadcastNewborn, attachRelay, empty]
+  rw [runInputs, checked_broadcast]
   simp only [runInputs]
   decide_cbv
 
 private theorem retainedExposures_literal : summary retainedExposures =
     .ok (3, 1, 2, [1, 1, 0], [7, 4, 0], 1/2) := by
   unfold summary
-  dsimp only [retainedExposures, empty, idleTwo, attachSource, attachRelay]
-  rw [replay_start one retainedExposures.agents rfl retainedExposures_agents_valid 1 (by decide)]
-  rw [runInputs, checked_single _ (1 : Fin 2) 0 (by norm_num)]
+  rw [replay_input retainedExposures one rfl rfl retainedExposures_agents_valid (by decide)]
+  dsimp only [retainedExposures, attachRelay, empty]
+  rw [runInputs, checked1]
   simp only [runInputs]
   decide_cbv
 
 private theorem halfReceptive_literal : summary halfReceptive =
     .ok (3, 1, 2, [1, 1/2, 1], [0, 1, 1], 1/2) := by
   unfold summary
-  dsimp only [halfReceptive, empty, idleTwo, attachSource, attachRelay]
-  rw [replay_start one halfReceptive.agents rfl halfReceptive_agents_valid 1 (by decide)]
-  rw [runInputs, checked_single _ (0 : Fin 2) 0 (by norm_num)]
+  rw [replay_input halfReceptive one rfl rfl halfReceptive_agents_valid (by decide)]
+  dsimp only [halfReceptive, attachSource, empty]
+  rw [runInputs, checked0]
   simp only [runInputs]
   decide_cbv
 
@@ -440,7 +483,7 @@ private theorem initialMZero_literal : summary initialMZero =
   unfold summary
   dsimp only [initialMZero, empty, idleTwo]
   unfold FitnessABM.replay
-  rw [parsed_seed one]
+  rw [parsed_unit]
   decide_cbv
 
 private theorem initialMTooLarge_literal : summary initialMTooLarge =
@@ -448,7 +491,7 @@ private theorem initialMTooLarge_literal : summary initialMTooLarge =
   unfold summary
   dsimp only [initialMTooLarge, empty, idleTwo]
   unfold FitnessABM.replay
-  rw [parsed_seed one]
+  rw [parsed_unit]
   decide_cbv
 
 private theorem seedAgentCount_literal : summary seedAgentCount =
@@ -456,7 +499,7 @@ private theorem seedAgentCount_literal : summary seedAgentCount =
   unfold summary
   dsimp only [seedAgentCount, empty, idleTwo]
   unfold FitnessABM.replay
-  rw [parsed_seed one]
+  rw [parsed_unit]
   decide_cbv
 
 private theorem seedAgentR_literal : summary seedAgentR =
@@ -464,7 +507,7 @@ private theorem seedAgentR_literal : summary seedAgentR =
   unfold summary
   dsimp only [seedAgentR, empty, idleTwo]
   unfold FitnessABM.replay
-  rw [parsed_seed one]
+  rw [parsed_unit]
   decide_cbv
 
 private theorem seedAgentThreshold_literal : summary seedAgentThreshold =
@@ -472,7 +515,7 @@ private theorem seedAgentThreshold_literal : summary seedAgentThreshold =
   unfold summary
   dsimp only [seedAgentThreshold, empty, idleTwo]
   unfold FitnessABM.replay
-  rw [parsed_seed one]
+  rw [parsed_unit]
   decide_cbv
 
 private theorem seedAgentBelief_literal : summary seedAgentBelief =
@@ -480,98 +523,98 @@ private theorem seedAgentBelief_literal : summary seedAgentBelief =
   unfold summary
   dsimp only [seedAgentBelief, empty, idleTwo]
   unfold FitnessABM.replay
-  rw [parsed_seed one]
+  rw [parsed_unit]
   decide_cbv
 
 private theorem birthFitness_literal : summary birthFitness =
     .error (.tickNetwork 0 0 .nonpositiveFitness) := by
   unfold summary
-  dsimp only [birthFitness, birthTargetCount, empty]
-  rw [replay_start one empty.agents rfl empty_agents_valid 1 (by decide)]
+  rw [replay_input birthFitness one rfl rfl empty_agents_valid (by decide)]
+  dsimp only [birthFitness, empty]
   decide_cbv
 
 private theorem birthTargetCount_literal : summary birthTargetCount =
     .error (.tickNetwork 0 0 .targetCountMismatch) := by
   unfold summary
-  dsimp only [birthTargetCount, birthTargetCount, empty]
-  rw [replay_start one empty.agents rfl empty_agents_valid 1 (by decide)]
+  rw [replay_input birthTargetCount one rfl rfl empty_agents_valid (by decide)]
+  dsimp only [birthTargetCount, empty]
   decide_cbv
 
 private theorem birthTargetRange_literal : summary birthTargetRange =
     .error (.tickNetwork 0 0 .targetOutOfRange) := by
   unfold summary
-  dsimp only [birthTargetRange, birthTargetCount, empty]
-  rw [replay_start one empty.agents rfl empty_agents_valid 1 (by decide)]
+  rw [replay_input birthTargetRange one rfl rfl empty_agents_valid (by decide)]
+  dsimp only [birthTargetRange, empty]
   decide_cbv
 
 private theorem birthTargetDuplicate_literal : summary birthTargetDuplicate =
     .error (.tickNetwork 0 0 .duplicateTarget) := by
   unfold summary
+  rw [replay_input birthTargetDuplicate one rfl rfl empty_agents_valid (by decide)]
   dsimp only [birthTargetDuplicate, birthTargetCount, empty]
-  rw [replay_start one empty.agents rfl empty_agents_valid 2 (by decide)]
   decide_cbv
 
 private theorem birthAgentThreshold_literal : summary birthAgentThreshold =
     .error (.tickAgent 0 0 .threshold) := by
   unfold summary
-  dsimp only [birthAgentThreshold, birthTargetCount, empty]
-  rw [replay_start one empty.agents rfl empty_agents_valid 1 (by decide)]
+  rw [replay_input birthAgentThreshold one rfl rfl empty_agents_valid (by decide)]
+  dsimp only [birthAgentThreshold, empty]
   decide_cbv
 
 private theorem lateBirth_literal : summary lateBirth =
     .error (.tickNetwork 3 1 .targetOutOfRange) := by
   unfold summary
-  dsimp only [lateBirth, birthTargetCount, empty]
-  rw [replay_start one empty.agents rfl empty_agents_valid 1 (by decide)]
+  rw [replay_input lateBirth one rfl rfl empty_agents_valid (by decide)]
+  dsimp only [lateBirth, empty]
   decide_cbv
 
 private theorem firstFailure_literal : summary firstFailure =
     .error (.tickAgent 0 0 .threshold) := by
   unfold summary
-  dsimp only [firstFailure, birthTargetCount, empty]
-  rw [replay_start one empty.agents rfl empty_agents_valid 1 (by decide)]
+  rw [replay_input firstFailure one rfl rfl empty_agents_valid (by decide)]
+  dsimp only [firstFailure, empty]
   decide_cbv
 
 private theorem lateFirstBirth_literal : summary lateFirstBirth =
     .error (.tickNetwork 2 0 .targetOutOfRange) := by
   unfold summary
-  dsimp only [lateFirstBirth, birthTargetCount, empty]
-  rw [replay_start one empty.agents rfl empty_agents_valid 1 (by decide)]
+  rw [replay_input lateFirstBirth one rfl rfl empty_agents_valid (by decide)]
+  dsimp only [lateFirstBirth, empty]
   decide_cbv
 
 private theorem successive_growth_literal :
     (observeTransition successiveBirths ⟨1, by decide⟩).map
       (fun t => (t.postGrowth.beliefs, t.postGrowth.exposures, t.tickMass, t.transmissions)) =
       .ok ([1, 1, 0, 0], [0, 1, 0, 0], 1/4, [(0, 1, 1), (1, 0, 1), (1, 2, 1)]) := by
-  unfold observeTransition replayPrefix
-  dsimp only [successiveBirths, attachRelay, empty, List.take]
-  rw [replay_start one empty.agents rfl empty_agents_valid 1 (by decide)]
-  rw [runInputs, checked_single _ (1 : Fin 2) 0 (by norm_num)]
+  unfold observeTransition
+  rw [prefix_start successiveBirths one rfl rfl empty_agents_valid (by decide)]
+  dsimp only [successiveBirths, empty, List.take]
+  rw [runInputs, checked1]
   simp only [runInputs]
   dsimp only
-  rw [checked_single _ (2 : Fin 3) 0 (by norm_num)]
+  rw [checked2]
   decide_cbv
 
 private theorem retained_growth_literal :
     (observeTransition retainedExposures ⟨0, by decide⟩).map
       (fun t => t.postGrowth.exposures) = .ok [7, 3, 0] := by
-  unfold observeTransition replayPrefix
+  unfold observeTransition
+  rw [prefix_start retainedExposures one rfl rfl retainedExposures_agents_valid (by decide)]
   dsimp only [retainedExposures, attachRelay, empty, List.take]
-  rw [replay_start one retainedExposures.agents rfl retainedExposures_agents_valid 1 (by decide)]
   simp only [runInputs]
   dsimp only
-  rw [checked_single _ (1 : Fin 2) 0 (by norm_num)]
+  rw [checked1]
   decide_cbv
 
 private theorem newborn_transmissions_literal :
     (observeTransition broadcastNewborn ⟨0, by decide⟩).map
       (fun t => t.transmissions) = .ok [(0, 1, 1), (2, 1, 1)] := by
-  unfold observeTransition replayPrefix
+  unfold observeTransition
+  rw [prefix_start broadcastNewborn one rfl rfl empty_agents_valid (by decide)]
   dsimp only [broadcastNewborn, attachRelay, empty, List.take]
-  rw [replay_start one empty.agents rfl empty_agents_valid 1 (by decide)]
   simp only [runInputs]
   dsimp only
-  rw [checked_single _ (1 : Fin 2) 1 (by norm_num)]
+  rw [checked_broadcast]
   decide_cbv
 
 theorem success_literals :
