@@ -87,7 +87,39 @@ jobs:
               printf '%s is absent; running present test %s for RED.\n' \
                 "$core" "$test_file"
             fi
+            if [ "$suite" = FitnessABMReplay ]; then
+              /usr/bin/time -f "BB ABM vectors build elapsed=%e s peak_rss=%M KiB" \
+                timeout --kill-after=10s 240s \
+                  lake build NarrativeDynamics.Conformance.FitnessABMVectors
+            fi
             /usr/bin/time -f "$suite test elapsed=%e s peak_rss=%M KiB" \
               timeout --kill-after=10s 240s \
                 lake env lean -DmaxErrors=64 "$test_file"
           done
+
+      - name: Generate and compare BB ABM conformance corpus
+        run: |
+          set -euo pipefail
+          generated="$(mktemp)"
+          captured="$(mktemp)"
+          trap 'rm -f "$generated" "$captured"' EXIT
+          if ! /usr/bin/time -f "BB ABM exporter elapsed=%e s peak_rss=%M KiB" \
+              timeout --kill-after=10s 240s \
+                lake env lean --run NarrativeDynamics/Conformance/FitnessABMVectors.lean \
+                >"$generated" 2>"$captured"; then
+            cat "$generated" >&2
+            cat "$captured" >&2
+            exit 1
+          fi
+          cat "$captured" >&2
+          test -s "$generated"
+          test "$(wc -l < "$generated")" -eq 1
+          test "$(tail -c 1 "$generated" | od -An -t u1 | tr -d ' ')" = 10
+          printf '%s\n' BB_ABM_V1_JSON_BEGIN
+          cat "$generated"
+          printf '%s\n' BB_ABM_V1_JSON_END
+          if [ -f conformance/bb_abm_v1.json ]; then
+            cmp conformance/bb_abm_v1.json "$generated"
+          else
+            printf '%s\n' 'Initial generation: conformance/bb_abm_v1.json is absent.'
+          fi

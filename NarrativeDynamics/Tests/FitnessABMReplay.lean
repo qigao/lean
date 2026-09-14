@@ -1,4 +1,4 @@
-import NarrativeDynamics.Core.FitnessABMReplay
+import NarrativeDynamics.Conformance.FitnessABMVectors
 
 namespace NarrativeDynamics.Tests.FitnessABMReplay
 
@@ -6,6 +6,7 @@ open NarrativeDynamics.NetworkPropagation
 open NarrativeDynamics.FitnessAttachment
 open NarrativeDynamics.FitnessAttachment.Internal
 open NarrativeDynamics.FitnessABM
+open NarrativeDynamics.Conformance.BBPropagation
 open scoped BigOperators
 
 def seedRaw : FitnessAttachment.RawSeed := ⟨2, #[1, 1], #[(0, 1)]⟩
@@ -657,6 +658,83 @@ example : ∃ final,
     FitnessABM.replay weightedSeed 2 agentsRaw [some attach01] = .ok ⟨final, 1/4⟩ ∧
     FitnessABM.replay weightedSeed 2 agentsRaw [some attach10] = .ok ⟨final, 3/4⟩ :=
   ⟨_, replay01, replay10⟩
+
+private def propagationSummary (seed : RawSeed) (agents : Array RawAgent) :
+    Except JointError (List Rat × List Nat × List Bool × List (Nat × Nat)) :=
+  match FitnessABM.replay seed 1 agents [] with
+  | .error error => .error error
+  | .ok result =>
+    let prior := result.final.state
+    let next := advance prior
+    letI := prior.network.snapshot.adjDec
+    .ok (
+      List.ofFn (fun i => (next.population.agents i).belief),
+      List.ofFn (fun i => (next.population.agents i).exposures),
+      List.ofFn (fun i => broadcasting (next.population.profiles i)
+        (next.population.agents i)),
+      (transmissions prior.network.snapshot.graph.Adj prior.population).toList.map
+        fun pair => (pair.1.val, pair.2.val))
+
+-- These literal raw snapshots and complete observations fix the acceptance
+-- semantics independently of corpus generation.
+example : attachSource =
+    ⟨"attach-source", ⟨3, #[1, 1, 1], #[(0, 1), (0, 2)]⟩,
+      #[⟨1, 1/2, 1, 0⟩, ⟨1, 1/2, 0, 0⟩, ⟨1, 1/2, 0, 0⟩]⟩ := rfl
+example : propagationSummary attachSource.seed attachSource.agents =
+    .ok ([1, 1, 1], [0, 1, 1], [true, true, true], [(0, 1), (0, 2)]) := by
+  decide_cbv
+
+example : attachRelay =
+    ⟨"attach-relay", ⟨3, #[1, 1, 1], #[(0, 1), (1, 2)]⟩,
+      #[⟨1, 1/2, 1, 0⟩, ⟨1, 1/2, 0, 0⟩, ⟨1, 1/2, 0, 0⟩]⟩ := rfl
+example : propagationSummary attachRelay.seed attachRelay.agents =
+    .ok ([1, 1, 0], [0, 1, 0], [true, true, false], [(0, 1)]) := by
+  decide_cbv
+
+example : relayNextRound =
+    ⟨"relay-next-round", ⟨3, #[1, 1, 1], #[(0, 1), (1, 2)]⟩,
+      #[⟨1, 1/2, 1, 0⟩, ⟨1, 1/2, 1, 1⟩, ⟨1, 1/2, 0, 0⟩]⟩ := rfl
+example : propagationSummary relayNextRound.seed relayNextRound.agents =
+    .ok ([1, 1, 1], [1, 2, 1], [true, true, true],
+      [(0, 1), (1, 0), (1, 2)]) := by
+  decide_cbv
+
+example : secondBirth =
+    ⟨"second-birth", ⟨4, #[1, 1, 1, 1], #[(0, 1), (1, 2), (2, 3)]⟩,
+      #[⟨1, 1/2, 1, 0⟩, ⟨1, 1/2, 1, 1⟩, ⟨1, 1/2, 0, 0⟩,
+        ⟨1, 1/2, 0, 0⟩]⟩ := rfl
+example : propagationSummary secondBirth.seed secondBirth.agents =
+    .ok ([1, 1, 1, 0], [1, 2, 1, 0], [true, true, true, false],
+      [(0, 1), (1, 0), (1, 2)]) := by
+  decide_cbv
+
+example : halfReceptive =
+    ⟨"half-receptive", ⟨2, #[1, 1], #[(0, 1)]⟩,
+      #[⟨1, 1/2, 1, 0⟩, ⟨1/2, 1/2, 0, 0⟩]⟩ := rfl
+example : propagationSummary halfReceptive.seed halfReceptive.agents =
+    .ok ([1, 1/2], [0, 1], [true, true], [(0, 1)]) := by
+  decide_cbv
+
+example : zeroReceptive =
+    ⟨"zero-receptive", ⟨2, #[1, 1], #[(0, 1)]⟩,
+      #[⟨1, 1/2, 1, 0⟩, ⟨0, 1/2, 0, 0⟩]⟩ := rfl
+example : propagationSummary zeroReceptive.seed zeroReceptive.agents =
+    .ok ([1, 0], [0, 1], [true, false], [(0, 1)]) := by
+  decide_cbv
+
+example : silent =
+    ⟨"silent", ⟨2, #[1, 1], #[(0, 1)]⟩,
+      #[⟨1, 1/2, 0, 0⟩, ⟨1, 1/2, 0, 0⟩]⟩ := rfl
+example : propagationSummary silent.seed silent.agents =
+    .ok ([0, 0], [0, 0], [false, false], []) := by
+  decide_cbv
+
+example : zeroThreshold =
+    ⟨"zero-threshold", ⟨2, #[1, 1], #[(0, 1)]⟩,
+      #[⟨1, 0, 0, 0⟩, ⟨1, 1/2, 0, 0⟩]⟩ := rfl
+example : propagationSummary zeroThreshold.seed zeroThreshold.agents =
+    .ok ([0, 0], [0, 1], [true, false], [(0, 1)]) := by
+  decide_cbv
 
 end FiniteReplayFixtures
 
