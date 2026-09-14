@@ -13,8 +13,9 @@ from .kth_development import _file_pin, _path, _read_json
 from .kthreuse import _prepare_source
 from .models import GraphDiagnosticClassifier
 from .ntu_io import _canonical_json, _hash_json, _publish_exclusive
-from .pose_comparison import _graph_inputs
+from .pose_comparison import _graph_record
 from .pose_indexed_training import evaluate_indexed, train_indexed_model
+from .provenance import _check_matched, _context
 from .train import TrainConfig
 
 _FAMILIES = ("rewired", "flywire")
@@ -23,6 +24,14 @@ _DIAGONAL_POLICY = "drop"
 _INPUT_POLICY = "dense_all_nodes"
 _READOUT_POLICY = "flatten"
 _NODE_DIM = 2
+_STABLE_CONTROL_IDENTITY_FIELDS = (
+    "format_version",
+    "graph_fingerprint",
+    "protocol_hash",
+    "source_sha256",
+    "seeds",
+    "swaps",
+)
 
 
 def _same(actual: Any, expected: Any, context: str) -> None:
@@ -48,6 +57,64 @@ def _model(graph, *, classes: int) -> GraphDiagnosticClassifier:
         input_policy=_INPUT_POLICY,
         readout_policy=_READOUT_POLICY,
     )
+
+
+def _load_frozen_control_graphs(
+    protocol_path: Path,
+    connectivity_path: Path,
+    controls_path: Path,
+) -> tuple[Any, dict[str, Any], dict[int, Any]]:
+    """Verify cached controls by frozen content, not current generator/runtime metadata.
+
+    The control bundle bytes are independently SHA-pinned by the caller. Here we
+    rebuild the selected FlyWire graph from the pinned CSV and frozen protocol,
+    require the stable control identity fields to match, then validate every cached
+    rewired graph against its frozen fingerprint and graph invariants. Generator and
+    runtime metadata are deliberately not compared because this development runner
+    is consuming already-frozen controls rather than regenerating them.
+    """
+    frozen = _read_json(protocol_path, "corrected KTH topology protocol")
+    bundle = _read_json(controls_path, "corrected KTH topology controls")
+    selection, current_identity = _context(frozen, connectivity_path)
+
+    cached_identity = bundle.get("identity")
+    if type(cached_identity) is not dict:
+        raise ValueError("corrected KTH topology cached control identity malformed")
+    stable_current = {name: current_identity.get(name) for name in _STABLE_CONTROL_IDENTITY_FIELDS}
+    stable_cached = {name: cached_identity.get(name) for name in _STABLE_CONTROL_IDENTITY_FIELDS}
+    _same(stable_cached, stable_current, "stable control identity")
+
+    if bundle.get("format_version") != 1:
+        raise ValueError("corrected KTH topology unsupported control bundle format")
+    controls = bundle.get("controls")
+    expected_keys = {str(seed) for seed in current_identity["seeds"]}
+    if type(controls) is not dict or set(controls) != expected_keys:
+        raise ValueError("corrected KTH topology cached control seed roster mismatch")
+
+    expected_fingerprints = frozen.get("rewired_graph_fingerprints")
+    if type(expected_fingerprints) is not dict or set(expected_fingerprints) != expected_keys:
+        raise ValueError("corrected KTH topology frozen rewired fingerprint roster mismatch")
+
+    rewired: dict[int, Any] = {}
+    for seed in current_identity["seeds"]:
+        control = controls.get(str(seed))
+        if type(control) is not dict:
+            raise ValueError(f"corrected KTH topology seed {seed} cached control malformed")
+        try:
+            graph = _graph_record(control["graph"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f"corrected KTH topology seed {seed} cached graph malformed") from exc
+        fingerprint = graph_fingerprint(graph)
+        if control.get("fingerprint") != fingerprint:
+            raise ValueError(f"corrected KTH topology seed {seed} cached fingerprint mismatch")
+        if expected_fingerprints[str(seed)] != fingerprint:
+            raise ValueError(f"corrected KTH topology seed {seed} differs from frozen fingerprint")
+        if control.get("successful_swaps") != current_identity["swaps"]:
+            raise ValueError(f"corrected KTH topology seed {seed} successful-swap budget mismatch")
+        _check_matched(graph, selection.graph)
+        rewired[seed] = graph
+
+    return selection, stable_cached, rewired
 
 
 def run_seed(
@@ -86,13 +153,10 @@ def run_seed(
     if config.graph_node_dim != _NODE_DIM:
         raise ValueError("corrected KTH topology requires frozen graph node_dim=2")
 
-    selection, identity, rewired = _graph_inputs(
+    selection, identity, rewired = _load_frozen_control_graphs(
         protocol_path,
         connectivity_path,
         controls_path,
-        protocol_pin,
-        controls_pin,
-        config,
     )
     raw_graphs = {"rewired": rewired[seed], "flywire": selection.graph}
     graphs = {
