@@ -2477,6 +2477,16 @@ deduplicated. The two-birth edge experiment also retains the exact result
 The V23.6 proof workflow includes dedicated distribution, network-event, BB-only
 naming, and trust gates. The maintained implementation adds no RNG, Monte Carlo,
 PMF/Measure migration, random-fitness generator, asymptotic power-law or condensation
-claim, or empirical/high-probability six-hop claim. The trust audit rejects
-`sorry`/`admit`, `native_decide`, new user axioms, unsafe escape hatches, skipped
-proof gates, and unlimited proof-resource settings.
+claim, or empirical/high-probability six-hop claim. The source trust audit rejects
+`sorry`/`admit`, `native_decide`, user-axiom and unsafe declarations (including
+private declarations), and zero proof-resource limits across the fitness Lean
+modules and tests. As a conservative source lint, it also inspects braces in
+ordinary strings as possible interpolation terms; raw strings remain literal data.
+The log audit requires the expected theorem reports and accepts
+only `propext`, `Classical.choice`, and `Quot.sound` as their transitive axioms.
+The contract steps retain bounded timeouts and fail on proof or audit errors.
+The audit's positive and negative regression cases run in the Lean proof job.
+
+When Python discovery is enabled outside the existing fitness-branch exclusions,
+its job checks out the same exact head as Lean and installs the existing pinned
+`requirements-world-studio.txt` environment before running the full unittest suite.
