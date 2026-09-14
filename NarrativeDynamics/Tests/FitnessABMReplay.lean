@@ -305,7 +305,7 @@ private theorem incoming0 :
      simp only [h0, h1, h2, dif_pos, dif_neg (show ¬ False from fun h => h)] <;>
        first
        | exact iff_of_false (fun h => h.1) (by decide)
-       | decide_cbv)
+       | (trace_state; decide_cbv))
 
 private theorem incoming1 :
     let s := grow (initial one) targets1 positiveM birthData
