@@ -121,7 +121,7 @@ private theorem checkRoster_complete (index : Nat) (raw : List RawAgent)
       have impossible : Except.ok pair = Except.error e := hp.symm.trans he
       cases impossible
     · simp only [ht]
-      exact ⟨_, rfl⟩
+      exact ⟨⟨(), h⟩, True.intro⟩
 
 /-- Exact roster size is checked before examining any scalar field. -/
 def parseAgents (n : Nat) (raw : Array RawAgent) :
