@@ -57,6 +57,17 @@ private def seedFor (weighted : Bool) : JointState 2 :=
 private def target {n : Nat} (i : Fin n) : Targets n 1 :=
   ⟨fun _ => i, fun _ _ _ => Subsingleton.elim _ _⟩
 
+private theorem target_selected {n : Nat} (i : Fin n) :
+    (target i).selected = {i} := by
+  ext j
+  simp only [Targets.selected, Finset.mem_image, Finset.mem_univ, true_and,
+    Finset.mem_singleton]
+  constructor
+  · rintro ⟨a, h⟩
+    exact h.symm
+  · intro h
+    exact ⟨0, h.symm⟩
+
 private def oneTrace (i : Fin 2) : TargetTrace 2 1 1 := (target i, PUnit.unit)
 
 private theorem oneTrace_univ :
@@ -139,7 +150,7 @@ private theorem first_incoming (weighted : Bool) (i : Fin 2) :
   cases weighted <;> fin_cases i <;> fin_cases a <;> fin_cases b <;>
     norm_num [seedFor, seedWeighted, seed2, grow, applyBirth, birthSnapshot,
       birthGraph, birthAdj, lastCases_eq_if, Fin.ext_iff, extendPopulation,
-      birthOne, target, Targets.selected, broadcasting]
+      birthOne, target_selected, broadcasting]
 
 private theorem first_step (weighted : Bool) (i : Fin 2) :
     advance (grow (seedFor weighted) (target i) (by decide) birthOne) =
@@ -187,9 +198,9 @@ theorem newborn_mass_unit : eventProbability seed2 1 (by decide) (by decide)
   rw [oneTrace_univ, Finset.sum_insert (by decide), Finset.sum_singleton]
   have h0 := one_broadcasts false 0
   have h1 := one_broadcasts false 1
-  change newbornBroadcasts (jointFinal seed2 1 _ _ _ (oneTrace 0)) = true at h0
-  change newbornBroadcasts (jointFinal seed2 1 _ _ _ (oneTrace 1)) = false at h1
-  rw [h0, h1]
+  change newbornBroadcasts (jointFinal seed2 1 (by decide) (by decide) [some birthOne] (oneTrace 0)) = true at h0
+  change newbornBroadcasts (jointFinal seed2 1 (by decide) (by decide) [some birthOne] (oneTrace 1)) = false at h1
+  simp only [h0, h1, Bool.false_eq_true, if_false, if_true]
   simp [unit_mass]
 
 -- Only fitness changed: the chosen-graph propagation result above is shared.
@@ -200,9 +211,9 @@ theorem newborn_mass_weighted : eventProbability seedWeighted 1 (by decide) (by 
   rw [oneTrace_univ, Finset.sum_insert (by decide), Finset.sum_singleton]
   have h0 := one_broadcasts true 0
   have h1 := one_broadcasts true 1
-  change newbornBroadcasts (jointFinal seedWeighted 1 _ _ _ (oneTrace 0)) = true at h0
-  change newbornBroadcasts (jointFinal seedWeighted 1 _ _ _ (oneTrace 1)) = false at h1
-  rw [h0, h1]
+  change newbornBroadcasts (jointFinal seedWeighted 1 (by decide) (by decide) [some birthOne] (oneTrace 0)) = true at h0
+  change newbornBroadcasts (jointFinal seedWeighted 1 (by decide) (by decide) [some birthOne] (oneTrace 1)) = false at h1
+  simp only [h0, h1, Bool.false_eq_true, if_false, if_true]
   simp [weighted_mass_zero]
 
 private def idleRound (i : Fin 2) : JointState 3 where
@@ -229,7 +240,7 @@ private theorem idle_incoming (i : Fin 2) :
   fin_cases i <;> fin_cases a <;> fin_cases b <;>
     norm_num [firstRound, seedFor, seed2, grow, applyBirth, birthSnapshot,
       birthGraph, birthAdj, lastCases_eq_if, Fin.ext_iff, birthOne,
-      target, Targets.selected, broadcasting]
+      target_selected, broadcasting]
 
 private theorem idle_step (i : Fin 2) : advance (firstRound false i) = idleRound i := by
   apply joint_eq
@@ -252,12 +263,11 @@ theorem newborn_mass_after_idle : eventProbability seed2 1 (by decide) (by decid
   unfold eventProbability
   change (∑ trace : TargetTrace 2 1 1, _) = _
   rw [oneTrace_univ, Finset.sum_insert (by decide), Finset.sum_singleton]
-  rw [idle_broadcasts, idle_broadcasts]
-  change (if true = true then jointProbability seed2 1 _ _ [some birthOne]
-      (oneTrace 0) else 0) +
-    (if true = true then jointProbability seed2 1 _ _ [some birthOne]
-      (oneTrace 1) else 0) = 1
-  simp [unit_mass]
+  simp only [idle_broadcasts, if_true]
+  change jointProbability seed2 1 (by decide) (by decide) [some birthOne] (oneTrace 0) +
+    jointProbability seed2 1 (by decide) (by decide) [some birthOne] (oneTrace 1) = 1
+  rw [unit_mass, unit_mass]
+  norm_num
 
 -- The chosen second target is the first newborn, whose frozen weight is one.
 private def twoTrace : TargetTrace 2 1 2 :=
@@ -316,22 +326,40 @@ private theorem one_diameter (i : Fin 2) :
   have upper : meshDiameter s.snapshot.graph.Adj
       ⟨2, by simpa using state_bounded s⟩ ≤ 2 :=
     meshDiameter_minimal _ _ (by simpa using state_bounded s)
+  have noEdge : ¬ s.snapshot.graph.Adj
+      (if i = 0 then (1 : Fin 3) else 0) 2 := by
+    fin_cases i <;>
+      norm_num [s, firstRound, seedFor, seed2, grow, applyBirth, birthSnapshot,
+        birthGraph, birthAdj, lastCases_eq_if, Fin.ext_iff, target_selected]
+  have different : (if i = 0 then (1 : Fin 3) else 0) ≠ 2 := by
+    fin_cases i <;> decide
   have noOne : ¬ ReachWithin s.snapshot.graph.Adj 1
       (if i = 0 then (1 : Fin 3) else 0) 2 := by
-    rw [← reached_iff]
-    fin_cases i <;> decide_cbv
+    rintro ⟨length, hlength, walk⟩
+    have casesLength : length = 0 ∨ length = 1 := by omega
+    rcases casesLength with h | h
+    · subst length
+      cases walk
+      exact different rfl
+    · subst length
+      cases walk with
+      | step edge rest =>
+          cases rest
+          exact noEdge edge
   have lower : 2 ≤ meshDiameter s.snapshot.graph.Adj
       ⟨2, by simpa using state_bounded s⟩ := by
     by_contra h
     apply noOne
-    exact reachWithin_mono (meshDiameter_spec _ _ _ _) (by omega)
+    exact reachWithin_mono
+      (meshDiameter_spec s.snapshot.graph.Adj
+        ⟨2, by simpa using state_bounded s⟩ _ _) (by omega)
   exact Nat.le_antisymm upper lower
 
 example (i : Fin 2) :
     let out := jointFinal seed2 1 (by decide) (by decide) [some birthOne] (oneTrace i)
     meshDiameter out.state.network.snapshot.graph.Adj
       ⟨out.nodeCount - 1, state_bounded out.state.network⟩ = 2 := by
-  change let out := jointFinal (seedFor false) 1 _ _ _ (oneTrace i); _
+  change let out := jointFinal (seedFor false) 1 (by decide) (by decide) [some birthOne] (oneTrace i); _
   simp only [one_final]
   exact one_diameter i
 
@@ -347,8 +375,8 @@ example :
       (oneTrace 0)).state.population.agents = [⟨1,0⟩, ⟨1,1⟩, ⟨1,1⟩] ∧
     List.ofFn (jointFinal seed2 1 (by decide) (by decide) [some birthOne]
       (oneTrace 1)).state.population.agents = [⟨1,0⟩, ⟨1,1⟩, ⟨0,0⟩] := by
-  change List.ofFn (jointFinal (seedFor false) 1 _ _ _ (oneTrace 0)).state.population.agents = _ ∧
-    List.ofFn (jointFinal (seedFor false) 1 _ _ _ (oneTrace 1)).state.population.agents = _
+  change List.ofFn (jointFinal (seedFor false) 1 (by decide) (by decide) [some birthOne] (oneTrace 0)).state.population.agents = _ ∧
+    List.ofFn (jointFinal (seedFor false) 1 (by decide) (by decide) [some birthOne] (oneTrace 1)).state.population.agents = _
   rw [one_final, one_final]
   decide_cbv
 
