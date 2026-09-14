@@ -1,6 +1,6 @@
 # BB-driven ABM Evolution V1 Design
 
-Status: approved and implemented through Tasks 1–5 of `docs/superpowers/plans/2026-09-14-bb-abm-evolution-v1.md`, with actual CI and independent task reviews complete. Task 6's genuine missing-public-surface RED is complete; its permanent integration candidate awaits final CI, draft-PR evidence, and broad review.
+Status: approved and implemented through Tasks 1–6 of `docs/superpowers/plans/2026-09-14-bb-abm-evolution-v1.md` at implementation SHA `864fa5bb165a8b9c9f3608e4e3313f78fbfafe39`. All six task reviews and the whole-branch review are Approved. Draft [PR #73](https://github.com/qigao/lean/pull/73) targets `proof/narrative-dynamics-v0` and records required checks for subsequent revisions at their exact checked revisions.
 
 Base: `proof/narrative-dynamics-v0` at `0a41462a37064a2a3ded3676ebdfb24b9243fc8c`.
 
@@ -221,4 +221,10 @@ The first follow-up after this foundation should be a separately specified runti
 
 ## 12. Design review and next handoff
 
-This design records the approved direction of BB-driven network growth with persistent agent updates and its first concrete proof scope. The implementation plan covers the propagation kernel, joint growth, checked replay, joint outcome probabilities, and conformance/audit integration. Tasks 1–5 completed their executable RED/GREEN checks and independent reviews; Task 6 integration and final branch review remain tracked in that plan.
+This design records the approved direction of BB-driven network growth with persistent agent updates and its first concrete proof scope. The implementation plan covers the propagation kernel, joint growth, checked replay, joint outcome probabilities, and conformance/audit integration. Tasks 1–6 completed their executable RED/GREEN checks and independent reviews, and the whole-branch review is Approved.
+
+The reviewed source evidence is implementation SHA `864fa5bb165a8b9c9f3608e4e3313f78fbfafe39`. Proof run `34840279459` completed SUCCESS for Lean job `103963470577`, Python job `103963395694`, and selector job `103963395857`; World Studio run `34840279355`, verify job `103963395318`, completed SUCCESS. The permanent gate accepted all 35 required public reports and the eight actual Lean-generated vectors matched the existing Python V1 runtime corpus comparison. Complete Python discovery ran 1,646 tests in 638.418 seconds and ended `OK (skipped=1)`, with only the existing `BLENDER_EXECUTABLE` smoke test skipped.
+
+The broad review upheld the initial `hb : m ≤ n` interface, temporary-workflow lifecycle, finite `maxRecDepth 4096` and bounded-command policy, and explicit conformance-module prerequisite build. It treated inherited `Learning.lean:21`, `GroundedGoalCovariance.lean:96`, and Node/JavaScript workflow warnings as nonblocking maintenance. This evidence proves the fixed-fitness scalar-belief ABM in the stated finite boundary; it adds no adaptive fitness, V19 population creation, or universal four-hop claim.
+
+Draft [PR #73](https://github.com/qigao/lean/pull/73) records required checks and their exact checked revisions. The source-proof evidence above remains pinned to `864fa5bb165a8b9c9f3608e4e3313f78fbfafe39` and does not imply a result for any later revision.

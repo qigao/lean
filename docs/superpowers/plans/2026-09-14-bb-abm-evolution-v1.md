@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-14-bb-abm-evolution-v1-design.md`, approved from commit `49655229bc3c613a6b71f9c671a3e38a458551dc`.
 
-**Execution status (2026-09-14):** Tasks 1–5 have actual CI evidence and clean independent task reviews. Task 6's public-root RED is confirmed at `46284f101f60fef3872ef387a1ec1306786b1edc` by run `34838812694`, job `103958744122`; its permanent integration candidate awaits final CI, draft-PR evidence, and broad review.
+**Execution status (2026-09-14):** Tasks 1–6 are complete at implementation SHA `864fa5bb165a8b9c9f3608e4e3313f78fbfafe39`. All six task reviews and the whole-branch review are Approved with no Critical, Important, or introduced Minor findings. Draft [PR #73](https://github.com/qigao/lean/pull/73) targets `proof/narrative-dynamics-v0`.
 
 ## Global Constraints
 
@@ -708,11 +708,11 @@ python -m unittest tests.test_fitness_trust_audit tests.test_network_abm_bb_conf
 git diff --check
 ```
 
-Task 6 local evidence covers `bash -n`, the complete source audit, the four focused Python modules (29 tests), and `git diff --check`. Lean is unavailable in this execution environment, so `lake build` and the complete bounded script remain required ordinary-CI gates rather than local passes. The complete Python discovery also remains a required final-revision CI gate.
+Task 6 local evidence covers `bash -n`, the complete source audit, the four focused Python modules (29 tests), and `git diff --check`. Lean was unavailable in this execution environment, so the actual implementation-revision CI evidence below supplies the `lake build`, complete bounded script, and complete Python discovery results.
 
 Do not repeat the complete Python discovery locally if the current revision's required CI will run it and no additional local risk requires that repetition. Run earlier BB acceptance gates through the unchanged workflow; compare their elapsed time and memory with the prior baseline if a regression appears.
 
-- [ ] **Commit the integration and publish the implementation branch for review:**
+- [x] **Commit the integration and publish the implementation branch for review:**
 
 ```bash
 git add tools/check_fitness_abm.sh .github/workflows/proof.yml NarrativeDynamics.lean README.md NarrativeDynamics/Tests/NetworkPropagation.lean NarrativeDynamics/Tests/FitnessABM.lean NarrativeDynamics/Tests/FitnessABMReplay.lean NarrativeDynamics/Tests/FitnessABMDistribution.lean
@@ -721,7 +721,15 @@ git commit -m "ci: verify BB ABM proofs and cross-language examples"
 
 Open a draft PR against `proof/narrative-dynamics-v0`, describing the concrete missing composition, the new behavior, the proof scope, and the unchanged production Python boundary. Keep all task commits. Record the final implementation SHA and verify that the Lean proof and complete Python discovery jobs check that SHA; verify the required World Studio workflow according to its existing checkout/event semantics. A skipped job or a docs-only workflow result is not implementation evidence. Do not merge without the user's merge authorization.
 
-- [ ] **Review the final diff and evidence.** Use the requesting-code-review workflow before declaring merge readiness. Check the generic proofs, concrete delayed-relay and probability examples, error precedence, root imports, corpus provenance, and absence of production Python contract edits. Resolve material findings and rerun only affected checks plus required CI. Report actual pass/failure/skip status, execution revision, and any remaining scope limits.
+- [x] **Review the final diff and evidence.** Use the requesting-code-review workflow before declaring merge readiness. Check the generic proofs, concrete delayed-relay and probability examples, error precedence, root imports, corpus provenance, and absence of production Python contract edits. Resolve material findings and rerun only affected checks plus required CI. Report actual pass/failure/skip status, execution revision, and any remaining scope limits.
+
+### Reviewed implementation evidence
+
+The reviewed source implementation is `864fa5bb165a8b9c9f3608e4e3313f78fbfafe39`. Proof workflow run `34840279459` completed SUCCESS for selector job `103963395857`, Lean job `103963470577`, and Python job `103963395694`. World Studio run `34840279355`, verify job `103963395318`, also completed SUCCESS under its existing checkout semantics. The permanent Lean gate audited all 35 required public reports, generated all eight actual conformance vectors, and passed the unconditional runtime corpus comparison. Complete Python discovery ran 1,646 tests in 638.418 seconds and ended `OK (skipped=1)`; the one skip is the existing Blender smoke test that requires `BLENDER_EXECUTABLE`.
+
+All six task reviews and the whole-branch review are Approved. The broad review upheld the four execution rulings: carry the initial `hb : m ≤ n`; use and then remove the temporary diagnostic workflow; retain finite `maxRecDepth 4096` fixtures with default heartbeats and bounded commands; and build `NarrativeDynamics.Conformance.FitnessABMVectors` before the importing Replay fixture. It classified inherited warnings at `Learning.lean:21` and `GroundedGoalCovariance.lean:96`, plus existing Node/JavaScript workflow warnings, as nonblocking maintenance outside this change.
+
+Draft [PR #73](https://github.com/qigao/lean/pull/73) is the authoritative place to inspect required checks for subsequent PR revisions. The source-proof evidence above remains pinned to `864fa5bb165a8b9c9f3608e4e3313f78fbfafe39`; each later revision's checks must be evaluated at the exact revision they report.
 
 ## Spec coverage and handoff
 
@@ -738,8 +746,8 @@ Open a draft PR against `proof/narrative-dynamics-v0`, describing the concrete m
 | 9: Acceptance scenarios | Tasks 1–5 concrete assertions and one shared corpus |
 | 10: Modules, resources, conformance and CI | File ownership table; Tasks 5–6; pinned environment preparation |
 | 11: Deferred extensions | Global constraints and Task 6 diff/scope review |
-| 12: Plan before implementation | This plan; completed Task 1–5 evidence and Task 6 progress are checked explicitly |
+| 12: Plan before implementation | This plan; all six tasks and their reviewed implementation evidence are checked explicitly |
 
 Before execution, read the approved spec and this plan together. Normal implementation choices within these contracts need no new design approval. If the work requires changing fitness based on behavior, creating V19 agents, weakening raw atomicity, or treating a floating-point comparison as a formal proof, that is outside the approved boundary and needs a revised design.
 
-The original planning commit contained no Lean or production implementation. Approved execution is proceeding task by task under the subagent-driven-development workflow; publication, final CI, and broad review remain parent-owned gates.
+The original planning commit contained no Lean or production implementation. Approved task-by-task execution and draft-PR publication are complete. PR #73 records required checks for each subsequent revision at its exact checked revision.
