@@ -9,7 +9,10 @@ from pathlib import Path
 from typing import Any
 
 from .kth_extract import _spec_from_protocol, kth_extractor_code_hash
-from .kth_source import _ACTIONS, _MISSING_VIDEO_KEY, _canonical_json, _hash_json, parse_sequence_file
+from .kth_source import (
+    _ACTIONS, _MISSING_VIDEO_KEY, _canonical_json, _hash_json,
+    development_subsequences, expected_source_exclusions, parse_sequence_file,
+)
 from .ntu_io import _hash_file, _publish_exclusive
 from .pose_extract import _schema
 
@@ -45,7 +48,8 @@ def _verify_sidecar(sample_dir: Path, record: dict[str, Any]) -> None:
 
 
 def _source_record(plan, sequence_sha: str, archive_records: list[dict[str, Any]],
-                   video_records: list[dict[str, Any]], missing_records: list[dict[str, Any]]) -> dict[str, Any]:
+                   video_records: list[dict[str, Any]], missing_records: list[dict[str, Any]],
+                   exclusion_records: list[dict[str, Any]]) -> dict[str, Any]:
     videos = sorted(video_records, key=lambda row: (_ACTIONS.index(row["action"]), row["subject"], row["scenario"]))
     if len(videos) != 599:
         raise ValueError("KTH source evidence must cover exactly 599 present parent videos")
@@ -57,6 +61,16 @@ def _source_record(plan, sequence_sha: str, archive_records: list[dict[str, Any]
     }]
     if missing != expected_missing:
         raise ValueError("KTH source evidence missing-video record changed")
+    exclusions = json.loads(_canonical_json(exclusion_records))
+    if _canonical_json(exclusions) != _canonical_json(expected_source_exclusions()):
+        raise ValueError("KTH source exclusion record changed")
+    archives = sorted(archive_records, key=lambda row: _ACTIONS.index(row["action"]))
+    exclusion = exclusions[0]
+    boxing_archive = next(row for row in archives if row["action"] == "boxing")
+    corrupt_parent = next(row for row in videos if row["video_key"] == exclusion["video_key"])
+    if (boxing_archive["sha256"] != exclusion["archive_sha256"]
+            or corrupt_parent["sha256"] != exclusion["member_sha256"]):
+        raise ValueError("KTH source exclusion is not bound to exact official bytes")
     subsequences = [dict(row) for row in plan.subsequences]
     dataset_content_hash = _hash_json({
         "sequence_file_sha256": sequence_sha,
@@ -67,6 +81,7 @@ def _source_record(plan, sequence_sha: str, archive_records: list[dict[str, Any]
         "dataset_content_hash": dataset_content_hash, "classes": list(_ACTIONS),
         "policy": plan.split_policy,
         "assignments": [{"sample_id": row["sample_id"], "split": row["split"]} for row in subsequences],
+        "source_exclusions": exclusions,
     })
     record = {
         "format_version": 1, "kind": "kth_rgb_source_manifest",
@@ -74,14 +89,16 @@ def _source_record(plan, sequence_sha: str, archive_records: list[dict[str, Any]
         "official_source": "https://www.csc.kth.se/cvap/actions/",
         "classes": list(_ACTIONS), "split_policy": plan.split_policy,
         "sequence_file_sha256": sequence_sha,
-        "archives": sorted(archive_records, key=lambda row: _ACTIONS.index(row["action"])),
+        "archives": archives,
         "videos": videos, "missing_videos": missing, "subsequences": subsequences,
+        "source_exclusions": exclusions,
         "dataset_content_hash": dataset_content_hash, "split_hash": split_hash,
     }
     record["source_manifest_hash"] = _hash_json(record)
     record["input_inventory_hash"] = _hash_json({
         "sequence_file_sha256": sequence_sha, "videos": videos,
         "missing_videos": missing, "subsequences": subsequences,
+        "source_exclusions": exclusions,
     })
     return json.loads(_canonical_json(record))
 
@@ -102,8 +119,10 @@ def aggregate_kth_shards(sequence_file: str | Path, *, protocol: dict[str, Any],
     all_videos: dict[str, dict[str, Any]] = {}
     all_missing: dict[str, dict[str, Any]] = {}
     all_samples: dict[str, tuple[dict[str, Any], Path]] = {}
+    all_exclusions: list[dict[str, Any]] = []
     archive_records: list[dict[str, Any]] = []
     python_version = platform_name = None
+    usable_development = development_subsequences(plan.subsequences, expected_source_exclusions())
     for raw_path in shard_paths:
         path = Path(raw_path).absolute()
         report_path = path / "shard-report.json"
@@ -128,6 +147,9 @@ def aggregate_kth_shards(sequence_file: str | Path, *, protocol: dict[str, Any],
         }
         for name, value in expected_common.items():
             _same(report.get(name), value, f"shard {action} {name}")
+        expected_exclusions = expected_source_exclusions() if action == "boxing" else []
+        _same(report.get("source_exclusions"), expected_exclusions, f"shard {action} source_exclusions")
+        all_exclusions.extend(expected_exclusions)
         if python_version is None:
             python_version, platform_name = report.get("python_version"), report.get("platform")
         if report.get("python_version") != python_version or report.get("platform") != platform_name:
@@ -177,7 +199,7 @@ def aggregate_kth_shards(sequence_file: str | Path, *, protocol: dict[str, Any],
             }
 
         samples = report.get("samples")
-        expected_samples = [row for row in plan.subsequences if row["label"] == action and row["split"] != "final_test"]
+        expected_samples = [row for row in usable_development if row["label"] == action]
         if type(samples) is not list or len(samples) != len(expected_samples):
             raise ValueError("KTH action shard development sample count mismatch")
         for expected, actual in zip(expected_samples, samples, strict=True):
@@ -207,12 +229,15 @@ def aggregate_kth_shards(sequence_file: str | Path, *, protocol: dict[str, Any],
     if (set(reports) != set(_ACTIONS) or set(all_videos) != expected_present_keys
             or set(all_missing) != expected_missing_keys or len(all_videos) != 599):
         raise ValueError("KTH aggregation requires six actions, 599 present videos and one missing slot")
-    expected_development = [row for row in plan.subsequences if row["split"] != "final_test"]
+    if _canonical_json(all_exclusions) != _canonical_json(expected_source_exclusions()):
+        raise ValueError("KTH aggregation requires exact corrupt-source exclusion evidence")
+    expected_development = development_subsequences(plan.subsequences, all_exclusions)
     if set(all_samples) != {row["sample_id"] for row in expected_development}:
-        raise ValueError("KTH aggregation requires complete development subsequence evidence")
+        raise ValueError("KTH aggregation requires complete usable development subsequence evidence")
 
     source = _source_record(
-        plan, sequence_sha, archive_records, list(all_videos.values()), list(all_missing.values())
+        plan, sequence_sha, archive_records, list(all_videos.values()), list(all_missing.values()),
+        all_exclusions,
     )
     frozen = json.loads(_canonical_json(protocol))
     for name in ("dataset_content_hash", "input_inventory_hash", "source_manifest_hash", "split_hash"):
@@ -234,9 +259,7 @@ def aggregate_kth_shards(sequence_file: str | Path, *, protocol: dict[str, Any],
     sample_reports: list[dict[str, Any]] = []
     try:
         with geometry_path.open("xb") as geometry_out, timing_path.open("xb") as timing_out:
-            for expected in plan.subsequences:
-                if expected["split"] == "final_test":
-                    continue
+            for expected in expected_development:
                 actual, sample_dir = all_samples[expected["sample_id"]]
                 _verify_sidecar(sample_dir, actual)
                 parent = all_videos[expected["video_key"]]
@@ -268,6 +291,7 @@ def aggregate_kth_shards(sequence_file: str | Path, *, protocol: dict[str, Any],
             "dataset_content_hash": source["dataset_content_hash"],
             "split_hash": source["split_hash"], "input_inventory_hash": source["input_inventory_hash"],
             "source_manifest_hash": source["source_manifest_hash"],
+            "source_exclusions": source["source_exclusions"],
             "sequence_file_sha256": sequence_sha,
             "archive_sha256": frozen["archive_sha256"],
             "versions": spec.expected_versions(), "python_version": python_version,
