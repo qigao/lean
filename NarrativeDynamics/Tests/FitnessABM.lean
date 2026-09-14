@@ -44,4 +44,78 @@ example : joined.population.agents (newId 2) = ⟨0,0⟩ := by decide_cbv
 example : List.ofFn (fun i => ((advance joined).population.agents i).belief) =
     [1,1,0] := by decide_cbv
 
+-- Profiles survive embedding, independently of their agents' changing beliefs.
+example : joined.population.profiles (oldId 2 0) = seed2.population.profiles 0 := by
+  simpa [joined] using grow_old_profile seed2 target1 (by decide) birthOne 0
+
+def successiveBirths : Schedule 2 1 :=
+  .birth target1 birthOne (.birth ⟨![2], by decide⟩ birthOne .nil)
+def twoBirths := runTyped seed2 (by decide) (by decide) successiveBirths
+
+-- Catches stale attachment weights, omitted rounds, and asynchronous forwarding.
+example : List.ofFn (fun i => (twoBirths.final.state.population.agents i).belief) =
+    [1,1,1,0] := by decide_cbv
+example : List.ofFn (fun i => (twoBirths.final.state.population.agents i).exposures) =
+    [1,2,1,0] := by decide_cbv
+example : twoBirths.final.nodeCount = 4 := by decide_cbv
+example : actualEdgeCount twoBirths.final.state.network.snapshot = 3 := by decide_cbv
+example : twoBirths.final.roundIndex = 2 := by decide_cbv
+example : twoBirths.probability = 1/8 := by decide_cbv
+
+def birthThenIdle : Schedule 2 1 :=
+  .birth target1 birthOne (.birth ⟨![2], by decide⟩ birthOne (.idle .nil))
+def thirdRound := runTyped seed2 (by decide) (by decide) birthThenIdle
+
+-- The last newborn receives on the following round; idle adds no probability.
+example : List.ofFn (fun i => (thirdRound.final.state.population.agents i).belief) =
+    [1,1,1,1] := by decide_cbv
+example : List.ofFn (fun i => (thirdRound.final.state.population.agents i).exposures) =
+    [2,4,2,1] := by decide_cbv
+example : thirdRound.final.roundIndex = 3 := by decide_cbv
+example : thirdRound.probability = 1/8 := by decide_cbv
+
+def newbornOne : NewAgent :=
+  { newbornZero with initialBelief := 1, beliefValid := by norm_num }
+def broadcastingBirth : BirthData := ⟨⟨1, by norm_num⟩, newbornOne⟩
+def immediate := tick seed2 (by decide) (by decide)
+  (.birth target1 broadcastingBirth)
+
+-- Birth precedes propagation: a newborn above threshold broadcasts immediately.
+example : List.ofFn (fun i => (immediate.final.state.population.agents i).belief) =
+    [1,1,1] := by decide_cbv
+example : List.ofFn (fun i => (immediate.final.state.population.agents i).exposures) =
+    [0,2,0] := by decide_cbv
+
+def idleOnly := runTyped (m := 1) seed2 (by decide) (by decide)
+  (.idle (.idle .nil)) 7
+example : idleOnly.probability = 1 := by decide_cbv
+example : idleOnly.final.roundIndex = 9 := by decide_cbv
+example : idleOnly.final.nodeCount = 2 := by decide_cbv
+example : List.ofFn (fun i => (idleOnly.final.state.population.agents i).belief) =
+    [1,1] := by decide_cbv
+example : (tick (m := 1) seed2 (by decide) (by decide) .idle 7).final.roundIndex =
+    8 := by decide_cbv
+example : (runTyped (m := 1) seed2 (by decide) (by decide) .nil 7).final.roundIndex =
+    7 := by decide_cbv
+
+-- Reordering a full target set changes neither topology nor the observed round.
+def target01 : Targets 2 2 := ⟨![0,1], by decide⟩
+def target10 : Targets 2 2 := ⟨![1,0], by decide⟩
+example :
+    (grow seed2 target01 (by decide) birthOne).network.snapshot.graph =
+      (grow seed2 target10 (by decide) birthOne).network.snapshot.graph ∧
+    ∀ i,
+      (advance (grow seed2 target01 (by decide) birthOne)).population.profiles i =
+        (advance (grow seed2 target10 (by decide) birthOne)).population.profiles i ∧
+      ((advance (grow seed2 target01 (by decide) birthOne)).population.agents i).belief =
+        ((advance (grow seed2 target10 (by decide) birthOne)).population.agents i).belief ∧
+      ((advance (grow seed2 target01 (by decide) birthOne)).population.agents i).exposures =
+        ((advance (grow seed2 target10 (by decide) birthOne)).population.agents i).exposures :=
+  grow_order_irrelevant seed2 target01 target10 (by decide) birthOne (by decide_cbv)
+
+#print axioms NarrativeDynamics.FitnessABM.extendPopulation_valid
+#print axioms NarrativeDynamics.FitnessABM.grow_order_irrelevant
+#print axioms NarrativeDynamics.FitnessABM.runTyped_counts
+#print axioms NarrativeDynamics.FitnessABM.runTyped_probability_pos
+
 end NarrativeDynamics.Tests.FitnessABM
