@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 import logging
+import math
 import random
 
 import numpy as np
@@ -49,6 +50,52 @@ def graph_fingerprint(graph: DirectedGraph) -> str:
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def diagnostic_graph(
+    graph: DirectedGraph,
+    *,
+    weight_policy: str = "raw",
+    diagonal_policy: str = "keep",
+) -> DirectedGraph:
+    """Return an explicit development-only graph transform for architecture diagnosis.
+
+    This helper never mutates the frozen FlyWire/control graphs. Normalization is by
+    target-node incoming L1 mass so message scale can be isolated from topology.
+    """
+    if type(graph) is not DirectedGraph:
+        raise ValueError("diagnostic graph requires an explicit DirectedGraph")
+    if weight_policy not in ("raw", "incoming_l1", "log1p_incoming_l1"):
+        raise ValueError("unsupported diagnostic graph weight policy")
+    if diagonal_policy not in ("keep", "drop"):
+        raise ValueError("unsupported diagnostic graph diagonal policy")
+
+    edges: list[tuple[int, int, float]] = []
+    for source, target, raw_weight in zip(graph.src, graph.dst, graph.weight):
+        if diagonal_policy == "drop" and source == target:
+            continue
+        weight = float(raw_weight)
+        if weight_policy == "log1p_incoming_l1":
+            if weight < 0.0:
+                raise ValueError("log1p diagnostic normalization requires nonnegative weights")
+            weight = math.log1p(weight)
+        edges.append((source, target, weight))
+
+    if weight_policy in ("incoming_l1", "log1p_incoming_l1"):
+        incoming: dict[int, float] = {}
+        for _, target, weight in edges:
+            incoming[target] = incoming.get(target, 0.0) + abs(weight)
+        if any(total <= 0.0 or not math.isfinite(total) for total in incoming.values()):
+            raise ValueError("diagnostic incoming normalization requires positive finite L1 mass")
+        edges = [(source, target, weight / incoming[target])
+                 for source, target, weight in edges]
+
+    return DirectedGraph(
+        num_nodes=graph.num_nodes,
+        src=tuple(source for source, _, _ in edges),
+        dst=tuple(target for _, target, _ in edges),
+        weight=tuple(weight for _, _, weight in edges),
+    )
 
 
 def random_sparse_graph(num_nodes: int, num_edges: int, seed: int) -> DirectedGraph:
@@ -120,8 +167,6 @@ def rewire_degree_preserving(
 
         old_one = (a, b)
         old_two = (c, d)
-        # Same collision predicate as E - {old_one, old_two}, without an O(E)
-        # allocation per proposal. Keep RNG calls and acceptance order unchanged.
         if (
             (proposed_one in edge_set and proposed_one != old_one and proposed_one != old_two)
             or (proposed_two in edge_set and proposed_two != old_one and proposed_two != old_two)
