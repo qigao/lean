@@ -1,5 +1,7 @@
-import NarrativeDynamics.Core.FitnessABMDistribution
+import NarrativeDynamics
 import NarrativeDynamics.Core.SmallWorldMetrics
+
+#check NarrativeDynamics.FitnessABM.replay_projection
 
 namespace NarrativeDynamics.FitnessABM.DistributionFixtures
 

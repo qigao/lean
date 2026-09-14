@@ -59,6 +59,9 @@ jobs:
           mathlib_sha="$(git -C .lake/packages/mathlib rev-parse HEAD)"
           printf 'mathlib_sha=%s\n' "$mathlib_sha" | tee -a "$GITHUB_OUTPUT" "$GITHUB_STEP_SUMMARY"
 
+      - name: Build unchanged public root for integration RED
+        run: lake build NarrativeDynamics
+
       - name: Build and test present BB ABM cores
         run: |
           set -euo pipefail
