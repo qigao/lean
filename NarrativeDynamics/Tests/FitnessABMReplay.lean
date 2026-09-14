@@ -1019,8 +1019,8 @@ private theorem secondBirth_delivered :
   rcases pair with ⟨j, i⟩
   have hmem : (j, i) ∈ transmissions g secondBirthPopulation ↔
       j ∈ incoming g secondBirthPopulation i := by
-    simp only [transmissions, incoming, Finset.mem_filter, Finset.mem_product,
-      Finset.mem_univ, true_and]
+    rw [transmission_iff]
+    simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
   rw [hmem, secondBirth_incoming]
   fin_cases j <;> fin_cases i <;> norm_num [Fin.ext_iff]
 
