@@ -1229,7 +1229,7 @@ private theorem successive_growth_literal :
   rw [prefix_start successiveBirths one rfl rfl empty_agents_valid (by decide)]
   dsimp only [successiveBirths, empty, List.take]
   rw [runInputs, checked1]
-  simp only [runInputs]
+  simp only [runInputs, List.getElem_cons_succ, List.getElem_cons_zero]
   rw [checked2]
   decide_cbv
 
@@ -1239,7 +1239,7 @@ private theorem retained_growth_literal :
   unfold observeTransition
   rw [prefix_start retainedExposures one rfl rfl retainedExposures_agents_valid (by decide)]
   dsimp only [retainedExposures, attachRelay, empty, List.take]
-  simp only [runInputs]
+  simp only [runInputs, List.getElem_cons_zero]
   rw [checked1]
   decide_cbv
 
@@ -1249,7 +1249,7 @@ private theorem newborn_transmissions_literal :
   unfold observeTransition
   rw [prefix_start broadcastNewborn one rfl rfl empty_agents_valid (by decide)]
   dsimp only [broadcastNewborn, attachRelay, empty, List.take]
-  simp only [runInputs]
+  simp only [runInputs, List.getElem_cons_zero]
   rw [checked_broadcast]
   decide_cbv
 
