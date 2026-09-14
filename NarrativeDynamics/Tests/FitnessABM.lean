@@ -7,6 +7,16 @@ open NarrativeDynamics.FitnessAttachment
 open NarrativeDynamics.FitnessAttachment.Internal
 open NarrativeDynamics.FitnessABM
 
+-- Temporary CI diagnostics: force proof dependencies, then flush stdout directly.
+-- This observes elaboration only and supplies no proof of any fixture assertion.
+private def fixtureCheckpoint (name : Lean.Name) : Lean.Elab.Command.CommandElabM Unit := do
+  let out ← IO.getStdout
+  out.putStrLn s!"FitnessABM checkpoint waiting: {name}"
+  out.flush
+  let dependencies ← Lean.collectAxioms name
+  out.putStrLn s!"FitnessABM checkpoint complete: {name}; dependencies={dependencies}"
+  out.flush
+
 private theorem seed2_connected : (⊤ : SimpleGraph (Fin 2)).Connected where
   preconnected := by
     intro u v
@@ -29,6 +39,8 @@ def seed2 : JointState 2 where
     · intro i
       fin_cases i <;> norm_num [AgentState.Valid]
 
+run_cmd fixtureCheckpoint ``seed2
+
 def newbornZero : NewAgent :=
   { profile := ⟨1, 1/2⟩, initialBelief := 0
     profileValid := by norm_num [AgentProfile.Valid]
@@ -41,8 +53,10 @@ def joined := grow seed2 target1 (by decide) birthOne
 example : joined.population.agents (oldId 2 0) = seed2.population.agents 0 := by
   simpa [joined] using grow_old_state seed2 target1 (by decide) birthOne 0
 example : joined.population.agents (newId 2) = ⟨0,0⟩ := by decide_cbv
-example : List.ofFn (fun i => ((advance joined).population.agents i).belief) =
+theorem diagnosticFirstRound : List.ofFn (fun i => ((advance joined).population.agents i).belief) =
     [1,1,0] := by decide_cbv
+
+run_cmd fixtureCheckpoint ``diagnosticFirstRound
 
 -- Profiles survive embedding, independently of their agents' changing beliefs.
 example : joined.population.profiles (oldId 2 0) = seed2.population.profiles 0 := by
@@ -53,26 +67,36 @@ def successiveBirths : Schedule 2 1 :=
 def twoBirths := runTyped seed2 (by decide) (by decide) successiveBirths
 
 -- Catches stale attachment weights, omitted rounds, and asynchronous forwarding.
-example : List.ofFn (fun i => (twoBirths.final.state.population.agents i).belief) =
+theorem diagnosticTwoBirthBeliefs : List.ofFn (fun i => (twoBirths.final.state.population.agents i).belief) =
     [1,1,1,0] := by decide_cbv
-example : List.ofFn (fun i => (twoBirths.final.state.population.agents i).exposures) =
+run_cmd fixtureCheckpoint ``diagnosticTwoBirthBeliefs
+
+theorem diagnosticTwoBirthExposures : List.ofFn (fun i => (twoBirths.final.state.population.agents i).exposures) =
     [1,2,1,0] := by decide_cbv
+run_cmd fixtureCheckpoint ``diagnosticTwoBirthExposures
+
 example : twoBirths.final.nodeCount = 4 := by decide_cbv
 example : actualEdgeCount twoBirths.final.state.network.snapshot = 3 := by decide_cbv
 example : twoBirths.final.roundIndex = 2 := by decide_cbv
-example : twoBirths.probability = 1/8 := by decide_cbv
+theorem diagnosticTwoBirthMass : twoBirths.probability = 1/8 := by decide_cbv
+run_cmd fixtureCheckpoint ``diagnosticTwoBirthMass
 
 def birthThenIdle : Schedule 2 1 :=
   .birth target1 birthOne (.birth ⟨![2], by decide⟩ birthOne (.idle .nil))
 def thirdRound := runTyped seed2 (by decide) (by decide) birthThenIdle
 
 -- The last newborn receives on the following round; idle adds no probability.
-example : List.ofFn (fun i => (thirdRound.final.state.population.agents i).belief) =
+theorem diagnosticThirdBeliefs : List.ofFn (fun i => (thirdRound.final.state.population.agents i).belief) =
     [1,1,1,1] := by decide_cbv
-example : List.ofFn (fun i => (thirdRound.final.state.population.agents i).exposures) =
+run_cmd fixtureCheckpoint ``diagnosticThirdBeliefs
+
+theorem diagnosticThirdExposures : List.ofFn (fun i => (thirdRound.final.state.population.agents i).exposures) =
     [2,4,2,1] := by decide_cbv
+run_cmd fixtureCheckpoint ``diagnosticThirdExposures
+
 example : thirdRound.final.roundIndex = 3 := by decide_cbv
-example : thirdRound.probability = 1/8 := by decide_cbv
+theorem diagnosticThirdMass : thirdRound.probability = 1/8 := by decide_cbv
+run_cmd fixtureCheckpoint ``diagnosticThirdMass
 
 def newbornOne : NewAgent :=
   { newbornZero with initialBelief := 1, beliefValid := by norm_num }
@@ -83,16 +107,18 @@ def immediate := tick seed2 (by decide) (by decide)
 -- Birth precedes propagation: a newborn above threshold broadcasts immediately.
 example : List.ofFn (fun i => (immediate.final.state.population.agents i).belief) =
     [1,1,1] := by decide_cbv
-example : List.ofFn (fun i => (immediate.final.state.population.agents i).exposures) =
+theorem diagnosticImmediate : List.ofFn (fun i => (immediate.final.state.population.agents i).exposures) =
     [0,2,0] := by decide_cbv
+run_cmd fixtureCheckpoint ``diagnosticImmediate
 
 def idleOnly := runTyped (m := 1) seed2 (by decide) (by decide)
   (.idle (.idle .nil)) 7
 example : idleOnly.probability = 1 := by decide_cbv
 example : idleOnly.final.roundIndex = 9 := by decide_cbv
 example : idleOnly.final.nodeCount = 2 := by decide_cbv
-example : List.ofFn (fun i => (idleOnly.final.state.population.agents i).belief) =
+theorem diagnosticIdle : List.ofFn (fun i => (idleOnly.final.state.population.agents i).belief) =
     [1,1] := by decide_cbv
+run_cmd fixtureCheckpoint ``diagnosticIdle
 example : (tick (m := 1) seed2 (by decide) (by decide) .idle 7).final.roundIndex =
     8 := by decide_cbv
 example : (runTyped (m := 1) seed2 (by decide) (by decide) .nil 7).final.roundIndex =
@@ -101,7 +127,7 @@ example : (runTyped (m := 1) seed2 (by decide) (by decide) .nil 7).final.roundIn
 -- Reordering a full target set changes neither topology nor the observed round.
 def target01 : Targets 2 2 := ⟨![0,1], by decide⟩
 def target10 : Targets 2 2 := ⟨![1,0], by decide⟩
-example :
+theorem diagnosticOrder :
     (grow seed2 target01 (by decide) birthOne).network.snapshot.graph =
       (grow seed2 target10 (by decide) birthOne).network.snapshot.graph ∧
     ∀ i,
@@ -112,6 +138,7 @@ example :
       ((advance (grow seed2 target01 (by decide) birthOne)).population.agents i).exposures =
         ((advance (grow seed2 target10 (by decide) birthOne)).population.agents i).exposures :=
   grow_order_irrelevant seed2 target01 target10 (by decide) birthOne (by decide_cbv)
+run_cmd fixtureCheckpoint ``diagnosticOrder
 
 #print axioms NarrativeDynamics.FitnessABM.extendPopulation_valid
 #print axioms NarrativeDynamics.FitnessABM.grow_order_irrelevant
