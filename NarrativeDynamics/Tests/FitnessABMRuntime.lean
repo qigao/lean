@@ -1321,7 +1321,23 @@ run_cmd do
 
 private theorem seedDisconnected_literal : summary seedDisconnected =
     .error (.seedNetwork .disconnectedSeed) := by
-  decide_cbv
+  have hn : 2 ≤ seedDisconnected.seed.nodeCount := by decide
+  have hs : seedDisconnected.seed.fitness.size = seedDisconnected.seed.nodeCount := rfl
+  have hf : positiveSeedFitness seedDisconnected.seed := by decide
+  have he : validSeedEdges seedDisconnected.seed := by decide
+  have hd : (seedDisconnected.seed.edges.toList.map canonicalEdge).Nodup := by decide
+  have hc : ¬ ∀ b, b ∈ reached (seedSnapshot seedDisconnected.seed hs)
+      (⟨0, by have := hn; omega⟩ : Fin seedDisconnected.seed.nodeCount)
+      (seedDisconnected.seed.nodeCount - 1) := by
+    change ¬ ∀ b : Fin 3, b ∈ reached
+      (seedSnapshot (⟨3, #[1, 1, 1], #[(0, 1)]⟩ : RawSeed) rfl) (0 : Fin 3) 2
+    decide
+  have parsed : parseSeed seedDisconnected.seed = .error .disconnectedSeed := by
+    simp only [parseSeed, dif_pos hn, dif_pos hs, dif_pos hf, dif_pos he,
+      dif_pos hd, dif_neg hc]
+  unfold summary FitnessABM.replay
+  rw [parsed]
+  rfl
 
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
 run_cmd do
