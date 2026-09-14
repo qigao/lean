@@ -72,6 +72,16 @@ private theorem advance_agents {n : Nat} (s : JointState n)
   funext i
   simp only [nextAgent, h]
 
+-- Keep finite case analysis at its public equations, rather than unfolding
+-- the reverse-induction implementation when indices are concrete numerals.
+private theorem lastCases_eq_if {α : Sort u} {n : Nat}
+    (last : α) (old : Fin n → α) (i : Fin (n + 1)) :
+    Fin.lastCases last old i =
+      if h : i.val < n then old ⟨i.val, h⟩ else last := by
+  refine Fin.lastCases ?_ (fun j => ?_) i
+  · simp
+  · simp [j.isLt]
+
 section FiniteJointFixtures
 -- Existing finite BB fixture budget; the core and heartbeat limit are unchanged.
 set_option maxRecDepth 4096
@@ -96,7 +106,7 @@ private theorem round1_incoming :
   simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
   fin_cases i <;> fin_cases j <;>
     norm_num [joined, grow, applyBirth, birthSnapshot, birthGraph, birthAdj,
-      Fin.lastCases, seed2, extendPopulation, birthOne, newbornZero,
+      lastCases_eq_if, Fin.ext_iff, seed2, extendPopulation, birthOne, newbornZero,
       target1, Targets.selected, broadcasting]
 
 private theorem round1_step : advance (joined) = round1 := by
@@ -133,7 +143,7 @@ private theorem round2_incoming :
   simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
   fin_cases i <;> fin_cases j <;>
     norm_num [round1, joined, grow, applyBirth, birthSnapshot, birthGraph, birthAdj,
-      Fin.lastCases, seed2, extendPopulation, birthOne, newbornZero,
+      lastCases_eq_if, Fin.ext_iff, seed2, extendPopulation, birthOne, newbornZero,
       target1, target2, Targets.selected, broadcasting]
 
 private theorem round2_step : advance (grow round1 target2 one_pos birthOne) = round2 := by
@@ -165,7 +175,7 @@ private theorem round3_incoming :
   simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
   fin_cases i <;> fin_cases j <;>
     norm_num [round2, round1, joined, grow, applyBirth, birthSnapshot, birthGraph,
-      birthAdj, Fin.lastCases, seed2, extendPopulation, birthOne, newbornZero,
+      birthAdj, lastCases_eq_if, Fin.ext_iff, seed2, extendPopulation, birthOne, newbornZero,
       target1, target2, Targets.selected, broadcasting]
 
 private theorem round3_step : advance (round2) = round3 := by
@@ -276,7 +286,7 @@ private theorem immediateState_incoming :
   ext j
   simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
   fin_cases i <;> fin_cases j <;>
-    norm_num [grow, applyBirth, birthSnapshot, birthGraph, birthAdj, Fin.lastCases,
+    norm_num [grow, applyBirth, birthSnapshot, birthGraph, birthAdj, lastCases_eq_if, Fin.ext_iff,
       seed2, extendPopulation, broadcastingBirth, newbornOne, newbornZero,
       target1, Targets.selected, broadcasting]
 
