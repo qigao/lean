@@ -32,13 +32,14 @@ private def exceptDecidableEq {α : Type} [DecidableEq α] : DecidableEq (Except
 -- Register only the finite observable result types used by these literals.
 private instance : DecidableEq
     (Except JointError (Nat × Nat × Nat × List Rat × List Nat × Rat)) :=
-  exceptDecidableEq
+  @exceptDecidableEq _ (fun a b => inferInstance)
 private instance : DecidableEq
     (Except JointError (List Rat × List Nat × Rat × List (Nat × Nat × Rat))) :=
-  exceptDecidableEq
-private instance : DecidableEq (Except JointError (List Nat)) := exceptDecidableEq
+  @exceptDecidableEq _ (fun a b => inferInstance)
+private instance : DecidableEq (Except JointError (List Nat)) :=
+  @exceptDecidableEq _ (fun a b => inferInstance)
 private instance : DecidableEq (Except JointError (List (Nat × Nat × Rat))) :=
-  exceptDecidableEq
+  @exceptDecidableEq _ (fun a b => inferInstance)
 
 section FiniteLiterals
 set_option maxRecDepth 4096
