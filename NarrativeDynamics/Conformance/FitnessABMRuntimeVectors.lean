@@ -68,14 +68,11 @@ def successiveIdle : RuntimeCaseInput :=
 def weightedSource : RuntimeCaseInput :=
   { attachSource with id := "weighted-source", seed := weightedSeed }
 def ordered01 : RuntimeCaseInput :=
-  { empty with id := "ordered-01", seed := weightedSeed, m := 2,
-    ticks := [some ⟨⟨1, #[0, 1]⟩, 1, 1/2, 0⟩] }
+  { empty with id := "ordered-01", seed := weightedSeed, m := 2, ticks := [some ⟨⟨1, #[0, 1]⟩, 1, 1/2, 0⟩] }
 def ordered10 : RuntimeCaseInput :=
-  { empty with id := "ordered-10", seed := weightedSeed, m := 2,
-    ticks := [some ⟨⟨1, #[1, 0]⟩, 1, 1/2, 0⟩] }
+  { empty with id := "ordered-10", seed := weightedSeed, m := 2, ticks := [some ⟨⟨1, #[1, 0]⟩, 1, 1/2, 0⟩] }
 def zeroReceptive : RuntimeCaseInput :=
-  { attachSource with id := "zero-receptive",
-    agents := #[⟨1, 1/2, 1, 0⟩, ⟨0, 1/2, 0, 0⟩] }
+  { attachSource with id := "zero-receptive", agents := #[⟨1, 1/2, 1, 0⟩, ⟨0, 1/2, 0, 0⟩] }
 def silent : RuntimeCaseInput :=
   { attachSource with id := "silent", agents := #[⟨1, 1/2, 0, 0⟩, ⟨1, 1/2, 0, 0⟩] }
 def zeroThreshold : RuntimeCaseInput :=
@@ -83,11 +80,9 @@ def zeroThreshold : RuntimeCaseInput :=
 def broadcastNewborn : RuntimeCaseInput :=
   { attachRelay with id := "broadcast-newborn", ticks := [some ⟨⟨1, #[1]⟩, 1, 1/2, 1⟩] }
 def retainedExposures : RuntimeCaseInput :=
-  { attachRelay with id := "retained-exposures",
-    agents := #[⟨1, 1/2, 1, 7⟩, ⟨1, 1/2, 0, 3⟩] }
+  { attachRelay with id := "retained-exposures", agents := #[⟨1, 1/2, 1, 7⟩, ⟨1, 1/2, 0, 3⟩] }
 def halfReceptive : RuntimeCaseInput :=
-  { attachSource with id := "half-receptive",
-    agents := #[⟨1, 1/2, 1, 0⟩, ⟨1/2, 1/2, 0, 0⟩] }
+  { attachSource with id := "half-receptive", agents := #[⟨1, 1/2, 1, 0⟩, ⟨1/2, 1/2, 0, 0⟩] }
 
 def successInputs : List RuntimeCaseInput :=
   [empty, idleTwo, attachSource, attachRelay, relayIdle, successiveBirths,
@@ -130,8 +125,7 @@ def birthAgentThreshold : RuntimeCaseInput :=
 def lateBirth : RuntimeCaseInput :=
   { empty with id := "late-birth", ticks := [none, some (birth 1), none, some (birth 3)] }
 def firstFailure : RuntimeCaseInput :=
-  { empty with id := "first-failure",
-    ticks := [some ⟨⟨1, #[0]⟩, 1, 2, 0⟩, some ⟨⟨0, #[0]⟩, 1, 1/2, 0⟩] }
+  { empty with id := "first-failure", ticks := [some ⟨⟨1, #[0]⟩, 1, 2, 0⟩, some ⟨⟨0, #[0]⟩, 1, 1/2, 0⟩] }
 def lateFirstBirth : RuntimeCaseInput :=
   { empty with id := "late-first-birth", ticks := [none, none, some (birth 2)] }
 
