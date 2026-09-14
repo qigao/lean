@@ -1,5 +1,4 @@
-import NarrativeDynamics.Core.FitnessABM
-import NarrativeDynamics.Core.FitnessReplay
+import NarrativeDynamics.Core.FitnessABMReplay
 
 namespace NarrativeDynamics.Tests.FitnessABMReplay
 
