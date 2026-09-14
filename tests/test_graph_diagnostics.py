@@ -4,6 +4,7 @@ import torch
 
 import yolo_flywire.graphs as graphs
 import yolo_flywire.models.graph_rnn as graph_rnn
+from yolo_flywire.pose_batches import PoseBatch
 
 
 def _graph():
@@ -71,3 +72,47 @@ def test_graph_diagnostic_seed_routing_injects_only_declared_nodes():
     assert torch.count_nonzero(injected[:, 1, :]).item() == 0
     assert torch.count_nonzero(injected[:, 0, :]).item() > 0
     assert torch.count_nonzero(injected[:, 2, :]).item() > 0
+
+
+def test_graph_diagnostic_padded_execution_keeps_finished_states_and_node_aware_readout():
+    graph = graphs.DirectedGraph(
+        num_nodes=3,
+        src=(0, 1, 2),
+        dst=(1, 2, 0),
+        weight=(1.0, 1.0, 1.0),
+    )
+    model = graph_rnn.GraphDiagnosticClassifier(
+        121, graph, 2, 2,
+        input_policy="selected_nodes",
+        input_node_indices=(0, 2),
+        readout_policy="flatten",
+    )
+    features = torch.zeros((2, 3, 121), dtype=torch.float32)
+    features[0, :2, 0] = 1.0
+    features[1, :, 0] = 1.0
+    lengths = torch.tensor([2, 3], dtype=torch.int64)
+    mask = torch.tensor([[True, True, False], [True, True, True]], dtype=torch.bool)
+    batch = PoseBatch(features, lengths, mask)
+    encoded = model.encode_padded(batch)
+    logits = model.forward_padded(batch)
+    assert tuple(encoded.shape) == (2, 6)
+    assert tuple(logits.shape) == (2, 2)
+    assert torch.isfinite(encoded).all().item()
+    assert torch.isfinite(logits).all().item()
+
+
+def test_selected_node_high_dim_diagnostic_fits_shared_parameter_ceiling():
+    graph = graphs.DirectedGraph(
+        num_nodes=187,
+        src=tuple(range(187)),
+        dst=tuple((index + 1) % 187 for index in range(187)),
+        weight=tuple(1.0 for _ in range(187)),
+    )
+    model = graph_rnn.GraphDiagnosticClassifier(
+        121, graph, 23, 6,
+        input_policy="selected_nodes",
+        input_node_indices=(122, 123, 124, 125, 126, 127, 128, 129),
+        readout_policy="flatten",
+    )
+    assert model.parameter_count() == 49318
+    assert model.parameter_count() <= 50000
