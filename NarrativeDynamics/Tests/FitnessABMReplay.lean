@@ -313,8 +313,8 @@ private theorem incoming0 :
     (simp only [grow, applyBirth, birthSnapshot, birthGraph, birthAdj,
       lastCases_eq_if, initial, seedNetwork, extendPopulation,
       birthData, one, selected0, broadcasting, top2_adj]
-     simp only [h0, h1, h2, dif_pos, dif_neg (show ¬ False from fun h => h)] <;>
-       norm_num [Fin.ext_iff])
+     simp only [h0, h1, h2, dif_pos, dif_neg (show ¬ False from fun h => h)]
+     norm_num [Fin.ext_iff])
 
 private theorem incoming1 :
     let s := grow (initial one) targets1 positiveM birthData
