@@ -751,7 +751,8 @@ private theorem propagationSummary_flat (seed : RawSeed) (agents : Array RawAgen
     omega
   rw [propagationSummary_of_parses seed agents network parsed hn hm hp]
   apply congrArg Except.ok
-  apply propagationObservation_congr
+  apply propagationObservation_congr (dg := network.snapshot.adjDec)
+    (dh := seedAdjDec seed)
   · exact congrArg SimpleGraph.Adj (parseSeed_graph seed network hn)
   · apply population_eq
     · funext i
@@ -764,66 +765,72 @@ private theorem propagationSummary_flat (seed : RawSeed) (agents : Array RawAgen
         ((hvalues i hi).2.symm)
 
 private theorem attachSource_connected :
-    (seedGraph attachSource.seed).Connected where
-  preconnected := by
-    intro i j
-    fin_cases i <;> fin_cases j <;>
-      first
-      | exact ⟨.nil⟩
-      | exact ⟨.cons (by decide_cbv) .nil⟩
-      | exact ⟨.cons
-          (show (seedGraph attachSource.seed).Adj 1 0 by decide_cbv)
-          (.cons (show (seedGraph attachSource.seed).Adj 0 2 by decide_cbv) .nil)⟩
-      | exact ⟨.cons
-          (show (seedGraph attachSource.seed).Adj 2 0 by decide_cbv)
-          (.cons (show (seedGraph attachSource.seed).Adj 0 1 by decide_cbv) .nil)⟩
-  nonempty := inferInstance
+    (seedGraph attachSource.seed).Connected := by
+  let g : SimpleGraph (Fin 3) := seedGraph attachSource.seed
+  letI : DecidableRel g.Adj := seedAdjDec attachSource.seed
+  change g.Connected
+  refine { preconnected := ?_, nonempty := inferInstance }
+  intro i j
+  fin_cases i <;> fin_cases j <;>
+    first
+    | exact ⟨.nil⟩
+    | exact ⟨.cons (by decide_cbv) .nil⟩
+    | exact ⟨.cons
+        (show g.Adj 1 0 by decide_cbv)
+        (.cons (show g.Adj 0 2 by decide_cbv) .nil)⟩
+    | exact ⟨.cons
+        (show g.Adj 2 0 by decide_cbv)
+        (.cons (show g.Adj 0 1 by decide_cbv) .nil)⟩
 
 private theorem attachRelay_connected :
-    (seedGraph attachRelay.seed).Connected where
-  preconnected := by
-    intro i j
-    fin_cases i <;> fin_cases j <;>
-      first
-      | exact ⟨.nil⟩
-      | exact ⟨.cons (by decide_cbv) .nil⟩
-      | exact ⟨.cons
-          (show (seedGraph attachRelay.seed).Adj 0 1 by decide_cbv)
-          (.cons (show (seedGraph attachRelay.seed).Adj 1 2 by decide_cbv) .nil)⟩
-      | exact ⟨.cons
-          (show (seedGraph attachRelay.seed).Adj 2 1 by decide_cbv)
-          (.cons (show (seedGraph attachRelay.seed).Adj 1 0 by decide_cbv) .nil)⟩
-  nonempty := inferInstance
+    (seedGraph attachRelay.seed).Connected := by
+  let g : SimpleGraph (Fin 3) := seedGraph attachRelay.seed
+  letI : DecidableRel g.Adj := seedAdjDec attachRelay.seed
+  change g.Connected
+  refine { preconnected := ?_, nonempty := inferInstance }
+  intro i j
+  fin_cases i <;> fin_cases j <;>
+    first
+    | exact ⟨.nil⟩
+    | exact ⟨.cons (by decide_cbv) .nil⟩
+    | exact ⟨.cons
+        (show g.Adj 0 1 by decide_cbv)
+        (.cons (show g.Adj 1 2 by decide_cbv) .nil)⟩
+    | exact ⟨.cons
+        (show g.Adj 2 1 by decide_cbv)
+        (.cons (show g.Adj 1 0 by decide_cbv) .nil)⟩
 
 private theorem secondBirth_connected :
-    (seedGraph secondBirth.seed).Connected where
-  preconnected := by
-    intro i j
-    fin_cases i <;> fin_cases j <;>
-      first
-      | exact ⟨.nil⟩
-      | exact ⟨.cons (by decide_cbv) .nil⟩
-      | exact ⟨.cons
-          (show (seedGraph secondBirth.seed).Adj 0 1 by decide_cbv)
-          (.cons (show (seedGraph secondBirth.seed).Adj 1 2 by decide_cbv) .nil)⟩
-      | exact ⟨.cons
-          (show (seedGraph secondBirth.seed).Adj 2 1 by decide_cbv)
-          (.cons (show (seedGraph secondBirth.seed).Adj 1 0 by decide_cbv) .nil)⟩
-      | exact ⟨.cons
-          (show (seedGraph secondBirth.seed).Adj 1 2 by decide_cbv)
-          (.cons (show (seedGraph secondBirth.seed).Adj 2 3 by decide_cbv) .nil)⟩
-      | exact ⟨.cons
-          (show (seedGraph secondBirth.seed).Adj 3 2 by decide_cbv)
-          (.cons (show (seedGraph secondBirth.seed).Adj 2 1 by decide_cbv) .nil)⟩
-      | exact ⟨.cons
-          (show (seedGraph secondBirth.seed).Adj 0 1 by decide_cbv)
-          (.cons (show (seedGraph secondBirth.seed).Adj 1 2 by decide_cbv)
-            (.cons (show (seedGraph secondBirth.seed).Adj 2 3 by decide_cbv) .nil))⟩
-      | exact ⟨.cons
-          (show (seedGraph secondBirth.seed).Adj 3 2 by decide_cbv)
-          (.cons (show (seedGraph secondBirth.seed).Adj 2 1 by decide_cbv)
-            (.cons (show (seedGraph secondBirth.seed).Adj 1 0 by decide_cbv) .nil))⟩
-  nonempty := inferInstance
+    (seedGraph secondBirth.seed).Connected := by
+  let g : SimpleGraph (Fin 4) := seedGraph secondBirth.seed
+  letI : DecidableRel g.Adj := seedAdjDec secondBirth.seed
+  change g.Connected
+  refine { preconnected := ?_, nonempty := inferInstance }
+  intro i j
+  fin_cases i <;> fin_cases j <;>
+    first
+    | exact ⟨.nil⟩
+    | exact ⟨.cons (by decide_cbv) .nil⟩
+    | exact ⟨.cons
+        (show g.Adj 0 1 by decide_cbv)
+        (.cons (show g.Adj 1 2 by decide_cbv) .nil)⟩
+    | exact ⟨.cons
+        (show g.Adj 2 1 by decide_cbv)
+        (.cons (show g.Adj 1 0 by decide_cbv) .nil)⟩
+    | exact ⟨.cons
+        (show g.Adj 1 2 by decide_cbv)
+        (.cons (show g.Adj 2 3 by decide_cbv) .nil)⟩
+    | exact ⟨.cons
+        (show g.Adj 3 2 by decide_cbv)
+        (.cons (show g.Adj 2 1 by decide_cbv) .nil)⟩
+    | exact ⟨.cons
+        (show g.Adj 0 1 by decide_cbv)
+        (.cons (show g.Adj 1 2 by decide_cbv)
+          (.cons (show g.Adj 2 3 by decide_cbv) .nil))⟩
+    | exact ⟨.cons
+        (show g.Adj 3 2 by decide_cbv)
+        (.cons (show g.Adj 2 1 by decide_cbv)
+          (.cons (show g.Adj 1 0 by decide_cbv) .nil))⟩
 
 private theorem attachSource_seed_valid : attachSource.seed.Valid :=
   { nodes := by decide
