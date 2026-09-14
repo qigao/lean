@@ -153,9 +153,9 @@ example : rowValues (.ok (attachmentRow Fixtures.triangle {0, 2} (by decide))) =
     .ok [0, 1, 0] := by decide_cbv
 example : rowValues (.ok (attachmentRow Fixtures.constantTriangle ∅ (by decide))) =
     .ok [1/3, 1/3, 1/3] := by decide_cbv
-example : rowValues (.ok (baRow Fixtures.star ∅ (by decide))) =
+example : rowValues (.ok (unitFitnessRow Fixtures.star ∅ (by decide))) =
     .ok [1/2, 1/6, 1/6, 1/6] := by decide_cbv
-example : rowValues (.ok (baRow Fixtures.star {0} (by decide))) =
+example : rowValues (.ok (unitFitnessRow Fixtures.star {0} (by decide))) =
     .ok [0, 1/3, 1/3, 1/3] := by decide_cbv
 example : rowValues (.ok (attachmentRow
     (scaleFitness Fixtures.triangle ⟨3/2, by norm_num⟩) {2} (by decide))) =
@@ -187,8 +187,8 @@ example {n : Nat} (s : State n) (S : Finset (Fin n)) (hS : S.card < n) :
     (∑ i, (attachmentRow s S hS).mass i) = 1 := (attachmentRow s S hS).total_one
 example {n : Nat} (s : State n) (S : Finset (Fin n)) (hS : S.card < n)
     (c : PosFitness) (constant : ∀ j, s.snapshot.fitness j = c.val) (i : Fin n) :
-    (attachmentRow s S hS).mass i = (baRow s S hS).mass i :=
-  attachment_ba s S hS c constant i
+    (attachmentRow s S hS).mass i = (unitFitnessRow s S hS).mass i :=
+  attachment_constant_fitness s S hS c constant i
 example {n : Nat} (s : State n) (S : Finset (Fin n)) (hS : S.card < n)
     (c : PosFitness) (i : Fin n) :
     (attachmentRow (scaleFitness s c) S hS).mass i = (attachmentRow s S hS).mass i :=
@@ -215,9 +215,110 @@ example {n : Nat} (s t : State n) (S : Finset (Fin n)) (hS : S.card < n)
 #print axioms remaining_total_pos
 #print axioms attachment_mass
 #print axioms attachment_support
-#print axioms attachment_ba
+#print axioms attachment_constant_fitness
 #print axioms attachment_scale
 #print axioms attachment_ratio
 #print axioms attachment_mono
 #print axioms attachment_strict_mono
 #print axioms bb_triangle_fixture
+
+-- Task 3: actual finite target embeddings, conditional products, and set events.
+namespace NarrativeDynamics.FitnessAttachment.Fixtures
+
+def t21 : Fin 2 ↪ Fin 3 := ⟨![2, 1], by decide⟩
+def t12 : Fin 2 ↪ Fin 3 := ⟨![1, 2], by decide⟩
+def t012 : Fin 3 ↪ Fin 3 := Function.Embedding.refl _
+
+end NarrativeDynamics.FitnessAttachment.Fixtures
+
+section ExactTargetFixtures
+-- These equation-checked finite enumerations need a deeper, still bounded stack.
+-- This setting does not apply to the old tests or to any generic proof below.
+set_option maxRecDepth 4096
+
+example : Fintype.card (Targets 3 2) = 6 := by decide
+example : Targets.ordered Fixtures.t21 = [2, 1] := by decide_cbv
+example : Targets.selected Fixtures.t21 = {1, 2} := by decide_cbv
+example : orderedMass Fixtures.triangle Fixtures.t21 = 8/21 := by decide_cbv
+example : orderedMass Fixtures.triangle Fixtures.t12 = 8/35 := by decide_cbv
+example : orderedMass Fixtures.triangle Fixtures.t21 ≠
+    orderedMass Fixtures.triangle Fixtures.t12 := by decide_cbv
+example : setMass Fixtures.triangle 2 {1, 2} = 64/105 := by decide_cbv
+example : (∑ T : Targets 3 2, orderedMass Fixtures.triangle T) = 1 := by decide_cbv
+example : (∑ T : Targets 3 3, orderedMass Fixtures.triangle T) = 1 := by decide_cbv
+example : (∑ T : Targets 3 0, orderedMass Fixtures.triangle T) = 1 := by decide_cbv
+example : (∑ T : Targets 3 1, orderedMass Fixtures.triangle T) = 1 := by decide_cbv
+example : (∑ T : Targets 3 4, orderedMass Fixtures.triangle T) = 0 := by decide_cbv
+example : orderedMass Fixtures.triangle Fixtures.t012 = 1/21 := by decide_cbv
+example : ∀ T : Targets 3 2, orderedMass Fixtures.constantTriangle T = 1/6 := by decide_cbv
+example : setMass Fixtures.constantTriangle 2 {0, 1} = 1/3 := by decide_cbv
+example : setMass Fixtures.constantTriangle 2 {0, 2} = 1/3 := by decide_cbv
+example : setMass Fixtures.constantTriangle 2 {1, 2} = 1/3 := by decide_cbv
+example : setMass Fixtures.triangle 2 {0} = 0 := by decide_cbv
+example : setMass Fixtures.triangle 2 Finset.univ = 0 := by decide_cbv
+example : setMass Fixtures.triangle 0 ∅ = 1 := by decide_cbv
+example : setMass Fixtures.triangle 3 Finset.univ = 1 := by decide_cbv
+example : orderedMass (scaleFitness Fixtures.triangle ⟨3/2, by norm_num⟩)
+    Fixtures.t21 = 8/21 := by decide_cbv
+
+-- Impossible mathematical traces have zero mass; an empty continuation performs no draw.
+example : traceMass (![2, 4, 8] : Fin 3 → Rat) ∅ [2, 2] = 0 := by decide_cbv
+example : traceMass (![2, 4, 8] : Fin 3 → Rat) {2} [2] = 0 := by decide_cbv
+example : traceMass (![2, 4, 8] : Fin 3 → Rat) Finset.univ [] = 1 := by decide_cbv
+example : traceMass (![2, 4, 8] : Fin 3 → Rat) Finset.univ [0] = 0 := by decide_cbv
+example : traceMass (![0, 0, 0] : Fin 3 → Rat) ∅ [0] = 0 := by decide_cbv
+
+-- Regression witnesses use equation-based evaluation, not native computation.
+example : total (remaining (![0, 0, 0] : Fin 3 → Rat) ∅) = 0 := by decide_cbv
+example : total (remaining (![0, 0, 0] : Fin 3 → Rat) ∅) ≤ 0 := by decide_cbv
+theorem zero_trace_fixture : traceMass (![0, 0, 0] : Fin 3 → Rat) ∅ [0] = 0 := by
+  decide_cbv
+theorem bb_ordered_mass_fixture : orderedMass Fixtures.triangle Fixtures.t21 = 8/21 := by
+  decide_cbv
+theorem bb_set_mass_fixture : setMass Fixtures.triangle 2 {1, 2} = 64/105 := by
+  decide_cbv
+example : traceMass (![0, 0, 0] : Fin 3 → Rat) ∅ [0] = 0 := by
+  simp only [traceMass]
+  decide_cbv
+
+end ExactTargetFixtures
+
+example {n m : Nat} (T : Targets n m) : T.selected.card = m := selected_card T
+example {n m : Nat} (s : State n) (T : Targets n m) : 0 < orderedMass s T :=
+  orderedMass_pos s T
+example {n m : Nat} (s : State n) (hm : m ≤ n) :
+    (∑ T : Targets n m, orderedMass s T) = 1 := orderedMass_sum_one s hm
+example {n m : Nat} (s : State n) (hm : m ≤ n) :
+    (∑ A ∈ (Finset.univ : Finset (Fin n)).powersetCard m, setMass s m A) = 1 :=
+  setMass_sum_one s hm
+example {n m : Nat} (s : State n) (T : Targets n m) (c : PosFitness)
+    (constant : ∀ i, s.snapshot.fitness i = c.val) :
+    orderedMass s T = orderedMass (unitFitnessState s) T :=
+  orderedMass_constant_fitness s T c constant
+example {n m : Nat} (s : State n) (T : Targets n m) (c : PosFitness) :
+    orderedMass (scaleFitness s c) T = orderedMass s T := orderedMass_scale s T c
+example {n m : Nat} (s : State n) (A : Finset (Fin n)) (hA : A.card ≠ m) :
+    setMass s m A = 0 := setMass_wrong_card s A hA
+
+#print axioms selected_card
+#print axioms orderedMass_pos
+#print axioms orderedMass_sum_one
+#print axioms setMass_sum_one
+#print axioms orderedMass_constant_fitness
+#print axioms orderedMass_scale
+#print axioms setMass_wrong_card
+
+example {n : Nat} (w : Fin n → Rat) (S : Finset (Fin n))
+    (i : Fin n) (xs : List (Fin n)) :
+    traceMass w S (i :: xs) =
+      if i ∈ S ∨ total (remaining w S) ≤ 0 then 0
+      else (w i / total (remaining w S)) * traceMass w (insert i S) xs :=
+  traceMass_cons_eq w S i xs
+
+#print axioms traceMass_cons_eq
+#print axioms split_mass
+#print axioms continuation_sum_one
+#print axioms traceMass_scale
+#print axioms zero_trace_fixture
+#print axioms bb_ordered_mass_fixture
+#print axioms bb_set_mass_fixture

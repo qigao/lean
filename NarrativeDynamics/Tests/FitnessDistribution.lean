@@ -1,0 +1,287 @@
+import NarrativeDynamics.Core.FitnessDistributionInvariance
+
+open NarrativeDynamics
+open NarrativeDynamics.FitnessAttachment
+open NarrativeDynamics.FitnessAttachment.Internal
+
+namespace NarrativeDynamics.FitnessAttachment.DistributionFixtures
+
+example : Fintype.card (TargetTrace 3 2 0) = 1 := by decide_cbv
+example : Fintype.card (TargetTrace 3 2 1) = 6 := by decide_cbv
+example : Fintype.card (TargetTrace 2 1 2) = 6 := by decide_cbv
+
+def edgeSeed : RawSeed := ⟨2, #[1, 1], #[(0, 1)]⟩
+
+private theorem edgeSeedConnected : (seedGraph edgeSeed).Connected where
+  preconnected := by
+    intro u v
+    by_cases h : u = v
+    · subst v
+      exact ⟨.nil⟩
+    · have huv : (seedGraph edgeSeed).Adj u v := by
+        fin_cases u <;> fin_cases v <;>
+          simp_all [seedGraph, edgeSeed, canonicalEdge]
+      exact ⟨.cons huv .nil⟩
+  nonempty := ⟨⟨0, by decide⟩⟩
+
+def edge2State : State 2 :=
+  ⟨seedSnapshot edgeSeed rfl, by
+    exact ⟨by decide, edgeSeedConnected, by decide⟩⟩
+
+private def unitFitness : PosFitness := ⟨1, by norm_num⟩
+
+private def zeroTarget2 : Targets 2 1 :=
+  ⟨fun _ => ⟨0, by decide⟩, fun i j _ => Subsingleton.elim i j⟩
+
+private def zeroTarget3 : Targets 3 1 :=
+  ⟨fun _ => ⟨0, by decide⟩, fun i j _ => Subsingleton.elim i j⟩
+
+def edge3State : State 3 :=
+  applyBirth edge2State zeroTarget2 (by decide) unitFitness
+
+def edge4State : State 4 :=
+  applyBirth edge3State zeroTarget3 (by decide) unitFitness
+
+private theorem birthDegreeFn {n m : Nat} (s : State n) (T : Targets n m)
+    (hm : 0 < m) (eta : PosFitness) :
+    degree (applyBirth s T hm eta).snapshot =
+      Fin.lastCases m (fun u => degree s.snapshot u + if u ∈ T.selected then 1 else 0) := by
+  funext v
+  refine Fin.lastCases ?_ (fun u => ?_) v
+  · rw [Fin.lastCases_last]
+    exact birth_degree_new s T hm eta
+  · rw [Fin.lastCases_castSucc]
+    exact birth_degree_old s T hm eta u
+
+private theorem birthFitnessFn {n m : Nat} (s : State n) (T : Targets n m)
+    (hm : 0 < m) (eta : PosFitness) :
+    (applyBirth s T hm eta).snapshot.fitness =
+      Fin.lastCases eta.val s.snapshot.fitness := rfl
+
+private theorem edge2Degrees :
+    degree edge2State.snapshot = (![1, 1] : Fin 2 → Nat) := by
+  funext i
+  fin_cases i <;> decide_cbv
+
+private theorem edge2Fitness :
+    edge2State.snapshot.fitness = (![1, 1] : Fin 2 → Rat) := by
+  funext i
+  fin_cases i <;> decide_cbv
+
+private theorem edge2FitnessList :
+    List.ofFn edge2State.snapshot.fitness = [1, 1] := by
+  rw [edge2Fitness]
+  decide_cbv
+
+private theorem edge2Edges : actualEdgeCount edge2State.snapshot = 1 := by
+  decide_cbv
+
+private theorem edge2Weights :
+    weights edge2State.snapshot = (![1, 1] : Fin 2 → Rat) := by
+  funext i
+  unfold weights
+  rw [edge2Fitness, edge2Degrees]
+  fin_cases i <;> decide_cbv
+
+private theorem edge2Mass : orderedMass edge2State zeroTarget2 = 1 / 2 := by
+  unfold orderedMass
+  rw [edge2Weights]
+  decide_cbv
+
+private theorem edge3Degrees :
+    degree edge3State.snapshot = (![2, 1, 1] : Fin 3 → Nat) := by
+  rw [edge3State, birthDegreeFn, edge2Degrees]
+  funext i
+  fin_cases i <;> decide_cbv
+
+private theorem edge3Fitness :
+    edge3State.snapshot.fitness = (![1, 1, 1] : Fin 3 → Rat) := by
+  rw [edge3State, birthFitnessFn, edge2Fitness]
+  funext i
+  fin_cases i <;> decide_cbv
+
+private theorem edge3Weights :
+    weights edge3State.snapshot = (![2, 1, 1] : Fin 3 → Rat) := by
+  funext i
+  unfold weights
+  rw [edge3Fitness, edge3Degrees]
+  fin_cases i <;> decide_cbv
+
+private theorem edge3Mass : orderedMass edge3State zeroTarget3 = 1 / 2 := by
+  unfold orderedMass
+  rw [edge3Weights]
+  decide_cbv
+
+private def twoBirthSchedule : List PosFitness := [unitFitness, unitFitness]
+
+private def zeroZeroTrace : TargetTrace 2 1 twoBirthSchedule.length :=
+  (zeroTarget2, (zeroTarget3, PUnit.unit))
+
+example :
+    traceProbability edge2State 1 (by decide) (by decide)
+      twoBirthSchedule zeroZeroTrace = 1 / 4 := by
+  change orderedMass edge2State zeroTarget2 *
+    (orderedMass edge3State zeroTarget3 * 1) = 1 / 4
+  rw [edge2Mass, edge3Mass]
+  norm_num
+
+example :
+    (∑ trace : TargetTrace 2 1 twoBirthSchedule.length,
+      traceProbability edge2State 1 (by decide) (by decide)
+        twoBirthSchedule trace) = 1 := by
+  exact traceProbability_sum_one edge2State 1 (by decide) (by decide) twoBirthSchedule
+
+example :
+    traceFinal edge2State 1 (by decide) (by decide)
+      twoBirthSchedule zeroZeroTrace = ⟨4, edge4State⟩ := by
+  rfl
+
+example :
+    actualNodeCount
+        (traceFinal edge2State 1 (by decide) (by decide)
+          twoBirthSchedule zeroZeroTrace).state.snapshot = 4 := by
+  rw [traceFinal_nodes]
+  norm_num [actualNodeCount, twoBirthSchedule]
+
+example :
+    actualEdgeCount
+        (traceFinal edge2State 1 (by decide) (by decide)
+          twoBirthSchedule zeroZeroTrace).state.snapshot = 3 := by
+  rw [traceFinal_edges, edge2Edges]
+  norm_num [twoBirthSchedule]
+
+example :
+    List.ofFn
+        (traceFinal edge2State 1 (by decide) (by decide)
+          twoBirthSchedule zeroZeroTrace).state.snapshot.fitness = [1, 1, 1, 1] := by
+  rw [traceFinal_fitness, edge2FitnessList]
+  rfl
+
+example :
+    (traceFinal edge2State 1 (by decide) (by decide)
+      twoBirthSchedule zeroZeroTrace).state.snapshot.Valid := by
+  exact traceFinal_valid edge2State 1 (by decide) (by decide)
+    twoBirthSchedule zeroZeroTrace
+
+private def stableZeroDegreeAtLeastTwo : RunState → Prop
+  | ⟨0, _⟩ => False
+  | ⟨n + 1, s⟩ => 2 ≤ degree s.snapshot (0 : Fin (n + 1))
+
+private instance stableZeroDegreeAtLeastTwoDecidable :
+    DecidablePred stableZeroDegreeAtLeastTwo := by
+  intro out
+  rcases out with ⟨n, s⟩
+  cases n with
+  | zero =>
+      change Decidable False
+      exact isFalse id
+  | succ n =>
+      change Decidable (2 ≤ degree s.snapshot (0 : Fin (n + 1)))
+      infer_instance
+
+example :
+    eventProbability edge2State 1 (by decide) (by decide)
+      twoBirthSchedule (fun _ => True) = 1 := by
+  exact eventProbability_true edge2State 1 (by decide) (by decide) twoBirthSchedule
+
+example :
+    eventProbability edge2State 1 (by decide) (by decide)
+      twoBirthSchedule (fun _ => False) = 0 := by
+  exact eventProbability_false edge2State 1 (by decide) (by decide) twoBirthSchedule
+
+example :
+    eventProbability edge2State 1 (by decide) (by decide)
+      twoBirthSchedule stableZeroDegreeAtLeastTwo = 5 / 8 := by
+  decide_cbv
+
+example :
+    eventProbability edge2State 1 (by decide) (by decide)
+      twoBirthSchedule (fun out => ¬ stableZeroDegreeAtLeastTwo out) = 3 / 8 := by
+  rw [eventProbability_compl]
+  norm_num [show eventProbability edge2State 1 (by decide) (by decide)
+    twoBirthSchedule stableZeroDegreeAtLeastTwo = 5 / 8 by decide_cbv]
+
+private def stableZeroDegree : RunState → Rat
+  | ⟨0, _⟩ => 0
+  | ⟨n + 1, s⟩ => (degree s.snapshot (0 : Fin (n + 1)) : Rat)
+
+example :
+    expectation edge2State 1 (by decide) (by decide)
+      twoBirthSchedule (fun _ => (7 / 3 : Rat)) = 7 / 3 := by
+  exact expectation_const edge2State 1 (by decide) (by decide)
+    twoBirthSchedule (7 / 3)
+
+example :
+    expectation edge2State 1 (by decide) (by decide)
+      twoBirthSchedule stableZeroDegree = 15 / 8 := by
+  decide_cbv
+
+example :
+    expectation edge2State 1 (by decide) (by decide)
+      twoBirthSchedule (fun out => if stableZeroDegreeAtLeastTwo out then 1 else 0) = 5 / 8 := by
+  rw [expectation_indicator]
+  decide_cbv
+
+private def tripleFitness : PosFitness := ⟨3, by norm_num⟩
+
+private theorem stableZeroDegreeAtLeastTwo_scale (out : RunState) :
+    stableZeroDegreeAtLeastTwo (scaleRunState out tripleFitness) ↔
+      stableZeroDegreeAtLeastTwo out := by
+  rcases out with ⟨n, s⟩
+  cases n with
+  | zero => rfl
+  | succ n =>
+      change
+        2 ≤ degree (scaleFitness s tripleFitness).snapshot (0 : Fin (n + 1)) ↔
+          2 ≤ degree s.snapshot (0 : Fin (n + 1))
+      rfl
+
+example :
+    traceProbability (scaleFitness edge2State tripleFitness) 1 (by decide) (by decide)
+      (scaleSchedule tripleFitness twoBirthSchedule)
+      (scaleTargetTrace tripleFitness twoBirthSchedule zeroZeroTrace) = 1 / 4 := by
+  rw [traceProbability_scale]
+  change orderedMass edge2State zeroTarget2 *
+    (orderedMass edge3State zeroTarget3 * 1) = 1 / 4
+  rw [edge2Mass, edge3Mass]
+  norm_num
+
+example :
+    traceFinal (scaleFitness edge2State tripleFitness) 1 (by decide) (by decide)
+      (scaleSchedule tripleFitness twoBirthSchedule)
+      (scaleTargetTrace tripleFitness twoBirthSchedule zeroZeroTrace) =
+        scaleRunState ⟨4, edge4State⟩ tripleFitness := by
+  rw [traceFinal_scale]
+  rfl
+
+/-- Scaling the unit-fitness experiment by three is also the constant-fitness
+    normalization case: all initial and scheduled fitness values become three. -/
+example :
+    eventProbability (scaleFitness edge2State tripleFitness) 1 (by decide) (by decide)
+      (scaleSchedule tripleFitness twoBirthSchedule) stableZeroDegreeAtLeastTwo = 5 / 8 := by
+  rw [eventProbability_scale (hinv := stableZeroDegreeAtLeastTwo_scale)]
+  decide_cbv
+
+#print axioms NarrativeDynamics.FitnessAttachment.traceProbability_pos
+#print axioms NarrativeDynamics.FitnessAttachment.traceProbability_sum_continuationMass
+#print axioms NarrativeDynamics.FitnessAttachment.traceProbability_sum_one
+#print axioms NarrativeDynamics.FitnessAttachment.traceProbability_le_one
+#print axioms NarrativeDynamics.FitnessAttachment.traceFinal_nodes
+#print axioms NarrativeDynamics.FitnessAttachment.traceFinal_edges
+#print axioms NarrativeDynamics.FitnessAttachment.traceFinal_fitness
+#print axioms NarrativeDynamics.FitnessAttachment.traceFinal_valid
+#print axioms NarrativeDynamics.FitnessAttachment.eventProbability_true
+#print axioms NarrativeDynamics.FitnessAttachment.eventProbability_false
+#print axioms NarrativeDynamics.FitnessAttachment.eventProbability_nonneg
+#print axioms NarrativeDynamics.FitnessAttachment.eventProbability_le_one
+#print axioms NarrativeDynamics.FitnessAttachment.eventProbability_compl
+#print axioms NarrativeDynamics.FitnessAttachment.eventProbability_mono
+#print axioms NarrativeDynamics.FitnessAttachment.expectation_const
+#print axioms NarrativeDynamics.FitnessAttachment.expectation_add
+#print axioms NarrativeDynamics.FitnessAttachment.expectation_smul
+#print axioms NarrativeDynamics.FitnessAttachment.expectation_indicator
+#print axioms NarrativeDynamics.FitnessAttachment.traceProbability_scale
+#print axioms NarrativeDynamics.FitnessAttachment.traceFinal_scale
+#print axioms NarrativeDynamics.FitnessAttachment.eventProbability_scale
+
+end NarrativeDynamics.FitnessAttachment.DistributionFixtures
