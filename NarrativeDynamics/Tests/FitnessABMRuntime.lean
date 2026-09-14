@@ -18,6 +18,23 @@ def summary (input : RuntimeCaseInput) :
       List.ofFn (fun i => (out.final.state.population.agents i).exposures),
       out.probability)
 
+private theorem summary_result_ok (out : Result) (nodes rounds edges : Nat)
+    (beliefs : List Rat) (exposures : List Nat) (mass : Rat) :
+    (Except.ok out : Except JointError Result).map (fun result =>
+      (result.final.nodeCount, result.final.roundIndex,
+        actualEdgeCount result.final.state.network.snapshot,
+        List.ofFn (fun i => (result.final.state.population.agents i).belief),
+        List.ofFn (fun i => (result.final.state.population.agents i).exposures),
+        result.probability)) = .ok (nodes, rounds, edges, beliefs, exposures, mass) ↔
+      out.final.nodeCount = nodes ∧ out.final.roundIndex = rounds ∧
+      actualEdgeCount out.final.state.network.snapshot = edges ∧
+      List.ofFn (fun i => (out.final.state.population.agents i).belief) = beliefs ∧
+      List.ofFn (fun i => (out.final.state.population.agents i).exposures) = exposures ∧
+      out.probability = mass := by
+  change (Except.ok (_, _, _, _, _, _) : Except JointError _) =
+    Except.ok (_, _, _, _, _, _) ↔ _
+  simp only [Except.ok.injEq, Prod.mk.injEq]
+
 private def exceptDecidableEq {α : Type} [DecidableEq α] : DecidableEq (Except JointError α) :=
   fun x y => match x, y with
   | .error x, .error y =>
@@ -345,7 +362,7 @@ private theorem attachSource_literal : summary attachSource =
   dsimp only [attachSource, empty]
   rw [runInputs, checked0]
   simp only [runInputs]
-  simp only [Except.map, Except.ok.injEq, Prod.mk.injEq]
+  apply (summary_result_ok _ _ _ _ _ _ _).mpr
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
@@ -360,7 +377,7 @@ private theorem attachRelay_literal : summary attachRelay =
   dsimp only [attachRelay, empty]
   rw [runInputs, checked1]
   simp only [runInputs]
-  simp only [Except.map, Except.ok.injEq, Prod.mk.injEq]
+  apply (summary_result_ok _ _ _ _ _ _ _).mpr
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
@@ -375,7 +392,7 @@ private theorem relayIdle_literal : summary relayIdle =
   dsimp only [relayIdle, empty]
   rw [runInputs, checked1]
   simp only [runInputs]
-  simp only [Except.map, Except.ok.injEq, Prod.mk.injEq]
+  apply (summary_result_ok _ _ _ _ _ _ _).mpr
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
@@ -391,7 +408,7 @@ private theorem successiveBirths_literal : summary successiveBirths =
   rw [runInputs, checked1]
   rw [runInputs, checked2]
   simp only [runInputs]
-  simp only [Except.map, Except.ok.injEq, Prod.mk.injEq]
+  apply (summary_result_ok _ _ _ _ _ _ _).mpr
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
@@ -407,7 +424,7 @@ private theorem successiveIdle_literal : summary successiveIdle =
   rw [runInputs, checked1]
   rw [runInputs, checked2]
   simp only [runInputs]
-  simp only [Except.map, Except.ok.injEq, Prod.mk.injEq]
+  apply (summary_result_ok _ _ _ _ _ _ _).mpr
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
@@ -422,7 +439,7 @@ private theorem weightedSource_literal : summary weightedSource =
   dsimp only [weightedSource, attachSource, empty]
   rw [runInputs, checked0]
   simp only [runInputs]
-  simp only [Except.map, Except.ok.injEq, Prod.mk.injEq]
+  apply (summary_result_ok _ _ _ _ _ _ _).mpr
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
@@ -437,7 +454,7 @@ private theorem ordered01_literal : summary ordered01 =
   dsimp only [ordered01, empty]
   rw [runInputs, checked01]
   simp only [runInputs]
-  simp only [Except.map, Except.ok.injEq, Prod.mk.injEq]
+  apply (summary_result_ok _ _ _ _ _ _ _).mpr
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
@@ -452,7 +469,7 @@ private theorem ordered10_literal : summary ordered10 =
   dsimp only [ordered10, empty]
   rw [runInputs, checked10]
   simp only [runInputs]
-  simp only [Except.map, Except.ok.injEq, Prod.mk.injEq]
+  apply (summary_result_ok _ _ _ _ _ _ _).mpr
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
@@ -467,7 +484,7 @@ private theorem zeroReceptive_literal : summary zeroReceptive =
   dsimp only [zeroReceptive, attachSource, empty]
   rw [runInputs, checked0]
   simp only [runInputs]
-  simp only [Except.map, Except.ok.injEq, Prod.mk.injEq]
+  apply (summary_result_ok _ _ _ _ _ _ _).mpr
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
@@ -482,7 +499,7 @@ private theorem silent_literal : summary silent =
   dsimp only [silent, attachSource, empty]
   rw [runInputs, checked0]
   simp only [runInputs]
-  simp only [Except.map, Except.ok.injEq, Prod.mk.injEq]
+  apply (summary_result_ok _ _ _ _ _ _ _).mpr
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
@@ -497,7 +514,7 @@ private theorem zeroThreshold_literal : summary zeroThreshold =
   dsimp only [zeroThreshold, attachSource, empty]
   rw [runInputs, checked0]
   simp only [runInputs]
-  simp only [Except.map, Except.ok.injEq, Prod.mk.injEq]
+  apply (summary_result_ok _ _ _ _ _ _ _).mpr
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
@@ -512,7 +529,7 @@ private theorem broadcastNewborn_literal : summary broadcastNewborn =
   dsimp only [broadcastNewborn, attachRelay, empty]
   rw [runInputs, checked_broadcast]
   simp only [runInputs]
-  simp only [Except.map, Except.ok.injEq, Prod.mk.injEq]
+  apply (summary_result_ok _ _ _ _ _ _ _).mpr
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
@@ -527,7 +544,7 @@ private theorem retainedExposures_literal : summary retainedExposures =
   dsimp only [retainedExposures, attachRelay, empty]
   rw [runInputs, checked1]
   simp only [runInputs]
-  simp only [Except.map, Except.ok.injEq, Prod.mk.injEq]
+  apply (summary_result_ok _ _ _ _ _ _ _).mpr
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
@@ -542,7 +559,7 @@ private theorem halfReceptive_literal : summary halfReceptive =
   dsimp only [halfReceptive, attachSource, empty]
   rw [runInputs, checked0]
   simp only [runInputs]
-  simp only [Except.map, Except.ok.injEq, Prod.mk.injEq]
+  apply (summary_result_ok _ _ _ _ _ _ _).mpr
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
