@@ -21,6 +21,7 @@ def _record(seed: int, *, rewired: float, flywire: float) -> dict:
         "prepared_binding_sha256": "d" * 64,
         "aggregate_manifest_sha256": "e" * 64,
         "execution_config_hash": "f" * 64,
+        "control_identity_hash": "0" * 64,
         "normalization": {"weight_policy": "log1p_incoming_l1", "diagonal_policy": "drop"},
         "architecture": {
             "input_policy": "dense_all_nodes",
