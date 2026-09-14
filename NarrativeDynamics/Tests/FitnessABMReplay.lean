@@ -22,6 +22,18 @@ def summary (r : Except JointError Result) :
      List.ofFn (fun i => (out.final.state.population.agents i).exposures),
      out.probability)
 
+private theorem summary_ok (out : Result) (nodes rounds edges : Nat)
+    (beliefs : List Rat) (exposures : List Nat) (mass : Rat) :
+    summary (.ok out) = .ok (nodes, rounds, edges, beliefs, exposures, mass) ↔
+      out.final.nodeCount = nodes ∧ out.final.roundIndex = rounds ∧
+      actualEdgeCount out.final.state.network.snapshot = edges ∧
+      List.ofFn (fun i => (out.final.state.population.agents i).belief) = beliefs ∧
+      List.ofFn (fun i => (out.final.state.population.agents i).exposures) = exposures ∧
+      out.probability = mass := by
+  change (Except.ok (_, _, _, _, _, _) : Except JointError _) =
+    Except.ok (_, _, _, _, _, _) ↔ _
+  simp only [Except.ok.injEq, Prod.mk.injEq]
+
 -- Decidability is needed only for the finite observable result, never graph functions.
 private instance : DecidableEq
     (Except JointError (Nat × Nat × Nat × List Rat × List Nat × Rat)) :=
@@ -272,6 +284,9 @@ private def round2 : JointState 3 :=
       · intro i; fin_cases i <;> norm_num [AgentProfile.Valid]
       · intro i; fin_cases i <;> norm_num [AgentState.Valid] }
 
+private theorem top2_adj (i j : Fin 2) :
+    (⊤ : SimpleGraph (Fin 2)).Adj i j ↔ i ≠ j := Iff.rfl
+
 private theorem incoming0 :
     let s := grow (initial one) targets0 positiveM birthData
     letI := s.network.snapshot.adjDec
@@ -283,7 +298,7 @@ private theorem incoming0 :
   fin_cases i <;> fin_cases j <;>
     (simp only [grow, applyBirth, birthSnapshot, birthGraph, birthAdj,
       lastCases_eq_if, initial, seedNetwork, extendPopulation,
-      birthData, one, targets0, Targets.selected, broadcasting]
+      birthData, one, targets0, Targets.selected, broadcasting, top2_adj]
      decide_cbv)
 
 private theorem incoming1 :
@@ -353,21 +368,45 @@ private theorem replay2 : FitnessABM.replay seedRaw 1 agentsRaw [some attach1, n
     replay_start one 1 (by decide), runInputs, checked1]
   simp only [runInputs, round1_step, round2_step, mass1, mul_one]
 
+private theorem seed_edges_one : actualEdgeCount (initial one).network.snapshot = 1 := by
+  decide_cbv
+
+private theorem round0_edges : actualEdgeCount round0.network.snapshot = 2 := by
+  change actualEdgeCount
+    (applyBirth (initial one).network targets0 positiveM birthData.fitness).snapshot = 2
+  rw [birth_edges, seed_edges_one]
+
+private theorem round1_edges : actualEdgeCount round1.network.snapshot = 2 := by
+  change actualEdgeCount
+    (applyBirth (initial one).network targets1 positiveM birthData.fitness).snapshot = 2
+  rw [birth_edges, seed_edges_one]
+
+private theorem round2_edges : actualEdgeCount round2.network.snapshot = 2 := round1_edges
+
 -- Exact original RED observations, with symbolic rounds before finite reduction.
 example : summary (FitnessABM.replay seedRaw 1 agentsRaw [some attach0]) =
     .ok (3, 1, 2, [1, 1, 1], [0, 1, 1], 1/2) := by
   rw [replay0]
-  decide_cbv
+  apply (summary_ok _ _ _ _ _ _ _).mpr
+  refine ⟨rfl, rfl, round0_edges, ?_, ?_, rfl⟩
+  · decide_cbv
+  · decide_cbv
 
 example : summary (FitnessABM.replay seedRaw 1 agentsRaw [some attach1]) =
     .ok (3, 1, 2, [1, 1, 0], [0, 1, 0], 1/2) := by
   rw [replay1]
-  decide_cbv
+  apply (summary_ok _ _ _ _ _ _ _).mpr
+  refine ⟨rfl, rfl, round1_edges, ?_, ?_, rfl⟩
+  · decide_cbv
+  · decide_cbv
 
 example : summary (FitnessABM.replay seedRaw 1 agentsRaw [some attach1, none]) =
     .ok (3, 2, 2, [1, 1, 1], [1, 2, 1], 1/2) := by
   rw [replay2]
-  decide_cbv
+  apply (summary_ok _ _ _ _ _ _ _).mpr
+  refine ⟨rfl, rfl, round2_edges, ?_, ?_, rfl⟩
+  · decide_cbv
+  · decide_cbv
 
 example : summary (FitnessABM.replay seedRaw 1 agentsRaw []) =
     .ok (2, 0, 1, [1, 0], [0, 0], 1) := by
@@ -574,16 +613,30 @@ private theorem replay10 : FitnessABM.replay weightedSeed 2 agentsRaw [some atta
     replay_start three 2 (by decide), runInputs, checked10]
   simp only [runInputs, order_same, roundBoth_step, mass10, mul_one]
 
+private theorem seed_edges_three : actualEdgeCount (initial three).network.snapshot = 1 := by
+  decide_cbv
+
+private theorem roundBoth_edges : actualEdgeCount roundBoth.network.snapshot = 3 := by
+  change actualEdgeCount
+    (applyBirth (initial three).network targets01 two_pos birthData.fitness).snapshot = 3
+  rw [birth_edges, seed_edges_three]
+
 -- Both original orders are replayed, with identical complete grown states.
 example : summary (FitnessABM.replay weightedSeed 2 agentsRaw [some attach01]) =
     .ok (3, 1, 3, [1, 1, 1], [0, 1, 1], 1/4) := by
   rw [replay01]
-  decide_cbv
+  apply (summary_ok _ _ _ _ _ _ _).mpr
+  refine ⟨rfl, rfl, roundBoth_edges, ?_, ?_, rfl⟩
+  · decide_cbv
+  · decide_cbv
 
 example : summary (FitnessABM.replay weightedSeed 2 agentsRaw [some attach10]) =
     .ok (3, 1, 3, [1, 1, 1], [0, 1, 1], 3/4) := by
   rw [replay10]
-  decide_cbv
+  apply (summary_ok _ _ _ _ _ _ _).mpr
+  refine ⟨rfl, rfl, roundBoth_edges, ?_, ?_, rfl⟩
+  · decide_cbv
+  · decide_cbv
 
 example : ∃ final,
     FitnessABM.replay weightedSeed 2 agentsRaw [some attach01] = .ok ⟨final, 1/4⟩ ∧
