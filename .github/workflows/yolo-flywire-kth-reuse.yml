@@ -1,0 +1,311 @@
+name: yolo-flywire-kth-reuse
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Existing yolo-flywire-kth-real run whose coordinator and six shards are reused
+        required: true
+        default: "34799343181"
+        type: string
+      source_head_sha:
+        description: Exact source-run head SHA bound to the cached artifacts
+        required: true
+        default: "ce6ef961ca144884618fe7bcea1a58446c0df311"
+        type: string
+      learning_rate:
+        description: Development learning rate recorded in evidence
+        required: true
+        default: "0.001"
+        type: string
+      gru_hidden_dim:
+        description: GRU hidden width under frozen parameter ceiling
+        required: true
+        default: "64"
+        type: string
+      graph_node_dim:
+        description: Graph recurrent node width shared by graph arms
+        required: true
+        default: "2"
+        type: string
+  push:
+    branches:
+      - research/yolo-flywire-behavior-v0
+    paths:
+      - .github/workflows/yolo-flywire-kth-reuse.yml
+      - python/yolo_flywire/kthreuse.py
+      - tests/test_kth_reuse.py
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: yolo-flywire-kth-reuse-${{ github.ref }}-${{ inputs.source_run_id || '34799343181' }}
+  cancel-in-progress: false
+
+env:
+  PYTHONPATH: python
+  PYTHONUNBUFFERED: "1"
+  OMP_NUM_THREADS: "1"
+  MKL_NUM_THREADS: "1"
+  SOURCE_RUN_ID: ${{ inputs.source_run_id || '34799343181' }}
+  SOURCE_HEAD_SHA: ${{ inputs.source_head_sha || 'ce6ef961ca144884618fe7bcea1a58446c0df311' }}
+  LEARNING_RATE: ${{ inputs.learning_rate || '0.001' }}
+  GRU_HIDDEN_DIM: ${{ inputs.gru_hidden_dim || '64' }}
+  GRAPH_NODE_DIM: ${{ inputs.graph_node_dim || '2' }}
+
+jobs:
+  prepare:
+    name: Verify cached KTH shards and aggregate once
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout orchestration head
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install development runtime
+        run: python -m pip install -e "./python[dev]" "numpy==2.4.6" "torch==2.14.0"
+
+      - name: Verify source workflow run identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}" \
+            --output source-run.json
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          run = json.loads(Path("source-run.json").read_text(encoding="utf-8"))
+          if str(run.get("id")) != os.environ["SOURCE_RUN_ID"]:
+              raise SystemExit("cached KTH source run id mismatch")
+          if run.get("head_sha") != os.environ["SOURCE_HEAD_SHA"]:
+              raise SystemExit("cached KTH source head SHA mismatch")
+          if run.get("repository", {}).get("full_name") != os.environ["GITHUB_REPOSITORY"]:
+              raise SystemExit("cached KTH source repository mismatch")
+          if run.get("head_branch") != "research/yolo-flywire-behavior-v0":
+              raise SystemExit("cached KTH source branch mismatch")
+          print(f"KTH cached source run={run['id']} head={run['head_sha']} status={run.get('status')}")
+          PY
+
+      - name: Download coordinator and all six cached KTH pose shards
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          pattern: kth-*-${{ env.SOURCE_RUN_ID }}
+          path: cached
+          merge-multiple: false
+
+      - name: Require exact cached artifact roster
+        run: |
+          test -f "cached/kth-coordinator-${SOURCE_RUN_ID}/00sequences.txt"
+          test -f "cached/kth-coordinator-${SOURCE_RUN_ID}/frozen-runtime-protocol.json"
+          for action in boxing handclapping handwaving jogging running walking; do
+            test -f "cached/kth-${action}-${SOURCE_RUN_ID}/shard-report.json"
+          done
+          count=$(find cached -name shard-report.json -type f | wc -l)
+          test "$count" -eq 6
+
+      - name: Aggregate cached verified KTH pose evidence
+        run: |
+          python -m yolo_flywire.kth_aggregate \
+            --sequence-file "cached/kth-coordinator-${SOURCE_RUN_ID}/00sequences.txt" \
+            --protocol "cached/kth-coordinator-${SOURCE_RUN_ID}/frozen-runtime-protocol.json" \
+            --shards-root cached \
+            --output aggregate
+          mkdir aggregate/bundle
+          mv aggregate/manifest.json aggregate/observations.jsonl aggregate/timing.jsonl aggregate/bundle/
+
+      - name: Generate exact FlyWire controls from frozen protocol
+        run: |
+          commit=0d8574d46627ce7fadd968a3c5d602e837325373
+          path=data/type_to_type_connection_and_synapse_counts.csv
+          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+            "https://raw.githubusercontent.com/murthylab/visual-system-parts-list/${commit}/${path}" \
+            --output flywire-connectivity.csv
+          python -m yolo_flywire.provenance generate \
+            --config aggregate/frozen-protocol.json \
+            --source flywire-connectivity.csv \
+            --output controls
+          python -m yolo_flywire.provenance verify \
+            --config aggregate/frozen-protocol.json \
+            --source flywire-connectivity.csv \
+            --output controls
+
+      - name: Freeze one shared five-seed execution condition
+        run: |
+          python - <<'PY'
+          import json, math, os
+          from pathlib import Path
+          source = json.loads(Path("aggregate/source-manifest.json").read_text(encoding="utf-8"))
+          excluded = {row["sample_id"] for row in source.get("source_exclusions", [])}
+          train = [row for row in source["subsequences"] if row["split"] == "train" and row["sample_id"] not in excluded]
+          train_count = len(train)
+          batch_size = (train_count + 1) // 2
+          if train_count < 2 or 20 * math.ceil(train_count / batch_size) != 40:
+              raise SystemExit("KTH cached train roster cannot satisfy frozen 40-update budget")
+          config = {
+              "seeds": [7, 11, 19, 23, 31],
+              "epochs": 20,
+              "lr": float(os.environ["LEARNING_RATE"]),
+              "batch_size": batch_size,
+              "max_updates": 40,
+              "parameter_ceiling": 50000,
+              "gru_hidden_dim": int(os.environ["GRU_HIDDEN_DIM"]),
+              "graph_node_dim": int(os.environ["GRAPH_NODE_DIM"]),
+          }
+          if config["lr"] <= 0 or config["gru_hidden_dim"] <= 0 or config["graph_node_dim"] <= 0:
+              raise SystemExit("KTH cached development hyperparameters must be positive")
+          Path("execution-config.json").write_text(
+              json.dumps(config, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8"
+          )
+          print(f"KTH cached training_subsequences={train_count} batch_size={batch_size}")
+          PY
+
+      - name: Upload one prepared immutable comparison input
+        uses: actions/upload-artifact@v4
+        with:
+          name: kth-reuse-prepared-${{ github.run_id }}
+          path: |
+            source-run.json
+            aggregate/source-manifest.json
+            aggregate/frozen-protocol.json
+            aggregate/bundle
+            execution-config.json
+            flywire-connectivity.csv
+            controls/control-bundle.json
+            controls/flywire-selected-graph.json
+            controls/verification-run.json
+          if-no-files-found: error
+          retention-days: 1
+
+  seed:
+    name: Four arms for seed ${{ matrix.seed }}
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        seed:
+          - 7
+          - 11
+          - 19
+          - 23
+          - 31
+    steps:
+      - name: Checkout orchestration head
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install development runtime
+        run: python -m pip install -e "./python[dev]" "numpy==2.4.6" "torch==2.14.0"
+
+      - name: Download prepared cached comparison input
+        uses: actions/download-artifact@v4
+        with:
+          name: kth-reuse-prepared-${{ github.run_id }}
+          path: prepared
+
+      - name: Execute paired four-arm comparison for one seed
+        run: |
+          protocol_sha=$(sha256sum prepared/aggregate/frozen-protocol.json | awk '{print $1}')
+          controls_sha=$(sha256sum prepared/controls/control-bundle.json | awk '{print $1}')
+          python -m yolo_flywire.kthreuse seed \
+            --protocol prepared/aggregate/frozen-protocol.json \
+            --protocol-sha256 "$protocol_sha" \
+            --source-manifest prepared/aggregate/source-manifest.json \
+            --bundle prepared/aggregate/bundle \
+            --execution-config prepared/execution-config.json \
+            --connectivity prepared/flywire-connectivity.csv \
+            --controls prepared/controls/control-bundle.json \
+            --controls-sha256 "$controls_sha" \
+            --seed "${{ matrix.seed }}" \
+            --source-run-id "$SOURCE_RUN_ID" \
+            --source-head-sha "$SOURCE_HEAD_SHA" \
+            --output seed-output
+
+      - name: Upload one seed report only
+        uses: actions/upload-artifact@v4
+        with:
+          name: kth-reuse-seed-${{ matrix.seed }}-${{ github.run_id }}
+          path: seed-output/seed_report.json
+          if-no-files-found: error
+          retention-days: 1
+
+  reduce:
+    name: Deterministically reduce five paired seed reports
+    needs: [prepare, seed]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout orchestration head
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install development runtime
+        run: python -m pip install -e "./python[dev]" "numpy==2.4.6" "torch==2.14.0"
+
+      - name: Download prepared cached comparison input
+        uses: actions/download-artifact@v4
+        with:
+          name: kth-reuse-prepared-${{ github.run_id }}
+          path: prepared
+
+      - name: Download all five seed reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: kth-reuse-seed-*-${{ github.run_id }}
+          path: seed-reports
+          merge-multiple: false
+
+      - name: Reduce exact five-seed evidence
+        run: |
+          protocol_sha=$(sha256sum prepared/aggregate/frozen-protocol.json | awk '{print $1}')
+          python -m yolo_flywire.kthreuse reduce \
+            --protocol prepared/aggregate/frozen-protocol.json \
+            --protocol-sha256 "$protocol_sha" \
+            --source-manifest prepared/aggregate/source-manifest.json \
+            --execution-config prepared/execution-config.json \
+            --reports-root seed-reports \
+            --output development
+
+      - name: Stage cached real-KTH development evidence
+        run: |
+          mkdir final-evidence
+          cp prepared/source-run.json final-evidence/
+          cp prepared/aggregate/source-manifest.json final-evidence/
+          cp prepared/aggregate/frozen-protocol.json final-evidence/
+          cp prepared/aggregate/bundle/manifest.json final-evidence/aggregate-manifest.json
+          cp prepared/execution-config.json final-evidence/
+          cp development/development_report.json final-evidence/
+          cp prepared/controls/flywire-selected-graph.json final-evidence/
+          cp prepared/controls/verification-run.json final-evidence/
+          cp -r seed-reports final-evidence/seed-reports
+
+      - name: Upload cached real-KTH development report
+        uses: actions/upload-artifact@v4
+        with:
+          name: yolo-flywire-kth-reuse-development-${{ github.run_id }}
+          path: final-evidence
+          if-no-files-found: error
+          retention-days: 30
