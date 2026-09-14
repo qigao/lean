@@ -157,7 +157,7 @@ def observePrefix (input : RuntimeCaseInput) (count : Nat) :
     ⟨observeState result.final.state, result.final.roundIndex,
       (inputBirths (input.ticks.take count)).length, result.probability⟩
 
-private def observeTransmissions {n : Nat} (state : JointState n) :
+def observeTransmissions {n : Nat} (state : JointState n) :
     List (Nat × Nat × Rat) :=
   letI := state.network.snapshot.adjDec
   let delivered := NetworkPropagation.transmissions

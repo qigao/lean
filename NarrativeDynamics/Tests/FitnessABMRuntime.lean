@@ -1221,6 +1221,11 @@ private theorem lateFirstBirth_literal : summary lateFirstBirth =
   dsimp only [lateFirstBirth, empty]
   decide_cbv
 
+private theorem transmission_mem_incoming {n : Nat} (g : MeshGraph (Fin n))
+    [DecidableRel g] (p : Population n) (source target : Fin n) :
+    (source, target) ∈ transmissions g p ↔ source ∈ incoming g p target := by
+  simp only [transmission_iff, incoming, Finset.mem_filter, Finset.mem_univ, true_and]
+
 private theorem successive_growth_literal :
     (observeTransition successiveBirths ⟨1, by decide⟩).map
       (fun t => (t.postGrowth.beliefs, t.postGrowth.exposures, t.tickMass, t.transmissions)) =
@@ -1231,6 +1236,10 @@ private theorem successive_growth_literal :
   rw [runInputs, checked1]
   simp only [runInputs, List.getElem_cons_succ, List.getElem_cons_zero]
   rw [checked2]
+  simp only [Except.map, observeState, observeTransmissions,
+    transmission_mem_incoming, successive_incoming]
+  simp only [grow_agents, default_growth_agents, advance_projection,
+    grow_projection, initial_network]
   decide_cbv
 
 private theorem retained_growth_literal :
@@ -1241,6 +1250,7 @@ private theorem retained_growth_literal :
   dsimp only [retainedExposures, attachRelay, empty, List.take]
   simp only [runInputs, List.getElem_cons_zero]
   rw [checked1]
+  simp only [Except.map, observeState, grow_agents, retainedExposures_initial_agents]
   decide_cbv
 
 private theorem newborn_transmissions_literal :
@@ -1251,6 +1261,9 @@ private theorem newborn_transmissions_literal :
   dsimp only [broadcastNewborn, attachRelay, empty, List.take]
   simp only [runInputs, List.getElem_cons_zero]
   rw [checked_broadcast]
+  simp only [Except.map, observeTransmissions, transmission_mem_incoming,
+    broadcastNewborn_incoming]
+  simp only [grow_agents, default_agents]
   decide_cbv
 
 theorem success_literals :
