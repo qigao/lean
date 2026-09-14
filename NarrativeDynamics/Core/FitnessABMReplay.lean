@@ -91,7 +91,7 @@ theorem parseAgent_complete (raw : RawAgent) (h : raw.Valid) :
 
 /-- Structural left-to-right validation; later records cannot replace a failure. -/
 private def checkRoster (index : Nat) (raw : List RawAgent) :
-    Except JointError {u : Unit // ∀ a ∈ raw, a.Valid} :=
+    Except JointError {_u : Unit // ∀ a ∈ raw, a.Valid} :=
   match raw with
   | [] => .ok ⟨(), by simp⟩
   | a :: rest =>
@@ -115,8 +115,13 @@ private theorem checkRoster_complete (index : Nat) (raw : List RawAgent)
   | cons a rest ih =>
     obtain ⟨pair, hp⟩ := parseAgent_complete a (h a (by simp))
     obtain ⟨tail, ht⟩ := ih (index + 1) (fun b hb => h b (by simp [hb]))
-    simp only [checkRoster, hp, ht]
-    exact ⟨_, rfl⟩
+    unfold checkRoster
+    split
+    · rename_i e he
+      have impossible : Except.ok pair = Except.error e := hp.symm.trans he
+      cases impossible
+    · simp only [ht]
+      exact ⟨_, rfl⟩
 
 /-- Exact roster size is checked before examining any scalar field. -/
 def parseAgents (n : Nat) (raw : Array RawAgent) :
@@ -368,6 +373,7 @@ private theorem runInputs_projection (m tickIndex birthIndex : Nat) (s : RunStat
             (raw.birth :: inputBirths rest) =
               .ok (projectResult ⟨tail.final, next.2 * tail.probability⟩)
           rw [FitnessAttachment.replay_step, hp]
+          dsimp only
           change runBirths m (birthIndex + 1)
             ⟨s.nodeCount + 1, next.1.network⟩ (inputBirths rest) =
               .ok (projectResult tail) at ht
@@ -441,8 +447,8 @@ theorem replay_counts (seed : FitnessAttachment.RawSeed) (m : Nat)
   have hp := replay_project_exact seed m agents ticks out h
   obtain ⟨initial, p, _, _, _, hr⟩ := replay_success seed m agents ticks out h
   refine ⟨?_, ?_, FitnessAttachment.replay_edges seed m _ (projectResult out) network hs hp⟩
-  · simpa only [projectResult, projectState, actualNodeCount, Fintype.card_fin] using
-      FitnessAttachment.replay_nodes seed m _ (projectResult out) hp
+  · exact (Fintype.card_fin out.final.nodeCount).symm.trans
+      (FitnessAttachment.replay_nodes seed m _ (projectResult out) hp)
   · simpa only [Nat.zero_add] using
       runInputs_rounds m 0 0 ⟨seed.nodeCount, 0, ⟨initial, p.val, p.property⟩⟩ ticks out hr
 
