@@ -147,6 +147,10 @@ jobs:
           export PATH="$HOME/.elan/bin:$PATH"
           lake build
 
+      - name: BB ABM joint evolution contracts
+        timeout-minutes: 25
+        run: bash tools/check_fitness_abm.sh
+
       - name: BB-only naming audit
         run: |
           set -euo pipefail
