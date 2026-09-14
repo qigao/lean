@@ -1,0 +1,25 @@
+name: BB runtime environment
+on:
+  push:
+    branches: ["build/bb-runtime-environment-20260914"]
+    paths: [".github/workflows/bb-runtime-environment.yml"]
+permissions:
+  contents: read
+jobs:
+  toolchain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download pinned public Lean release
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            https://github.com/leanprover/lean4/releases/download/v4.32.0/lean-4.32.0-linux.tar.zst \
+            --output "$RUNNER_TEMP/lean-4.32.0-linux.tar.zst"
+          sha256sum "$RUNNER_TEMP/lean-4.32.0-linux.tar.zst"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lean-4.32.0-linux
+          path: ${{ runner.temp }}/lean-4.32.0-linux.tar.zst
+          compression-level: 0
+          retention-days: 1
