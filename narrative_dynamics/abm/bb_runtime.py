@@ -13,6 +13,8 @@ from narrative_dynamics.abm.bb_runtime_contracts import (
     BBRuntimeFrame,
     BBRuntimeNewborn,
     BBRuntimeRawSeed,
+    BBRuntimeReplay,
+    BBRuntimeSeed,
     BBRuntimeTick,
     BBRuntimeTopology,
     BBRuntimeTransition,
@@ -515,3 +517,120 @@ def _advance_tick(
     return BBRuntimeTransition(
         prior, tick, post_growth, round_result, tick_mass, next_frame,
     )
+
+
+def _initial_frame(
+    seed: object,
+    m: object,
+) -> BBRuntimeFrame | BBRuntimeError:
+    if not isinstance(seed, BBRuntimeSeed):
+        return BBRuntimeError(
+            "seed_network", "invalidType", field="seed",
+        )
+
+    topology = _parse_bb_seed(seed.network)
+    if isinstance(topology, BBRuntimeError):
+        return topology
+
+    checked_m = _check_m(m, topology.node_count, stage="initial_m")
+    if isinstance(checked_m, BBRuntimeError):
+        return checked_m
+
+    if not isinstance(seed.agents, tuple):
+        return BBRuntimeError(
+            "seed_agents", "invalidType", field="agents",
+        )
+    if len(seed.agents) != topology.node_count:
+        return BBRuntimeError(
+            "seed_agents",
+            "seedAgentCount",
+            field="agents",
+            expected=topology.node_count,
+            actual=len(seed.agents),
+        )
+
+    profiles: list[NetworkAgentSpec] = []
+    states: list[NetworkAgentState] = []
+    used_ids: frozenset[str] = frozenset()
+    for agent_index, raw in enumerate(seed.agents):
+        parsed = _parse_agent(
+            raw,
+            newborn=False,
+            used_ids=used_ids,
+            stage="seed_agent",
+            agent_index=agent_index,
+        )
+        if isinstance(parsed, BBRuntimeError):
+            return parsed
+        profile, state = parsed
+        profiles.append(profile)
+        states.append(state)
+        used_ids = used_ids | frozenset((profile.agent_id,))
+
+    identities: list[str] = []
+    for field in ("model_id", "version"):
+        value = getattr(seed, field)
+        if not isinstance(value, str):
+            return BBRuntimeError(
+                "seed_identity", "invalidType", field=field,
+            )
+        try:
+            identities.append(_text(value, label=field))
+        except ValueError:
+            return BBRuntimeError(
+                "seed_identity", "invalidText", field=field,
+            )
+    model_id, version = identities
+
+    config = BBRuntimeConfig(
+        model_id,
+        version,
+        checked_m,
+        topology.node_count,
+        len(topology.edges),
+    )
+    agent_ids = tuple(profile.agent_id for profile in profiles)
+    model = _model_for(config, agent_ids, topology, tuple(profiles))
+    population = PopulationState(
+        model.model_id,
+        model.content_hash,
+        0,
+        None,
+        tuple(states),
+    )
+    return BBRuntimeFrame(
+        config,
+        0,
+        0,
+        agent_ids,
+        topology,
+        model,
+        population,
+        Fraction(1),
+        None,
+        None,
+    )
+
+
+def replay_bb_population(
+    seed: BBRuntimeSeed,
+    m: int,
+    ticks: tuple[BBRuntimeTick, ...],
+) -> BBRuntimeReplay | BBRuntimeError:
+    initial = _initial_frame(seed, m)
+    if isinstance(initial, BBRuntimeError):
+        return initial
+    if not isinstance(ticks, tuple):
+        return BBRuntimeError("ticks", "invalidType", field="ticks")
+    current = initial
+    transitions = []
+    for raw in ticks:
+        step = _advance_tick(current, raw)
+        if isinstance(step, BBRuntimeError):
+            return step
+        transitions.append(step)
+        current = step.next_frame
+    return BBRuntimeReplay(initial, tuple(transitions), current)
+
+
+__all__ = ["replay_bb_population"]
