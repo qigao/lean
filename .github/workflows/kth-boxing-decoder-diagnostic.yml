@@ -25,8 +25,8 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install exact PyAV runtime only
-        run: python -m pip install --only-binary=av "av==15.1.0"
+      - name: Install exact decoder runtime only
+        run: python -m pip install --only-binary=av "av==15.1.0" "numpy==2.4.6"
 
       - name: Download official KTH boxing archive
         run: |
@@ -57,8 +57,9 @@ jobs:
                           target.write(chunk)
               print(f"KTH_BOXING_DIAG member_sha256={member_hash.hexdigest()}")
 
-              def run_mode(name, codec_options=None, output_corrupt=False):
+              def run_mode(name, codec_options=None):
                   count = 0
+                  declared = None
                   last_pts = None
                   last_time_base = None
                   prefix_hash = sha256()
@@ -71,8 +72,6 @@ jobs:
                               stream.codec_context.thread_count = 1
                               if codec_options is not None:
                                   stream.codec_context.options = dict(codec_options)
-                              if output_corrupt:
-                                  stream.codec_context.flags |= stream.codec_context.flags.OUTPUT_CORRUPT
                               declared = stream.frames
                               for frame in container.decode(stream):
                                   count += 1
@@ -96,11 +95,15 @@ jobs:
                   else:
                       print(f"KTH_BOXING_DIAG mode={name} exception_type={type(exception).__module__}.{type(exception).__name__}")
                       print(f"KTH_BOXING_DIAG mode={name} exception_repr={exception!r}")
+                  return count, exception
 
-              run_mode("strict", {"err_detect": "explode"})
-              run_mode("default")
-              run_mode("ignore_err", {"err_detect": "ignore_err"})
-              run_mode("ignore_err_output_corrupt", {"err_detect": "ignore_err"}, output_corrupt=True)
+              strict_count, strict_exc = run_mode("strict", {"err_detect": "explode"})
+              default_count, default_exc = run_mode("default")
+              ignore_count, ignore_exc = run_mode("ignore_err", {"err_detect": "ignore_err"})
+              if strict_count != 304 or strict_exc is None:
+                  raise SystemExit("strict mode no longer reproduces the known official-file failure boundary")
+              if default_count < 304 or ignore_count < 304:
+                  raise SystemExit("non-strict decoder modes regressed before the known strict prefix")
           PY
 
       - name: Remove source archive
