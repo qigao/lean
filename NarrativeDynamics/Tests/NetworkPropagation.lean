@@ -42,7 +42,9 @@ def silent : Population 3 :=
   { initial3 with agents := fun _ => ⟨0, 0⟩ }
 
 example : transmissions line3 silent = ∅ := by decide_cbv
-example : ∀ i, (propagate line3 silent).agents i = silent.agents i := by decide_cbv
+example : ∀ i, (propagate line3 silent).agents i = silent.agents i := by
+  intro i
+  fin_cases i <;> decide_cbv
 
 def zeroSource : Population 3 :=
   { initial3 with
