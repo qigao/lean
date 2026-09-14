@@ -1020,22 +1020,26 @@ The module dependency direction is `bb_runtime_contracts -> existing contracts/s
 Implementation started from the pinned plan base
 `28c190d879b55b59a722215b68931610427791ec`. The Task 6 implementation base is
 published commit `a7240d07c985922dd86a7fd444de2d7053a4dda4`, tree
-`3ea8fbd68a3f649f4d30bcc0e5da702a80918647`. Local focused work used Python
-3.12.14. Actual accepted CI checkpoints use Python 3.13.15, Lean 4.32.0 commit
+`3ea8fbd68a3f649f4d30bcc0e5da702a80918647`. The final reviewed runtime source
+checkpoint is published commit `07cd76031135652c5e0cb1de5abb94d6953a55c1`, tree
+`218840305c3cda060eb7f1bcd3046b2d855fc779`; reviewed local commit
+`d9d912715ac358a02974787593d9f5592f5b8b6c` maps to it by identical tree. Local
+focused work used Python 3.12.14. Actual accepted CI checkpoints use Python 3.13.15,
+Lean 4.32.0 commit
 `8c9756b28d64dab099da31a4c09229a9e6a2ef35`, and mathlib
 `81a5d257c8e410db227a6665ed08f64fea08e997`. Local Lean execution is unavailable
-because of process-path permissions; its required current-revision evidence remains
-owned by ordinary CI.
+because of process-path permissions; the actual current-revision Lean evidence
+below comes from ordinary CI.
 
 | Unit | Current status | Recorded evidence |
 | --- | --- | --- |
 | Preparation | Complete | Clean isolated feature worktree; pinned implementation base, Python and Lean/mathlib versions recorded above. |
 | Task 1 | Complete | [RED `54ecbd8`](https://github.com/qigao/lean/commit/54ecbd899111ae99d247af3690c53cefc70240ef) lacked `bb_runtime_contracts`; [GREEN `bf08488`](https://github.com/qigao/lean/commit/bf084889d15adef4e667ed657530cefda4165a86) passed 31 record tests in [proof run 34853658596](https://github.com/qigao/lean/actions/runs/34853658596). The tests cover immutable bindings, numeric registry, signed-zero identity and lineage. |
-| Task 2 | Complete | Local implementation `829509e` and review fix `7958d70` map by equal trees to published [`32a6ba5`](https://github.com/qigao/lean/commit/32a6ba5) and [`7d31fe7`](https://github.com/qigao/lean/commit/7d31fe7). The absent-runtime RED became a 40-test contracts/kernel GREEN; independent specification and quality review approved the fix. [Proof run 34857235587](https://github.com/qigao/lean/actions/runs/34857235587) passed 1,686 tests with the one existing Blender skip and all old Lean gates. |
+| Task 2 | Complete | Local implementation `829509e` and review fix `7958d70` map by equal trees to published [`32a6ba5`](https://github.com/qigao/lean/commit/32a6ba5) and [`7d31fe7`](https://github.com/qigao/lean/commit/7d31fe7). The absent-runtime RED became a 40-test contracts/kernel GREEN; independent specification and quality review approved the fix. [Proof run 34857235587](https://github.com/qigao/lean/actions/runs/34857235587) passed 1,686 tests with the one existing Blender skip and all old Lean gates. Final whole-branch review found one per-entry fitness-priority defect. The public regression RED failed two of ten kernel tests; the minimal fix in [`07cd760`](https://github.com/qigao/lean/commit/07cd76031135652c5e0cb1de5abb94d6953a55c1) passed ten kernel and 57 focused runtime/conformance tests. Scoped review approved it with the finding closed and none open. |
 | Task 3 | Complete | Local `86f4f80` maps by equal tree to published [`21eb8b5`](https://github.com/qigao/lean/commit/21eb8b5). The missing `_advance_tick` RED became a 57-test runtime GREEN; independent specification and quality review reported no findings. The same-head Python [push run 34858806728](https://github.com/qigao/lean/actions/runs/34858806728), PR Lean [run 34858811906](https://github.com/qigao/lean/actions/runs/34858811906), and World [run 34858812103](https://github.com/qigao/lean/actions/runs/34858812103) provide the accepted split checkpoint. |
 | Task 4 | Complete | Local `9e7ef66` maps by equal tree to published [`fdc6ff3`](https://github.com/qigao/lean/commit/fdc6ff3). The absent public replay RED became 72 runtime tests plus 20 existing V1 regression tests GREEN; independent specification and quality review reported no findings. [Proof run 34860493325](https://github.com/qigao/lean/actions/runs/34860493325) passed 1,718 tests with the existing Blender skip and all old Lean gates. |
 | Task 5 | Complete | Manifest-declared local source `0d037d2` maps by equal tree to published [`a7240d0`](https://github.com/qigao/lean/commit/a7240d07c985922dd86a7fd444de2d7053a4dda4), with all 24 Task 5 commits preserved. Actual Lean replay produced 16 success/20 error cases, 36 prefixes and 20 transitions; all 35 old and three new reports, fresh export/comparison and restored corpus gates passed in [bounded auxiliary run 34875479725](https://github.com/qigao/lean/actions/runs/34875479725). Independent specification and quality review approved with no findings. |
-| Task 6 | In progress | The production-imported example exits zero with the documented four registry-ordered frames and final exact mass `1/8`; README boundary documentation and this record are present. Full current-head proof/World Studio CI and final whole-branch implementation review remain pending. |
+| Task 6 | Complete | The production-imported example exits zero with the documented four registry-ordered frames and final exact mass `1/8`. Published documentation commits [`381ffec`](https://github.com/qigao/lean/commit/381ffec24154f59a20a8ae9cc4339b86a691b79a), [`183ec02`](https://github.com/qigao/lean/commit/183ec02df0b56e50c802cebcca53f3d7340846a4), and [`a9822ba`](https://github.com/qigao/lean/commit/a9822bad1a4d2fae0ccc2f264834a5d69abc17b5) retain the example, bounded README and durable execution evidence. Exact-source proof and World Studio CI passed at accepted source `07cd760`; final whole-branch and scoped-fix reviews are Approved with zero open findings. |
 
 The preserved RED/GREEN history is diagnostic evidence, not a claim that every
 test existed at each earlier checkpoint. Task 1's first RED contained 29 tests;
@@ -1086,9 +1090,47 @@ cover the later Task 6 documentation commits.
 Task 6 local acceptance used `python3 -m examples.bb_abm_runtime`; it exited zero
 and printed global ticks `0,1,2,3`, epochs `0,1,2,2`, local rounds `0,1,1,2`,
 node/edge counts `2/1,3/2,4/3,4/3`, the documented beliefs and exposures, and
-exact masses `1,1/2,1/8,1/8`. `git diff --check` is required again at the final
-Task 6 revision. Full `python3 -m unittest discover -s tests -v`, `lake build`,
-both permanent fitness gates, exact PR-head checkout inspection, actual World
-merge identity, and final whole-branch review remain unchecked until the controller
-records fresh evidence for the final implementation revision. No overall six-task
-completion is claimed here.
+exact masses `1,1/2,1/8,1/8`.
+
+The final whole-branch review included Task 1 and found one Important issue: seed
+fitness entries were all type-checked before positivity, so a later bad type could
+displace an earlier nonpositive value. The public regression RED failed two of ten
+kernel tests for `(0, True)` and `(-1, 1.0)`; reverse `(True, 0)` remained the
+passing precedence control. The minimal ordered per-entry positivity fix passed all
+ten kernel tests and all 57 focused contracts, kernel, replay and conformance tests.
+Reviewed local `d9d9127` maps by identical tree to published `07cd760`. The full
+review and scoped fix review are Approved with one finding closed and zero open.
+
+Final accepted-source proof [run
+34880741113](https://github.com/qigao/lean/actions/runs/34880741113) checked out exact
+feature revision `07cd76031135652c5e0cb1de5abb94d6953a55c1`. Python 3.13.15 job
+`104099116024` ran `python -m unittest discover -s tests -v`: 1,720 tests in
+393.064 seconds, `OK (skipped=1)`. The only skip was the unchanged real-Blender
+smoke test requiring `BLENDER_EXECUTABLE`; the new mixed-fitness regression and the
+CPU-resource-limit test passed. Lean job `104099155070` completed all 15 validation
+steps and post-steps, including the default `lake build`, every old gate, the new
+runtime gate, all 35 old and three new dependency reports, both fresh generations
+and both unconditional byte comparisons. Every required report used only
+`propext`, `Classical.choice`, and `Quot.sound`. The bounded runtime build, literal
+and export phases took 9.17, 28.93 and 5.85 seconds within their 240-second bounds.
+Only pre-existing warnings from protected Learning and GroundedGoalCovariance
+sources, plus infrastructure warnings, remained; the new producer and fixture
+emitted no warnings.
+
+Final accepted-source World Studio [run
+34880741117](https://github.com/qigao/lean/actions/runs/34880741117), job
+`104099115738`, succeeded at actual merge
+`c77f88759c9cc008b13548959253e117a2346b30`. Its verified parents are the planning
+base `28c190d879b55b59a722215b68931610427791ec` and accepted source `07cd760`; its
+tree `218840305c3cda060eb7f1bcd3046b2d855fc779` equals the feature tree. The run
+passed 270 pytest cases/89 subtests, 774 network tests, 15 browser files/129 tests,
+and one real-browser flow.
+
+The acceptance record is therefore complete for all six implementation units at
+source checkpoint `07cd760`: executable example, complete Python discovery,
+default Lean build, both permanent fitness gates, all 38 reports, old and new fresh
+corpus comparisons, actual feature and World merge identities, and final review
+all passed. This execution record cannot identify its own future documentation
+commit. After publishing that separate record commit, the controller will inspect
+its latest actual CI and record the documentation-head evidence in PR #75 metadata;
+no future documentation-head result is claimed here.
