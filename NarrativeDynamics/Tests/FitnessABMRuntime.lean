@@ -177,8 +177,9 @@ private theorem checked_single {n : Nat} (s : JointState n) (j : Fin n)
         constructor
         · norm_num [AgentProfile.Valid]
         · exact hb⟩ := by
-    simp only [parseAgent, show (0 : Rat) ≤ 1 ∧ 1 ≤ 1 from by norm_num,
-      show (0 : Rat) ≤ 1/2 ∧ 1/2 ≤ 1 from by norm_num, hb, dif_pos]
+    simp only [parseAgent,
+      dif_pos (show (0 : Rat) ≤ 1 ∧ 1 ≤ 1 from by norm_num),
+      dif_pos (show (0 : Rat) ≤ 1/2 ∧ 1/2 ≤ 1 from by norm_num), dif_pos hb]
   refine ⟨⟨singletonTarget j, one, positiveM⟩, _, ?_, hp, rfl⟩
   simp only [validateBirth, dif_pos hm, dif_pos (show (0 : Rat) < 1 from by norm_num),
     dif_pos (show (#[j.val] : Array Nat).size = 1 from rfl),
@@ -238,32 +239,33 @@ private theorem checked10 (s : JointState 2) :
 
 private theorem empty_agents_valid : ∀ a ∈ empty.agents.toList, a.Valid := by
   intro a ha
-  simp [empty, attachSource, attachRelay, empty, agentsRaw] at ha
+  simp [empty, agentsRaw] at ha
   rcases ha with rfl | rfl <;> norm_num [RawAgent.Valid]
 
 private theorem zeroReceptive_agents_valid : ∀ a ∈ zeroReceptive.agents.toList, a.Valid := by
   intro a ha
-  simp [zeroReceptive, attachSource, attachRelay, empty, agentsRaw] at ha
+  simp [zeroReceptive, attachSource, empty, agentsRaw] at ha
   rcases ha with rfl | rfl <;> norm_num [RawAgent.Valid]
 
 private theorem silent_agents_valid : ∀ a ∈ silent.agents.toList, a.Valid := by
   intro a ha
-  simp [silent, attachSource, attachRelay, empty, agentsRaw] at ha
-  rcases ha with rfl | rfl <;> norm_num [RawAgent.Valid]
+  simp [silent, attachSource, empty, agentsRaw] at ha
+  rcases ha with rfl
+  norm_num [RawAgent.Valid]
 
 private theorem zeroThreshold_agents_valid : ∀ a ∈ zeroThreshold.agents.toList, a.Valid := by
   intro a ha
-  simp [zeroThreshold, attachSource, attachRelay, empty, agentsRaw] at ha
+  simp [zeroThreshold, attachSource, empty, agentsRaw] at ha
   rcases ha with rfl | rfl <;> norm_num [RawAgent.Valid]
 
 private theorem retainedExposures_agents_valid : ∀ a ∈ retainedExposures.agents.toList, a.Valid := by
   intro a ha
-  simp [retainedExposures, attachSource, attachRelay, empty, agentsRaw] at ha
+  simp [retainedExposures, attachRelay, empty, agentsRaw] at ha
   rcases ha with rfl | rfl <;> norm_num [RawAgent.Valid]
 
 private theorem halfReceptive_agents_valid : ∀ a ∈ halfReceptive.agents.toList, a.Valid := by
   intro a ha
-  simp [halfReceptive, attachSource, attachRelay, empty, agentsRaw] at ha
+  simp [halfReceptive, attachSource, empty, agentsRaw] at ha
   rcases ha with rfl | rfl <;> norm_num [RawAgent.Valid]
 
 private theorem empty_literal : summary empty =
