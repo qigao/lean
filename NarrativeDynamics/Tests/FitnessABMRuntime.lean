@@ -387,25 +387,78 @@ private theorem singleton_selected {n : Nat} (target : Fin n) :
     subst i
     exact ⟨0, rfl⟩
 
+private theorem initial_network (eta : PosFitness) (raw : Array RawAgent)
+    (hs : raw.size = 2) (hv : ∀ a ∈ raw.toList, a.Valid) :
+    (initial eta raw hs hv).network = seedNetwork eta := rfl
+
+private theorem default_profiles (eta : PosFitness) :
+    (initial eta agentsRaw rfl empty_agents_valid).population.profiles =
+      fun _ => ⟨1, 1/2⟩ := by
+  funext i
+  fin_cases i <;> rfl
+
+private theorem default_agents (eta : PosFitness) :
+    (initial eta agentsRaw rfl empty_agents_valid).population.agents =
+      ![⟨1, 0⟩, ⟨0, 0⟩] := by
+  funext i
+  fin_cases i <;> rfl
+
+private theorem top2_adj (i j : Fin 2) :
+    (⊤ : SimpleGraph (Fin 2)).Adj i j ↔ i ≠ j := Iff.rfl
+
+private theorem growth0_incoming (eta : PosFitness) :
+    let s := grow (initial eta agentsRaw rfl empty_agents_valid)
+      (singletonTarget (0 : Fin 2)) positiveM (newbornData 0 (by norm_num))
+    letI := s.network.snapshot.adjDec
+    incoming s.network.snapshot.graph.Adj s.population =
+      (![∅, {0}, {0}] : Fin 3 → Finset (Fin 3)) := by
+  have h0 : (0 : Nat) < 2 := by decide
+  have h1 : (1 : Nat) < 2 := by decide
+  have h2 : ¬ (2 : Nat) < 2 := by decide
+  funext i
+  ext j
+  simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
+  fin_cases i <;> fin_cases j <;>
+    (simp only [grow, applyBirth, birthSnapshot, birthGraph, birthAdj,
+      lastCases_eq_if, initial_network, default_profiles, default_agents,
+      seedNetwork, extendPopulation, newbornData, singleton_selected, broadcasting, top2_adj]
+     simp only [h0, h1, h2, dif_pos, dif_neg (show ¬ False from fun h => h)]
+     norm_num [Fin.ext_iff])
+
+private theorem growth1_incoming (eta : PosFitness) :
+    let s := grow (initial eta agentsRaw rfl empty_agents_valid)
+      (singletonTarget (1 : Fin 2)) positiveM (newbornData 0 (by norm_num))
+    letI := s.network.snapshot.adjDec
+    incoming s.network.snapshot.graph.Adj s.population =
+      (![∅, {0}, ∅] : Fin 3 → Finset (Fin 3)) := by
+  have h0 : (0 : Nat) < 2 := by decide
+  have h1 : (1 : Nat) < 2 := by decide
+  have h2 : ¬ (2 : Nat) < 2 := by decide
+  funext i
+  ext j
+  simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
+  fin_cases i <;> fin_cases j <;>
+    (simp only [grow, applyBirth, birthSnapshot, birthGraph, birthAdj,
+      lastCases_eq_if, initial_network, default_profiles, default_agents,
+      seedNetwork, extendPopulation, newbornData, singleton_selected, broadcasting, top2_adj]
+     simp only [h0, h1, h2, dif_pos, dif_neg (show ¬ False from fun h => h)]
+     norm_num [Fin.ext_iff])
+
 private theorem default_growth_incoming (eta : PosFitness) (target : Fin 2) :
     let s := grow (initial eta agentsRaw rfl empty_agents_valid)
       (singletonTarget target) positiveM (newbornData 0 (by norm_num))
     letI := s.network.snapshot.adjDec
     incoming s.network.snapshot.graph.Adj s.population =
       (![∅, {0}, if target = 0 then {0} else ∅] : Fin 3 → Finset (Fin 3)) := by
-  funext i
-  ext j
-  simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
-  fin_cases target <;> fin_cases i <;> fin_cases j <;>
-    norm_num [grow, applyBirth, birthSnapshot, birthGraph, birthAdj,
-      lastCases_eq_if, Fin.ext_iff, initial, seedNetwork, roster, agentsRaw,
-      extendPopulation, newbornData, one, singleton_selected, broadcasting]
+  fin_cases target <;>
+    first | exact growth0_incoming eta | exact growth1_incoming eta
 
 private theorem default_growth_agents (eta : PosFitness) (target : Fin 2) :
     (advance (grow (initial eta agentsRaw rfl empty_agents_valid)
       (singletonTarget target) positiveM (newbornData 0 (by norm_num)))).population.agents =
       ![⟨1, 0⟩, ⟨1, 1⟩, ⟨if target = 0 then 1 else 0, if target = 0 then 1 else 0⟩] := by
   rw [advance_agents _ _ (default_growth_incoming eta target)]
+  simp only [grow, extendPopulation, default_profiles, default_agents]
   funext i
   fin_cases target <;> fin_cases i <;> decide_cbv
 
