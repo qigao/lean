@@ -117,8 +117,8 @@ def test_kth_action_shard_never_decodes_final_test_subjects(tmp_path, monkeypatc
     sequence = tmp_path / "00sequences.txt"
     raw_sequence = _sequence_text().encode()
     sequence.write_bytes(raw_sequence)
-    action = "boxing"
-    archive = tmp_path / "boxing.zip"
+    action = "walking"
+    archive = tmp_path / "walking.zip"
     with ZipFile(archive, "w") as zipped:
         for subject in range(1, 26):
             for scenario in range(1, 5):
@@ -167,5 +167,6 @@ def test_kth_action_shard_never_decodes_final_test_subjects(tmp_path, monkeypatc
     for video in report["videos"]:
         assert video["decoded"] is (video["subject"] not in final_subjects)
     assert all(sample["split"] != "final_test" for sample in report["samples"])
+    assert report["source_exclusions"] == []
     assert report["final_test_decoded"] is False
     assert not (output / ".scratch").exists()
