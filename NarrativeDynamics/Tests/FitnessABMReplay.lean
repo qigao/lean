@@ -764,6 +764,10 @@ private theorem propagationSummary_flat (seed : RawSeed) (agents : Array RawAgen
       exact ((parseAgents_sound _ _ _ hp).2.2 i hi).2.trans
         ((hvalues i hi).2.symm)
 
+private theorem reachable_edge {n : Nat} (g : SimpleGraph (Fin n))
+    (i j : Fin n) (hedge : g.Adj i j) : g.Reachable i j :=
+  ⟨.cons hedge .nil⟩
+
 private theorem attachSource_connected :
     (seedGraph attachSource.seed).Connected := by
   let g : SimpleGraph (Fin 3) := seedGraph attachSource.seed
@@ -774,13 +778,14 @@ private theorem attachSource_connected :
   fin_cases i <;> fin_cases j <;>
     first
     | exact ⟨.nil⟩
-    | exact ⟨.cons (by decide_cbv) .nil⟩
+    | apply reachable_edge g
+      norm_num [g, seedGraph, attachSource, canonicalEdge, Fin.ext_iff]
     | exact ⟨.cons
-        (show g.Adj 1 0 by decide_cbv)
-        (.cons (show g.Adj 0 2 by decide_cbv) .nil)⟩
+        (show g.Adj 1 0 by norm_num [g, seedGraph, attachSource, canonicalEdge, Fin.ext_iff])
+        (.cons (show g.Adj 0 2 by norm_num [g, seedGraph, attachSource, canonicalEdge, Fin.ext_iff]) .nil)⟩
     | exact ⟨.cons
-        (show g.Adj 2 0 by decide_cbv)
-        (.cons (show g.Adj 0 1 by decide_cbv) .nil)⟩
+        (show g.Adj 2 0 by norm_num [g, seedGraph, attachSource, canonicalEdge, Fin.ext_iff])
+        (.cons (show g.Adj 0 1 by norm_num [g, seedGraph, attachSource, canonicalEdge, Fin.ext_iff]) .nil)⟩
 
 private theorem attachRelay_connected :
     (seedGraph attachRelay.seed).Connected := by
@@ -792,13 +797,14 @@ private theorem attachRelay_connected :
   fin_cases i <;> fin_cases j <;>
     first
     | exact ⟨.nil⟩
-    | exact ⟨.cons (by decide_cbv) .nil⟩
+    | apply reachable_edge g
+      norm_num [g, seedGraph, attachRelay, canonicalEdge, Fin.ext_iff]
     | exact ⟨.cons
-        (show g.Adj 0 1 by decide_cbv)
-        (.cons (show g.Adj 1 2 by decide_cbv) .nil)⟩
+        (show g.Adj 0 1 by norm_num [g, seedGraph, attachRelay, canonicalEdge, Fin.ext_iff])
+        (.cons (show g.Adj 1 2 by norm_num [g, seedGraph, attachRelay, canonicalEdge, Fin.ext_iff]) .nil)⟩
     | exact ⟨.cons
-        (show g.Adj 2 1 by decide_cbv)
-        (.cons (show g.Adj 1 0 by decide_cbv) .nil)⟩
+        (show g.Adj 2 1 by norm_num [g, seedGraph, attachRelay, canonicalEdge, Fin.ext_iff])
+        (.cons (show g.Adj 1 0 by norm_num [g, seedGraph, attachRelay, canonicalEdge, Fin.ext_iff]) .nil)⟩
 
 private theorem secondBirth_connected :
     (seedGraph secondBirth.seed).Connected := by
@@ -810,27 +816,28 @@ private theorem secondBirth_connected :
   fin_cases i <;> fin_cases j <;>
     first
     | exact ⟨.nil⟩
-    | exact ⟨.cons (by decide_cbv) .nil⟩
+    | apply reachable_edge g
+      norm_num [g, seedGraph, secondBirth, canonicalEdge, Fin.ext_iff]
     | exact ⟨.cons
-        (show g.Adj 0 1 by decide_cbv)
-        (.cons (show g.Adj 1 2 by decide_cbv) .nil)⟩
+        (show g.Adj 0 1 by norm_num [g, seedGraph, secondBirth, canonicalEdge, Fin.ext_iff])
+        (.cons (show g.Adj 1 2 by norm_num [g, seedGraph, secondBirth, canonicalEdge, Fin.ext_iff]) .nil)⟩
     | exact ⟨.cons
-        (show g.Adj 2 1 by decide_cbv)
-        (.cons (show g.Adj 1 0 by decide_cbv) .nil)⟩
+        (show g.Adj 2 1 by norm_num [g, seedGraph, secondBirth, canonicalEdge, Fin.ext_iff])
+        (.cons (show g.Adj 1 0 by norm_num [g, seedGraph, secondBirth, canonicalEdge, Fin.ext_iff]) .nil)⟩
     | exact ⟨.cons
-        (show g.Adj 1 2 by decide_cbv)
-        (.cons (show g.Adj 2 3 by decide_cbv) .nil)⟩
+        (show g.Adj 1 2 by norm_num [g, seedGraph, secondBirth, canonicalEdge, Fin.ext_iff])
+        (.cons (show g.Adj 2 3 by norm_num [g, seedGraph, secondBirth, canonicalEdge, Fin.ext_iff]) .nil)⟩
     | exact ⟨.cons
-        (show g.Adj 3 2 by decide_cbv)
-        (.cons (show g.Adj 2 1 by decide_cbv) .nil)⟩
+        (show g.Adj 3 2 by norm_num [g, seedGraph, secondBirth, canonicalEdge, Fin.ext_iff])
+        (.cons (show g.Adj 2 1 by norm_num [g, seedGraph, secondBirth, canonicalEdge, Fin.ext_iff]) .nil)⟩
     | exact ⟨.cons
-        (show g.Adj 0 1 by decide_cbv)
-        (.cons (show g.Adj 1 2 by decide_cbv)
-          (.cons (show g.Adj 2 3 by decide_cbv) .nil))⟩
+        (show g.Adj 0 1 by norm_num [g, seedGraph, secondBirth, canonicalEdge, Fin.ext_iff])
+        (.cons (show g.Adj 1 2 by norm_num [g, seedGraph, secondBirth, canonicalEdge, Fin.ext_iff])
+          (.cons (show g.Adj 2 3 by norm_num [g, seedGraph, secondBirth, canonicalEdge, Fin.ext_iff]) .nil))⟩
     | exact ⟨.cons
-        (show g.Adj 3 2 by decide_cbv)
-        (.cons (show g.Adj 2 1 by decide_cbv)
-          (.cons (show g.Adj 1 0 by decide_cbv) .nil))⟩
+        (show g.Adj 3 2 by norm_num [g, seedGraph, secondBirth, canonicalEdge, Fin.ext_iff])
+        (.cons (show g.Adj 2 1 by norm_num [g, seedGraph, secondBirth, canonicalEdge, Fin.ext_iff])
+          (.cons (show g.Adj 1 0 by norm_num [g, seedGraph, secondBirth, canonicalEdge, Fin.ext_iff]) .nil))⟩
 
 private theorem attachSource_seed_valid : attachSource.seed.Valid :=
   { nodes := by decide
@@ -880,6 +887,164 @@ private def silentPopulation : Population 2 :=
 private def zeroThresholdPopulation : Population 2 :=
   ⟨![⟨1, 0⟩, ⟨1, 1/2⟩], ![⟨0, 0⟩, ⟨0, 0⟩]⟩
 
+-- Compute each finite set and updated state once, then assemble observations.
+private theorem propagationObservation_of_next {n : Nat} (g : MeshGraph (Fin n))
+    [DecidableRel g] (population : Population n) (next : Fin n → AgentState)
+    (delivered : Finset (Fin n × Fin n))
+    (hnext : nextAgent g population = next)
+    (hdelivered : transmissions g population = delivered) :
+    propagationObservation g population =
+      (List.ofFn (fun i => (next i).belief),
+       List.ofFn (fun i => (next i).exposures),
+       List.ofFn (fun i => broadcasting (population.profiles i) (next i)),
+       orderedPairs fun source target => decide ((source, target) ∈ delivered)) := by
+  simp only [propagationObservation, propagate, hnext, hdelivered]
+
+private theorem attachSource_observation :
+    @propagationObservation 3 (seedGraph attachSource.seed).Adj
+      (seedAdjDec attachSource.seed) attachInitialPopulation =
+      ([1, 1, 1], [0, 1, 1], [true, true, true], [(0, 1), (0, 2)]) := by
+  let g : MeshGraph (Fin 3) := (seedGraph attachSource.seed).Adj
+  letI : DecidableRel g := seedAdjDec attachSource.seed
+  have hincoming : incoming g attachInitialPopulation =
+      (![∅, {0}, {0}] : Fin 3 → Finset (Fin 3)) := by
+    funext i
+    ext j
+    fin_cases i <;> fin_cases j <;>
+      norm_num [incoming, g, seedGraph, attachSource, canonicalEdge,
+        attachInitialPopulation, broadcasting, Fin.ext_iff]
+  have hnext : nextAgent g attachInitialPopulation =
+      (![⟨1, 0⟩, ⟨1, 1⟩, ⟨1, 1⟩] : Fin 3 → AgentState) := by
+    funext i
+    simp only [nextAgent, hincoming]
+    fin_cases i <;> norm_num [attachInitialPopulation]
+  have hdelivered : transmissions g attachInitialPopulation =
+      ({(0, 1), (0, 2)} : Finset (Fin 3 × Fin 3)) := by
+    ext pair
+    rcases pair with ⟨j, i⟩
+    fin_cases j <;> fin_cases i <;>
+      norm_num [transmissions, g, seedGraph, attachSource, canonicalEdge,
+        attachInitialPopulation, broadcasting, Fin.ext_iff]
+  change propagationObservation g attachInitialPopulation = _
+  rw [propagationObservation_of_next g attachInitialPopulation _ _ hnext hdelivered]
+  decide_cbv
+
+private theorem attachRelay_observation :
+    @propagationObservation 3 (seedGraph attachRelay.seed).Adj
+      (seedAdjDec attachRelay.seed) attachInitialPopulation =
+      ([1, 1, 0], [0, 1, 0], [true, true, false], [(0, 1)]) := by
+  let g : MeshGraph (Fin 3) := (seedGraph attachRelay.seed).Adj
+  letI : DecidableRel g := seedAdjDec attachRelay.seed
+  have hincoming : incoming g attachInitialPopulation =
+      (![∅, {0}, ∅] : Fin 3 → Finset (Fin 3)) := by
+    funext i
+    ext j
+    fin_cases i <;> fin_cases j <;>
+      norm_num [incoming, g, seedGraph, attachRelay, canonicalEdge,
+        attachInitialPopulation, broadcasting, Fin.ext_iff]
+  have hnext : nextAgent g attachInitialPopulation =
+      (![⟨1, 0⟩, ⟨1, 1⟩, ⟨0, 0⟩] : Fin 3 → AgentState) := by
+    funext i
+    simp only [nextAgent, hincoming]
+    fin_cases i <;> norm_num [attachInitialPopulation]
+  have hdelivered : transmissions g attachInitialPopulation =
+      ({(0, 1)} : Finset (Fin 3 × Fin 3)) := by
+    ext pair
+    rcases pair with ⟨j, i⟩
+    fin_cases j <;> fin_cases i <;>
+      norm_num [transmissions, g, seedGraph, attachRelay, canonicalEdge,
+        attachInitialPopulation, broadcasting, Fin.ext_iff]
+  change propagationObservation g attachInitialPopulation = _
+  rw [propagationObservation_of_next g attachInitialPopulation _ _ hnext hdelivered]
+  decide_cbv
+
+private theorem relayNextRound_observation :
+    @propagationObservation 3 (seedGraph relayNextRound.seed).Adj
+      (seedAdjDec relayNextRound.seed) relayPopulation =
+      ([1, 1, 1], [1, 2, 1], [true, true, true], [(0, 1), (1, 0), (1, 2)]) := by
+  let g : MeshGraph (Fin 3) := (seedGraph relayNextRound.seed).Adj
+  letI : DecidableRel g := seedAdjDec relayNextRound.seed
+  have hincoming : incoming g relayPopulation =
+      (![{1}, {0}, {1}] : Fin 3 → Finset (Fin 3)) := by
+    funext i
+    ext j
+    fin_cases i <;> fin_cases j <;>
+      norm_num [incoming, g, seedGraph, relayNextRound, canonicalEdge,
+        relayPopulation, broadcasting, Fin.ext_iff]
+  have hnext : nextAgent g relayPopulation =
+      (![⟨1, 1⟩, ⟨1, 2⟩, ⟨1, 1⟩] : Fin 3 → AgentState) := by
+    funext i
+    simp only [nextAgent, hincoming]
+    fin_cases i <;> norm_num [relayPopulation]
+  have hdelivered : transmissions g relayPopulation =
+      ({(0, 1), (1, 0), (1, 2)} : Finset (Fin 3 × Fin 3)) := by
+    ext pair
+    rcases pair with ⟨j, i⟩
+    fin_cases j <;> fin_cases i <;>
+      norm_num [transmissions, g, seedGraph, relayNextRound, canonicalEdge,
+        relayPopulation, broadcasting, Fin.ext_iff]
+  change propagationObservation g relayPopulation = _
+  rw [propagationObservation_of_next g relayPopulation _ _ hnext hdelivered]
+  decide_cbv
+
+private theorem secondBirth_observation :
+    @propagationObservation 4 (seedGraph secondBirth.seed).Adj
+      (seedAdjDec secondBirth.seed) secondBirthPopulation =
+      ([1, 1, 1, 0], [1, 2, 1, 0], [true, true, true, false], [(0, 1), (1, 0), (1, 2)]) := by
+  let g : MeshGraph (Fin 4) := (seedGraph secondBirth.seed).Adj
+  letI : DecidableRel g := seedAdjDec secondBirth.seed
+  have hincoming : incoming g secondBirthPopulation =
+      (![{1}, {0}, {1}, ∅] : Fin 4 → Finset (Fin 4)) := by
+    funext i
+    ext j
+    fin_cases i <;> fin_cases j <;>
+      norm_num [incoming, g, seedGraph, secondBirth, canonicalEdge,
+        secondBirthPopulation, broadcasting, Fin.ext_iff]
+  have hnext : nextAgent g secondBirthPopulation =
+      (![⟨1, 1⟩, ⟨1, 2⟩, ⟨1, 1⟩, ⟨0, 0⟩] : Fin 4 → AgentState) := by
+    funext i
+    simp only [nextAgent, hincoming]
+    fin_cases i <;> norm_num [secondBirthPopulation]
+  have hdelivered : transmissions g secondBirthPopulation =
+      ({(0, 1), (1, 0), (1, 2)} : Finset (Fin 4 × Fin 4)) := by
+    ext pair
+    rcases pair with ⟨j, i⟩
+    fin_cases j <;> fin_cases i <;>
+      norm_num [transmissions, g, seedGraph, secondBirth, canonicalEdge,
+        secondBirthPopulation, broadcasting, Fin.ext_iff]
+  change propagationObservation g secondBirthPopulation = _
+  rw [propagationObservation_of_next g secondBirthPopulation _ _ hnext hdelivered]
+  decide_cbv
+
+private theorem silent_observation :
+    @propagationObservation 2 (seedGraph silent.seed).Adj
+      (seedAdjDec silent.seed) silentPopulation =
+      ([0, 0], [0, 0], [false, false], []) := by
+  let g : MeshGraph (Fin 2) := (seedGraph silent.seed).Adj
+  letI : DecidableRel g := seedAdjDec silent.seed
+  have hincoming : incoming g silentPopulation =
+      (![∅, ∅] : Fin 2 → Finset (Fin 2)) := by
+    funext i
+    ext j
+    fin_cases i <;> fin_cases j <;>
+      norm_num [incoming, g, seedGraph, silent, canonicalEdge,
+        silentPopulation, broadcasting, Fin.ext_iff]
+  have hnext : nextAgent g silentPopulation =
+      (![⟨0, 0⟩, ⟨0, 0⟩] : Fin 2 → AgentState) := by
+    funext i
+    simp only [nextAgent, hincoming]
+    fin_cases i <;> norm_num [silentPopulation]
+  have hdelivered : transmissions g silentPopulation =
+      (∅ : Finset (Fin 2 × Fin 2)) := by
+    ext pair
+    rcases pair with ⟨j, i⟩
+    fin_cases j <;> fin_cases i <;>
+      norm_num [transmissions, g, seedGraph, silent, canonicalEdge,
+        silentPopulation, broadcasting, Fin.ext_iff]
+  change propagationObservation g silentPopulation = _
+  rw [propagationObservation_of_next g silentPopulation _ _ hnext hdelivered]
+  decide_cbv
+
 -- These literal raw snapshots and complete observations fix the acceptance
 -- semantics independently of corpus generation.
 example : attachSource =
@@ -896,7 +1061,7 @@ example : propagationSummary attachSource.seed attachSource.agents =
       intro i hi
       fin_cases i <;> constructor <;> rfl)]
   apply congrArg Except.ok
-  decide_cbv
+  exact attachSource_observation
 
 example : attachRelay =
     ⟨"attach-relay", ⟨3, #[1, 1, 1], #[(0, 1), (1, 2)]⟩,
@@ -912,7 +1077,7 @@ example : propagationSummary attachRelay.seed attachRelay.agents =
       intro i hi
       fin_cases i <;> constructor <;> rfl)]
   apply congrArg Except.ok
-  decide_cbv
+  exact attachRelay_observation
 
 example : relayNextRound =
     ⟨"relay-next-round", ⟨3, #[1, 1, 1], #[(0, 1), (1, 2)]⟩,
@@ -929,7 +1094,7 @@ example : propagationSummary relayNextRound.seed relayNextRound.agents =
       intro i hi
       fin_cases i <;> constructor <;> rfl)]
   apply congrArg Except.ok
-  decide_cbv
+  exact relayNextRound_observation
 
 example : secondBirth =
     ⟨"second-birth", ⟨4, #[1, 1, 1, 1], #[(0, 1), (1, 2), (2, 3)]⟩,
@@ -947,7 +1112,7 @@ example : propagationSummary secondBirth.seed secondBirth.agents =
       intro i hi
       fin_cases i <;> constructor <;> rfl)]
   apply congrArg Except.ok
-  decide_cbv
+  exact secondBirth_observation
 
 example : halfReceptive =
     ⟨"half-receptive", ⟨2, #[1, 1], #[(0, 1)]⟩,
@@ -996,7 +1161,7 @@ example : propagationSummary silent.seed silent.agents =
       intro i hi
       fin_cases i <;> constructor <;> rfl)]
   apply congrArg Except.ok
-  decide_cbv
+  exact silent_observation
 
 example : zeroThreshold =
     ⟨"zero-threshold", ⟨2, #[1, 1], #[(0, 1)]⟩,
