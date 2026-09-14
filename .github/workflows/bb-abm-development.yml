@@ -98,6 +98,7 @@ jobs:
           done
 
       - name: Generate and compare BB ABM conformance corpus
+        if: ${{ !cancelled() }}
         run: |
           set -euo pipefail
           generated="$(mktemp)"

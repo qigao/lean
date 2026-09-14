@@ -666,21 +666,212 @@ private def orderedPairs {n : Nat}
     ids.filterMap fun target =>
       if keepPair source target then some (source.val, target.val) else none).toList
 
+private def propagationObservation {n : Nat} (g : MeshGraph (Fin n))
+    [DecidableRel g] (population : Population n) :
+    List Rat × List Nat × List Bool × List (Nat × Nat) :=
+  let next := propagate g population
+  let delivered := transmissions g population
+  (List.ofFn (fun i => (next.agents i).belief),
+   List.ofFn (fun i => (next.agents i).exposures),
+   List.ofFn (fun i => broadcasting (next.profiles i) (next.agents i)),
+   orderedPairs fun source target => decide ((source, target) ∈ delivered))
+
+private def stateObservation {n : Nat} (prior : JointState n) :
+    List Rat × List Nat × List Bool × List (Nat × Nat) :=
+  let next := advance prior
+  letI := prior.network.snapshot.adjDec
+  let delivered := transmissions prior.network.snapshot.graph.Adj prior.population
+  (List.ofFn (fun i => (next.population.agents i).belief),
+   List.ofFn (fun i => (next.population.agents i).exposures),
+   List.ofFn (fun i => broadcasting (next.population.profiles i)
+     (next.population.agents i)),
+   orderedPairs fun source target => decide ((source, target) ∈ delivered))
+
+private theorem stateObservation_eq_propagationObservation {n : Nat}
+    (prior : JointState n) :
+    stateObservation prior =
+      @propagationObservation n prior.network.snapshot.graph.Adj
+        prior.network.snapshot.adjDec prior.population := by
+  rfl
+
 private def propagationSummary (seed : RawSeed) (agents : Array RawAgent) :
     Except JointError (List Rat × List Nat × List Bool × List (Nat × Nat)) :=
   match FitnessABM.replay seed 1 agents [] with
   | .error error => .error error
   | .ok result =>
     let prior := result.final.state
-    let next := advance prior
-    letI := prior.network.snapshot.adjDec
-    let delivered := transmissions prior.network.snapshot.graph.Adj prior.population
-    .ok (
-      List.ofFn (fun i => (next.population.agents i).belief),
-      List.ofFn (fun i => (next.population.agents i).exposures),
-      List.ofFn (fun i => broadcasting (next.population.profiles i)
-        (next.population.agents i)),
-      orderedPairs fun source target => decide ((source, target) ∈ delivered))
+    .ok (stateObservation prior)
+
+private theorem propagationSummary_of_parses (seed : RawSeed) (agents : Array RawAgent)
+    (network : FitnessAttachment.State seed.nodeCount)
+    (population : {p : Population seed.nodeCount // p.Valid})
+    (hseed : parseSeed seed = .ok network)
+    (hm : 0 < (1 : Nat) ∧ 1 ≤ seed.nodeCount)
+    (hpopulation : parseAgents seed.nodeCount agents = .ok population) :
+    propagationSummary seed agents =
+      .ok (@propagationObservation seed.nodeCount network.snapshot.graph.Adj
+        network.snapshot.adjDec population.val) := by
+  simpa only [propagationSummary, FitnessABM.replay, hseed, if_pos hm,
+    hpopulation, runInputs] using
+      congrArg Except.ok (stateObservation_eq_propagationObservation
+        (prior := ⟨network, population.val, population.property⟩))
+
+private theorem propagationObservation_congr {n : Nat}
+    {g h : MeshGraph (Fin n)} [dg : DecidableRel g] [dh : DecidableRel h]
+    {p q : Population n} (hg : g = h) (hp : p = q) :
+    @propagationObservation n g dg p = @propagationObservation n h dh q := by
+  cases hg
+  cases hp
+  have hi : dg = dh := Subsingleton.elim _ _
+  cases hi
+  rfl
+
+private theorem population_eq {n : Nat} (p q : Population n)
+    (hprofiles : p.profiles = q.profiles) (hagents : p.agents = q.agents) : p = q := by
+  cases p
+  cases q
+  simp_all
+
+-- Parser soundness identifies the concrete population and adjacency before any
+-- finite propagation evaluation; connectivity is never unfolded by CBV.
+private theorem propagationSummary_flat (seed : RawSeed) (agents : Array RawAgent)
+    (hseed : seed.Valid) (hsize : agents.size = seed.nodeCount)
+    (hvalid : ∀ a ∈ agents.toList, a.Valid)
+    (population : Population seed.nodeCount)
+    (hvalues : ∀ (i : Fin seed.nodeCount) (hi : i.val < agents.size),
+      population.profiles i = ⟨agents[i.val].receptivity, agents[i.val].threshold⟩ ∧
+      population.agents i = ⟨agents[i.val].belief, agents[i.val].exposures⟩) :
+    propagationSummary seed agents =
+      .ok (@propagationObservation seed.nodeCount (seedGraph seed).Adj
+        (seedAdjDec seed) population) := by
+  obtain ⟨network, hn⟩ := parseSeed_complete seed hseed
+  obtain ⟨parsed, hp⟩ := parseAgents_complete seed.nodeCount agents hsize hvalid
+  have hm : 0 < (1 : Nat) ∧ 1 ≤ seed.nodeCount := by
+    have := hseed.nodes
+    omega
+  rw [propagationSummary_of_parses seed agents network parsed hn hm hp]
+  apply congrArg Except.ok
+  apply propagationObservation_congr
+  · exact congrArg SimpleGraph.Adj (parseSeed_graph seed network hn)
+  · apply population_eq
+    · funext i
+      have hi : i.val < agents.size := by rw [hsize]; exact i.isLt
+      exact ((parseAgents_sound _ _ _ hp).2.2 i hi).1.trans
+        ((hvalues i hi).1.symm)
+    · funext i
+      have hi : i.val < agents.size := by rw [hsize]; exact i.isLt
+      exact ((parseAgents_sound _ _ _ hp).2.2 i hi).2.trans
+        ((hvalues i hi).2.symm)
+
+private theorem attachSource_connected :
+    (seedGraph attachSource.seed).Connected where
+  preconnected := by
+    intro i j
+    fin_cases i <;> fin_cases j <;>
+      first
+      | exact ⟨.nil⟩
+      | exact ⟨.cons (by decide_cbv) .nil⟩
+      | exact ⟨.cons
+          (show (seedGraph attachSource.seed).Adj 1 0 by decide_cbv)
+          (.cons (show (seedGraph attachSource.seed).Adj 0 2 by decide_cbv) .nil)⟩
+      | exact ⟨.cons
+          (show (seedGraph attachSource.seed).Adj 2 0 by decide_cbv)
+          (.cons (show (seedGraph attachSource.seed).Adj 0 1 by decide_cbv) .nil)⟩
+  nonempty := inferInstance
+
+private theorem attachRelay_connected :
+    (seedGraph attachRelay.seed).Connected where
+  preconnected := by
+    intro i j
+    fin_cases i <;> fin_cases j <;>
+      first
+      | exact ⟨.nil⟩
+      | exact ⟨.cons (by decide_cbv) .nil⟩
+      | exact ⟨.cons
+          (show (seedGraph attachRelay.seed).Adj 0 1 by decide_cbv)
+          (.cons (show (seedGraph attachRelay.seed).Adj 1 2 by decide_cbv) .nil)⟩
+      | exact ⟨.cons
+          (show (seedGraph attachRelay.seed).Adj 2 1 by decide_cbv)
+          (.cons (show (seedGraph attachRelay.seed).Adj 1 0 by decide_cbv) .nil)⟩
+  nonempty := inferInstance
+
+private theorem secondBirth_connected :
+    (seedGraph secondBirth.seed).Connected where
+  preconnected := by
+    intro i j
+    fin_cases i <;> fin_cases j <;>
+      first
+      | exact ⟨.nil⟩
+      | exact ⟨.cons (by decide_cbv) .nil⟩
+      | exact ⟨.cons
+          (show (seedGraph secondBirth.seed).Adj 0 1 by decide_cbv)
+          (.cons (show (seedGraph secondBirth.seed).Adj 1 2 by decide_cbv) .nil)⟩
+      | exact ⟨.cons
+          (show (seedGraph secondBirth.seed).Adj 2 1 by decide_cbv)
+          (.cons (show (seedGraph secondBirth.seed).Adj 1 0 by decide_cbv) .nil)⟩
+      | exact ⟨.cons
+          (show (seedGraph secondBirth.seed).Adj 1 2 by decide_cbv)
+          (.cons (show (seedGraph secondBirth.seed).Adj 2 3 by decide_cbv) .nil)⟩
+      | exact ⟨.cons
+          (show (seedGraph secondBirth.seed).Adj 3 2 by decide_cbv)
+          (.cons (show (seedGraph secondBirth.seed).Adj 2 1 by decide_cbv) .nil)⟩
+      | exact ⟨.cons
+          (show (seedGraph secondBirth.seed).Adj 0 1 by decide_cbv)
+          (.cons (show (seedGraph secondBirth.seed).Adj 1 2 by decide_cbv)
+            (.cons (show (seedGraph secondBirth.seed).Adj 2 3 by decide_cbv) .nil))⟩
+      | exact ⟨.cons
+          (show (seedGraph secondBirth.seed).Adj 3 2 by decide_cbv)
+          (.cons (show (seedGraph secondBirth.seed).Adj 2 1 by decide_cbv)
+            (.cons (show (seedGraph secondBirth.seed).Adj 1 0 by decide_cbv) .nil))⟩
+  nonempty := inferInstance
+
+private theorem attachSource_seed_valid : attachSource.seed.Valid :=
+  { nodes := by decide
+    size := rfl
+    fitness := by intro i; fin_cases i <;> norm_num [attachSource, positiveSeedFitness]
+    edges := by intro i; fin_cases i <;> decide_cbv
+    distinct := by decide_cbv
+    connected := attachSource_connected }
+
+private theorem attachRelay_seed_valid : attachRelay.seed.Valid :=
+  { nodes := by decide
+    size := rfl
+    fitness := by intro i; fin_cases i <;> norm_num [attachRelay, positiveSeedFitness]
+    edges := by intro i; fin_cases i <;> decide_cbv
+    distinct := by decide_cbv
+    connected := attachRelay_connected }
+
+private theorem relayNextRound_seed_valid : relayNextRound.seed.Valid := by
+  simpa [relayNextRound, attachRelay] using attachRelay_seed_valid
+
+private theorem secondBirth_seed_valid : secondBirth.seed.Valid :=
+  { nodes := by decide
+    size := rfl
+    fitness := by intro i; fin_cases i <;> norm_num [secondBirth, positiveSeedFitness]
+    edges := by intro i; fin_cases i <;> decide_cbv
+    distinct := by decide_cbv
+    connected := secondBirth_connected }
+
+private def attachInitialPopulation : Population 3 :=
+  ⟨fun _ => ⟨1, 1/2⟩, ![⟨1, 0⟩, ⟨0, 0⟩, ⟨0, 0⟩]⟩
+
+private def relayPopulation : Population 3 :=
+  ⟨fun _ => ⟨1, 1/2⟩, ![⟨1, 0⟩, ⟨1, 1⟩, ⟨0, 0⟩]⟩
+
+private def secondBirthPopulation : Population 4 :=
+  ⟨fun _ => ⟨1, 1/2⟩, ![⟨1, 0⟩, ⟨1, 1⟩, ⟨0, 0⟩, ⟨0, 0⟩]⟩
+
+private def halfReceptivePopulation : Population 2 :=
+  ⟨![⟨1, 1/2⟩, ⟨1/2, 1/2⟩], ![⟨1, 0⟩, ⟨0, 0⟩]⟩
+
+private def zeroReceptivePopulation : Population 2 :=
+  ⟨![⟨1, 1/2⟩, ⟨0, 1/2⟩], ![⟨1, 0⟩, ⟨0, 0⟩]⟩
+
+private def silentPopulation : Population 2 :=
+  ⟨fun _ => ⟨1, 1/2⟩, ![⟨0, 0⟩, ⟨0, 0⟩]⟩
+
+private def zeroThresholdPopulation : Population 2 :=
+  ⟨![⟨1, 0⟩, ⟨1, 1/2⟩], ![⟨0, 0⟩, ⟨0, 0⟩]⟩
 
 -- These literal raw snapshots and complete observations fix the acceptance
 -- semantics independently of corpus generation.
@@ -689,6 +880,15 @@ example : attachSource =
       #[⟨1, 1/2, 1, 0⟩, ⟨1, 1/2, 0, 0⟩, ⟨1, 1/2, 0, 0⟩]⟩ := rfl
 example : propagationSummary attachSource.seed attachSource.agents =
     .ok ([1, 1, 1], [0, 1, 1], [true, true, true], [(0, 1), (0, 2)]) := by
+  have hvalid : ∀ a ∈ attachSource.agents.toList, a.Valid := by
+    intro a ha
+    simp [attachSource] at ha
+    rcases ha with rfl | rfl <;> norm_num [RawAgent.Valid]
+  rw [propagationSummary_flat attachSource.seed attachSource.agents
+    attachSource_seed_valid rfl hvalid attachInitialPopulation (by
+      intro i hi
+      fin_cases i <;> constructor <;> rfl)]
+  apply congrArg Except.ok
   decide_cbv
 
 example : attachRelay =
@@ -696,6 +896,15 @@ example : attachRelay =
       #[⟨1, 1/2, 1, 0⟩, ⟨1, 1/2, 0, 0⟩, ⟨1, 1/2, 0, 0⟩]⟩ := rfl
 example : propagationSummary attachRelay.seed attachRelay.agents =
     .ok ([1, 1, 0], [0, 1, 0], [true, true, false], [(0, 1)]) := by
+  have hvalid : ∀ a ∈ attachRelay.agents.toList, a.Valid := by
+    intro a ha
+    simp [attachRelay] at ha
+    rcases ha with rfl | rfl <;> norm_num [RawAgent.Valid]
+  rw [propagationSummary_flat attachRelay.seed attachRelay.agents
+    attachRelay_seed_valid rfl hvalid attachInitialPopulation (by
+      intro i hi
+      fin_cases i <;> constructor <;> rfl)]
+  apply congrArg Except.ok
   decide_cbv
 
 example : relayNextRound =
@@ -704,6 +913,15 @@ example : relayNextRound =
 example : propagationSummary relayNextRound.seed relayNextRound.agents =
     .ok ([1, 1, 1], [1, 2, 1], [true, true, true],
       [(0, 1), (1, 0), (1, 2)]) := by
+  have hvalid : ∀ a ∈ relayNextRound.agents.toList, a.Valid := by
+    intro a ha
+    simp [relayNextRound] at ha
+    rcases ha with rfl | rfl | rfl <;> norm_num [RawAgent.Valid]
+  rw [propagationSummary_flat relayNextRound.seed relayNextRound.agents
+    relayNextRound_seed_valid rfl hvalid relayPopulation (by
+      intro i hi
+      fin_cases i <;> constructor <;> rfl)]
+  apply congrArg Except.ok
   decide_cbv
 
 example : secondBirth =
@@ -713,6 +931,15 @@ example : secondBirth =
 example : propagationSummary secondBirth.seed secondBirth.agents =
     .ok ([1, 1, 1, 0], [1, 2, 1, 0], [true, true, true, false],
       [(0, 1), (1, 0), (1, 2)]) := by
+  have hvalid : ∀ a ∈ secondBirth.agents.toList, a.Valid := by
+    intro a ha
+    simp [secondBirth] at ha
+    rcases ha with rfl | rfl | rfl <;> norm_num [RawAgent.Valid]
+  rw [propagationSummary_flat secondBirth.seed secondBirth.agents
+    secondBirth_seed_valid rfl hvalid secondBirthPopulation (by
+      intro i hi
+      fin_cases i <;> constructor <;> rfl)]
+  apply congrArg Except.ok
   decide_cbv
 
 example : halfReceptive =
@@ -720,6 +947,15 @@ example : halfReceptive =
       #[⟨1, 1/2, 1, 0⟩, ⟨1/2, 1/2, 0, 0⟩]⟩ := rfl
 example : propagationSummary halfReceptive.seed halfReceptive.agents =
     .ok ([1, 1/2], [0, 1], [true, true], [(0, 1)]) := by
+  have hvalid : ∀ a ∈ halfReceptive.agents.toList, a.Valid := by
+    intro a ha
+    simp [halfReceptive] at ha
+    rcases ha with rfl | rfl <;> norm_num [RawAgent.Valid]
+  rw [propagationSummary_flat halfReceptive.seed halfReceptive.agents
+    (parseSeed_sound seedRaw (seedNetwork one) parsed_seedRaw) rfl hvalid halfReceptivePopulation (by
+      intro i hi
+      fin_cases i <;> constructor <;> rfl)]
+  apply congrArg Except.ok
   decide_cbv
 
 example : zeroReceptive =
@@ -727,6 +963,15 @@ example : zeroReceptive =
       #[⟨1, 1/2, 1, 0⟩, ⟨0, 1/2, 0, 0⟩]⟩ := rfl
 example : propagationSummary zeroReceptive.seed zeroReceptive.agents =
     .ok ([1, 0], [0, 1], [true, false], [(0, 1)]) := by
+  have hvalid : ∀ a ∈ zeroReceptive.agents.toList, a.Valid := by
+    intro a ha
+    simp [zeroReceptive] at ha
+    rcases ha with rfl | rfl <;> norm_num [RawAgent.Valid]
+  rw [propagationSummary_flat zeroReceptive.seed zeroReceptive.agents
+    (parseSeed_sound seedRaw (seedNetwork one) parsed_seedRaw) rfl hvalid zeroReceptivePopulation (by
+      intro i hi
+      fin_cases i <;> constructor <;> rfl)]
+  apply congrArg Except.ok
   decide_cbv
 
 example : silent =
@@ -734,6 +979,16 @@ example : silent =
       #[⟨1, 1/2, 0, 0⟩, ⟨1, 1/2, 0, 0⟩]⟩ := rfl
 example : propagationSummary silent.seed silent.agents =
     .ok ([0, 0], [0, 0], [false, false], []) := by
+  have hvalid : ∀ a ∈ silent.agents.toList, a.Valid := by
+    intro a ha
+    simp [silent] at ha
+    rcases ha with rfl
+    norm_num [RawAgent.Valid]
+  rw [propagationSummary_flat silent.seed silent.agents
+    (parseSeed_sound seedRaw (seedNetwork one) parsed_seedRaw) rfl hvalid silentPopulation (by
+      intro i hi
+      fin_cases i <;> constructor <;> rfl)]
+  apply congrArg Except.ok
   decide_cbv
 
 example : zeroThreshold =
@@ -741,6 +996,15 @@ example : zeroThreshold =
       #[⟨1, 0, 0, 0⟩, ⟨1, 1/2, 0, 0⟩]⟩ := rfl
 example : propagationSummary zeroThreshold.seed zeroThreshold.agents =
     .ok ([0, 0], [0, 1], [true, false], [(0, 1)]) := by
+  have hvalid : ∀ a ∈ zeroThreshold.agents.toList, a.Valid := by
+    intro a ha
+    simp [zeroThreshold] at ha
+    rcases ha with rfl | rfl <;> norm_num [RawAgent.Valid]
+  rw [propagationSummary_flat zeroThreshold.seed zeroThreshold.agents
+    (parseSeed_sound seedRaw (seedNetwork one) parsed_seedRaw) rfl hvalid zeroThresholdPopulation (by
+      intro i hi
+      fin_cases i <;> constructor <;> rfl)]
+  apply congrArg Except.ok
   decide_cbv
 
 end FiniteReplayFixtures
