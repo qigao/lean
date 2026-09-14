@@ -1073,9 +1073,15 @@ real-browser flow. Its actual checkout was merge
 `a4d9b72eccf2e0bb2841786be1cdd5e134784a40`; its verified parents were the planning
 base and `a7240d0`, and its tree equaled the feature tree. The Python and Lean jobs
 in ordinary proof [run
-34877241337](https://github.com/qigao/lean/actions/runs/34877241337), jobs
-`104087364557` and `104087387108`, were still running when this record was
-authored; neither is marked complete here.
+34877241337](https://github.com/qigao/lean/actions/runs/34877241337) also passed at
+published `a7240d0`. Python 3.13.15 job `104087364557` ran the unchanged complete
+command `python -m unittest discover -s tests -v`: 1,719 tests in 635.145 seconds,
+`OK (skipped=1)`. The only skip was the existing real-Blender smoke test requiring
+its executable, and the CPU-resource-limit test passed. Lean job `104087387108`
+passed the default `lake build`, all 35 old and three new dependency reports with
+the allowed axioms, both fresh generations and unconditional byte comparisons;
+the new producer and fixture emitted no warnings. This Task 5 evidence does not
+cover the later Task 6 documentation commits.
 
 Task 6 local acceptance used `python3 -m examples.bb_abm_runtime`; it exited zero
 and printed global ticks `0,1,2,3`, epochs `0,1,2,2`, local rounds `0,1,1,2`,
