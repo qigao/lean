@@ -349,6 +349,167 @@ private theorem halfReceptive_agents_valid : ∀ a ∈ halfReceptive.agents.toLi
   simp [halfReceptive, attachSource, empty, agentsRaw] at ha
   rcases ha with rfl | rfl <;> norm_num [RawAgent.Valid]
 
+private theorem lastCases_eq_if {α : Sort u} {n : Nat}
+    (last : α) (old : Fin n → α) (i : Fin (n + 1)) :
+    Fin.lastCases last old i =
+      if h : i.val < n then old ⟨i.val, h⟩ else last := by
+  refine Fin.lastCases ?_ (fun j => ?_) i
+  · simp
+  · simp [j.isLt]
+
+private theorem advance_agents {n : Nat} (s : JointState n)
+    (received : Fin n → Finset (Fin n))
+    (h : letI := s.network.snapshot.adjDec
+      incoming s.network.snapshot.graph.Adj s.population = received) :
+    (advance s).population.agents = fun i =>
+      if (received i).card = 0 then s.population.agents i
+      else
+        { belief := (1 - (s.population.profiles i).receptivity) *
+              (s.population.agents i).belief +
+            (s.population.profiles i).receptivity *
+              ((∑ j ∈ received i, (s.population.agents j).belief) /
+                ((received i).card : Rat))
+          exposures := (s.population.agents i).exposures + (received i).card } := by
+  letI := s.network.snapshot.adjDec
+  change nextAgent s.network.snapshot.graph.Adj s.population = _
+  funext i
+  simp only [nextAgent, h]
+
+private theorem singleton_selected {n : Nat} (target : Fin n) :
+    (singletonTarget target).selected = {target} := by
+  ext i
+  simp only [Targets.selected, Finset.mem_image, Finset.mem_univ, true_and,
+    Finset.mem_singleton]
+  constructor
+  · rintro ⟨j, hj⟩
+    exact hj.symm
+  · intro hi
+    subst i
+    exact ⟨0, rfl⟩
+
+private theorem default_growth_incoming (eta : PosFitness) (target : Fin 2) :
+    let s := grow (initial eta agentsRaw rfl empty_agents_valid)
+      (singletonTarget target) positiveM (newbornData 0 (by norm_num))
+    letI := s.network.snapshot.adjDec
+    incoming s.network.snapshot.graph.Adj s.population =
+      (![∅, {0}, if target = 0 then {0} else ∅] : Fin 3 → Finset (Fin 3)) := by
+  funext i
+  ext j
+  simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
+  fin_cases target <;> fin_cases i <;> fin_cases j <;>
+    norm_num [grow, applyBirth, birthSnapshot, birthGraph, birthAdj,
+      lastCases_eq_if, Fin.ext_iff, initial, seedNetwork, roster, agentsRaw,
+      extendPopulation, newbornData, one, singleton_selected, broadcasting]
+
+private theorem default_growth_agents (eta : PosFitness) (target : Fin 2) :
+    (advance (grow (initial eta agentsRaw rfl empty_agents_valid)
+      (singletonTarget target) positiveM (newbornData 0 (by norm_num)))).population.agents =
+      ![⟨1, 0⟩, ⟨1, 1⟩, ⟨if target = 0 then 1 else 0, if target = 0 then 1 else 0⟩] := by
+  rw [advance_agents _ _ (default_growth_incoming eta target)]
+  funext i
+  fin_cases target <;> fin_cases i <;> decide_cbv
+
+run_cmd do
+  let _ ← Lean.collectAxioms ``default_growth_agents
+  let out ← IO.getStderr
+  out.putStrLn "BB runtime diagnostic: traversed default_growth_agents"
+  out.flush
+
+private theorem relay_idle_incoming (eta : PosFitness) :
+    let s := advance (grow (initial eta agentsRaw rfl empty_agents_valid)
+      (singletonTarget (1 : Fin 2)) positiveM (newbornData 0 (by norm_num)))
+    letI := s.network.snapshot.adjDec
+    incoming s.network.snapshot.graph.Adj s.population =
+      (![{1}, {0}, {1}] : Fin 3 → Finset (Fin 3)) := by
+  funext i
+  ext j
+  simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
+  fin_cases i <;> fin_cases j <;>
+    norm_num [default_growth_agents, grow, applyBirth, birthSnapshot, birthGraph, birthAdj,
+      lastCases_eq_if, Fin.ext_iff, initial, seedNetwork, roster, agentsRaw,
+      extendPopulation, newbornData, one, singleton_selected, broadcasting]
+
+private theorem relay_idle_agents (eta : PosFitness) :
+    (advance (advance (grow (initial eta agentsRaw rfl empty_agents_valid)
+      (singletonTarget (1 : Fin 2)) positiveM
+      (newbornData 0 (by norm_num))))).population.agents =
+      ![⟨1, 1⟩, ⟨1, 2⟩, ⟨1, 1⟩] := by
+  rw [advance_agents _ _ (relay_idle_incoming eta)]
+  simp only [grow, extendPopulation, default_growth_agents]
+  funext i
+  fin_cases i <;> decide_cbv
+
+run_cmd do
+  let _ ← Lean.collectAxioms ``relay_idle_agents
+  let out ← IO.getStderr
+  out.putStrLn "BB runtime diagnostic: traversed relay_idle_agents"
+  out.flush
+
+private theorem successive_incoming :
+    let s := grow (advance (grow (initial one agentsRaw rfl empty_agents_valid)
+      (singletonTarget (1 : Fin 2)) positiveM (newbornData 0 (by norm_num))))
+      (singletonTarget (2 : Fin 3)) positiveM (newbornData 0 (by norm_num))
+    letI := s.network.snapshot.adjDec
+    incoming s.network.snapshot.graph.Adj s.population =
+      (![{1}, {0}, {1}, ∅] : Fin 4 → Finset (Fin 4)) := by
+  funext i
+  ext j
+  simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
+  fin_cases i <;> fin_cases j <;>
+    norm_num [default_growth_agents, grow, applyBirth, birthSnapshot, birthGraph, birthAdj,
+      lastCases_eq_if, Fin.ext_iff, initial, seedNetwork, roster, agentsRaw,
+      extendPopulation, newbornData, one, singleton_selected, broadcasting]
+
+private theorem successive_agents :
+    (advance (grow (advance (grow (initial one agentsRaw rfl empty_agents_valid)
+      (singletonTarget (1 : Fin 2)) positiveM (newbornData 0 (by norm_num))))
+      (singletonTarget (2 : Fin 3)) positiveM
+      (newbornData 0 (by norm_num)))).population.agents =
+      ![⟨1, 1⟩, ⟨1, 2⟩, ⟨1, 1⟩, ⟨0, 0⟩] := by
+  rw [advance_agents _ _ successive_incoming]
+  simp only [grow, extendPopulation, default_growth_agents]
+  funext i
+  fin_cases i <;> decide_cbv
+
+run_cmd do
+  let _ ← Lean.collectAxioms ``successive_agents
+  let out ← IO.getStderr
+  out.putStrLn "BB runtime diagnostic: traversed successive_agents"
+  out.flush
+
+private theorem successive_idle_incoming :
+    let s := advance (grow (advance (grow (initial one agentsRaw rfl empty_agents_valid)
+      (singletonTarget (1 : Fin 2)) positiveM (newbornData 0 (by norm_num))))
+      (singletonTarget (2 : Fin 3)) positiveM (newbornData 0 (by norm_num)))
+    letI := s.network.snapshot.adjDec
+    incoming s.network.snapshot.graph.Adj s.population =
+      (![{1}, {0, 2}, {1}, {2}] : Fin 4 → Finset (Fin 4)) := by
+  funext i
+  ext j
+  simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
+  fin_cases i <;> fin_cases j <;>
+    norm_num [successive_agents, default_growth_agents, grow, applyBirth,
+      birthSnapshot, birthGraph, birthAdj, lastCases_eq_if, Fin.ext_iff,
+      initial, seedNetwork, roster, agentsRaw, extendPopulation, newbornData,
+      one, singleton_selected, broadcasting]
+
+private theorem successive_idle_agents :
+    (advance (advance (grow (advance (grow (initial one agentsRaw rfl empty_agents_valid)
+      (singletonTarget (1 : Fin 2)) positiveM (newbornData 0 (by norm_num))))
+      (singletonTarget (2 : Fin 3)) positiveM
+      (newbornData 0 (by norm_num))))).population.agents =
+      ![⟨1, 2⟩, ⟨1, 4⟩, ⟨1, 2⟩, ⟨1, 1⟩] := by
+  rw [advance_agents _ _ successive_idle_incoming]
+  simp only [successive_agents]
+  funext i
+  fin_cases i <;> decide_cbv
+run_cmd do
+  let _ ← Lean.collectAxioms ``successive_idle_agents
+  let out ← IO.getStderr
+  out.putStrLn "BB runtime diagnostic: traversed successive_idle_agents"
+  out.flush
+
+
 private theorem empty_literal : summary empty =
     .ok (2, 0, 1, [1, 0], [0, 0], 1) := by
   unfold summary
@@ -389,8 +550,10 @@ private theorem attachSource_literal : summary attachSource =
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
-  · decide_cbv
-  · decide_cbv
+  · rw [default_growth_agents]
+    decide_cbv
+  · rw [default_growth_agents]
+    decide_cbv
   · decide_cbv
 
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
@@ -411,8 +574,10 @@ private theorem attachRelay_literal : summary attachRelay =
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
-  · decide_cbv
-  · decide_cbv
+  · rw [default_growth_agents]
+    decide_cbv
+  · rw [default_growth_agents]
+    decide_cbv
   · decide_cbv
 
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
@@ -433,8 +598,10 @@ private theorem relayIdle_literal : summary relayIdle =
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
-  · decide_cbv
-  · decide_cbv
+  · rw [relay_idle_agents]
+    decide_cbv
+  · rw [relay_idle_agents]
+    decide_cbv
   · decide_cbv
 
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
@@ -456,8 +623,10 @@ private theorem successiveBirths_literal : summary successiveBirths =
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
-  · decide_cbv
-  · decide_cbv
+  · rw [successive_agents]
+    decide_cbv
+  · rw [successive_agents]
+    decide_cbv
   · decide_cbv
 
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
@@ -479,8 +648,10 @@ private theorem successiveIdle_literal : summary successiveIdle =
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
-  · decide_cbv
-  · decide_cbv
+  · rw [successive_idle_agents]
+    decide_cbv
+  · rw [successive_idle_agents]
+    decide_cbv
   · decide_cbv
 
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
@@ -501,8 +672,10 @@ private theorem weightedSource_literal : summary weightedSource =
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
-  · decide_cbv
-  · decide_cbv
+  · rw [default_growth_agents]
+    decide_cbv
+  · rw [default_growth_agents]
+    decide_cbv
   · decide_cbv
 
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
