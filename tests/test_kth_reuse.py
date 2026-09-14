@@ -19,6 +19,7 @@ def _record(seed: int, *, binding: str = "a" * 64) -> dict:
             "optimizer_steps": 40,
             "validation_metrics": {"macro_f1": 0.1 * (index + 1)},
         })
+    scores = {arm["family"]: arm["validation_metrics"]["macro_f1"] for arm in arms}
     return {
         "format_version": 1,
         "kind": "kth_real_seed_execution",
@@ -36,9 +37,9 @@ def _record(seed: int, *, binding: str = "a" * 64) -> dict:
         "arms": arms,
         "paired_validation": {
             "seed": seed,
-            "flywire_macro_f1": 0.4,
-            "rewired_macro_f1": 0.3,
-            "difference": 0.1,
+            "flywire_macro_f1": scores["flywire"],
+            "rewired_macro_f1": scores["rewired"],
+            "difference": scores["flywire"] - scores["rewired"],
         },
     }
 
