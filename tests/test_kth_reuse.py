@@ -64,8 +64,9 @@ def test_reduce_seed_records_rejects_cross_seed_binding_drift():
 def test_reuse_workflow_downloads_cached_run_and_never_redownloads_rgb_or_yolo():
     text = Path(".github/workflows/yolo-flywire-kth-reuse.yml").read_text(encoding="utf-8")
     assert "source_run_id" in text
-    assert "run-id: ${{ inputs.source_run_id }}" in text
-    assert "kth-*-${{ inputs.source_run_id }}" in text
+    assert "SOURCE_RUN_ID" in text
+    assert "run-id: ${{ env.SOURCE_RUN_ID }}" in text
+    assert "kth-*-${{ env.SOURCE_RUN_ID }}" in text
     assert "matrix:" in text and "seed:" in text
     for seed in SEEDS:
         assert f"- {seed}" in text
