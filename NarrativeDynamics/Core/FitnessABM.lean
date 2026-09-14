@@ -161,31 +161,39 @@ theorem runTyped_counts {n m : Nat} (s : JointState n) (hm : 0 < m) (hb : m ≤ 
       roundIndex + schedule.tickCount ∧
     actualEdgeCount (runTyped s hm hb schedule roundIndex).final.state.network.snapshot =
       actualEdgeCount s.network.snapshot + m * schedule.birthCount := by
-  cases schedule with
-  | nil => simp [runTyped, Schedule.birthCount, Schedule.tickCount]
-  | idle rest =>
-      have h := runTyped_counts (advance s) hm hb rest (roundIndex + 1)
+  revert s hm hb roundIndex
+  induction schedule with
+  | nil =>
+      intro s hm hb roundIndex
+      simp [runTyped, Schedule.birthCount, Schedule.tickCount]
+  | idle rest ih =>
+      intro s hm hb roundIndex
+      have h := ih (advance s) hm hb (roundIndex + 1)
       simpa [runTyped, Schedule.birthCount, Schedule.tickCount,
         Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using h
-  | birth T b rest =>
-      have h := runTyped_counts (advance (grow s T hm b)) hm
-        (Nat.le_trans hb (Nat.le_succ n)) rest (roundIndex + 1)
+  | birth T b rest ih =>
+      intro s hm hb roundIndex
+      have h := ih (advance (grow s T hm b)) hm
+        (Nat.le_trans hb (Nat.le_succ _)) (roundIndex + 1)
       simpa [runTyped, Schedule.birthCount, Schedule.tickCount, birth_edges,
         Nat.mul_add, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using h
-termination_by structural schedule
 
 /-- Every supplied legal target trace has positive exact BB mass. -/
 theorem runTyped_probability_pos {n m : Nat} (s : JointState n) (hm : 0 < m)
     (hb : m ≤ n) (schedule : Schedule n m) (roundIndex : Nat := 0) :
     0 < (runTyped s hm hb schedule roundIndex).probability := by
-  cases schedule with
-  | nil => norm_num [runTyped]
-  | idle rest =>
-      exact runTyped_probability_pos (advance s) hm hb rest (roundIndex + 1)
-  | birth T b rest =>
+  revert s hm hb roundIndex
+  induction schedule with
+  | nil =>
+      intro s hm hb roundIndex
+      norm_num [runTyped]
+  | idle rest ih =>
+      intro s hm hb roundIndex
+      exact ih (advance s) hm hb (roundIndex + 1)
+  | birth T b rest ih =>
+      intro s hm hb roundIndex
       exact mul_pos (orderedMass_pos s.network T)
-        (runTyped_probability_pos (advance (grow s T hm b)) hm
-          (Nat.le_trans hb (Nat.le_succ n)) rest (roundIndex + 1))
-termination_by structural schedule
+        (ih (advance (grow s T hm b)) hm
+          (Nat.le_trans hb (Nat.le_succ _)) (roundIndex + 1))
 
 end NarrativeDynamics.FitnessABM
