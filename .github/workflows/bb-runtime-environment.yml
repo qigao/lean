@@ -105,6 +105,7 @@ jobs:
         if: steps.request.outputs.phase == 'gate'
         run: |
           set -euo pipefail
+          timeout --kill-after=10s 240s lake build
           bash tools/check_fitness_abm.sh
           bash tools/check_fitness_abm_runtime.sh
       - uses: actions/upload-artifact@v4
