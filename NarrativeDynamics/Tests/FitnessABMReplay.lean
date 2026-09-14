@@ -292,6 +292,9 @@ private theorem incoming0 :
     letI := s.network.snapshot.adjDec
     incoming s.network.snapshot.graph.Adj s.population =
       (![∅, {0}, {0}] : Fin 3 → Finset (Fin 3)) := by
+  have h0 : (0 : Nat) < 2 := by decide
+  have h1 : (1 : Nat) < 2 := by decide
+  have h2 : ¬ (2 : Nat) < 2 := by decide
   funext i
   ext j
   simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
@@ -299,7 +302,7 @@ private theorem incoming0 :
     (simp only [grow, applyBirth, birthSnapshot, birthGraph, birthAdj,
       lastCases_eq_if, initial, seedNetwork, extendPopulation,
       birthData, one, targets0, Targets.selected, broadcasting, top2_adj]
-     decide_cbv)
+     simp only [h0, h1, h2, dif_pos, dif_neg] <;> decide_cbv)
 
 private theorem incoming1 :
     let s := grow (initial one) targets1 positiveM birthData
