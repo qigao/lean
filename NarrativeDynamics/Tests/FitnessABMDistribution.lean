@@ -138,19 +138,27 @@ private def firstRound (weighted : Bool) (i : Fin 2) : JointState 3 where
     · intro j
       fin_cases i <;> fin_cases j <;> norm_num [AgentState.Valid]
 
+private theorem top2_adj (i j : Fin 2) :
+    (⊤ : SimpleGraph (Fin 2)).Adj i j ↔ i ≠ j := Iff.rfl
+
 private theorem first_incoming (weighted : Bool) (i : Fin 2) :
     let s := grow (seedFor weighted) (target i) (by decide) birthOne
     letI := s.network.snapshot.adjDec
     incoming s.network.snapshot.graph.Adj s.population =
       (![∅, {0}, if i = 0 then {0} else ∅] : Fin 3 → Finset (Fin 3)) := by
   letI := (grow (seedFor weighted) (target i) (by decide) birthOne).network.snapshot.adjDec
+  have h0 : (0 : Nat) < 2 := by decide
+  have h1 : (1 : Nat) < 2 := by decide
+  have h2 : ¬ (2 : Nat) < 2 := by decide
   funext a
   ext b
   simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
   cases weighted <;> fin_cases i <;> fin_cases a <;> fin_cases b <;>
-    norm_num [seedFor, seedWeighted, seed2, grow, applyBirth, birthSnapshot,
-      birthGraph, birthAdj, lastCases_eq_if, Fin.ext_iff, extendPopulation,
-      birthOne, target_selected, broadcasting]
+    (simp only [seedFor, seedWeighted, seed2, grow, applyBirth, birthSnapshot,
+       birthGraph, birthAdj, lastCases_eq_if, extendPopulation,
+       birthOne, target_selected, broadcasting, top2_adj]
+     simp only [h0, h1, h2, dif_pos, dif_neg (show ¬ False from fun h => h)]
+     norm_num [Fin.ext_iff])
 
 private theorem first_step (weighted : Bool) (i : Fin 2) :
     advance (grow (seedFor weighted) (target i) (by decide) birthOne) =
@@ -234,13 +242,18 @@ private theorem idle_incoming (i : Fin 2) :
       (![if i = 0 then {1,2} else {1}, {0}, if i = 0 then {0} else {1}] :
         Fin 3 → Finset (Fin 3)) := by
   letI := (firstRound false i).network.snapshot.adjDec
+  have h0 : (0 : Nat) < 2 := by decide
+  have h1 : (1 : Nat) < 2 := by decide
+  have h2 : ¬ (2 : Nat) < 2 := by decide
   funext a
   ext b
   simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
   fin_cases i <;> fin_cases a <;> fin_cases b <;>
-    norm_num [firstRound, seedFor, seed2, grow, applyBirth, birthSnapshot,
-      birthGraph, birthAdj, lastCases_eq_if, Fin.ext_iff, birthOne,
-      target_selected, broadcasting]
+    (simp only [firstRound, seedFor, seed2, grow, applyBirth, birthSnapshot,
+       birthGraph, birthAdj, lastCases_eq_if, birthOne,
+       target_selected, broadcasting, top2_adj]
+     simp only [h0, h1, h2, dif_pos, dif_neg (show ¬ False from fun h => h)]
+     norm_num [Fin.ext_iff])
 
 private theorem idle_step (i : Fin 2) : advance (firstRound false i) = idleRound i := by
   apply joint_eq
@@ -318,6 +331,19 @@ example : jointProbability seedWeighted 2 (by decide) (by decide) [some birthOne
 example : eventProbability seedWeighted 2 (by decide) (by decide) [some birthOne]
     (fun _ => True) = 1 := eventProbability_true _ _ _ _ _
 
+private theorem walk_zero_eq {Node : Type*} {g : MeshGraph Node} {a b : Node}
+    (walk : MeshWalk g 0 a b) : a = b := by
+  cases walk
+  rfl
+
+private theorem walk_one_adj {Node : Type*} {g : MeshGraph Node} {a b : Node}
+    (walk : MeshWalk g 1 a b) : g a b := by
+  cases walk with
+  | step edge rest =>
+      have h := walk_zero_eq rest
+      cases h
+      exact edge
+
 -- Actual final graphs both have diameter two, but the newborn states differ.
 private theorem one_diameter (i : Fin 2) :
     meshDiameter (firstRound false i).network.snapshot.graph.Adj
@@ -328,9 +354,14 @@ private theorem one_diameter (i : Fin 2) :
     meshDiameter_minimal _ _ (by simpa using state_bounded s)
   have noEdge : ¬ s.snapshot.graph.Adj
       (if i = 0 then (1 : Fin 3) else 0) 2 := by
+    have h0 : (0 : Nat) < 2 := by decide
+    have h1 : (1 : Nat) < 2 := by decide
+    have h2 : ¬ (2 : Nat) < 2 := by decide
     fin_cases i <;>
-      norm_num [s, firstRound, seedFor, seed2, grow, applyBirth, birthSnapshot,
-        birthGraph, birthAdj, lastCases_eq_if, Fin.ext_iff, target_selected]
+      (simp only [s, firstRound, seedFor, seed2, grow, applyBirth, birthSnapshot,
+         birthGraph, birthAdj, lastCases_eq_if, target_selected, top2_adj]
+       simp only [h0, h1, h2, dif_pos, dif_neg (show ¬ False from fun h => h)]
+       norm_num [Fin.ext_iff])
   have different : (if i = 0 then (1 : Fin 3) else 0) ≠ 2 := by
     fin_cases i <;> decide
   have noOne : ¬ ReachWithin s.snapshot.graph.Adj 1
@@ -339,13 +370,9 @@ private theorem one_diameter (i : Fin 2) :
     have casesLength : length = 0 ∨ length = 1 := by omega
     rcases casesLength with h | h
     · subst length
-      cases walk
-      exact different rfl
+      exact different (walk_zero_eq walk)
     · subst length
-      cases walk with
-      | step edge rest =>
-          cases rest
-          exact noEdge edge
+      exact noEdge (walk_one_adj walk)
   have lower : 2 ≤ meshDiameter s.snapshot.graph.Adj
       ⟨2, by simpa using state_bounded s⟩ := by
     by_contra h
@@ -359,8 +386,10 @@ example (i : Fin 2) :
     let out := jointFinal seed2 1 (by decide) (by decide) [some birthOne] (oneTrace i)
     meshDiameter out.state.network.snapshot.graph.Adj
       ⟨out.nodeCount - 1, state_bounded out.state.network⟩ = 2 := by
-  change let out := jointFinal (seedFor false) 1 (by decide) (by decide) [some birthOne] (oneTrace i); _
-  simp only [one_final]
+  have h := one_final false i
+  change jointFinal seed2 1 (by decide) (by decide) [some birthOne] (oneTrace i) = _ at h
+  dsimp only
+  rw [h]
   exact one_diameter i
 
 example :
