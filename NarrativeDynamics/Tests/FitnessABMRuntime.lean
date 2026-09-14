@@ -491,8 +491,8 @@ private theorem relay_idle_incoming (eta : PosFitness) :
   ext j
   simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
   fin_cases i <;> fin_cases j <;>
-    (simp only [grow_projection, grow_agents, grow_profiles, advance_projection,
-      advance_profiles, default_growth_agents, default_profiles, default_agents, initial_network]
+    (simp only [grow_projection, grow_profiles, advance_projection,
+      advance_profiles, default_growth_agents, default_profiles, initial_network]
      simp only [applyBirth, birthSnapshot, birthGraph, birthAdj, lastCases_eq_if,
       seedNetwork, newbornData, singleton_selected, broadcasting, top2_adj]
      simp only [h0_2, h1_2, h2_2, dif_pos, dif_neg (show ¬ False from fun h => h)]
@@ -504,8 +504,8 @@ private theorem relay_idle_agents (eta : PosFitness) :
       (newbornData 0 (by norm_num))))).population.agents =
       ![⟨1, 1⟩, ⟨1, 2⟩, ⟨1, 1⟩] := by
   rw [advance_agents _ _ (relay_idle_incoming eta)]
-  simp only [grow_agents, grow_profiles, advance_profiles, default_growth_agents,
-    default_profiles, default_agents]
+  simp only [grow_profiles, advance_profiles, default_growth_agents,
+    default_profiles]
   funext i
   fin_cases i <;> decide_cbv
 
@@ -534,7 +534,7 @@ private theorem successive_incoming :
   simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
   fin_cases i <;> fin_cases j <;>
     (simp only [grow_projection, grow_agents, grow_profiles, advance_projection,
-      advance_profiles, default_growth_agents, default_profiles, default_agents, initial_network]
+      advance_profiles, default_growth_agents, default_profiles, initial_network]
      simp only [applyBirth, birthSnapshot, birthGraph, birthAdj, lastCases_eq_if,
       seedNetwork, newbornData, singleton_selected, broadcasting, top2_adj]
      simp only [h0_2, h1_2, h2_2, h0_3, h1_3, h2_3, h3_3, dif_pos, dif_neg (show ¬ False from fun h => h)]
@@ -548,7 +548,7 @@ private theorem successive_agents :
       ![⟨1, 1⟩, ⟨1, 2⟩, ⟨1, 1⟩, ⟨0, 0⟩] := by
   rw [advance_agents _ _ successive_incoming]
   simp only [grow_agents, grow_profiles, advance_profiles, default_growth_agents,
-    default_profiles, default_agents]
+    default_profiles]
   funext i
   fin_cases i <;> decide_cbv
 
@@ -576,8 +576,8 @@ private theorem successive_idle_incoming :
   ext j
   simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
   fin_cases i <;> fin_cases j <;>
-    (simp only [grow_projection, grow_agents, grow_profiles, advance_projection,
-      advance_profiles, successive_agents, default_growth_agents, default_profiles, default_agents, initial_network]
+    (simp only [grow_projection, grow_profiles, advance_projection,
+      advance_profiles, successive_agents, default_profiles, initial_network]
      simp only [applyBirth, birthSnapshot, birthGraph, birthAdj, lastCases_eq_if,
       seedNetwork, newbornData, singleton_selected, broadcasting, top2_adj]
      simp only [h0_2, h1_2, h2_2, h0_3, h1_3, h2_3, h3_3, dif_pos, dif_neg (show ¬ False from fun h => h)]
@@ -590,8 +590,8 @@ private theorem successive_idle_agents :
       (newbornData 0 (by norm_num))))).population.agents =
       ![⟨1, 2⟩, ⟨1, 4⟩, ⟨1, 2⟩, ⟨1, 1⟩] := by
   rw [advance_agents _ _ successive_idle_incoming]
-  simp only [grow_agents, grow_profiles, advance_profiles, successive_agents,
-    default_profiles, default_agents]
+  simp only [grow_profiles, advance_profiles, successive_agents,
+    default_profiles]
   funext i
   fin_cases i <;> decide_cbv
 run_cmd do
@@ -600,6 +600,306 @@ run_cmd do
   out.putStrLn "BB runtime diagnostic: traversed successive_idle_agents"
   out.flush
 
+
+private theorem zeroReceptive_initial_profiles :
+    (initial one #[⟨1, 1/2, 1, 0⟩, ⟨0, 1/2, 0, 0⟩] rfl zeroReceptive_agents_valid).population.profiles = ![⟨1, 1/2⟩, ⟨0, 1/2⟩] := by
+  funext i
+  fin_cases i <;> rfl
+
+private theorem zeroReceptive_initial_agents :
+    (initial one #[⟨1, 1/2, 1, 0⟩, ⟨0, 1/2, 0, 0⟩] rfl zeroReceptive_agents_valid).population.agents = ![⟨1, 0⟩, ⟨0, 0⟩] := by
+  funext i
+  fin_cases i <;> rfl
+
+private theorem zeroReceptive_incoming :
+    let s := grow (initial one #[⟨1, 1/2, 1, 0⟩, ⟨0, 1/2, 0, 0⟩] rfl zeroReceptive_agents_valid)
+      (singletonTarget (0 : Fin 2)) positiveM (newbornData 0 (by norm_num))
+    letI := s.network.snapshot.adjDec
+    incoming s.network.snapshot.graph.Adj s.population =
+      (![∅, {0}, {0}] : Fin 3 → Finset (Fin 3)) := by
+  have h0 : (0 : Nat) < 2 := by decide
+  have h1 : (1 : Nat) < 2 := by decide
+  have h2 : ¬ (2 : Nat) < 2 := by decide
+  funext i
+  ext j
+  simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
+  fin_cases i <;> fin_cases j <;>
+    (simp only [grow_projection, grow_agents, grow_profiles, zeroReceptive_initial_profiles, zeroReceptive_initial_agents,
+      initial_network]
+     simp only [applyBirth, birthSnapshot, birthGraph, birthAdj, lastCases_eq_if,
+      seedNetwork, newbornData, singleton_selected, broadcasting, top2_adj]
+     simp only [h0, h1, h2, dif_pos, dif_neg (show ¬ False from fun h => h)]
+     norm_num [Fin.ext_iff])
+
+private theorem zeroReceptive_step_agents :
+    (advance (grow (initial one #[⟨1, 1/2, 1, 0⟩, ⟨0, 1/2, 0, 0⟩] rfl zeroReceptive_agents_valid)
+      (singletonTarget (0 : Fin 2)) positiveM (newbornData 0 (by norm_num)))).population.agents =
+      ![⟨1, 0⟩, ⟨0, 1⟩, ⟨1, 1⟩] := by
+  rw [advance_agents _ _ zeroReceptive_incoming]
+  simp only [grow_agents, grow_profiles, zeroReceptive_initial_profiles, zeroReceptive_initial_agents]
+  funext i
+  fin_cases i <;> decide_cbv
+
+run_cmd do
+  let _ ← Lean.collectAxioms ``zeroReceptive_step_agents
+  let out ← IO.getStderr
+  out.putStrLn "BB runtime diagnostic: traversed zeroReceptive_step_agents"
+  out.flush
+
+private theorem silent_initial_profiles :
+    (initial one #[⟨1, 1/2, 0, 0⟩, ⟨1, 1/2, 0, 0⟩] rfl silent_agents_valid).population.profiles = ![⟨1, 1/2⟩, ⟨1, 1/2⟩] := by
+  funext i
+  fin_cases i <;> rfl
+
+private theorem silent_initial_agents :
+    (initial one #[⟨1, 1/2, 0, 0⟩, ⟨1, 1/2, 0, 0⟩] rfl silent_agents_valid).population.agents = ![⟨0, 0⟩, ⟨0, 0⟩] := by
+  funext i
+  fin_cases i <;> rfl
+
+private theorem silent_incoming :
+    let s := grow (initial one #[⟨1, 1/2, 0, 0⟩, ⟨1, 1/2, 0, 0⟩] rfl silent_agents_valid)
+      (singletonTarget (0 : Fin 2)) positiveM (newbornData 0 (by norm_num))
+    letI := s.network.snapshot.adjDec
+    incoming s.network.snapshot.graph.Adj s.population =
+      (![∅, ∅, ∅] : Fin 3 → Finset (Fin 3)) := by
+  have h0 : (0 : Nat) < 2 := by decide
+  have h1 : (1 : Nat) < 2 := by decide
+  have h2 : ¬ (2 : Nat) < 2 := by decide
+  funext i
+  ext j
+  simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
+  fin_cases i <;> fin_cases j <;>
+    (simp only [grow_projection, grow_agents, grow_profiles, silent_initial_profiles, silent_initial_agents,
+      initial_network]
+     simp only [applyBirth, birthSnapshot, birthGraph, birthAdj, lastCases_eq_if,
+      seedNetwork, newbornData, singleton_selected, broadcasting, top2_adj]
+     simp only [h0, h1, h2, dif_pos, dif_neg (show ¬ False from fun h => h)]
+     norm_num [Fin.ext_iff])
+
+private theorem silent_step_agents :
+    (advance (grow (initial one #[⟨1, 1/2, 0, 0⟩, ⟨1, 1/2, 0, 0⟩] rfl silent_agents_valid)
+      (singletonTarget (0 : Fin 2)) positiveM (newbornData 0 (by norm_num)))).population.agents =
+      ![⟨0, 0⟩, ⟨0, 0⟩, ⟨0, 0⟩] := by
+  rw [advance_agents _ _ silent_incoming]
+  simp only [grow_agents, grow_profiles, silent_initial_profiles, silent_initial_agents]
+  funext i
+  fin_cases i <;> decide_cbv
+
+run_cmd do
+  let _ ← Lean.collectAxioms ``silent_step_agents
+  let out ← IO.getStderr
+  out.putStrLn "BB runtime diagnostic: traversed silent_step_agents"
+  out.flush
+
+private theorem zeroThreshold_initial_profiles :
+    (initial one #[⟨1, 0, 0, 0⟩, ⟨1, 1/2, 0, 0⟩] rfl zeroThreshold_agents_valid).population.profiles = ![⟨1, 0⟩, ⟨1, 1/2⟩] := by
+  funext i
+  fin_cases i <;> rfl
+
+private theorem zeroThreshold_initial_agents :
+    (initial one #[⟨1, 0, 0, 0⟩, ⟨1, 1/2, 0, 0⟩] rfl zeroThreshold_agents_valid).population.agents = ![⟨0, 0⟩, ⟨0, 0⟩] := by
+  funext i
+  fin_cases i <;> rfl
+
+private theorem zeroThreshold_incoming :
+    let s := grow (initial one #[⟨1, 0, 0, 0⟩, ⟨1, 1/2, 0, 0⟩] rfl zeroThreshold_agents_valid)
+      (singletonTarget (0 : Fin 2)) positiveM (newbornData 0 (by norm_num))
+    letI := s.network.snapshot.adjDec
+    incoming s.network.snapshot.graph.Adj s.population =
+      (![∅, {0}, {0}] : Fin 3 → Finset (Fin 3)) := by
+  have h0 : (0 : Nat) < 2 := by decide
+  have h1 : (1 : Nat) < 2 := by decide
+  have h2 : ¬ (2 : Nat) < 2 := by decide
+  funext i
+  ext j
+  simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
+  fin_cases i <;> fin_cases j <;>
+    (simp only [grow_projection, grow_agents, grow_profiles, zeroThreshold_initial_profiles, zeroThreshold_initial_agents,
+      initial_network]
+     simp only [applyBirth, birthSnapshot, birthGraph, birthAdj, lastCases_eq_if,
+      seedNetwork, newbornData, singleton_selected, broadcasting, top2_adj]
+     simp only [h0, h1, h2, dif_pos, dif_neg (show ¬ False from fun h => h)]
+     norm_num [Fin.ext_iff])
+
+private theorem zeroThreshold_step_agents :
+    (advance (grow (initial one #[⟨1, 0, 0, 0⟩, ⟨1, 1/2, 0, 0⟩] rfl zeroThreshold_agents_valid)
+      (singletonTarget (0 : Fin 2)) positiveM (newbornData 0 (by norm_num)))).population.agents =
+      ![⟨0, 0⟩, ⟨0, 1⟩, ⟨0, 1⟩] := by
+  rw [advance_agents _ _ zeroThreshold_incoming]
+  simp only [grow_agents, grow_profiles, zeroThreshold_initial_profiles, zeroThreshold_initial_agents]
+  funext i
+  fin_cases i <;> decide_cbv
+
+run_cmd do
+  let _ ← Lean.collectAxioms ``zeroThreshold_step_agents
+  let out ← IO.getStderr
+  out.putStrLn "BB runtime diagnostic: traversed zeroThreshold_step_agents"
+  out.flush
+
+private theorem broadcastNewborn_incoming :
+    let s := grow (initial one agentsRaw rfl empty_agents_valid)
+      (singletonTarget (1 : Fin 2)) positiveM (newbornData 1 (by norm_num))
+    letI := s.network.snapshot.adjDec
+    incoming s.network.snapshot.graph.Adj s.population =
+      (![∅, {0, 2}, ∅] : Fin 3 → Finset (Fin 3)) := by
+  have h0 : (0 : Nat) < 2 := by decide
+  have h1 : (1 : Nat) < 2 := by decide
+  have h2 : ¬ (2 : Nat) < 2 := by decide
+  funext i
+  ext j
+  simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
+  fin_cases i <;> fin_cases j <;>
+    (simp only [grow_projection, grow_agents, grow_profiles, default_profiles, default_agents,
+      initial_network]
+     simp only [applyBirth, birthSnapshot, birthGraph, birthAdj, lastCases_eq_if,
+      seedNetwork, newbornData, singleton_selected, broadcasting, top2_adj]
+     simp only [h0, h1, h2, dif_pos, dif_neg (show ¬ False from fun h => h)]
+     norm_num [Fin.ext_iff])
+
+private theorem broadcastNewborn_step_agents :
+    (advance (grow (initial one agentsRaw rfl empty_agents_valid)
+      (singletonTarget (1 : Fin 2)) positiveM (newbornData 1 (by norm_num)))).population.agents =
+      ![⟨1, 0⟩, ⟨1, 2⟩, ⟨1, 0⟩] := by
+  rw [advance_agents _ _ broadcastNewborn_incoming]
+  simp only [grow_agents, grow_profiles, default_profiles, default_agents]
+  funext i
+  fin_cases i <;> decide_cbv
+
+run_cmd do
+  let _ ← Lean.collectAxioms ``broadcastNewborn_step_agents
+  let out ← IO.getStderr
+  out.putStrLn "BB runtime diagnostic: traversed broadcastNewborn_step_agents"
+  out.flush
+
+private theorem retainedExposures_initial_profiles :
+    (initial one #[⟨1, 1/2, 1, 7⟩, ⟨1, 1/2, 0, 3⟩] rfl retainedExposures_agents_valid).population.profiles = ![⟨1, 1/2⟩, ⟨1, 1/2⟩] := by
+  funext i
+  fin_cases i <;> rfl
+
+private theorem retainedExposures_initial_agents :
+    (initial one #[⟨1, 1/2, 1, 7⟩, ⟨1, 1/2, 0, 3⟩] rfl retainedExposures_agents_valid).population.agents = ![⟨1, 7⟩, ⟨0, 3⟩] := by
+  funext i
+  fin_cases i <;> rfl
+
+private theorem retainedExposures_incoming :
+    let s := grow (initial one #[⟨1, 1/2, 1, 7⟩, ⟨1, 1/2, 0, 3⟩] rfl retainedExposures_agents_valid)
+      (singletonTarget (1 : Fin 2)) positiveM (newbornData 0 (by norm_num))
+    letI := s.network.snapshot.adjDec
+    incoming s.network.snapshot.graph.Adj s.population =
+      (![∅, {0}, ∅] : Fin 3 → Finset (Fin 3)) := by
+  have h0 : (0 : Nat) < 2 := by decide
+  have h1 : (1 : Nat) < 2 := by decide
+  have h2 : ¬ (2 : Nat) < 2 := by decide
+  funext i
+  ext j
+  simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
+  fin_cases i <;> fin_cases j <;>
+    (simp only [grow_projection, grow_agents, grow_profiles, retainedExposures_initial_profiles, retainedExposures_initial_agents,
+      initial_network]
+     simp only [applyBirth, birthSnapshot, birthGraph, birthAdj, lastCases_eq_if,
+      seedNetwork, newbornData, singleton_selected, broadcasting, top2_adj]
+     simp only [h0, h1, h2, dif_pos, dif_neg (show ¬ False from fun h => h)]
+     norm_num [Fin.ext_iff])
+
+private theorem retainedExposures_step_agents :
+    (advance (grow (initial one #[⟨1, 1/2, 1, 7⟩, ⟨1, 1/2, 0, 3⟩] rfl retainedExposures_agents_valid)
+      (singletonTarget (1 : Fin 2)) positiveM (newbornData 0 (by norm_num)))).population.agents =
+      ![⟨1, 7⟩, ⟨1, 4⟩, ⟨0, 0⟩] := by
+  rw [advance_agents _ _ retainedExposures_incoming]
+  simp only [grow_agents, grow_profiles, retainedExposures_initial_profiles, retainedExposures_initial_agents]
+  funext i
+  fin_cases i <;> decide_cbv
+
+run_cmd do
+  let _ ← Lean.collectAxioms ``retainedExposures_step_agents
+  let out ← IO.getStderr
+  out.putStrLn "BB runtime diagnostic: traversed retainedExposures_step_agents"
+  out.flush
+
+private theorem halfReceptive_initial_profiles :
+    (initial one #[⟨1, 1/2, 1, 0⟩, ⟨1/2, 1/2, 0, 0⟩] rfl halfReceptive_agents_valid).population.profiles = ![⟨1, 1/2⟩, ⟨1/2, 1/2⟩] := by
+  funext i
+  fin_cases i <;> rfl
+
+private theorem halfReceptive_initial_agents :
+    (initial one #[⟨1, 1/2, 1, 0⟩, ⟨1/2, 1/2, 0, 0⟩] rfl halfReceptive_agents_valid).population.agents = ![⟨1, 0⟩, ⟨0, 0⟩] := by
+  funext i
+  fin_cases i <;> rfl
+
+private theorem halfReceptive_incoming :
+    let s := grow (initial one #[⟨1, 1/2, 1, 0⟩, ⟨1/2, 1/2, 0, 0⟩] rfl halfReceptive_agents_valid)
+      (singletonTarget (0 : Fin 2)) positiveM (newbornData 0 (by norm_num))
+    letI := s.network.snapshot.adjDec
+    incoming s.network.snapshot.graph.Adj s.population =
+      (![∅, {0}, {0}] : Fin 3 → Finset (Fin 3)) := by
+  have h0 : (0 : Nat) < 2 := by decide
+  have h1 : (1 : Nat) < 2 := by decide
+  have h2 : ¬ (2 : Nat) < 2 := by decide
+  funext i
+  ext j
+  simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
+  fin_cases i <;> fin_cases j <;>
+    (simp only [grow_projection, grow_agents, grow_profiles, halfReceptive_initial_profiles, halfReceptive_initial_agents,
+      initial_network]
+     simp only [applyBirth, birthSnapshot, birthGraph, birthAdj, lastCases_eq_if,
+      seedNetwork, newbornData, singleton_selected, broadcasting, top2_adj]
+     simp only [h0, h1, h2, dif_pos, dif_neg (show ¬ False from fun h => h)]
+     norm_num [Fin.ext_iff])
+
+private theorem halfReceptive_step_agents :
+    (advance (grow (initial one #[⟨1, 1/2, 1, 0⟩, ⟨1/2, 1/2, 0, 0⟩] rfl halfReceptive_agents_valid)
+      (singletonTarget (0 : Fin 2)) positiveM (newbornData 0 (by norm_num)))).population.agents =
+      ![⟨1, 0⟩, ⟨1/2, 1⟩, ⟨1, 1⟩] := by
+  rw [advance_agents _ _ halfReceptive_incoming]
+  simp only [grow_agents, grow_profiles, halfReceptive_initial_profiles, halfReceptive_initial_agents]
+  funext i
+  fin_cases i <;> decide_cbv
+
+run_cmd do
+  let _ ← Lean.collectAxioms ``halfReceptive_step_agents
+  let out ← IO.getStderr
+  out.putStrLn "BB runtime diagnostic: traversed halfReceptive_step_agents"
+  out.flush
+
+private theorem targets01_selected : targets01.selected = {0, 1} := by decide_cbv
+private theorem targets10_selected : targets10.selected = {0, 1} := by decide_cbv
+
+private theorem both_growth_incoming (eta : PosFitness) (targets : Targets 2 2)
+    (selected : targets.selected = {0, 1}) :
+    let s := grow (initial eta agentsRaw rfl empty_agents_valid)
+      targets (by decide) (newbornData 0 (by norm_num))
+    letI := s.network.snapshot.adjDec
+    incoming s.network.snapshot.graph.Adj s.population =
+      (![∅, {0}, {0}] : Fin 3 → Finset (Fin 3)) := by
+  have h0 : (0 : Nat) < 2 := by decide
+  have h1 : (1 : Nat) < 2 := by decide
+  have h2 : ¬ (2 : Nat) < 2 := by decide
+  funext i
+  ext j
+  simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
+  fin_cases i <;> fin_cases j <;>
+    (simp only [grow_projection, grow_agents, grow_profiles, default_profiles, default_agents,
+      initial_network]
+     simp only [applyBirth, birthSnapshot, birthGraph, birthAdj, lastCases_eq_if,
+      seedNetwork, newbornData, selected, broadcasting, top2_adj]
+     simp only [h0, h1, h2, dif_pos, dif_neg (show ¬ False from fun h => h)]
+     norm_num [Fin.ext_iff])
+
+private theorem both_growth_agents (eta : PosFitness) (targets : Targets 2 2)
+    (selected : targets.selected = {0, 1}) :
+    (advance (grow (initial eta agentsRaw rfl empty_agents_valid)
+      targets (by decide) (newbornData 0 (by norm_num)))).population.agents =
+      ![⟨1, 0⟩, ⟨1, 1⟩, ⟨1, 1⟩] := by
+  rw [advance_agents _ _ (both_growth_incoming eta targets selected)]
+  simp only [grow_agents, grow_profiles, default_profiles, default_agents]
+  funext i
+  fin_cases i <;> decide_cbv
+
+run_cmd do
+  let _ ← Lean.collectAxioms ``both_growth_agents
+  let out ← IO.getStderr
+  out.putStrLn "BB runtime diagnostic: traversed both_growth_agents"
+  out.flush
 
 private theorem empty_literal : summary empty =
     .ok (2, 0, 1, [1, 0], [0, 0], 1) := by
@@ -707,9 +1007,7 @@ private theorem successiveBirths_literal : summary successiveBirths =
   unfold summary
   rw [replay_input successiveBirths one rfl rfl empty_agents_valid (by decide)]
   dsimp only [successiveBirths, empty]
-  rw [runInputs, checked1]
-  rw [runInputs, checked2]
-  simp only [runInputs]
+  simp only [runInputs, checked1, checked2]
   apply (summary_result_ok _ _ _ _ _ _ _).mpr
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
@@ -732,9 +1030,7 @@ private theorem successiveIdle_literal : summary successiveIdle =
   unfold summary
   rw [replay_input successiveIdle one rfl rfl empty_agents_valid (by decide)]
   dsimp only [successiveIdle, empty]
-  rw [runInputs, checked1]
-  rw [runInputs, checked2]
-  simp only [runInputs]
+  simp only [runInputs, checked1, checked2]
   apply (summary_result_ok _ _ _ _ _ _ _).mpr
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
@@ -787,8 +1083,10 @@ private theorem ordered01_literal : summary ordered01 =
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
-  · decide_cbv
-  · decide_cbv
+  · rw [both_growth_agents three targets01 targets01_selected]
+    decide_cbv
+  · rw [both_growth_agents three targets01 targets01_selected]
+    decide_cbv
   · decide_cbv
 
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
@@ -809,8 +1107,10 @@ private theorem ordered10_literal : summary ordered10 =
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
-  · decide_cbv
-  · decide_cbv
+  · rw [both_growth_agents three targets10 targets10_selected]
+    decide_cbv
+  · rw [both_growth_agents three targets10 targets10_selected]
+    decide_cbv
   · decide_cbv
 
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
@@ -831,8 +1131,10 @@ private theorem zeroReceptive_literal : summary zeroReceptive =
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
-  · decide_cbv
-  · decide_cbv
+  · rw [zeroReceptive_step_agents]
+    decide_cbv
+  · rw [zeroReceptive_step_agents]
+    decide_cbv
   · decide_cbv
 
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
@@ -853,8 +1155,10 @@ private theorem silent_literal : summary silent =
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
-  · decide_cbv
-  · decide_cbv
+  · rw [silent_step_agents]
+    decide_cbv
+  · rw [silent_step_agents]
+    decide_cbv
   · decide_cbv
 
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
@@ -875,8 +1179,10 @@ private theorem zeroThreshold_literal : summary zeroThreshold =
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
-  · decide_cbv
-  · decide_cbv
+  · rw [zeroThreshold_step_agents]
+    decide_cbv
+  · rw [zeroThreshold_step_agents]
+    decide_cbv
   · decide_cbv
 
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
@@ -897,8 +1203,10 @@ private theorem broadcastNewborn_literal : summary broadcastNewborn =
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
-  · decide_cbv
-  · decide_cbv
+  · rw [broadcastNewborn_step_agents]
+    decide_cbv
+  · rw [broadcastNewborn_step_agents]
+    decide_cbv
   · decide_cbv
 
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
@@ -919,8 +1227,10 @@ private theorem retainedExposures_literal : summary retainedExposures =
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
-  · decide_cbv
-  · decide_cbv
+  · rw [retainedExposures_step_agents]
+    decide_cbv
+  · rw [retainedExposures_step_agents]
+    decide_cbv
   · decide_cbv
 
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
@@ -941,8 +1251,10 @@ private theorem halfReceptive_literal : summary halfReceptive =
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
   · simp only [advance_projection, grow_projection, birth_edges]
     decide_cbv
-  · decide_cbv
-  · decide_cbv
+  · rw [halfReceptive_step_agents]
+    decide_cbv
+  · rw [halfReceptive_step_agents]
+    decide_cbv
   · decide_cbv
 
 -- Temporary diagnostic: traverse this proof before flushing a location marker.
