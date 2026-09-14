@@ -2066,6 +2066,147 @@ projection. Those are the separate V21.2 phase; LLM/retrieval and production ass
 adapters remain later V21 phases. A run policy may reserve output kinds or a Blender
 mode for those future consumers, but V21.1 does not silently stub or execute them.
 
+### Lean social-mesh feasibility V23.0
+
+V23.0 begins with a formal graph-theoretic foundation rather than a networking or
+NetworkX prototype. `NarrativeDynamics.Core.SocialMesh` defines exact-length walks
+and bounded reachability over a directed mesh snapshot. Lean proves that every path
+inside a local-society projection lifts to the global mesh; if the society is closed
+under outgoing edges, every global path starting inside remains in that projection
+and no bounded path reaches an outsider.
+
+One explicit bridge composes bounded paths on both sides. In particular, a path of
+at most two hops to the bridge, the bridge edge itself, and a path of at most three
+hops from it imply reachability within six hops. This is a conditional six-degree
+theorem, not a claim that every empirical society has diameter six. A separate
+placement structure makes authoritative physical residence a function while social
+membership remains a relation, formally permitting one Agent to belong to multiple
+societies without occupying multiple physical worlds.
+
+This proof layer does not yet formalize Watts--Strogatz clustering or expected path
+length, alternate attachment-model preferential attachment or power-law asymptotics, temporal
+mesh transitions, automatic community formation, Python execution, NetworkX, P2P,
+WSS, or Raft. Those models can be added only after their assumptions and required
+invariants are stated explicitly.
+
+### Lean deterministic small-world certificate V23.1
+
+V23.1 turns the initial bridge result into a composable two-level network theorem.
+`NarrativeDynamics.Core.SmallWorld` maps an exact walk in the society graph to an
+exact Agent-level walk between designated society gateways. Agent entry, society
+travel, and Agent exit then compose with an additive hop budget. Consequently, if
+every Agent can reach and be reached from its assigned society gateway within one
+hop, and every pair of societies is connected within four hops, every ordered Agent
+pair is connected within six hops: `1 + 4 + 1 = 6`.
+
+The module also defines a deterministic `SmallWorldCertificate`: symmetric edges,
+a uniform global hop bound, and perfect local clustering, meaning that every pair
+of distinct neighbors of a center is directly connected. The certificate is
+stronger than merely having a high empirical clustering coefficient. Adding
+shortcuts provably preserves its existing global hop bound, but the proof does not
+claim arbitrary new edges preserve perfect clustering because they may introduce
+new open wedges.
+
+All conclusions remain conditional on explicit graph witnesses. V23.1 does not
+claim that real societies satisfy six degrees, calculate a numerical clustering
+coefficient or average shortest path, sample a Watts--Strogatz distribution, or
+prove an alternate attachment-model preferential-attachment or power-law asymptotic theorem. Those
+finite-metric and probabilistic results remain separate proof phases.
+
+### Lean finite small-world metrics V23.2
+
+V23.2 supplies exact finite-network measurements for the V23.1 certificate.
+`NarrativeDynamics.Core.SmallWorldMetrics` enumerates each node's outgoing
+neighbors, the distinct ordered neighbor pairs, and the subset closed by an edge.
+Their rational cardinality ratio is the local clustering coefficient. A node with
+fewer than two distinct neighbors has denominator zero and coefficient zero;
+perfect local clustering with a nonempty candidate-pair set is proved to have
+coefficient one. For symmetric networks, ordered-pair duplication changes both
+counts equally and leaves the ratio unchanged.
+
+The same module defines exact shortest hop count and mesh diameter as the least
+natural numbers satisfying the existing `ReachWithin` and `GlobalHopBound`
+predicates. The specification theorems prove those minima are reachable, while the
+minimality theorems rule out any smaller witnessed bound. On finite node types,
+average shortest-path length is the rational mean over all ordered distinct node
+pairs, with empty and singleton types evaluating to zero.
+
+A `SmallWorldCertificate g limit` now proves both that the exact mesh diameter is
+at most `limit` and that the average shortest-path length is at most `limit`. These
+are deterministic consequences of supplied graph witnesses, not empirical
+estimates. V23.2 still does not sample a Watts--Strogatz network, prove an expected
+clustering/path-length law, construct an alternate attachment process, or establish a
+power-law degree distribution.
+
+### Lean Watts--Strogatz foundation V23.3
+
+V23.3 constructs the deterministic initial graph needed by a later stochastic
+Watts--Strogatz model. `NarrativeDynamics.Core.WattsStrogatz` places `Fin n` nodes
+on a modular ring and connects distinct nodes whose clockwise or counterclockwise
+difference is within a configured radius. The relation is decidable, symmetric,
+and loopless. Valid parameter packages require a positive radius and
+`2 * radius < nodeCount`. This still allows the complete ring at
+`nodeCount = 2 * radius + 1`.
+
+Mathlib's finite `cycleGraph` is formally embedded into every positive-radius
+ring. A converter preserves exact walk length from `SimpleGraph.Walk` to the
+project's `MeshWalk`; finite simple-path length then proves the regular ring has a
+global hop bound of `nodeCount - 1`. The existing executable metric definitions
+also check a concrete baseline: the six-node radius-two ring has local clustering
+coefficient `2 / 3` at node zero.
+
+An explicit undirected-shortcut operation retains every old edge and adds both
+orientations of one new connection. Distinct shortcut endpoints preserve
+looplessness, and a symmetric base remains symmetric. More importantly, Lean now
+proves that retaining edges cannot increase any pair's exact shortest hop count,
+the exact mesh diameter, or finite average shortest-path length. No analogous
+global clustering monotonicity is asserted because a shortcut may create a new
+open wedge even while shortening paths.
+
+V23.3 is still not the random WS model: it defines no probability space, rewiring
+sampler, expectation, concentration bound, or asymptotic small-world theorem. It
+also makes no alternate attachment-model or power-law claim.
+
+### Lean finite fitness attachment and replay V23.5
+
+V23.5 formalizes a finite Bianconi–Barabási fitness-attachment model in
+`NarrativeDynamics.Core.FitnessAttachment`, `FitnessBirth`, `FitnessValidation`,
+and `FitnessReplay`. States contain connected simple graphs with at least two
+vertices and immutable, strictly positive rational fitness. Degrees are computed
+from actual adjacency. For a fixed positive attachment count bounded by the seed
+size, each birth selects an ordered list of distinct existing targets. All choices
+within one birth use the same old graph and degrees. Each choice masks the selected targets and renormalizes the remaining fitness-times-degree
+weights. The newborn becomes eligible in subsequent births.
+
+Lean proves normalization, support, ordered and unordered target-mass laws, and
+preservation of connectivity through actual graph updates. Each birth adds one
+vertex and the specified number of undirected edges while preserving old edges
+and stored fitness. Common fitness gives the finite degree-weighted
+constant-fitness BB law with selection without replacement. Multiplying all seed and
+newborn fitness values by one positive factor preserves the topology and trace
+probabilities.
+
+The raw API validates seed data and every supplied birth before applying it.
+Finite replay returns the actual final state and exact rational probability of
+the supplied ordered trace; it draws no random numbers. A failed birth reports
+its first zero-based index and cause without returning partial state or
+probability. Successful replay preserves stable vertex IDs, extends the complete
+fitness list, and has positive trace probability. The finite continuation law
+sums to one for a fixed schedule of newborn fitness values.
+
+`NarrativeDynamics.Tests.FitnessScope` checks an eight-vertex path obtained through
+six actual checked births from a two-vertex edge, with unit fitness and one target
+per birth. The supplied target sequence has probability `1 / 46080`. Its actual
+graph has seven edges and degrees `[1, 2, 2, 2, 2, 2, 2, 1]`; Lean proves endpoint
+shortest distance seven, absence of a six-hop route, and diameter seven. The lower
+bound follows by induction on every possible walk, using the fact that each edge
+changes the vertex label by one.
+
+This positive-probability example rules out an unconditional six-hop guarantee
+for the model. Power-law statistics, typical distances, and asymptotic
+small-world behavior require separate probabilistic analysis; further six-hop
+results require additional assumptions and proofs.
+
 ### V21.2 typed simulation output and public journal
 
 V21.2 projects an accepted situated-network round into one deterministic typed batch.
@@ -2309,3 +2450,44 @@ python3 -m unittest discover -s tests -v
 ```
 
 The formal and simulation layers follow a RED → GREEN workflow. See `docs/superpowers/specs/2026-08-22-simulation-calibration-boundary-design.md` for the current design and modeling limitations.
+
+### Lean exact finite BB trace distribution V23.6
+
+V23.6 lifts the finite Bianconi–Barabási replay kernel into an executable exact
+probability law over all legal ordered target traces for a fixed typed initial
+state, attachment count, and positive newborn-fitness schedule.
+`NarrativeDynamics.Core.FitnessDistribution` defines the finite `TargetTrace`
+carrier, exact rational `traceProbability`, authoritative `traceFinal`, finite
+`eventProbability`, and exact rational `expectation`. The trace law is normalized
+through the existing `continuationMass = 1` theorem rather than a second stochastic
+kernel. `FitnessDistributionInvariance` proves that common positive fitness scaling
+preserves every trace probability and final topology, and therefore preserves any
+explicitly topology-invariant event probability.
+
+The exact finite network fixtures connect this distribution back to the existing
+small-world metrics. Starting from a two-node unit-fitness edge with `m = 1` and two
+births, the six ordered traces have masses `1/4, 1/8, 1/8, 1/8, 1/4, 1/8`; exactly
+the two star outcomes have final mesh diameter at most two, so
+`P(meshDiameter ≤ 2) = 1/2`. Starting from a unit-fitness triangle with `m = 2`, all
+six ordered one-birth traces have mass `1/6`. The final-graph event that the newborn
+is adjacent to stable IDs 1 and 2 has probability `1/3` because the distinct ordered
+traces `(1,2)` and `(2,1)` each contribute `1/6`; final states are not quotient- or
+deduplicated. The two-birth edge experiment also retains the exact result
+`E[degree(0)] = 15/8`.
+
+The V23.6 proof workflow includes dedicated distribution, network-event, BB-only
+naming, and trust gates. The maintained implementation adds no RNG, Monte Carlo,
+PMF/Measure migration, random-fitness generator, asymptotic power-law or condensation
+claim, or empirical/high-probability six-hop claim. The source trust audit rejects
+`sorry`/`admit`, `native_decide`, user-axiom and unsafe declarations (including
+private declarations), and zero proof-resource limits across the fitness Lean
+modules and tests. As a conservative source lint, it also inspects braces in
+ordinary strings as possible interpolation terms; raw strings remain literal data.
+The log audit requires the expected theorem reports and accepts
+only `propext`, `Classical.choice`, and `Quot.sound` as their transitive axioms.
+The contract steps retain bounded timeouts and fail on proof or audit errors.
+The audit's positive and negative regression cases run in the Lean proof job.
+
+When Python discovery is enabled outside the existing fitness-branch exclusions,
+its job checks out the same exact head as Lean and installs the existing pinned
+`requirements-world-studio.txt` environment before running the full unittest suite.

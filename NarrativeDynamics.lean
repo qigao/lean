@@ -5,6 +5,10 @@ import NarrativeDynamics.Core.Strategy
 import NarrativeDynamics.Core.Epistemic
 import NarrativeDynamics.Core.WorldGraph
 import NarrativeDynamics.Core.TypedGraph
+import NarrativeDynamics.Core.SocialMesh
+import NarrativeDynamics.Core.SmallWorld
+import NarrativeDynamics.Core.SmallWorldMetrics
+import NarrativeDynamics.Core.WattsStrogatz
 import NarrativeDynamics.Core.TypedHypergraph
 import NarrativeDynamics.Core.TypedInference
 import NarrativeDynamics.Core.Closure
@@ -29,3 +33,9 @@ import NarrativeDynamics.Core.GroundedGoalRankingReversal
 import NarrativeDynamics.Core.GroundedGoalSoftmax
 import NarrativeDynamics.Core.StoryState
 import NarrativeDynamics.Core.Testimony
+import NarrativeDynamics.Core.FitnessAttachment
+import NarrativeDynamics.Core.FitnessBirth
+import NarrativeDynamics.Core.FitnessValidation
+import NarrativeDynamics.Core.FitnessReplay
+import NarrativeDynamics.Core.FitnessDistribution
+import NarrativeDynamics.Core.FitnessDistributionInvariance

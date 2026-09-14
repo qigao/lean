@@ -1056,8 +1056,10 @@ def test_websocket_connection_capacity_and_disconnect_release_subscriptions(
             assert "result" in receive_json_bounded(replacement)
 
 
+@pytest.mark.parametrize("cancel_connection", (False, True), ids=("disconnect", "cancelled"))
 def test_websocket_disconnect_releases_active_slot_and_exact_rebind_resumes(
     tmp_path: Path,
+    cancel_connection: bool,
 ) -> None:
     router = StudioOutputRouter()
     app, _ = app_for(
@@ -1065,6 +1067,20 @@ def test_websocket_disconnect_releases_active_slot_and_exact_rebind_resumes(
         output_router=router,
         limits=WorldStudioServerLimits(maximum_websocket_connections=1),
     )
+    cancellation_scopes: list[anyio.CancelScope] = []
+    connection_finished = threading.Event()
+
+    async def cancellable_app(scope, receive, send):
+        if scope["type"] != "websocket":
+            await app(scope, receive, send)
+            return
+        with anyio.CancelScope() as cancellation_scope:
+            cancellation_scopes.append(cancellation_scope)
+            try:
+                await app(scope, receive, send)
+            finally:
+                connection_finished.set()
+
     headers = {"origin": "https://studio.example"}
     subscribe = {
         "jsonrpc": "2.0",
@@ -1080,7 +1096,7 @@ def test_websocket_disconnect_releases_active_slot_and_exact_rebind_resumes(
     }
     first = public_batch_range(1, 1)
     second = public_batch_range(2, 2)
-    with TestClient(app) as client:
+    with TestClient(cancellable_app if cancel_connection else app) as client:
         with client.websocket_connect(
             "/v1/stream", headers=headers, subprotocols=["nd-jsonrpc-v1"]
         ) as initial:
@@ -1103,7 +1119,13 @@ def test_websocket_disconnect_releases_active_slot_and_exact_rebind_resumes(
             )
             assert "result" in receive_json_bounded(initial)
 
-        router.publish("run-1", second)
+            if cancel_connection:
+                # Force cancellation while the connection is active, independently
+                # of TestClient's disconnect/cancellation scheduling race.
+                initial.portal.call(cancellation_scopes[0].cancel)
+                assert connection_finished.wait(1)
+
+        assert router.publish("run-1", second) == ()
         with client.websocket_connect(
             "/v1/stream", headers=headers, subprotocols=["nd-jsonrpc-v1"]
         ) as replacement:
