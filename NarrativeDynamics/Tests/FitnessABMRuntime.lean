@@ -357,6 +357,16 @@ private theorem lastCases_eq_if {α : Sort u} {n : Nat}
   · simp
   · simp [j.isLt]
 
+private theorem grow_agents {n m : Nat} (s : JointState n) (T : Targets n m)
+    (hm : 0 < m) (b : BirthData) :
+    (grow s T hm b).population.agents =
+      Fin.lastCases ⟨b.agent.initialBelief, 0⟩ s.population.agents := rfl
+
+private theorem grow_profiles {n m : Nat} (s : JointState n) (T : Targets n m)
+    (hm : 0 < m) (b : BirthData) :
+    (grow s T hm b).population.profiles =
+      Fin.lastCases b.agent.profile s.population.profiles := rfl
+
 private theorem advance_agents {n : Nat} (s : JointState n)
     (received : Fin n → Finset (Fin n))
     (h : letI := s.network.snapshot.adjDec
@@ -474,13 +484,19 @@ private theorem relay_idle_incoming (eta : PosFitness) :
     letI := s.network.snapshot.adjDec
     incoming s.network.snapshot.graph.Adj s.population =
       (![{1}, {0}, {1}] : Fin 3 → Finset (Fin 3)) := by
+  have h0_2 : ( 0 : Nat) < 2 := by decide
+  have h1_2 : ( 1 : Nat) < 2 := by decide
+  have h2_2 : ¬ (2 : Nat) < 2 := by decide
   funext i
   ext j
   simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
   fin_cases i <;> fin_cases j <;>
-    norm_num [default_growth_agents, grow, applyBirth, birthSnapshot, birthGraph, birthAdj,
-      lastCases_eq_if, Fin.ext_iff, initial, seedNetwork, roster, agentsRaw,
-      extendPopulation, newbornData, one, singleton_selected, broadcasting]
+    (simp only [grow_projection, grow_agents, grow_profiles, advance_projection,
+      advance_profiles, default_growth_agents, default_profiles, default_agents, initial_network]
+     simp only [applyBirth, birthSnapshot, birthGraph, birthAdj, lastCases_eq_if,
+      seedNetwork, newbornData, singleton_selected, broadcasting, top2_adj]
+     simp only [h0_2, h1_2, h2_2, dif_pos, dif_neg (show ¬ False from fun h => h)]
+     norm_num [Fin.ext_iff])
 
 private theorem relay_idle_agents (eta : PosFitness) :
     (advance (advance (grow (initial eta agentsRaw rfl empty_agents_valid)
@@ -488,7 +504,8 @@ private theorem relay_idle_agents (eta : PosFitness) :
       (newbornData 0 (by norm_num))))).population.agents =
       ![⟨1, 1⟩, ⟨1, 2⟩, ⟨1, 1⟩] := by
   rw [advance_agents _ _ (relay_idle_incoming eta)]
-  simp only [grow, extendPopulation, default_growth_agents]
+  simp only [grow_agents, grow_profiles, advance_profiles, default_growth_agents,
+    default_profiles, default_agents]
   funext i
   fin_cases i <;> decide_cbv
 
@@ -505,13 +522,23 @@ private theorem successive_incoming :
     letI := s.network.snapshot.adjDec
     incoming s.network.snapshot.graph.Adj s.population =
       (![{1}, {0}, {1}, ∅] : Fin 4 → Finset (Fin 4)) := by
+  have h0_2 : ( 0 : Nat) < 2 := by decide
+  have h1_2 : ( 1 : Nat) < 2 := by decide
+  have h2_2 : ¬ (2 : Nat) < 2 := by decide
+  have h0_3 : ( 0 : Nat) < 3 := by decide
+  have h1_3 : ( 1 : Nat) < 3 := by decide
+  have h2_3 : ( 2 : Nat) < 3 := by decide
+  have h3_3 : ¬ (3 : Nat) < 3 := by decide
   funext i
   ext j
   simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
   fin_cases i <;> fin_cases j <;>
-    norm_num [default_growth_agents, grow, applyBirth, birthSnapshot, birthGraph, birthAdj,
-      lastCases_eq_if, Fin.ext_iff, initial, seedNetwork, roster, agentsRaw,
-      extendPopulation, newbornData, one, singleton_selected, broadcasting]
+    (simp only [grow_projection, grow_agents, grow_profiles, advance_projection,
+      advance_profiles, default_growth_agents, default_profiles, default_agents, initial_network]
+     simp only [applyBirth, birthSnapshot, birthGraph, birthAdj, lastCases_eq_if,
+      seedNetwork, newbornData, singleton_selected, broadcasting, top2_adj]
+     simp only [h0_2, h1_2, h2_2, h0_3, h1_3, h2_3, h3_3, dif_pos, dif_neg (show ¬ False from fun h => h)]
+     norm_num [Fin.ext_iff])
 
 private theorem successive_agents :
     (advance (grow (advance (grow (initial one agentsRaw rfl empty_agents_valid)
@@ -520,7 +547,8 @@ private theorem successive_agents :
       (newbornData 0 (by norm_num)))).population.agents =
       ![⟨1, 1⟩, ⟨1, 2⟩, ⟨1, 1⟩, ⟨0, 0⟩] := by
   rw [advance_agents _ _ successive_incoming]
-  simp only [grow, extendPopulation, default_growth_agents]
+  simp only [grow_agents, grow_profiles, advance_profiles, default_growth_agents,
+    default_profiles, default_agents]
   funext i
   fin_cases i <;> decide_cbv
 
@@ -537,14 +565,23 @@ private theorem successive_idle_incoming :
     letI := s.network.snapshot.adjDec
     incoming s.network.snapshot.graph.Adj s.population =
       (![{1}, {0, 2}, {1}, {2}] : Fin 4 → Finset (Fin 4)) := by
+  have h0_2 : ( 0 : Nat) < 2 := by decide
+  have h1_2 : ( 1 : Nat) < 2 := by decide
+  have h2_2 : ¬ (2 : Nat) < 2 := by decide
+  have h0_3 : ( 0 : Nat) < 3 := by decide
+  have h1_3 : ( 1 : Nat) < 3 := by decide
+  have h2_3 : ( 2 : Nat) < 3 := by decide
+  have h3_3 : ¬ (3 : Nat) < 3 := by decide
   funext i
   ext j
   simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
   fin_cases i <;> fin_cases j <;>
-    norm_num [successive_agents, default_growth_agents, grow, applyBirth,
-      birthSnapshot, birthGraph, birthAdj, lastCases_eq_if, Fin.ext_iff,
-      initial, seedNetwork, roster, agentsRaw, extendPopulation, newbornData,
-      one, singleton_selected, broadcasting]
+    (simp only [grow_projection, grow_agents, grow_profiles, advance_projection,
+      advance_profiles, successive_agents, default_growth_agents, default_profiles, default_agents, initial_network]
+     simp only [applyBirth, birthSnapshot, birthGraph, birthAdj, lastCases_eq_if,
+      seedNetwork, newbornData, singleton_selected, broadcasting, top2_adj]
+     simp only [h0_2, h1_2, h2_2, h0_3, h1_3, h2_3, h3_3, dif_pos, dif_neg (show ¬ False from fun h => h)]
+     norm_num [Fin.ext_iff])
 
 private theorem successive_idle_agents :
     (advance (advance (grow (advance (grow (initial one agentsRaw rfl empty_agents_valid)
@@ -553,7 +590,8 @@ private theorem successive_idle_agents :
       (newbornData 0 (by norm_num))))).population.agents =
       ![⟨1, 2⟩, ⟨1, 4⟩, ⟨1, 2⟩, ⟨1, 1⟩] := by
   rw [advance_agents _ _ successive_idle_incoming]
-  simp only [successive_agents]
+  simp only [grow_agents, grow_profiles, advance_profiles, successive_agents,
+    default_profiles, default_agents]
   funext i
   fin_cases i <;> decide_cbv
 run_cmd do
