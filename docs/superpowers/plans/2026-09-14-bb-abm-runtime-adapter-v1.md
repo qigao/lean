@@ -1030,11 +1030,11 @@ owned by ordinary CI.
 | Unit | Current status | Recorded evidence |
 | --- | --- | --- |
 | Preparation | Complete | Clean isolated feature worktree; pinned implementation base, Python and Lean/mathlib versions recorded above. |
-| Task 1 | Complete | RED `54ecbd8` lacked `bb_runtime_contracts`; GREEN `bf08488` passed 31 record tests. Immutable bindings, numeric registry, signed-zero identity and lineage are covered in the [historical evidence](../../../.superpowers/sdd/2026-09-14-bb-abm-runtime-adapter-v1/task-1-historical-evidence.md). |
-| Task 2 | Complete | Local implementation `829509e` and review fix `7958d70` map to published `32a6ba5` and `7d31fe7`. The absent-runtime RED became a 40-test contracts/kernel GREEN; independent specification and quality review approved the fix. See the [Task 2 report](../../../.superpowers/sdd/2026-09-14-bb-abm-runtime-adapter-v1/task-2-report.md) and [CI record](../../../.superpowers/sdd/2026-09-14-bb-abm-runtime-adapter-v1/task-2-ci.md). |
-| Task 3 | Complete | Local `86f4f80` maps to published `21eb8b5`. The missing `_advance_tick` RED became a 57-test runtime GREEN; independent specification and quality review reported no findings. See the [Task 3 report](../../../.superpowers/sdd/2026-09-14-bb-abm-runtime-adapter-v1/task-3-report.md) and [CI record](../../../.superpowers/sdd/2026-09-14-bb-abm-runtime-adapter-v1/task-3-ci.md). |
-| Task 4 | Complete | Local `9e7ef66` maps to published `fdc6ff3`. The absent public replay RED became 72 runtime tests plus 20 existing V1 regression tests GREEN; independent specification and quality review reported no findings. See the [Task 4 report](../../../.superpowers/sdd/2026-09-14-bb-abm-runtime-adapter-v1/task-4-report.md) and [CI record](../../../.superpowers/sdd/2026-09-14-bb-abm-runtime-adapter-v1/task-4-ci.md). |
-| Task 5 | Complete | Local `0d037d2` maps to published `a7240d0` with all 24 Task 5 commits and exact final tree preserved. Actual Lean replay produced 16 success/20 error cases, 36 prefixes and 20 transitions; all 35 old and three new reports, fresh export/comparison and restored corpus gates passed. Independent specification and quality review approved with no findings. See the [Task 5 report](../../../.superpowers/sdd/2026-09-14-bb-abm-runtime-adapter-v1/task-5-report.md), [final acceptance](../../../.superpowers/sdd/2026-09-14-bb-abm-runtime-adapter-v1/task-5-final-acceptance.json), and [publication map](../../../.superpowers/sdd/2026-09-14-bb-abm-runtime-adapter-v1/task-5-publication.json). |
+| Task 1 | Complete | [RED `54ecbd8`](https://github.com/qigao/lean/commit/54ecbd899111ae99d247af3690c53cefc70240ef) lacked `bb_runtime_contracts`; [GREEN `bf08488`](https://github.com/qigao/lean/commit/bf084889d15adef4e667ed657530cefda4165a86) passed 31 record tests in [proof run 34853658596](https://github.com/qigao/lean/actions/runs/34853658596). The tests cover immutable bindings, numeric registry, signed-zero identity and lineage. |
+| Task 2 | Complete | Local implementation `829509e` and review fix `7958d70` map by equal trees to published [`32a6ba5`](https://github.com/qigao/lean/commit/32a6ba5) and [`7d31fe7`](https://github.com/qigao/lean/commit/7d31fe7). The absent-runtime RED became a 40-test contracts/kernel GREEN; independent specification and quality review approved the fix. [Proof run 34857235587](https://github.com/qigao/lean/actions/runs/34857235587) passed 1,686 tests with the one existing Blender skip and all old Lean gates. |
+| Task 3 | Complete | Local `86f4f80` maps by equal tree to published [`21eb8b5`](https://github.com/qigao/lean/commit/21eb8b5). The missing `_advance_tick` RED became a 57-test runtime GREEN; independent specification and quality review reported no findings. The same-head Python [push run 34858806728](https://github.com/qigao/lean/actions/runs/34858806728), PR Lean [run 34858811906](https://github.com/qigao/lean/actions/runs/34858811906), and World [run 34858812103](https://github.com/qigao/lean/actions/runs/34858812103) provide the accepted split checkpoint. |
+| Task 4 | Complete | Local `9e7ef66` maps by equal tree to published [`fdc6ff3`](https://github.com/qigao/lean/commit/fdc6ff3). The absent public replay RED became 72 runtime tests plus 20 existing V1 regression tests GREEN; independent specification and quality review reported no findings. [Proof run 34860493325](https://github.com/qigao/lean/actions/runs/34860493325) passed 1,718 tests with the existing Blender skip and all old Lean gates. |
+| Task 5 | Complete | Manifest-declared local source `0d037d2` maps by equal tree to published [`a7240d0`](https://github.com/qigao/lean/commit/a7240d07c985922dd86a7fd444de2d7053a4dda4), with all 24 Task 5 commits preserved. Actual Lean replay produced 16 success/20 error cases, 36 prefixes and 20 transitions; all 35 old and three new reports, fresh export/comparison and restored corpus gates passed in [bounded auxiliary run 34875479725](https://github.com/qigao/lean/actions/runs/34875479725). Independent specification and quality review approved with no findings. |
 | Task 6 | In progress | The production-imported example exits zero with the documented four registry-ordered frames and final exact mass `1/8`; README boundary documentation and this record are present. Full current-head proof/World Studio CI and final whole-branch implementation review remain pending. |
 
 The preserved RED/GREEN history is diagnostic evidence, not a claim that every
@@ -1058,20 +1058,24 @@ checked merge `cc678aa7f90584d9070caa7bad0d39d128fc24a4`, whose parents and tree
 verified against `fdc6ff3`. These earlier runs do not substitute for Task 6 final
 head acceptance.
 
-Task 5's final bounded gate [run
-34875479725](https://github.com/qigao/lean/actions/runs/34875479725) passed the
-unchanged 35 foundation reports, three new reports, old and new fresh exporters,
-and unconditional byte comparisons. The current ordinary Task 5 World Studio
+Task 5's final bounded auxiliary gate [run
+34875479725](https://github.com/qigao/lean/actions/runs/34875479725) executed at
+auxiliary checkout `54704bc8532db1eb3fc74f979216a1c9fb842804`. Its source manifest
+declared local source `0d037d2a383f8013194f694b3b9c000f88da7814`; that exact source
+tree later mapped to published
+`a7240d07c985922dd86a7fd444de2d7053a4dda4`. This auxiliary execution is separate
+from ordinary PR-head CI. It passed the unchanged 35 foundation reports, three new
+reports, old and new fresh exporters, and unconditional byte comparisons. The
+current ordinary Task 5 World Studio
 [run 34877241475](https://github.com/qigao/lean/actions/runs/34877241475) passed
 270 pytest cases/89 subtests, 773 network tests, 15 browser files/129 tests and one
 real-browser flow. Its actual checkout was merge
 `a4d9b72eccf2e0bb2841786be1cdd5e134784a40`; its verified parents were the planning
 base and `a7240d0`, and its tree equaled the feature tree. The Python and Lean jobs
 in ordinary proof [run
-34877241337](https://github.com/qigao/lean/actions/runs/34877241337) were still
-running when this record was authored; neither is marked complete here. Full logs
-and job identities are retained in the [Task 5 CI
-record](../../../.superpowers/sdd/2026-09-14-bb-abm-runtime-adapter-v1/task-5-ci.md).
+34877241337](https://github.com/qigao/lean/actions/runs/34877241337), jobs
+`104087364557` and `104087387108`, were still running when this record was
+authored; neither is marked complete here.
 
 Task 6 local acceptance used `python3 -m examples.bb_abm_runtime`; it exited zero
 and printed global ticks `0,1,2,3`, epochs `0,1,2,2`, local rounds `0,1,1,2`,
