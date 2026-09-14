@@ -7,6 +7,7 @@ from narrative_dynamics.abm.bb_runtime import (
     _check_birth,
     _check_m,
     _parse_bb_seed,
+    replay_bb_population,
 )
 from narrative_dynamics.abm.bb_runtime_contracts import (
     BBRuntimeError,
@@ -107,6 +108,31 @@ class BBRuntimeKernelTests(unittest.TestCase):
             with self.subTest(label=label):
                 self.assert_error(_parse_bb_seed(raw), stage="seed_network",
                                   code=code, field=field)
+
+    def test_seed_fitness_entries_check_type_then_positivity_in_numeric_order(self):
+        cases = (
+            ((0, True), "nonpositiveFitness", "fitness", "nonpositiveFitness"),
+            ((-1, 1.0), "nonpositiveFitness", "fitness", "nonpositiveFitness"),
+            ((True, 0), "invalidType", "fitness[0]", None),
+        )
+        for fitness, code, field, bb_cause in cases:
+            with self.subTest(fitness=fitness):
+                raw = replace(
+                    seed(),
+                    network=replace(seed().network, fitness=fitness),
+                )
+                error = replay_bb_population(raw, 1, ())
+                self.assertEqual(error.to_dict(), {
+                    "stage": "seed_network",
+                    "code": code,
+                    "field": field,
+                    "agent_index": None,
+                    "tick_index": None,
+                    "birth_index": None,
+                    "bb_cause": bb_cause,
+                    "expected": None,
+                    "actual": None,
+                })
 
     def test_seed_success_canonicalizes_edges_and_retains_exact_fitness(self):
         raw = BBRuntimeRawSeed(

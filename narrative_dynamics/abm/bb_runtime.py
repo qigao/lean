@@ -70,9 +70,10 @@ def _parse_bb_seed(raw: object) -> BBRuntimeTopology | BBRuntimeError:
             return _network_error(
                 "seed_network", "invalidType", f"fitness[{index}]",
             )
-        checked_fitness.append(Fraction(value))
-    if any(value <= 0 for value in checked_fitness):
-        return _network_error("seed_network", "nonpositiveFitness", "fitness")
+        checked_value = Fraction(value)
+        if checked_value <= 0:
+            return _network_error("seed_network", "nonpositiveFitness", "fitness")
+        checked_fitness.append(checked_value)
 
     edges = raw.edges
     if not isinstance(edges, tuple):
