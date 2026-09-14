@@ -1,4 +1,4 @@
-name: BB ABM development bootstrap
+name: BB ABM development gate
 
 on:
   push:
@@ -9,8 +9,8 @@ permissions:
   contents: read
 
 jobs:
-  lean-red:
-    name: Lean dependency bootstrap and Task 1 RED
+  lean-development:
+    name: Lean BB ABM development gate
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -59,64 +59,35 @@ jobs:
           mathlib_sha="$(git -C .lake/packages/mathlib rev-parse HEAD)"
           printf 'mathlib_sha=%s\n' "$mathlib_sha" | tee -a "$GITHUB_OUTPUT" "$GITHUB_STEP_SUMMARY"
 
-      - name: Build existing SocialMesh dependency closure
-        run: lake build NarrativeDynamics.Core.SocialMesh
-
-      - name: Run Task 1 NetworkPropagation RED
-        run: |
-          timeout --kill-after=10s 240s \
-            lake env lean -DmaxErrors=8 NarrativeDynamics/Tests/NetworkPropagation.lean
-
-      - name: Package resolved Lean environment
-        id: package
-        if: ${{ always() && steps.resolve.outcome == 'success' }}
+      - name: Build and test present BB ABM cores
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          import subprocess
-          from urllib.parse import urlsplit
-
-          configs = [
-              path for path in Path('.lake/packages').rglob('config')
-              if '.git' in path.parts
-          ]
-          if not configs:
-              raise SystemExit('no Lake dependency git metadata found')
-          for config in configs:
-              result = subprocess.run(
-                  ['git', 'config', '--file', str(config), '--null', '--list'],
-                  check=True, stdout=subprocess.PIPE, text=True)
-              for entry in result.stdout.split('\0'):
-                  if not entry:
-                      continue
-                  key, separator, value = entry.partition('\n')
-                  lowered = key.lower()
-                  if lowered.startswith(('credential.', 'http.')):
-                      raise SystemExit(f'credential-bearing git setting in {config}: {key}')
-                  if lowered.startswith(('remote.', 'submodule.')) and lowered.endswith('.url'):
-                      url = urlsplit(value)
-                      if (url.scheme, url.hostname, url.username, url.password) != (
-                          'https', 'github.com', None, None
-                      ):
-                          raise SystemExit(f'non-public dependency URL in {config}')
-          print(f'audited {len(configs)} public dependency git config(s)')
-          PY
-          toolchain_dir="$(basename "$(lake env lean --print-prefix)")"
-          archive="$RUNNER_TEMP/lean-v4.32.0-mathlib-environment.tar.zst"
-          tar --zstd -cf "$archive" \
-            -C "$HOME/.elan" bin "toolchains/$toolchain_dir" \
-            -C "$GITHUB_WORKSPACE" lean-toolchain lake-manifest.json .lake/packages
-          du -sh "$archive" | tee -a "$GITHUB_STEP_SUMMARY"
-          du -sb "$archive" | awk '{print "artifact_bytes=" $1}' | \
-            tee -a "$GITHUB_OUTPUT" "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload resolved Lean environment
-        if: ${{ always() && steps.package.outcome == 'success' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: lean-v4.32.0-mathlib-environment-${{ github.sha }}
-          path: ${{ runner.temp }}/lean-v4.32.0-mathlib-environment.tar.zst
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 3
+          for suite in \
+            NetworkPropagation \
+            FitnessABM \
+            FitnessABMReplay \
+            FitnessABMDistribution; do
+            core="NarrativeDynamics/Core/$suite.lean"
+            test_file="NarrativeDynamics/Tests/$suite.lean"
+            if [ ! -f "$core" ] && [ ! -f "$test_file" ]; then
+              printf '%s and %s are pending development; skipping.\n' \
+                "$core" "$test_file"
+              continue
+            fi
+            if [ -f "$core" ]; then
+              if [ ! -f "$test_file" ]; then
+                printf 'Present core %s requires matching test %s.\n' \
+                  "$core" "$test_file" >&2
+                exit 1
+              fi
+              /usr/bin/time -f "$suite build elapsed=%e s peak_rss=%M KiB" \
+                timeout --kill-after=10s 240s \
+                  lake build "NarrativeDynamics.Core.$suite"
+            else
+              printf '%s is absent; running present test %s for RED.\n' \
+                "$core" "$test_file"
+            fi
+            /usr/bin/time -f "$suite test elapsed=%e s peak_rss=%M KiB" \
+              timeout --kill-after=10s 240s \
+                lake env lean -DmaxErrors=8 "$test_file"
+          done
