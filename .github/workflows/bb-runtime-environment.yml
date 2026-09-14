@@ -1,32 +1,115 @@
-name: BB runtime environment
+name: BB runtime development
 on:
   push:
     branches: ["build/bb-runtime-environment-20260914"]
-    paths: [".github/workflows/bb-runtime-environment.yml"]
+    paths:
+      - ".github/workflows/bb-runtime-environment.yml"
+      - "docs/superpowers/plans/bb-runtime-ci/request.json"
 permissions:
   contents: read
 jobs:
-  toolchain:
+  lean-development:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
-      - name: Download pinned public Lean release
+      - uses: actions/checkout@v4
+      - name: Record requested source files
+        id: request
         run: |
           set -euo pipefail
-          curl --fail --location --retry 3 \
-            https://github.com/leanprover/lean4/releases/download/v4.32.0/lean-4.32.0-linux.tar.zst \
-            --output "$RUNNER_TEMP/lean-4.32.0-linux.tar.zst"
-          sha256sum "$RUNNER_TEMP/lean-4.32.0-linux.tar.zst"
-          split --bytes=300M --numeric-suffixes=0 "$RUNNER_TEMP/lean-4.32.0-linux.tar.zst" "$RUNNER_TEMP/lean-part-"
-      - uses: actions/upload-artifact@v4
+          mkdir -p .bb-ci-out
+          git rev-parse HEAD | tee .bb-ci-out/ci-revision.txt
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          request_path = Path("docs/superpowers/plans/bb-runtime-ci/request.json")
+          request_bytes = request_path.read_bytes()
+          request = json.loads(request_bytes)
+          phase = request["phase"]
+          if phase not in ("environment", "red", "generate", "gate"):
+              raise ValueError("unknown bounded phase")
+          allowed = {
+              "NarrativeDynamics/Conformance/FitnessABMRuntimeVectors.lean",
+              "NarrativeDynamics/Tests/FitnessABMRuntime.lean",
+              "conformance/bb_abm_runtime_v1.json",
+              "tools/check_fitness_abm_runtime.sh",
+          }
+          seen = set()
+          manifest = []
+          for item in request["files"]:
+              name = item["path"]
+              if name not in allowed or name in seen:
+                  raise ValueError("unexpected or duplicate source path")
+              seen.add(name)
+              data = item["content"].encode("utf-8")
+              digest = hashlib.sha256(data).hexdigest()
+              if digest != item["sha256"]:
+                  raise ValueError("source digest mismatch")
+              path = Path(name)
+              path.parent.mkdir(parents=True, exist_ok=True)
+              path.write_bytes(data)
+              manifest.append({"path": name, "sha256": digest})
+          provenance = {
+              "declared_source_revision": request["source_revision"],
+              "request_sha256": hashlib.sha256(request_bytes).hexdigest(),
+              "files": manifest,
+          }
+          Path(".bb-ci-out/source-manifest.json").write_text(json.dumps(provenance, indent=2)+"\n")
+          print(json.dumps(provenance))
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write("phase="+phase+"\n")
+          PY
+      - uses: actions/cache@v4
         with:
-          name: lean-4.32.0-linux-part-00
-          path: ${{ runner.temp }}/lean-part-00
-          compression-level: 0
-          retention-days: 1
-      - uses: actions/upload-artifact@v4
+          path: ~/.elan
+          key: ${{ runner.os }}-elan-${{ hashFiles('lean-toolchain') }}
+          restore-keys: ${{ runner.os }}-elan-
+      - name: Install pinned Lean
+        run: |
+          if [ ! -x "$HOME/.elan/bin/elan" ]; then
+            curl https://elan.lean-lang.org/elan-init.sh -sSf | sh -s -- -y
+          fi
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - uses: actions/cache@v4
         with:
-          name: lean-4.32.0-linux-part-01
-          path: ${{ runner.temp }}/lean-part-01
-          compression-level: 0
-          retention-days: 1
+          path: .lake/packages
+          key: ${{ runner.os }}-lake-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lakefile.toml') }}
+          restore-keys: ${{ runner.os }}-lake-${{ hashFiles('lean-toolchain') }}-
+      - name: Resolve unchanged dependencies
+        run: |
+          set -euo pipefail
+          lake update
+          cat lean-toolchain
+          lake env lean --version | tee .bb-ci-out/lean-version.txt
+          git -C .lake/packages/mathlib rev-parse HEAD | tee .bb-ci-out/mathlib-revision.txt
+      - name: Bounded literal check and first generation
+        if: steps.request.outputs.phase == 'red' || steps.request.outputs.phase == 'generate'
+        run: |
+          set -euo pipefail
+          python3 tools/audit_fitness_trust.py source \
+            NarrativeDynamics/Conformance/FitnessABMRuntimeVectors.lean \
+            NarrativeDynamics/Tests/FitnessABMRuntime.lean
+          timeout --kill-after=10s 240s lake build NarrativeDynamics.Conformance.FitnessABMRuntimeVectors
+          timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 \
+            NarrativeDynamics/Tests/FitnessABMRuntime.lean 2>&1 | tee .bb-ci-out/literal-reports.txt
+          python3 tools/audit_fitness_trust.py log .bb-ci-out/literal-reports.txt \
+            --require NarrativeDynamics.Tests.FitnessABMRuntime.success_literals \
+            --require NarrativeDynamics.Tests.FitnessABMRuntime.shared_error_literals \
+            --require NarrativeDynamics.Tests.FitnessABMRuntime.transition_literals
+          if [ "${{ steps.request.outputs.phase }}" = generate ]; then
+            timeout --kill-after=10s 240s lake env lean --run \
+              NarrativeDynamics/Conformance/FitnessABMRuntimeVectors.lean \
+              > .bb-ci-out/bb_abm_runtime_v1.json
+          fi
+      - name: Permanent gates with fresh comparison
+        if: steps.request.outputs.phase == 'gate'
+        run: |
+          set -euo pipefail
+          bash tools/check_fitness_abm.sh
+          bash tools/check_fitness_abm_runtime.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bb-runtime-development-output
+          path: .bb-ci-out/
+          retention-days: 3
