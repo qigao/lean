@@ -4,17 +4,17 @@ import json
 import unittest
 
 from narrative_dynamics.abm.bb_runtime_contracts import (
-    BBRuntimeAgent, BBRuntimeBirth, BBRuntimeConfig, BBRuntimeError,
+    BBRuntimeAgent, BBRuntimeBirth, BBRuntimeError,
     BBRuntimeNewborn, BBRuntimeRawSeed, BBRuntimeReplay, BBRuntimeSeed,
     BBRuntimeTick, BBRuntimeTopology,
 )
 from narrative_dynamics.abm.contracts import (
-    NetworkAgentState, PopulationState, SocialNetwork,
+    NetworkAgentState, SocialNetwork,
 )
 from narrative_dynamics.abm.simulation import PopulationTrajectory, simulate_round
 from narrative_dynamics.contracts import stable_content_hash
 from tests.bb_runtime_fixtures import (
-    birth, fixture_model, genesis_frame, manual_birth, manual_idle, seed,
+    birth, genesis_frame, manual_birth, manual_idle, seed,
 )
 
 
@@ -358,6 +358,27 @@ class BBRuntimeContractsTests(unittest.TestCase):
         document["transitions"][0]["transition"]["tick"]["birth"]["targets"].clear()
         self.assertEqual(replay.content_hash, original)
         self.assertNotIn("transition_hash", step.next_frame.to_dict())
+
+    def test_replay_binds_content_hash_when_float_equality_is_insufficient(self):
+        step = manual_birth()
+        original = step.prior
+        states = (original.population.agents[0],
+                  replace(original.population.agents[1], belief=-0.0))
+        alternative = replace(original, population=replace(original.population, agents=states))
+        self.assertEqual(original, alternative)
+        self.assertNotEqual(original.content_hash, alternative.content_hash)
+        with self.assertRaises(ValueError):
+            BBRuntimeReplay(alternative, (step,), step.next_frame)
+
+    def test_old_signed_zero_cannot_be_rewritten_at_a_birth(self):
+        step = manual_birth()
+        states = list(step.post_growth_population.agents)
+        states[1] = replace(states[1], belief=-0.0)
+        post = replace(step.post_growth_population, agents=tuple(states))
+        self.assertEqual(post, step.post_growth_population)
+        self.assertNotEqual(post.content_hash, step.post_growth_population.content_hash)
+        with self.assertRaises(ValueError):
+            self.with_post_growth(step, post)
 
     def test_error_has_no_success_prefix_payload(self):
         error = BBRuntimeError(
