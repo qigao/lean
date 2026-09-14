@@ -22,6 +22,19 @@ def summary (r : Except JointError Result) :
      List.ofFn (fun i => (out.final.state.population.agents i).exposures),
      out.probability)
 
+-- Decidability is needed only for the finite observable result, never graph functions.
+private instance : DecidableEq
+    (Except JointError (Nat × Nat × Nat × List Rat × List Nat × Rat)) :=
+  fun x y => match x, y with
+  | .error x, .error y =>
+      if h : x = y then .isTrue (by cases h; rfl)
+      else .isFalse (fun he => h (Except.error.inj he))
+  | .ok x, .ok y =>
+      if h : x = y then .isTrue (by cases h; rfl)
+      else .isFalse (fun he => h (Except.ok.inj he))
+  | .error _, .ok _ => .isFalse (by intro h; cases h)
+  | .ok _, .error _ => .isFalse (by intro h; cases h)
+
 section FiniteReplayFixtures
 -- Match the established finite BB fixture budget; keep default heartbeats.
 set_option maxRecDepth 4096
@@ -69,7 +82,13 @@ private theorem network_eq {n : Nat} (s t : FitnessAttachment.State n)
 private theorem raw_graph (eta : PosFitness) :
     seedGraph ⟨2, #[1, eta.val], #[(0, 1)]⟩ = (⊤ : SimpleGraph (Fin 2)) := by
   ext i j
-  fin_cases i <;> fin_cases j <;> norm_num [seedGraph, canonicalEdge, Fin.ext_iff]
+  change (i ≠ j ∧ canonicalEdge (i.val, j.val) ∈ [(0, 1)]) ↔ i ≠ j
+  constructor
+  · exact And.left
+  · intro h
+    refine ⟨h, ?_⟩
+    fin_cases i <;> fin_cases j <;>
+      first | exact False.elim (h rfl) | decide_cbv
 
 private theorem parsed_seed (eta : PosFitness) :
     parseSeed ⟨2, #[1, eta.val], #[(0, 1)]⟩ = .ok (seedNetwork eta) := by
@@ -88,7 +107,7 @@ private theorem parsed_seed (eta : PosFitness) :
       distinct := by
         dsimp only [raw]
         decide_cbv
-      connected := by change (seedGraph _).Connected; rw [raw_graph]; exact top2_connected }
+      connected := by rw [raw_graph]; exact top2_connected }
   obtain ⟨s, hs⟩ := parseSeed_complete raw valid
   have he : s = seedNetwork eta := by
     apply network_eq
@@ -99,6 +118,9 @@ private theorem parsed_seed (eta : PosFitness) :
       funext i
       fin_cases i <;> rfl
   exact hs.trans (congrArg Except.ok he)
+
+private theorem parsed_seedRaw : parseSeed seedRaw = .ok (seedNetwork one) :=
+  parsed_seed one
 
 private theorem parsed_agents :
     parseAgents 2 agentsRaw = .ok
@@ -259,9 +281,10 @@ private theorem incoming0 :
   ext j
   simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and]
   fin_cases i <;> fin_cases j <;>
-    norm_num [grow, applyBirth, birthSnapshot, birthGraph, birthAdj,
-      lastCases_eq_if, Fin.ext_iff, initial, seedNetwork, extendPopulation,
+    (simp only [grow, applyBirth, birthSnapshot, birthGraph, birthAdj,
+      lastCases_eq_if, initial, seedNetwork, extendPopulation,
       birthData, one, targets0, Targets.selected, broadcasting]
+     decide_cbv)
 
 private theorem incoming1 :
     let s := grow (initial one) targets1 positiveM birthData
@@ -357,31 +380,31 @@ example : summary (FitnessABM.replay ⟨0, #[], #[]⟩ 1 #[⟨-1, 2, 2, 0⟩] []
     .error (.seedNetwork .invalidNodeCount) := by decide_cbv
 
 example : summary (FitnessABM.replay seedRaw 0 agentsRaw []) = .error .initialM := by
-  unfold FitnessABM.replay seedRaw
-  rw [parsed_seed one]
+  unfold FitnessABM.replay
+  rw [parsed_seedRaw]
   decide_cbv
 
 example : summary (FitnessABM.replay seedRaw 3 agentsRaw []) = .error .initialM := by
-  unfold FitnessABM.replay seedRaw
-  rw [parsed_seed one]
+  unfold FitnessABM.replay
+  rw [parsed_seedRaw]
   decide_cbv
 
 example : summary (FitnessABM.replay seedRaw 1 #[⟨1, 1/2, 1, 0⟩] []) =
     .error (.seedAgentCount 2 1) := by
-  unfold FitnessABM.replay seedRaw
-  rw [parsed_seed one]
+  unfold FitnessABM.replay
+  rw [parsed_seedRaw]
   decide_cbv
 
 example : summary (FitnessABM.replay seedRaw 1 #[⟨-1, 2, 1, 0⟩, ⟨1, 1/2, 0, 0⟩] []) =
     .error (.seedAgent 0 .receptivity) := by
-  unfold FitnessABM.replay seedRaw
-  rw [parsed_seed one]
+  unfold FitnessABM.replay
+  rw [parsed_seedRaw]
   decide_cbv
 
 example : summary (FitnessABM.replay seedRaw 1 #[⟨1, 1/2, 1, 0⟩, ⟨1, 1/2, 2, 0⟩] []) =
     .error (.seedAgent 1 .belief) := by
-  unfold FitnessABM.replay seedRaw
-  rw [parsed_seed one]
+  unfold FitnessABM.replay
+  rw [parsed_seedRaw]
   decide_cbv
 
 private theorem start_one (m : Nat) (hm : 0 < m ∧ m ≤ 2) (ticks : List RawTick) :

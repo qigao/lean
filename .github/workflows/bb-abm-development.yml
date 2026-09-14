@@ -89,5 +89,5 @@ jobs:
             fi
             /usr/bin/time -f "$suite test elapsed=%e s peak_rss=%M KiB" \
               timeout --kill-after=10s 240s \
-                lake env lean -DmaxErrors=8 "$test_file"
+                lake env lean -DmaxErrors=64 "$test_file"
           done
