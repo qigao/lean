@@ -71,7 +71,7 @@ class BBRuntimeKernelTests(unittest.TestCase):
             ("fitness container", replace(valid, fitness=[1, 1]), "invalidType", "fitness"),
             ("node before fitness size",
              BBRuntimeRawSeed(1, (1, 1), ((0, 1),)), "invalidNodeCount", "node_count"),
-            ("fitness size", replace(valid, fitness=(1,)),
+            ("fitness size before positivity", replace(valid, fitness=(0,)),
              "fitnessSizeMismatch", "fitness"),
             ("fitness element type", replace(valid, fitness=(1.0, 1)),
              "invalidType", "fitness[0]"),
