@@ -162,8 +162,10 @@ private theorem checked_single {n : Nat} (s : JointState n) (j : Fin n)
     fin_cases i
     exact j.isLt
   have distinct : targetsDistinct #[j.val] := by
-    intro a b h
-    exact Subsingleton.elim a b
+    intro a b _
+    fin_cases a
+    fin_cases b
+    rfl
   have he : (⟨bound, distinct⟩ : CheckedTargets n #[j.val]).embedding =
       singletonTarget j := by
     apply Function.Embedding.ext
