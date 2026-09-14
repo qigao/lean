@@ -1,0 +1,158 @@
+name: yolo-flywire-kth-reduce-resume
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/yolo-flywire-behavior-v0
+    paths:
+      - .github/workflows/yolo-flywire-kth-reduce-resume.yml
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONPATH: python
+  PYTHONUNBUFFERED: "1"
+  OMP_NUM_THREADS: "1"
+  MKL_NUM_THREADS: "1"
+  SOURCE_REUSE_RUN_ID: "34806767442"
+  SOURCE_REUSE_HEAD_SHA: "657b7f166761f4b6baf7ec0202437ed099f5dcf0"
+  PREPARED_ARTIFACT_ID: "10333301800"
+  PREPARED_ARTIFACT_DIGEST: "c4c6986b0060d30e8a3055279f87dce0c09696d07bdb8a9c709ef0cda4ffaa72"
+
+jobs:
+  resume-reduce:
+    name: Resume exact five-seed KTH reduction
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout orchestration head
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install development runtime
+        run: python -m pip install -e "./python[dev]" "numpy==2.4.6" "torch==2.14.0"
+
+      - name: Download exact completed reuse artifacts through REST
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p prepared seed-reports
+
+          download_exact() {
+            artifact_id="$1"
+            expected_name="$2"
+            expected_digest="$3"
+            destination="$4"
+            metadata="$RUNNER_TEMP/artifact-${artifact_id}.json"
+            archive="$RUNNER_TEMP/artifact-${artifact_id}.zip"
+
+            curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}" \
+              --output "$metadata"
+
+            python - "$metadata" "$artifact_id" "$expected_name" "$expected_digest" "$SOURCE_REUSE_RUN_ID" "$SOURCE_REUSE_HEAD_SHA" <<'PY'
+          import json, sys
+          from pathlib import Path
+          path, artifact_id, name, digest, run_id, head_sha = sys.argv[1:]
+          record = json.loads(Path(path).read_text(encoding="utf-8"))
+          if str(record.get("id")) != artifact_id:
+              raise SystemExit("artifact id mismatch")
+          if record.get("name") != name:
+              raise SystemExit("artifact name mismatch")
+          if record.get("expired") is not False:
+              raise SystemExit("artifact expired")
+          if record.get("digest") != "sha256:" + digest:
+              raise SystemExit("artifact digest metadata mismatch")
+          run = record.get("workflow_run") or {}
+          if str(run.get("id")) != run_id or run.get("head_sha") != head_sha:
+              raise SystemExit("artifact source run/head mismatch")
+          PY
+
+            curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
+              --output "$archive"
+            actual=$(sha256sum "$archive" | awk '{print $1}')
+            test "$actual" = "$expected_digest"
+            mkdir -p "$destination"
+            unzip -q "$archive" -d "$destination"
+          }
+
+          download_exact "$PREPARED_ARTIFACT_ID" \
+            "kth-reuse-prepared-${SOURCE_REUSE_RUN_ID}" \
+            "$PREPARED_ARTIFACT_DIGEST" \
+            prepared
+
+          download_exact 10333519001 "kth-reuse-seed-7-${SOURCE_REUSE_RUN_ID}" \
+            8a390840d8da92a8c5d5ef9deeea027e35f56152652a19509134f39901ff5afd \
+            "seed-reports/kth-reuse-seed-7-${SOURCE_REUSE_RUN_ID}"
+          download_exact 10333742524 "kth-reuse-seed-11-${SOURCE_REUSE_RUN_ID}" \
+            e4dc931c669624c88a20f068e960dcf8b5eca37a5f15d598efd556234c1509b2 \
+            "seed-reports/kth-reuse-seed-11-${SOURCE_REUSE_RUN_ID}"
+          download_exact 10333328901 "kth-reuse-seed-19-${SOURCE_REUSE_RUN_ID}" \
+            113d0edc4fc8325d956c93eae37cd9f927aa9500d0a38b081db83a98ef59e717 \
+            "seed-reports/kth-reuse-seed-19-${SOURCE_REUSE_RUN_ID}"
+          download_exact 10333732536 "kth-reuse-seed-23-${SOURCE_REUSE_RUN_ID}" \
+            81d40ec6c60a74d02201c0b5ba5aed7baf4b04906570b2ec5bb391b759e52ff0 \
+            "seed-reports/kth-reuse-seed-23-${SOURCE_REUSE_RUN_ID}"
+          download_exact 10333528606 "kth-reuse-seed-31-${SOURCE_REUSE_RUN_ID}" \
+            9f413c4fb200b6d972b44b8db7bb6ccd6c7c63b4b40ba7f6f4c2d504453f3f0e \
+            "seed-reports/kth-reuse-seed-31-${SOURCE_REUSE_RUN_ID}"
+
+          test "$(find seed-reports -name seed_report.json -type f | wc -l)" -eq 5
+
+      - name: Deterministically reduce exact five-seed evidence
+        run: |
+          protocol_sha=$(sha256sum prepared/aggregate/frozen-protocol.json | awk '{print $1}')
+          python -m yolo_flywire.kthreuse reduce \
+            --protocol prepared/aggregate/frozen-protocol.json \
+            --protocol-sha256 "$protocol_sha" \
+            --source-manifest prepared/aggregate/source-manifest.json \
+            --execution-config prepared/execution-config.json \
+            --reports-root seed-reports \
+            --output development
+
+      - name: Stage resumed cached real-KTH development evidence
+        run: |
+          mkdir final-evidence
+          cp prepared/source-run.json final-evidence/
+          cp prepared/aggregate/source-manifest.json final-evidence/
+          cp prepared/aggregate/frozen-protocol.json final-evidence/
+          cp prepared/aggregate/bundle/manifest.json final-evidence/aggregate-manifest.json
+          cp prepared/execution-config.json final-evidence/
+          cp development/development_report.json final-evidence/
+          cp prepared/controls/flywire-selected-graph.json final-evidence/
+          cp prepared/controls/verification-run.json final-evidence/
+          cp -r seed-reports final-evidence/seed-reports
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          Path("final-evidence/resume-binding.json").write_text(
+              json.dumps({
+                  "source_reuse_run_id": int(os.environ["SOURCE_REUSE_RUN_ID"]),
+                  "source_reuse_head_sha": os.environ["SOURCE_REUSE_HEAD_SHA"],
+                  "prepared_artifact_id": int(os.environ["PREPARED_ARTIFACT_ID"]),
+                  "seed_artifact_ids": [10333519001, 10333742524, 10333328901, 10333732536, 10333528606],
+              }, sort_keys=True, separators=(",", ":")) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Upload resumed KTH development report
+        uses: actions/upload-artifact@v4
+        with:
+          name: yolo-flywire-kth-reuse-resumed-development-${{ github.run_id }}
+          path: final-evidence
+          if-no-files-found: error
+          retention-days: 30
