@@ -776,7 +776,7 @@ private theorem attachSource_connected :
   refine { preconnected := ?_, nonempty := inferInstance }
   intro i j
   fin_cases i <;> fin_cases j <;>
-    first
+    solve
     | exact ⟨.nil⟩
     | apply reachable_edge g
       norm_num [g, seedGraph, attachSource, canonicalEdge, Fin.ext_iff]
@@ -795,7 +795,7 @@ private theorem attachRelay_connected :
   refine { preconnected := ?_, nonempty := inferInstance }
   intro i j
   fin_cases i <;> fin_cases j <;>
-    first
+    solve
     | exact ⟨.nil⟩
     | apply reachable_edge g
       norm_num [g, seedGraph, attachRelay, canonicalEdge, Fin.ext_iff]
@@ -814,7 +814,7 @@ private theorem secondBirth_connected :
   refine { preconnected := ?_, nonempty := inferInstance }
   intro i j
   fin_cases i <;> fin_cases j <;>
-    first
+    solve
     | exact ⟨.nil⟩
     | apply reachable_edge g
       norm_num [g, seedGraph, secondBirth, canonicalEdge, Fin.ext_iff]
@@ -987,33 +987,52 @@ private theorem relayNextRound_observation :
   rw [propagationObservation_of_next g relayPopulation _ _ hnext hdelivered]
   decide_cbv
 
+private theorem secondBirth_incoming :
+    @incoming 4 (seedGraph secondBirth.seed).Adj (seedAdjDec secondBirth.seed)
+      secondBirthPopulation =
+      (![{1}, {0}, {1}, ∅] : Fin 4 → Finset (Fin 4)) := by
+  let g : MeshGraph (Fin 4) := (seedGraph secondBirth.seed).Adj
+  letI : DecidableRel g := seedAdjDec secondBirth.seed
+  change incoming g secondBirthPopulation = _
+  funext i
+  ext j
+  fin_cases i <;> fin_cases j <;>
+    norm_num [incoming, g, seedGraph, secondBirth, canonicalEdge,
+      secondBirthPopulation, broadcasting, Fin.ext_iff]
+
+private theorem secondBirth_next :
+    @nextAgent 4 (seedGraph secondBirth.seed).Adj (seedAdjDec secondBirth.seed)
+      secondBirthPopulation =
+      (![⟨1, 1⟩, ⟨1, 2⟩, ⟨1, 1⟩, ⟨0, 0⟩] : Fin 4 → AgentState) := by
+  funext i
+  simp only [nextAgent, secondBirth_incoming]
+  fin_cases i <;> norm_num [secondBirthPopulation]
+
+private theorem secondBirth_delivered :
+    @transmissions 4 (seedGraph secondBirth.seed).Adj (seedAdjDec secondBirth.seed)
+      secondBirthPopulation =
+      ({(0, 1), (1, 0), (1, 2)} : Finset (Fin 4 × Fin 4)) := by
+  let g : MeshGraph (Fin 4) := (seedGraph secondBirth.seed).Adj
+  letI : DecidableRel g := seedAdjDec secondBirth.seed
+  change transmissions g secondBirthPopulation = _
+  ext pair
+  rcases pair with ⟨j, i⟩
+  have hmem : (j, i) ∈ transmissions g secondBirthPopulation ↔
+      j ∈ incoming g secondBirthPopulation i := by
+    simp only [transmissions, incoming, Finset.mem_filter, Finset.mem_product,
+      Finset.mem_univ, true_and]
+  rw [hmem, secondBirth_incoming]
+  fin_cases j <;> fin_cases i <;> norm_num [Fin.ext_iff]
+
 private theorem secondBirth_observation :
     @propagationObservation 4 (seedGraph secondBirth.seed).Adj
       (seedAdjDec secondBirth.seed) secondBirthPopulation =
       ([1, 1, 1, 0], [1, 2, 1, 0], [true, true, true, false], [(0, 1), (1, 0), (1, 2)]) := by
   let g : MeshGraph (Fin 4) := (seedGraph secondBirth.seed).Adj
   letI : DecidableRel g := seedAdjDec secondBirth.seed
-  have hincoming : incoming g secondBirthPopulation =
-      (![{1}, {0}, {1}, ∅] : Fin 4 → Finset (Fin 4)) := by
-    funext i
-    ext j
-    fin_cases i <;> fin_cases j <;>
-      norm_num [incoming, g, seedGraph, secondBirth, canonicalEdge,
-        secondBirthPopulation, broadcasting, Fin.ext_iff]
-  have hnext : nextAgent g secondBirthPopulation =
-      (![⟨1, 1⟩, ⟨1, 2⟩, ⟨1, 1⟩, ⟨0, 0⟩] : Fin 4 → AgentState) := by
-    funext i
-    simp only [nextAgent, hincoming]
-    fin_cases i <;> norm_num [secondBirthPopulation]
-  have hdelivered : transmissions g secondBirthPopulation =
-      ({(0, 1), (1, 0), (1, 2)} : Finset (Fin 4 × Fin 4)) := by
-    ext pair
-    rcases pair with ⟨j, i⟩
-    fin_cases j <;> fin_cases i <;>
-      norm_num [transmissions, g, seedGraph, secondBirth, canonicalEdge,
-        secondBirthPopulation, broadcasting, Fin.ext_iff]
   change propagationObservation g secondBirthPopulation = _
-  rw [propagationObservation_of_next g secondBirthPopulation _ _ hnext hdelivered]
+  rw [propagationObservation_of_next g secondBirthPopulation _ _
+    secondBirth_next secondBirth_delivered]
   decide_cbv
 
 private theorem silent_observation :
