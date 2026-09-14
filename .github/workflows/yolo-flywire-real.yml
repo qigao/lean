@@ -1,0 +1,258 @@
+name: yolo-flywire-real
+
+on:
+  workflow_dispatch:
+    inputs:
+      learning_rate:
+        description: Development learning rate; recorded in execution evidence
+        required: true
+        default: "0.001"
+        type: string
+      gru_hidden_dim:
+        description: GRU hidden width; must remain under the frozen parameter ceiling
+        required: true
+        default: "64"
+        type: string
+      graph_node_dim:
+        description: Graph recurrent node width; shared by all graph arms
+        required: true
+        default: "2"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: yolo-flywire-real
+  cancel-in-progress: false
+
+env:
+  REAL_ROOT: /var/tmp/yolo-flywire-real-${{ github.run_id }}
+  REQUIRED_FREE_GIB: "350"
+  PYTHONPATH: python
+  PYTHONUNBUFFERED: "1"
+  OMP_NUM_THREADS: "1"
+  MKL_NUM_THREADS: "1"
+
+jobs:
+  real-development:
+    name: Authorized NTU120 real development
+    runs-on: [self-hosted, linux, x64, yolo-flywire-real]
+    timeout-minutes: 7200
+    env:
+      NTU120_RGB_ARCHIVE_URL_1: ${{ secrets.NTU120_RGB_ARCHIVE_URL_1 }}
+      NTU120_RGB_ARCHIVE_URL_2: ${{ secrets.NTU120_RGB_ARCHIVE_URL_2 }}
+      LEARNING_RATE: ${{ inputs.learning_rate }}
+      GRU_HIDDEN_DIM: ${{ inputs.gru_hidden_dim }}
+      GRAPH_NODE_DIM: ${{ inputs.graph_node_dim }}
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate dedicated runner and authorized download inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          for command in curl unzip df sha256sum; do
+            command -v "$command" >/dev/null || { echo "missing required command: $command" >&2; exit 1; }
+          done
+          test -n "$NTU120_RGB_ARCHIVE_URL_1" || { echo "NTU120_RGB_ARCHIVE_URL_1 secret is required" >&2; exit 1; }
+          test -n "$NTU120_RGB_ARCHIVE_URL_2" || { echo "NTU120_RGB_ARCHIVE_URL_2 secret is required" >&2; exit 1; }
+          available_kib=$(df -Pk /var/tmp | awk 'NR==2 {print $4}')
+          required_kib=$((REQUIRED_FREE_GIB * 1024 * 1024))
+          if (( available_kib < required_kib )); then
+            echo "runner requires at least ${REQUIRED_FREE_GIB} GiB free under /var/tmp" >&2
+            exit 1
+          fi
+          rm -rf "$REAL_ROOT"
+          mkdir -p "$REAL_ROOT/archives" "$REAL_ROOT/ntu" "$REAL_ROOT/.evidence"
+
+      - name: Install frozen extraction runtime
+        run: |
+          python -m pip install --only-binary=av -e "./python[pose]" \
+            "ultralytics==8.4.146" "av==15.1.0" \
+            "torch==2.14.0" "numpy==2.4.6" "opencv-python==5.0.0.93"
+
+      - name: Download authorized NTU120 RGB archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 5 --retry-all-errors --continue-at - \
+            "$NTU120_RGB_ARCHIVE_URL_1" --output "$REAL_ROOT/archives/ntu120-rgb-part1.zip"
+          curl --fail --location --retry 5 --retry-all-errors --continue-at - \
+            "$NTU120_RGB_ARCHIVE_URL_2" --output "$REAL_ROOT/archives/ntu120-rgb-part2.zip"
+          unzip -q -n "$REAL_ROOT/archives/ntu120-rgb-part1.zip" -d "$REAL_ROOT/ntu"
+          unzip -q -n "$REAL_ROOT/archives/ntu120-rgb-part2.zip" -d "$REAL_ROOT/ntu"
+          rm -f "$REAL_ROOT/archives/ntu120-rgb-part1.zip" "$REAL_ROOT/archives/ntu120-rgb-part2.zip"
+          rmdir "$REAL_ROOT/archives"
+
+      - name: Download official Ultralytics pose checkpoint and hash it
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$REAL_ROOT"
+          python - <<'PY'
+          from pathlib import Path
+          from ultralytics import YOLO
+
+          YOLO("yolo26n-pose.pt")
+          path = Path("yolo26n-pose.pt")
+          if not path.is_file() or path.stat().st_size <= 0:
+              raise SystemExit("Ultralytics did not materialize yolo26n-pose.pt")
+          PY
+          sha256sum yolo26n-pose.pt | tee "$REAL_ROOT/.evidence/yolo-weight.sha256"
+
+      - name: Inventory selected NTU120 RGB bytes
+        run: |
+          python -m yolo_flywire.ntu_io freeze \
+            --root "$REAL_ROOT/ntu" \
+            --output "$REAL_ROOT/inventory.json"
+
+      - name: Freeze byte-backed real input protocol
+        run: |
+          python -m yolo_flywire.real_freeze freeze \
+            --protocol protocols/v0-real-ntu120-preflight.json \
+            --root "$REAL_ROOT/ntu" \
+            --inventory "$REAL_ROOT/inventory.json" \
+            --weights "$REAL_ROOT/yolo26n-pose.pt" \
+            --output "$REAL_ROOT/frozen-protocol.json"
+
+      - name: Download and verify pinned FlyWire connectivity
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit=0d8574d46627ce7fadd968a3c5d602e837325373
+          path=data/type_to_type_connection_and_synapse_counts.csv
+          curl --fail --location --retry 5 --retry-all-errors \
+            "https://raw.githubusercontent.com/murthylab/visual-system-parts-list/${commit}/${path}" \
+            --output "$REAL_ROOT/flywire-connectivity.csv"
+          python -m yolo_flywire.provenance generate \
+            --config "$REAL_ROOT/frozen-protocol.json" \
+            --source "$REAL_ROOT/flywire-connectivity.csv" \
+            --output "$REAL_ROOT/controls"
+          python -m yolo_flywire.provenance verify \
+            --config "$REAL_ROOT/frozen-protocol.json" \
+            --source "$REAL_ROOT/flywire-connectivity.csv" \
+            --output "$REAL_ROOT/controls"
+
+      - name: Freeze explicit development execution condition
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import math
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["REAL_ROOT"])
+          inventory = json.loads((root / "inventory.json").read_text(encoding="utf-8"))
+          train_count = sum(row.get("split") == "train" for row in inventory["samples"])
+          if train_count < 2:
+              raise SystemExit("real development requires at least two training samples")
+          batch_size = (train_count + 1) // 2
+          if 20 * math.ceil(train_count / batch_size) != 40:
+              raise SystemExit("derived complete-roster batch size does not match the frozen 40-update budget")
+          config = {
+              "seeds": [7, 11, 19, 23, 31],
+              "epochs": 20,
+              "lr": float(os.environ["LEARNING_RATE"]),
+              "batch_size": batch_size,
+              "max_updates": 40,
+              "parameter_ceiling": 50000,
+              "gru_hidden_dim": int(os.environ["GRU_HIDDEN_DIM"]),
+              "graph_node_dim": int(os.environ["GRAPH_NODE_DIM"]),
+          }
+          if config["lr"] <= 0 or config["gru_hidden_dim"] <= 0 or config["graph_node_dim"] <= 0:
+              raise SystemExit("development hyperparameters must be positive")
+          (root / "execution-config.json").write_text(
+              json.dumps(config, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n",
+              encoding="utf-8",
+          )
+          print(f"training_samples={train_count} batch_size={batch_size}")
+          PY
+
+      - name: Execute sealed development comparison
+        shell: bash
+        run: |
+          set -euo pipefail
+          protocol_sha=$(sha256sum "$REAL_ROOT/frozen-protocol.json" | awk '{print $1}')
+          controls_sha=$(sha256sum "$REAL_ROOT/controls/control-bundle.json" | awk '{print $1}')
+          python -m yolo_flywire.real_development run \
+            --protocol "$REAL_ROOT/frozen-protocol.json" \
+            --protocol-sha256 "$protocol_sha" \
+            --root "$REAL_ROOT/ntu" \
+            --inventory "$REAL_ROOT/inventory.json" \
+            --weights "$REAL_ROOT/yolo26n-pose.pt" \
+            --execution-config "$REAL_ROOT/execution-config.json" \
+            --connectivity "$REAL_ROOT/flywire-connectivity.csv" \
+            --controls "$REAL_ROOT/controls/control-bundle.json" \
+            --controls-sha256 "$controls_sha" \
+            --output "$REAL_ROOT/development"
+
+      - name: Stage evidence without licensed media or model assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp "$REAL_ROOT/frozen-protocol.json" "$REAL_ROOT/.evidence/frozen-protocol.json"
+          cp "$REAL_ROOT/execution-config.json" "$REAL_ROOT/.evidence/execution-config.json"
+          cp "$REAL_ROOT/development/development_report.json" "$REAL_ROOT/.evidence/development_report.json"
+          cp "$REAL_ROOT/development/extraction/manifest.json" "$REAL_ROOT/.evidence/extraction-manifest.json"
+          cp "$REAL_ROOT/controls/flywire-selected-graph.json" "$REAL_ROOT/.evidence/flywire-selected-graph.json"
+          cp "$REAL_ROOT/controls/verification-run.json" "$REAL_ROOT/.evidence/flywire-verification-run.json"
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["REAL_ROOT"])
+          protocol = json.loads((root / "frozen-protocol.json").read_text(encoding="utf-8"))
+          controls = root / "controls" / "control-bundle.json"
+          values = {
+              "commit": os.environ["GITHUB_SHA"],
+              "dataset_content_hash": protocol["dataset_content_hash"],
+              "split_hash": protocol["split_hash"],
+              "yolo_weights_sha256": protocol["yolo_weights_sha256"],
+              "frozen_protocol_sha256": hashlib.sha256((root / "frozen-protocol.json").read_bytes()).hexdigest(),
+              "control_bundle_sha256": hashlib.sha256(controls.read_bytes()).hexdigest(),
+          }
+          (root / ".evidence" / "asset-hashes.json").write_text(
+              json.dumps(values, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+  publish-evidence:
+    name: Publish real-development evidence and clean licensed bytes
+    needs: [real-development]
+    if: always()
+    runs-on: [self-hosted, linux, x64, yolo-flywire-real]
+    timeout-minutes: 30
+    steps:
+      - name: Copy evidence into artifact staging
+        if: needs.real-development.result == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .evidence
+          cp -a "$REAL_ROOT/.evidence" .evidence
+
+      - name: Upload evidence only
+        if: needs.real-development.result == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: yolo-flywire-real-development-${{ github.run_id }}
+          path: .evidence
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Remove downloaded and derived licensed data
+        if: always()
+        shell: bash
+        run: rm -rf "$REAL_ROOT" .evidence

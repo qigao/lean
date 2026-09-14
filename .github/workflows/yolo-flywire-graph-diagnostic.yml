@@ -1,0 +1,345 @@
+name: yolo-flywire-graph-diagnostic
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/yolo-flywire-behavior-v0
+    paths:
+      - .github/workflows/yolo-flywire-graph-diagnostic.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: yolo-flywire-graph-diagnostic-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONPATH: python
+  PYTHONUNBUFFERED: "1"
+  OMP_NUM_THREADS: "1"
+  MKL_NUM_THREADS: "1"
+  PREPARED_ARTIFACT_ID: "10333301800"
+  PREPARED_ARTIFACT_NAME: kth-reuse-prepared-34806767442
+  PREPARED_RUN_ID: "34806767442"
+  PREPARED_HEAD_SHA: "657b7f166761f4b6baf7ec0202437ed099f5dcf0"
+
+jobs:
+  diagnose:
+    name: Diagnose cached real-KTH graph recurrence
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout diagnostic head
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install development runtime
+        run: python -m pip install -e "./python[dev]" "numpy==2.4.6" "torch==2.14.0"
+
+      - name: Download exact prepared KTH artifact through REST
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${PREPARED_ARTIFACT_ID}" \
+            --output artifact-metadata.json
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          meta = json.loads(Path("artifact-metadata.json").read_text(encoding="utf-8"))
+          expected = {
+              "id": int(os.environ["PREPARED_ARTIFACT_ID"]),
+              "name": os.environ["PREPARED_ARTIFACT_NAME"],
+          }
+          for key, value in expected.items():
+              if meta.get(key) != value:
+                  raise SystemExit(f"prepared artifact {key} mismatch")
+          run = meta.get("workflow_run", {})
+          if str(run.get("id")) != os.environ["PREPARED_RUN_ID"]:
+              raise SystemExit("prepared artifact source run mismatch")
+          if run.get("head_sha") != os.environ["PREPARED_HEAD_SHA"]:
+              raise SystemExit("prepared artifact source head mismatch")
+          if meta.get("expired") is not False:
+              raise SystemExit("prepared artifact is expired")
+          digest = meta.get("digest")
+          if not isinstance(digest, str) or not digest.startswith("sha256:"):
+              raise SystemExit("prepared artifact digest missing")
+          print(f"prepared artifact id={meta['id']} digest={digest}")
+          PY
+          curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${PREPARED_ARTIFACT_ID}/zip" \
+            --output prepared.zip
+          mkdir prepared
+          unzip -q prepared.zip -d prepared
+          test -f prepared/aggregate/frozen-protocol.json
+          test -f prepared/aggregate/source-manifest.json
+          test -f prepared/aggregate/bundle/manifest.json
+          test -f prepared/execution-config.json
+          test -f prepared/flywire-connectivity.csv
+          test -f prepared/controls/flywire-selected-graph.json
+
+      - name: Trace raw and normalized graph dynamics on real KTH clips
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+          import hashlib
+          import json
+          from pathlib import Path
+          import statistics
+
+          import torch
+
+          from yolo_flywire.flywire import load_visual_type_graph
+          from yolo_flywire.graphs import diagnostic_graph, graph_fingerprint, random_sparse_graph
+          from yolo_flywire.kthreuse import _prepare_source
+          from yolo_flywire.models.graph_rnn import (
+              GraphDiagnosticClassifier,
+              GraphRecurrentClassifier,
+              diagnose_graph_recurrence,
+          )
+          from yolo_flywire.pose_training import _seeded_cpu
+
+          root = Path("prepared")
+          protocol_path = root / "aggregate/frozen-protocol.json"
+          source_manifest = json.loads((root / "aggregate/source-manifest.json").read_text(encoding="utf-8"))
+          execution_config = json.loads((root / "execution-config.json").read_text(encoding="utf-8"))
+          selected_graph_record = json.loads(
+              (root / "controls/flywire-selected-graph.json").read_text(encoding="utf-8")
+          )
+          protocol_sha = hashlib.sha256(protocol_path.read_bytes()).hexdigest()
+
+          (protocol_path, protocol_pin, frozen, source_record, config, prepared_source,
+           binding_pin, manifest_pin) = _prepare_source(
+              protocol_path,
+              protocol_sha256=protocol_sha,
+              source_manifest=source_manifest,
+              bundle=root / "aggregate/bundle",
+              execution_config=execution_config,
+          )
+          prepared_source.verify(expected_binding_sha256=binding_pin)
+
+          connectivity_path = root / "flywire-connectivity.csv"
+          connectivity_sha = hashlib.sha256(connectivity_path.read_bytes()).hexdigest()
+          if connectivity_sha != frozen.get("flywire_connectivity_sha256"):
+              raise SystemExit("diagnostic FlyWire connectivity differs from frozen SHA-256")
+          seed_types = tuple(selected_graph_record["seed_types"])
+          min_seed_synapses = int(selected_graph_record["min_seed_synapses"])
+          selection = load_visual_type_graph(
+              connectivity_path,
+              seed_types=seed_types,
+              min_seed_synapses=min_seed_synapses,
+          )
+          selected_fingerprint = graph_fingerprint(selection.graph)
+          expected_fingerprint = selected_graph_record["graph_fingerprint"]
+          if selected_fingerprint != expected_fingerprint or selected_fingerprint != frozen.get("selected_graph_fingerprint"):
+              raise SystemExit("reconstructed selected graph fingerprint differs from frozen graph")
+          if list(selection.node_types) != selected_graph_record["node_types"]:
+              raise SystemExit("reconstructed selected graph node roster differs from frozen graph")
+          for name, actual in (
+              ("num_nodes", selection.graph.num_nodes),
+              ("num_edges", selection.graph.num_edges),
+              ("num_diagonal_edges", sum(a == b for a, b in zip(selection.graph.src, selection.graph.dst))),
+          ):
+              if actual != selected_graph_record[name]:
+                  raise SystemExit(f"reconstructed selected graph {name} differs from frozen graph")
+          graph_identity = {
+              "source_sha256": connectivity_sha,
+              "selected_graph_fingerprint": selected_fingerprint,
+              "seed_types": list(seed_types),
+              "min_seed_synapses": min_seed_synapses,
+              "num_nodes": selection.graph.num_nodes,
+              "num_edges": selection.graph.num_edges,
+              "num_diagonal_edges": selected_graph_record["num_diagonal_edges"],
+          }
+
+          train = tuple(entry for entry in prepared_source.index.samples if entry.split == "train")
+          selected_indices = []
+          selected_samples = []
+          for label in prepared_source.classes:
+              matches = [(index, entry) for index, entry in enumerate(train) if entry.label == label]
+              if not matches:
+                  raise SystemExit(f"missing train class for diagnostic: {label}")
+              index, entry = matches[0]
+              selected_indices.append(index)
+              selected_samples.append({
+                  "sample_id": entry.sample_id,
+                  "label": entry.label,
+                  "subject": entry.subject,
+                  "frame_count": entry.frame_count,
+                  "train_index": index,
+              })
+
+          samples = []
+          for index, metadata in zip(selected_indices, selected_samples, strict=True):
+              part = prepared_source.read_partition(
+                  split="train",
+                  indices=(index,),
+                  expected_binding_sha256=binding_pin,
+              )
+              length = int(part.observations.lengths[0].item())
+              x = part.observations.features[0, :length].unsqueeze(0).contiguous()
+              if tuple(x.shape) != (1, length, 121) or not torch.isfinite(x).all().item():
+                  raise SystemExit("real KTH diagnostic feature tensor invalid")
+              samples.append((metadata, x))
+
+          variants = {
+              "flywire_raw_keep_diagonal": lambda seed: selection.graph,
+              "flywire_incoming_l1_keep_diagonal": lambda seed: diagnostic_graph(
+                  selection.graph, weight_policy="incoming_l1", diagonal_policy="keep"),
+              "flywire_log1p_incoming_l1_keep_diagonal": lambda seed: diagnostic_graph(
+                  selection.graph, weight_policy="log1p_incoming_l1", diagonal_policy="keep"),
+              "flywire_log1p_incoming_l1_drop_diagonal": lambda seed: diagnostic_graph(
+                  selection.graph, weight_policy="log1p_incoming_l1", diagonal_policy="drop"),
+              "random_unit": lambda seed: random_sparse_graph(
+                  selection.graph.num_nodes, selection.graph.num_edges, seed),
+          }
+
+          traces = []
+          graph_stats = {}
+          for seed in config.seeds:
+              for variant_name, graph_factory in variants.items():
+                  graph = graph_factory(seed)
+                  weights = [float(value) for value in graph.weight]
+                  incoming = [0.0] * graph.num_nodes
+                  for target, weight in zip(graph.dst, weights):
+                      incoming[target] += abs(weight)
+                  nonzero_incoming = [value for value in incoming if value > 0.0]
+                  graph_stats.setdefault(variant_name, {
+                      "num_nodes": graph.num_nodes,
+                      "num_edges": graph.num_edges,
+                      "num_diagonal_edges": sum(a == b for a, b in zip(graph.src, graph.dst)),
+                      "weight_min": min(weights) if weights else 0.0,
+                      "weight_median": statistics.median(weights) if weights else 0.0,
+                      "weight_mean": statistics.fmean(weights) if weights else 0.0,
+                      "weight_max": max(weights) if weights else 0.0,
+                      "incoming_l1_median_nonzero": statistics.median(nonzero_incoming) if nonzero_incoming else 0.0,
+                      "incoming_l1_max": max(incoming) if incoming else 0.0,
+                  })
+                  with _seeded_cpu(seed):
+                      model = GraphRecurrentClassifier(
+                          121, graph, config.graph_node_dim, len(prepared_source.classes),
+                      )
+                  for metadata, x in samples:
+                      trace = diagnose_graph_recurrence(model, x)
+                      traces.append({
+                          "seed": seed,
+                          "variant": variant_name,
+                          "sample": metadata,
+                          "trace": trace,
+                      })
+
+          def summarize(rows):
+              all_steps = [step for row in rows for step in row["trace"]["per_step"]]
+              after_first = [step for step in all_steps if step["time_index"] > 0]
+              def at_time(t):
+                  values = [step["saturation_fraction"] for row in rows
+                            for step in row["trace"]["per_step"] if step["time_index"] == t]
+                  return statistics.fmean(values) if values else None
+              return {
+                  "trace_count": len(rows),
+                  "actual_time_steps": len(all_steps),
+                  "mean_saturation_all_steps": statistics.fmean(step["saturation_fraction"] for step in all_steps),
+                  "mean_saturation_after_first": statistics.fmean(step["saturation_fraction"] for step in after_first),
+                  "max_saturation": max(step["saturation_fraction"] for step in all_steps),
+                  "mean_saturation_t0": at_time(0),
+                  "mean_saturation_t1": at_time(1),
+                  "mean_saturation_t4": at_time(4),
+                  "mean_saturation_t9": at_time(9),
+                  "mean_message_rms_after_first": statistics.fmean(step["message_rms"] for step in after_first),
+                  "mean_message_term_rms_after_first": statistics.fmean(step["message_term_rms"] for step in after_first),
+                  "mean_preactivation_rms": statistics.fmean(step["preactivation_rms"] for step in all_steps),
+                  "mean_state_rms": statistics.fmean(step["state_rms"] for step in all_steps),
+              }
+
+          summaries = {
+              name: summarize([row for row in traces if row["variant"] == name])
+              for name in variants
+          }
+
+          node_types = tuple(selection.node_types)
+          seed_node_indices = tuple(node_types.index(name) for name in seed_types)
+          with _seeded_cpu(config.seeds[0]):
+              formal_model = GraphRecurrentClassifier(
+                  121, selection.graph, config.graph_node_dim, len(prepared_source.classes),
+              )
+          with _seeded_cpu(config.seeds[0]):
+              flatten_model = GraphDiagnosticClassifier(
+                  121, selection.graph, config.graph_node_dim, len(prepared_source.classes),
+                  readout_policy="flatten",
+              )
+          with _seeded_cpu(config.seeds[0]):
+              selected_flatten_model = GraphDiagnosticClassifier(
+                  121, diagnostic_graph(
+                      selection.graph,
+                      weight_policy="log1p_incoming_l1",
+                      diagonal_policy="drop",
+                  ),
+                  config.graph_node_dim,
+                  len(prepared_source.classes),
+                  input_policy="selected_nodes",
+                  input_node_indices=seed_node_indices,
+                  readout_policy="flatten",
+              )
+
+          report = {
+              "format_version": 1,
+              "kind": "kth_real_graph_recurrence_diagnostic",
+              "evidence_scope": "kth_real_development_graph_diagnostic_only",
+              "final_test_evaluated": False,
+              "classifier_performance_evaluated": False,
+              "topology_claim_evaluated": False,
+              "prepared_artifact_id": 10333301800,
+              "prepared_artifact_run_id": 34806767442,
+              "protocol_sha256": protocol_pin,
+              "source_manifest_hash": source_record["source_manifest_hash"],
+              "prepared_binding_sha256": binding_pin,
+              "aggregate_manifest_sha256": manifest_pin,
+              "seeds": list(config.seeds),
+              "samples": selected_samples,
+              "graph_identity": graph_identity,
+              "graph_stats": graph_stats,
+              "architecture": {
+                  "num_nodes": selection.graph.num_nodes,
+                  "node_dim": config.graph_node_dim,
+                  "formal_parameter_count": formal_model.parameter_count(),
+                  "formal_readout_dim": formal_model.readout.in_features,
+                  "node_state_dim": selection.graph.num_nodes * config.graph_node_dim,
+                  "flatten_parameter_count": flatten_model.parameter_count(),
+                  "flatten_readout_dim": flatten_model.readout.in_features,
+                  "seed_types": list(seed_types),
+                  "seed_node_indices": list(seed_node_indices),
+                  "selected_input_flatten_parameter_count": selected_flatten_model.parameter_count(),
+                  "selected_input_flatten_readout_dim": selected_flatten_model.readout.in_features,
+              },
+              "summaries": summaries,
+              "traces": traces,
+          }
+          Path("graph-diagnostic.json").write_text(
+              json.dumps(report, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n",
+              encoding="utf-8",
+          )
+          for name, summary in summaries.items():
+              print(name, json.dumps(summary, sort_keys=True))
+          print("architecture", json.dumps(report["architecture"], sort_keys=True))
+          PY
+
+      - name: Upload real-KTH graph diagnostic evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: yolo-flywire-kth-graph-diagnostic-${{ github.run_id }}
+          path: |
+            artifact-metadata.json
+            graph-diagnostic.json
+          if-no-files-found: error
+          retention-days: 30

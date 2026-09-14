@@ -1,0 +1,30 @@
+{
+  "protocol_id": "v0-synthetic",
+  "claim": "temporal_model_useful",
+  "dataset_id": "synthetic-v0",
+  "yolo_version": "synthetic-point-sequence-v0",
+  "split_hash": "6474f3228489f3bf46efaa46e84241b837be987c30993f4a4a50cc814044da84",
+  "observation_schema_hash": "1b27173701fe23b9dd6a66e05a96b6abf9598d26f0a22383a8fe11d10f74e706",
+  "seeds": [7, 11, 19, 23, 31],
+  "budget": {
+    "epochs": 20,
+    "max_updates": 40,
+    "parameter_ceiling": 50000
+  },
+  "arms": [
+    {
+      "family": "gru",
+      "topology": "dense"
+    }
+  ],
+  "rewiring_algorithm": "directed-double-edge-swap-v1",
+  "primary_metric": "macro_f1",
+  "secondary_metrics": [
+    "balanced_accuracy",
+    "keypoint_noise_macro_f1",
+    "keypoint_mask_macro_f1"
+  ],
+  "success_threshold": 0.6,
+  "final_test_used_for_selection": false,
+  "evidence_scope": "harness_and_temporal_smoke_only"
+}

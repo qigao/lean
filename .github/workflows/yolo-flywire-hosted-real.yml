@@ -1,0 +1,370 @@
+name: yolo-flywire-hosted-real
+
+on:
+  workflow_dispatch:
+    inputs:
+      shard_count:
+        description: Number of bounded extraction shards
+        required: true
+        default: "16"
+        type: string
+      learning_rate:
+        description: Development learning rate recorded in evidence
+        required: true
+        default: "0.001"
+        type: string
+      gru_hidden_dim:
+        description: GRU hidden width under frozen parameter ceiling
+        required: true
+        default: "64"
+        type: string
+      graph_node_dim:
+        description: Graph recurrent node width shared by graph arms
+        required: true
+        default: "2"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: yolo-flywire-hosted-real
+  cancel-in-progress: false
+
+env:
+  PYTHONPATH: python
+  PYTHONUNBUFFERED: "1"
+  OMP_NUM_THREADS: "1"
+  MKL_NUM_THREADS: "1"
+  YOLO11_POSE_URL: "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo11n-pose.pt"
+
+jobs:
+  coordinator:
+    name: Freeze hosted YOLO11 source identity
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      transport_hash: ${{ steps.plan.outputs.transport_hash }}
+    env:
+      NTU120_REMOTE_MANIFEST_URL: ${{ secrets.NTU120_REMOTE_MANIFEST_URL }}
+      SHARD_COUNT: ${{ inputs.shard_count }}
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install frozen hosted extraction runtime
+        run: |
+          python -m pip install --only-binary=av -e "./python[dev,pose]" \
+            "ultralytics==8.4.146" "av==15.1.0" \
+            "torch==2.14.0" "numpy==2.4.6" "opencv-python==5.0.0.93"
+
+      - name: Fetch private authorized remote manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$NTU120_REMOTE_MANIFEST_URL" || { echo "NTU120_REMOTE_MANIFEST_URL secret is required" >&2; exit 1; }
+          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+            "$NTU120_REMOTE_MANIFEST_URL" --output transport-manifest.json
+
+      - name: Validate source and write URL-free scientific record
+        run: python -m yolo_flywire.remote_rgb transport-manifest.json --public-output scientific-source.json
+
+      - name: Download official YOLO11n pose checkpoint from GitHub release
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+            "$YOLO11_POSE_URL" --output yolo11n-pose.pt
+          test -s yolo11n-pose.pt || { echo "empty YOLO11n pose checkpoint" >&2; exit 1; }
+          sha256sum yolo11n-pose.pt
+
+      - name: Freeze hosted real-input protocol
+        run: |
+          python -m yolo_flywire.hosted_freeze freeze \
+            --protocol protocols/v1-hosted-yolo11n-preflight.json \
+            --remote-manifest transport-manifest.json \
+            --weights yolo11n-pose.pt \
+            --output frozen-hosted-protocol.json \
+            --transport-evidence transport-evidence.json
+
+      - name: Build deterministic extraction matrix
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from yolo_flywire.remote_rgb import validate_remote_manifest
+
+          remote = validate_remote_manifest(json.loads(Path("transport-manifest.json").read_text(encoding="utf-8")))
+          count = int(os.environ["SHARD_COUNT"])
+          if count <= 0 or count > len(remote.samples):
+              raise SystemExit("shard_count must be in 1..sample_count")
+          evidence = json.loads(Path("transport-evidence.json").read_text(encoding="utf-8"))
+          matrix = json.dumps({"shard": list(range(count))}, separators=(",", ":"))
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"matrix={matrix}\n")
+              handle.write(f"transport_hash={evidence['transport_manifest_hash']}\n")
+          print(f"samples={len(remote.samples)} shards={count}")
+          PY
+
+      - name: Remove private transport/model bytes before artifact publication
+        if: always()
+        run: rm -f transport-manifest.json yolo11n-pose.pt
+
+      - name: Upload URL-free coordinator evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: yolo11-hosted-coordinator-${{ github.run_id }}
+          path: |
+            frozen-hosted-protocol.json
+            transport-evidence.json
+            scientific-source.json
+          if-no-files-found: error
+          retention-days: 30
+
+  extract:
+    name: Extract hosted shard ${{ matrix.shard }}
+    needs: [coordinator]
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: true
+      max-parallel: 8
+      matrix: ${{ fromJson(needs.coordinator.outputs.matrix) }}
+    env:
+      NTU120_REMOTE_MANIFEST_URL: ${{ secrets.NTU120_REMOTE_MANIFEST_URL }}
+      TRANSPORT_HASH: ${{ needs.coordinator.outputs.transport_hash }}
+      SHARD_COUNT: ${{ inputs.shard_count }}
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install frozen hosted extraction runtime
+        run: |
+          python -m pip install --only-binary=av -e "./python[pose]" \
+            "ultralytics==8.4.146" "av==15.1.0" \
+            "torch==2.14.0" "numpy==2.4.6" "opencv-python==5.0.0.93"
+
+      - name: Download frozen coordinator evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: yolo11-hosted-coordinator-${{ github.run_id }}
+          path: coordinator
+
+      - name: Fetch and verify same private transport manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+            "$NTU120_REMOTE_MANIFEST_URL" --output transport-manifest.json
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from yolo_flywire.remote_rgb import validate_remote_manifest
+          remote = validate_remote_manifest(json.loads(Path("transport-manifest.json").read_text(encoding="utf-8")))
+          if remote.transport_manifest_hash != os.environ["TRANSPORT_HASH"]:
+              raise SystemExit("transport manifest changed during hosted experiment")
+          PY
+
+      - name: Download and verify exact official YOLO11n checkpoint from GitHub release
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+            "$YOLO11_POSE_URL" --output yolo11n-pose.pt
+          test -s yolo11n-pose.pt || { echo "empty YOLO11n pose checkpoint" >&2; exit 1; }
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          protocol = json.loads(Path("coordinator/frozen-hosted-protocol.json").read_text(encoding="utf-8"))
+          path = Path("yolo11n-pose.pt")
+          actual = hashlib.sha256(path.read_bytes()).hexdigest()
+          if actual != protocol["yolo_weights_sha256"]:
+              raise SystemExit("YOLO11n checkpoint differs from frozen coordinator SHA-256")
+          print(actual)
+          PY
+
+      - name: Stream one verified RGB clip at a time
+        run: |
+          python -m yolo_flywire.hosted_extract shard \
+            --remote-manifest transport-manifest.json \
+            --protocol coordinator/frozen-hosted-protocol.json \
+            --weights yolo11n-pose.pt \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count "$SHARD_COUNT" \
+            --output shard
+
+      - name: Remove private transport/model bytes before artifact publication
+        if: always()
+        run: rm -f transport-manifest.json yolo11n-pose.pt
+
+      - name: Upload pose/evidence shard only
+        uses: actions/upload-artifact@v4
+        with:
+          name: yolo11-hosted-shard-${{ matrix.shard }}-${{ github.run_id }}
+          path: shard
+          if-no-files-found: error
+          retention-days: 1
+
+  aggregate-and-compare:
+    name: Aggregate hosted pose evidence and run four-arm development
+    needs: [coordinator, extract]
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      NTU120_REMOTE_MANIFEST_URL: ${{ secrets.NTU120_REMOTE_MANIFEST_URL }}
+      TRANSPORT_HASH: ${{ needs.coordinator.outputs.transport_hash }}
+      LEARNING_RATE: ${{ inputs.learning_rate }}
+      GRU_HIDDEN_DIM: ${{ inputs.gru_hidden_dim }}
+      GRAPH_NODE_DIM: ${{ inputs.graph_node_dim }}
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install development runtime
+        run: python -m pip install -e "./python[dev]" "numpy==2.4.6" "torch==2.14.0"
+
+      - name: Download frozen coordinator evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: yolo11-hosted-coordinator-${{ github.run_id }}
+          path: coordinator
+
+      - name: Download all successful extraction shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: yolo11-hosted-shard-*-${{ github.run_id }}
+          path: shards
+          merge-multiple: false
+
+      - name: Fetch and verify same private transport manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+            "$NTU120_REMOTE_MANIFEST_URL" --output transport-manifest.json
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from yolo_flywire.remote_rgb import validate_remote_manifest
+          remote = validate_remote_manifest(json.loads(Path("transport-manifest.json").read_text(encoding="utf-8")))
+          if remote.transport_manifest_hash != os.environ["TRANSPORT_HASH"]:
+              raise SystemExit("transport manifest changed before aggregation")
+          PY
+
+      - name: Aggregate exact frozen development roster
+        run: |
+          python -m yolo_flywire.hosted_aggregate \
+            --remote-manifest transport-manifest.json \
+            --protocol coordinator/frozen-hosted-protocol.json \
+            --shards-root shards \
+            --output aggregate
+
+      - name: Download pinned FlyWire connectivity and generate exact controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit=0d8574d46627ce7fadd968a3c5d602e837325373
+          path=data/type_to_type_connection_and_synapse_counts.csv
+          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+            "https://raw.githubusercontent.com/murthylab/visual-system-parts-list/${commit}/${path}" \
+            --output flywire-connectivity.csv
+          python -m yolo_flywire.provenance generate \
+            --config coordinator/frozen-hosted-protocol.json \
+            --source flywire-connectivity.csv \
+            --output controls
+          python -m yolo_flywire.provenance verify \
+            --config coordinator/frozen-hosted-protocol.json \
+            --source flywire-connectivity.csv \
+            --output controls
+
+      - name: Freeze explicit development execution condition
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, math, os
+          from pathlib import Path
+          from yolo_flywire.remote_rgb import validate_remote_manifest
+          remote = validate_remote_manifest(json.loads(Path("transport-manifest.json").read_text(encoding="utf-8")))
+          train_count = sum(row["split"] == "train" for row in remote.samples)
+          batch_size = (train_count + 1) // 2
+          if train_count < 2 or 20 * math.ceil(train_count / batch_size) != 40:
+              raise SystemExit("complete remote training roster cannot satisfy frozen 40-update budget")
+          config = {
+              "seeds": [7, 11, 19, 23, 31],
+              "epochs": 20,
+              "lr": float(os.environ["LEARNING_RATE"]),
+              "batch_size": batch_size,
+              "max_updates": 40,
+              "parameter_ceiling": 50000,
+              "gru_hidden_dim": int(os.environ["GRU_HIDDEN_DIM"]),
+              "graph_node_dim": int(os.environ["GRAPH_NODE_DIM"]),
+          }
+          if config["lr"] <= 0 or config["gru_hidden_dim"] <= 0 or config["graph_node_dim"] <= 0:
+              raise SystemExit("development hyperparameters must be positive")
+          Path("execution-config.json").write_text(json.dumps(config, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+          print(f"training_samples={train_count} batch_size={batch_size}")
+          PY
+
+      - name: Execute existing four-arm development core
+        shell: bash
+        run: |
+          set -euo pipefail
+          protocol_sha=$(sha256sum coordinator/frozen-hosted-protocol.json | awk '{print $1}')
+          controls_sha=$(sha256sum controls/control-bundle.json | awk '{print $1}')
+          python -m yolo_flywire.hosted_development run \
+            --protocol coordinator/frozen-hosted-protocol.json \
+            --protocol-sha256 "$protocol_sha" \
+            --remote-manifest transport-manifest.json \
+            --bundle aggregate \
+            --execution-config execution-config.json \
+            --connectivity flywire-connectivity.csv \
+            --controls controls/control-bundle.json \
+            --controls-sha256 "$controls_sha" \
+            --output development
+
+      - name: Stage URL-free final evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir final-evidence
+          cp coordinator/frozen-hosted-protocol.json final-evidence/
+          cp coordinator/transport-evidence.json final-evidence/
+          cp coordinator/scientific-source.json final-evidence/
+          cp aggregate/manifest.json final-evidence/aggregate-manifest.json
+          cp execution-config.json final-evidence/
+          cp development/development_report.json final-evidence/
+          cp controls/flywire-selected-graph.json final-evidence/
+          cp controls/verification-run.json final-evidence/
+
+      - name: Remove private transport and large intermediate pose bytes
+        if: always()
+        run: rm -f transport-manifest.json && rm -rf shards aggregate
+
+      - name: Upload final hosted development evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: yolo-flywire-hosted-real-development-${{ github.run_id }}
+          path: final-evidence
+          if-no-files-found: error
+          retention-days: 30

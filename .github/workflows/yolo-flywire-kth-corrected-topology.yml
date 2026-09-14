@@ -1,0 +1,245 @@
+name: yolo-flywire-kth-corrected-topology
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/yolo-flywire-behavior-v0
+    paths:
+      - .github/workflows/yolo-flywire-kth-corrected-topology.yml
+      - python/yolo_flywire/graph_topology_corrected.py
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: yolo-flywire-kth-corrected-topology-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHONPATH: python
+  PYTHONUNBUFFERED: "1"
+  OMP_NUM_THREADS: "1"
+  MKL_NUM_THREADS: "1"
+  PREPARED_ARTIFACT_ID: "10333301800"
+  PREPARED_ARTIFACT_NAME: kth-reuse-prepared-34806767442
+  PREPARED_RUN_ID: "34806767442"
+  PREPARED_HEAD_SHA: "657b7f166761f4b6baf7ec0202437ed099f5dcf0"
+
+jobs:
+  prepare:
+    name: Bind exact cached KTH input and controls
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout corrected-topology head
+        uses: actions/checkout@v4
+
+      - name: Verify and download exact prepared artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${PREPARED_ARTIFACT_ID}" \
+            --output artifact-metadata.json
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          meta = json.loads(Path("artifact-metadata.json").read_text(encoding="utf-8"))
+          if meta.get("id") != int(os.environ["PREPARED_ARTIFACT_ID"]):
+              raise SystemExit("corrected topology prepared artifact id mismatch")
+          if meta.get("name") != os.environ["PREPARED_ARTIFACT_NAME"]:
+              raise SystemExit("corrected topology prepared artifact name mismatch")
+          run = meta.get("workflow_run", {})
+          if str(run.get("id")) != os.environ["PREPARED_RUN_ID"]:
+              raise SystemExit("corrected topology prepared run mismatch")
+          if run.get("head_sha") != os.environ["PREPARED_HEAD_SHA"]:
+              raise SystemExit("corrected topology prepared head mismatch")
+          if meta.get("expired") is not False:
+              raise SystemExit("corrected topology prepared artifact expired")
+          digest = meta.get("digest")
+          if not isinstance(digest, str) or not digest.startswith("sha256:"):
+              raise SystemExit("corrected topology prepared artifact digest missing")
+          print(f"prepared artifact id={meta['id']} digest={digest}")
+          PY
+          curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${PREPARED_ARTIFACT_ID}/zip" \
+            --output prepared.zip
+          mkdir prepared
+          unzip -q prepared.zip -d prepared
+          cp artifact-metadata.json prepared/source-artifact-metadata.json
+          test -f prepared/aggregate/frozen-protocol.json
+          test -f prepared/aggregate/source-manifest.json
+          test -f prepared/aggregate/bundle/manifest.json
+          test -f prepared/execution-config.json
+          test -f prepared/flywire-connectivity.csv
+          test -f prepared/controls/control-bundle.json
+
+      - name: Require exact development boundary and architecture budget
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          protocol = json.loads(Path("prepared/aggregate/frozen-protocol.json").read_text(encoding="utf-8"))
+          config = json.loads(Path("prepared/execution-config.json").read_text(encoding="utf-8"))
+          manifest = json.loads(Path("prepared/aggregate/bundle/manifest.json").read_text(encoding="utf-8"))
+          expected = [7, 11, 19, 23, 31]
+          if protocol.get("seeds") != expected or config.get("seeds") != expected:
+              raise SystemExit("corrected topology seed roster differs from frozen protocol")
+          if config.get("epochs") != 20 or config.get("max_updates") != 40:
+              raise SystemExit("corrected topology training budget differs from frozen KTH condition")
+          if config.get("parameter_ceiling") != 50000 or config.get("graph_node_dim") != 2:
+              raise SystemExit("corrected topology architecture budget differs from frozen KTH condition")
+          if protocol.get("final_test_decoded") is not False or protocol.get("classifier_evaluated") is not False:
+              raise SystemExit("corrected topology protocol crossed final-test boundary")
+          if manifest.get("final_test_decoded") is not False or manifest.get("classifier_evaluated") is not False:
+              raise SystemExit("corrected topology pose bundle crossed final-test boundary")
+          print("corrected topology prepared input verified")
+          PY
+
+      - name: Re-publish immutable prepared input for matrix
+        uses: actions/upload-artifact@v4
+        with:
+          name: kth-corrected-topology-prepared-${{ github.run_id }}
+          path: prepared
+          if-no-files-found: error
+          retention-days: 1
+
+  seed:
+    name: Corrected FlyWire vs rewired for seed ${{ matrix.seed }}
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        seed: [7, 11, 19, 23, 31]
+    steps:
+      - name: Checkout corrected-topology head
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11 with shared pip cache
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: python/pyproject.toml
+
+      - name: Install development runtime
+        run: python -m pip install -e "./python[dev]" "numpy==2.4.6" "torch==2.14.0"
+
+      - name: Download exact prepared input
+        uses: actions/download-artifact@v4
+        with:
+          name: kth-corrected-topology-prepared-${{ github.run_id }}
+          path: prepared
+
+      - name: Train paired corrected topology arms
+        run: |
+          protocol_sha=$(sha256sum prepared/aggregate/frozen-protocol.json | awk '{print $1}')
+          controls_sha=$(sha256sum prepared/controls/control-bundle.json | awk '{print $1}')
+          python -m yolo_flywire.graph_topology_corrected seed \
+            --protocol prepared/aggregate/frozen-protocol.json \
+            --protocol-sha256 "$protocol_sha" \
+            --source-manifest prepared/aggregate/source-manifest.json \
+            --bundle prepared/aggregate/bundle \
+            --execution-config prepared/execution-config.json \
+            --connectivity prepared/flywire-connectivity.csv \
+            --controls prepared/controls/control-bundle.json \
+            --controls-sha256 "$controls_sha" \
+            --seed "${{ matrix.seed }}" \
+            --output seed-output
+          cat seed-output/seed_report.json
+
+      - name: Upload one-seed corrected topology evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: kth-corrected-topology-seed-${{ matrix.seed }}-${{ github.run_id }}
+          path: seed-output/seed_report.json
+          if-no-files-found: error
+          retention-days: 1
+
+  reduce:
+    name: Reduce corrected topology five-seed evidence
+    needs: [prepare, seed]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout corrected-topology head
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11 with shared pip cache
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: python/pyproject.toml
+
+      - name: Install development runtime
+        run: python -m pip install -e "./python[dev]" "numpy==2.4.6" "torch==2.14.0"
+
+      - name: Download exact prepared input
+        uses: actions/download-artifact@v4
+        with:
+          name: kth-corrected-topology-prepared-${{ github.run_id }}
+          path: prepared
+
+      - name: Download seed 7 report
+        uses: actions/download-artifact@v4
+        with:
+          name: kth-corrected-topology-seed-7-${{ github.run_id }}
+          path: seed-reports/7
+      - name: Download seed 11 report
+        uses: actions/download-artifact@v4
+        with:
+          name: kth-corrected-topology-seed-11-${{ github.run_id }}
+          path: seed-reports/11
+      - name: Download seed 19 report
+        uses: actions/download-artifact@v4
+        with:
+          name: kth-corrected-topology-seed-19-${{ github.run_id }}
+          path: seed-reports/19
+      - name: Download seed 23 report
+        uses: actions/download-artifact@v4
+        with:
+          name: kth-corrected-topology-seed-23-${{ github.run_id }}
+          path: seed-reports/23
+      - name: Download seed 31 report
+        uses: actions/download-artifact@v4
+        with:
+          name: kth-corrected-topology-seed-31-${{ github.run_id }}
+          path: seed-reports/31
+
+      - name: Reduce exact five-seed corrected topology evidence
+        run: |
+          python -m yolo_flywire.graph_topology_corrected reduce \
+            --protocol prepared/aggregate/frozen-protocol.json \
+            --reports-root seed-reports \
+            --output reduced
+          cat reduced/corrected_topology_report.json
+
+      - name: Stage development-only corrected topology evidence
+        run: |
+          mkdir final-evidence
+          cp prepared/source-artifact-metadata.json final-evidence/
+          cp prepared/aggregate/frozen-protocol.json final-evidence/
+          cp prepared/aggregate/source-manifest.json final-evidence/
+          cp prepared/aggregate/bundle/manifest.json final-evidence/aggregate-manifest.json
+          cp prepared/execution-config.json final-evidence/
+          cp prepared/controls/flywire-selected-graph.json final-evidence/
+          cp reduced/corrected_topology_report.json final-evidence/
+          cp -r seed-reports final-evidence/seed-reports
+
+      - name: Upload corrected KTH topology report
+        uses: actions/upload-artifact@v4
+        with:
+          name: yolo-flywire-kth-corrected-topology-${{ github.run_id }}
+          path: final-evidence
+          if-no-files-found: error
+          retention-days: 30
