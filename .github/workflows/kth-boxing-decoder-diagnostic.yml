@@ -1,0 +1,108 @@
+name: kth-boxing-decoder-diagnostic
+
+on:
+  push:
+    branches:
+      - research/yolo-flywire-behavior-v0
+    paths:
+      - .github/workflows/kth-boxing-decoder-diagnostic.yml
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      KTH_BOXING_URL: https://www.csc.kth.se/cvap/actions/boxing.zip
+    steps:
+      - name: Checkout exact research head
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install exact PyAV runtime only
+        run: python -m pip install --only-binary=av "av==15.1.0"
+
+      - name: Download official KTH boxing archive
+        run: |
+          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+            "$KTH_BOXING_URL" --output boxing.zip
+          test -s boxing.zip
+          sha256sum boxing.zip
+
+      - name: Compare strict default and ignore-error decode modes
+        run: |
+          python - <<'PY'
+          from hashlib import sha256
+          from pathlib import Path
+          from tempfile import TemporaryDirectory
+          from zipfile import ZipFile
+          import av
+
+          archive = Path("boxing.zip")
+          member = "person01_boxing_d4_uncomp.avi"
+
+          with TemporaryDirectory(prefix="kth-boxing-d4-") as temporary:
+              clip = Path(temporary) / member
+              member_hash = sha256()
+              with ZipFile(archive, "r") as zipped:
+                  with zipped.open(member, "r") as source, clip.open("wb") as target:
+                      while chunk := source.read(1024 * 1024):
+                          member_hash.update(chunk)
+                          target.write(chunk)
+              print(f"KTH_BOXING_DIAG member_sha256={member_hash.hexdigest()}")
+
+              def run_mode(name, codec_options=None, output_corrupt=False):
+                  count = 0
+                  last_pts = None
+                  last_time_base = None
+                  prefix_hash = sha256()
+                  all_hash = sha256()
+                  exception = None
+                  with clip.open("rb") as handle:
+                      try:
+                          with av.open(handle, mode="r", format="avi") as container:
+                              stream = container.streams.video[0]
+                              stream.codec_context.thread_count = 1
+                              if codec_options is not None:
+                                  stream.codec_context.options = dict(codec_options)
+                              if output_corrupt:
+                                  stream.codec_context.flags |= stream.codec_context.flags.OUTPUT_CORRUPT
+                              declared = stream.frames
+                              for frame in container.decode(stream):
+                                  count += 1
+                                  last_pts = frame.pts
+                                  last_time_base = frame.time_base
+                                  raw = frame.to_ndarray(format="bgr24").tobytes()
+                                  all_hash.update(raw)
+                                  if count <= 304:
+                                      prefix_hash.update(raw)
+                      except BaseException as exc:
+                          exception = exc
+                  print(f"KTH_BOXING_DIAG mode={name} declared_frames={declared}")
+                  print(f"KTH_BOXING_DIAG mode={name} successful_frames={count}")
+                  print(f"KTH_BOXING_DIAG mode={name} last_pts={last_pts}")
+                  print(f"KTH_BOXING_DIAG mode={name} last_time_base={last_time_base}")
+                  print(f"KTH_BOXING_DIAG mode={name} prefix304_sha256={prefix_hash.hexdigest()}")
+                  print(f"KTH_BOXING_DIAG mode={name} all_frames_sha256={all_hash.hexdigest()}")
+                  if exception is None:
+                      print(f"KTH_BOXING_DIAG mode={name} exception_type=None")
+                      print(f"KTH_BOXING_DIAG mode={name} exception_repr=None")
+                  else:
+                      print(f"KTH_BOXING_DIAG mode={name} exception_type={type(exception).__module__}.{type(exception).__name__}")
+                      print(f"KTH_BOXING_DIAG mode={name} exception_repr={exception!r}")
+
+              run_mode("strict", {"err_detect": "explode"})
+              run_mode("default")
+              run_mode("ignore_err", {"err_detect": "ignore_err"})
+              run_mode("ignore_err_output_corrupt", {"err_detect": "ignore_err"}, output_corrupt=True)
+          PY
+
+      - name: Remove source archive
+        if: always()
+        run: rm -f boxing.zip
