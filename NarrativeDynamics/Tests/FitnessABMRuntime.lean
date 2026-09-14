@@ -141,7 +141,7 @@ private theorem replay_start (eta : PosFitness) (raw : Array RawAgent)
     (m : Nat) (hm : 0 < m ∧ m ≤ 2) (ticks : List RawTick) :
     FitnessABM.replay ⟨2, #[1, eta.val], #[(0, 1)]⟩ m raw ticks =
       runInputs m 0 0 ⟨2, 0, initial eta raw hs hv⟩ ticks := by
-  simp only [FitnessABM.replay, parsed_seed, if_pos hm, parsed_roster]
+  simp only [FitnessABM.replay, parsed_seed, if_pos hm, parsed_roster raw hs hv]
   rfl
 
 private def singletonTarget {n : Nat} (j : Fin n) : Targets n 1 :=
