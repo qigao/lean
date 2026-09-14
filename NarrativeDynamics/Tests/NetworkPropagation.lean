@@ -101,4 +101,10 @@ example {n : Nat} (g : MeshGraph (Fin n)) [DecidableRel g]
     nextAgent g p i = nextAgent g q i :=
   nextAgent_locality g p q i hstate hprofile hbelief hbroadcast
 
+#print axioms NarrativeDynamics.NetworkPropagation.propagate_valid
+#print axioms NarrativeDynamics.NetworkPropagation.transmission_iff
+#print axioms NarrativeDynamics.NetworkPropagation.nextAgent_no_incoming
+#print axioms NarrativeDynamics.NetworkPropagation.exposures_mono
+#print axioms NarrativeDynamics.NetworkPropagation.nextAgent_locality
+
 end NarrativeDynamics.Tests.NetworkPropagation

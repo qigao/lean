@@ -2491,3 +2491,37 @@ The audit's positive and negative regression cases run in the Lean proof job.
 When Python discovery is enabled outside the existing fitness-branch exclusions,
 its job checks out the same exact head as Lean and installs the existing pinned
 `requirements-world-studio.txt` environment before running the full unittest suite.
+
+### Lean BB-driven agent evolution V23.7
+
+The BB agent model composes finite fitness attachment with one concrete rational
+scalar-belief ABM. Fitness stays fixed in the BB state, agent receptivity and
+broadcast thresholds stay fixed after birth, and every undirected BB edge supplies
+unit influence in both directions. A birth retains every old agent's stable ID,
+profile, belief, and exposure before propagation, initializes the newborn with zero
+exposure, and then performs one synchronous propagation round from the complete
+post-birth snapshot. Idle ticks perform the same propagation without changing the
+network or multiplying the trace probability. The definitions and generic contracts
+are in [`NetworkPropagation`](NarrativeDynamics/Core/NetworkPropagation.lean),
+[`FitnessABM`](NarrativeDynamics/Core/FitnessABM.lean),
+[`FitnessABMReplay`](NarrativeDynamics/Core/FitnessABMReplay.lean), and
+[`FitnessABMDistribution`](NarrativeDynamics/Core/FitnessABMDistribution.lean).
+
+The exact probability experiment fixes the seed, initial agent state, positive
+attachment count, birth calendar, newborn fitness, profiles, and initial beliefs;
+only legal ordered BB target traces vary. For a two-node unit-fitness seed with
+beliefs `[1, 0]` and one zero-belief newborn, attaching the newborn to source `0`
+has mass `1/2` and produces beliefs `[1, 1, 1]`, while attaching it to relay `1`
+has mass `1/2` and produces `[1, 1, 0]`. Thus the newborn-broadcast event has exact
+probability `1/2`. Changing only the seed fitness to `[1, 3]` changes that event
+probability to `1/4`. The kernel-checked branches, delayed relay, idle tick, exact
+event masses, and diameter witnesses are in the
+[`FitnessABMDistribution` fixtures](NarrativeDynamics/Tests/FitnessABMDistribution.lean).
+
+The checked replay is atomic: it returns either the complete joint state and exact
+existing BB trace mass or one indexed validation error. The shared corpus compares
+eight finite, single-round Lean examples with the existing fixed-roster Python V1
+runtime; this is example agreement, not a proof of Python floating-point arithmetic
+or a production birth adapter. The proof does not add V19 population creation,
+adaptive fitness, full semantic cognition, asymptotic small-world results, or a
+universal fixed-hop guarantee.

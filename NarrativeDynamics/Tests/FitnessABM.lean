@@ -408,6 +408,12 @@ example :
   grow_order_irrelevant seed2 target01 target10 (by decide) birthOne (by decide_cbv)
 
 #print axioms NarrativeDynamics.FitnessABM.extendPopulation_valid
+#print axioms NarrativeDynamics.FitnessABM.grow_projection
+#print axioms NarrativeDynamics.FitnessABM.grow_old_state
+#print axioms NarrativeDynamics.FitnessABM.grow_new_state
+#print axioms NarrativeDynamics.FitnessABM.grow_old_profile
+#print axioms NarrativeDynamics.FitnessABM.advance_projection
+#print axioms NarrativeDynamics.FitnessABM.advance_profiles
 #print axioms NarrativeDynamics.FitnessABM.grow_order_irrelevant
 #print axioms NarrativeDynamics.FitnessABM.runTyped_counts
 #print axioms NarrativeDynamics.FitnessABM.runTyped_probability_pos

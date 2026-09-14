@@ -1,6 +1,6 @@
 # BB-driven ABM Evolution V1 Design
 
-Status: approved for implementation planning by the user's subsequent `go`. The implementation plan is `docs/superpowers/plans/2026-09-14-bb-abm-evolution-v1.md`; implementation has not started.
+Status: approved and implemented through Tasks 1–5 of `docs/superpowers/plans/2026-09-14-bb-abm-evolution-v1.md`, with actual CI and independent task reviews complete. Task 6's genuine missing-public-surface RED is complete; its permanent integration candidate awaits final CI, draft-PR evidence, and broad review.
 
 Base: `proof/narrative-dynamics-v0` at `0a41462a37064a2a3ded3676ebdfb24b9243fc8c`.
 
@@ -153,7 +153,7 @@ The probability statement is conditional on the supplied birth calendar and agen
 
 ## 9. Concrete acceptance scenarios
 
-These are proof obligations and regression targets for implementation, not results already established by this design document.
+These are the proof obligations and regression targets implemented by Tasks 1–5. Their completed CI and review evidence is tracked by the implementation plan; this design document is not itself proof evidence.
 
 ### 9.1 One birth with a behavioral outcome probability
 
@@ -221,6 +221,4 @@ The first follow-up after this foundation should be a separately specified runti
 
 ## 12. Design review and next handoff
 
-This design records the approved direction of BB-driven network growth with persistent agent updates and proposes its first concrete proof scope. Its source references, acceptance arithmetic, and compatibility statements must be checked before commit.
-
-After written design review, create an implementation plan covering the propagation kernel, joint growth, checked replay, joint outcome probabilities, and conformance/audit integration. The plan must identify an executable failing example for each new behavior before implementing it. No production or Lean proof implementation belongs to this design-only change.
+This design records the approved direction of BB-driven network growth with persistent agent updates and its first concrete proof scope. The implementation plan covers the propagation kernel, joint growth, checked replay, joint outcome probabilities, and conformance/audit integration. Tasks 1–5 completed their executable RED/GREEN checks and independent reviews; Task 6 integration and final branch review remain tracked in that plan.

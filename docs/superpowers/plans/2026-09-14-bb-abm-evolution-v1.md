@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-14-bb-abm-evolution-v1-design.md`, approved from commit `49655229bc3c613a6b71f9c671a3e38a458551dc`.
 
+**Execution status (2026-09-14):** Tasks 1–5 have actual CI evidence and clean independent task reviews. Task 6's public-root RED is confirmed at `46284f101f60fef3872ef387a1ec1306786b1edc` by run `34838812694`, job `103958744122`; its permanent integration candidate awaits final CI, draft-PR evidence, and broad review.
+
 ## Global Constraints
 
 - "Fitness is stored only in the existing BB state."
@@ -130,7 +132,7 @@ def propagate {n : Nat} (g : MeshGraph (Fin n)) [DecidableRel g]
   { p with agents := nextAgent g p }
 ```
 
-- [ ] **Write the delayed-relay RED.** Import the future core module, open its namespace and `BigOperators`, and define this exact directed test graph and population:
+- [x] **Write the delayed-relay RED.** Import the future core module, open its namespace and `BigOperators`, and define this exact directed test graph and population:
 
 ```lean
 def line3 : MeshGraph (Fin 3) := fun i j => i.val + 1 = j.val
@@ -147,9 +149,9 @@ example : List.ofFn (fun i =>
 example : transmissions line3 initial3 = {(0, 1)} := by decide_cbv
 ```
 
-- [ ] **Run RED:** `lake env lean NarrativeDynamics/Tests/NetworkPropagation.lean`. Record the missing-module or missing-declaration failure, not a toolchain installation failure.
-- [ ] **Implement the records and pure functions above.** Import `NarrativeDynamics.Core.SocialMesh`, keep executable decidability, and collect all incoming signals before returning any updated state.
-- [ ] **Prove validity from finite sums.** For a nonempty incoming set, derive `0 < (received.card : Rat)`, a nonnegative signal sum, and `sum <= received.card` using `Finset.sum_nonneg` and `Finset.sum_le_sum`. Divide by the positive cardinality, then prove the convex update bounds with receptivity in `[0,1]`. For the empty set, use the original agent validity. Export this exact theorem interface:
+- [x] **Run RED:** `lake env lean NarrativeDynamics/Tests/NetworkPropagation.lean`. Record the missing-module or missing-declaration failure, not a toolchain installation failure.
+- [x] **Implement the records and pure functions above.** Import `NarrativeDynamics.Core.SocialMesh`, keep executable decidability, and collect all incoming signals before returning any updated state.
+- [x] **Prove validity from finite sums.** For a nonempty incoming set, derive `0 < (received.card : Rat)`, a nonnegative signal sum, and `sum <= received.card` using `Finset.sum_nonneg` and `Finset.sum_le_sum`. Divide by the positive cardinality, then prove the convex update bounds with receptivity in `[0,1]`. For the empty set, use the original agent validity. Export this exact theorem interface:
 
 ```lean
 example {n : Nat} (g : MeshGraph (Fin n)) [DecidableRel g]
@@ -157,8 +159,8 @@ example {n : Nat} (g : MeshGraph (Fin n)) [DecidableRel g]
   propagate_valid g p hp
 ```
 
-- [ ] **Add and prove local contracts.** Export `transmission_iff` for `(j,i) ∈ transmissions g p ↔ g j i ∧ broadcasting (p.profiles j) (p.agents j) = true`; `nextAgent_no_incoming` for an empty incoming set; and `exposures_mono` for old exposure at most the computed exposure. Prove `nextAgent_locality`: with the graph fixed, equal receiver state/profile and equal adjacent source beliefs/broadcast booleans imply equal next receiver state. Source exposure counts and nonadjacent agent state are not read. Derive the transmission result by `simp [transmissions]`; use the identical incoming set and identical finite signal sum for locality.
-- [ ] **Add numeric and direction boundaries.** Use the following exact expectations, changing only the indicated input fields in `initial3`:
+- [x] **Add and prove local contracts.** Export `transmission_iff` for `(j,i) ∈ transmissions g p ↔ g j i ∧ broadcasting (p.profiles j) (p.agents j) = true`; `nextAgent_no_incoming` for an empty incoming set; and `exposures_mono` for old exposure at most the computed exposure. Prove `nextAgent_locality`: with the graph fixed, equal receiver state/profile and equal adjacent source beliefs/broadcast booleans imply equal next receiver state. Source exposure counts and nonadjacent agent state are not read. Derive the transmission result by `simp [transmissions]`; use the identical incoming set and identical finite signal sum for locality.
+- [x] **Add numeric and direction boundaries.** Use the following exact expectations, changing only the indicated input fields in `initial3`:
 
 ```text
 receiver 1 receptivity = 1/2: next belief = 1/2, next exposure = 1, broadcasting = true
@@ -168,7 +170,7 @@ source 0 belief = 0, threshold = 0: transmission (0,1) carries zero; receiver ex
 only source 1 broadcasts on line3: (1,2) transmits; (1,0) does not
 ```
 
-- [ ] **Run GREEN and audit the new source:**
+- [x] **Run GREEN and audit the new source:**
 
 ```bash
 lake build NarrativeDynamics.Core.NetworkPropagation
@@ -223,9 +225,9 @@ inductive TickInput (n m : Nat) : Type where
   | birth (targets : Targets n m) (data : BirthData)
 ```
 
-Implement these exact interfaces: `extendPopulation {n} (p : Population n) (a : NewAgent) : Population (n+1)`; `grow {n m} (s : JointState n) (T : Targets n m) (hm : 0 < m) (b : BirthData) : JointState (n+1)`; `advance {n} (s : JointState n) : JointState n`; `runTyped {n m} (s : JointState n) (hm : 0 < m) (schedule : Schedule n m) (roundIndex : Nat := 0) : Result`; and `tick` with the same state, `hm`, and round argument but one `TickInput n m`.
+Implement these exact interfaces: `extendPopulation {n} (p : Population n) (a : NewAgent) : Population (n+1)`; `grow {n m} (s : JointState n) (T : Targets n m) (hm : 0 < m) (b : BirthData) : JointState (n+1)`; `advance {n} (s : JointState n) : JointState n`; `runTyped {n m} (s : JointState n) (hm : 0 < m) (hb : m ≤ n) (schedule : Schedule n m) (roundIndex : Nat := 0) : Result`; and `tick` with the same state, `hm`, `hb`, and round argument but one `TickInput n m`.
 
-- [ ] **Write a typed birth RED.** Construct the seed network as the complete graph on `Fin 2`, with fitness `[1,1]`; prove its connectedness by the zero-length walk for equal vertices and one edge otherwise. Its population is profiles `fun _ => ⟨1,1/2⟩`, beliefs `[1,0]`, exposures `[0,0]`, with bounds discharged by finite cases and `norm_num`. Name it `seed2` in the test namespace. Define:
+- [x] **Write a typed birth RED.** Construct the seed network as the complete graph on `Fin 2`, with fitness `[1,1]`; prove its connectedness by the zero-length walk for equal vertices and one edge otherwise. Its population is profiles `fun _ => ⟨1,1/2⟩`, beliefs `[1,0]`, exposures `[0,0]`, with bounds discharged by finite cases and `norm_num`. Name it `seed2` in the test namespace. Define:
 
 ```lean
 def newbornZero : NewAgent :=
@@ -243,26 +245,27 @@ example : List.ofFn (fun i => ((advance joined).population.agents i).belief) =
     [1,1,0] := by decide_cbv
 ```
 
-- [ ] **Run RED:** `lake env lean NarrativeDynamics/Tests/FitnessABM.lean` and record the absent typed composition surface.
-- [ ] **Implement identity transport and growth.** Set profiles to `Fin.lastCases a.profile p.profiles`; states to `Fin.lastCases ⟨a.initialBelief,0⟩ p.agents`; prove validity by `Fin.lastCases`. Define the new network only with `applyBirth s.network T hm b.fitness`. Export `extendPopulation_valid`, `grow_projection`, `grow_old_state`, and `grow_new_state`. Export `grow_old_profile` as the corresponding profile identity theorem.
-- [ ] **Implement one synchronous advance.** Install `s.network.snapshot.adjDec`, use `propagate s.network.snapshot.graph.Adj s.population`, and derive its validity with `propagate_valid`. Export `advance_projection` for unchanged network and `advance_profiles` for unchanged profiles.
-- [ ] **Implement structural schedule recursion.** Use these equations, with `tail.final` retained and probability multiplied only at births:
+- [x] **Run RED:** `lake env lean NarrativeDynamics/Tests/FitnessABM.lean` and record the absent typed composition surface.
+- [x] **Implement identity transport and growth.** Set profiles to `Fin.lastCases a.profile p.profiles`; states to `Fin.lastCases ⟨a.initialBelief,0⟩ p.agents`; prove validity by `Fin.lastCases`. Define the new network only with `applyBirth s.network T hm b.fitness`. Export `extendPopulation_valid`, `grow_projection`, `grow_old_state`, and `grow_new_state`. Export `grow_old_profile` as the corresponding profile identity theorem.
+- [x] **Implement one synchronous advance.** Install `s.network.snapshot.adjDec`, use `propagate s.network.snapshot.graph.Adj s.population`, and derive its validity with `propagate_valid`. Export `advance_projection` for unchanged network and `advance_profiles` for unchanged profiles.
+- [x] **Implement structural schedule recursion.** Use these equations, with `tail.final` retained and probability multiplied only at births:
 
 ```text
-runTyped s hm nil r = Result(RunState(n,r,s), 1)
-runTyped s hm (idle rest) r = runTyped (advance s) hm rest (r+1)
-runTyped s hm (birth T b rest) r =
-  let tail = runTyped (advance (grow s T hm b)) hm rest (r+1)
+runTyped s hm hb nil r = Result(RunState(n,r,s), 1)
+runTyped s hm hb (idle rest) r = runTyped (advance s) hm hb rest (r+1)
+runTyped s hm hb (birth T b rest) r =
+  let tail = runTyped (advance (grow s T hm b)) hm
+    (Nat.le_trans hb (Nat.le_succ n)) rest (r+1)
   Result(tail.final, orderedMass s.network T * tail.probability)
-tick s hm idle r = runTyped s hm (idle nil) r
-tick s hm (birth T b) r = runTyped s hm (birth T b nil) r
+tick s hm hb idle r = runTyped s hm hb (idle nil) r
+tick s hm hb (birth T b) r = runTyped s hm hb (birth T b nil) r
 ```
 
 Define `Schedule.tickCount` and `Schedule.birthCount` by recursion: both are zero at `nil`; `idle` adds only one tick; `birth` adds one to both. Prove `runTyped_counts`: final node count is `n + birthCount`, final round index is `r + tickCount`, and final edge count is the original edge count plus `m * birthCount`. Prove `runTyped_probability_pos` from `orderedMass_pos` and multiplication of positive masses. Totality comes from structural recursion, not an assumption about arbitrary callbacks.
 
-- [ ] **Prove target-order topology and behavior agreement.** Export `grow_order_irrelevant`: if `T.selected = U.selected`, then the grown graphs and their one-round propagated population observations agree. Reuse `birth_order_irrelevant` and identical population extension; do not assert equal ordered probabilities. The comparison observes profiles, beliefs, and exposures, rather than proof fields.
-- [ ] **Add successive-birth and idle-tick tests.** In the seed fixture, use `.birth target1 birthOne (.birth ⟨![2], by decide⟩ birthOne .nil)`. Require beliefs `[1,1,1,0]`, exposures `[1,2,1,0]`, node count four, edge count three, round index two, and probability `1/8`. Appending `.idle .nil` instead of the final `.nil` must make agent `3` receive at round three. Also test an immediately broadcasting newborn supplied with belief one, old profile retention, and unit probability for an idle-only schedule.
-- [ ] **Run GREEN, then commit:**
+- [x] **Prove target-order topology and behavior agreement.** Export `grow_order_irrelevant`: if `T.selected = U.selected`, then the grown graphs and their one-round propagated population observations agree. Reuse `birth_order_irrelevant` and identical population extension; do not assert equal ordered probabilities. The comparison observes profiles, beliefs, and exposures, rather than proof fields.
+- [x] **Add successive-birth and idle-tick tests.** In the seed fixture, use `.birth target1 birthOne (.birth ⟨![2], by decide⟩ birthOne .nil)`. Require beliefs `[1,1,1,0]`, exposures `[1,2,1,0]`, node count four, edge count three, round index two, and probability `1/8`. Appending `.idle .nil` instead of the final `.nil` must make agent `3` receive at round three. Also test an immediately broadcasting newborn supplied with belief one, old profile retention, and unit probability for an idle-only schedule.
+- [x] **Run GREEN, then commit:**
 
 ```bash
 lake build NarrativeDynamics.Core.FitnessABM
@@ -318,7 +321,7 @@ inductive JointError where
 
 Implement `parseAgent (raw : RawAgent) : Except AgentField {pair : AgentProfile × AgentState // pair.1.Valid ∧ pair.2.Valid}`; `parseAgents (n : Nat) (raw : Array RawAgent) : Except JointError {p : Population n // p.Valid}`; `checkedBirth {n} (s : JointState n) (m : Nat) (raw : RawBirthInput) : Except BirthError (JointState (n+1) × Rat)`; `runInputs (m tickIndex birthIndex : Nat) (s : RunState) (ticks : List RawTick) : Except JointError Result`; and `replay (seed : FitnessAttachment.RawSeed) (m : Nat) (agents : Array RawAgent) (ticks : List RawTick) : Except JointError Result`.
 
-- [ ] **Write checked replay RED with an observable summary.** In the test namespace define:
+- [x] **Write checked replay RED with an observable summary.** In the test namespace define:
 
 ```lean
 def seedRaw : FitnessAttachment.RawSeed := ⟨2, #[1,1], #[(0,1)]⟩
@@ -342,14 +345,14 @@ example : summary (replay seedRaw 1 agentsRaw [some attach1,none]) =
     .ok (3,2,2,[1,1,1],[1,2,1],1/2) := by decide_cbv
 ```
 
-- [ ] **Run RED:** `lake env lean NarrativeDynamics/Tests/FitnessABMReplay.lean`. Record the absent checked joint replay rather than a dependency-install failure.
-- [ ] **Implement scalar and roster validation in the approved order.** `parseAgent` checks receptivity bounds, threshold bounds, then belief bounds, returning the original values plus proofs; it does not clamp. `parseAgents` checks array size first, traverses records in ascending index order, and returns a population only after all records validate. Use a structurally recursive traversal that retains the first failure. Prove `parseAgent_sound`, `parseAgent_complete`, `parseAgents_sound`, and `parseAgents_complete` from the actual branch conditions.
-- [ ] **Implement `checkedBirth` by calling existing `step` first.** On BB failure, return `.network cause`. On success `(nextNetwork,mass)`, validate the newborn as a `RawAgent` with exposure zero. Build its `NewAgent` from those checked values, extend the population onto `nextNetwork`, and return the same `mass`. Use `step_spec` to prove `checkedBirth_spec`: every success equals the typed `grow` with the validated targets, fitness and agent data, paired with the existing `orderedMass`. Do not call a second attachment kernel or modify the raw target order.
-- [ ] **Implement the raw run recursion with separate indices.** For `none`, advance once, increment round and tick index, keep birth index and probability factor one. For `some raw`, call `checkedBirth`, wrap an error with the current two indices, advance the successful grown state, and increment both indices. Only after the suffix succeeds return its final state with the current birth mass multiplied in. Empty input returns the current state with mass one. The outer `replay` applies `parseSeed`, the fixed `m` check, then `parseAgents`, and starts all indices at zero.
-- [ ] **Define exact validity and projection predicates.** Add `RawAgent.Valid` as the three interval requirements and `RawBirthInput.AgentValid` for its corresponding fields. Define `WellFormedTicks n m`: true at the empty list; recurse with unchanged `n` for `none`; for a birth require `raw.birth.Valid n m`, `raw.AgentValid`, and `WellFormedTicks (n+1) m rest`. Define `ReplayInputValid` as BB seed validity, the initial `m` requirement, exact agent-array length, every seed-agent validity, and this tick validity. Define `inputBirths (ticks : List RawTick) : List FitnessAttachment.RawBirth` by `filterMap` of each supplied birth.
-- [ ] **Prove execution and BB agreement.** Export `replay_success_iff_valid` with `(∃ out, replay seed m agents ticks = .ok out) ↔ ReplayInputValid seed m agents ticks`. Export `replay_projection`: a successful joint result projects to a successful existing BB replay on `inputBirths ticks`, with the same node count, adjacency, stored fitness, and probability. Compare the existential graph carriers with a witnessed node-count equality and the resulting `Fin.cast`; never replace this with a comparison of counters alone. Derive `replay_counts` and `replay_probability_pos` through this projection and the tick-count induction.
-- [ ] **Prove failure stability.** Export `runInputs_append_error`: if a prefix already returns `.error e`, appending a suffix returns that same error. Prove it by induction on the prefix, preserving the exact current state and indices. The output type exposes no prefix state or accumulated probability on error. Add conflicting-error examples in addition to the generic theorem.
-- [ ] **Add the complete failure matrix.** Use exact error constructors, including both positions:
+- [x] **Run RED:** `lake env lean NarrativeDynamics/Tests/FitnessABMReplay.lean`. Record the absent checked joint replay rather than a dependency-install failure.
+- [x] **Implement scalar and roster validation in the approved order.** `parseAgent` checks receptivity bounds, threshold bounds, then belief bounds, returning the original values plus proofs; it does not clamp. `parseAgents` checks array size first, traverses records in ascending index order, and returns a population only after all records validate. Use a structurally recursive traversal that retains the first failure. Prove `parseAgent_sound`, `parseAgent_complete`, `parseAgents_sound`, and `parseAgents_complete` from the actual branch conditions.
+- [x] **Implement `checkedBirth` by calling existing `step` first.** On BB failure, return `.network cause`. On success `(nextNetwork,mass)`, validate the newborn as a `RawAgent` with exposure zero. Build its `NewAgent` from those checked values, extend the population onto `nextNetwork`, and return the same `mass`. Use `step_spec` to prove `checkedBirth_spec`: every success equals the typed `grow` with the validated targets, fitness and agent data, paired with the existing `orderedMass`. Do not call a second attachment kernel or modify the raw target order.
+- [x] **Implement the raw run recursion with separate indices.** For `none`, advance once, increment round and tick index, keep birth index and probability factor one. For `some raw`, call `checkedBirth`, wrap an error with the current two indices, advance the successful grown state, and increment both indices. Only after the suffix succeeds return its final state with the current birth mass multiplied in. Empty input returns the current state with mass one. The outer `replay` applies `parseSeed`, the fixed `m` check, then `parseAgents`, and starts all indices at zero.
+- [x] **Define exact validity and projection predicates.** Add `RawAgent.Valid` as the three interval requirements and `RawBirthInput.AgentValid` for its corresponding fields. Define `WellFormedTicks n m`: true at the empty list; recurse with unchanged `n` for `none`; for a birth require `raw.birth.Valid n m`, `raw.AgentValid`, and `WellFormedTicks (n+1) m rest`. Define `ReplayInputValid` as BB seed validity, the initial `m` requirement, exact agent-array length, every seed-agent validity, and this tick validity. Define `inputBirths (ticks : List RawTick) : List FitnessAttachment.RawBirth` by `filterMap` of each supplied birth.
+- [x] **Prove execution and BB agreement.** Export `replay_success_iff_valid` with `(∃ out, replay seed m agents ticks = .ok out) ↔ ReplayInputValid seed m agents ticks`. Export `replay_projection`: a successful joint result projects to a successful existing BB replay on `inputBirths ticks`, with the same node count, adjacency, stored fitness, and probability. Compare the existential graph carriers with a witnessed node-count equality and the resulting `Fin.cast`; never replace this with a comparison of counters alone. Derive `replay_counts` and `replay_probability_pos` through this projection and the tick-count induction.
+- [x] **Prove failure stability.** Export `runInputs_append_error`: if a prefix already returns `.error e`, appending a suffix returns that same error. Prove it by induction on the prefix, preserving the exact current state and indices. The output type exposes no prefix state or accumulated probability on error. Add conflicting-error examples in addition to the generic theorem.
+- [x] **Add the complete failure matrix.** Use exact error constructors, including both positions:
 
 | Input change | Expected first error |
 | --- | --- |
@@ -367,7 +370,7 @@ example : summary (replay seedRaw 1 agentsRaw [some attach1,none]) =
 
 Also assert the empty replay summary `.ok (2,0,1,[1,0],[0,0],1)` and idle-only projection to empty BB replay. For an `m=2` seed edge, target orders `[0,1]` and `[1,0]` under seed fitness `[1,3]` produce masses `1/4` and `3/4`, identical grown graphs, and identical agent results. Preserve both ordered requests.
 
-- [ ] **Run GREEN and commit.** Use symbolic step equations and small observational summaries if full raw reduction becomes expensive; do not expand validity proofs merely to compute three-node data.
+- [x] **Run GREEN and commit.** Use symbolic step equations and small observational summaries if full raw reduction becomes expensive; do not expand validity proofs merely to compute three-node data.
 
 ```bash
 lake build NarrativeDynamics.Core.FitnessABMReplay
@@ -387,7 +390,7 @@ git commit -m "feat(lean): validate and replay finite BB agent evolution"
 **Produces:** In `NarrativeDynamics.FitnessABM`, `Calendar := List (Option BirthData)`; `fitnessSchedule (calendar : Calendar) : List PosFitness`; `scheduleOfTrace {n m} (calendar : Calendar) : TargetTrace n m (fitnessSchedule calendar).length → Schedule n m`; and these outcome/probability interfaces:
 
 ```text
-jointFinal {n} (s : JointState n) (m : Nat) (hm : 0 < m)
+jointFinal {n} (s : JointState n) (m : Nat) (hm : 0 < m) (hb : m <= n)
   (calendar : Calendar) (trace : TargetTrace n m (fitnessSchedule calendar).length)
   : RunState
 
@@ -400,7 +403,7 @@ eventProbability {n} (s : JointState n) (m : Nat) (hm : 0 < m) (hb : m <= n)
   : Rat
 ```
 
-- [ ] **Write the agent-event RED.** In test namespace `NarrativeDynamics.FitnessABM.DistributionFixtures`, define the two-node joint seed directly: complete graph on `Fin 2`, connected by at most one edge, unit fitness, profiles `⟨1,1/2⟩`, and agent states `[⟨1,0⟩,⟨0,0⟩]`. Name it `seed2`. Define `birthOne` with unit positive fitness and `NewAgent` profile `⟨1,1/2⟩`, initial belief zero, and bounds proved by `norm_num`. Define this total observable over the existential final carrier:
+- [x] **Write the agent-event RED.** In test namespace `NarrativeDynamics.FitnessABM.DistributionFixtures`, define the two-node joint seed directly: complete graph on `Fin 2`, connected by at most one edge, unit fitness, profiles `⟨1,1/2⟩`, and agent states `[⟨1,0⟩,⟨0,0⟩]`. Name it `seed2`. Define `birthOne` with unit positive fitness and `NewAgent` profile `⟨1,1/2⟩`, initial belief zero, and bounds proved by `norm_num`. Define this total observable over the existential final carrier:
 
 ```lean
 def newbornBroadcasts (out : RunState) : Bool :=
@@ -415,20 +418,20 @@ theorem newborn_mass_unit : eventProbability seed2 1 (by decide) (by decide)
   decide_cbv
 ```
 
-- [ ] **Run RED:** `lake env lean NarrativeDynamics/Tests/FitnessABMDistribution.lean` and record the missing joint-event surface.
-- [ ] **Attach the existing trace to the fixed calendar.** Define `fitnessSchedule` by filtering births and mapping `BirthData.fitness`. Recurse over the calendar in `scheduleOfTrace`: the empty calendar gives `.nil`, `none` gives `.idle` without consuming a target, and `some data` consumes the head target and constructs `.birth`. Use explicit length equalities and transport at dependent boundaries where Lean requires them. Do not add a second target-trace type or Fintype enumeration.
-- [ ] **Define outcomes and probabilities from existing functions.** Set `jointFinal` to `(runTyped s hm (scheduleOfTrace calendar trace)).final`. Set `jointProbability` to `traceProbability s.network m hm hb (fitnessSchedule calendar) trace`. Use the following event sum, with the existing executable Fintype instance; never discard traces based on their resulting agent beliefs:
+- [x] **Run RED:** `lake env lean NarrativeDynamics/Tests/FitnessABMDistribution.lean` and record the missing joint-event surface.
+- [x] **Attach the existing trace to the fixed calendar.** Define `fitnessSchedule` by filtering births and mapping `BirthData.fitness`. Recurse over the calendar in `scheduleOfTrace`: the empty calendar gives `.nil`, `none` gives `.idle` without consuming a target, and `some data` consumes the head target and constructs `.birth`. Use explicit length equalities and transport at dependent boundaries where Lean requires them. Do not add a second target-trace type or Fintype enumeration.
+- [x] **Define outcomes and probabilities from existing functions.** Set `jointFinal` to `(runTyped s hm hb (scheduleOfTrace calendar trace)).final`. Set `jointProbability` to `traceProbability s.network m hm hb (fitnessSchedule calendar) trace`. Use the following event sum, with the existing executable Fintype instance; never discard traces based on their resulting agent beliefs:
 
 ```lean
 def eventProbability {n : Nat} (s : JointState n) (m : Nat)
     (hm : 0 < m) (hb : m <= n) (calendar : Calendar)
     (event : RunState → Prop) [DecidablePred event] : Rat :=
   ∑ trace : TargetTrace n m (fitnessSchedule calendar).length,
-    if event (jointFinal s m hm calendar trace)
+    if event (jointFinal s m hm hb calendar trace)
     then jointProbability s m hm hb calendar trace else 0
 ```
-- [ ] **Prove the probability bridge.** Export `jointProbability_eq_runTyped`: the existing trace probability equals the mass actually returned by the composed run. Induct over the calendar; idle contributes no mass or network change, while a birth uses `advance_projection` before the next factor. Export `jointFinal_projection` comparing its graph observations with `traceFinal`, `jointProbability_sum_one` by the existing normalized law, and `eventProbability_true`, `eventProbability_false`, `eventProbability_nonneg`, and `eventProbability_le_one` by finite sums. The upper bound compares each summand with its nonnegative trace mass, then uses normalization.
-- [ ] **Prove the complete exact acceptance set:**
+- [x] **Prove the probability bridge.** Export `jointProbability_eq_runTyped`: the existing trace probability equals the mass actually returned by the composed run. Induct over the calendar; idle contributes no mass or network change, while a birth uses `advance_projection` before the next factor. Export `jointFinal_projection` comparing its graph observations with `traceFinal`, `jointProbability_sum_one` by the existing normalized law, and `eventProbability_true`, `eventProbability_false`, `eventProbability_nonneg`, and `eventProbability_le_one` by finite sums. The upper bound compares each summand with its nonnegative trace mass, then uses normalization.
+- [x] **Prove the complete exact acceptance set:**
 
 ```text
 unit seed fitness, one birth: newbornBroadcasts probability = 1/2
@@ -445,7 +448,7 @@ Keep the changed-fitness comparison conditional: it changes target probabilities
 
 Name the weighted-seed equality `newborn_mass_weighted` and the birth-then-idle equality `newborn_mass_after_idle` in the same test namespace. Print their actual axiom reports with that of `newborn_mass_unit` and require all three in the final audit.
 
-- [ ] **Run GREEN and commit.** Keep the event carrier tiny and compute only observational data at fixture boundaries.
+- [x] **Run GREEN and commit.** Keep the event carrier tiny and compute only observational data at fixture boundaries.
 
 ```bash
 lake build NarrativeDynamics.Core.FitnessABMDistribution
@@ -464,7 +467,7 @@ git commit -m "feat(lean): prove exact probabilities of BB agent outcomes"
 
 **Produces:** A deterministic Lean executable that writes one JSON object, a checked-in corpus generated by that executable, and a Python test that compares each vector with one independently valid V1 round. This layer does not sample BB traces or construct a changing-roster Python trajectory.
 
-- [ ] **Write the corpus-consumer RED.** Use the following test body and imports in `tests/test_network_abm_bb_conformance.py`. All chosen numerical examples have exactly representable binary values, so require exact equality and use no tolerance:
+- [x] **Write the corpus-consumer RED.** Use the following test body and imports in `tests/test_network_abm_bb_conformance.py`. All chosen numerical examples have exactly representable binary values, so require exact equality and use no tolerance:
 
 ```python
 import json
@@ -540,8 +543,8 @@ class BBPropagationConformanceTests(unittest.TestCase):
 
 The explicit `PopulationState` construction is essential: `initialize_population` counts supplied beliefs as an exposure and would change the approved vectors. Each vector is an independent round-zero snapshot; no artificial cross-model parent hash is introduced.
 
-- [ ] **Run RED:** `python -m unittest tests.test_network_abm_bb_conformance -v`. The expected initial failure is the absent shared corpus, not an unrelated import error.
-- [ ] **Define the eight exact inputs in the Lean exporter.** Give every listed graph unit fitness, `m=1`, default receptivity one, and default threshold `1/2`. The graphs are post-growth snapshots for a single propagation comparison. All prior exposures and exceptional parameters are explicit:
+- [x] **Run RED:** `python -m unittest tests.test_network_abm_bb_conformance -v`. The expected initial failure is the absent shared corpus, not an unrelated import error.
+- [x] **Define the eight exact inputs in the Lean exporter.** Give every listed graph unit fitness, `m=1`, default receptivity one, and default threshold `1/2`. The graphs are post-growth snapshots for a single propagation comparison. All prior exposures and exceptional parameters are explicit:
 
 | ID | Undirected edges | Prior beliefs | Prior exposures | Parameter change | Required next beliefs | Required next exposures |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -556,7 +559,7 @@ The explicit `PopulationState` construction is essential: `initialize_population
 
 Broadcasting is derived from the next beliefs and unchanged thresholds. Transmissions are derived from the input snapshot, never the next beliefs. Assert these exact input/output pairs in `NarrativeDynamics/Tests/NetworkPropagation.lean` or `NarrativeDynamics/Tests/FitnessABMReplay.lean` as applicable, so the exporter cannot silently redefine expected semantics by generating a new corpus.
 
-- [ ] **Implement the exporter from actual computed state.** In namespace `NarrativeDynamics.Conformance.BBPropagation`, define `VectorInput` with fields `id : String`, `seed : FitnessAttachment.RawSeed`, and `agents : Array FitnessABM.RawAgent`; `vectorInputs : List VectorInput` contains the eight rows. Define `renderCase : VectorInput → Except String Lean.Json`: call joint `replay` with the provided seed/agents and no ticks, then compute `advance` and `transmissions` on the parsed joint state. An error becomes an exporter error, not an omitted vector.
+- [x] **Implement the exporter from actual computed state.** In namespace `NarrativeDynamics.Conformance.BBPropagation`, define `VectorInput` with fields `id : String`, `seed : FitnessAttachment.RawSeed`, and `agents : Array FitnessABM.RawAgent`; `vectorInputs : List VectorInput` contains the eight rows. Define `renderCase : VectorInput → Except String Lean.Json`: call joint `replay` with the provided seed/agents and no ticks, then compute `advance` and `transmissions` on the parsed joint state. An error becomes an exporter error, not an omitted vector.
 
 Serialize `input.edges` once per undirected pair in ascending numeric order, and profiles/states in ascending `Fin` order. Rational values are JSON strings from `toString` of the actual `Rat`; exposure counts and IDs are JSON numbers; broadcasting values are JSON booleans. Use `Lean.Json` constructors and `Lean.Json.mkObj`, not manual string escaping. A row has precisely this shape:
 
@@ -566,7 +569,7 @@ Serialize `input.edges` once per undirected pair in ascending numeric order, and
 
 Define `renderCorpus : Except String Lean.Json` by traversing every vector through `renderCase` and wrapping the array with `schema = "bb-abm-v1"`. `main : IO Unit` prints its compressed JSON plus one newline on success and throws `IO.userError` on failure. Keep all top-level axiom reports in test modules, not in exporter stdout.
 
-- [ ] **Generate and compare GREEN.** The first generation creates the checked-in corpus. Subsequent verification always generates to a temporary path and compares, rather than silently updating the golden file:
+- [x] **Generate and compare GREEN.** The first generation creates the checked-in corpus. Subsequent verification always generates to a temporary path and compares, rather than silently updating the golden file:
 
 ```bash
 lake build NarrativeDynamics.Core.FitnessABMReplay
@@ -574,8 +577,8 @@ lake env lean --run NarrativeDynamics/Conformance/FitnessABMVectors.lean > confo
 python -m unittest tests.test_network_abm_bb_conformance tests.test_network_abm_simulation tests.test_network_abm_contracts -v
 ```
 
-- [ ] **Check that the comparison can detect disagreement.** Temporarily change `attach-relay`'s expected receiver-2 belief from zero to one in the corpus; the Python test must fail on that receiver. Regenerate the original corpus from Lean and require the test to pass. Record both outputs. This checks the cross-language comparison without modifying either production kernel.
-- [ ] **Commit only the conformance surface and associated exact fixture assertions:**
+- [x] **Check that the comparison can detect disagreement.** Temporarily change `attach-relay`'s expected receiver-2 belief from zero to one in the corpus; the Python test must fail on that receiver. Regenerate the original corpus from Lean and require the test to pass. Record both outputs. This checks the cross-language comparison without modifying either production kernel.
+- [x] **Commit only the conformance surface and associated exact fixture assertions:**
 
 ```bash
 git diff --check
@@ -591,8 +594,8 @@ git commit -m "test: compare BB agent propagation with shared Lean vectors"
 
 **Produces:** One bounded proof gate that fails on missing proofs, missing dependency reports, timeouts, or corpus disagreement; root imports for the four new core modules; and README claims supported by the completed proof and comparison evidence.
 
-- [ ] **Write the integration RED.** Change the first import of `NarrativeDynamics/Tests/FitnessABMDistribution.lean` to `import NarrativeDynamics` and add `#check NarrativeDynamics.FitnessABM.replay_projection`. Before new root imports, a fresh build/test must fail to resolve that public surface through the root. Also run the existing log auditor with an absent required new theorem report and confirm rejection; retain the existing audit regression tests rather than adding a duplicate auditor implementation.
-- [ ] **Add the root imports after the corresponding modules exist:**
+- [x] **Write the integration RED.** Change the first import of `NarrativeDynamics/Tests/FitnessABMDistribution.lean` to `import NarrativeDynamics` and add `#check NarrativeDynamics.FitnessABM.replay_projection`. Before new root imports, a fresh build/test must fail to resolve that public surface through the root. Also run the existing log auditor with an absent required new theorem report and confirm rejection; retain the existing audit regression tests rather than adding a duplicate auditor implementation.
+- [x] **Add the root imports after the corresponding modules exist:**
 
 ```lean
 import NarrativeDynamics.Core.NetworkPropagation
@@ -603,8 +606,8 @@ import NarrativeDynamics.Core.FitnessABMDistribution
 
 Preserve the existing imports and a final newline. Do not import tests or the conformance executable into the public root.
 
-- [ ] **Append actual dependency reports to each test module.** For every name in the script's `proof_names` array below, add `#print axioms NarrativeDynamics.<name>` to the test that owns that theorem. Keep helper lemmas private unless they are part of the specified public API. If an additional public theorem is necessary, add both its printed report and its required name; do not weaken the allowlist or remove a requirement to make a log pass.
-- [ ] **Create the following bounded check script.** It runs after `lake build`, from any directory, and reuses the existing audit CLI. The four proof test suites run sequentially to avoid concurrent peak-memory demand:
+- [x] **Append actual dependency reports to each test module.** For every name in the script's `proof_names` array below, add `#print axioms NarrativeDynamics.<name>` to the test that owns that theorem. Keep helper lemmas private unless they are part of the specified public API. If an additional public theorem is necessary, add both its printed report and its required name; do not weaken the allowlist or remove a requirement to make a log pass.
+- [x] **Create the following bounded check script.** It runs after `lake build`, from any directory, and reuses the existing audit CLI. The conformance-module prerequisite and four proof test suites run sequentially to avoid concurrent peak-memory demand:
 
 ```bash
 #!/usr/bin/env bash
@@ -621,6 +624,10 @@ python3 tools/audit_fitness_trust.py source \
   NarrativeDynamics/Core/NetworkPropagation.lean \
   NarrativeDynamics/Tests/NetworkPropagation.lean \
   NarrativeDynamics/Conformance/FitnessABMVectors.lean
+
+/usr/bin/time -f 'FitnessABMVectors build elapsed=%e s peak_rss=%M KiB' \
+  timeout --kill-after=10s 240s \
+  lake build NarrativeDynamics.Conformance.FitnessABMVectors
 
 for bb_suite in NetworkPropagation FitnessABM FitnessABMReplay FitnessABMDistribution; do
   /usr/bin/time -f "$bb_suite elapsed=%e s peak_rss=%M KiB" \
@@ -680,7 +687,7 @@ cmp conformance/bb_abm_v1.json "$bb_vectors"
 
 The emitted JSON is executable comparison evidence, not a proof oracle. Kernel-checked fixture equalities and actual theorem axiom reports remain separate obligations. `pipefail` must preserve a failing Lean/timeout exit even when `tee` succeeds.
 
-- [ ] **Wire the script into the existing Lean proof job.** Add this step after `Build Lean library`, leaving checkout, event selection, the old BB gates, and the full theorem suite intact:
+- [x] **Wire the script into the existing Lean proof job.** Add this step after `Build Lean library`, leaving checkout, event selection, the old BB gates, and the full theorem suite intact:
 
 ```yaml
       - name: BB ABM joint evolution contracts
@@ -688,10 +695,10 @@ The emitted JSON is executable comparison evidence, not a proof oracle. Kernel-c
         run: bash tools/check_fitness_abm.sh
 ```
 
-The job already adds Elan to `GITHUB_PATH`. The 25-minute outer step contains four independently limited proof suites and one independently limited exporter; it does not increase the 240-second limit of any individual check. Python's full discovery job already collects `test_network_abm_bb_conformance.py` after installing its locked dependencies, so the Lean-only job does not need those Python runtime imports or another dependency installation.
+The job already adds Elan to `GITHUB_PATH`. The 25-minute outer step contains the independently limited conformance-module build, four independently limited proof suites, and one independently limited exporter; it does not increase the 240-second limit of any individual check. The prerequisite build is required because `FitnessABMReplay` imports the shared conformance inputs while the public root deliberately does not import the executable module. Python's full discovery job already collects `test_network_abm_bb_conformance.py` after installing its locked dependencies, so the Lean-only job does not need those Python runtime imports or another dependency installation.
 
-- [ ] **Write the verified README addition.** State the concrete model, fixed fitness, unit channel influence, birth-then-synchronous-propagation order, idle ticks, persistent old states, and the exact probability experiment. Show the two one-birth branches and probabilities `1/2` and `1/4`, linking the new theorem/test modules. State that Python comparison is finite single-round example agreement, and that V19 creation, adaptive fitness, and fixed-hop guarantees remain outside this proof. Use completed results only; do not present this planning document as proof evidence.
-- [ ] **Run the local final gates available in the execution environment:**
+- [x] **Write the verified README addition.** State the concrete model, fixed fitness, unit channel influence, birth-then-synchronous-propagation order, idle ticks, persistent old states, and the exact probability experiment. Show the two one-birth branches and probabilities `1/2` and `1/4`, linking the new theorem/test modules. State that Python comparison is finite single-round example agreement, and that V19 creation, adaptive fitness, and fixed-hop guarantees remain outside this proof. Use completed results only; do not present this planning document as proof evidence.
+- [x] **Run the local final gates available in the execution environment:**
 
 ```bash
 bash -n tools/check_fitness_abm.sh
@@ -700,6 +707,8 @@ bash tools/check_fitness_abm.sh
 python -m unittest tests.test_fitness_trust_audit tests.test_network_abm_bb_conformance tests.test_network_abm_simulation tests.test_network_abm_contracts -v
 git diff --check
 ```
+
+Task 6 local evidence covers `bash -n`, the complete source audit, the four focused Python modules (29 tests), and `git diff --check`. Lean is unavailable in this execution environment, so `lake build` and the complete bounded script remain required ordinary-CI gates rather than local passes. The complete Python discovery also remains a required final-revision CI gate.
 
 Do not repeat the complete Python discovery locally if the current revision's required CI will run it and no additional local risk requires that repetition. Run earlier BB acceptance gates through the unchanged workflow; compare their elapsed time and memory with the prior baseline if a regression appears.
 
@@ -729,8 +738,8 @@ Open a draft PR against `proof/narrative-dynamics-v0`, describing the concrete m
 | 9: Acceptance scenarios | Tasks 1–5 concrete assertions and one shared corpus |
 | 10: Modules, resources, conformance and CI | File ownership table; Tasks 5–6; pinned environment preparation |
 | 11: Deferred extensions | Global constraints and Task 6 diff/scope review |
-| 12: Plan before implementation | This plan; all implementation task checkboxes remain unchecked |
+| 12: Plan before implementation | This plan; completed Task 1–5 evidence and Task 6 progress are checked explicitly |
 
 Before execution, read the approved spec and this plan together. Normal implementation choices within these contracts need no new design approval. If the work requires changing fitness based on behavior, creating V19 agents, weakening raw atomicity, or treating a floating-point comparison as a formal proof, that is outside the approved boundary and needs a revised design.
 
-Execution can use a fresh implementer/reviewer per task under the subagent-driven-development skill, or proceed inline with executing-plans and task checkpoints. Select the execution mode at handoff; this planning commit contains no Lean or production implementation.
+The original planning commit contained no Lean or production implementation. Approved execution is proceeding task by task under the subagent-driven-development workflow; publication, final CI, and broad review remain parent-owned gates.

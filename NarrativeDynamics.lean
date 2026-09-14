@@ -39,3 +39,7 @@ import NarrativeDynamics.Core.FitnessValidation
 import NarrativeDynamics.Core.FitnessReplay
 import NarrativeDynamics.Core.FitnessDistribution
 import NarrativeDynamics.Core.FitnessDistributionInvariance
+import NarrativeDynamics.Core.NetworkPropagation
+import NarrativeDynamics.Core.FitnessABM
+import NarrativeDynamics.Core.FitnessABMReplay
+import NarrativeDynamics.Core.FitnessABMDistribution
