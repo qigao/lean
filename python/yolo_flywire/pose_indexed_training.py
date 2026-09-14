@@ -10,13 +10,15 @@ import torch
 from torch.nn import functional as F
 
 from .eval import MetricBundle
-from .models import GRUClassifier, GraphRecurrentClassifier
+from .models import GRUClassifier, GraphDiagnosticClassifier, GraphRecurrentClassifier
 from .pose_indexed_development import IndexedPoseDevelopment
 from .pose_training import (
     PaddedModel, PaddedTrainedRun, _logits, _metrics, _positive_integer,
     _seeded_cpu, _validate_config, _validate_partition,
 )
 from .train import TrainConfig, _reset_parameters, _state_hash
+
+_SUPPORTED_MODELS = (GRUClassifier, GraphRecurrentClassifier, GraphDiagnosticClassifier)
 
 
 def _split_rows(source: IndexedPoseDevelopment, split: str):
@@ -28,7 +30,7 @@ def _validate_source_model(
 ) -> tuple[tuple[object, ...], tuple[object, ...]]:
     if type(source) is not IndexedPoseDevelopment:
         raise ValueError("expected an explicit IndexedPoseDevelopment source")
-    if type(model) not in (GRUClassifier, GraphRecurrentClassifier):
+    if type(model) not in _SUPPORTED_MODELS:
         raise ValueError("expected an explicit supported padded model")
     source.verify(expected_binding_sha256=expected_binding_sha256)
     input_dim = (model.gru.input_size if type(model) is GRUClassifier
