@@ -135,4 +135,191 @@ def errorInputs : List RuntimeCaseInput :=
     seedAgentBelief, birthFitness, birthTargetCount, birthTargetRange,
     birthTargetDuplicate, birthAgentThreshold, lateBirth, firstFailure, lateFirstBirth]
 
+/-- Numeric ID order and actual adjacency, including every completed birth. -/
+def observeState {n : Nat} (state : JointState n) : StateObservation :=
+  letI := state.network.snapshot.adjDec
+  let ids : List (Fin n) := List.ofFn id
+  { nodeCount := n
+    edges := ids.flatMap fun source => ids.filterMap fun target =>
+      if source < target ∧ state.network.snapshot.graph.Adj source target then
+        some (source.val, target.val) else none
+    fitness := List.ofFn fun i => state.network.snapshot.fitness i
+    receptivity := List.ofFn fun i => (state.population.profiles i).receptivity
+    thresholds := List.ofFn fun i => (state.population.profiles i).threshold
+    beliefs := List.ofFn fun i => (state.population.agents i).belief
+    exposures := List.ofFn fun i => (state.population.agents i).exposures
+    broadcasting := List.ofFn fun i =>
+      NetworkPropagation.broadcasting (state.population.profiles i) (state.population.agents i) }
+
+def observePrefix (input : RuntimeCaseInput) (count : Nat) :
+    Except JointError PrefixObservation :=
+  (replayPrefix input count).map fun result =>
+    ⟨observeState result.final.state, result.final.roundIndex,
+      (inputBirths (input.ticks.take count)).length, result.probability⟩
+
+private def observeTransmissions {n : Nat} (state : JointState n) :
+    List (Nat × Nat × Rat) :=
+  letI := state.network.snapshot.adjDec
+  let delivered := NetworkPropagation.transmissions
+    state.network.snapshot.graph.Adj state.population
+  let ids : List (Fin n) := List.ofFn id
+  ids.flatMap fun source => ids.filterMap fun target =>
+    if (source, target) ∈ delivered then
+      some (source.val, target.val, (state.population.agents source).belief) else none
+
+/-- A real prior replay plus the current checked birth gives the pre-round state.
+The successor prefix is computed independently by replay, never by a second formula. -/
+def observeTransition (input : RuntimeCaseInput) (index : Fin input.ticks.length) :
+    Except JointError TransitionObservation :=
+  let birthIndex := (inputBirths (input.ticks.take index.val)).length
+  match replayPrefix input index.val with
+  | .error error => .error error
+  | .ok prior =>
+    match input.ticks[index.val] with
+    | none => .ok ⟨index.val, birthIndex, 1,
+        observeState prior.final.state, observeTransmissions prior.final.state⟩
+    | some raw =>
+      match checkedBirth prior.final.state input.m raw with
+      | .error (.network error) => .error (.tickNetwork index.val birthIndex error)
+      | .error (.agent field) => .error (.tickAgent index.val birthIndex field)
+      | .ok next => .ok ⟨index.val, birthIndex, next.2,
+          observeState next.1, observeTransmissions next.1⟩
+
+/-- Validate the entire authored history before exposing any prefix observation. -/
+def observeCase (input : RuntimeCaseInput) : Except JointError HistoryObservation := do
+  let _ ← replayPrefix input input.ticks.length
+  let prefixes ← (List.range (input.ticks.length + 1)).mapM (observePrefix input)
+  let transitions ← (List.ofFn (fun i : Fin input.ticks.length => i)).mapM
+    (observeTransition input)
+  pure ⟨prefixes, transitions⟩
+
+private def ratJson (value : Rat) : Lean.Json := .str (toString value)
+private def natJson (value : Nat) : Lean.Json := Lean.toJson value
+private def listJson {α : Type} (render : α → Lean.Json) (values : List α) : Lean.Json :=
+  .arr (values.map render).toArray
+private def pairJson (pair : Nat × Nat) : Lean.Json :=
+  .arr #[natJson pair.1, natJson pair.2]
+
+private def inputJson (input : RuntimeCaseInput) : Lean.Json :=
+  Lean.Json.mkObj [
+    ("seed", Lean.Json.mkObj [
+      ("node_count", natJson input.seed.nodeCount),
+      ("fitness", .arr (input.seed.fitness.map ratJson)),
+      ("edges", .arr (input.seed.edges.map pairJson))]),
+    ("m", natJson input.m),
+    ("agents", .arr (input.agents.map fun a => Lean.Json.mkObj [
+      ("receptivity", ratJson a.receptivity), ("threshold", ratJson a.threshold),
+      ("belief", ratJson a.belief), ("exposures", natJson a.exposures)])),
+    ("ticks", listJson (fun tick => match tick with
+      | none => .null
+      | some raw => Lean.Json.mkObj [
+          ("fitness", ratJson raw.birth.fitness),
+          ("targets", .arr (raw.birth.targets.map natJson)),
+          ("receptivity", ratJson raw.receptivity),
+          ("threshold", ratJson raw.threshold), ("belief", ratJson raw.belief)]) input.ticks)]
+
+private def stateJson (state : StateObservation) : Lean.Json :=
+  Lean.Json.mkObj [
+    ("node_count", natJson state.nodeCount), ("edges", listJson pairJson state.edges),
+    ("fitness", listJson ratJson state.fitness),
+    ("receptivity", listJson ratJson state.receptivity),
+    ("thresholds", listJson ratJson state.thresholds),
+    ("beliefs", listJson ratJson state.beliefs),
+    ("exposures", listJson natJson state.exposures),
+    ("broadcasting", listJson Lean.Json.bool state.broadcasting)]
+
+private def prefixJson (prefix : PrefixObservation) : Lean.Json :=
+  Lean.Json.mkObj [
+    ("state", stateJson prefix.state), ("tick_count", natJson prefix.tickCount),
+    ("birth_count", natJson prefix.birthCount), ("trace_mass", ratJson prefix.traceMass)]
+
+private def transitionJson (transition : TransitionObservation) : Lean.Json :=
+  Lean.Json.mkObj [
+    ("tick_index", natJson transition.tickIndex),
+    ("birth_index", natJson transition.birthIndex),
+    ("tick_mass", ratJson transition.tickMass),
+    ("post_growth", stateJson transition.postGrowth),
+    ("transmissions", listJson (fun (source, target, signal) => Lean.Json.mkObj [
+      ("source", natJson source), ("target", natJson target), ("signal", ratJson signal)])
+        transition.transmissions)]
+
+private def causeName : FitnessAttachment.Internal.Error → String
+  | .negativeWeight => "negativeWeight"
+  | .zeroMass => "zeroMass"
+  | .invalidNodeCount => "invalidNodeCount"
+  | .fitnessSizeMismatch => "fitnessSizeMismatch"
+  | .nonpositiveFitness => "nonpositiveFitness"
+  | .invalidEdge => "invalidEdge"
+  | .duplicateEdge => "duplicateEdge"
+  | .disconnectedSeed => "disconnectedSeed"
+  | .invalidM => "invalidM"
+  | .targetCountMismatch => "targetCountMismatch"
+  | .targetOutOfRange => "targetOutOfRange"
+  | .duplicateTarget => "duplicateTarget"
+
+private def causeField : FitnessAttachment.Internal.Error → String
+  | .invalidNodeCount => "node_count"
+  | .negativeWeight | .fitnessSizeMismatch | .nonpositiveFitness => "fitness"
+  | .invalidEdge | .duplicateEdge | .disconnectedSeed => "edges"
+  | .invalidM => "m"
+  | .zeroMass | .targetCountMismatch | .targetOutOfRange | .duplicateTarget => "targets"
+
+private def agentField : AgentField → String
+  | .receptivity => "receptivity"
+  | .threshold => "broadcast_threshold"
+  | .belief => "belief"
+
+private def errorObject (stage code field : String)
+    (agentIndex tickIndex birthIndex : Option Nat := none)
+    (cause : Option String := none) (expected actual : Option Nat := none) : Lean.Json :=
+  let optionalNat := fun (value : Option Nat) => value.elim Lean.Json.null natJson
+  Lean.Json.mkObj [
+    ("stage", .str stage), ("code", .str code), ("field", .str field),
+    ("agent_index", optionalNat agentIndex), ("tick_index", optionalNat tickIndex),
+    ("birth_index", optionalNat birthIndex), ("bb_cause", cause.elim .null Lean.Json.str),
+    ("expected", optionalNat expected), ("actual", optionalNat actual)]
+
+private def errorJson : JointError → Lean.Json
+  | .seedNetwork cause => errorObject "seed_network" (causeName cause) (causeField cause)
+      none none none (some (causeName cause))
+  | .initialM => errorObject "initial_m" "initialM" "m"
+  | .seedAgentCount expected actual => errorObject "seed_agents" "seedAgentCount" "agents"
+      none none none none (some expected) (some actual)
+  | .seedAgent index field => errorObject "seed_agent" "invalidAgentValue" (agentField field)
+      (some index)
+  | .tickNetwork tickIndex birthIndex cause =>
+      errorObject "tick_network" (causeName cause) (causeField cause)
+        none (some tickIndex) (some birthIndex) (some (causeName cause))
+  | .tickAgent tickIndex birthIndex field =>
+      errorObject "tick_agent" "invalidAgentValue" (agentField field)
+        none (some tickIndex) (some birthIndex)
+
+private def renderSuccess (input : RuntimeCaseInput) : Except String Lean.Json :=
+  match observeCase input with
+  | .error error => .error s!"{input.id}: unexpected replay error {reprStr error}"
+  | .ok history => .ok <| Lean.Json.mkObj [
+      ("id", .str input.id), ("input", inputJson input),
+      ("prefixes", listJson prefixJson history.prefixes),
+      ("transitions", listJson transitionJson history.transitions)]
+
+private def renderError (input : RuntimeCaseInput) : Except String Lean.Json :=
+  match observeCase input with
+  | .ok _ => .error s!"{input.id}: unexpected replay success"
+  | .error error => .ok <| Lean.Json.mkObj [
+      ("id", .str input.id), ("input", inputJson input), ("expected_error", errorJson error)]
+
+def renderCorpus : Except String Lean.Json := do
+  let success ← successInputs.mapM renderSuccess
+  let errors ← errorInputs.mapM renderError
+  pure <| Lean.Json.mkObj [
+    ("schema", .str "bb-abm-runtime-v1"),
+    ("success", .arr success.toArray), ("errors", .arr errors.toArray)]
+
+def main : IO Unit :=
+  match renderCorpus with
+  | .ok corpus => IO.println corpus.compress
+  | .error error => throw (IO.userError error)
+
 end NarrativeDynamics.Conformance.BBRuntime
+
+def main : IO Unit := NarrativeDynamics.Conformance.BBRuntime.main
