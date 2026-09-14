@@ -659,6 +659,13 @@ example : ∃ final,
     FitnessABM.replay weightedSeed 2 agentsRaw [some attach10] = .ok ⟨final, 3/4⟩ :=
   ⟨_, replay01, replay10⟩
 
+private def orderedPairs {n : Nat}
+    (keepPair : Fin n → Fin n → Bool) : List (Nat × Nat) :=
+  let ids : Array (Fin n) := Array.ofFn id
+  (ids.flatMap fun source =>
+    ids.filterMap fun target =>
+      if keepPair source target then some (source.val, target.val) else none).toList
+
 private def propagationSummary (seed : RawSeed) (agents : Array RawAgent) :
     Except JointError (List Rat × List Nat × List Bool × List (Nat × Nat)) :=
   match FitnessABM.replay seed 1 agents [] with
@@ -667,13 +674,13 @@ private def propagationSummary (seed : RawSeed) (agents : Array RawAgent) :
     let prior := result.final.state
     let next := advance prior
     letI := prior.network.snapshot.adjDec
+    let delivered := transmissions prior.network.snapshot.graph.Adj prior.population
     .ok (
       List.ofFn (fun i => (next.population.agents i).belief),
       List.ofFn (fun i => (next.population.agents i).exposures),
       List.ofFn (fun i => broadcasting (next.population.profiles i)
         (next.population.agents i)),
-      (transmissions prior.network.snapshot.graph.Adj prior.population).toList.map
-        fun pair => (pair.1.val, pair.2.val))
+      orderedPairs fun source target => decide ((source, target) ∈ delivered))
 
 -- These literal raw snapshots and complete observations fix the acceptance
 -- semantics independently of corpus generation.

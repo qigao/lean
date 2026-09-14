@@ -57,17 +57,22 @@ private def natJson (value : Nat) : Lean.Json :=
 private def pairJson (source target : Nat) : Lean.Json :=
   .arr #[natJson source, natJson target]
 
+private def orderedPairsJson {n : Nat}
+    (keepPair : Fin n → Fin n → Bool) : Lean.Json :=
+  let ids : Array (Fin n) := Array.ofFn id
+  .arr <| ids.flatMap fun source =>
+    ids.filterMap fun target =>
+      if keepPair source target then some (pairJson source.val target.val) else none
+
 private def graphEdgesJson {n : Nat} (state : JointState n) : Lean.Json :=
   letI := state.network.snapshot.adjDec
-  let pairs := (Finset.univ.product Finset.univ).filter fun pair =>
-    pair.1 < pair.2 ∧ state.network.snapshot.graph.Adj pair.1 pair.2
-  .arr <| pairs.toList.toArray.map fun pair =>
-    pairJson pair.1.val pair.2.val
+  orderedPairsJson fun source target => decide
+    (source < target ∧ state.network.snapshot.graph.Adj source target)
 
 private def transmissionsJson {n : Nat} (state : JointState n) : Lean.Json :=
   letI := state.network.snapshot.adjDec
-  .arr <| (transmissions state.network.snapshot.graph.Adj state.population).toList.toArray.map
-    fun pair => pairJson pair.1.val pair.2.val
+  let delivered := transmissions state.network.snapshot.graph.Adj state.population
+  orderedPairsJson fun source target => decide ((source, target) ∈ delivered)
 
 def renderCase (input : VectorInput) : Except String Lean.Json :=
   match FitnessABM.replay input.seed 1 input.agents [] with
