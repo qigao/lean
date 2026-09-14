@@ -107,6 +107,7 @@ def create_world_studio_asgi_app(
     import asyncio
     import json
 
+    from anyio import CancelScope
     from starlette.applications import Starlette
     from starlette.middleware.base import BaseHTTPMiddleware
     from starlette.responses import FileResponse, JSONResponse, Response
@@ -833,32 +834,37 @@ def create_world_studio_asgi_app(
                 except Exception:
                     pass
         finally:
-            for task in tasks:
-                task.cancel()
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
-            try:
-                session_invalid = (
-                    bound_session_id is not None
-                    and bound_session_deadline is not None
-                    and not session_is_valid(bound_session_id, bound_session_deadline)
-                )
-                if session_invalid:
-                    connection_revoked = True
-                    output_router.revoke_connection(connection_id)
-                    if not control_tasks:
-                        output_router.release_connection_revocation(connection_id)
-                else:
-                    output_router.unsubscribe_connection(connection_id)
-                    if control_tasks:
-                        connection_revoked = True
-                        output_router.revoke_connection(connection_id)
-            finally:
-                if bound_session_id is not None:
-                    unbind_session_connection(bound_session_id, connection_id)
-                async with connection_condition:
-                    active_connections -= 1
-                    connection_condition.notify_all()
+            # AnyIO cancellation repeats at await points, including task draining.
+            # Finish releasing ownership and capacity before propagating it.
+            with CancelScope(shield=True):
+                try:
+                    for task in tasks:
+                        task.cancel()
+                    if tasks:
+                        await asyncio.gather(*tasks, return_exceptions=True)
+                finally:
+                    try:
+                        session_invalid = (
+                            bound_session_id is not None
+                            and bound_session_deadline is not None
+                            and not session_is_valid(bound_session_id, bound_session_deadline)
+                        )
+                        if session_invalid:
+                            connection_revoked = True
+                            output_router.revoke_connection(connection_id)
+                            if not control_tasks:
+                                output_router.release_connection_revocation(connection_id)
+                        else:
+                            output_router.unsubscribe_connection(connection_id)
+                            if control_tasks:
+                                connection_revoked = True
+                                output_router.revoke_connection(connection_id)
+                    finally:
+                        if bound_session_id is not None:
+                            unbind_session_connection(bound_session_id, connection_id)
+                        async with connection_condition:
+                            active_connections -= 1
+                            connection_condition.notify_all()
 
     routes = [
         Route("/health", health, methods=["GET"]),
