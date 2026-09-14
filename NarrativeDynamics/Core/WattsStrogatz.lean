@@ -36,6 +36,7 @@ structure WattsStrogatzParameters where
   nodeCount : Nat
   radius : Nat
   radiusPositive : 0 < radius
+  /-- This radius bound permits a complete ring when `nodeCount = 2 * radius + 1`. -/
   localNotComplete : 2 * radius < nodeCount
 
 /-- The regular ring selected by a valid parameter package. -/

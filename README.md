@@ -2145,7 +2145,8 @@ Watts--Strogatz model. `NarrativeDynamics.Core.WattsStrogatz` places `Fin n` nod
 on a modular ring and connects distinct nodes whose clockwise or counterclockwise
 difference is within a configured radius. The relation is decidable, symmetric,
 and loopless. Valid parameter packages require a positive radius and
-`2 * radius < nodeCount`, excluding an already-complete local neighborhood.
+`2 * radius < nodeCount`. This still allows the complete ring at
+`nodeCount = 2 * radius + 1`.
 
 Mathlib's finite `cycleGraph` is formally embedded into every positive-radius
 ring. A converter preserves exact walk length from `SimpleGraph.Walk` to the
