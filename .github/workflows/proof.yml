@@ -151,6 +151,10 @@ jobs:
         timeout-minutes: 25
         run: bash tools/check_fitness_abm.sh
 
+      - name: BB ABM runtime replay conformance
+        timeout-minutes: 15
+        run: bash tools/check_fitness_abm_runtime.sh
+
       - name: BB-only naming audit
         run: |
           set -euo pipefail

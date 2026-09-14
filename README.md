@@ -2525,3 +2525,47 @@ runtime; this is example agreement, not a proof of Python floating-point arithme
 or a production birth adapter. The proof does not add V19 population creation,
 adaptive fitness, full semantic cognition, asymptotic small-world results, or a
 universal fixed-hop guarantee.
+
+### Python authored BB population replay V1
+
+The public [`replay_bb_population`](narrative_dynamics/abm/bb_runtime.py) API
+executes a finite tuple of caller-authored ticks. Each birth's fixed, ordered
+target tuple addresses the current append-only numeric-ID registry; a newborn's
+external string ID is appended at the next numeric index and never recovered by
+sorting V1 agents. The adapter computes BB fitness weights, each ordered birth
+mass, and the cumulative trace mass exactly with `Fraction`. That mass is
+conditional on the supplied seed, attachment count, birth calendar, fitness,
+profiles, initial beliefs, and authored target choices. The behavioral step reuses
+the existing V1 floating-point `simulate_round` propagation.
+
+Run the production-imported [example](examples/bb_abm_runtime.py):
+
+```bash
+python3 -m examples.bb_abm_runtime
+```
+
+It prints the actual registry-ordered frames for two births followed by one idle
+tick:
+
+| Global tick | Epoch | V1 local round | Nodes/edges | Beliefs | Exposures | Exact trace mass |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0 | 0 | 0 | 2/1 | `[1.0, 0.0]` | `[0, 0]` | `1` |
+| 1 | 1 | 1 | 3/2 | `[1.0, 1.0, 0.0]` | `[0, 1, 0]` | `1/2` |
+| 2 | 2 | 1 | 4/3 | `[1.0, 1.0, 1.0, 0.0]` | `[1, 2, 1, 0]` | `1/8` |
+| 3 | 2 | 2 | 4/3 | `[1.0, 1.0, 1.0, 1.0]` | `[2, 4, 2, 1]` | `1/8` |
+
+The global tick advances for every authored tick and the epoch advances only on a
+birth. A birth creates a new V1 model epoch whose post-growth input is local round
+zero and whose propagation result is local round one; an idle continues the
+current epoch's local clock. Validation either returns a complete replay or one
+atomic `BBRuntimeError`, with no successful prefix, partial topology, allocated ID,
+or accumulated mass exposed on failure.
+
+The [full-trace corpus](conformance/bb_abm_runtime_v1.json) covers 16 finite success
+cases and 20 shared error cases, including every recorded prefix and transition,
+against the Lean replay described by the
+[design](docs/superpowers/specs/2026-09-14-bb-abm-runtime-adapter-v1-design.md).
+This finite conformance establishes agreement for those checked inputs; it is not
+a proof of all executions of the Python floating-point propagation. The supported
+runtime boundary is the authored finite schedule exposed by the
+[`bb_runtime` module](narrative_dynamics/abm/bb_runtime.py).
