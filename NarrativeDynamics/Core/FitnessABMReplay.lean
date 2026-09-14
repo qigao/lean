@@ -102,8 +102,9 @@ private def checkRoster (index : Nat) (raw : List RawAgent) :
       | .error e => .error e
       | .ok tail => .ok ⟨(), by
           intro b hb
-          rcases List.mem_cons.mp hb with rfl | hb
-          · exact (parseAgent_sound a pair ha).1
+          rcases List.mem_cons.mp hb with hab | hb
+          · rw [hab]
+            exact (parseAgent_sound a pair ha).1
           · exact tail.property b hb⟩
 termination_by structural raw
 
@@ -199,7 +200,7 @@ theorem checkedBirth_spec {n m : Nat} (s : JointState n) (raw : RawBirthInput)
         simpa only [checkedBirth, hs, hp, Except.ok.injEq, grow, newborn] using h.symm
   · rintro ⟨v, pair, hv, hp, rfl⟩
     have hs := (step_spec s.network raw.birth _).mpr ⟨v, hv, rfl⟩
-    simpa only [checkedBirth, hs, newbornRaw, hp, grow, newborn]
+    simp only [checkedBirth, hs, newbornRaw, hp, grow, newborn]
 
 private theorem checkedBirth_projection {n m : Nat} (s : JointState n)
     (raw : RawBirthInput) (out : JointState (n + 1) × Rat)
@@ -310,7 +311,7 @@ private theorem replay_success (seed : FitnessAttachment.RawSeed) (m : Nat)
     by_cases hm : 0 < m ∧ m ≤ seed.nodeCount
     · cases hp : parseAgents seed.nodeCount agents with
       | error e => simp [replay, hs, hm, hp] at h
-      | ok p => exact ⟨network, p, hs, hm, hp, by simpa [replay, hs, hm, hp] using h⟩
+      | ok p => exact ⟨network, p, rfl, hm, rfl, by simpa [replay, hs, hm, hp] using h⟩
     · simp [replay, hs, hm] at h
 
 theorem replay_success_iff_valid (seed : FitnessAttachment.RawSeed) (m : Nat)
@@ -363,13 +364,15 @@ private theorem runInputs_projection (m tickIndex birthIndex : Nat) (s : RunStat
           have hp := checkedBirth_projection s.state raw next hc
           have ht := ih (tickIndex := tickIndex + 1) (birthIndex := birthIndex + 1)
             (s := ⟨s.nodeCount + 1, s.roundIndex + 1, advance next.1⟩) (out := tail) hr
-          simpa only [inputBirths, List.filterMap_cons, Option.map_some,
-            projectState, advance_projection, runBirths, hp, projectResult] using
-            congrArg (fun r : Except FitnessAttachment.ReplayError FitnessAttachment.ReplayResult =>
-              (match r with
-              | .error e => .error e
-              | .ok result => .ok ⟨result.final, next.2 * result.probability⟩ :
-                Except FitnessAttachment.ReplayError FitnessAttachment.ReplayResult)) ht
+          change runBirths m birthIndex ⟨s.nodeCount, s.state.network⟩
+            (raw.birth :: inputBirths rest) =
+              .ok (projectResult ⟨tail.final, next.2 * tail.probability⟩)
+          rw [FitnessAttachment.replay_step, hp]
+          change runBirths m (birthIndex + 1)
+            ⟨s.nodeCount + 1, next.1.network⟩ (inputBirths rest) =
+              .ok (projectResult tail) at ht
+          rw [ht]
+          rfl
 
 private theorem replay_project_exact (seed : FitnessAttachment.RawSeed) (m : Nat)
     (agents : Array RawAgent) (ticks : List RawTick) (out : Result)
@@ -438,7 +441,7 @@ theorem replay_counts (seed : FitnessAttachment.RawSeed) (m : Nat)
   have hp := replay_project_exact seed m agents ticks out h
   obtain ⟨initial, p, _, _, _, hr⟩ := replay_success seed m agents ticks out h
   refine ⟨?_, ?_, FitnessAttachment.replay_edges seed m _ (projectResult out) network hs hp⟩
-  · simpa [projectResult, projectState, actualNodeCount] using
+  · simpa only [projectResult, projectState, actualNodeCount, Fintype.card_fin] using
       FitnessAttachment.replay_nodes seed m _ (projectResult out) hp
   · simpa only [Nat.zero_add] using
       runInputs_rounds m 0 0 ⟨seed.nodeCount, 0, ⟨initial, p.val, p.property⟩⟩ ticks out hr
@@ -451,10 +454,10 @@ theorem replay_probability_pos (seed : FitnessAttachment.RawSeed) (m : Nat)
 
 /-- An error is stable under every appended suffix, with its exact two positions. -/
 theorem runInputs_append_error (m tickIndex birthIndex : Nat) (s : RunState)
-    (prefix suffix : List RawTick) (e : JointError)
-    (h : runInputs m tickIndex birthIndex s prefix = .error e) :
-    runInputs m tickIndex birthIndex s (prefix ++ suffix) = .error e := by
-  induction prefix generalizing tickIndex birthIndex s with
+    (preTicks suffix : List RawTick) (e : JointError)
+    (h : runInputs m tickIndex birthIndex s preTicks = .error e) :
+    runInputs m tickIndex birthIndex s (preTicks ++ suffix) = .error e := by
+  induction preTicks generalizing tickIndex birthIndex s with
   | nil => simp [runInputs] at h
   | cons t rest ih =>
     cases t with
