@@ -1,0 +1,98 @@
+name: flywire-cx-gate1-provenance
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/flywire-cx-temporal-gate1
+    paths:
+      - "python/yolo_flywire/cx_artifact.py"
+      - "python/yolo_flywire/cx_nulls.py"
+      - "python/yolo_flywire/cx_protocol.py"
+      - "python/yolo_flywire/cx_provenance.py"
+      - "protocols/v2-cx-temporal-gate1-preflight.json"
+      - ".github/workflows/flywire-cx-gate1-provenance.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  provenance:
+    name: FAFB v783 CX measured provenance
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install lightweight provenance runtime
+        run: |
+          python -m pip install numpy
+          python -m pip install --no-deps -e ./python
+
+      - name: Download official Codex FAFB static products
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .cx-source
+          curl --fail --location --retry 3 --retry-all-errors \
+            --output .cx-source/consolidated_cell_types \
+            'https://codex.flywire.ai/api/download_resource?data_product=consolidated_cell_types&dataset=fafb'
+          curl --fail --location --retry 3 --retry-all-errors \
+            --output .cx-source/connections_princeton \
+            'https://codex.flywire.ai/api/download_resource?data_product=connections_princeton&dataset=fafb'
+          sha256sum .cx-source/consolidated_cell_types .cx-source/connections_princeton
+
+      - name: Inspect downloaded CSV schema without altering bytes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import gzip
+
+          for name in ('consolidated_cell_types', 'connections_princeton'):
+              path = Path('.cx-source') / name
+              raw = path.read_bytes()
+              payload = gzip.decompress(raw) if raw[:2] == b'\x1f\x8b' else raw
+              first = payload.decode('utf-8-sig').splitlines()[0]
+              print(f'{name}: bytes={len(raw)} gzip={raw[:2] == b"\x1f\x8b"} header={first}')
+          PY
+
+      - name: Build and verify measured provenance bundle
+        shell: bash
+        run: |
+          python - <<'PY'
+          from dataclasses import asdict
+          import json
+          from pathlib import Path
+
+          from yolo_flywire.cx_protocol import load_cx_protocol
+          from yolo_flywire.cx_provenance import build_cx_provenance, verify_cx_provenance
+
+          protocol = load_cx_protocol('protocols/v2-cx-temporal-gate1-preflight.json')
+          cells = Path('.cx-source/consolidated_cell_types')
+          connections = Path('.cx-source/connections_princeton')
+          bundle = Path('.cx-provenance')
+          report = build_cx_provenance(protocol, cells, connections, bundle)
+          verified = verify_cx_provenance(protocol, cells, connections, bundle)
+          if verified != report:
+              raise SystemExit('fresh provenance verification differed from build report')
+          print(json.dumps(asdict(report), sort_keys=True, indent=2))
+          PY
+
+      - name: Upload measured provenance evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: flywire-cx-gate1-provenance-${{ github.sha }}
+          path: |
+            .cx-provenance/
+            .cx-source/
+          if-no-files-found: error
+          retention-days: 30
