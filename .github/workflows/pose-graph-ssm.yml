@@ -65,3 +65,73 @@ jobs:
           pose_graph_ssm/tests/test_training_fairness.py
           pose_graph_ssm/tests/test_development_runner.py
           -q
+
+  full:
+    name: Full pose Graph SSM suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pose_graph_ssm/pyproject.toml
+      - name: Install CPU-only full runtime
+        run: |
+          python -m pip install pytest numpy
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --no-deps -e ./pose_graph_ssm
+      - name: Verify installed CLI surface
+        run: pose-graph-ssm --help
+      - name: Run complete Graph SSM suite
+        run: python -m pytest pose_graph_ssm/tests -q
+
+  isolation:
+    name: Graph SSM source isolation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Reject abandoned-stack dependencies
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          patterns = {
+              "yolo_flywire": re.compile(r"yolo_flywire", re.I),
+              "flywire": re.compile(r"\bflywire\b", re.I),
+              "codex": re.compile(r"\bcodex\b", re.I),
+              "connectome": re.compile(r"\bconnectome\b", re.I),
+              "cx_": re.compile(r"\bcx_", re.I),
+              "spiking": re.compile(r"\bspiking\b", re.I),
+              "lif": re.compile(r"\blif\b", re.I),
+              "surrogate_spike": re.compile(r"surrogate_spike", re.I),
+          }
+          violations = []
+          for path in sorted(Path("pose_graph_ssm/src").rglob("*.py")):
+              text = path.read_text(encoding="utf-8")
+              for name, pattern in patterns.items():
+                  if pattern.search(text):
+                      violations.append(f"{path}: {name}")
+          if violations:
+              raise SystemExit("forbidden abandoned-stack references:\n" + "\n".join(violations))
+          PY
+
+  lean:
+    name: Existing Lean regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install elan
+        shell: bash
+        run: |
+          curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Build Lean project
+        run: lake build
