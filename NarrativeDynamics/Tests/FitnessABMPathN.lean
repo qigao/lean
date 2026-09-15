@@ -58,3 +58,11 @@ example
       atTop
       (nhds (mean n x : Real)) :=
   trajectory_tendsto n hn x hx i
+
+#print axioms NarrativeDynamics.FitnessABMPathN.propagate_independent_exposures
+#print axioms NarrativeDynamics.FitnessABMPathN.propagate_eq_kernel
+#print axioms NarrativeDynamics.FitnessABMPathN.allBroadcast_iterate
+#print axioms NarrativeDynamics.FitnessABMPathN.path_stationary_weights
+#print axioms NarrativeDynamics.FitnessABMPathN.mean_step
+#print axioms NarrativeDynamics.FitnessABMPathN.path_block_common_mass
+#print axioms NarrativeDynamics.FitnessABMPathN.trajectory_tendsto
