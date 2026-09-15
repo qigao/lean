@@ -4,8 +4,8 @@ import Mathlib
 # Proof-neutral idle-tail iteration
 
 This module packages repeated application of one state transition together with
-an observation function. It deliberately contains no BB, graph, replay, or
-probability semantics.
+an observation function. It deliberately contains no model-specific graph,
+replay, or probability semantics.
 -/
 
 namespace NarrativeDynamics
