@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   protocol:
-    name: CX protocol contract
+    name: CX protocol and artifact contracts
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -26,12 +26,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install lightweight protocol test runtime
+      - name: Install lightweight graph test runtime
         run: |
-          python -m pip install pytest
+          python -m pip install pytest numpy
           python -m pip install --no-deps -e ./python
-      - name: Run CX protocol RED/GREEN gate
-        run: python -m pytest tests/test_cx_protocol.py -q
+      - name: Run CX RED/GREEN gates
+        run: python -m pytest tests/test_cx_protocol.py tests/test_cx_artifact.py -q
 
   legacy-protocol:
     name: Existing YOLO/FlyWire protocol compatibility
