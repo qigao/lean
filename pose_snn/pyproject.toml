@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pose-temporal-snn"
+version = "0.1.0"
+description = "Streaming skeleton temporal SNN experiments"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=1.26",
+  "torch>=2.3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
