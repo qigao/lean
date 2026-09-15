@@ -69,6 +69,7 @@ def test_input_projection_targets_only_biological_inputs_and_readout_only_output
     artifact = _artifact()
     model = CxLifClassifier(12, artifact, 4, dynamics=TEST_DYNAMICS)
     assert model.input_projection.out_features == len(artifact.input_indices)
+    assert model.input_projection.bias is None
     assert model.readout.in_features == len(artifact.output_indices)
     assert tuple(model.input_indices.tolist()) == artifact.input_indices
     assert tuple(model.output_indices.tolist()) == artifact.output_indices
@@ -79,7 +80,6 @@ def test_recurrent_weights_are_fixed_buffers_not_trainable_parameters():
     parameter_names = {name for name, _ in model.named_parameters()}
     assert parameter_names == {
         "input_projection.weight",
-        "input_projection.bias",
         "readout.weight",
         "readout.bias",
     }
@@ -92,7 +92,6 @@ def test_input_injection_is_zero_outside_biological_input_nodes():
     model = CxLifClassifier(3, artifact, 2, dynamics=TEST_DYNAMICS)
     with torch.no_grad():
         model.input_projection.weight.fill_(1.0)
-        model.input_projection.bias.zero_()
     injected = model.inject(torch.ones(2, 3))
     assert injected.shape == (2, artifact.graph.num_nodes)
     assert torch.count_nonzero(injected[:, list(artifact.core_indices)]).item() == 0
@@ -113,7 +112,6 @@ def test_same_trainable_parameters_but_different_topology_change_spike_trajector
     alternate = CxLifClassifier(2, _artifact(alternate=True), 2, dynamics=TEST_DYNAMICS)
     with torch.no_grad():
         real.input_projection.weight.fill_(1.0)
-        real.input_projection.bias.zero_()
         real.readout.weight.copy_(torch.eye(2))
         real.readout.bias.zero_()
         alternate.load_state_dict(real.state_dict())
