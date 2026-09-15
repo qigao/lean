@@ -97,5 +97,6 @@ jobs:
           path: |
             .cx-provenance/
             .cx-source/
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
