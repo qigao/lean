@@ -74,4 +74,27 @@ theorem terminal_td0_terminal_credit
     td0DirectCredit d d = 1 := by
   simp [td0DirectCredit]
 
+def causalTraceCoeff (gamma lambda : ℝ) : Nat → ℝ
+  | 0 => 1
+  | d + 1 => (gamma * lambda) * causalTraceCoeff gamma lambda d
+
+theorem causal_trace_coeff_closed_form
+    (gamma lambda : ℝ)
+    (d : Nat) :
+    causalTraceCoeff gamma lambda d = (gamma * lambda) ^ d := by
+  induction d with
+  | zero =>
+      simp [causalTraceCoeff]
+  | succ d ih =>
+      simp [causalTraceCoeff, ih, pow_succ, mul_comm]
+
+theorem causal_trace_coeff_ne_zero
+    (gamma lambda : ℝ)
+    (d : Nat)
+    (hgamma : gamma ≠ 0)
+    (hlambda : lambda ≠ 0) :
+    causalTraceCoeff gamma lambda d ≠ 0 := by
+  rw [causal_trace_coeff_closed_form]
+  exact pow_ne_zero d (mul_ne_zero hgamma hlambda)
+
 end NarrativeDynamics.TemporalCredit
