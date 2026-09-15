@@ -1,5 +1,6 @@
 import NarrativeDynamics.Core.FitnessABMPath4
 import NarrativeDynamics.Tests.FitnessABMReplay
+import NarrativeDynamics.Core.FitnessABMPath4Convergence
 
 open NarrativeDynamics.NetworkPropagation NarrativeDynamics.FitnessABMPath4
 
@@ -851,3 +852,96 @@ end FiniteReplayFixtures
 #print axioms equal_control
 
 end NarrativeDynamics.Tests.FitnessABMPath4
+
+open Filter Topology
+
+example (x : Beliefs) (hx : allBroadcast x) (i : Fin 4) :
+    Tendsto (fun n : Nat => (trajectory x n i : Real))
+      atTop (nhds (mean x : Real)) := trajectory_tendsto x hx i
+
+namespace NarrativeDynamics.Tests.FitnessABMPath4
+
+-- Each tail index k denotes global tick 4+k, as certified by raw_tail_bridge.
+-- Removing the finite activation offset therefore retains the common clock.
+private theorem tail_tendsto_from_activation (h : History)
+    (hx : allBroadcast (tailBelief h (activationOffset h))) (i : Fin 4) :
+    Tendsto (fun k : Nat => (tailBelief h k i : Real))
+      atTop (nhds (mean (tailBelief h (activationOffset h)) : Real)) := by
+  apply (tendsto_add_atTop_iff_nat (activationOffset h)).mp
+  have hlimit := trajectory_tendsto (tailBelief h (activationOffset h)) hx i
+  convert hlimit using 1
+  funext n
+  rw [Nat.add_comm n (activationOffset h), tail_from_activation]
+
+theorem bbii_tendsto (i : Fin 4) :
+    Tendsto (fun k : Nat => (tailBelief .bbii k i : Real))
+      atTop (nhds (127/192 : Real)) := by
+  have hlimit := tail_tendsto_from_activation .bbii activation_bbii.2 i
+  have hm : mean (tailBelief .bbii 2) = 127/192 := by
+    rw [activation_bbii.1]
+    dsimp [mean]
+    norm_num
+  norm_num [activationOffset, hm] at hlimit
+  exact hlimit
+
+theorem bibi_tendsto (i : Fin 4) :
+    Tendsto (fun k : Nat => (tailBelief .bibi k i : Real))
+      atTop (nhds (127/192 : Real)) := by
+  have hlimit := tail_tendsto_from_activation .bibi activation_bibi.2 i
+  have hm : mean (tailBelief .bibi 2) = 127/192 := by
+    rw [activation_bibi.1]
+    dsimp [mean]
+    norm_num
+  norm_num [activationOffset, hm] at hlimit
+  exact hlimit
+
+theorem iibb_tendsto (i : Fin 4) :
+    Tendsto (fun k : Nat => (tailBelief .iibb k i : Real))
+      atTop (nhds (87/128 : Real)) := by
+  have hlimit := tail_tendsto_from_activation .iibb activation_iibb.2 i
+  have hm : mean (tailBelief .iibb 3) = 87/128 := by
+    rw [activation_iibb.1]
+    dsimp [mean]
+    norm_num
+  norm_num [activationOffset, hm] at hlimit
+  exact hlimit
+
+theorem separation_limit (i : Fin 4) :
+    Tendsto
+      (fun k : Nat => (tailBelief .iibb k i : Real) - (tailBelief .bbii k i : Real))
+      atTop (nhds (7/384 : Real)) ∧ (0 : Real) < 7/384 := by
+  constructor
+  · convert (iibb_tendsto i).sub (bbii_tendsto i) using 1
+    norm_num
+  · norm_num
+
+-- Independently transport BBII's limit through the all-k equality control.
+example (i : Fin 4) :
+    Tendsto (fun k : Nat => (tailBelief .bibi k i : Real))
+      atTop (nhds (127/192 : Real)) := by
+  simpa only [← equal_control] using bbii_tendsto i
+
+example (i : Fin 4) :
+    Tendsto (fun k : Nat => (tailBelief .bbii k i : Real))
+      atTop (nhds (127/192 : Real)) := bbii_tendsto i
+
+example (i : Fin 4) :
+    Tendsto (fun k : Nat => (tailBelief .bibi k i : Real))
+      atTop (nhds (127/192 : Real)) := bibi_tendsto i
+
+example (i : Fin 4) :
+    Tendsto (fun k : Nat => (tailBelief .iibb k i : Real))
+      atTop (nhds (87/128 : Real)) := iibb_tendsto i
+
+example (i : Fin 4) :
+    Tendsto
+      (fun k : Nat => (tailBelief .iibb k i : Real) - (tailBelief .bbii k i : Real))
+      atTop (nhds (7/384 : Real)) ∧ (0 : Real) < 7/384 := separation_limit i
+
+end NarrativeDynamics.Tests.FitnessABMPath4
+
+#print axioms NarrativeDynamics.FitnessABMPath4.trajectory_tendsto
+#print axioms NarrativeDynamics.Tests.FitnessABMPath4.bbii_tendsto
+#print axioms NarrativeDynamics.Tests.FitnessABMPath4.bibi_tendsto
+#print axioms NarrativeDynamics.Tests.FitnessABMPath4.iibb_tendsto
+#print axioms NarrativeDynamics.Tests.FitnessABMPath4.separation_limit

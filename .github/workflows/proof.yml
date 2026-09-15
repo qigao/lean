@@ -162,6 +162,9 @@ jobs:
           /usr/bin/time -f 'FitnessABMPath4 build elapsed=%e s peak_rss=%M KiB' \
             timeout --kill-after=10s 240s \
             lake build NarrativeDynamics.Core.FitnessABMPath4
+          /usr/bin/time -f 'FitnessABMPath4Convergence build elapsed=%e s peak_rss=%M KiB' \
+            timeout --kill-after=10s 240s \
+            lake build NarrativeDynamics.Core.FitnessABMPath4Convergence
           /usr/bin/time -f 'FitnessABMPath4 tests elapsed=%e s peak_rss=%M KiB' \
             timeout --kill-after=10s 240s \
             lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FitnessABMPath4.lean
