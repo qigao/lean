@@ -1,0 +1,273 @@
+name: pose-graph-ssm-pyskl-development
+
+on:
+  push:
+    branches:
+      - research/pose-graph-ssm-v1
+    paths:
+      - .github/workflows/pose-graph-ssm-pyskl-development.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pose-graph-ssm-pyskl-development
+  cancel-in-progress: false
+
+env:
+  PYSKL_NTU120_URL: https://download.openmmlab.com/mmaction/pyskl/data/nturgbd/ntu120_3danno.pkl
+  EXPECTED_PYSKL_SHA256: 91a423355774b5c81c8967214f253116544701d239b38120ba1d7ab87058a543
+  PROTOCOL_PATH: pose_graph_ssm/protocols/v1-pyskl-development-preflight.json
+  PYTHONUNBUFFERED: "1"
+  OMP_NUM_THREADS: "1"
+  MKL_NUM_THREADS: "1"
+
+jobs:
+  source:
+    name: Freeze public PYSKL source
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Restore pinned source cache
+        id: source-cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/pyskl/ntu120_3danno.pkl
+          key: pyskl-ntu120-3danno-${{ env.EXPECTED_PYSKL_SHA256 }}
+      - name: Download pinned public source on cache miss
+        if: steps.source-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .cache/pyskl
+          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+            "$PYSKL_NTU120_URL" --output .cache/pyskl/ntu120_3danno.pkl
+      - name: Verify pinned source bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual=$(sha256sum .cache/pyskl/ntu120_3danno.pkl | awk '{print $1}')
+          test "$actual" = "$EXPECTED_PYSKL_SHA256" || {
+            echo "PYSKL source SHA-256 drift: $actual" >&2
+            exit 1
+          }
+      - name: Validate frozen source inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install "numpy==2.4.6"
+          python -m pip install --no-deps -e ./pose_graph_ssm
+          python - <<'PY'
+          import json
+          from collections import Counter
+          from pathlib import Path
+          from pose_graph_ssm.protocol import load_protocol
+          from pose_graph_ssm.pyskl_source import read_pyskl_3d_annotations
+
+          protocol = load_protocol(Path("pose_graph_ssm/protocols/v1-pyskl-development-preflight.json"))
+          source = read_pyskl_3d_annotations(Path(".cache/pyskl/ntu120_3danno.pkl"), protocol)
+          counts = Counter(sample.split for sample in source.samples)
+          expected = {"train": 6336, "validation": 359, "final_test": 2748}
+          if dict(counts) != expected:
+              raise SystemExit(f"PYSKL selected split inventory drift: {dict(counts)}")
+          evidence = {
+              "format_version": 1,
+              "kind": "pyskl-ntu120-3danno-frozen-source",
+              "source_sha256": source.source_sha256,
+              "protocol_id": protocol.protocol_id,
+              "selected_sample_count": len(source.samples),
+              "split_counts": expected,
+          }
+          Path("source-evidence.json").write_text(
+              json.dumps(evidence, sort_keys=True, separators=(",", ":")) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(evidence, sort_keys=True))
+          PY
+      - name: Upload source evidence only
+        uses: actions/upload-artifact@v4
+        with:
+          name: pose-graph-ssm-pyskl-source-${{ github.run_id }}
+          path: source-evidence.json
+          if-no-files-found: error
+          retention-days: 30
+
+  seed:
+    name: PYSKL development seed ${{ matrix.seed }}
+    needs: [source]
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        seed: [7, 11, 19, 23, 31]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pose_graph_ssm/pyproject.toml
+      - name: Restore exact pinned PYSKL source
+        id: source-cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/pyskl/ntu120_3danno.pkl
+          key: pyskl-ntu120-3danno-${{ env.EXPECTED_PYSKL_SHA256 }}
+      - name: Require frozen source cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.source-cache.outputs.cache-hit }}" = "true" || {
+            echo "frozen PYSKL source cache is missing" >&2
+            exit 1
+          }
+          actual=$(sha256sum .cache/pyskl/ntu120_3danno.pkl | awk '{print $1}')
+          test "$actual" = "$EXPECTED_PYSKL_SHA256"
+      - name: Install frozen CPU training runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install "numpy==2.4.6"
+          python -m pip install "torch==2.14.0+cpu" --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --no-deps -e ./pose_graph_ssm
+      - name: Prepare once and train all four arms for seed
+        env:
+          DEVELOPMENT_SEED: ${{ matrix.seed }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p seed-results
+          python - <<'PY'
+          from dataclasses import asdict
+          import json
+          import os
+          from pathlib import Path
+
+          from pose_graph_ssm.protocol import load_protocol
+          from pose_graph_ssm.pyskl_source import prepare_pyskl_data
+          from pose_graph_ssm.results import DevelopmentCell
+          from pose_graph_ssm.training import train_validation_arm, training_protocol_fingerprint
+
+          source_path = Path(".cache/pyskl/ntu120_3danno.pkl")
+          protocol = load_protocol(Path("pose_graph_ssm/protocols/v1-pyskl-development-preflight.json"))
+          prepared = prepare_pyskl_data(source_path, protocol)
+          expected_sha = os.environ["EXPECTED_PYSKL_SHA256"]
+          if prepared.binding.dataset_content_hash != expected_sha:
+              raise SystemExit("prepared PYSKL dataset-content hash differs from pinned source")
+          seed = int(os.environ["DEVELOPMENT_SEED"])
+          if seed not in protocol.seeds:
+              raise SystemExit("matrix seed is outside frozen protocol")
+          training_hash = training_protocol_fingerprint(protocol)
+          for kind in protocol.model_kinds:
+              run = train_validation_arm(kind, seed, prepared, protocol)
+              cell = DevelopmentCell(
+                  run=run,
+                  binding_fingerprint=prepared.binding.fingerprint,
+                  dataset_content_hash=prepared.binding.dataset_content_hash,
+                  split_hash=prepared.binding.split_hash,
+                  feature_stats_hash=prepared.binding.feature_stats_hash,
+                  training_fingerprint=training_hash,
+              )
+              path = Path("seed-results") / f"cell-{kind}-seed-{seed}.json"
+              path.write_text(
+                  json.dumps(asdict(cell), sort_keys=True, separators=(",", ":")) + "\n",
+                  encoding="utf-8",
+              )
+              print(json.dumps({
+                  "model": kind,
+                  "seed": seed,
+                  "early_prediction_auc": run.early_prediction_auc,
+                  "retention_auc": run.retention_auc,
+                  "dropout_recovery_rate": run.dropout_recovery_rate,
+                  "full_sequence_macro_f1": run.full_sequence_macro_f1,
+              }, sort_keys=True))
+          PY
+      - name: Upload four paired cells for seed
+        uses: actions/upload-artifact@v4
+        with:
+          name: pose-graph-ssm-pyskl-seed-${{ matrix.seed }}-${{ github.run_id }}
+          path: seed-results
+          if-no-files-found: error
+          retention-days: 30
+
+  aggregate:
+    name: Reduce PYSKL 20-cell development matrix
+    needs: [source, seed]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install reducer runtime
+        run: |
+          python -m pip install "numpy==2.4.6"
+          python -m pip install "torch==2.14.0+cpu" --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --no-deps -e ./pose_graph_ssm
+      - name: Download all seed cells
+        uses: actions/download-artifact@v4
+        with:
+          pattern: pose-graph-ssm-pyskl-seed-*-${{ github.run_id }}
+          path: cells
+          merge-multiple: true
+      - name: Download pinned source evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: pose-graph-ssm-pyskl-source-${{ github.run_id }}
+          path: source-evidence
+      - name: Validate and reduce exact 20 cells
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p final-evidence
+          python - <<'PY'
+          from dataclasses import asdict
+          import json
+          from pathlib import Path
+
+          from pose_graph_ssm.protocol import load_protocol
+          from pose_graph_ssm.results import DevelopmentCell, reduce_development_matrix
+          from pose_graph_ssm.training import RunResult
+
+          protocol = load_protocol(Path("pose_graph_ssm/protocols/v1-pyskl-development-preflight.json"))
+          cells = []
+          paths = sorted(Path("cells").glob("cell-*.json"))
+          if len(paths) != 20:
+              raise SystemExit(f"expected exactly 20 development cells, got {len(paths)}")
+          for path in paths:
+              raw = json.loads(path.read_text(encoding="utf-8"))
+              run_raw = raw.pop("run")
+              run_raw["early_macro_f1_by_ratio"] = tuple(
+                  (float(ratio), float(score))
+                  for ratio, score in run_raw["early_macro_f1_by_ratio"]
+              )
+              run = RunResult(**run_raw)
+              cells.append(DevelopmentCell(run=run, **raw))
+          summary = reduce_development_matrix(cells, protocol)
+          Path("final-evidence/summary.json").write_text(
+              json.dumps(asdict(summary), sort_keys=True, separators=(",", ":")) + "\n",
+              encoding="utf-8",
+          )
+          Path("final-evidence/cells.json").write_text(
+              json.dumps([asdict(cell) for cell in cells], sort_keys=True, separators=(",", ":")) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(asdict(summary), sort_keys=True))
+          PY
+          cp source-evidence/source-evidence.json final-evidence/
+          cp "$PROTOCOL_PATH" final-evidence/protocol.json
+      - name: Upload URL-free PYSKL development evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pose-graph-ssm-pyskl-development-${{ github.run_id }}
+          path: final-evidence
+          if-no-files-found: error
+          retention-days: 30
