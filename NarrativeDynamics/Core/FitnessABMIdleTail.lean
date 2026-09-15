@@ -53,7 +53,7 @@ theorem runIdleTrajectory_eq (s : RunState) (k : Nat) :
   | succ k ih =>
       rw [show runIdleTrajectory s (Nat.succ k) =
           idleRunStep (runIdleTrajectory s k) by
-        simpa [Nat.succ_eq_add_one, runIdleTrajectory] using
+        simpa [Nat.succ_eq_add_one, runIdleTrajectory, runIdleTail] using
           (IdleTailModel.trajectory_succ runIdleTail s k)]
       rw [ih]
       simp [idleRunStep, Function.iterate_succ_apply', Nat.add_assoc]
