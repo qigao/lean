@@ -8,7 +8,18 @@ import re
 from typing import Any
 
 
-_PROTOCOL_ID = "pose-graph-ssm-v1-development-preflight"
+_RAW_PROTOCOL_ID = "pose-graph-ssm-v1-development-preflight"
+_PYSKL_PROTOCOL_ID = "pose-graph-ssm-v1-pyskl-development-preflight"
+_PROFILE_SOURCE_SEMANTICS = {
+    _RAW_PROTOCOL_ID: (
+        "max-fully-tracked-joints-then-lowest-body-id",
+        "ntu25-tracking-interp-root0-torso20-v1",
+    ),
+    _PYSKL_PROTOCOL_ID: (
+        "pyskl-person-0-motion-ranked",
+        "pyskl-zero-frame-interp-root0-torso20-v1",
+    ),
+}
 _ACTIONS = (8, 9, 22, 23, 26, 27, 31, 34, 35, 36)
 _OUTER_TRAIN = (
     1, 2, 4, 5, 8, 9, 13, 14, 15, 16, 17, 18, 19, 25, 27, 28, 31,
@@ -21,8 +32,6 @@ _MODEL_KINDS = ("gru", "ssm_only", "graph_tcn", "graph_ssm")
 _SEEDS = (7, 11, 19, 23, 31)
 _RATIOS = (0.10, 0.20, 0.40, 0.60, 0.80, 1.00)
 _PARAMETER_CEILING = 120_000
-_PRIMARY_BODY_RULE = "max-fully-tracked-joints-then-lowest-body-id"
-_NORMALIZATION_ID = "ntu25-tracking-interp-root0-torso20-v1"
 _FEATURE_SPEC_ID = "ntu25-p-jm-b-bm-a-v1"
 _STANDARDIZATION_EPSILON = 1e-6
 _RETENTION_RATIO = 0.40
@@ -193,8 +202,8 @@ def _digest(name: str, value: object) -> str | None:
 
 def _models(value: object) -> tuple[ModelConfig, ...]:
     raw = _object("models", value, frozenset(_MODEL_KINDS))
-    result: list[ModelConfig] = []
     expected_blocks = {"gru": 1, "ssm_only": 2, "graph_tcn": 2, "graph_ssm": 2}
+    result: list[ModelConfig] = []
     for kind in _MODEL_KINDS:
         item = _object(f"models.{kind}", raw[kind], _MODEL_FIELDS)
         if item["kind"] != kind:
@@ -255,10 +264,16 @@ def _quartiles(value: object) -> tuple[int, int, int] | None:
     return result  # type: ignore[return-value]
 
 
+def _profile(protocol_id: object) -> tuple[str, str, str]:
+    if type(protocol_id) is not str or protocol_id not in _PROFILE_SOURCE_SEMANTICS:
+        raise ValueError("protocol_id must remain one of the frozen source profiles")
+    primary_body_rule, normalization_id = _PROFILE_SOURCE_SEMANTICS[protocol_id]
+    return protocol_id, primary_body_rule, normalization_id
+
+
 def validate_protocol_dict(value: dict[str, Any]) -> ExperimentProtocol:
     raw = _object("protocol", value, _REQUIRED_FIELDS)
-    if raw["protocol_id"] != _PROTOCOL_ID:
-        raise ValueError("protocol_id must remain frozen")
+    protocol_id, primary_body_rule, normalization_id = _profile(raw["protocol_id"])
 
     actions = _int_tuple("actions", raw["actions"])
     outer = _int_tuple("outer_train_subjects", raw["outer_train_subjects"])
@@ -285,13 +300,13 @@ def validate_protocol_dict(value: dict[str, Any]) -> ExperimentProtocol:
         raise ValueError("parameter_ceiling must remain frozen")
 
     frozen_strings = {
-        "primary_body_rule": _PRIMARY_BODY_RULE,
-        "normalization_id": _NORMALIZATION_ID,
+        "primary_body_rule": primary_body_rule,
+        "normalization_id": normalization_id,
         "feature_spec_id": _FEATURE_SPEC_ID,
     }
     for name, expected in frozen_strings.items():
         if raw[name] != expected:
-            raise ValueError(f"{name} must remain frozen")
+            raise ValueError(f"{name} must remain frozen for protocol profile {protocol_id}")
 
     exact_floats = {
         "standardization_epsilon": _STANDARDIZATION_EPSILON,
@@ -347,7 +362,7 @@ def validate_protocol_dict(value: dict[str, Any]) -> ExperimentProtocol:
             raise ValueError("final test provenance is incomplete: " + ", ".join(missing))
 
     return ExperimentProtocol(
-        protocol_id=_PROTOCOL_ID,
+        protocol_id=protocol_id,
         actions=actions,
         outer_train_subjects=outer,
         validation_subjects=validation,
@@ -355,8 +370,8 @@ def validate_protocol_dict(value: dict[str, Any]) -> ExperimentProtocol:
         seeds=seeds,
         observation_ratios=ratios,
         parameter_ceiling=_PARAMETER_CEILING,
-        primary_body_rule=_PRIMARY_BODY_RULE,
-        normalization_id=_NORMALIZATION_ID,
+        primary_body_rule=primary_body_rule,
+        normalization_id=normalization_id,
         feature_spec_id=_FEATURE_SPEC_ID,
         standardization_epsilon=parsed_floats["standardization_epsilon"],
         retention_ratio=parsed_floats["retention_ratio"],
