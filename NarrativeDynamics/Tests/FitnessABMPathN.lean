@@ -70,6 +70,64 @@ example
 #print axioms NarrativeDynamics.FitnessABMPathN.path_block_common_mass
 #print axioms NarrativeDynamics.FitnessABMPathN.trajectory_tendsto
 
+theorem path4_adj_compat (i j : Fin 4) :
+    NarrativeDynamics.FitnessABMPathN.pathAdj 4 i j ↔
+      NarrativeDynamics.FitnessABMPath4.pathAdj i j := by
+  rfl
+
+theorem path4_step_compat (x : Fin 4 → Rat) :
+    NarrativeDynamics.FitnessABMPathN.beliefStep 4 x =
+      NarrativeDynamics.FitnessABMPath4.beliefStep x := by
+  rfl
+
+theorem path4_trajectory_compat (x : Fin 4 → Rat) (k : Nat) :
+    NarrativeDynamics.FitnessABMPathN.trajectory 4 x k =
+      NarrativeDynamics.FitnessABMPath4.trajectory x k := by
+  rfl
+
+theorem path4_mean_compat (x : Fin 4 → Rat) :
+    NarrativeDynamics.FitnessABMPathN.mean 4 x =
+      NarrativeDynamics.FitnessABMPath4.mean x := by
+  norm_num [NarrativeDynamics.FitnessABMPathN.mean,
+    NarrativeDynamics.FiniteConsensus.weightedMean,
+    NarrativeDynamics.FitnessABMPathN.stationaryWeight,
+    NarrativeDynamics.FitnessABMPathN.weightSum,
+    NarrativeDynamics.FitnessABMPathN.degree,
+    NarrativeDynamics.FitnessABMPathN.neighbors,
+    NarrativeDynamics.FitnessABMPathN.pathAdj,
+    NarrativeDynamics.FitnessABMPath4.mean,
+    Fin.sum_univ_succ]
+  ring
+
+theorem path5_adj_compat (i j : Fin 5) :
+    NarrativeDynamics.FitnessABMPathN.pathAdj 5 i j ↔
+      NarrativeDynamics.FitnessABMPath5.path5Adj i j := by
+  rfl
+
+theorem path5_step_compat (x : Fin 5 → Rat) :
+    NarrativeDynamics.FitnessABMPathN.beliefStep 5 x =
+      NarrativeDynamics.FitnessABMPath5.beliefStep x := by
+  rfl
+
+theorem path5_trajectory_compat (x : Fin 5 → Rat) (k : Nat) :
+    NarrativeDynamics.FitnessABMPathN.trajectory 5 x k =
+      NarrativeDynamics.FitnessABMPath5.trajectory x k := by
+  rfl
+
+theorem path5_mean_compat (x : Fin 5 → Rat) :
+    NarrativeDynamics.FitnessABMPathN.mean 5 x =
+      NarrativeDynamics.FitnessABMPath5.mean x := by
+  norm_num [NarrativeDynamics.FitnessABMPathN.mean,
+    NarrativeDynamics.FiniteConsensus.weightedMean,
+    NarrativeDynamics.FitnessABMPathN.stationaryWeight,
+    NarrativeDynamics.FitnessABMPathN.weightSum,
+    NarrativeDynamics.FitnessABMPathN.degree,
+    NarrativeDynamics.FitnessABMPathN.neighbors,
+    NarrativeDynamics.FitnessABMPathN.pathAdj,
+    NarrativeDynamics.FitnessABMPath5.mean,
+    Fin.sum_univ_succ]
+  ring
+
 example (i j : Fin 4) :
     NarrativeDynamics.FitnessABMPathN.pathAdj 4 i j ↔
       NarrativeDynamics.FitnessABMPath4.pathAdj i j :=
@@ -109,3 +167,36 @@ example (x : Fin 5 → Rat) :
     NarrativeDynamics.FitnessABMPathN.mean 5 x =
       NarrativeDynamics.FitnessABMPath5.mean x :=
   path5_mean_compat x
+
+example
+    (x : NarrativeDynamics.FitnessABMPath4.Beliefs)
+    (hx : NarrativeDynamics.FitnessABMPath4.allBroadcast x)
+    (i : Fin 4) :
+    Tendsto
+      (fun k : Nat => (NarrativeDynamics.FitnessABMPath4.trajectory x k i : Real))
+      atTop
+      (nhds (NarrativeDynamics.FitnessABMPath4.mean x : Real)) := by
+  have hxN : NarrativeDynamics.FitnessABMPathN.allBroadcast 4 x := by
+    simpa [NarrativeDynamics.FitnessABMPathN.allBroadcast,
+      NarrativeDynamics.FitnessABMPath4.allBroadcast] using hx
+  simpa only [path4_trajectory_compat, path4_mean_compat] using
+    NarrativeDynamics.FitnessABMPathN.trajectory_tendsto
+      4 (by decide) x hxN i
+
+def smoke6 : NarrativeDynamics.FitnessABMPathN.Beliefs 6 :=
+  ![1, 7/8, 3/4, 5/8, 3/4, 1]
+
+theorem smoke6_allBroadcast :
+    NarrativeDynamics.FitnessABMPathN.allBroadcast 6 smoke6 := by
+  intro j
+  fin_cases j <;>
+    norm_num [smoke6, NarrativeDynamics.FitnessABMPathN.allBroadcast]
+
+example (i : Fin 6) :
+    Tendsto
+      (fun k : Nat =>
+        (NarrativeDynamics.FitnessABMPathN.trajectory 6 smoke6 k i : Real))
+      atTop
+      (nhds (NarrativeDynamics.FitnessABMPathN.mean 6 smoke6 : Real)) :=
+  NarrativeDynamics.FitnessABMPathN.trajectory_tendsto
+    6 (by decide) smoke6 smoke6_allBroadcast i
