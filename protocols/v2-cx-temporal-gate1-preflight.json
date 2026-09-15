@@ -1,0 +1,43 @@
+{
+  "protocol_id": "v2-cx-temporal-gate1-preflight",
+  "dataset": "FAFB",
+  "release": "v783",
+  "cell_types_product": "consolidated_cell_types",
+  "connections_product": "connections_princeton",
+  "connection_threshold": 5,
+  "input_families": ["ER", "ExR", "PFN"],
+  "core_families": ["EPG", "PEG", "PEN", "Delta7", "hDelta", "vDelta"],
+  "output_families": ["PFL"],
+  "nt_signs": {
+    "ACH": 1,
+    "OCT": 1,
+    "SER": 1,
+    "DA": 1,
+    "GABA": -1,
+    "GLUT": -1
+  },
+  "seeds": [7, 11, 19, 23, 31],
+  "observation_ratios": [0.10, 0.20, 0.40, 0.60, 0.80, 1.00],
+  "early_auc_effect": 0.02,
+  "temporal_effect": 0.05,
+  "positive_seed_count": 4,
+  "degree_rewiring_algorithm": "cx-directed-double-edge-swap-v1",
+  "block_rewiring_algorithm": "cx-block-preserving-double-edge-swap-v1",
+  "rewiring_successful_swaps_per_offdiagonal_edge": 10,
+  "recurrent_magnitude_policy": "log1p",
+  "retention_observation_ratio": 0.40,
+  "final_test_enabled": false,
+  "source_hashes": {
+    "consolidated_cell_types": null,
+    "connections_princeton": null
+  },
+  "dataset_content_hash": null,
+  "split_hash": null,
+  "event_encoder_hash": null,
+  "dynamics_hash": null,
+  "input_node_fingerprint": null,
+  "output_node_fingerprint": null,
+  "cx_artifact_fingerprint": null,
+  "degree_null_fingerprints": null,
+  "block_null_fingerprints": null
+}
