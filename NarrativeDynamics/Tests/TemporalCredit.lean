@@ -59,4 +59,27 @@ example : td0DirectCredit 3 0 = 0 := by
 example : td0DirectCredit 5 0 = 0 := by
   exact terminal_td0_zero_direct_causal_credit 5 (by decide)
 
+example (gamma lambda : ℝ) :
+    causalTraceCoeff gamma lambda 0 = 1 := by
+  simpa using causal_trace_coeff_closed_form gamma lambda 0
+
+example (gamma lambda : ℝ) :
+    causalTraceCoeff gamma lambda 1 = gamma * lambda := by
+  simpa using causal_trace_coeff_closed_form gamma lambda 1
+
+example (gamma lambda : ℝ) :
+    causalTraceCoeff gamma lambda 3 = (gamma * lambda) ^ 3 := by
+  exact causal_trace_coeff_closed_form gamma lambda 3
+
+example (gamma lambda : ℝ) :
+    causalTraceCoeff gamma lambda 5 = (gamma * lambda) ^ 5 := by
+  exact causal_trace_coeff_closed_form gamma lambda 5
+
+example
+    (gamma lambda : ℝ)
+    (hgamma : gamma ≠ 0)
+    (hlambda : lambda ≠ 0) :
+    causalTraceCoeff gamma lambda 5 ≠ 0 := by
+  exact causal_trace_coeff_ne_zero gamma lambda 5 hgamma hlambda
+
 end NarrativeDynamics.TemporalCredit.Tests
