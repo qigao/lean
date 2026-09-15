@@ -1,0 +1,28 @@
+name: PathN focused TDD
+
+on:
+  push:
+    branches:
+      - feature/bb-pathn-convergence-v1
+  pull_request:
+    branches:
+      - proof/narrative-dynamics-v0
+    paths:
+      - 'NarrativeDynamics/Core/FiniteConsensus.lean'
+      - 'NarrativeDynamics/Core/FitnessABMPathN.lean'
+      - 'NarrativeDynamics/Tests/FiniteConsensus.lean'
+      - 'NarrativeDynamics/Tests/FitnessABMPathN.lean'
+      - '.github/workflows/pathn-focused.yml'
+
+jobs:
+  focused:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: leanprover/lean-action@v1
+        with:
+          use-github-cache: true
+      - name: FiniteConsensus focused consumer
+        run: |
+          timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 \
+            NarrativeDynamics/Tests/FiniteConsensus.lean
