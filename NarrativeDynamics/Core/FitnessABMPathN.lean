@@ -212,7 +212,13 @@ private theorem applyKernel_pathKernel
         (1 / (2 * (degree n i : Rat))) *
           (∑ j ∈ neighbors n i, x j) := by
   classical
-  simp only [applyKernel, Matrix.mulVec_apply, dotProduct, pathKernel]
+  simp only [applyKernel, Matrix.mulVec_apply, dotProduct]
+  change
+    (∑ j : Fin n, pathKernel n i j * x j) =
+      (1/2 : Rat) * x i +
+        (1 / (2 * (degree n i : Rat))) *
+          (∑ j ∈ neighbors n i, x j)
+  simp only [pathKernel]
   rw [show
       (∑ j : Fin n,
         ((if i = j then (1/2 : Rat) else 0) +
