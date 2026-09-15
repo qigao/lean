@@ -36,23 +36,24 @@ def commonClockReplay : Beliefs := ![13/16, 3/4, 11/16, 3/4, 13/16]
 
 -- One actual propagation round takes the earlier supplied replay state to the
 -- later supplied replay state.
-example : trajectory earlyReplay 1 = delayedReplay := by
+theorem early_to_delayed : trajectory earlyReplay 1 = delayedReplay := by
   decide_cbv
 
 -- If the earlier history activates at clock 1 and the delayed history at clock
 -- 2 with the supplied state above, both exact tails agree at common clock 3.
-example : trajectory earlyReplay 2 = commonClockReplay := by
+theorem early_to_common : trajectory earlyReplay 2 = commonClockReplay := by
   decide_cbv
 
-example : trajectory delayedReplay 1 = commonClockReplay := by
+theorem delayed_to_common : trajectory delayedReplay 1 = commonClockReplay := by
   decide_cbv
 
-example : trajectory earlyReplay 2 = trajectory delayedReplay 1 := by
-  decide_cbv
+theorem common_clock_agreement :
+    trajectory earlyReplay 2 = trajectory delayedReplay 1 := by
+  exact early_to_common.trans delayed_to_common.symm
 
 -- The stationary degree-weighted mean agrees across the finite replay states.
-example : mean earlyReplay = mean delayedReplay := by
+theorem mean_early_delayed : mean earlyReplay = mean delayedReplay := by
   decide_cbv
 
-example : mean delayedReplay = mean commonClockReplay := by
+theorem mean_delayed_common : mean delayedReplay = mean commonClockReplay := by
   decide_cbv
