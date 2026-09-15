@@ -11,11 +11,6 @@ from typing import Any
 
 import numpy as np
 
-from .data import PreparedData, PreparedSample, PreparationBinding, _check_optional_pin
-from .evaluation import length_quartile_boundaries
-from .features import FeatureStandardizer, kinematic_features
-from .graph import adjacency_fingerprint
-from .models.selective_ssm import ssm_spec_fingerprint
 from .ntu import split_for_subject
 from .protocol import ExperimentProtocol
 
@@ -193,7 +188,15 @@ def read_pyskl_3d_annotations(path: str | Path, protocol: ExperimentProtocol) ->
     return PysklSource(source_sha256=hashlib.sha256(raw).hexdigest(), samples=tuple(selected))
 
 
-def prepare_pyskl_data(path: str | Path, protocol: ExperimentProtocol) -> PreparedData:
+def prepare_pyskl_data(path: str | Path, protocol: ExperimentProtocol):
+    # Keep public-source validation NumPy-only. Training/evaluation dependencies are
+    # imported only when this preparation path is actually requested.
+    from .data import PreparedData, PreparedSample, PreparationBinding, _check_optional_pin
+    from .evaluation import length_quartile_boundaries
+    from .features import FeatureStandardizer, kinematic_features
+    from .graph import adjacency_fingerprint
+    from .models.selective_ssm import ssm_spec_fingerprint
+
     source = read_pyskl_3d_annotations(path, protocol)
     label_map = tuple((action, index) for index, action in enumerate(protocol.actions))
     label_lookup = dict(label_map)
@@ -238,10 +241,7 @@ def prepare_pyskl_data(path: str | Path, protocol: ExperimentProtocol) -> Prepar
     train_samples = materialize(raw_train)
     validation_samples = materialize(raw_validation)
     quartiles = length_quartile_boundaries([sample.features.shape[0] for sample in train_samples])
-    assignments = [
-        {"sample_id": sample.sample_id, "split": sample.split}
-        for sample in source.samples
-    ]
+    assignments = [{"sample_id": sample.sample_id, "split": sample.split} for sample in source.samples]
     split_hash = _hash_json(
         {
             "source_sha256": source.source_sha256,
