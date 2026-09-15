@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import pickle
 from pathlib import Path
 
@@ -8,7 +9,7 @@ import numpy as np
 import pytest
 
 from pose_graph_ssm.protocol import load_protocol
-from pose_graph_ssm.pyskl_source import prepare_pyskl_data, read_pyskl_3d_annotations
+from pose_graph_ssm.pyskl_source import _restricted_load, prepare_pyskl_data, read_pyskl_3d_annotations
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,6 +55,21 @@ def _write(path: Path, payload: dict[str, object]) -> str:
     raw = pickle.dumps(payload, protocol=4)
     path.write_bytes(raw)
     return hashlib.sha256(raw).hexdigest()
+
+
+def test_restricted_loader_supports_protocol2_bytes_encoding():
+    # Protocol 2 serializes bytes through GLOBAL _codecs.encode; PYSKL's published
+    # annotation pickle uses this legacy-compatible representation.
+    assert _restricted_load(pickle.dumps(b"ntu", protocol=2)) == b"ntu"
+
+
+def test_restricted_loader_rejects_arbitrary_globals():
+    class Unsafe:
+        def __reduce__(self):
+            return os.system, ("echo forbidden",)
+
+    with pytest.raises(ValueError, match="safely decode"):
+        _restricted_load(pickle.dumps(Unsafe(), protocol=2))
 
 
 def test_reads_strict_pyskl_3d_annotation_contract(tmp_path: Path):
