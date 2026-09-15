@@ -64,12 +64,16 @@ jobs:
           export PATH="$HOME/.elan/bin:$PATH"
           timeout --kill-after=10s 240s \
             lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FitnessABMIdleTail.lean
-      - name: Build Path4 test module
+      - name: Build refactored Path4 test module
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
           timeout --kill-after=10s 240s lake build NarrativeDynamics.Tests.FitnessABMPath4
-      - name: Path4 idle-tail compatibility consumer
+      - name: Audit Path4 idle-tail refactor
         run: |
-          export PATH="$HOME/.elan/bin:$PATH"
-          timeout --kill-after=10s 240s \
-            lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FitnessABMPath4IdleTailCompat.lean
+          if git grep -n 'private theorem run_idle' -- NarrativeDynamics/Tests/FitnessABMPath4.lean; then
+            echo 'legacy test-local run_idle still exists' >&2
+            exit 1
+          fi
+          git grep -n 'theorem tailState_idleTail' -- NarrativeDynamics/Tests/FitnessABMPath4.lean
+          git grep -n 'theorem tailBelief_idleTail' -- NarrativeDynamics/Tests/FitnessABMPath4.lean
+          git grep -n 'replay_append_idle' -- NarrativeDynamics/Tests/FitnessABMPath4.lean
