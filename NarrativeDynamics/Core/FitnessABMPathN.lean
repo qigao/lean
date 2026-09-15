@@ -353,6 +353,7 @@ private theorem degree_formula (n : Nat) (hn : 2 ≤ n) (i : Fin n) :
   classical
   by_cases hzero : i.val = 0
   · have hright : i.val + 1 < n := by omega
+    have hn1 : 1 < n := by omega
     let r : Fin n := ⟨i.val + 1, hright⟩
     have hneighbors : neighbors n i = {r} := by
       ext j
@@ -369,7 +370,7 @@ private theorem degree_formula (n : Nat) (hn : 2 ≤ n) (i : Fin n) :
         subst j
         right
         dsimp [r]
-    simp [degree, hneighbors, hzero, hright]
+    simp [degree, hneighbors, hzero, hright, hn1]
   · by_cases hright : i.val + 1 < n
     · let l : Fin n := ⟨i.val - 1, by omega⟩
       let r : Fin n := ⟨i.val + 1, hright⟩
@@ -500,7 +501,6 @@ theorem pathKernel_detailed_balance
         simp [pathKernel, Ne.symm hij, mem_neighbors_iff, hji]]
       unfold stationaryWeight
       field_simp [hwi, hdi, hdj]
-      ring
     · have hji : ¬ pathAdj n i j := by
         intro h
         exact hadj ((pathAdj_symm i j).1 h)
@@ -555,10 +555,8 @@ theorem mean_iterate
   exact mean_kernel_iterate n hn x k
 
 theorem mean_between
-    (n : Nat) (hn : 2 ≤ n) (x : Beliefs n) :
+    (n : Nat) [Nonempty (Fin n)] (hn : 2 ≤ n) (x : Beliefs n) :
     coordMin x ≤ mean n x ∧ mean n x ≤ coordMax x := by
-  let i0 : Fin n := ⟨0, by omega⟩
-  letI : Nonempty (Fin n) := ⟨i0⟩
   exact weightedMean_between (path_stationary_weights n hn) x
 
 end NarrativeDynamics.FitnessABMPathN
