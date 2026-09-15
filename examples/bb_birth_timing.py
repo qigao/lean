@@ -15,7 +15,10 @@ from narrative_dynamics.abm.bb_runtime_contracts import (
 )
 
 
-def run_experiment() -> dict[str, object]:
+def run_experiment(*, extra_idle_rounds: int = 0) -> dict[str, object]:
+    """Replay the original schedules followed by a shared idle-only tail."""
+    if type(extra_idle_rounds) is not int or extra_idle_rounds < 0:
+        raise ValueError("extra_idle_rounds must be a nonnegative integer")
     seed = BBRuntimeSeed(
         BBRuntimeRawSeed(2, (1, 1), ((0, 1),)),
         (
@@ -37,6 +40,7 @@ def run_experiment() -> dict[str, object]:
         ordered_births = iter(births)
         ticks = tuple(next(ordered_births) if kind == "B" else BBRuntimeTick()
                       for kind in schedule)
+        ticks += (BBRuntimeTick(),) * extra_idle_rounds
         replay = replay_bb_population(seed, 1, ticks)
         if isinstance(replay, BBRuntimeError):
             raise RuntimeError(f"{schedule}: {replay.stage}/{replay.code}")
