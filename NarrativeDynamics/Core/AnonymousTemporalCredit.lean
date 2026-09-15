@@ -5,7 +5,6 @@ namespace NarrativeDynamics.AnonymousTemporalCredit
 structure Delivery where
   source : Nat
   reward : ℝ
-  deriving DecidableEq
 
 abbrev DeliveryBucket := List Delivery
 abbrev DeliveryHistory := List DeliveryBucket
@@ -19,7 +18,6 @@ def aggregateStream (history : DeliveryHistory) : List ℝ :=
 structure LearnerView (Obs : Type) where
   observations : List Obs
   feedback : List ℝ
-  deriving DecidableEq
 
 def learnerView (observations : List Obs) (history : DeliveryHistory) : LearnerView Obs :=
   { observations := observations, feedback := aggregateStream history }
@@ -35,7 +33,8 @@ theorem aggregate_view_source_noninterference
     (left right : DeliveryHistory)
     (h : aggregateStream left = aggregateStream right) :
     learnerView observations left = learnerView observations right := by
-  simp [learnerView, h]
+  cases h
+  rfl
 
 theorem aggregate_conservation (history : DeliveryHistory) :
     (aggregateStream history).sum =
@@ -43,7 +42,19 @@ theorem aggregate_conservation (history : DeliveryHistory) :
   induction history with
   | nil => rfl
   | cons bucket rest ih =>
-      simp [aggregateStream, aggregateBucket, ih]
+      change aggregateBucket bucket + (aggregateStream rest).sum =
+        (List.map Delivery.reward (bucket ++ rest.flatten)).sum
+      rw [List.map_append, List.sum_append, aggregateBucket, ih]
+
+theorem aggregateBucket_relabel
+    (f : Nat → Nat) (bucket : DeliveryBucket) :
+    aggregateBucket (bucket.map (relabelDelivery f)) = aggregateBucket bucket := by
+  induction bucket with
+  | nil => rfl
+  | cons delivery rest ih =>
+      change delivery.reward + aggregateBucket (rest.map (relabelDelivery f)) =
+        delivery.reward + aggregateBucket rest
+      rw [ih]
 
 theorem aggregate_stream_relabel_sources
     (f : Nat → Nat) (history : DeliveryHistory) :
@@ -51,7 +62,10 @@ theorem aggregate_stream_relabel_sources
   induction history with
   | nil => rfl
   | cons bucket rest ih =>
-      simp [relabelSources, aggregateStream, aggregateBucket, relabelDelivery, ih]
+      change aggregateBucket (bucket.map (relabelDelivery f)) ::
+          aggregateStream (relabelSources f rest) =
+        aggregateBucket bucket :: aggregateStream rest
+      rw [aggregateBucket_relabel, ih]
 
 theorem learner_view_source_relabel_invariant
     (observations : List Obs) (history : DeliveryHistory) (f : Nat → Nat) :
