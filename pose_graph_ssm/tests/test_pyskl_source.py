@@ -13,7 +13,7 @@ from pose_graph_ssm.pyskl_source import _restricted_load, prepare_pyskl_data, re
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PROTOCOL = load_protocol(ROOT / "protocols" / "v1-development-preflight.json")
+PROTOCOL = load_protocol(ROOT / "protocols" / "v1-pyskl-development-preflight.json")
 
 
 def _sequence(frames: int, *, offset: float = 0.0) -> np.ndarray:
@@ -37,14 +37,13 @@ def _annotation(sample_id: str, action: int, frames: int, *, offset: float = 0.0
 
 
 def _payload() -> dict[str, object]:
-    # Train lengths are deliberately distinct so the frozen quartile contract is well-defined.
     train_subjects = [56, 57, 58, 59, 70, 78, 80, 81]
     train_lengths = [12, 16, 20, 24, 28, 32, 36, 40]
     annotations: list[dict[str, object]] = []
     for index, (subject, frames) in enumerate(zip(train_subjects, train_lengths)):
         annotations.append(_annotation(f"S001C001P{subject:03d}R001A008", 8, frames, offset=index * 0.01))
-    annotations.append(_annotation("S001C001P014R001A008", 8, 30, offset=0.2))  # validation
-    annotations.append(_annotation("S001C001P003R001A008", 8, 30, offset=0.3))  # final_test
+    annotations.append(_annotation("S001C001P014R001A008", 8, 30, offset=0.2))
+    annotations.append(_annotation("S001C001P003R001A008", 8, 30, offset=0.3))
     return {
         "split": {"xsub_train": [row["frame_dir"] for row in annotations[:-1]], "xsub_val": [annotations[-1]["frame_dir"]]},
         "annotations": annotations,
@@ -58,8 +57,6 @@ def _write(path: Path, payload: dict[str, object]) -> str:
 
 
 def test_restricted_loader_supports_protocol2_bytes_encoding():
-    # Protocol 2 serializes bytes through GLOBAL _codecs.encode; PYSKL's published
-    # annotation pickle uses this legacy-compatible representation.
     assert _restricted_load(pickle.dumps(b"ntu", protocol=2)) == b"ntu"
 
 
