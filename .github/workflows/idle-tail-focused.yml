@@ -51,6 +51,10 @@ jobs:
           export PATH="$HOME/.elan/bin:$PATH"
           timeout --kill-after=10s 240s \
             lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/IdleTail.lean
+      - name: Build FitnessABMIdleTail
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          timeout --kill-after=10s 240s lake build NarrativeDynamics.Core.FitnessABMIdleTail
       - name: FitnessABMIdleTail focused consumer
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
