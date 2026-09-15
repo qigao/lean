@@ -220,8 +220,10 @@ private theorem averagingKernel_one {ι : Type*} [Fintype ι] [DecidableEq ι] :
   classical
   constructor
   · intro i j
-    by_cases h : i = j <;> simp [h]
+    rw [Matrix.one_apply]
+    split_ifs <;> norm_num
   · intro i
+    simp only [Matrix.one_apply]
     simp
 
 private theorem averagingKernel_mul {ι : Type*} [Fintype ι]
@@ -339,13 +341,13 @@ theorem coordRange_apply_le_of_commonColumn
       δ * x c + (1 - δ) * coordMin x ≤ applyKernel K x i := by
     intro i
     rw [applyKernel_eq_common_add_residual K c δ hδ1 x i]
-    exact add_le_add_left
+    exact add_le_add_right
       (mul_le_mul_of_nonneg_left (applyKernel_between hR x i).1 hfac) _
   have hupp : ∀ i,
       applyKernel K x i ≤ δ * x c + (1 - δ) * coordMax x := by
     intro i
     rw [applyKernel_eq_common_add_residual K c δ hδ1 x i]
-    exact add_le_add_left
+    exact add_le_add_right
       (mul_le_mul_of_nonneg_left (applyKernel_between hR x i).2 hfac) _
   unfold coordRange
   calc
@@ -469,10 +471,13 @@ theorem block_contraction_tendsto
     have hrange : 0 ≤ (coordRange x : Real) := by
       exact_mod_cast coordRange_nonneg x
     positivity
+  have hrange_nonneg : 0 ≤ (coordRange x : Real) := by
+    exact_mod_cast coordRange_nonneg x
   have hgeom_lt :
       ((1 - δ : Rat) : Real) ^ q * (coordRange x : Real) < ε := by
     have hqq := hq q le_rfl
-    simpa [Real.dist_eq, abs_of_nonneg hbound_nonneg] using hqq
+    simpa [Real.dist_eq, abs_of_nonneg hbound_nonneg,
+      abs_of_nonneg hfac0, Real.norm_eq_abs, abs_of_nonneg hrange_nonneg] using hqq
   refine ⟨q * b, ?_⟩
   intro k hk
   have hrangeTail := coordRange_kernelTrajectory_tail_le hK x hk
