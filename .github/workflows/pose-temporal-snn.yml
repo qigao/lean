@@ -33,4 +33,5 @@ jobs:
           pose_snn/tests/test_protocol.py
           pose_snn/tests/test_ntu.py
           pose_snn/tests/test_normalization.py
+          pose_snn/tests/test_events.py
           -q
