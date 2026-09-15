@@ -336,4 +336,229 @@ theorem trajectory_eq_kernelTrajectory
       simpa [Nat.succ_eq_add_one] using
         (kernelTrajectory_succ (pathKernel n) x k).symm
 
+/-- Sum of path degrees, used to normalize the stationary distribution. -/
+def weightSum (n : Nat) : Rat :=
+  ∑ i : Fin n, (degree n i : Rat)
+
+def stationaryWeight (n : Nat) (i : Fin n) : Rat :=
+  (degree n i : Rat) / weightSum n
+
+def mean (n : Nat) (x : Beliefs n) : Rat :=
+  weightedMean (stationaryWeight n) x
+
+private theorem degree_formula (n : Nat) (hn : 2 ≤ n) (i : Fin n) :
+    degree n i =
+      (if i.val = 0 then 0 else 1) +
+      (if i.val + 1 < n then 1 else 0) := by
+  classical
+  by_cases hzero : i.val = 0
+  · have hright : i.val + 1 < n := by omega
+    let r : Fin n := ⟨i.val + 1, hright⟩
+    have hneighbors : neighbors n i = {r} := by
+      ext j
+      simp only [mem_neighbors_iff, Finset.mem_singleton]
+      constructor
+      · intro h
+        apply Fin.ext
+        rcases h with h | h
+        · dsimp [r]
+          omega
+        · dsimp [r]
+          omega
+      · intro h
+        subst j
+        right
+        dsimp [r]
+    simp [degree, hneighbors, hzero, hright]
+  · by_cases hright : i.val + 1 < n
+    · let l : Fin n := ⟨i.val - 1, by omega⟩
+      let r : Fin n := ⟨i.val + 1, hright⟩
+      have hl : l ∈ neighbors n i := by
+        simp only [mem_neighbors_iff]
+        left
+        dsimp [l]
+        omega
+      have hr : r ∈ neighbors n i := by
+        simp only [mem_neighbors_iff]
+        right
+        dsimp [r]
+      have hlr : l ≠ r := by
+        intro h
+        have hv := congrArg Fin.val h
+        dsimp [l, r] at hv
+        omega
+      have hsubset : ({l, r} : Finset (Fin n)) ⊆ neighbors n i := by
+        intro j hj
+        simp only [Finset.mem_insert, Finset.mem_singleton] at hj
+        rcases hj with rfl | rfl
+        · exact hl
+        · exact hr
+      have htwo : 2 ≤ degree n i := by
+        have hc := Finset.card_le_card hsubset
+        simpa [degree, hlr] using hc
+      have hle := degree_le_two n i
+      have hd : degree n i = 2 := by omega
+      simp [hd, hzero, hright]
+    · have hlast : i.val + 1 = n := by omega
+      let l : Fin n := ⟨i.val - 1, by omega⟩
+      have hneighbors : neighbors n i = {l} := by
+        ext j
+        simp only [mem_neighbors_iff, Finset.mem_singleton]
+        constructor
+        · intro h
+          apply Fin.ext
+          rcases h with h | h
+          · dsimp [l]
+            omega
+          · exfalso
+            omega
+        · intro h
+          subst j
+          left
+          dsimp [l]
+          omega
+      simp [degree, hneighbors, hzero, hright]
+
+private theorem sum_has_pred (n : Nat) :
+    (∑ i : Fin n, if i.val = 0 then (0 : Nat) else 1) = n - 1 := by
+  cases n with
+  | zero => simp
+  | succ n =>
+      rw [Fin.sum_univ_succ]
+      simp
+
+private theorem sum_has_succ (n : Nat) :
+    (∑ i : Fin n, if i.val + 1 < n then (1 : Nat) else 0) = n - 1 := by
+  cases n with
+  | zero => simp
+  | succ n =>
+      rw [Fin.sum_univ_castSucc]
+      simp only [Fin.val_last, Fin.val_castSucc]
+      have hcast : ∀ i : Fin n, i.val + 1 < n + 1 := by
+        intro i
+        omega
+      simp [hcast]
+
+theorem path_degree_sum (n : Nat) (hn : 2 ≤ n) :
+    weightSum n = ((2 * (n - 1) : Nat) : Rat) := by
+  have hnat : (∑ i : Fin n, degree n i) = 2 * (n - 1) := by
+    calc
+      (∑ i : Fin n, degree n i) =
+          ∑ i : Fin n,
+            ((if i.val = 0 then 0 else 1) +
+              (if i.val + 1 < n then 1 else 0)) := by
+        apply Finset.sum_congr rfl
+        intro i _
+        exact degree_formula n hn i
+      _ = (∑ i : Fin n, if i.val = 0 then (0 : Nat) else 1) +
+          (∑ i : Fin n, if i.val + 1 < n then (1 : Nat) else 0) := by
+        rw [Finset.sum_add_distrib]
+      _ = (n - 1) + (n - 1) := by
+        rw [sum_has_pred, sum_has_succ]
+      _ = 2 * (n - 1) := by omega
+  unfold weightSum
+  exact_mod_cast hnat
+
+theorem weightSum_pos (n : Nat) (hn : 2 ≤ n) : 0 < weightSum n := by
+  rw [path_degree_sum n hn]
+  exact_mod_cast (show 0 < 2 * (n - 1) by omega)
+
+theorem stationaryWeight_nonneg (n : Nat) (hn : 2 ≤ n) (i : Fin n) :
+    0 ≤ stationaryWeight n i := by
+  exact div_nonneg (by positivity) (le_of_lt (weightSum_pos n hn))
+
+theorem stationaryWeight_sum_one (n : Nat) (hn : 2 ≤ n) :
+    ∑ i : Fin n, stationaryWeight n i = 1 := by
+  unfold stationaryWeight
+  rw [← Finset.sum_div]
+  change weightSum n / weightSum n = 1
+  exact div_self (ne_of_gt (weightSum_pos n hn))
+
+private theorem pathAdj_symm {n : Nat} (i j : Fin n) :
+    pathAdj n i j ↔ pathAdj n j i := by
+  unfold pathAdj
+  omega
+
+theorem pathKernel_detailed_balance
+    (n : Nat) (hn : 2 ≤ n) (i j : Fin n) :
+    stationaryWeight n i * pathKernel n i j =
+      stationaryWeight n j * pathKernel n j i := by
+  classical
+  by_cases hij : i = j
+  · subst j
+    rfl
+  · by_cases hadj : pathAdj n j i
+    · have hji : pathAdj n i j := (pathAdj_symm i j).2 hadj
+      have hwi : weightSum n ≠ 0 := ne_of_gt (weightSum_pos n hn)
+      have hdiNat : degree n i ≠ 0 := Nat.ne_of_gt (degree_pos n hn i)
+      have hdjNat : degree n j ≠ 0 := Nat.ne_of_gt (degree_pos n hn j)
+      have hdi : (degree n i : Rat) ≠ 0 := by exact_mod_cast hdiNat
+      have hdj : (degree n j : Rat) ≠ 0 := by exact_mod_cast hdjNat
+      rw [show pathKernel n i j = 1 / (2 * (degree n i : Rat)) by
+        simp [pathKernel, hij, mem_neighbors_iff, hadj]]
+      rw [show pathKernel n j i = 1 / (2 * (degree n j : Rat)) by
+        simp [pathKernel, Ne.symm hij, mem_neighbors_iff, hji]]
+      unfold stationaryWeight
+      field_simp [hwi, hdi, hdj]
+      ring
+    · have hji : ¬ pathAdj n i j := by
+        intro h
+        exact hadj ((pathAdj_symm i j).1 h)
+      simp [pathKernel, hij, Ne.symm hij, mem_neighbors_iff, hadj, hji]
+
+theorem path_stationary_weights (n : Nat) (hn : 2 ≤ n) :
+    StationaryWeights (pathKernel n) (stationaryWeight n) := by
+  refine ⟨stationaryWeight_nonneg n hn, stationaryWeight_sum_one n hn, ?_⟩
+  intro j
+  calc
+    (∑ i, stationaryWeight n i * pathKernel n i j) =
+        ∑ i, stationaryWeight n j * pathKernel n j i := by
+      apply Finset.sum_congr rfl
+      intro i _
+      exact pathKernel_detailed_balance n hn i j
+    _ = stationaryWeight n j * (∑ i, pathKernel n j i) := by
+      rw [Finset.mul_sum]
+    _ = stationaryWeight n j := by
+      rw [pathKernel_row_sum n hn j]
+      ring
+
+theorem mean_kernel_step (n : Nat) (hn : 2 ≤ n) (x : Beliefs n) :
+    mean n (applyKernel (pathKernel n) x) = mean n x := by
+  exact weightedMean_apply (path_stationary_weights n hn) x
+
+theorem mean_kernel_iterate
+    (n : Nat) (hn : 2 ≤ n) (x : Beliefs n) (k : Nat) :
+    mean n (kernelTrajectory (pathKernel n) x k) = mean n x := by
+  induction k with
+  | zero => simp [mean]
+  | succ k ih =>
+      rw [show kernelTrajectory (pathKernel n) x (Nat.succ k) =
+          applyKernel (pathKernel n) (kernelTrajectory (pathKernel n) x k) by
+        simpa [Nat.succ_eq_add_one] using
+          kernelTrajectory_succ (pathKernel n) x k]
+      rw [mean_kernel_step n hn, ih]
+
+theorem mean_step
+    (n : Nat) (hn : 2 ≤ n) (x : Beliefs n) (hx : allBroadcast n x) :
+    mean n (beliefStep n x) = mean n x := by
+  have hbridge : beliefStep n x = applyKernel (pathKernel n) x := by
+    simpa [beliefStep] using
+      propagate_eq_kernel n hn x (fun _ => 0) hx
+  rw [hbridge]
+  exact mean_kernel_step n hn x
+
+theorem mean_iterate
+    (n : Nat) (hn : 2 ≤ n) (x : Beliefs n)
+    (hx : allBroadcast n x) (k : Nat) :
+    mean n (trajectory n x k) = mean n x := by
+  rw [trajectory_eq_kernelTrajectory n hn x hx k]
+  exact mean_kernel_iterate n hn x k
+
+theorem mean_between
+    (n : Nat) (hn : 2 ≤ n) (x : Beliefs n) :
+    coordMin x ≤ mean n x ∧ mean n x ≤ coordMax x := by
+  let i0 : Fin n := ⟨0, by omega⟩
+  letI : Nonempty (Fin n) := ⟨i0⟩
+  exact weightedMean_between (path_stationary_weights n hn) x
+
 end NarrativeDynamics.FitnessABMPathN
