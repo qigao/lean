@@ -59,4 +59,19 @@ theorem learner_view_independent_of_causal_label
       learnerView rewardFn (withCausalLabel trial label₂) := by
   rfl
 
+def td0DirectCredit (terminalPos pos : Nat) : ℝ :=
+  if pos = terminalPos then 1 else 0
+
+theorem terminal_td0_zero_direct_causal_credit
+    (d : Nat)
+    (hd : 0 < d) :
+    td0DirectCredit d 0 = 0 := by
+  have hne : (0 : Nat) ≠ d := Nat.ne_of_lt hd
+  simp [td0DirectCredit, hne]
+
+theorem terminal_td0_terminal_credit
+    (d : Nat) :
+    td0DirectCredit d d = 1 := by
+  simp [td0DirectCredit]
+
 end NarrativeDynamics.TemporalCredit
