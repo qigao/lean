@@ -111,4 +111,58 @@ theorem allBroadcast_iterate (x : Beliefs) (hx : allBroadcast x) (n : Nat) :
       simpa [trajectory, Function.iterate_succ_apply'] using
         allBroadcast_step (trajectory x n) ih
 
+/-- The invariant mean weights the path vertices by their degrees. -/
+def mean (x : Beliefs) : Rat := (x 0+2*x 1+2*x 2+x 3)/6
+
+def coeffA (x : Beliefs) : Rat := (x 0+x 1-x 2-x 3)/3
+
+def coeffB (x : Beliefs) : Rat := (x 0-x 1-x 2+x 3)/3
+
+def coeffC (x : Beliefs) : Rat := (x 0-2*x 1+2*x 2-x 3)/6
+
+def modeV : Beliefs := ![1,1/2,-1/2,-1]
+
+def modeW : Beliefs := ![1,-1/2,-1/2,1]
+
+def modeZ : Beliefs := ![1,-1,1,-1]
+
+/-- All four modes are retained, including the zero mode at time zero. -/
+def closedForm (x : Beliefs) (n : Nat) : Beliefs := fun i =>
+  mean x + coeffA x*(3/4)^n*modeV i +
+    coeffB x*(1/4)^n*modeW i + coeffC x*(0:Rat)^n*modeZ i
+
+theorem mean_step (x : Beliefs) (hx : allBroadcast x) :
+    mean (beliefStep x) = mean x := by
+  rw [show beliefStep x = linearStep x from propagate_eq_linear x _ hx]
+  dsimp [mean, linearStep]
+  ring
+
+theorem decompose (x : Beliefs) : closedForm x 0 = x := by
+  funext i
+  fin_cases i <;>
+    dsimp [closedForm, mean, coeffA, coeffB, coeffC, modeV, modeW, modeZ] <;>
+    ring
+
+theorem linear_closedForm_succ (x : Beliefs) (n : Nat) :
+    linearStep (closedForm x n) = closedForm x (n+1) := by
+  funext i
+  fin_cases i <;>
+    dsimp [linearStep, closedForm, modeV, modeW, modeZ] <;>
+    simp only [pow_succ] <;>
+    ring
+
+/-- The formula follows the actual broadcast dynamics at every time. -/
+theorem iterate_closedForm (x : Beliefs) (hx : allBroadcast x) (n : Nat) :
+    trajectory x n = closedForm x n := by
+  induction n with
+  | zero => simpa [trajectory] using (decompose x).symm
+  | succ n ih =>
+      have hregion := allBroadcast_iterate x hx n
+      calc
+        trajectory x (n+1) = beliefStep (trajectory x n) := by
+          simp only [trajectory, Function.iterate_succ_apply']
+        _ = linearStep (trajectory x n) := propagate_eq_linear _ _ hregion
+        _ = linearStep (closedForm x n) := congrArg linearStep ih
+        _ = closedForm x (n+1) := linear_closedForm_succ x n
+
 end NarrativeDynamics.FitnessABMPath4
