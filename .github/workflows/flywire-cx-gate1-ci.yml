@@ -30,8 +30,27 @@ jobs:
         run: |
           python -m pip install pytest numpy
           python -m pip install --no-deps -e ./python
-      - name: Run CX RED/GREEN gates
+      - name: Run CX graph/event gates
         run: python -m pytest tests/test_cx_protocol.py tests/test_cx_artifact.py tests/test_cx_nulls.py tests/test_cx_events.py -q
+
+  lif:
+    name: Fixed CX LIF reservoir contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: python/pyproject.toml
+      - name: Install CPU-only LIF test runtime
+        run: |
+          python -m pip install pytest numpy
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --no-deps -e ./python
+      - name: Run fixed CX LIF RED/GREEN gate
+        run: python -m pytest tests/test_cx_lif.py -q
 
   legacy-protocol:
     name: Existing YOLO/FlyWire protocol compatibility
