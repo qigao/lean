@@ -41,8 +41,13 @@ outside the all-broadcast region. -/
 theorem propagate_independent_exposures (x : Beliefs) (e : Fin 4 → Nat) :
     project (propagate pathAdj (population x e)) = beliefStep x := by
   funext i
-  dsimp [project, propagate, beliefStep, nextAgent, incoming, broadcasting, population]
-  split <;> rename_i h <;> simp only [h, if_true, if_false]
+  have hin : incoming pathAdj (population x e) i =
+      incoming pathAdj (population x (fun _ => 0)) i := by
+    rfl
+  change (nextAgent pathAdj (population x e) i).belief =
+    (nextAgent pathAdj (population x (fun _ => 0)) i).belief
+  simp only [nextAgent, hin]
+  split_ifs <;> rfl
 
 /-- Enumerate the actual incoming sets using path adjacency and the inclusive
 broadcast threshold. -/
@@ -68,15 +73,19 @@ theorem propagate_eq_linear (x : Beliefs) (e : Fin 4 → Nat)
   funext i
   fin_cases i
   · change (nextAgent pathAdj (population x e) 0).belief = linearStep x 0
-    norm_num [nextAgent, incoming_eq x e hx, linearStep, population] <;> ring
+    simp only [nextAgent, incoming_eq x e hx 0]
+    norm_num [linearStep, population] <;> ring
   · change (nextAgent pathAdj (population x e) 1).belief = linearStep x 1
-    norm_num [nextAgent, incoming_eq x e hx, linearStep, population,
+    simp only [nextAgent, incoming_eq x e hx 1]
+    norm_num [linearStep, population,
       Finset.sum_pair h02, Finset.card_pair h02] <;> ring
   · change (nextAgent pathAdj (population x e) 2).belief = linearStep x 2
-    norm_num [nextAgent, incoming_eq x e hx, linearStep, population,
+    simp only [nextAgent, incoming_eq x e hx 2]
+    norm_num [linearStep, population,
       Finset.sum_pair h13, Finset.card_pair h13] <;> ring
   · change (nextAgent pathAdj (population x e) 3).belief = linearStep x 3
-    norm_num [nextAgent, incoming_eq x e hx, linearStep, population] <;> ring
+    simp only [nextAgent, incoming_eq x e hx 3]
+    norm_num [linearStep, population] <;> ring
 
 theorem allBroadcast_step (x : Beliefs) (hx : allBroadcast x) :
     allBroadcast (beliefStep x) := by
