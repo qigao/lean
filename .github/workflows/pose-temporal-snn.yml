@@ -35,3 +35,23 @@ jobs:
           pose_snn/tests/test_normalization.py
           pose_snn/tests/test_events.py
           -q
+
+  models:
+    name: Pose temporal SNN model contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pose_snn/pyproject.toml
+      - name: Install CPU-only model runtime
+        run: |
+          python -m pip install pytest numpy
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Run RSNN RED/GREEN gate
+        env:
+          PYTHONPATH: pose_snn/src
+        run: python -m pytest pose_snn/tests/test_rsnn.py -q
