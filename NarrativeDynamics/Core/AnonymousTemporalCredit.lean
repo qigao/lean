@@ -80,7 +80,7 @@ structure TraceState (n : Nat) where
 
 def zeroVector : Vector n := fun _ => 0
 
-def normalizedCredit (feature : Vector n) (denominator : ℝ) : Vector n :=
+noncomputable def normalizedCredit (feature : Vector n) (denominator : ℝ) : Vector n :=
   fun i => feature i / denominator
 
 def advanceTrace
@@ -112,10 +112,7 @@ theorem zero_rho_trace_is_current_credit
     advanceTrace 0 { eligibility := zeroVector, prediction := 0 }
         credit prediction =
       { eligibility := credit, prediction := prediction } := by
-  apply TraceState.ext
-  · funext i
-    simp [advanceTrace, zeroVector]
-  · simp [advanceTrace]
+  simp [advanceTrace, zeroVector]
 
 theorem immediate_reduction_to_phase3a
     (weights feature : Vector n)
