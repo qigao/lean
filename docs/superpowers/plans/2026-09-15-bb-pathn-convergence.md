@@ -2,44 +2,44 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans`. Execute one task at a time, preserve each RED/GREEN boundary, and review before advancing.
 
-**Goal:** Generalize the verified Path4/Path5 BB belief dynamics to every finite path `Fin n` with `2 ≤ n`, proving coordinatewise convergence of the actual `NetworkPropagation.propagate` trajectory to the degree-weighted stationary mean without using a spectral closed form.
+**Goal:** Generalize the verified Path4/Path5 BB belief dynamics to every finite path `Fin n` with `2 ≤ n`, proving coordinatewise convergence of the actual `NetworkPropagation.propagate` trajectory to the degree-weighted stationary mean without an explicit spectral closed form.
 
-**Architecture:** Keep executable BB dynamics unchanged. Add a proof-only `FiniteConsensus` layer over finite rational kernels and a path-specific `FitnessABMPathN` layer that derives its kernel from actual propagation in the all-broadcast region. Prove a path-specific `(n - 1)`-step common-column mass lower bound `δ(n) = (1/4)^(n-1)`, use it for geometric range contraction, then cast only the final limit statement to `Real`.
+**Architecture:** Keep executable BB dynamics unchanged. Add a proof-only `FiniteConsensus` layer over finite rational kernels and a path-specific `FitnessABMPathN` layer that derives its kernel from actual propagation inside the all-broadcast region. Prove a path-specific `(n - 1)`-step common-column mass lower bound `δ(n) = (1/4)^(n-1)`, use it for geometric coordinate-range contraction, and cast only the final convergence argument to `Real`.
 
-**Tech Stack:** Lean 4.32.0, mathlib v4.32.0, exact `Rat` arithmetic, `Matrix`, existing `NetworkPropagation`, existing fitness trust audit, GitHub Actions proof workflow.
+**Tech Stack:** Lean 4.32.0, mathlib v4.32.0, exact `Rat`, `Matrix`, existing `NetworkPropagation`, existing fitness trust audit, existing GitHub proof workflow.
 
 **Spec:** `docs/superpowers/specs/2026-09-15-bb-pathn-convergence-design.md`, approved at `c3ba593215f551fb9473ce854c508870755a0077`.
 
 ## Global constraints
 
-- `beliefStep` must remain defined through `NetworkPropagation.propagate`; a matrix/kernel is proof-only evidence.
-- Keep Path4 and Path5 source and theorem surfaces intact in this first generic PR.
-- Do not add a Path6 production module; `n = 6` appears only as a fixed smoke instance.
-- No theorem may claim convergence for arbitrary connected graphs or arbitrary stochastic matrices.
-- Keep profiles fixed at receptivity `1/2`, inclusive broadcast threshold `1/2`.
-- The generic convergence theorem requires explicit `2 ≤ n` and explicit initial `allBroadcast`.
-- Stay over `Rat` until the analytic limit layer; cast to `Real` only for `Tendsto`/absolute-value convergence.
+- `beliefStep` remains defined through `NetworkPropagation.propagate`; matrices/kernels are proof-only.
+- Keep existing Path4 and Path5 production modules and theorem surfaces intact.
+- Do not add a Path6 production module; `n = 6` is only a fixed generic smoke test.
+- Do not prove convergence for arbitrary connected graphs, arbitrary stochastic matrices, arbitrary receptivity, or arbitrary thresholds.
+- Profiles remain receptivity `1/2`, inclusive threshold `1/2`.
+- Generic convergence requires explicit `2 ≤ n` and explicit initial `allBroadcast`.
+- Stay over `Rat` until the final analytic layer; cast to `Real` only for the limit proof.
 - No `sorry`, `admit`, `native_decide`, new `axiom`, `unsafe`, `unlock_limits`, or unlimited resource settings.
-- Allowed transitive Lean axioms remain exactly `propext`, `Classical.choice`, `Quot.sound`.
-- Every focused build/test in the final gate is bounded by `timeout --kill-after=10s 240s` and reports GNU `time` peak RSS.
-- Do not add `FiniteConsensus` or `FitnessABMPathN` to `NarrativeDynamics.lean` in this change. Like Path4/Path5, they are explicitly built by their proof gate so the umbrella library cannot accidentally mask missing specialized compilation.
-- A proof-resource failure is a design signal: factor the proof or introduce a recursive helper before considering any resource increase.
+- Allowed transitive axioms remain exactly `propext`, `Classical.choice`, `Quot.sound`.
+- Every focused build/test in the final gate uses `timeout --kill-after=10s 240s` and GNU `time` peak RSS.
+- Do not import `FiniteConsensus` or `FitnessABMPathN` from `NarrativeDynamics.lean` in this PR. Explicit gate builds must prove these specialized modules compile.
+- A resource failure is a proof-structure signal. Factor the proof before changing limits.
 
 ## File map
 
 | File | Responsibility | Tasks |
 | --- | --- | --- |
-| `NarrativeDynamics/Core/FiniteConsensus.lean` | Generic finite rational averaging, stationary weights, range contraction, generic analytic convergence | 1, 6 |
-| `NarrativeDynamics/Tests/FiniteConsensus.lean` | RED/GREEN consumers and required axiom reports for generic consensus | 1, 6, 8 |
-| `NarrativeDynamics/Core/FitnessABMPathN.lean` | Generic path structure, actual propagation bridge, stationary degree weights, path common mass, final Path-n theorem | 2–6 |
-| `NarrativeDynamics/Tests/FitnessABMPathN.lean` | Generic contracts, Path4/Path5 compatibility, n=6 smoke, required axiom reports | 2–7 |
-| `tools/check_fitness_abm_pathn.sh` | Dedicated bounded builds/tests/source+log trust audit | 8 |
-| `.github/workflows/proof.yml` | Dedicated `BB finite-path convergence` step after the existing Path4/Path5 gate | 8 |
-| Existing Path4/Path5/conformance files | Regression evidence only; no production edits planned | 7–8 |
+| `NarrativeDynamics/Core/FiniteConsensus.lean` | Generic rational averaging, stationary weights, range contraction, generic convergence | 1, 6 |
+| `NarrativeDynamics/Tests/FiniteConsensus.lean` | Generic RED/GREEN consumers and axiom reports | 1, 6, 8 |
+| `NarrativeDynamics/Core/FitnessABMPathN.lean` | Generic path, actual propagation bridge, stationary degree weights, common mass, final theorem | 2–6 |
+| `NarrativeDynamics/Tests/FitnessABMPathN.lean` | Generic contracts, compatibility, n=6 smoke, axiom reports | 2–7 |
+| `tools/check_fitness_abm_pathn.sh` | Dedicated bounded build/test/trust gate | 8 |
+| `.github/workflows/proof.yml` | Dedicated PathN step after existing Path4/Path5 gate | 8 |
+| Existing Path4/Path5/conformance files | Regression evidence only | 7–8 |
 
 ## Preparation before Task 1
 
-- [ ] Create execution branch `feature/bb-pathn-convergence-v1` from the approved plan commit, not from `master`:
+- [ ] Create `feature/bb-pathn-convergence-v1` from the committed plan head, not from `master`.
 
 ```bash
 git checkout design/bb-pathn-convergence-v1
@@ -48,30 +48,24 @@ git checkout -b feature/bb-pathn-convergence-v1
 git rev-parse HEAD
 ```
 
-Expected starting head: the committed implementation-plan head produced by this document.
-
-- [ ] Record immutable implementation base and make sure no production code differs from merged Path5 except approved docs:
+- [ ] Record the implementation base and verify the starting diff contains only the approved spec and this plan.
 
 ```bash
 git merge-base HEAD proof/narrative-dynamics-v0
 git diff --stat proof/narrative-dynamics-v0...HEAD
 ```
 
-Expected before implementation: only the Path-n spec and plan.
-
-- [ ] Read `NetworkPropagation.lean`, `FitnessABMPath4.lean`, `FitnessABMPath4Convergence.lean`, `FitnessABMPath5.lean`, `FitnessABMPath5Vectors.lean`, `tools/check_fitness_abm_path4.sh`, and `tools/audit_fitness_trust.py` before editing.
+- [ ] Before editing, read `NetworkPropagation.lean`, Path4, Path4Convergence, Path5, Path5Vectors, `check_fitness_abm_path4.sh`, and `audit_fitness_trust.py`.
 
 ---
 
 ## Task 1: FiniteConsensus RED and exact averaging foundation
 
-**Files:** create `NarrativeDynamics/Tests/FiniteConsensus.lean`; create `NarrativeDynamics/Core/FiniteConsensus.lean`.
+**Files:** create `NarrativeDynamics/Core/FiniteConsensus.lean`; create `NarrativeDynamics/Tests/FiniteConsensus.lean`.
 
-**Purpose:** Establish the generic finite rational kernel vocabulary and min/max/range/stationary-weight lemmas without any BB/path dependency. Do not prove asymptotic convergence yet.
+**Purpose:** Establish a generic finite rational kernel vocabulary, coordinate extrema/range, stationary weights, and one-step preservation/bounds. Do not prove asymptotic convergence yet.
 
 ### Public interfaces
-
-Use a finite nonempty index type and a rational matrix kernel:
 
 ```lean
 namespace NarrativeDynamics.FiniteConsensus
@@ -99,10 +93,10 @@ def kernelTrajectory [Fintype ι] (K : Kernel ι) (x : ι → Rat) (k : Nat) : �
   (applyKernel K)^[k] x
 
 def CommonColumnMass [Fintype ι] (K : Kernel ι) (δ : Rat) : Prop :=
-  ∃ c, ∀ i, δ ≤ K i c
+  ∃ c : ι, ∀ i, δ ≤ K i c
 ```
 
-Define finite coordinate extrema and range under `[Fintype ι] [Nonempty ι] [DecidableEq ι]` as `coordMin`, `coordMax`, `coordRange := coordMax - coordMin`. The implementation may use the image of `Finset.univ` and finite min/max; consumers must not depend on the helper representation.
+Under `[Fintype ι] [Nonempty ι] [DecidableEq ι]`, define `coordMin`, `coordMax`, and `coordRange x := coordMax x - coordMin x`. Consumers must not depend on the internal finite-min/max representation.
 
 Required Task-1 theorems:
 
@@ -121,20 +115,15 @@ applyKernel_mul
 kernelPow_apply
 ```
 
-`weightedMean_apply` must consume `StationaryWeights K π` and prove
-`weightedMean π (applyKernel K x) = weightedMean π x` by finite-sum rearrangement.
-
-`kernelPow_apply` must connect matrix powers to iteration:
+`weightedMean_apply` consumes `StationaryWeights K π` and proves `weightedMean π (applyKernel K x) = weightedMean π x` by finite-sum rearrangement. `kernelPow_apply` fixes matrix/application orientation once:
 
 ```lean
 applyKernel (K ^ k) x = kernelTrajectory K x k
 ```
 
-up to orientation required by the chosen `Matrix.mul_apply`; if the initial orientation is reversed, correct the definition once here rather than compensating later in PathN.
+### TDD
 
-### TDD steps
-
-- [ ] **RED 1.1:** create the consumer first, importing the absent module and requiring the public vocabulary:
+- [ ] **RED:** create the consumer before the core module.
 
 ```lean
 import NarrativeDynamics.Core.FiniteConsensus
@@ -144,27 +133,19 @@ open NarrativeDynamics.FiniteConsensus
 private def pairKernel : Kernel (Fin 2) := fun _ _ => 1/2
 private def pairWeights : Fin 2 → Rat := fun _ => 1/2
 
-example : applyKernel pairKernel ![0, 1] = ![1/2, 1/2] := by
-  decide_cbv
-
-example : weightedMean pairWeights ![0, 1] = 1/2 := by
-  decide_cbv
-
+example : applyKernel pairKernel ![0, 1] = ![1/2, 1/2] := by decide_cbv
+example : weightedMean pairWeights ![0, 1] = 1/2 := by decide_cbv
 example (x : Fin 2 → Rat) : 0 ≤ coordRange x := coordRange_nonneg x
 ```
-
-- [ ] Run the RED consumer:
 
 ```bash
 timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 \
   NarrativeDynamics/Tests/FiniteConsensus.lean
 ```
 
-Expected: failure because `NarrativeDynamics.Core.FiniteConsensus` is absent. A missing toolchain is not acceptable RED evidence.
+Expected RED: missing `NarrativeDynamics.Core.FiniteConsensus`. A missing Lean toolchain is not RED evidence.
 
-- [ ] **GREEN 1.2:** implement only the interfaces/basic lemmas above. Prove `applyKernel_between` from entry nonnegativity + row sum; derive one-step range nonincrease. Prove stationary mean preservation with `Finset.sum_comm`/sum distribution, not coordinate enumeration.
-
-- [ ] Run focused build and consumer:
+- [ ] **GREEN:** implement only the interfaces and basic lemmas. Prove output bounds from nonnegative row coefficients summing to one; derive one-step range nonincrease. Prove stationary mean preservation with sum rearrangement, not coordinate enumeration.
 
 ```bash
 timeout --kill-after=10s 240s lake build NarrativeDynamics.Core.FiniteConsensus
@@ -172,9 +153,7 @@ timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 \
   NarrativeDynamics/Tests/FiniteConsensus.lean
 ```
 
-Expected: PASS under default Lean resource settings.
-
-- [ ] Commit Task 1:
+- [ ] Commit.
 
 ```bash
 git add NarrativeDynamics/Core/FiniteConsensus.lean \
@@ -182,17 +161,13 @@ git add NarrativeDynamics/Core/FiniteConsensus.lean \
 git commit -m "feat(lean): add finite consensus kernel foundation"
 ```
 
-**Review gate:** verify `FiniteConsensus.lean` imports no BB/path module and contains no graph/connectivity theorem.
+**Review gate:** `FiniteConsensus` imports no BB/path module and contains no graph/connectivity theorem.
 
 ---
 
 ## Task 2: Generic finite-path structure and proof kernel
 
 **Files:** create `NarrativeDynamics/Core/FitnessABMPathN.lean`; create `NarrativeDynamics/Tests/FitnessABMPathN.lean`.
-
-**Consumes:** `NetworkPropagation`, Task-1 `FiniteConsensus`.
-
-**Produces:** path structure, actual model definitions, proof-only kernel, and structural row-stochastic facts. No propagation/kernel equality yet.
 
 ### Required interfaces
 
@@ -236,7 +211,7 @@ def pathKernel (n : Nat) : Kernel (Fin n) := fun i j =>
   else 0
 ```
 
-Required structural facts for `hn : 2 ≤ n`:
+Required structural theorems for `hn : 2 ≤ n`:
 
 ```text
 neighbors_nonempty
@@ -244,22 +219,19 @@ degree_pos
 degree_le_two
 pathKernel_nonneg
 pathKernel_row_sum
-pathKernel_averaging : AveragingKernel (pathKernel n)
-pathKernel_self : pathKernel n i i = 1/2
-pathKernel_self_lower : 1/4 ≤ pathKernel n i i
-pathKernel_adj_lower : pathAdj n j i → 1/4 ≤ pathKernel n i j
+pathKernel_averaging
+pathKernel_self
+pathKernel_self_lower
+pathKernel_adj_lower
 ```
 
-Do not use generic `fin_cases i` in any theorem quantified over arbitrary `n`.
+### TDD
 
-### TDD steps
-
-- [ ] **RED 2.1:** write fixed consumers that force the generic declarations while allowing finite evaluation only in the test:
+- [ ] **RED:** fixed n=6 consumers force generic declarations without proving anything by generic enumeration.
 
 ```lean
 import NarrativeDynamics.Core.FitnessABMPathN
 
-open NarrativeDynamics
 open NarrativeDynamics.FitnessABMPathN
 
 example : pathAdj 6 (0 : Fin 6) 1 := by decide
@@ -268,16 +240,12 @@ example : degree 6 3 = 2 := by decide_cbv
 example : pathKernel 6 0 0 = 1/2 := by decide_cbv
 example : pathKernel 6 0 1 = 1/2 := by decide_cbv
 example : pathKernel 6 3 2 = 1/4 := by decide_cbv
-example : pathKernel 6 3 3 = 1/2 := by decide_cbv
 ```
 
-- [ ] Run RED before creating the core module; expected missing-import failure.
+Run the test before creating the core module; expected missing-import RED.
 
-- [ ] **GREEN 2.2:** implement generic path definitions. Prove neighbor/degree facts structurally from `Fin` value inequalities and the path adjacency predicate. The proof may split on whether `i.val = 0`, `i.val + 1 = n`, or interior, but must not enumerate `Fin n`.
-
-- [ ] Prove row sum by rewriting the neighbor contribution as `degree * (1/(2*degree))` plus diagonal `1/2`; use `degree_pos` for the nonzero denominator.
-
-- [ ] Run:
+- [ ] **GREEN:** implement path structure. Prove degree facts structurally from `Fin` inequalities. Endpoint/interior splitting is allowed; `fin_cases i` over generic `Fin n` is not.
+- [ ] Prove row sum by reducing the neighbor contribution to `degree * (1/(2*degree))` and using `degree_pos`.
 
 ```bash
 timeout --kill-after=10s 240s lake build NarrativeDynamics.Core.FitnessABMPathN
@@ -285,7 +253,7 @@ timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 \
   NarrativeDynamics/Tests/FitnessABMPathN.lean
 ```
 
-- [ ] Commit:
+- [ ] Commit.
 
 ```bash
 git add NarrativeDynamics/Core/FitnessABMPathN.lean \
@@ -293,80 +261,56 @@ git add NarrativeDynamics/Core/FitnessABMPathN.lean \
 git commit -m "feat(lean): define generic finite path kernel"
 ```
 
-**Review gate:** confirm `beliefStep` is visibly defined via `propagate`, never via `pathKernel`.
+**Review gate:** `beliefStep` visibly calls actual `propagate`; `pathKernel` is not the executable definition.
 
 ---
 
 ## Task 3: Actual-propagation bridge and all-broadcast invariance
 
-**Files:** modify `NarrativeDynamics/Core/FitnessABMPathN.lean`; modify `NarrativeDynamics/Tests/FitnessABMPathN.lean`.
-
-**Consumes:** Task-2 generic path and Task-1 averaging lemmas.
-
-**Produces:** generic exposure independence, actual incoming-set characterization, propagation/kernel bridge, region invariance, and actual/kernel trajectory equality.
+**Files:** modify PathN core/test.
 
 ### Required theorems
 
 ```lean
-propagate_independent_exposures
-  (n : Nat) (x : Beliefs n) (e : Fin n → Nat) :
+theorem propagate_independent_exposures
+    (n : Nat) (x : Beliefs n) (e : Fin n → Nat) :
   project n (propagate (pathAdj n) (population n x e)) = beliefStep n x
 
-incoming_eq_neighbors
-  (n : Nat) (x : Beliefs n) (e : Fin n → Nat)
-  (hx : allBroadcast n x) (i : Fin n) :
+theorem incoming_eq_neighbors
+    (n : Nat) (x : Beliefs n) (e : Fin n → Nat)
+    (hx : allBroadcast n x) (i : Fin n) :
   incoming (pathAdj n) (population n x e) i = neighbors n i
 
-propagate_eq_kernel
-  (n : Nat) (hn : 2 ≤ n) (x : Beliefs n) (e : Fin n → Nat)
-  (hx : allBroadcast n x) :
+theorem propagate_eq_kernel
+    (n : Nat) (hn : 2 ≤ n) (x : Beliefs n) (e : Fin n → Nat)
+    (hx : allBroadcast n x) :
   project n (propagate (pathAdj n) (population n x e)) =
     applyKernel (pathKernel n) x
 
-allBroadcast_step
-  (n : Nat) (hn : 2 ≤ n) (x : Beliefs n)
-  (hx : allBroadcast n x) :
+theorem allBroadcast_step
+    (n : Nat) (hn : 2 ≤ n) (x : Beliefs n)
+    (hx : allBroadcast n x) :
   allBroadcast n (beliefStep n x)
 
-allBroadcast_iterate
-  (n : Nat) (hn : 2 ≤ n) (x : Beliefs n)
-  (hx : allBroadcast n x) (k : Nat) :
+theorem allBroadcast_iterate
+    (n : Nat) (hn : 2 ≤ n) (x : Beliefs n)
+    (hx : allBroadcast n x) (k : Nat) :
   allBroadcast n (trajectory n x k)
 
-trajectory_eq_kernelTrajectory
-  (n : Nat) (hn : 2 ≤ n) (x : Beliefs n)
-  (hx : allBroadcast n x) (k : Nat) :
+theorem trajectory_eq_kernelTrajectory
+    (n : Nat) (hn : 2 ≤ n) (x : Beliefs n)
+    (hx : allBroadcast n x) (k : Nat) :
   trajectory n x k = kernelTrajectory (pathKernel n) x k
 ```
 
-### TDD steps
+### TDD
 
-- [ ] **RED 3.1:** add consumers for the missing theorems before implementation:
-
-```lean
-example (n : Nat) (x : Beliefs n) (e : Fin n → Nat) :
-    project n (propagate (pathAdj n) (population n x e)) = beliefStep n x :=
-  propagate_independent_exposures n x e
-
-example (n : Nat) (hn : 2 ≤ n) (x : Beliefs n)
-    (hx : allBroadcast n x) (k : Nat) :
-    trajectory n x k = kernelTrajectory (pathKernel n) x k :=
-  trajectory_eq_kernelTrajectory n hn x hx k
-```
-
-Run the test and record unknown-declaration RED.
-
-- [ ] **GREEN 3.2:** prove exposure independence exactly as Path4/Path5 do: incoming/broadcast decisions depend on profiles and beliefs, not exposure counts. Do not require `allBroadcast` for this theorem.
-
-- [ ] Prove `incoming_eq_neighbors` from the inclusive threshold. Under `hx`, every source broadcasts, so the filter reduces to adjacency.
-
-- [ ] Prove `propagate_eq_kernel` from the actual `nextAgent` formula and the neighbor cardinality. The self `1/2` and neighbor `1/(2*degree)` coefficients must be derived from receptivity `1/2`, not assumed as a replacement definition.
-
-- [ ] Prove `allBroadcast_step` using `pathKernel_averaging` + `applyKernel_between`; do not split endpoint/interior coordinates. Lift to iteration by induction.
-
-- [ ] Prove `trajectory_eq_kernelTrajectory` by induction, applying the actual bridge at each step using `allBroadcast_iterate`.
-
-- [ ] Run focused build/test and commit:
+- [ ] **RED:** add consumers for `propagate_independent_exposures` and `trajectory_eq_kernelTrajectory`, then run the focused PathN test and record unknown declarations.
+- [ ] **GREEN:** prove exposure independence outside the broadcast region by the same locality used by Path4/Path5: profiles/beliefs determine incoming and signal; exposures do not.
+- [ ] Prove `incoming_eq_neighbors`: under `allBroadcast`, the incoming filter reduces exactly to adjacency.
+- [ ] Derive `propagate_eq_kernel` from `nextAgent`; self `1/2` and neighbor `1/(2*degree)` coefficients must come from actual receptivity/neighbor averaging.
+- [ ] Prove `allBroadcast_step` from `pathKernel_averaging` + generic convex bounds, then iterate it.
+- [ ] Prove actual `trajectory = kernelTrajectory` by induction, using the invariant to reapply the bridge at every step.
 
 ```bash
 timeout --kill-after=10s 240s lake build NarrativeDynamics.Core.FitnessABMPathN
@@ -377,15 +321,13 @@ git add NarrativeDynamics/Core/FitnessABMPathN.lean \
 git commit -m "feat(lean): bridge generic paths to actual propagation"
 ```
 
-**Review gate:** search the generic proof for `fin_cases`; none may be used to prove a theorem for arbitrary `Fin n`.
+**Review gate:** no generic theorem may prove `Fin n` cases by `fin_cases`.
 
 ---
 
 ## Task 4: Stationary degree weights and invariant mean
 
-**Files:** modify both PathN core/test files; Task-1 `FiniteConsensus` only if a genuinely generic stationary-weight helper is missing.
-
-**Produces:** path degree sum, normalized weights, detailed balance, stationarity, mean preservation, and mean-in-range facts.
+**Files:** modify PathN core/test; modify FiniteConsensus only if a truly generic helper is missing.
 
 ### Required interfaces
 
@@ -403,23 +345,24 @@ def mean (n : Nat) (x : Beliefs n) : Rat :=
 Required theorems for `hn : 2 ≤ n`:
 
 ```text
-path_degree_sum : weightSum n = 2 * (n - 1)
+path_degree_sum
 weightSum_pos
 stationaryWeight_nonneg
 stationaryWeight_sum_one
 pathKernel_detailed_balance
-path_stationary_weights : StationaryWeights (pathKernel n) (stationaryWeight n)
+path_stationary_weights
 mean_kernel_step
+mean_kernel_iterate
 mean_step
 mean_iterate
 mean_between
 ```
 
-Use exact rational casts in `path_degree_sum`; the right side of the theorem should be typed as `Rat`, e.g. `(2 * (n - 1) : Nat)` cast or an equivalent explicit rational expression chosen once and used consistently.
+`path_degree_sum` must use one explicit rational typing convention consistently; e.g. `weightSum n = ((2 * (n - 1) : Nat) : Rat)`.
 
-### TDD steps
+### TDD
 
-- [ ] **RED 4.1:** add generic consumers:
+- [ ] **RED:** add both consumers before implementation.
 
 ```lean
 example (n : Nat) (hn : 2 ≤ n) (x : Beliefs n)
@@ -428,55 +371,46 @@ example (n : Nat) (hn : 2 ≤ n) (x : Beliefs n)
   mean_step n hn x hx
 
 example (n : Nat) (hn : 2 ≤ n) (x : Beliefs n) (k : Nat) :
-    mean n (kernelTrajectory (pathKernel n) x k) = mean n x := by
-  exact mean_kernel_iterate n hn x k
+    mean n (kernelTrajectory (pathKernel n) x k) = mean n x :=
+  mean_kernel_iterate n hn x k
 ```
 
-Run and capture unknown-declaration RED.
-
-- [ ] **GREEN 4.2:** prove the path degree sum structurally. Prefer an endpoint/interior Finset decomposition or the finite undirected-handshake identity if it reduces obligations cleanly; do not introduce a theorem for arbitrary connected graphs.
-
-- [ ] Prove detailed balance by cases `i = j`, adjacent distinct, nonadjacent. For adjacent distinct coordinates use path symmetry and cancellation of the receiver degree in `degree(i) * 1/(2*degree(i))`.
-
-- [ ] Derive stationarity from detailed balance + row sum; normalize with `weightSum_pos`.
-
-- [ ] Derive `mean_kernel_step` using generic `weightedMean_apply`, then obtain actual `mean_step` through `propagate_eq_kernel`; obtain `mean_iterate` from trajectory induction.
-
-- [ ] Run focused checks and commit:
+- [ ] **GREEN:** prove degree sum structurally (endpoint/interior Finset decomposition or a narrow finite path handshake argument).
+- [ ] Prove detailed balance by `i=j`, adjacent-distinct, nonadjacent cases; do not generalize graph classes.
+- [ ] Derive normalized stationarity from detailed balance + row sum.
+- [ ] Derive `mean_kernel_step` from generic `weightedMean_apply`; induct for `mean_kernel_iterate`. Derive actual `mean_step` via `propagate_eq_kernel` and actual `mean_iterate` via trajectory induction. `mean_between` comes from normalized nonnegative weights.
 
 ```bash
 timeout --kill-after=10s 240s lake build NarrativeDynamics.Core.FiniteConsensus
 timeout --kill-after=10s 240s lake build NarrativeDynamics.Core.FitnessABMPathN
-timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 \
-  NarrativeDynamics/Tests/FiniteConsensus.lean
-timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 \
-  NarrativeDynamics/Tests/FitnessABMPathN.lean
-git add NarrativeDynamics/Core/FiniteConsensus.lean \
-        NarrativeDynamics/Core/FitnessABMPathN.lean \
-        NarrativeDynamics/Tests/FiniteConsensus.lean \
+timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FiniteConsensus.lean
+timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FitnessABMPathN.lean
+```
+
+- [ ] Commit changed files only.
+
+```bash
+git add NarrativeDynamics/Core/FitnessABMPathN.lean \
         NarrativeDynamics/Tests/FitnessABMPathN.lean
+git add NarrativeDynamics/Core/FiniteConsensus.lean \
+        NarrativeDynamics/Tests/FiniteConsensus.lean 2>/dev/null || true
 git commit -m "feat(lean): prove generic path stationary mean"
 ```
 
-Only include Task-1 files in this commit if they actually changed.
-
 ---
 
-## Task 5: Prove the `(n - 1)`-step common-column mass
+## Task 5: `(n - 1)`-step common-column mass
 
 **Files:** modify PathN core/test.
 
-**Purpose:** Supply the one genuinely path-specific mixing witness required by generic consensus; do not generalize connectivity.
-
-### Required definitions and theorem
+### Required definitions/theorems
 
 ```lean
 def block (n : Nat) : Nat := n - 1
-
 def delta (n : Nat) : Rat := (1/4 : Rat) ^ block n
 ```
 
-Required scalar theorems for `hn : 2 ≤ n`:
+For `hn : 2 ≤ n`:
 
 ```text
 block_pos
@@ -484,6 +418,7 @@ delta_pos
 delta_lt_one
 one_sub_delta_pos
 one_sub_delta_lt_one
+path_block_common_mass
 ```
 
 Main theorem:
@@ -491,24 +426,24 @@ Main theorem:
 ```lean
 theorem path_block_common_mass
     (n : Nat) (hn : 2 ≤ n) :
-    CommonColumnMass ((pathKernel n) ^ block n) (delta n)
+  CommonColumnMass ((pathKernel n) ^ block n) (delta n)
 ```
 
-The witness column must be node `0`.
+The common column witness is node `0`.
 
 ### Proof construction
 
-Do not expand the whole matrix power. Establish one explicit nonnegative contribution per target:
+Do not expand the entire matrix power.
 
-1. Prove `left_reach_mass`: after `i.val` steps, influence from source `0` to target `i` is at least `(1/4)^i.val`. Induct along the unique predecessor chain `0 → 1 → ... → i` and keep only the predecessor term from each nonnegative matrix-multiplication sum.
-2. Prove `self_pad_mass`: if `(K^t) i 0 ≥ a`, then after one more self step the same coefficient is at least `(1/4) * a`, using `pathKernel_self_lower`; iterate this for `block n - i.val` padding steps.
-3. Combine `i.val ≤ n-1` with exponent arithmetic to get exactly `(1/4)^(n-1)`.
+1. `left_reach_mass`: after `i.val` steps, coefficient `(pathKernel n ^ i.val) i 0` is at least `(1/4)^i.val`; induct along `0 → 1 → ... → i`, retaining only the predecessor term from a nonnegative multiplication sum.
+2. `self_pad_mass`: an additional self transition preserves at least another factor `1/4`; iterate for `block n - i.val` steps.
+3. Combine `i.val ≤ n-1` and exponent arithmetic to reach exactly `(1/4)^(n-1)`.
 
-If direct `Matrix.pow_succ` elaboration becomes unstable, introduce a small recursive coefficient helper local to PathN and prove equivalence to matrix power. Do not raise global heartbeat/memory limits.
+If matrix-power elaboration is the bottleneck, introduce a local recursive coefficient helper and prove equivalence to matrix power. Do not raise global limits.
 
-### TDD steps
+### TDD
 
-- [ ] **RED 5.1:** consumer:
+- [ ] **RED:**
 
 ```lean
 example (n : Nat) (hn : 2 ≤ n) :
@@ -516,16 +451,14 @@ example (n : Nat) (hn : 2 ≤ n) :
   path_block_common_mass n hn
 ```
 
-- [ ] Add fixed sanity checks only after the generic theorem is RED:
+Then add fixed sanity checks:
 
 ```lean
 example : block 6 = 5 := by decide
 example : delta 6 = 1/1024 := by norm_num [delta, block]
 ```
 
-- [ ] **GREEN 5.2:** implement the scalar and path-mass lemmas, then run PathN build/test under 240 seconds.
-
-- [ ] Commit:
+- [ ] **GREEN:** implement the path-specific proof and run PathN build/test under the 240-second bound.
 
 ```bash
 git add NarrativeDynamics/Core/FitnessABMPathN.lean \
@@ -533,21 +466,15 @@ git add NarrativeDynamics/Core/FitnessABMPathN.lean \
 git commit -m "feat(lean): prove finite path common mass"
 ```
 
-**Review gate:** main theorem must be quantified over arbitrary `n ≥ 2`; no `n = 4/5/6` case analysis is acceptable in its proof.
+**Review gate:** no fixed-size case analysis occurs in `path_block_common_mass`.
 
 ---
 
 ## Task 6: Generic block contraction and coordinate convergence
 
-**Files:** modify `FiniteConsensus.lean`, `FiniteConsensus` tests, PathN core/test.
+**Files:** modify FiniteConsensus core/test and PathN core/test.
 
-**Consumes:** Task-1 averaging/stationarity + Task-5 common mass.
-
-**Produces:** reusable common-column contraction, block geometric decay, generic consensus `Tendsto`, then PathN `trajectory_tendsto`.
-
-### Generic FiniteConsensus theorems
-
-Add:
+### Generic FiniteConsensus additions
 
 ```text
 coordRange_apply_le_of_commonColumn
@@ -556,7 +483,7 @@ block_geometric_bound
 block_contraction_tendsto
 ```
 
-Target generic theorem shape:
+Target theorem:
 
 ```lean
 theorem block_contraction_tendsto
@@ -574,20 +501,17 @@ theorem block_contraction_tendsto
     (nhds (weightedMean π x : Real))
 ```
 
-The implementation may add explicit helper hypotheses/lemmas showing `K^b` is averaging, but it must derive them from `hK`, not require the Path layer to assert them independently.
+Any helper showing `K^b` is averaging must be derived from `hK` inside FiniteConsensus.
 
 ### Required proof route
 
-1. From common column `c`, subtract exactly `δ` mass from that column in every row and normalize the residual by `1-δ`; prove the residual is an averaging kernel using `0 < 1-δ`.
-2. The shared `δ*x(c)` cancels between output coordinates, giving
-   `coordRange (applyKernel (K^b) x) ≤ (1-δ) * coordRange x`.
-3. Use `kernelPow_apply` to turn that into a bound after `b` iterations.
-4. Induct over complete blocks:
-   `coordRange (kernelTrajectory K x (q*b)) ≤ (1-δ)^q * coordRange x`.
-5. Cast the inequality to `Real` and use the existing geometric-power limit theorem (`tendsto_pow_atTop_nhds_zero_of_lt_one` or the closest v4.32 theorem) with `0 ≤ 1-δ < 1`.
-6. For arbitrary later clocks, use one-step range nonincrease rather than introducing a `Nat.div` closed form.
-7. Use stationary mean preservation + `weightedMean_between` to get
-   `|x_k i - weightedMean π x| ≤ coordRange x_k`, then squeeze to zero.
+1. For the common column `c`, subtract `δ` from that column in every row and divide the residual by `1-δ`; prove the residual is an averaging kernel.
+2. The common term `δ*x(c)` cancels between outputs, giving `coordRange (applyKernel (K^b) x) ≤ (1-δ) * coordRange x`.
+3. Use `kernelPow_apply` to convert the block matrix to `b` iterations.
+4. Induct: `coordRange (kernelTrajectory K x (q*b)) ≤ (1-δ)^q * coordRange x`.
+5. Cast to `Real` and use the v4.32 geometric-power limit theorem with `0 ≤ 1-δ < 1`.
+6. For arbitrary `k ≥ q*b`, use single-step range nonincrease rather than a `Nat.div` formula.
+7. Stationarity preserves `weightedMean`; normalized weights keep it between current extrema, yielding `|x_k i - weightedMean π x| ≤ coordRange x_k`; squeeze to zero.
 
 ### PathN final theorem
 
@@ -603,26 +527,13 @@ theorem trajectory_tendsto
     (nhds (mean n x : Real))
 ```
 
-Derive it by converting `trajectory` to `kernelTrajectory` using Task 3 and applying the generic theorem with:
+Instantiate generic consensus with `pathKernel n`, `stationaryWeight n`, `block n`, `delta n`, then rewrite actual trajectory via Task 3.
 
-```text
-K = pathKernel n
-π = stationaryWeight n
-b = block n
-delta = delta n
-```
+### TDD
 
-### TDD steps
-
-- [ ] **RED 6.1:** first add a finite consensus consumer that references `block_contraction_tendsto` for `pairKernel`; then add a PathN consumer referencing `trajectory_tendsto`.
-
-- [ ] Run both tests and capture missing-theorem RED before implementing convergence.
-
-- [ ] **GREEN 6.2:** implement generic contraction/limit first. Keep all analytic imports confined to `FiniteConsensus.lean` unless a separate convergence file proves measurably clearer; if split, use `FiniteConsensusConvergence.lean` and update this plan's gate names consistently before advancing.
-
-- [ ] Implement the thin PathN final theorem only after generic consensus passes.
-
-- [ ] Add required axiom-report lines to test files:
+- [ ] **RED:** add a `pairKernel` consumer for `block_contraction_tendsto`; separately add a PathN consumer for `trajectory_tendsto`. Run both tests and record missing-theorem RED.
+- [ ] **GREEN:** prove generic convergence first, then the thin PathN theorem.
+- [ ] Add exact required axiom reports:
 
 ```lean
 #print axioms NarrativeDynamics.FiniteConsensus.coordRange_apply_le_of_commonColumn
@@ -636,15 +547,16 @@ delta = delta n
 #print axioms NarrativeDynamics.FitnessABMPathN.trajectory_tendsto
 ```
 
-- [ ] Run focused build/tests and commit:
-
 ```bash
 timeout --kill-after=10s 240s lake build NarrativeDynamics.Core.FiniteConsensus
 timeout --kill-after=10s 240s lake build NarrativeDynamics.Core.FitnessABMPathN
-timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 \
-  NarrativeDynamics/Tests/FiniteConsensus.lean
-timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 \
-  NarrativeDynamics/Tests/FitnessABMPathN.lean
+timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FiniteConsensus.lean
+timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FitnessABMPathN.lean
+```
+
+- [ ] Commit.
+
+```bash
 git add NarrativeDynamics/Core/FiniteConsensus.lean \
         NarrativeDynamics/Core/FitnessABMPathN.lean \
         NarrativeDynamics/Tests/FiniteConsensus.lean \
@@ -652,95 +564,77 @@ git add NarrativeDynamics/Core/FiniteConsensus.lean \
 git commit -m "feat(lean): prove finite path consensus convergence"
 ```
 
-**Stop-and-fix rule:** if this task exceeds the 240-second focused envelope, do not continue to compatibility/CI. Identify whether min/max, matrix power, or analytic conversion is responsible and factor that proof first.
+**Stop-and-fix rule:** if focused proof exceeds 240 seconds, stop before compatibility/CI and factor whichever of finite extrema, matrix power, or analytic conversion is responsible.
 
 ---
 
-## Task 7: Path4/Path5 compatibility and generic n=6 smoke
+## Task 7: Path4/Path5 compatibility and n=6 smoke
 
-**Files:** modify only `NarrativeDynamics/Tests/FitnessABMPathN.lean` unless a missing public compatibility helper in PathN is demonstrably needed. Do not modify existing Path4/Path5 production modules.
+**Files:** primarily `NarrativeDynamics/Tests/FitnessABMPathN.lean`; only expose a small PathN helper if the test cannot state compatibility cleanly. Do not change Path4/Path5 production modules.
 
-**Imports:** PathN, Path4, Path4Convergence, Path5.
+Import PathN, Path4, Path4Convergence, and Path5 using namespace aliases `PN`, `P4`, `P5` in the test.
 
-### Required compatibility evidence
-
-Use namespace aliases in the test to avoid ambiguous `Beliefs`, `mean`, `trajectory` names.
-
-Path4:
+### Compatibility theorems
 
 ```text
 path4_adj_compat
 path4_step_compat
 path4_trajectory_compat
 path4_mean_compat
-```
-
-Path5:
-
-```text
 path5_adj_compat
 path5_step_compat
 path5_trajectory_compat
 path5_mean_compat
 ```
 
-For fixed sizes, `fin_cases` is allowed in compatibility proofs. It is forbidden only as a substitute for the generic theorem.
+Use `fin_cases` only for these fixed-size compatibility proofs when necessary.
 
-Add a consumer showing the generic convergence theorem reproduces the old Path4 limit statement after compatibility rewrites:
+Prove that the generic theorem independently reproduces the old Path4 convergence statement; do not call `P4.trajectory_tendsto`:
 
 ```lean
-example (x : NarrativeDynamics.FitnessABMPath4.Beliefs)
-    (hx : NarrativeDynamics.FitnessABMPath4.allBroadcast x)
-    (i : Fin 4) :
+example (x : P4.Beliefs) (hx : P4.allBroadcast x) (i : Fin 4) :
     Tendsto
-      (fun k : Nat => (NarrativeDynamics.FitnessABMPath4.trajectory x k i : Real))
+      (fun k : Nat => (P4.trajectory x k i : Real))
       atTop
-      (nhds (NarrativeDynamics.FitnessABMPath4.mean x : Real)) := by
-  -- rewrite old trajectory/mean to PathN and apply PathN.trajectory_tendsto
-  ...
+      (nhds (P4.mean x : Real)) := by
+  have hxN : PN.allBroadcast 4 x := by
+    simpa [PN.allBroadcast, P4.allBroadcast] using hx
+  simpa only [path4_trajectory_compat, path4_mean_compat] using
+    PN.trajectory_tendsto 4 (by decide) x hxN i
 ```
-
-The proof must not call the existing Path4 `trajectory_tendsto`; this consumer demonstrates that the generic theorem independently reaches the same statement.
 
 ### n=6 smoke
 
-Define only in the test:
-
 ```lean
-def smoke6 : NarrativeDynamics.FitnessABMPathN.Beliefs 6 :=
-  ![1, 7/8, 3/4, 5/8, 3/4, 1]
-```
+def smoke6 : PN.Beliefs 6 := ![1, 7/8, 3/4, 5/8, 3/4, 1]
 
-Prove fixed `allBroadcast 6 smoke6`, then instantiate:
+theorem smoke6_allBroadcast : PN.allBroadcast 6 smoke6 := by
+  intro j
+  fin_cases j <;> norm_num [smoke6, PN.allBroadcast]
 
-```lean
 example (i : Fin 6) :
     Tendsto
-      (fun k : Nat => (trajectory 6 smoke6 k i : Real))
+      (fun k : Nat => (PN.trajectory 6 smoke6 k i : Real))
       atTop
-      (nhds (mean 6 smoke6 : Real)) :=
-  trajectory_tendsto 6 (by decide) smoke6 (by
-    intro j
-    fin_cases j <;> norm_num [smoke6, allBroadcast]) i
+      (nhds (PN.mean 6 smoke6 : Real)) :=
+  PN.trajectory_tendsto 6 (by decide) smoke6 smoke6_allBroadcast i
 ```
 
-This may use `fin_cases` because `Fin 6` is a fixed smoke test; no `FitnessABMPath6.lean` is created.
+This is test-only; do not create `FitnessABMPath6.lean`.
 
-### Regression execution
+### TDD/regression
 
-- [ ] **RED 7.1:** add compatibility consumers before compatibility theorem helpers; unknown declarations or unclosed definitional equalities are the intended RED.
-
-- [ ] **GREEN 7.2:** prove compatibility, then run:
+- [ ] **RED:** add compatibility consumers before compatibility helpers; intended failures are unknown declarations/unclosed equalities.
+- [ ] **GREEN:** prove compatibility and smoke, then run:
 
 ```bash
-timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 \
-  NarrativeDynamics/Tests/FitnessABMPathN.lean
-timeout --kill-after=10s 240s bash tools/check_fitness_abm_path4.sh
+timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FitnessABMPathN.lean
+timeout --kill-after=10s 900s bash tools/check_fitness_abm_path4.sh
 ```
 
-Expected: generic tests pass; old Path4 explicit closed-form/convergence and existing Path5 generated replay golden remain unchanged and pass.
+Expected: generic tests pass and the existing Path4 closed-form/convergence plus Path5 generated replay golden remain untouched and green.
 
-- [ ] Commit:
+- [ ] Commit.
 
 ```bash
 git add NarrativeDynamics/Tests/FitnessABMPathN.lean
@@ -749,15 +643,17 @@ git commit -m "test(lean): certify PathN compatibility and smoke"
 
 ---
 
-## Task 8: Dedicated bounded gate, exact-head CI, trust audit, and review readiness
+## Task 8: Dedicated bounded gate and exact-head review readiness
 
-**Files:** create `tools/check_fitness_abm_pathn.sh`; modify `.github/workflows/proof.yml`. Do not fold this gate into `check_fitness_abm_path4.sh`.
+**Files:** create `tools/check_fitness_abm_pathn.sh`; modify `.github/workflows/proof.yml`.
 
-### Gate script contract
+Do not fold PathN into `check_fitness_abm_path4.sh`.
 
-Create `tools/check_fitness_abm_pathn.sh` with `set -euo pipefail`, repository-root normalization, GNU `time`, two temporary logs, and cleanup trap.
+### Gate script
 
-Source audit exactly the maintained PathN proof surface:
+Create `tools/check_fitness_abm_pathn.sh` with `set -euo pipefail`, repo-root normalization, GNU `time`, two logs, and a cleanup trap.
+
+Source audit:
 
 ```bash
 python3 tools/audit_fitness_trust.py source \
@@ -767,7 +663,7 @@ python3 tools/audit_fitness_trust.py source \
   NarrativeDynamics/Tests/FitnessABMPathN.lean
 ```
 
-Explicitly build specialized modules because `NarrativeDynamics.lean` does not import them:
+Explicit builds:
 
 ```bash
 for module in \
@@ -778,7 +674,7 @@ for module in \
 done
 ```
 
-Run both test files separately and capture logs:
+Tests/logs:
 
 ```bash
 /usr/bin/time -f 'FiniteConsensus tests elapsed=%e s peak_rss=%M KiB' \
@@ -792,7 +688,7 @@ Run both test files separately and capture logs:
   2>&1 | tee "$pathn_log"
 ```
 
-Audit mandatory reports:
+Mandatory trust reports:
 
 ```bash
 python3 tools/audit_fitness_trust.py log "$consensus_log" \
@@ -809,11 +705,9 @@ python3 tools/audit_fitness_trust.py log "$pathn_log" \
   --require NarrativeDynamics.FitnessABMPathN.trajectory_tendsto
 ```
 
-If implementation chooses a separate `FiniteConsensusConvergence.lean` during Task 6, add that exact file/module to source audit and timed builds; do not leave stale names in the gate.
-
 ### Workflow integration
 
-Insert one step immediately after existing `BB path-four convergence`:
+Immediately after existing `BB path-four convergence`:
 
 ```yaml
       - name: BB finite-path convergence
@@ -821,11 +715,11 @@ Insert one step immediately after existing `BB path-four convergence`:
         run: bash tools/check_fitness_abm_pathn.sh
 ```
 
-Do not alter event selection, exact-head checkout, Path4 gate, Path5 runtime golden, naming audit, or later regression steps.
+Do not alter event selection, exact-head checkout, existing Path4/Path5 gate, Path5 golden, or later regression steps.
 
-### Final verification sequence
+### Final verification
 
-- [ ] Run shell/hygiene checks:
+- [ ] Hygiene:
 
 ```bash
 bash -n tools/check_fitness_abm_pathn.sh
@@ -833,77 +727,46 @@ git diff --check
 git status --short
 ```
 
-- [ ] Run dedicated gate locally if the toolchain is available:
+- [ ] Dedicated gate and existing Path4/Path5 gate on the same head:
 
 ```bash
 timeout --kill-after=10s 900s bash tools/check_fitness_abm_pathn.sh
-```
-
-- [ ] Run the existing Path4/Path5 regression gate once on the same head:
-
-```bash
 timeout --kill-after=10s 900s bash tools/check_fitness_abm_path4.sh
 ```
 
-- [ ] Commit CI integration:
+- [ ] Commit CI integration.
 
 ```bash
 git add tools/check_fitness_abm_pathn.sh .github/workflows/proof.yml
 git commit -m "ci: gate generic finite path convergence"
 ```
 
-- [ ] Push `feature/bb-pathn-convergence-v1` and open a draft PR against `proof/narrative-dynamics-v0`. Record the exact head SHA before CI.
-
-- [ ] Require one exact-head PR proof run where all of the following are success on that same SHA:
-  - Python numerical tests;
-  - full Lean library build;
-  - existing BB ABM joint gate;
-  - existing runtime replay conformance;
-  - existing Path4/Path5 gate including Path5 generated replay golden;
-  - new `BB finite-path convergence` gate;
-  - naming, attachment, replay, scope, distribution, general theorem, story, testimony tails;
-  - World Studio exact-head workflow.
-
-- [ ] Capture from the PathN gate logs:
-  - exact head SHA;
-  - `FiniteConsensus` build time/RSS;
-  - `FitnessABMPathN` build time/RSS;
-  - both test time/RSS values;
-  - source-audit result;
-  - mandatory axiom-report audit result.
-
-- [ ] Request code review after the exact-head gate passes. Fix Critical/Important findings before marking ready.
-
-- [ ] Update issue #83 with factual evidence only:
-  - concrete Path5 evidence remains landed at merge `5ee1330`;
-  - generic theorem now covers every `Fin n` with explicit `2 ≤ n` and all-broadcast hypothesis;
-  - executable step is still actual `NetworkPropagation.propagate`;
-  - stationary limit is degree-weighted;
-  - contraction witness is the explicit conservative `δ(n) = (1/4)^(n-1)`;
-  - arbitrary connected graphs and arbitrary `(α, τ)` remain out of scope.
-
-- [ ] Stop at review/merge readiness. Do not close #83 or merge automatically unless the user explicitly asks to merge after reviewing the exact-head evidence.
+- [ ] Push `feature/bb-pathn-convergence-v1`; open a draft PR against `proof/narrative-dynamics-v0`; record the exact head SHA.
+- [ ] Require one exact-head PR proof run where Python tests, full Lean build, all prior BB gates, existing Path4/Path5 generated replay gate, new PathN gate, naming/attachment/replay/scope/distribution/general theorem/story/testimony tails all succeed.
+- [ ] Require World Studio success on that same head.
+- [ ] Record PathN build/test elapsed time and peak RSS, source audit, and mandatory axiom-audit results.
+- [ ] Request code review; fix Critical/Important findings before marking ready.
+- [ ] Update #83 with factual evidence and explicit scope boundaries.
+- [ ] Stop at review/merge readiness. Do not merge or close #83 unless the user explicitly asks after exact-head review.
 
 ## Final acceptance checklist
 
-The implementation is review-ready only if all entries below are verified on one exact PR head:
-
-- [ ] `beliefStep` is implemented through actual `NetworkPropagation.propagate`.
-- [ ] Generic exposure independence holds without `allBroadcast`.
-- [ ] `propagate_eq_kernel` holds for every `n ≥ 2` in the all-broadcast region.
-- [ ] Generic all-broadcast invariance uses convexity, not finite enumeration.
-- [ ] Degree sum and normalized stationary degree weights are proved.
-- [ ] Degree-weighted mean preservation is proved for actual trajectories.
-- [ ] `(n-1)`-step path common-column mass has lower bound `(1/4)^(n-1)`.
+- [ ] `beliefStep` is actual `NetworkPropagation.propagate`.
+- [ ] Exposure independence is generic and does not require `allBroadcast`.
+- [ ] `propagate_eq_kernel` holds for all `n ≥ 2` in the all-broadcast region.
+- [ ] All-broadcast invariance is generic and convexity-based.
+- [ ] Path degree sum and normalized stationary degree weights are proved.
+- [ ] Actual trajectory preserves the degree-weighted mean.
+- [ ] `(n-1)`-step common-column mass is at least `(1/4)^(n-1)`.
 - [ ] Generic block range contraction is proved.
 - [ ] Coordinatewise `Tendsto` to the stationary mean is proved for every `n ≥ 2`.
 - [ ] Path4 adjacency/step/trajectory/mean compatibility passes.
-- [ ] Generic theorem independently reproduces the Path4 convergence statement.
+- [ ] The generic theorem independently reproduces the Path4 convergence statement.
 - [ ] Path5 adjacency/step/trajectory/mean compatibility passes.
-- [ ] Existing Path5 runtime/model generated golden comparison remains green.
-- [ ] Fixed `n = 6` smoke instantiates the generic theorem with no Path6 production module.
-- [ ] No arbitrary connected-graph or arbitrary stochastic-matrix convergence theorem was added.
+- [ ] Existing Path5 runtime/model golden conformance remains green.
+- [ ] Fixed `n=6` smoke instantiates the generic theorem with no Path6 production module.
+- [ ] No arbitrary connected-graph/stochastic-matrix convergence theorem was added.
 - [ ] No arbitrary receptivity/threshold generalization was added.
 - [ ] Source audit and required theorem axiom reports pass.
-- [ ] No global resource limit was disabled or raised merely to hide proof structure.
+- [ ] No resource limit is disabled or raised merely to hide proof structure.
 - [ ] Exact-head proof and World Studio workflows pass.
