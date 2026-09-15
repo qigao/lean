@@ -1,0 +1,12 @@
+pre_root_id,post_root_id,neuropil,syn_count,nt_type
+1,4,PB,3,ACH
+1,4,EB,4,ACH
+2,4,FB,4,GABA
+3,5,FB,5,ACH
+4,6,PB,8,ACH
+5,6,FB,6,GABA
+6,7,FB,7,GLUT
+7,8,FB,9,ACH
+8,4,FB,5,GABA
+4,8,FB,10,DA
+9,1,ME_L,12,ACH
