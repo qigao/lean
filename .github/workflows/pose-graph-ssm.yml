@@ -35,6 +35,7 @@ jobs:
           pose_graph_ssm/tests/test_normalization.py
           pose_graph_ssm/tests/test_features.py
           pose_graph_ssm/tests/test_remote_skeleton.py
+          pose_graph_ssm/tests/test_pyskl_source.py
           -q
 
   models:
