@@ -1,0 +1,31 @@
+name: pose-graph-ssm
+
+on:
+  push:
+    branches:
+      - research/pose-graph-ssm-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lightweight:
+    name: Graph SSM protocol contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install lightweight runtime
+        run: python -m pip install pytest
+      - name: Run protocol RED/GREEN gate
+        env:
+          PYTHONPATH: pose_graph_ssm/src
+        run: python -m pytest pose_graph_ssm/tests/test_protocol.py -q
