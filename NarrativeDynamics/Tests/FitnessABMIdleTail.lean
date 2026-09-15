@@ -1,4 +1,5 @@
 import NarrativeDynamics.Core.FitnessABMIdleTail
+import NarrativeDynamics.Core.FitnessABMReplay
 
 open NarrativeDynamics NarrativeDynamics.FitnessABM
 
@@ -18,3 +19,24 @@ example (s : RunState) (k : Nat) :
 example {n : Nat} (s : JointState n) (k : Nat) :
     IdleTailModel.trajectory (jointIdleTail n) s k = (advance^[k]) s := by
   rfl
+
+example (m tickIndex birthIndex k : Nat) (s : RunState) :
+    runInputs m tickIndex birthIndex s (List.replicate k none) =
+      .ok ⟨runIdleTrajectory s k, 1⟩ :=
+  runInputs_replicate_idle m tickIndex birthIndex k s
+
+example (m tickIndex birthIndex : Nat)
+    (s : RunState) (ticks : List RawTick) (out : Result) (k : Nat)
+    (h : runInputs m tickIndex birthIndex s ticks = .ok out) :
+    runInputs m tickIndex birthIndex s
+        (ticks ++ List.replicate k none) =
+      .ok ⟨runIdleTrajectory out.final k, out.probability⟩ :=
+  runInputs_append_idle m tickIndex birthIndex s ticks out k h
+
+example (seed : FitnessAttachment.RawSeed) (m : Nat)
+    (agents : Array RawAgent) (ticks : List RawTick)
+    (out : Result) (k : Nat)
+    (h : replay seed m agents ticks = .ok out) :
+    replay seed m agents (ticks ++ List.replicate k none) =
+      .ok ⟨runIdleTrajectory out.final k, out.probability⟩ :=
+  replay_append_idle seed m agents ticks out k h
