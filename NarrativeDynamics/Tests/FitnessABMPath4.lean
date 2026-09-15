@@ -832,24 +832,29 @@ example : tailBelief .bbii 2 = ![45/64,44/64,43/64,35/64] := activation_bbii.1
 
 end FiniteReplayFixtures
 
-#print axioms replay_baseline
-#print axioms raw_tail_bridge
+#print axioms NarrativeDynamics.FitnessABMPath4.propagate_independent_exposures
+#print axioms NarrativeDynamics.FitnessABMPath4.propagate_eq_linear
+#print axioms NarrativeDynamics.FitnessABMPath4.allBroadcast_iterate
+#print axioms NarrativeDynamics.FitnessABMPath4.mean_step
+#print axioms NarrativeDynamics.FitnessABMPath4.iterate_closedForm
+#print axioms NarrativeDynamics.Tests.FitnessABMPath4.replay_baseline
+#print axioms NarrativeDynamics.Tests.FitnessABMPath4.raw_tail_bridge
 #print axioms baseState_adj
 #print axioms baseState_profiles
 #print axioms baseState_exposures
 #print axioms tail_network
 #print axioms tail_profiles
 #print axioms tailBelief_step
-#print axioms activation_bbii
-#print axioms activation_bibi
-#print axioms activation_iibb
+#print axioms NarrativeDynamics.Tests.FitnessABMPath4.activation_bbii
+#print axioms NarrativeDynamics.Tests.FitnessABMPath4.activation_bibi
+#print axioms NarrativeDynamics.Tests.FitnessABMPath4.activation_iibb
 #print axioms baseline_not_allBroadcast
 #print axioms preactivation_not_allBroadcast
 #print axioms predecessor_bbii
 #print axioms predecessor_bibi
 #print axioms predecessor_iibb
 #print axioms tail_from_activation
-#print axioms equal_control
+#print axioms NarrativeDynamics.Tests.FitnessABMPath4.equal_control
 
 end NarrativeDynamics.Tests.FitnessABMPath4
 
