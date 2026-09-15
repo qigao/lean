@@ -1,4 +1,4 @@
-name: pose-graph-ssm-real-skeleton
+name: pose-graph-ssm-ntu-skeleton-e2e
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: pose-graph-ssm-real-skeleton
+  group: pose-graph-ssm-ntu-skeleton-e2e
   cancel-in-progress: false
 
 env:
@@ -22,12 +22,10 @@ env:
   PROTOCOL_PATH: pose_graph_ssm/protocols/v1-development-preflight.json
 
 jobs:
-  real-development:
-    name: Private NTU skeleton 4x5 development
+  ntu-skeleton-e2e:
+    name: NTU-format skeleton 4x5 end-to-end
     runs-on: ubuntu-latest
     timeout-minutes: 360
-    env:
-      NTU120_REMOTE_MANIFEST_URL: ${{ secrets.NTU120_REMOTE_MANIFEST_URL }}
     steps:
       - name: Checkout exact source
         uses: actions/checkout@v4
@@ -47,40 +45,71 @@ jobs:
           python -m pip install "torch==2.14.0+cpu" --index-url https://download.pytorch.org/whl/cpu
           python -m pip install --no-deps -e ./pose_graph_ssm
 
-      - name: Fetch existing authorized NTU manifest
+      - name: Generate deterministic NTU skeleton byte fixture
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$NTU120_REMOTE_MANIFEST_URL" || {
-            echo "NTU120_REMOTE_MANIFEST_URL secret is required" >&2
-            exit 1
+          python - <<'PY'
+          from __future__ import annotations
+          import hashlib
+          import json
+          import math
+          from pathlib import Path
+
+          actions = (8, 9, 22, 23, 26, 27, 31, 34, 35, 36)
+          root = Path("ntu-skeleton")
+          root.mkdir()
+
+          def joint_line(x: float, y: float, z: float, tracking: int) -> str:
+              values = [x, y, z, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+              return " ".join(f"{value:.9f}" for value in values) + f" {tracking}"
+
+          def write_sample(subject: int, action: int, class_index: int, frames: int, *, tracking: int = 2) -> None:
+              path = root / f"S001C001P{subject:03d}R001A{action:03d}.skeleton"
+              lines = [str(frames)]
+              for frame in range(frames):
+                  lines.extend(["1", "10 0 0 0 0 0 0 0 0 0", "25"])
+                  phase = 2.0 * math.pi * frame / max(frames - 1, 1)
+                  moving_joint = 1 + class_index
+                  for joint in range(25):
+                      x = joint * 0.01
+                      y = joint * 0.02
+                      z = 0.5 + joint * 0.001
+                      if joint == 20:
+                          y += 1.0
+                      if joint == moving_joint:
+                          x += 0.18 * math.sin((class_index + 1) * phase)
+                          z += 0.12 * math.cos(phase + class_index * 0.2)
+                      lines.append(joint_line(x, y, z, tracking))
+              path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+          # P056 is frozen train, P014 is frozen validation, P003 is sealed final-test.
+          for index, action in enumerate(actions):
+              write_sample(56, action, index, 30 + index)
+              write_sample(14, action, index, 34 + index)
+              # Structurally valid but unusable tracking proves final-test coordinates are not normalized/features.
+              write_sample(3, action, index, 32 + index, tracking=0)
+
+          rows = []
+          for path in sorted(root.glob("*.skeleton")):
+              raw = path.read_bytes()
+              rows.append({"filename": path.name, "size_bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()})
+          evidence = {
+              "format_version": 1,
+              "kind": "pose_graph_ssm_ntu_format_ci_fixture",
+              "evidence_scope": "ci_fixture_only",
+              "scientific_performance_claim_allowed": False,
+              "sample_count": len(rows),
+              "samples": rows,
           }
-          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
-            "$NTU120_REMOTE_MANIFEST_URL" --output transport-manifest.json
-          test -s transport-manifest.json || {
-            echo "empty NTU transport manifest" >&2
-            exit 1
-          }
+          Path("fixture-source.json").write_text(
+              json.dumps(evidence, sort_keys=True, separators=(",", ":")) + "\n",
+              encoding="utf-8",
+          )
+          print(f"generated {len(rows)} canonical NTU skeleton files")
+          PY
 
-      - name: Validate skeleton manifest and freeze URL-free source identity
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m pose_graph_ssm.remote_skeleton validate \
-            --manifest transport-manifest.json \
-            --protocol "$PROTOCOL_PATH" \
-            --public-output scientific-source.json
-
-      - name: Materialize and verify exact NTU skeleton bytes
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m pose_graph_ssm.remote_skeleton materialize \
-            --manifest transport-manifest.json \
-            --protocol "$PROTOCOL_PATH" \
-            --root ntu-skeleton
-
-      - name: Prepare leak-free development evidence
+      - name: Prepare leak-free development evidence from bytes
         shell: bash
         run: |
           set -euo pipefail
@@ -98,13 +127,35 @@ jobs:
             --prepared prepared \
             --output results
 
-      - name: Stage URL-free scientific evidence
+      - name: Verify complete 20-cell result surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          cells = sorted(Path("results").glob("*-seed-*.json"))
+          if len(cells) != 20:
+              raise SystemExit(f"expected 20 result cells, got {len(cells)}")
+          summary = json.loads(Path("results/summary.json").read_text(encoding="utf-8"))
+          if summary.get("cell_count") != 20:
+              raise SystemExit("summary does not bind exactly 20 cells")
+          print(json.dumps({
+              "cell_count": 20,
+              "disposition": summary["disposition"],
+              "primary_pass": summary["primary_pass"],
+              "graph_contribution_pass": summary["graph_contribution_pass"],
+              "ssm_contribution_pass": summary["ssm_contribution_pass"],
+          }, sort_keys=True))
+          PY
+
+      - name: Stage fixture-only evidence
         if: success()
         shell: bash
         run: |
           set -euo pipefail
           mkdir final-evidence
-          cp scientific-source.json final-evidence/
+          cp fixture-source.json final-evidence/
           cp prepared/protocol.json final-evidence/
           cp prepared/binding.json final-evidence/
           cp prepared/feature_stats.json final-evidence/
@@ -112,18 +163,16 @@ jobs:
           cp prepared/final_test_inventory.json final-evidence/
           cp results/*.json final-evidence/
 
-      - name: Remove private transport and raw skeleton bytes
+      - name: Remove raw skeleton bytes before upload
         if: always()
         shell: bash
-        run: |
-          rm -f transport-manifest.json
-          rm -rf ntu-skeleton
+        run: rm -rf ntu-skeleton
 
-      - name: Upload URL-free development evidence
+      - name: Upload fixture-only end-to-end evidence
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: pose-graph-ssm-real-development-${{ github.run_id }}
+          name: pose-graph-ssm-ntu-skeleton-e2e-${{ github.run_id }}
           path: final-evidence
           if-no-files-found: error
           retention-days: 30
