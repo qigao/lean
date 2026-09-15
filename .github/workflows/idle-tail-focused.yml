@@ -22,6 +22,10 @@ jobs:
           export PATH="$HOME/.elan/bin:$PATH"
           lake update
           lake env lean --version
+      - name: Build project anchor
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          timeout --kill-after=10s 240s lake build NarrativeDynamics.Core.FitnessABM
       - name: IdleTail focused consumer
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
