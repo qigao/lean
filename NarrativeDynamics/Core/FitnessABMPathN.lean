@@ -146,13 +146,19 @@ private theorem neighbor_mass_sum (n : Nat) (hn : 2 ≤ n) (i : Fin n) :
   let c : Rat := 1 / (2 * (degree n i : Rat))
   have hsum :
       (∑ j : Fin n, if j ∈ neighbors n i then c else 0) =
-        ∑ j ∈ neighbors n i, c := by
-    simp
+        ∑ j in neighbors n i, c := by
+    simpa using
+      (Finset.sum_ite_mem (Finset.univ : Finset (Fin n)) (neighbors n i)
+        (fun _ => c))
   rw [hsum]
-  simp only [Finset.sum_const, nsmul_eq_mul, degree]
   have hd := degree_eq_one_or_two n hn i
-  rcases hd with hd | hd <;>
-    simp [c, degree, hd] <;> norm_num
+  rcases hd with hd | hd
+  · have hcard : (neighbors n i).card = 1 := by
+      simpa [degree] using hd
+    simp [hcard, c, hd]
+  · have hcard : (neighbors n i).card = 2 := by
+      simpa [degree] using hd
+    simp [hcard, c, hd]
 
 theorem pathKernel_row_sum (n : Nat) (hn : 2 ≤ n) (i : Fin n) :
     ∑ j, pathKernel n i j = 1 := by
