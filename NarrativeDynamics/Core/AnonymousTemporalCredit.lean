@@ -33,8 +33,7 @@ theorem aggregate_view_source_noninterference
     (left right : DeliveryHistory)
     (h : aggregateStream left = aggregateStream right) :
     learnerView observations left = learnerView observations right := by
-  cases h
-  rfl
+  simp [learnerView, h]
 
 theorem aggregate_conservation (history : DeliveryHistory) :
     (aggregateStream history).sum =
