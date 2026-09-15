@@ -62,4 +62,73 @@ theorem incoming_eq (x : Beliefs) (e : Fin 5 → Nat)
   simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and, hb, and_true]
   fin_cases i <;> fin_cases j <;> decide
 
+private def linearStep (x : Beliefs) : Beliefs :=
+  ![(x 0 + x 1) / 2,
+    x 0 / 4 + x 1 / 2 + x 2 / 4,
+    x 1 / 4 + x 2 / 2 + x 3 / 4,
+    x 2 / 4 + x 3 / 2 + x 4 / 4,
+    (x 3 + x 4) / 2]
+
+/-- The local linear form is derived from the actual incoming sets; it is not
+used to define the dynamics. -/
+private theorem beliefStep_eq_linear (x : Beliefs) (hx : allBroadcast x) :
+    beliefStep x = linearStep x := by
+  have h02 : (0 : Fin 5) ≠ 2 := by decide
+  have h13 : (1 : Fin 5) ≠ 3 := by decide
+  have h24 : (2 : Fin 5) ≠ 4 := by decide
+  funext i
+  fin_cases i
+  · change (nextAgent path5Adj (population x (fun _ => 0)) 0).belief = linearStep x 0
+    simp only [nextAgent, incoming_eq x _ hx 0]
+    norm_num [linearStep, population]
+    ring
+  · change (nextAgent path5Adj (population x (fun _ => 0)) 1).belief = linearStep x 1
+    simp only [nextAgent, incoming_eq x _ hx 1]
+    norm_num [linearStep, population,
+      Finset.sum_pair h02, Finset.card_pair h02]
+    ring
+  · change (nextAgent path5Adj (population x (fun _ => 0)) 2).belief = linearStep x 2
+    simp only [nextAgent, incoming_eq x _ hx 2]
+    norm_num [linearStep, population,
+      Finset.sum_pair h13, Finset.card_pair h13]
+    ring
+  · change (nextAgent path5Adj (population x (fun _ => 0)) 3).belief = linearStep x 3
+    simp only [nextAgent, incoming_eq x _ hx 3]
+    norm_num [linearStep, population,
+      Finset.sum_pair h24, Finset.card_pair h24]
+    ring
+  · change (nextAgent path5Adj (population x (fun _ => 0)) 4).belief = linearStep x 4
+    simp only [nextAgent, incoming_eq x _ hx 4]
+    norm_num [linearStep, population]
+    ring
+
+theorem allBroadcast_step (x : Beliefs) (hx : allBroadcast x) :
+    allBroadcast (beliefStep x) := by
+  rw [beliefStep_eq_linear x hx]
+  intro i
+  have h0 := hx 0
+  have h1 := hx 1
+  have h2 := hx 2
+  have h3 := hx 3
+  have h4 := hx 4
+  fin_cases i <;> dsimp [linearStep] <;> constructor <;> linarith
+
+theorem allBroadcast_iterate (x : Beliefs) (hx : allBroadcast x) (n : Nat) :
+    allBroadcast (trajectory x n) := by
+  induction n with
+  | zero => simpa [trajectory] using hx
+  | succ n ih =>
+      simpa [trajectory, Function.iterate_succ_apply'] using
+        allBroadcast_step (trajectory x n) ih
+
+/-- The invariant mean weights path vertices by their degrees `1,2,2,2,1`. -/
+def mean (x : Beliefs) : Rat :=
+  (x 0 + 2 * x 1 + 2 * x 2 + 2 * x 3 + x 4) / 8
+
+theorem mean_step (x : Beliefs) (hx : allBroadcast x) :
+    mean (beliefStep x) = mean x := by
+  rw [beliefStep_eq_linear x hx]
+  dsimp [mean, linearStep]
+  ring
+
 end NarrativeDynamics.FitnessABMPath5
