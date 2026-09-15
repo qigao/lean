@@ -41,5 +41,7 @@ example (seed : FitnessAttachment.RawSeed) (m : Nat)
       .ok ⟨runIdleTrajectory out.final k, out.probability⟩ :=
   replay_append_idle seed m agents ticks out k h
 
+#print axioms NarrativeDynamics.FitnessABM.runIdleTrajectory_eq
+#print axioms NarrativeDynamics.FitnessABM.runInputs_replicate_idle
 #print axioms NarrativeDynamics.FitnessABM.runInputs_append_idle
 #print axioms NarrativeDynamics.FitnessABM.replay_append_idle
