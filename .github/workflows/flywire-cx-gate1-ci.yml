@@ -34,7 +34,7 @@ jobs:
         run: python -m pytest tests/test_cx_protocol.py tests/test_cx_artifact.py tests/test_cx_nulls.py tests/test_cx_events.py tests/test_ntu_skeleton.py -q
 
   lif:
-    name: CX LIF and temporal metric contracts
+    name: CX temporal and development contracts
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -49,8 +49,8 @@ jobs:
           python -m pip install pytest numpy
           python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
           python -m pip install --no-deps -e ./python
-      - name: Run CX LIF/metric RED/GREEN gates
-        run: python -m pytest tests/test_cx_lif.py tests/test_cx_evaluation.py -q
+      - name: Run CX temporal/development RED/GREEN gates
+        run: python -m pytest tests/test_cx_lif.py tests/test_cx_evaluation.py tests/test_cx_development.py -q
 
   legacy-protocol:
     name: Existing YOLO/FlyWire protocol compatibility
