@@ -38,3 +38,13 @@ example (n : Nat) (hn : 2 ≤ n) (x : Beliefs n)
 example (n : Nat) (hn : 2 ≤ n) (x : Beliefs n) (k : Nat) :
     mean n (kernelTrajectory (pathKernel n) x k) = mean n x :=
   mean_kernel_iterate n hn x k
+
+example (n : Nat) (hn : 2 ≤ n) :
+    CommonColumnMass ((pathKernel n) ^ block n) (delta n) :=
+  path_block_common_mass n hn
+
+example : block 6 = 5 := by
+  decide
+
+example : delta 6 = 1/1024 := by
+  norm_num [delta, block]
