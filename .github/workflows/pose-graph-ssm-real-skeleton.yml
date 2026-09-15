@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     env:
-      NTU120_SKELETON_MANIFEST_URL: ${{ secrets.NTU120_SKELETON_MANIFEST_URL }}
+      NTU120_REMOTE_MANIFEST_URL: ${{ secrets.NTU120_REMOTE_MANIFEST_URL }}
     steps:
       - name: Checkout exact source
         uses: actions/checkout@v4
@@ -47,22 +47,22 @@ jobs:
           python -m pip install "torch==2.14.0+cpu" --index-url https://download.pytorch.org/whl/cpu
           python -m pip install --no-deps -e ./pose_graph_ssm
 
-      - name: Fetch private authorized skeleton manifest
+      - name: Fetch existing authorized NTU manifest
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$NTU120_SKELETON_MANIFEST_URL" || {
-            echo "NTU120_SKELETON_MANIFEST_URL secret is required" >&2
+          test -n "$NTU120_REMOTE_MANIFEST_URL" || {
+            echo "NTU120_REMOTE_MANIFEST_URL secret is required" >&2
             exit 1
           }
           curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
-            "$NTU120_SKELETON_MANIFEST_URL" --output transport-manifest.json
+            "$NTU120_REMOTE_MANIFEST_URL" --output transport-manifest.json
           test -s transport-manifest.json || {
-            echo "empty NTU skeleton transport manifest" >&2
+            echo "empty NTU transport manifest" >&2
             exit 1
           }
 
-      - name: Validate private manifest and freeze URL-free source identity
+      - name: Validate skeleton manifest and freeze URL-free source identity
         shell: bash
         run: |
           set -euo pipefail
