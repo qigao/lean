@@ -17,7 +17,8 @@ concurrency:
 
 env:
   PYSKL_NTU120_URL: https://download.openmmlab.com/mmaction/pyskl/data/nturgbd/ntu120_3danno.pkl
-  PROTOCOL_PATH: pose_graph_ssm/protocols/v1-development-preflight.json
+  EXPECTED_PYSKL_SHA256: 91a423355774b5c81c8967214f253116544701d239b38120ba1d7ab87058a543
+  PROTOCOL_PATH: pose_graph_ssm/protocols/v1-pyskl-development-preflight.json
 
 jobs:
   discover:
@@ -38,15 +39,20 @@ jobs:
           python -m pip install "numpy==2.4.6"
           python -m pip install --no-deps -e ./pose_graph_ssm
 
-      - name: Download public PYSKL NTU120 3D annotations
+      - name: Download and pin public PYSKL NTU120 3D annotations
         shell: bash
         run: |
           set -euo pipefail
           curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
             "$PYSKL_NTU120_URL" --output ntu120_3danno.pkl
           test -s ntu120_3danno.pkl
+          actual=$(sha256sum ntu120_3danno.pkl | awk '{print $1}')
+          test "$actual" = "$EXPECTED_PYSKL_SHA256" || {
+            echo "PYSKL source SHA-256 drift: $actual" >&2
+            exit 1
+          }
           ls -lh ntu120_3danno.pkl
-          sha256sum ntu120_3danno.pkl
+          echo "$actual"
 
       - name: Validate exact annotation schema and frozen development inventory
         shell: bash
@@ -59,7 +65,7 @@ jobs:
           from pose_graph_ssm.protocol import load_protocol
           from pose_graph_ssm.pyskl_source import read_pyskl_3d_annotations
 
-          protocol = load_protocol(Path("pose_graph_ssm/protocols/v1-development-preflight.json"))
+          protocol = load_protocol(Path("pose_graph_ssm/protocols/v1-pyskl-development-preflight.json"))
           source = read_pyskl_3d_annotations(Path("ntu120_3danno.pkl"), protocol)
           split_counts = Counter(sample.split for sample in source.samples)
           action_counts = {
@@ -76,13 +82,14 @@ jobs:
               "format_version": 1,
               "kind": "pyskl-ntu120-3danno-source-discovery",
               "source_sha256": source.source_sha256,
+              "protocol_id": protocol.protocol_id,
               "selected_sample_count": len(source.samples),
               "split_counts": dict(sorted(split_counts.items())),
               "action_counts": action_counts,
               "source_semantics": {
                   "shape": "[M,T,25,3]",
-                  "primary_track": "PYSKL person-0 after motion ranking/denoising",
-                  "zero_padding": "whole-frame linear interpolation in pose_graph_ssm adapter",
+                  "primary_track": protocol.primary_body_rule,
+                  "normalization_id": protocol.normalization_id,
                   "tracking_state_available": False,
               },
           }
