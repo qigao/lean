@@ -1,0 +1,129 @@
+name: pose-graph-ssm-real-skeleton
+
+on:
+  push:
+    branches:
+      - research/pose-graph-ssm-v1
+    paths:
+      - .github/workflows/pose-graph-ssm-real-skeleton.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pose-graph-ssm-real-skeleton
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: "1"
+  OMP_NUM_THREADS: "1"
+  MKL_NUM_THREADS: "1"
+  PROTOCOL_PATH: pose_graph_ssm/protocols/v1-development-preflight.json
+
+jobs:
+  real-development:
+    name: Private NTU skeleton 4x5 development
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      NTU120_SKELETON_MANIFEST_URL: ${{ secrets.NTU120_SKELETON_MANIFEST_URL }}
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pose_graph_ssm/pyproject.toml
+
+      - name: Install frozen CPU runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install "numpy==2.4.6"
+          python -m pip install "torch==2.14.0+cpu" --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --no-deps -e ./pose_graph_ssm
+
+      - name: Fetch private authorized skeleton manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$NTU120_SKELETON_MANIFEST_URL" || {
+            echo "NTU120_SKELETON_MANIFEST_URL secret is required" >&2
+            exit 1
+          }
+          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+            "$NTU120_SKELETON_MANIFEST_URL" --output transport-manifest.json
+          test -s transport-manifest.json || {
+            echo "empty NTU skeleton transport manifest" >&2
+            exit 1
+          }
+
+      - name: Validate private manifest and freeze URL-free source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pose_graph_ssm.remote_skeleton validate \
+            --manifest transport-manifest.json \
+            --protocol "$PROTOCOL_PATH" \
+            --public-output scientific-source.json
+
+      - name: Materialize and verify exact NTU skeleton bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pose_graph_ssm.remote_skeleton materialize \
+            --manifest transport-manifest.json \
+            --protocol "$PROTOCOL_PATH" \
+            --root ntu-skeleton
+
+      - name: Prepare leak-free development evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          pose-graph-ssm prepare \
+            --root ntu-skeleton \
+            --protocol "$PROTOCOL_PATH" \
+            --output prepared
+
+      - name: Run frozen 4x5 validation matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          pose-graph-ssm compare-validation \
+            --root ntu-skeleton \
+            --prepared prepared \
+            --output results
+
+      - name: Stage URL-free scientific evidence
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir final-evidence
+          cp scientific-source.json final-evidence/
+          cp prepared/protocol.json final-evidence/
+          cp prepared/binding.json final-evidence/
+          cp prepared/feature_stats.json final-evidence/
+          cp prepared/development_inventory.json final-evidence/
+          cp prepared/final_test_inventory.json final-evidence/
+          cp results/*.json final-evidence/
+
+      - name: Remove private transport and raw skeleton bytes
+        if: always()
+        shell: bash
+        run: |
+          rm -f transport-manifest.json
+          rm -rf ntu-skeleton
+
+      - name: Upload URL-free development evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pose-graph-ssm-real-development-${{ github.run_id }}
+          path: final-evidence
+          if-no-files-found: error
+          retention-days: 30
