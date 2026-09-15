@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import codecs
 import hashlib
 import io
 import json
@@ -31,6 +32,7 @@ def _hash_json(value: object) -> str:
 
 class _RestrictedNumpyUnpickler(pickle.Unpickler):
     _ALLOWED: dict[tuple[str, str], object] = {
+        ("_codecs", "encode"): codecs.encode,
         ("numpy", "ndarray"): np.ndarray,
         ("numpy", "dtype"): np.dtype,
         ("numpy.core.multiarray", "_reconstruct"): np.core.multiarray._reconstruct,
