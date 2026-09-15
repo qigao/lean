@@ -254,9 +254,10 @@ theorem runInputs_replicate_idle
   | zero =>
       simp [runInputs, runIdleTrajectory]
   | succ k ih =>
-      simpa [List.replicate_succ, runInputs, idleRunStep, runIdleTrajectory_eq,
-        Function.iterate_succ_apply', Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
-        ih (tickIndex := tickIndex + 1) (idleRunStep s)
+      rw [runIdleTrajectory_eq]
+      simp only [List.replicate_succ, runInputs, ih, runIdleTrajectory_eq,
+        idleRunStep, Function.iterate_succ_apply]
+      congr 3 <;> omega
 
 theorem runInputs_append_idle
     (m tickIndex birthIndex : Nat)
