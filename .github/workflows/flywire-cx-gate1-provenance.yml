@@ -37,17 +37,18 @@ jobs:
           python -m pip install numpy
           python -m pip install --no-deps -e ./python
 
-      - name: Download official Codex FAFB static products
+      - name: Download FlyWire FAFB v783 static products
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .cx-source
+          base='https://storage.googleapis.com/flywire-data/codex/data/fafb/783'
           curl --fail --location --retry 3 --retry-all-errors \
             --output .cx-source/consolidated_cell_types \
-            'https://codex.flywire.ai/api/download_resource?data_product=consolidated_cell_types&dataset=fafb'
+            "$base/consolidated_cell_types.csv.gz"
           curl --fail --location --retry 3 --retry-all-errors \
             --output .cx-source/connections_princeton \
-            'https://codex.flywire.ai/api/download_resource?data_product=connections_princeton&dataset=fafb'
+            "$base/connections_princeton.csv.gz"
           sha256sum .cx-source/consolidated_cell_types .cx-source/connections_princeton
 
       - name: Inspect downloaded CSV schema without altering bytes
