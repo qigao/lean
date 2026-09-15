@@ -1,4 +1,5 @@
 name: flywire-cx-gate1-provenance
+# Task 10 exact-head verification reruns this workflow when its contract changes.
 
 on:
   workflow_dispatch:
