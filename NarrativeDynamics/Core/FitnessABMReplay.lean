@@ -1,5 +1,6 @@
 import NarrativeDynamics.Core.FitnessABM
 import NarrativeDynamics.Core.FitnessReplay
+import NarrativeDynamics.Core.FitnessABMIdleTail
 
 /-!
 # Checked finite joint replay
@@ -245,6 +246,52 @@ def runInputs (m tickIndex birthIndex : Nat) (s : RunState) (ticks : List RawTic
       | .ok tail => .ok ⟨tail.final, next.2 * tail.probability⟩
 termination_by structural ticks
 
+theorem runInputs_replicate_idle
+    (m tickIndex birthIndex k : Nat) (s : RunState) :
+    runInputs m tickIndex birthIndex s (List.replicate k none) =
+      .ok ⟨runIdleTrajectory s k, 1⟩ := by
+  induction k generalizing tickIndex s with
+  | zero =>
+      simp [runInputs, runIdleTrajectory]
+  | succ k ih =>
+      simpa [List.replicate_succ, runInputs, idleRunStep, runIdleTrajectory_eq,
+        Function.iterate_succ_apply', Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+        ih (tickIndex := tickIndex + 1) (idleRunStep s)
+
+theorem runInputs_append_idle
+    (m tickIndex birthIndex : Nat)
+    (s : RunState) (ticks : List RawTick)
+    (out : Result) (k : Nat)
+    (h : runInputs m tickIndex birthIndex s ticks = .ok out) :
+    runInputs m tickIndex birthIndex s
+        (ticks ++ List.replicate k none) =
+      .ok ⟨runIdleTrajectory out.final k, out.probability⟩ := by
+  induction ticks generalizing tickIndex birthIndex s out with
+  | nil =>
+      simp only [runInputs, Except.ok.injEq] at h
+      cases h
+      simpa using runInputs_replicate_idle m tickIndex birthIndex k s
+  | cons t rest ih =>
+      cases t with
+      | none =>
+          exact ih (tickIndex := tickIndex + 1) (birthIndex := birthIndex)
+            (s := idleRunStep s) (out := out) h
+      | some raw =>
+          cases hc : checkedBirth s.state m raw with
+          | error e => cases e <;> simp [runInputs, hc] at h
+          | ok next =>
+              cases hr : runInputs m (tickIndex + 1) (birthIndex + 1)
+                  ⟨s.nodeCount + 1, s.roundIndex + 1, advance next.1⟩ rest with
+              | error e => simp [runInputs, hc, hr] at h
+              | ok tail =>
+                  have hout : (⟨tail.final, next.2 * tail.probability⟩ : Result) = out := by
+                    simpa only [runInputs, hc, hr, Except.ok.injEq] using h
+                  cases hout
+                  have ht := ih (tickIndex := tickIndex + 1) (birthIndex := birthIndex + 1)
+                    (s := ⟨s.nodeCount + 1, s.roundIndex + 1, advance next.1⟩)
+                    (out := tail) hr
+                  simpa only [List.cons_append, runInputs, hc, ht]
+
 /-- Seed network, fixed attachment count, and roster are checked in that order. -/
 def replay (seed : FitnessAttachment.RawSeed) (m : Nat) (agents : Array RawAgent)
     (ticks : List RawTick) : Except JointError Result :=
@@ -256,6 +303,28 @@ def replay (seed : FitnessAttachment.RawSeed) (m : Nat) (agents : Array RawAgent
       | .error e => .error e
       | .ok p => runInputs m 0 0 ⟨seed.nodeCount, 0, ⟨network, p.val, p.property⟩⟩ ticks
     else .error .initialM
+
+theorem replay_append_idle
+    (seed : FitnessAttachment.RawSeed) (m : Nat)
+    (agents : Array RawAgent) (ticks : List RawTick)
+    (out : Result) (k : Nat)
+    (h : replay seed m agents ticks = .ok out) :
+    replay seed m agents (ticks ++ List.replicate k none) =
+      .ok ⟨runIdleTrajectory out.final k, out.probability⟩ := by
+  cases hs : parseSeed seed with
+  | error e => simp [replay, hs] at h
+  | ok network =>
+      by_cases hm : 0 < m ∧ m ≤ seed.nodeCount
+      · cases hp : parseAgents seed.nodeCount agents with
+        | error e => simp [replay, hs, hm, hp] at h
+        | ok p =>
+            have hr : runInputs m 0 0
+                ⟨seed.nodeCount, 0, ⟨network, p.val, p.property⟩⟩ ticks = .ok out := by
+              simpa [replay, hs, hm, hp] using h
+            have ha := runInputs_append_idle m 0 0
+              ⟨seed.nodeCount, 0, ⟨network, p.val, p.property⟩⟩ ticks out k hr
+            simpa [replay, hs, hm, hp] using ha
+      · simp [replay, hs, hm] at h
 
 def WellFormedTicks (n m : Nat) : List RawTick → Prop
   | [] => True
