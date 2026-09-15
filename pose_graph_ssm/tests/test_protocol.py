@@ -23,10 +23,18 @@ def test_preflight_freezes_graph_ssm_v1_and_seals_final_test():
     assert p.seeds == (7, 11, 19, 23, 31)
     assert p.observation_ratios == (0.10, 0.20, 0.40, 0.60, 0.80, 1.00)
     assert p.parameter_ceiling == 120_000
+    assert p.primary_body_rule == "max-fully-tracked-joints-then-lowest-body-id"
+    assert p.normalization_id == "ntu25-tracking-interp-root0-torso20-v1"
+    assert p.feature_spec_id == "ntu25-p-jm-b-bm-a-v1"
+    assert p.standardization_epsilon == pytest.approx(1e-6)
     assert p.retention_ratio == pytest.approx(0.40)
     assert p.retention_horizon == 20
     assert p.dropout_burst == 8
     assert p.recovery_horizon == 10
+    assert p.primary_early_effect == pytest.approx(0.02)
+    assert p.temporal_effect == pytest.approx(0.05)
+    assert p.attribution_effect == pytest.approx(0.01)
+    assert p.positive_seed_count == 4
     assert p.training.optimizer == "adamw"
     assert p.training.learning_rate == pytest.approx(3e-4)
     assert p.training.weight_decay == pytest.approx(1e-4)
@@ -73,6 +81,10 @@ def test_final_test_requires_every_measured_pin():
     ("dropout_burst", 7),
     ("recovery_horizon", 9),
     ("seeds", [7, 11, 19, 23, 99]),
+    ("primary_early_effect", 0.03),
+    ("temporal_effect", 0.04),
+    ("attribution_effect", 0.02),
+    ("positive_seed_count", 3),
 ])
 def test_protocol_rejects_changed_frozen_constants(field, value):
     raw = _raw()
