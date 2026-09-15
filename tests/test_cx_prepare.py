@@ -57,7 +57,7 @@ def _write_sample(
 
 def _root(tmp_path: Path, *, validation_motion: float = 5.0) -> Path:
     root = tmp_path / "ntu"
-    root.mkdir()
+    root.mkdir(parents=True)
     # P056 is development train, P031 is frozen inner validation, P003 is final test.
     _write_sample(root, subject=56, motions=(0.0, 0.1, 0.2))
     _write_sample(root, subject=31, motions=(0.0, validation_motion, 0.0))
