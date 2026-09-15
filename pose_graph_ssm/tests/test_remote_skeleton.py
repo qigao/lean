@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
 import pytest
 
 from pose_graph_ssm.protocol import load_protocol
 from pose_graph_ssm.remote_skeleton import (
+    build_remote_skeleton_transport,
+    require_development_coverage,
     validate_remote_skeleton_manifest,
     verify_downloaded_skeleton,
 )
@@ -14,6 +17,23 @@ from pose_graph_ssm.remote_skeleton import (
 
 ROOT = Path(__file__).resolve().parents[1]
 PROTOCOL = load_protocol(ROOT / "protocols" / "v1-development-preflight.json")
+
+
+def _joint_line(x: float, y: float, z: float, tracking: int = 2) -> str:
+    floats = [x, y, z, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+    return " ".join(str(value) for value in floats) + f" {tracking}"
+
+
+def _write_skeleton(root: Path, *, subject: int, action: int, frames: int = 4) -> Path:
+    path = root / f"S001C001P{subject:03d}R001A{action:03d}.skeleton"
+    lines = [str(frames)]
+    for frame in range(frames):
+        lines.extend(["1", "10 0 0 0 0 0 0 0 0 0", "25"])
+        for joint in range(25):
+            y = joint * 0.01 + (1.0 if joint == 20 else 0.0)
+            lines.append(_joint_line(frame * 0.01 + joint * 0.001, y, 0.5))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
 
 
 def _manifest(locator: str = "https://example.invalid/sample.skeleton"):
@@ -85,3 +105,38 @@ def test_downloaded_skeleton_must_match_manifest_bytes(tmp_path):
     target.write_bytes(payload + b"tampered")
     with pytest.raises(ValueError, match="SHA-256|size"):
         verify_downloaded_skeleton(target, row)
+
+
+def test_builder_uses_local_byte_identity_and_https_prefix(tmp_path):
+    source = _write_skeleton(tmp_path, subject=56, action=8)
+    raw = build_remote_skeleton_transport(
+        tmp_path,
+        PROTOCOL,
+        locator_prefix="https://private.example.invalid/ntu120-skeleton/",
+    )
+    assert raw["format_version"] == 1
+    assert raw["kind"] == "ntu120_skeleton_remote_transport"
+    assert len(raw["samples"]) == 1
+    row = raw["samples"][0]
+    assert row["filename"] == source.name
+    assert row["size_bytes"] == source.stat().st_size
+    assert row["sha256"] == hashlib.sha256(source.read_bytes()).hexdigest()
+    assert row["locator"] == f"https://private.example.invalid/ntu120-skeleton/{source.name}"
+    validate_remote_skeleton_manifest(raw, PROTOCOL)
+
+
+def test_builder_is_canonical_and_never_embeds_local_root(tmp_path):
+    _write_skeleton(tmp_path, subject=56, action=8)
+    first = build_remote_skeleton_transport(tmp_path, PROTOCOL, locator_prefix="https://private.example.invalid/data")
+    second = build_remote_skeleton_transport(tmp_path, PROTOCOL, locator_prefix="https://private.example.invalid/data/")
+    assert json.dumps(first, sort_keys=True, separators=(",", ":")) == json.dumps(
+        second, sort_keys=True, separators=(",", ":")
+    )
+    assert str(tmp_path) not in json.dumps(first)
+
+
+def test_development_coverage_requires_every_action_in_train_and_validation():
+    raw, _ = _manifest()
+    verified = validate_remote_skeleton_manifest(raw, PROTOCOL)
+    with pytest.raises(ValueError, match="coverage"):
+        require_development_coverage(verified, PROTOCOL)
