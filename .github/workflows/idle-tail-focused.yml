@@ -1,0 +1,29 @@
+name: Idle Tail focused TDD
+
+on:
+  push:
+    branches:
+      - feature/bb-replay-idle-tail-v1
+  workflow_dispatch:
+
+jobs:
+  focused:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lean
+        run: |
+          if [ ! -x "$HOME/.elan/bin/elan" ]; then
+            curl https://elan.lean-lang.org/elan-init.sh -sSf | sh -s -- -y
+          fi
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Resolve dependencies
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          lake update
+          lake env lean --version
+      - name: IdleTail focused consumer
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          timeout --kill-after=10s 240s \
+            lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/IdleTail.lean
