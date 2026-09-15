@@ -159,6 +159,10 @@ jobs:
         timeout-minutes: 15
         run: bash tools/check_fitness_abm_path4.sh
 
+      - name: BB finite-path convergence
+        timeout-minutes: 15
+        run: bash tools/check_fitness_abm_pathn.sh
+
       - name: BB-only naming audit
         run: |
           set -euo pipefail
