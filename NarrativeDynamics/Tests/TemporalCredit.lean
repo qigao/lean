@@ -36,6 +36,15 @@ private def baseTrial : Trial Cue Action Obs Label :=
     causalLabel := .causal
   }
 
+private def longTrial : Trial Cue Action Obs Label :=
+  {
+    cue := .right
+    causalAction := .move
+    distractors := [.stay, .stay, .move, .stay, .move]
+    observations := [1, 2, 3, 4, 5, 6]
+    causalLabel := .causal
+  }
+
 example :
     trialReward rewardFn (withDistractors baseTrial [.stay, .move]) =
       trialReward rewardFn (withDistractors baseTrial [.move, .move, .stay]) := by
@@ -46,6 +55,17 @@ example :
     learnerView rewardFn (withCausalLabel baseTrial .causal) =
       learnerView rewardFn (withCausalLabel baseTrial .hidden) := by
   exact learner_view_independent_of_causal_label rewardFn baseTrial .causal .hidden
+
+example :
+    trialReward rewardFn (withDistractors longTrial []) =
+      trialReward rewardFn (withDistractors longTrial [.move, .stay, .move]) := by
+  exact reward_invariant_under_distractor_substitution
+    rewardFn longTrial [] [.move, .stay, .move]
+
+example :
+    learnerView rewardFn (withCausalLabel longTrial .causal) =
+      learnerView rewardFn (withCausalLabel longTrial .hidden) := by
+  exact learner_view_independent_of_causal_label rewardFn longTrial .causal .hidden
 
 example : td0DirectCredit 0 0 = 1 := by
   exact terminal_td0_terminal_credit 0
@@ -83,3 +103,10 @@ example
   exact causal_trace_coeff_ne_zero gamma lambda 5 hgamma hlambda
 
 end NarrativeDynamics.TemporalCredit.Tests
+
+#print axioms NarrativeDynamics.TemporalCredit.reward_invariant_under_distractor_substitution
+#print axioms NarrativeDynamics.TemporalCredit.learner_view_independent_of_causal_label
+#print axioms NarrativeDynamics.TemporalCredit.terminal_td0_zero_direct_causal_credit
+#print axioms NarrativeDynamics.TemporalCredit.terminal_td0_terminal_credit
+#print axioms NarrativeDynamics.TemporalCredit.causal_trace_coeff_closed_form
+#print axioms NarrativeDynamics.TemporalCredit.causal_trace_coeff_ne_zero
