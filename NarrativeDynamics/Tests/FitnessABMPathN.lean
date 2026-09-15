@@ -29,3 +29,12 @@ example (x : Beliefs 6) (e : Fin 6 → Nat) :
 example (x : Beliefs 6) (hx : allBroadcast 6 x) (k : Nat) :
     trajectory 6 x k = kernelTrajectory (pathKernel 6) x k := by
   exact trajectory_eq_kernelTrajectory 6 (by omega) x hx k
+
+example (n : Nat) (hn : 2 ≤ n) (x : Beliefs n)
+    (hx : allBroadcast n x) :
+    mean n (beliefStep n x) = mean n x :=
+  mean_step n hn x hx
+
+example (n : Nat) (hn : 2 ≤ n) (x : Beliefs n) (k : Nat) :
+    mean n (kernelTrajectory (pathKernel n) x k) = mean n x :=
+  mean_kernel_iterate n hn x k
