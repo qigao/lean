@@ -28,6 +28,10 @@ jobs:
           export PATH="$HOME/.elan/bin:$PATH"
           lake update
           lake env lean --version
+      - name: Build FiniteConsensus
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          timeout --kill-after=10s 240s lake build NarrativeDynamics.Core.FiniteConsensus
       - name: FiniteConsensus focused consumer
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
