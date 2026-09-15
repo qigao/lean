@@ -15,39 +15,45 @@ structure LearnerView (Obs Reward : Type) where
   deriving DecidableEq
 
 def trialReward
-    (rewardFn : Cue → Action → Reward)
-    (trial : Trial Cue Action Obs Label) : Reward :=
+    {Cue Act Obs Label Reward : Type}
+    (rewardFn : Cue → Act → Reward)
+    (trial : Trial Cue Act Obs Label) : Reward :=
   rewardFn trial.cue trial.causalAction
 
 def learnerView
-    (rewardFn : Cue → Action → Reward)
-    (trial : Trial Cue Action Obs Label) : LearnerView Obs Reward :=
+    {Cue Act Obs Label Reward : Type}
+    (rewardFn : Cue → Act → Reward)
+    (trial : Trial Cue Act Obs Label) : LearnerView Obs Reward :=
   {
     observations := trial.observations
     terminalReward := trialReward rewardFn trial
   }
 
 def withDistractors
-    (trial : Trial Cue Action Obs Label)
-    (distractors : List Action) : Trial Cue Action Obs Label :=
+    {Cue Act Obs Label : Type}
+    (trial : Trial Cue Act Obs Label)
+    (distractors : List Act) : Trial Cue Act Obs Label :=
   { trial with distractors := distractors }
 
 def withCausalLabel
-    (trial : Trial Cue Action Obs Label)
-    (label : Label) : Trial Cue Action Obs Label :=
+    {Cue Act Obs Label : Type}
+    (trial : Trial Cue Act Obs Label)
+    (label : Label) : Trial Cue Act Obs Label :=
   { trial with causalLabel := label }
 
 theorem reward_invariant_under_distractor_substitution
-    (rewardFn : Cue → Action → Reward)
-    (trial : Trial Cue Action Obs Label)
-    (xs ys : List Action) :
+    {Cue Act Obs Label Reward : Type}
+    (rewardFn : Cue → Act → Reward)
+    (trial : Trial Cue Act Obs Label)
+    (xs ys : List Act) :
     trialReward rewardFn (withDistractors trial xs) =
       trialReward rewardFn (withDistractors trial ys) := by
   rfl
 
 theorem learner_view_independent_of_causal_label
-    (rewardFn : Cue → Action → Reward)
-    (trial : Trial Cue Action Obs Label)
+    {Cue Act Obs Label Reward : Type}
+    (rewardFn : Cue → Act → Reward)
+    (trial : Trial Cue Act Obs Label)
     (label₁ label₂ : Label) :
     learnerView rewardFn (withCausalLabel trial label₁) =
       learnerView rewardFn (withCausalLabel trial label₂) := by
