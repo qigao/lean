@@ -1,6 +1,7 @@
 import NarrativeDynamics.Core.FiniteConsensus
 
 open NarrativeDynamics.FiniteConsensus
+open Filter Topology
 
 private def pairKernel : Kernel (Fin 2) := fun _ _ => 1/2
 private def pairWeights : Fin 2 → Rat := fun _ => 1/2
