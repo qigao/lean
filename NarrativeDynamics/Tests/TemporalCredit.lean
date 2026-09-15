@@ -47,4 +47,16 @@ example :
       learnerView rewardFn (withCausalLabel baseTrial .hidden) := by
   exact learner_view_independent_of_causal_label rewardFn baseTrial .causal .hidden
 
+example : td0DirectCredit 0 0 = 1 := by
+  exact terminal_td0_terminal_credit 0
+
+example : td0DirectCredit 1 0 = 0 := by
+  exact terminal_td0_zero_direct_causal_credit 1 (by decide)
+
+example : td0DirectCredit 3 0 = 0 := by
+  exact terminal_td0_zero_direct_causal_credit 3 (by decide)
+
+example : td0DirectCredit 5 0 = 0 := by
+  exact terminal_td0_zero_direct_causal_credit 5 (by decide)
+
 end NarrativeDynamics.TemporalCredit.Tests
