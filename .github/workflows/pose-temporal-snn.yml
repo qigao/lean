@@ -14,8 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  protocol:
-    name: Pose temporal SNN protocol contract
+  lightweight:
+    name: Pose temporal SNN data and protocol contracts
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -24,8 +24,13 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install lightweight test runtime
-        run: python -m pip install pytest
-      - name: Run protocol RED/GREEN gate
+        run: python -m pip install pytest numpy
+      - name: Run lightweight RED/GREEN gates
         env:
           PYTHONPATH: pose_snn/src
-        run: python -m pytest pose_snn/tests/test_protocol.py -q
+        run: >-
+          python -m pytest
+          pose_snn/tests/test_protocol.py
+          pose_snn/tests/test_ntu.py
+          pose_snn/tests/test_normalization.py
+          -q
