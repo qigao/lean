@@ -8,10 +8,15 @@ from pose_graph_ssm.protocol import load_protocol, validate_protocol_dict
 
 ROOT = Path(__file__).resolve().parents[1]
 PROTOCOL = ROOT / "protocols" / "v1-development-preflight.json"
+PYSKL_PROTOCOL = ROOT / "protocols" / "v1-pyskl-development-preflight.json"
 
 
 def _raw() -> dict:
     return json.loads(PROTOCOL.read_text(encoding="utf-8"))
+
+
+def _pyskl_raw() -> dict:
+    return json.loads(PYSKL_PROTOCOL.read_text(encoding="utf-8"))
 
 
 def test_preflight_freezes_graph_ssm_v1_and_seals_final_test():
@@ -45,6 +50,42 @@ def test_preflight_freezes_graph_ssm_v1_and_seals_final_test():
     assert p.dataset_content_hash is None
     assert p.feature_stats_hash is None
     assert p.model_fingerprints is None
+
+
+def test_pyskl_preflight_changes_source_semantics_only():
+    raw = load_protocol(PROTOCOL)
+    p = load_protocol(PYSKL_PROTOCOL)
+    assert p.protocol_id == "pose-graph-ssm-v1-pyskl-development-preflight"
+    assert p.primary_body_rule == "pyskl-person-0-motion-ranked"
+    assert p.normalization_id == "pyskl-zero-frame-interp-root0-torso20-v1"
+    assert p.actions == raw.actions
+    assert p.outer_train_subjects == raw.outer_train_subjects
+    assert p.validation_subjects == raw.validation_subjects
+    assert p.model_kinds == raw.model_kinds
+    assert p.seeds == raw.seeds
+    assert p.observation_ratios == raw.observation_ratios
+    assert p.parameter_ceiling == raw.parameter_ceiling
+    assert p.feature_spec_id == raw.feature_spec_id
+    assert p.training == raw.training
+    assert p.primary_early_effect == raw.primary_early_effect
+    assert p.temporal_effect == raw.temporal_effect
+    assert p.attribution_effect == raw.attribution_effect
+    assert p.positive_seed_count == raw.positive_seed_count
+    assert p.final_test_enabled is False
+
+
+def test_pyskl_profile_rejects_raw_source_semantics():
+    raw = _pyskl_raw()
+    raw["primary_body_rule"] = "max-fully-tracked-joints-then-lowest-body-id"
+    with pytest.raises(ValueError, match="primary_body_rule|profile|frozen"):
+        validate_protocol_dict(raw)
+
+
+def test_raw_profile_rejects_pyskl_normalization():
+    raw = _raw()
+    raw["normalization_id"] = "pyskl-zero-frame-interp-root0-torso20-v1"
+    with pytest.raises(ValueError, match="normalization_id|profile|frozen"):
+        validate_protocol_dict(raw)
 
 
 def test_protocol_rejects_abandoned_stack_fields():
