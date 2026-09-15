@@ -221,6 +221,16 @@ forward(sequence) -> [batch, classes]
 
 Evaluation of prefixes, retention, and dropout recovery must use `step`; no arm may use bidirectional context, full-history attention, or hidden future frames.
 
+### 8.1 Zero-input semantics
+
+After feature standardization, an all-zero frame is the canonical no-observation input used by retention and controlled-dropout tests.
+
+All direct frame-entry projections in `SSMOnly`, `GraphTCN`, and `GraphSSM` use `bias=False`; graph self/neighbor projections and causal temporal-convolution input transforms also use `bias=False`. In the selective SSM, `W_B` and `W_C` are bias-free, while `b_delta` is allowed because it is an intrinsic learned time-scale parameter rather than input-dependent drive.
+
+`GRUCell` retains its standard recurrent/input biases; those are treated as part of the GRU's autonomous learned dynamics. Zero input therefore means no data-dependent external term, not that every model state must numerically decay to zero.
+
+A retention/dropout implementation may not substitute raw coordinate zeros before standardization, because raw zero would mean anatomical origin rather than neutral standardized input.
+
 ## 9. Model arms
 
 All models consume the same normalized continuous features and labels.
@@ -251,7 +261,7 @@ Purpose: isolate the value of a causal state-space temporal core without a human
 Per frame:
 
 ```text
-flatten [25,15] -> Linear(375,64) -> RMSNorm
+flatten [25,15] -> Linear(375,64,bias=False) -> RMSNorm
 ```
 
 Then apply two stacked `SelectiveSSMBlock(64)` blocks.
@@ -265,7 +275,7 @@ Purpose: isolate the value of SSM dynamics relative to a conventional causal tem
 Per joint input projection:
 
 ```text
-15 -> 64
+Linear(15,64,bias=False)
 ```
 
 Two blocks:
@@ -284,7 +294,7 @@ Purpose: primary proposed architecture.
 Per joint input projection:
 
 ```text
-15 -> 64
+Linear(15,64,bias=False)
 ```
 
 Preserve shape `[B,25,64]` at every streaming step.
@@ -310,7 +320,7 @@ Y = W_self(H) + W_neighbor(M)
 H' = RMSNorm(H + GELU(Y))
 ```
 
-`A` is a non-trainable buffer.
+`W_self` and `W_neighbor` are bias-free. `A` is a non-trainable buffer.
 
 This block is intentionally simple: graph attention and dynamic topology are excluded so the V1 comparison remains attributable.
 
@@ -332,6 +342,8 @@ S_t = Decay_t * S_(t-1) + (1 - Decay_t) * B_t
 Y_t = C_t * S_t + D * u_t
 Output_t = RMSNorm(u_t + W_out(Y_t))
 ```
+
+`W_B`, `W_C`, and `W_out` are bias-free. `W_delta` may use only the explicitly declared `b_delta` time-scale bias shown above.
 
 All operations are elementwise in the state dimension except learned linear projections.
 
@@ -436,11 +448,9 @@ These are secondary but mandatory reports.
 
 At the frozen 40% observation boundary:
 
-1. **Zero-input retention**: supply 20 zero-input frames and measure normalized true-class margin retention AUC.
-2. **Pose-dropout recovery**: replace all pose features with zero for a frozen burst of `8` frames, then restore the real observed stream; measure first stable return to the matched unperturbed predicted class and recovery rate within 10 restored frames.
+1. **Zero-input retention**: supply 20 standardized zero-input frames and measure normalized true-class margin retention AUC.
+2. **Pose-dropout recovery**: replace all standardized pose features with zero for a frozen burst of `8` frames, then restore the real observed stream; measure first stable return to the matched unperturbed predicted class and recovery rate within 10 restored frames.
 3. **Natural sequence-length strata**: report full-sequence and early-AUC metrics by validation frame-count quartile. Quartile boundaries are computed from development-training frame counts and frozen before final test.
-
-Zero-input/dropout frames are injected after feature standardization so zero means the training distribution's standardized neutral value, not raw coordinate origin.
 
 ## 15. Development success and stop rule
 
