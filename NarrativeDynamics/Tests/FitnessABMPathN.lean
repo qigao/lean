@@ -3,6 +3,7 @@ import NarrativeDynamics.Core.FitnessABMPathN
 open NarrativeDynamics.FitnessABMPathN
 open NarrativeDynamics.NetworkPropagation
 open NarrativeDynamics.FiniteConsensus
+open Filter Topology
 
 example : pathAdj 6 (0 : Fin 6) 1 := by
   decide
