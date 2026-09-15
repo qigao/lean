@@ -75,7 +75,10 @@ theorem degree_le_two (n : Nat) (i : Fin n) : degree n i ≤ 2 := by
   have hsubset : (neighbors n i).map e ⊆
       ({i.val - 1, i.val + 1} : Finset Nat) := by
     intro k hk
-    rcases Finset.mem_map.mp hk with ⟨j, hj, rfl⟩
+    rcases Finset.mem_map.mp hk with ⟨j, hj, hjk⟩
+    have hkval : j.val = k := by
+      simpa [e] using hjk
+    subst k
     have hadj : pathAdj n j i := (mem_neighbors_iff i j).mp hj
     simp only [Finset.mem_insert, Finset.mem_singleton]
     rcases hadj with hleft | hright
@@ -131,12 +134,36 @@ theorem pathKernel_adj_lower (n : Nat) (hn : 2 ≤ n) (i j : Fin n)
   rcases hd with hd | hd <;>
     simp [pathKernel, hne, hmem, hd] <;> norm_num
 
+private theorem self_mass_sum (n : Nat) (i : Fin n) :
+    (∑ j : Fin n, if i = j then (1/2 : Rat) else 0) = 1/2 := by
+  classical
+  simp
+
+private theorem neighbor_mass_sum (n : Nat) (hn : 2 ≤ n) (i : Fin n) :
+    (∑ j : Fin n,
+      if j ∈ neighbors n i then 1 / (2 * (degree n i : Rat)) else 0) = 1/2 := by
+  classical
+  let c : Rat := 1 / (2 * (degree n i : Rat))
+  have hsum :
+      (∑ j : Fin n, if j ∈ neighbors n i then c else 0) =
+        ∑ j ∈ neighbors n i, c := by
+    simp
+  rw [hsum]
+  simp only [Finset.sum_const, nsmul_eq_mul, degree]
+  have hd := degree_eq_one_or_two n hn i
+  rcases hd with hd | hd <;>
+    simp [c, degree, hd] <;> norm_num
+
 theorem pathKernel_row_sum (n : Nat) (hn : 2 ≤ n) (i : Fin n) :
     ∑ j, pathKernel n i j = 1 := by
   classical
-  have hd := degree_eq_one_or_two n hn i
-  rcases hd with hd | hd <;>
-    simp [pathKernel, degree, hd] <;> norm_num
+  rw [show (∑ j : Fin n, pathKernel n i j) =
+      (∑ j : Fin n, if i = j then (1/2 : Rat) else 0) +
+      (∑ j : Fin n,
+        if j ∈ neighbors n i then 1 / (2 * (degree n i : Rat)) else 0) by
+    simp only [pathKernel, Finset.sum_add_distrib]]
+  rw [self_mass_sum n i, neighbor_mass_sum n hn i]
+  norm_num
 
 theorem pathKernel_averaging (n : Nat) (hn : 2 ≤ n) :
     AveragingKernel (pathKernel n) := by
