@@ -123,7 +123,7 @@ class CxLifClassifier(nn.Module):
         recurrent_weight = magnitude * signs * float(dynamics.recurrent_gain)
         self.register_buffer("recurrent_weight", recurrent_weight, persistent=False)
 
-        self.input_projection = nn.Linear(input_dim, len(artifact.input_indices))
+        self.input_projection = nn.Linear(input_dim, len(artifact.input_indices), bias=False)
         self.readout = nn.Linear(len(artifact.output_indices), num_classes)
 
     def initial_state(
