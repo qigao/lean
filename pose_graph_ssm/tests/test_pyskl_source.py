@@ -108,6 +108,7 @@ def test_interpolates_only_all_zero_padding_frames(tmp_path: Path):
 
 
 def test_prepare_processed_source_keeps_final_test_feature_sealed(tmp_path: Path):
+    pytest.importorskip("torch")
     path = tmp_path / "ntu120_3danno.pkl"
     _write(path, _payload())
     prepared = prepare_pyskl_data(path, PROTOCOL)
