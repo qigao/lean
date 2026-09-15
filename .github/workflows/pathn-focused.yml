@@ -41,6 +41,12 @@ jobs:
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
           timeout --kill-after=10s 240s lake build NarrativeDynamics.Core.FitnessABMPathN
+      - name: Build Path4 Path5 compatibility baselines
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          timeout --kill-after=10s 240s lake build NarrativeDynamics.Core.FitnessABMPath4
+          timeout --kill-after=10s 240s lake build NarrativeDynamics.Core.FitnessABMPath4Convergence
+          timeout --kill-after=10s 240s lake build NarrativeDynamics.Core.FitnessABMPath5
       - name: PathN focused consumer
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
