@@ -89,17 +89,20 @@ private theorem beliefStep_eq_linear (x : Beliefs) (hx : allBroadcast x) :
     ring
   · change (nextAgent path5Adj (population x (fun _ => 0)) 2).belief = linearStep x 2
     simp only [nextAgent, incoming_eq x _ hx 2]
-    norm_num [linearStep, population,
+    dsimp only [linearStep, Matrix.cons_val]
+    norm_num [population,
       Finset.sum_pair h13, Finset.card_pair h13]
     ring
   · change (nextAgent path5Adj (population x (fun _ => 0)) 3).belief = linearStep x 3
     simp only [nextAgent, incoming_eq x _ hx 3]
-    norm_num [linearStep, population,
+    dsimp only [linearStep, Matrix.cons_val]
+    norm_num [population,
       Finset.sum_pair h24, Finset.card_pair h24]
     ring
   · change (nextAgent path5Adj (population x (fun _ => 0)) 4).belief = linearStep x 4
     simp only [nextAgent, incoming_eq x _ hx 4]
-    norm_num [linearStep, population]
+    dsimp only [linearStep, Matrix.cons_val]
+    norm_num [population]
     ring
 
 theorem allBroadcast_step (x : Beliefs) (hx : allBroadcast x) :
