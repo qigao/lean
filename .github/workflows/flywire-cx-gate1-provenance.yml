@@ -58,12 +58,14 @@ jobs:
           from pathlib import Path
           import gzip
 
+          magic = bytes((0x1f, 0x8b))
           for name in ('consolidated_cell_types', 'connections_princeton'):
               path = Path('.cx-source') / name
               raw = path.read_bytes()
-              payload = gzip.decompress(raw) if raw[:2] == b'\x1f\x8b' else raw
+              is_gzip = raw[:2] == magic
+              payload = gzip.decompress(raw) if is_gzip else raw
               first = payload.decode('utf-8-sig').splitlines()[0]
-              print(f'{name}: bytes={len(raw)} gzip={raw[:2] == b"\x1f\x8b"} header={first}')
+              print(f'{name}: bytes={len(raw)} gzip={is_gzip} header={first}')
           PY
 
       - name: Build and verify measured provenance bundle
