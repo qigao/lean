@@ -1,5 +1,5 @@
 import NarrativeDynamics.Core.FitnessABMPath4
-import NarrativeDynamics.Tests.FitnessABMReplay
+import NarrativeDynamics.Core.FitnessABMReplay
 import NarrativeDynamics.Core.FitnessABMPath4Convergence
 
 open NarrativeDynamics.NetworkPropagation NarrativeDynamics.FitnessABMPath4
