@@ -1,5 +1,6 @@
 import NarrativeDynamics.Core.FitnessABMPath4
 import NarrativeDynamics.Core.FitnessABMReplay
+import NarrativeDynamics.Core.FitnessABMIdleTail
 import NarrativeDynamics.Core.FitnessABMPath4Convergence
 
 open NarrativeDynamics.NetworkPropagation NarrativeDynamics.FitnessABMPath4
@@ -283,6 +284,20 @@ def baseState (h : History) : JointState 4 :=
 
 def tailState (h : History) (k : Nat) : JointState 4 := advance^[k] (baseState h)
 def tailBelief (h : History) (k : Nat) : NarrativeDynamics.FitnessABMPath4.Beliefs := NarrativeDynamics.FitnessABMPath4.project (tailState h k).population
+
+theorem tailState_idleTail (h : History) (k : Nat) :
+    tailState h k =
+      IdleTailModel.trajectory (jointIdleTail 4) (baseState h) k := by
+  rfl
+
+theorem tailBelief_idleTail (h : History) (k : Nat) :
+    tailBelief h k =
+      IdleTailModel.observedTrajectory
+        (observeJointWith
+(fun s : JointState 4 =>
+  NarrativeDynamics.FitnessABMPath4.project s.population))
+        (baseState h) k := by
+  rfl
 
 private def network3 : FitnessAttachment.State 3 :=
   (grow (initial one) (targets 2 1) positiveM birthData).network
@@ -668,33 +683,33 @@ private theorem mass_second (s : JointState 3) (hn : s.network = network3) :
   rw [hn]
   decide_cbv
 
-private theorem run_idle {n : Nat} (m t b r k : Nat) (s : JointState n) :
-    runInputs m t b ⟨n,r,s⟩ (List.replicate k none) =
-      .ok ⟨⟨n,r+k,advance^[k] s⟩,1⟩ := by
-  induction k generalizing s t r with
-  | zero => rfl
-  | succ k ih =>
-      simp only [List.replicate_succ, runInputs, ih, Function.iterate_succ_apply]
-      congr 3; omega
-
-theorem raw_tail_bridge (h : History) (k : Nat) :
-    rawTail h k = .ok ⟨⟨4,4+k,tailState h k⟩,1/8⟩ := by
+private theorem replay_prefix (h : History) :
+    FitnessABM.replay rawSeed 1 rawAgents (ticks h) =
+      .ok ⟨⟨4,4,baseState h⟩,1/8⟩ := by
   have hm0 := mass_first (initial one) rfl
   have hmb := mass_first stage_b rfl
   have hmc := mass_second stage_c rfl
   have hmd := mass_second stage_d rfl
   have hme := mass_second stage_e rfl
   cases h <;>
-    simp only [rawTail, ticks, List.cons_append, List.nil_append,
+    simp only [ticks,
       show rawSeed = ⟨2, #[1, one.val], #[(0,1)]⟩ from rfl,
       replay_start one 1 (by decide), runInputs, checked_first, checked_second,
       step_a, step_b, step_c, step_d, step_e, step_f, step_g,
-      step_g_birth, step_early, step_late, hm0, hmb, hmc, hmd, hme,
-      run_idle, tailState]
+      step_g_birth, step_early, step_late, hm0, hmb, hmc, hmd, hme]
   all_goals norm_num <;> rfl
 
+theorem raw_tail_bridge (h : History) (k : Nat) :
+    rawTail h k = .ok ⟨⟨4,4+k,tailState h k⟩,1/8⟩ := by
+  have hp := replay_append_idle
+    rawSeed 1 rawAgents (ticks h)
+    ⟨⟨4,4,baseState h⟩,1/8⟩ k (replay_prefix h)
+  rw [runIdleTrajectory_eq] at hp
+  simpa [rawTail, tailState] using hp
+
 theorem replay_baseline (h : History) :
-    rawTail h 0 = .ok ⟨⟨4,4,baseState h⟩,1/8⟩ := raw_tail_bridge h 0
+    rawTail h 0 = .ok ⟨⟨4,4,baseState h⟩,1/8⟩ := by
+  simpa [rawTail] using replay_prefix h
 
 theorem baseState_adj (h : History) (i j : Fin 4) :
     (baseState h).network.snapshot.graph.Adj i j ↔ NarrativeDynamics.FitnessABMPath4.pathAdj i j := by
@@ -839,6 +854,7 @@ end FiniteReplayFixtures
 #print axioms NarrativeDynamics.FitnessABMPath4.iterate_closedForm
 #print axioms NarrativeDynamics.Tests.FitnessABMPath4.replay_baseline
 #print axioms NarrativeDynamics.Tests.FitnessABMPath4.raw_tail_bridge
+#print axioms NarrativeDynamics.Tests.FitnessABMPath4.tailState_idleTail
 #print axioms baseState_adj
 #print axioms baseState_profiles
 #print axioms baseState_exposures
