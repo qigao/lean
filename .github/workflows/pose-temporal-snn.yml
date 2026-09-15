@@ -58,4 +58,5 @@ jobs:
           python -m pytest
           pose_snn/tests/test_rsnn.py
           pose_snn/tests/test_spiking_graph.py
+          pose_snn/tests/test_gru.py
           -q
