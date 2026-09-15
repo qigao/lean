@@ -64,6 +64,12 @@ jobs:
             exit 1
           fi
 
+      - name: Temporal credit theorem tests
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          lake build NarrativeDynamics.Core.TemporalCredit
+          lake env lean NarrativeDynamics/Tests/TemporalCredit.lean
+
       - name: Build Lean library
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
@@ -72,8 +78,6 @@ jobs:
       - name: Lean theorem tests
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
-          lake build NarrativeDynamics.Core.TemporalCredit
-          lake env lean NarrativeDynamics/Tests/TemporalCredit.lean
           lake env lean NarrativeDynamics/Tests/Drive.lean
           lake env lean NarrativeDynamics/Tests/Collective.lean
           lake env lean NarrativeDynamics/Tests/Learning.lean
