@@ -26,3 +26,6 @@ example
   block_contraction_tendsto
     pairKernel pairWeights hK hπ 1 (by omega)
     (1/2) (by norm_num) (by norm_num) hcommon x i
+
+#print axioms NarrativeDynamics.FiniteConsensus.coordRange_apply_le_of_commonColumn
+#print axioms NarrativeDynamics.FiniteConsensus.block_contraction_tendsto
