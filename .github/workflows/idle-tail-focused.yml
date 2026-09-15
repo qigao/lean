@@ -64,3 +64,12 @@ jobs:
           export PATH="$HOME/.elan/bin:$PATH"
           timeout --kill-after=10s 240s \
             lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FitnessABMIdleTail.lean
+      - name: Build Path4 test module
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          timeout --kill-after=10s 240s lake build NarrativeDynamics.Tests.FitnessABMPath4
+      - name: Path4 idle-tail compatibility consumer
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          timeout --kill-after=10s 240s \
+            lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FitnessABMPath4IdleTailCompat.lean
