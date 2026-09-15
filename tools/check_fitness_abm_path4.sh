@@ -11,10 +11,13 @@ trap 'rm -f "$path4_log"' EXIT
 python3 tools/audit_fitness_trust.py source \
   NarrativeDynamics/Core/FitnessABMPath4.lean \
   NarrativeDynamics/Core/FitnessABMPath4Convergence.lean \
-  NarrativeDynamics/Tests/FitnessABMPath4.lean
+  NarrativeDynamics/Tests/FitnessABMPath4.lean \
+  NarrativeDynamics/Core/FitnessABMPath5.lean \
+  NarrativeDynamics/Tests/FitnessABMPath5.lean
 
 for path4_module in NarrativeDynamics.Core.FitnessABMPath4 \
-    NarrativeDynamics.Core.FitnessABMPath4Convergence; do
+    NarrativeDynamics.Core.FitnessABMPath4Convergence \
+    NarrativeDynamics.Core.FitnessABMPath5; do
   "$path4_time" -f "$path4_module elapsed=%e s peak_rss=%M KiB" \
     timeout --kill-after=10s 240s lake build "$path4_module"
 done
