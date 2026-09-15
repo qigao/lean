@@ -88,15 +88,17 @@ theorem path4_trajectory_compat (x : Fin 4 → Rat) (k : Nat) :
 theorem path4_mean_compat (x : Fin 4 → Rat) :
     NarrativeDynamics.FitnessABMPathN.mean 4 x =
       NarrativeDynamics.FitnessABMPath4.mean x := by
-  norm_num [NarrativeDynamics.FitnessABMPathN.mean,
-    NarrativeDynamics.FiniteConsensus.weightedMean,
-    NarrativeDynamics.FitnessABMPathN.stationaryWeight,
-    NarrativeDynamics.FitnessABMPathN.weightSum,
-    NarrativeDynamics.FitnessABMPathN.degree,
-    NarrativeDynamics.FitnessABMPathN.neighbors,
-    NarrativeDynamics.FitnessABMPathN.pathAdj,
-    NarrativeDynamics.FitnessABMPath4.mean,
-    Fin.sum_univ_succ]
+  have h0 : NarrativeDynamics.FitnessABMPathN.degree 4 (0 : Fin 4) = 1 := by decide_cbv
+  have h1 : NarrativeDynamics.FitnessABMPathN.degree 4 (1 : Fin 4) = 2 := by decide_cbv
+  have h2 : NarrativeDynamics.FitnessABMPathN.degree 4 (2 : Fin 4) = 2 := by decide_cbv
+  have h3 : NarrativeDynamics.FitnessABMPathN.degree 4 (3 : Fin 4) = 1 := by decide_cbv
+  unfold NarrativeDynamics.FitnessABMPathN.mean
+    NarrativeDynamics.FiniteConsensus.weightedMean
+    NarrativeDynamics.FitnessABMPathN.stationaryWeight
+  rw [NarrativeDynamics.FitnessABMPathN.path_degree_sum 4 (by decide)]
+  rw [Fin.sum_univ_four]
+  rw [h0, h1, h2, h3]
+  norm_num [NarrativeDynamics.FitnessABMPath4.mean]
   ring
 
 theorem path5_adj_compat (i j : Fin 5) :
@@ -117,15 +119,19 @@ theorem path5_trajectory_compat (x : Fin 5 → Rat) (k : Nat) :
 theorem path5_mean_compat (x : Fin 5 → Rat) :
     NarrativeDynamics.FitnessABMPathN.mean 5 x =
       NarrativeDynamics.FitnessABMPath5.mean x := by
-  norm_num [NarrativeDynamics.FitnessABMPathN.mean,
-    NarrativeDynamics.FiniteConsensus.weightedMean,
-    NarrativeDynamics.FitnessABMPathN.stationaryWeight,
-    NarrativeDynamics.FitnessABMPathN.weightSum,
-    NarrativeDynamics.FitnessABMPathN.degree,
-    NarrativeDynamics.FitnessABMPathN.neighbors,
-    NarrativeDynamics.FitnessABMPathN.pathAdj,
-    NarrativeDynamics.FitnessABMPath5.mean,
-    Fin.sum_univ_succ]
+  have h0 : NarrativeDynamics.FitnessABMPathN.degree 5 (0 : Fin 5) = 1 := by decide_cbv
+  have h1 : NarrativeDynamics.FitnessABMPathN.degree 5 (1 : Fin 5) = 2 := by decide_cbv
+  have h2 : NarrativeDynamics.FitnessABMPathN.degree 5 (2 : Fin 5) = 2 := by decide_cbv
+  have h3 : NarrativeDynamics.FitnessABMPathN.degree 5 (3 : Fin 5) = 2 := by decide_cbv
+  have h4 : NarrativeDynamics.FitnessABMPathN.degree 5 (4 : Fin 5) = 1 := by decide_cbv
+  unfold NarrativeDynamics.FitnessABMPathN.mean
+    NarrativeDynamics.FiniteConsensus.weightedMean
+    NarrativeDynamics.FitnessABMPathN.stationaryWeight
+  rw [NarrativeDynamics.FitnessABMPathN.path_degree_sum 5 (by decide)]
+  rw [Fin.sum_univ_succ, Fin.sum_univ_four]
+  norm_num at h0 h1 h2 h3 h4 ⊢
+  rw [h0, h1, h2, h3, h4]
+  norm_num [NarrativeDynamics.FitnessABMPath5.mean]
   ring
 
 example (i j : Fin 4) :
