@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from yolo_flywire.cx_artifact import build_cx_artifact, write_cx_artifact
-from yolo_flywire.cx_protocol import load_cx_protocol
+from yolo_flywire.cx_protocol import validate_cx_protocol_dict
 from yolo_flywire.graphs import graph_fingerprint
 
 
@@ -19,7 +19,14 @@ PROTOCOL = ROOT / "protocols" / "v2-cx-temporal-gate1-preflight.json"
 
 @pytest.fixture
 def protocol():
-    return load_cx_protocol(PROTOCOL)
+    raw = json.loads(PROTOCOL.read_text(encoding="utf-8"))
+    # Fixture tests exercise CSV parsing/selection/serialization. They must not
+    # claim to be the measured FAFB source bytes frozen by the real preflight.
+    raw["source_hashes"] = {
+        "consolidated_cell_types": None,
+        "connections_princeton": None,
+    }
+    return validate_cx_protocol_dict(raw)
 
 
 def test_build_cx_artifact_aggregates_pair_before_threshold(protocol):
