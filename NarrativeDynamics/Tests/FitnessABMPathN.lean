@@ -122,14 +122,13 @@ theorem path5_mean_compat (x : Fin 5 → Rat) :
   have h0 : NarrativeDynamics.FitnessABMPathN.degree 5 (0 : Fin 5) = 1 := by decide_cbv
   have h1 : NarrativeDynamics.FitnessABMPathN.degree 5 (1 : Fin 5) = 2 := by decide_cbv
   have h2 : NarrativeDynamics.FitnessABMPathN.degree 5 (2 : Fin 5) = 2 := by decide_cbv
-  have h3 : NarrativeDynamics.FitnessABMPathN.degree 5 (3 : Fin 5) = 2 := by decide_cbv
-  have h4 : NarrativeDynamics.FitnessABMPathN.degree 5 (4 : Fin 5) = 1 := by decide_cbv
+  have h3 : NarrativeDynamics.FitnessABMPathN.degree 5 (Fin.succ 2) = 2 := by decide_cbv
+  have h4 : NarrativeDynamics.FitnessABMPathN.degree 5 (Fin.succ 3) = 1 := by decide_cbv
   unfold NarrativeDynamics.FitnessABMPathN.mean
     NarrativeDynamics.FiniteConsensus.weightedMean
     NarrativeDynamics.FitnessABMPathN.stationaryWeight
   rw [NarrativeDynamics.FitnessABMPathN.path_degree_sum 5 (by decide)]
   rw [Fin.sum_univ_succ, Fin.sum_univ_four]
-  norm_num at h0 h1 h2 h3 h4 ⊢
   rw [h0, h1, h2, h3, h4]
   norm_num [NarrativeDynamics.FitnessABMPath5.mean]
   ring
