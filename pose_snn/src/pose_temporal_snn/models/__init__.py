@@ -1,3 +1,4 @@
+from .gru import StreamingGRU
 from .rsnn import RSNN, RSNNState, surrogate_spike
 from .spiking_graph import SpikingGraph, SpikingGraphState
 
@@ -6,5 +7,6 @@ __all__ = [
     "RSNNState",
     "SpikingGraph",
     "SpikingGraphState",
+    "StreamingGRU",
     "surrogate_spike",
 ]
