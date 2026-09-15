@@ -37,3 +37,8 @@ jobs:
           export PATH="$HOME/.elan/bin:$PATH"
           timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 \
             NarrativeDynamics/Tests/FiniteConsensus.lean
+      - name: PathN RED consumer
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 \
+            NarrativeDynamics/Tests/FitnessABMPathN.lean
