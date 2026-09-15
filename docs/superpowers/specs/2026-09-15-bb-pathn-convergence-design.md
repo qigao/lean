@@ -40,7 +40,7 @@ actual NetworkPropagation.propagate
               v
       finite rational averaging kernel
               |
-              +--> invariant degree-weighted mean
+              +--> stationary degree weights / invariant mean
               |
               +--> finite-block common-mass contraction
                           |
@@ -72,7 +72,7 @@ of one common original coordinate, chosen as node `0`. The remaining mass is non
 range (step^[n-1] x) ≤ (1 - δ_n) * range x.
 ```
 
-Repeated block contraction forces the range to zero. The invariant degree-weighted mean always lies between the current minimum and maximum, so each coordinate converges to that mean.
+Repeated block contraction forces the range to zero. A normalized stationary weight vector identifies the preserved mean; because that mean always lies between the current minimum and maximum, each coordinate converges to it.
 
 Selected because it:
 
@@ -94,14 +94,35 @@ Not selected. It would couple convergence directly to the Path implementation an
 
 A small proof-only library for exact finite averaging. It must not mention BB, paths, births, thresholds, or `NetworkPropagation`.
 
-The canonical object is a finite rational kernel over a finite nonempty index type. Implementation may use `Matrix ι ι Rat`, but the public theorem surface should expose only the properties needed by consensus:
+The canonical object is a finite rational kernel over a finite nonempty index type. Implementation may use `Matrix ι ι Rat`, but the public theorem surface should expose only the properties needed by consensus.
 
-- nonnegative entries;
-- every row sums to `1`;
-- application to a vector;
+Use two narrow proof predicates/concepts:
+
+```text
+AveragingKernel K:
+  - 0 ≤ K(i,j)
+  - Σ_j K(i,j) = 1 for every row i
+
+StationaryWeights K π:
+  - 0 ≤ π(i)
+  - Σ_i π(i) = 1
+  - Σ_i π(i) * K(i,j) = π(j) for every column j
+```
+
+The associated mean is
+
+```text
+weightedMean π x = Σ_i π(i) * x(i).
+```
+
+This avoids a vague arbitrary “mean functional”: the generic convergence theorem knows exactly why the mean is preserved and why it lies inside the coordinate range.
+
+The public proof surface should cover:
+
+- application of a kernel to a vector;
+- finite range / min / max;
 - a common-column lower bound for a block kernel;
-- preservation of a supplied mean functional;
-- finite range / min / max.
+- normalized stationary weights and their weighted mean.
 
 A local thin predicate such as `AveragingKernel K` is preferred over coupling public project APIs to a large external stochastic-matrix API. Internally, existing Mathlib matrix lemmas may be used when convenient.
 
@@ -113,12 +134,13 @@ apply_between_min_max
 range_apply_le
 range_apply_le_of_commonColumn
 range_block_iterate_le
-mean_between_min_max
-coordinate_dist_mean_le_range
+weightedMean_apply
+weightedMean_between_min_max
+coordinate_dist_weightedMean_le_range
 block_contraction_tendsto
 ```
 
-The last theorem should be stated narrowly: if a finite averaging step preserves a mean and some positive-length block has a common-column mass `δ > 0`, then each coordinate tends to the preserved mean.
+The last theorem should be stated narrowly: if a finite averaging step has normalized stationary weights and some positive-length block has a common-column mass `δ > 0`, then each coordinate tends to the stationary weighted mean.
 
 It must **not** contain a theorem saying every connected finite graph satisfies the common-column hypothesis.
 
@@ -234,29 +256,33 @@ This theorem is critical: it justifies using the linear/kernel bridge at every l
 
 ## 7. Stationary degree-weighted mean
 
-For a path with `n ≥ 2`, define the invariant mean from actual path degrees rather than a hard-coded vector:
+For a path with `n ≥ 2`, define raw degree weights and normalized stationary weights:
 
 ```text
 weight(i) = degree(n,i)
 weightSum = Σ_i weight(i) = 2 * (n - 1)
+π(i) = weight(i) / weightSum
 
-mean_n(x) = (Σ_i weight(i) * x(i)) / weightSum
+mean_n(x) = weightedMean π x
+          = (Σ_i weight(i) * x(i)) / weightSum
 ```
 
 Required facts:
 
 1. `weightSum_pos` from `2 ≤ n`;
 2. `path_degree_sum : Σ degree = 2 * (n - 1)`;
-3. detailed-balance-style identity for the proof kernel:
+3. `π(i) ≥ 0` and `Σ_i π(i) = 1`;
+4. detailed-balance-style identity for the proof kernel:
 
 ```text
 degree(i) * K(i,j) = degree(j) * K(j,i)
 ```
 
 for all coordinates, including the diagonal and zero/nonadjacent cases;
-4. `mean_step` derived by finite sum rearrangement, not by expanding every coordinate;
-5. `mean_iterate`;
-6. `mean_between_min_max` because the normalized degree weights are nonnegative and sum to one.
+5. normalized degree weights satisfy `StationaryWeights K π`;
+6. `mean_step` follows from stationary weights and kernel application, not by expanding every coordinate;
+7. `mean_iterate`;
+8. `mean_between_min_max` follows from nonnegative normalized weights.
 
 For `n = 4` and `n = 5`, the generic mean must reduce extensionally to the existing weights:
 
@@ -301,9 +327,7 @@ For an averaging kernel `B` whose every row has at least `δ` mass in one common
 (Bx)(i) = δ * x(c) + (1 - δ) * residual_i(x),
 ```
 
-where `residual_i` is itself a convex combination when `δ < 1`.
-
-The common term cancels when comparing two output coordinates, giving
+where `residual_i` is itself a convex combination. The common term cancels when comparing two output coordinates, giving
 
 ```text
 range(Bx) ≤ (1 - δ) * range(x).
@@ -320,10 +344,12 @@ Required scalar facts for `2 ≤ n`:
 
 ```text
 0 < δ(n)
-δ(n) ≤ 1
-0 ≤ 1 - δ(n)
+δ(n) < 1
+0 < 1 - δ(n)
 1 - δ(n) < 1.
 ```
+
+The strict upper bound is available because `n - 1 ≥ 1`, hence `δ(n) ≤ 1/4`.
 
 The bound is deliberately conservative. No attempt is made to obtain the sharp spectral mixing rate.
 
@@ -343,13 +369,14 @@ range (trajectory n x (q * block n))
 
 3. use geometric decay of `(1 - δ)^q` over `Real`;
 4. for an arbitrary later clock `k ≥ q * block`, use single-step range monotonicity to bound its range by the completed-block range;
-5. because the invariant mean lies between the current min and max,
+5. stationarity gives `mean_n (trajectory n x k) = mean_n x`;
+6. normalized stationary weights put that mean between the current min and max, so
 
 ```text
 |trajectory n x k i - mean_n x| ≤ range (trajectory n x k);
 ```
 
-6. conclude coordinatewise `Tendsto`.
+7. conclude coordinatewise `Tendsto`.
 
 This avoids explicit `Nat.div` in the main analytic argument and keeps arithmetic obligations local.
 
@@ -496,10 +523,10 @@ The all-broadcast hypothesis remains explicit. The theorem must not silently lin
 
 The later implementation plan should preserve the following dependency order:
 
-1. **FiniteConsensus RED and foundation** — range/min/max and generic averaging contraction lemmas.
+1. **FiniteConsensus RED and foundation** — range/min/max, averaging-kernel, stationary-weight, and generic contraction lemmas.
 2. **Generic path structure** — adjacency, neighbors, degree, population/project, actual propagation definitions.
 3. **Actual-propagation bridge** — exposure independence and `propagate_eq_kernel`.
-4. **Invariant region + stationary mean** — convexity, degree sum, detailed balance, mean preservation.
+4. **Invariant region + stationary mean** — convexity, degree sum, detailed balance, stationary normalized degree weights, mean preservation.
 5. **Path block common mass** — explicit padded path walk and `δ(n)` lower bound.
 6. **Generic convergence** — block contraction, geometric decay, final `Tendsto`.
 7. **Path4/Path5 compatibility + n=6 smoke**.
@@ -515,6 +542,7 @@ The Path-n stage is review-ready only when all of the following are true on one 
 - the generic kernel bridge is proved for every `n ≥ 2` in the all-broadcast region;
 - exposure independence is proved generically;
 - all-broadcast invariance is proved without finite-size enumeration;
+- normalized degree weights are proved stationary for the proof kernel;
 - degree-weighted mean preservation is proved generically;
 - `(n - 1)`-step common-column mass has an explicit positive rational lower bound;
 - block range contraction is proved;
