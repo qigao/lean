@@ -48,3 +48,12 @@ example : block 6 = 5 := by
 
 example : delta 6 = 1/1024 := by
   norm_num [delta, block]
+
+example
+    (n : Nat) (hn : 2 ≤ n)
+    (x : Beliefs n) (hx : allBroadcast n x) (i : Fin n) :
+    Tendsto
+      (fun k : Nat => (trajectory n x k i : Real))
+      atTop
+      (nhds (mean n x : Real)) :=
+  trajectory_tendsto n hn x hx i
