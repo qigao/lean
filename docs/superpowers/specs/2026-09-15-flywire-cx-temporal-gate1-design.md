@@ -86,7 +86,12 @@ Thresholds are fitted on training data only and then frozen. The encoder may inc
 
 ### 6.1 Source
 
-Use FAFB v783 static data with immutable source identifiers and content hashes. Prefer Codex static products for neuron metadata and connectivity rather than web-page scraping.
+Use the public Codex FAFB v783 static-download products, not live page scraping. Gate 1 requires exactly these source families:
+
+```text
+consolidated_cell_types
+connections_princeton
+```
 
 The artifact records at minimum:
 
@@ -95,11 +100,11 @@ The artifact records at minimum:
 - exact source product names;
 - source content SHA-256 values;
 - extraction code/version identifier;
-- connection threshold: 5 aggregate synapses per directed connection unless the source product itself has already applied that threshold, in which case that fact is recorded explicitly;
+- connection threshold: 5 aggregate synapses per directed neuron pair, matching the FAFB Codex default minimum;
 - canonical node ordering;
 - graph fingerprint.
 
-The threshold is frozen before outcome evaluation and is not tuned for model performance.
+Codex connection data may contain multiple rows for one neuron pair when synapses occur in multiple neuropils. Gate 1 first aggregates those rows by directed neuron pair, then applies the fixed 5-synapse threshold. The threshold is not tuned for model performance.
 
 ### 6.2 Canonical core
 
@@ -126,7 +131,7 @@ OUTPUT    biological CX-efferent/action-selection population
 
 Input routing targets only `INPUT` nodes. Model readout consumes only `OUTPUT` nodes.
 
-The initial output population should include well-annotated PFL-family CX output pathways when present in the frozen dataset. Exact type lists must be emitted by the artifact builder and frozen before training.
+The initial output population includes well-annotated PFL-family CX output pathways when present in the frozen dataset. Exact type lists are emitted by the artifact builder and frozen before training.
 
 No human joint is assigned semantic identity to a particular fly neuron.
 
@@ -138,11 +143,11 @@ For edge `i -> j`:
 
 ```text
 magnitude_ij = f(synapse_count_ij)
-sign_i       = neurotransmitter-derived excitatory/inhibitory sign when admissible
+sign_i       = neurotransmitter-derived excitatory/inhibitory sign under the frozen policy
 weight_ij    = global_gain * sign_i * magnitude_ij
 ```
 
-The first implementation should support a declared magnitude policy with `raw` and `log1p` candidates, but the Gate 1 protocol must freeze one before final evaluation. There is no per-edge learned recurrent weight in R0.
+The implementation supports `raw` and `log1p` magnitude policies for development diagnostics, but the confirmatory protocol freezes one policy before final evaluation. There is no per-edge learned recurrent weight in R0.
 
 Use a minimal deterministic LIF recurrence with explicit parameters:
 
@@ -155,13 +160,13 @@ reset
 recurrent_delay_steps
 ```
 
-The initial values should be based on the Shiu-style whole-brain LIF regime when units are compatible. Any discretization or deviation is recorded in the protocol.
+Initial values follow the Shiu-style whole-brain LIF regime when units are compatible; any discretization or deviation is recorded in the protocol.
 
 Trainable parameters in R0 are limited to:
 
 - input projection into biological input nodes;
 - output readout from biological output nodes;
-- explicitly frozen-count global gain/scale parameters if needed.
+- explicitly declared global gain/scale parameters.
 
 The recurrent graph mask and relative biological recurrent weights remain fixed.
 
@@ -210,31 +215,31 @@ For each sequence, evaluate fixed observation ratios:
 10%, 20%, 40%, 60%, 80%, 100%
 ```
 
-The model receives only the observed prefix. The main summary is early-prediction area under the observation-ratio curve, with per-ratio macro F1/accuracy reported as secondary measures.
+The model receives only the observed prefix. For each ratio compute macro F1. The primary early-prediction statistic is trapezoidal area under macro-F1 versus observation-ratio curve, normalized by the ratio range so the result remains in `[0, 1]`.
 
 ### 9.2 State retention
 
-After an observed prefix, set subsequent external events to zero while allowing recurrent state to evolve.
+At the 40% observation boundary, set subsequent external events to zero while allowing recurrent state to evolve for a fixed horizon frozen in the protocol.
 
 Measure:
 
+- `retention_auc`: area under the true-class logit-margin curve over the zero-input horizon, normalized to the margin at the zero-input boundary and clipped only by a frozen numeric-stability rule;
 - output-confidence half-life `T50`;
-- latent-state similarity decay;
-- duration for which the originally predicted class remains stable.
+- duration for which the predicted class remains unchanged.
 
-This directly tests intrinsic temporal-state retention.
+`retention_auc` is the Gate 1 retention endpoint; `T50` and stable-duration are descriptive secondary metrics.
 
 ### 9.3 Perturbation recovery
 
-During recurrent evolution, apply a frozen perturbation protocol such as temporary silencing of a declared percentage of recurrent nodes or a fixed-magnitude state-noise pulse.
+At the same frozen 40% observation boundary, apply one frozen temporary node-silencing perturbation to recurrent state and then continue with the same subsequent observed events as the unperturbed matched run.
 
 Measure:
 
-- time to recover the pre-perturbation class/state basin;
-- fraction of trials that recover within the declared horizon;
-- degradation relative to an unperturbed matched run.
+- `recovery_rate`: fraction of eligible samples whose original unperturbed predicted class is recovered within the frozen recovery horizon;
+- median steps to recovery among recovered samples;
+- degradation versus the unperturbed matched trajectory.
 
-Perturbation strengths are selected on training/validation only and then frozen.
+Node-silencing fraction and recovery horizon are selected using training/validation only and then frozen.
 
 ## 10. Scoreboard
 
@@ -271,7 +276,24 @@ Real CX - Degree-preserving CX
 Real CX - Block-preserving CX
 ```
 
-The primary endpoint is the predeclared early-prediction AUC difference. State-retention and perturbation-recovery metrics are key secondary endpoints.
+Primary endpoint:
+
+```text
+early_prediction_auc = normalized AUC of macro F1 at 10/20/40/60/80/100%
+```
+
+Gate 1A practical-effect rule for biological CX organization:
+
+```text
+mean paired (Real - Degree) early_prediction_auc >= 0.02
+AND Real - Degree > 0 in at least 4/5 seeds
+AND at least one temporal-state secondary condition holds:
+    mean paired retention_auc difference >= 0.05 with >0 in at least 4/5 seeds
+    OR
+    mean paired recovery_rate difference >= 0.05 with >0 in at least 4/5 seeds
+```
+
+Gate 1B fine-wiring rule uses the same thresholds for `Real - Block`. Gate 1B is reported separately and is not silently substituted for Gate 1A.
 
 Before final-test execution, freeze:
 
@@ -279,23 +301,27 @@ Before final-test execution, freeze:
 - graph artifact fingerprint;
 - input/output node fingerprints;
 - all null-graph fingerprints;
-- kinematic encoder identity;
+- kinematic encoder identity and fitted thresholds;
 - LIF parameters;
+- recurrent magnitude/sign policy;
 - observation ratios;
-- perturbation protocol;
+- retention horizon;
+- perturbation fraction and recovery horizon;
 - training budget;
 - seeds;
-- primary metric and practical-effect threshold.
+- primary metric and practical-effect thresholds above.
 
 No retry may replace a failed or unfavorable seed result after final-test exposure.
 
 ## 12. Gate decision
 
-Gate 1 succeeds only if the frozen Real-CX arm shows a reproducible advantage over the decisive matched null, according to the predeclared practical-effect rule, with the effect concentrated in at least one temporal-state metric rather than only full-sequence accuracy.
+Gate 1A passes only if the frozen Real-CX arm satisfies the exact Real-versus-Degree rule in Section 11. A pass means biological CX organization produced a reproducible temporal-state advantage over a degree-/weight-matched null under this task.
 
-A null or negative result is valid and terminates the exact-topology branch before RTMW133 or mushroom-body work.
+Gate 1B passes only if the frozen Real-CX arm independently satisfies the exact Real-versus-Block rule. A Gate 1A pass with Gate 1B null means the evidence supports mesoscale organization, not precise fine wiring.
 
-A positive result licenses Gate 2 only:
+If Gate 1A is null or negative, stop the exact-CX branch before RTMW133 or mushroom-body work. A null result is a valid completed result.
+
+A Gate 1A pass licenses Gate 2 only:
 
 ```text
 RTMW133 vs reduced-body skeleton on fine-grained early prediction
