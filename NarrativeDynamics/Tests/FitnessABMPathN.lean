@@ -120,8 +120,8 @@ theorem path5_mean_compat (x : Fin 5 → Rat) :
     NarrativeDynamics.FitnessABMPathN.mean 5 x =
       NarrativeDynamics.FitnessABMPath5.mean x := by
   have h0 : NarrativeDynamics.FitnessABMPathN.degree 5 (0 : Fin 5) = 1 := by decide_cbv
-  have h1 : NarrativeDynamics.FitnessABMPathN.degree 5 (1 : Fin 5) = 2 := by decide_cbv
-  have h2 : NarrativeDynamics.FitnessABMPathN.degree 5 (2 : Fin 5) = 2 := by decide_cbv
+  have h1 : NarrativeDynamics.FitnessABMPathN.degree 5 (Fin.succ 0) = 2 := by decide_cbv
+  have h2 : NarrativeDynamics.FitnessABMPathN.degree 5 (Fin.succ 1) = 2 := by decide_cbv
   have h3 : NarrativeDynamics.FitnessABMPathN.degree 5 (Fin.succ 2) = 2 := by decide_cbv
   have h4 : NarrativeDynamics.FitnessABMPathN.degree 5 (Fin.succ 3) = 1 := by decide_cbv
   unfold NarrativeDynamics.FitnessABMPathN.mean
