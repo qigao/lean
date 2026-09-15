@@ -40,12 +40,22 @@ def _write_sample(
 
 
 def _dataset(root: Path, *, validation_scale: float) -> None:
-    _write_sample(root, subject=56, action=8, scale=1.0)
-    _write_sample(root, subject=57, action=9, scale=2.0)
-    _write_sample(root, subject=14, action=22, scale=validation_scale)
+    train_specs = (
+        (56, 8, 10),
+        (57, 9, 20),
+        (58, 22, 30),
+        (59, 23, 40),
+        (70, 26, 50),
+        (78, 27, 60),
+        (80, 31, 70),
+        (81, 34, 80),
+    )
+    for index, (subject, action, frames) in enumerate(train_specs, start=1):
+        _write_sample(root, subject=subject, action=action, scale=float(index), frames=frames)
+    _write_sample(root, subject=14, action=35, scale=validation_scale, frames=30)
     # Subject 3 is sealed final-test. Every joint is untracked so normalization
     # would fail if final-test coordinates leaked into preparation.
-    _write_sample(root, subject=3, action=23, scale=1.0, tracking=0)
+    _write_sample(root, subject=3, action=36, scale=1.0, tracking=0, frames=30)
 
 
 def test_validation_coordinate_change_does_not_refit_feature_statistics(tmp_path):
@@ -62,7 +72,7 @@ def test_validation_coordinate_change_does_not_refit_feature_statistics(tmp_path
     assert first.binding.dataset_content_hash != second.binding.dataset_content_hash
     assert first.binding.feature_stats_hash == second.binding.feature_stats_hash
     assert first.standardizer.fingerprint == second.standardizer.fingerprint
-    assert len(first.train_samples) == 2
+    assert len(first.train_samples) == 8
     assert len(first.validation_samples) == 1
 
 
@@ -72,7 +82,7 @@ def test_sealed_final_test_is_inventory_only_and_never_normalized(tmp_path):
     assert len(prepared.final_test_inventory) == 1
     row = prepared.final_test_inventory[0]
     assert row["split"] == "final_test"
-    assert row["sample_id"].endswith("A023")
+    assert row["sample_id"].endswith("A036")
     assert "features" not in row
     assert all(sample.sample_id != row["sample_id"] for sample in prepared.train_samples)
     assert all(sample.sample_id != row["sample_id"] for sample in prepared.validation_samples)
@@ -87,5 +97,4 @@ def test_preparation_binds_all_train_derived_and_architecture_invariants(tmp_pat
     assert len(prepared.binding.label_map_hash) == 64
     assert len(prepared.binding.adjacency_hash) == 64
     assert len(prepared.binding.ssm_spec_hash) == 64
-    assert len(prepared.binding.length_quartiles) == 3
-    assert prepared.binding.length_quartiles[0] <= prepared.binding.length_quartiles[1] <= prepared.binding.length_quartiles[2]
+    assert prepared.binding.length_quartiles == (20, 40, 60)
