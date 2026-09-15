@@ -175,4 +175,159 @@ theorem pathKernel_averaging (n : Nat) (hn : 2 ≤ n) :
     AveragingKernel (pathKernel n) := by
   exact ⟨pathKernel_nonneg n hn, pathKernel_row_sum n hn⟩
 
+/-- Broadcasting decisions, received beliefs, and therefore updated beliefs do
+not depend on the exposure counters. -/
+theorem propagate_independent_exposures
+    (n : Nat) (x : Beliefs n) (e : Fin n → Nat) :
+    project n (propagate (pathAdj n) (population n x e)) = beliefStep n x := by
+  change project n (propagate (pathAdj n) (population n x e)) =
+    project n (propagate (pathAdj n) (population n x (fun _ => 0)))
+  funext i
+  have hin : incoming (pathAdj n) (population n x e) i =
+      incoming (pathAdj n) (population n x (fun _ => 0)) i := by
+    rfl
+  change (nextAgent (pathAdj n) (population n x e) i).belief =
+    (nextAgent (pathAdj n) (population n x (fun _ => 0)) i).belief
+  simp only [nextAgent, hin]
+  split_ifs <;> rfl
+
+/-- In the all-broadcast region the actual incoming set is exactly the path
+neighbor set. -/
+theorem incoming_eq_neighbors
+    (n : Nat) (x : Beliefs n) (e : Fin n → Nat)
+    (hx : allBroadcast n x) (i : Fin n) :
+    incoming (pathAdj n) (population n x e) i = neighbors n i := by
+  ext j
+  have hb : broadcasting ((population n x e).profiles j)
+      ((population n x e).agents j) = true := by
+    change decide ((1 : Rat) / 2 ≤ x j) = true
+    exact decide_eq_true (hx j).1
+  simp only [incoming, Finset.mem_filter, Finset.mem_univ, true_and, hb, and_true,
+    mem_neighbors_iff]
+
+private theorem applyKernel_pathKernel
+    (n : Nat) (x : Beliefs n) (i : Fin n) :
+    applyKernel (pathKernel n) x i =
+      (1/2 : Rat) * x i +
+        (1 / (2 * (degree n i : Rat))) *
+          (∑ j ∈ neighbors n i, x j) := by
+  classical
+  simp only [applyKernel, Matrix.mulVec_apply, dotProduct, pathKernel]
+  rw [show
+      (∑ j : Fin n,
+        ((if i = j then (1/2 : Rat) else 0) +
+          if j ∈ neighbors n i then 1 / (2 * (degree n i : Rat)) else 0) * x j) =
+        (∑ j : Fin n, (if i = j then (1/2 : Rat) else 0) * x j) +
+        (∑ j : Fin n,
+          (if j ∈ neighbors n i then 1 / (2 * (degree n i : Rat)) else 0) * x j) by
+    rw [← Finset.sum_add_distrib]
+    apply Finset.sum_congr rfl
+    intro j _
+    ring]
+  have hself :
+      (∑ j : Fin n, (if i = j then (1/2 : Rat) else 0) * x j) =
+        (1/2 : Rat) * x i := by
+    simp
+  rw [hself]
+  let c : Rat := 1 / (2 * (degree n i : Rat))
+  have hneighbor :
+      (∑ j : Fin n, (if j ∈ neighbors n i then c else 0) * x j) =
+        c * (∑ j ∈ neighbors n i, x j) := by
+    calc
+      (∑ j : Fin n, (if j ∈ neighbors n i then c else 0) * x j) =
+          ∑ j ∈ neighbors n i, c * x j := by
+        simpa using
+          (Finset.sum_ite_mem (Finset.univ : Finset (Fin n)) (neighbors n i)
+            (fun j => c * x j))
+      _ = c * (∑ j ∈ neighbors n i, x j) := by
+        rw [Finset.mul_sum]
+  change
+    (1/2 : Rat) * x i +
+      (∑ j : Fin n, (if j ∈ neighbors n i then c else 0) * x j) =
+        (1/2 : Rat) * x i + c * (∑ j ∈ neighbors n i, x j)
+  rw [hneighbor]
+
+/-- The proof-only kernel is derived from the actual `nextAgent` update in the
+all-broadcast region. -/
+theorem propagate_eq_kernel
+    (n : Nat) (hn : 2 ≤ n) (x : Beliefs n) (e : Fin n → Nat)
+    (hx : allBroadcast n x) :
+    project n (propagate (pathAdj n) (population n x e)) =
+      applyKernel (pathKernel n) x := by
+  funext i
+  have hd : degree n i ≠ 0 := Nat.ne_of_gt (degree_pos n hn i)
+  have hcard : (neighbors n i).card ≠ 0 := by
+    simpa [degree] using hd
+  have hdq : (degree n i : Rat) ≠ 0 := by
+    exact_mod_cast hd
+  change (nextAgent (pathAdj n) (population n x e) i).belief =
+    applyKernel (pathKernel n) x i
+  rw [applyKernel_pathKernel n x i]
+  simp only [nextAgent, incoming_eq_neighbors n x e hx i, hcard, if_false]
+  change
+    (1 - (1/2 : Rat)) * x i +
+      (1/2 : Rat) * ((∑ j ∈ neighbors n i, x j) / (degree n i : Rat)) =
+        (1/2 : Rat) * x i +
+          (1 / (2 * (degree n i : Rat))) * (∑ j ∈ neighbors n i, x j)
+  field_simp [hdq]
+  ring
+
+private theorem kernel_preserves_allBroadcast
+    (n : Nat) (hn : 2 ≤ n) (x : Beliefs n)
+    (hx : allBroadcast n x) :
+    allBroadcast n (applyKernel (pathKernel n) x) := by
+  let i0 : Fin n := ⟨0, by omega⟩
+  letI : Nonempty (Fin n) := ⟨i0⟩
+  intro i
+  have hbetween := applyKernel_between (pathKernel_averaging n hn) x i
+  have hmin : (1/2 : Rat) ≤ coordMin x := by
+    unfold coordMin
+    apply Finset.le_inf'
+    intro j _
+    exact (hx j).1
+  have hmax : coordMax x ≤ (1 : Rat) := by
+    unfold coordMax
+    apply Finset.sup'_le
+    intro j _
+    exact (hx j).2
+  exact ⟨hmin.trans hbetween.1, hbetween.2.trans hmax⟩
+
+theorem allBroadcast_step
+    (n : Nat) (hn : 2 ≤ n) (x : Beliefs n)
+    (hx : allBroadcast n x) :
+    allBroadcast n (beliefStep n x) := by
+  have hbridge : beliefStep n x = applyKernel (pathKernel n) x := by
+    simpa [beliefStep] using
+      propagate_eq_kernel n hn x (fun _ => 0) hx
+  rw [hbridge]
+  exact kernel_preserves_allBroadcast n hn x hx
+
+theorem allBroadcast_iterate
+    (n : Nat) (hn : 2 ≤ n) (x : Beliefs n)
+    (hx : allBroadcast n x) (k : Nat) :
+    allBroadcast n (trajectory n x k) := by
+  induction k with
+  | zero => simpa [trajectory] using hx
+  | succ k ih =>
+      simpa [trajectory, Function.iterate_succ_apply'] using
+        allBroadcast_step n hn (trajectory n x k) ih
+
+theorem trajectory_eq_kernelTrajectory
+    (n : Nat) (hn : 2 ≤ n) (x : Beliefs n)
+    (hx : allBroadcast n x) (k : Nat) :
+    trajectory n x k = kernelTrajectory (pathKernel n) x k := by
+  induction k with
+  | zero => simp [trajectory, kernelTrajectory]
+  | succ k ih =>
+      have hk := allBroadcast_iterate n hn x hx k
+      have hbridge : beliefStep n (trajectory n x k) =
+          applyKernel (pathKernel n) (trajectory n x k) := by
+        simpa [beliefStep] using
+          propagate_eq_kernel n hn (trajectory n x k) (fun _ => 0) hk
+      rw [show trajectory n x (Nat.succ k) = beliefStep n (trajectory n x k) by
+        simp [trajectory, Function.iterate_succ_apply']]
+      rw [hbridge, ih]
+      simpa [Nat.succ_eq_add_one] using
+        (kernelTrajectory_succ (pathKernel n) x k).symm
+
 end NarrativeDynamics.FitnessABMPathN
