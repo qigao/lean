@@ -473,11 +473,16 @@ theorem block_contraction_tendsto
     positivity
   have hrange_nonneg : 0 ≤ (coordRange x : Real) := by
     exact_mod_cast coordRange_nonneg x
+  have hfac0' : 0 ≤ 1 - (δ : Real) := by
+    exact_mod_cast hfac0Rat
+  have hcastfac : ((1 - δ : Rat) : Real) = 1 - (δ : Real) := by
+    norm_cast
   have hgeom_lt :
       ((1 - δ : Rat) : Real) ^ q * (coordRange x : Real) < ε := by
     have hqq := hq q le_rfl
-    simpa [Real.dist_eq, abs_of_nonneg hbound_nonneg,
-      abs_of_nonneg hfac0, Real.norm_eq_abs, abs_of_nonneg hrange_nonneg] using hqq
+    rw [hcastfac]
+    simpa [Real.dist_eq, Real.norm_eq_abs,
+      abs_of_nonneg hfac0', abs_of_nonneg hrange_nonneg] using hqq
   refine ⟨q * b, ?_⟩
   intro k hk
   have hrangeTail := coordRange_kernelTrajectory_tail_le hK x hk
