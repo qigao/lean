@@ -24,3 +24,6 @@ example (k : Nat) :
         (incrementModel.step
           (IdleTailModel.trajectory incrementModel 3 k)) := by
   exact IdleTailModel.observedTrajectory_succ incrementModel 3 k
+
+#print axioms NarrativeDynamics.IdleTailModel.trajectory_add
+#print axioms NarrativeDynamics.IdleTailModel.observedTrajectory_succ
