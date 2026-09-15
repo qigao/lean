@@ -30,3 +30,4 @@ import NarrativeDynamics.Core.GroundedGoalSoftmax
 import NarrativeDynamics.Core.StoryState
 import NarrativeDynamics.Core.Testimony
 import NarrativeDynamics.Core.TemporalCredit
+import NarrativeDynamics.Core.AnonymousTemporalCredit

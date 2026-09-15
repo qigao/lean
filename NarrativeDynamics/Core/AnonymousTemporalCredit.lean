@@ -72,4 +72,61 @@ theorem learner_view_source_relabel_invariant
   exact aggregate_view_source_noninterference observations _ _
     (aggregate_stream_relabel_sources f history)
 
+abbrev Vector (n : Nat) := Fin n → ℝ
+
+structure TraceState (n : Nat) where
+  eligibility : Vector n
+  prediction : ℝ
+
+def zeroVector : Vector n := fun _ => 0
+
+def normalizedCredit (feature : Vector n) (denominator : ℝ) : Vector n :=
+  fun i => feature i / denominator
+
+def advanceTrace
+    (rho : ℝ) (state : TraceState n)
+    (currentCredit : Vector n) (currentPrediction : ℝ) : TraceState n :=
+  {
+    eligibility := fun i => rho * state.eligibility i + currentCredit i
+    prediction := rho * state.prediction + currentPrediction
+  }
+
+def normalizedPhase3AUpdate
+    (weights : Vector n) (alpha reward prediction : ℝ)
+    (credit : Vector n) : Vector n :=
+  fun i => weights i + alpha * (reward - prediction) * credit i
+
+def anonymousEligibilityUpdate
+    (weights : Vector n) (alpha feedback : ℝ)
+    (state : TraceState n) : Vector n :=
+  fun i => weights i + alpha * (feedback - state.prediction) * state.eligibility i
+
+theorem eligibility_historical_coefficient
+    (gamma lambda : ℝ) (d : Nat) :
+    NarrativeDynamics.TemporalCredit.causalTraceCoeff gamma lambda d =
+      (gamma * lambda) ^ d := by
+  exact NarrativeDynamics.TemporalCredit.causal_trace_coeff_closed_form gamma lambda d
+
+theorem zero_rho_trace_is_current_credit
+    (credit : Vector n) (prediction : ℝ) :
+    advanceTrace 0 { eligibility := zeroVector, prediction := 0 }
+        credit prediction =
+      { eligibility := credit, prediction := prediction } := by
+  apply TraceState.ext
+  · funext i
+    simp [advanceTrace, zeroVector]
+  · simp [advanceTrace]
+
+theorem immediate_reduction_to_phase3a
+    (weights feature : Vector n)
+    (denominator alpha reward prediction : ℝ) :
+    let credit := normalizedCredit feature denominator
+    let state := advanceTrace 0
+      { eligibility := zeroVector, prediction := 0 }
+      credit prediction
+    anonymousEligibilityUpdate weights alpha reward state =
+      normalizedPhase3AUpdate weights alpha reward prediction credit := by
+  funext i
+  simp [advanceTrace, zeroVector, anonymousEligibilityUpdate, normalizedPhase3AUpdate]
+
 end NarrativeDynamics.AnonymousTemporalCredit

@@ -87,3 +87,10 @@ example :
   norm_num
 
 end NarrativeDynamics.AnonymousTemporalCredit.Tests
+
+#print axioms NarrativeDynamics.AnonymousTemporalCredit.aggregate_view_source_noninterference
+#print axioms NarrativeDynamics.AnonymousTemporalCredit.aggregate_conservation
+#print axioms NarrativeDynamics.AnonymousTemporalCredit.learner_view_source_relabel_invariant
+#print axioms NarrativeDynamics.AnonymousTemporalCredit.eligibility_historical_coefficient
+#print axioms NarrativeDynamics.AnonymousTemporalCredit.zero_rho_trace_is_current_credit
+#print axioms NarrativeDynamics.AnonymousTemporalCredit.immediate_reduction_to_phase3a
