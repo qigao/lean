@@ -12,6 +12,7 @@ on:
       - 'NarrativeDynamics/Core/FitnessABMPathN.lean'
       - 'NarrativeDynamics/Tests/FiniteConsensus.lean'
       - 'NarrativeDynamics/Tests/FitnessABMPathN.lean'
+      - 'tools/check_fitness_abm_pathn.sh'
       - '.github/workflows/pathn-focused.yml'
 
 jobs:
@@ -52,3 +53,8 @@ jobs:
           export PATH="$HOME/.elan/bin:$PATH"
           timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 \
             NarrativeDynamics/Tests/FitnessABMPathN.lean
+      - name: Validate dedicated PathN gate
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          bash -n tools/check_fitness_abm_pathn.sh
+          timeout --kill-after=10s 900s bash tools/check_fitness_abm_pathn.sh
