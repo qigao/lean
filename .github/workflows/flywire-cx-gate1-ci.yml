@@ -31,9 +31,9 @@ jobs:
           python -m pip install pytest numpy
           python -m pip install --no-deps -e ./python
       - name: Run CX graph/event/skeleton/provenance gates
-        run: python -m pytest tests/test_cx_protocol.py tests/test_cx_artifact.py tests/test_cx_nulls.py tests/test_cx_events.py tests/test_ntu_skeleton.py tests/test_cx_provenance.py -q
+        run: python -m pytest tests/test_cx_protocol.py tests/test_cx_artifact.py tests/test_cx_nulls.py tests/test_cx_events.py tests/test_ntu_skeleton.py tests/test_cx_skeleton_prep.py tests/test_cx_provenance.py -q
 
-  lif:
+  temporal:
     name: CX temporal and development contracts
     runs-on: ubuntu-latest
     timeout-minutes: 10
