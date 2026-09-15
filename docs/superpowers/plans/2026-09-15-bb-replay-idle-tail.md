@@ -8,23 +8,23 @@
 
 **Tech Stack:** Lean 4.32.0, mathlib v4.32.0, exact `Rat`, existing `FitnessABM`, `FitnessABMReplay`, Path4/Path5/PathN gates, `tools/audit_fitness_trust.py`, GitHub proof workflow.
 
-**Spec:** `docs/superpowers/specs/2026-09-15-bb-replay-idle-tail-design.md`, approved on branch `design/bb-replay-idle-tail-v1` at `2f716319748502d2d3d9cede273665352814162c`.
+**Spec:** `docs/superpowers/specs/2026-09-15-bb-replay-idle-tail-design.md`, approved at `2f716319748502d2d3d9cede273665352814162c`.
 
 ## Global Constraints
 
-- Base implementation work on `proof/narrative-dynamics-v0@798f868a5327d6dd48de4f7a2b54cdf7a1ffed2a` plus the approved spec/plan history.
-- `FitnessABMPathN` remains the canonical reusable finite-path propagation surface; do not add `PropagationModel` or any second graph/population/step abstraction.
+- Implementation starts from the committed spec/plan history based on `proof/narrative-dynamics-v0@798f868a5327d6dd48de4f7a2b54cdf7a1ffed2a`.
+- `FitnessABMPathN` remains the canonical reusable finite-path propagation surface; do not add `PropagationModel` or another graph/population/step abstraction.
 - `FiniteConsensus` remains the canonical generic convergence layer; do not add convergence mathematics to idle-tail modules.
-- One idle runtime tick is the existing `none` branch of `runInputs`: node count unchanged, round index incremented by one, underlying state advanced with `FitnessABM.advance`, no birth mass introduced.
-- Appending idle ticks to a successful prefix preserves the prefix's accumulated replay probability exactly; it must not reset probability to `1`.
+- One idle runtime tick is exactly the existing `none` branch of `runInputs`: node count unchanged, round index incremented by one, underlying state updated with `FitnessABM.advance`, and no birth mass introduced.
+- Appending idle ticks to a successful replay prefix preserves the prefix's accumulated probability exactly; it must not reset probability to `1`.
 - Do not duplicate `checkedBirth`, parsing, `runInputs`, replay recursion, probability multiplication, or network update logic.
 - Keep BBII/BIBI/IIBB fixtures, activation offsets, and concrete history names in Path4 test code only.
-- Preserve existing theorem names and expected values for `replay_baseline`, `raw_tail_bridge`, activation theorems, common-clock convergence, Path5 generated replay, and PathN convergence.
-- No changes to `FitnessABMPathN.lean` or `FiniteConsensus.lean`.
-- No `sorry`, `admit`, `native_decide`, new `axiom`, `unsafe`, `unlock_limits`, `set_option maxHeartbeats 0`, or unbounded proof-resource settings.
-- Keep direct build/test invocations bounded by `timeout --kill-after=10s 240s` unless fresh evidence demonstrates a need to change the bound.
-- Trust reports must remain within the existing standard axiom allowlist (`propext`, `Classical.choice`, `Quot.sound`) unless a reviewed exception is justified by fresh evidence.
-- If a RED fails because of missing toolchain/dependencies or a malformed consumer rather than the intended missing declaration/theorem, repair the RED before writing production code.
+- Preserve theorem names and expected values for `replay_baseline`, `raw_tail_bridge`, activation theorems, common-clock convergence, Path5 generated replay, and PathN convergence.
+- Do not modify `FitnessABMPathN.lean` or `FiniteConsensus.lean`.
+- Do not use `sorry`, `admit`, `native_decide`, a new `axiom`, `unsafe`, `unlock_limits`, `set_option maxHeartbeats 0`, or unbounded proof-resource settings.
+- Every direct focused Lean build/test in the final gate uses `timeout --kill-after=10s 240s`.
+- Mandatory theorem reports must stay within `propext`, `Classical.choice`, and `Quot.sound`.
+- A malformed consumer or missing toolchain is not valid RED evidence; repair the harness before production changes.
 
 ## File Map
 
@@ -32,17 +32,15 @@
 | --- | --- | --- |
 | `NarrativeDynamics/Core/IdleTail.lean` | Proof-neutral repeated-step + observation interface | 1 |
 | `NarrativeDynamics/Tests/IdleTail.lean` | Generic RED/GREEN consumers | 1, 5 |
-| `NarrativeDynamics/Core/FitnessABMIdleTail.lean` | `advance`-backed `JointState` and `RunState` adapters | 2 |
-| `NarrativeDynamics/Tests/FitnessABMIdleTail.lean` | Runtime adapter and replay bridge consumers + axiom reports | 2–3, 5 |
-| `NarrativeDynamics/Core/FitnessABMReplay.lean` | Production append-idle theorems over existing replay recursion | 3 |
-| `NarrativeDynamics/Tests/FitnessABMPath4.lean` | Existing fixture; refactor tail wrappers to consume new boundary | 4–5 |
+| `NarrativeDynamics/Core/FitnessABMIdleTail.lean` | Exact `advance`-backed `JointState` and `RunState` adapters | 2 |
+| `NarrativeDynamics/Tests/FitnessABMIdleTail.lean` | Adapter/replay consumers and replay axiom reports | 2–3, 5 |
+| `NarrativeDynamics/Core/FitnessABMReplay.lean` | Append-idle theorems over existing `runInputs`/`replay` | 3 |
+| `NarrativeDynamics/Tests/FitnessABMPath4.lean` | Existing concrete fixture; compatibility consumer | 4–5 |
 | `tools/check_fitness_abm_path4.sh` | Bounded source/build/test/trust regression gate | 5 |
-| `docs/superpowers/specs/2026-09-15-bb-replay-idle-tail-design.md` | Approved architecture | reference only |
-| `docs/superpowers/plans/2026-09-15-bb-replay-idle-tail.md` | This execution plan | reference only |
 
 ## Preparation Before Task 1
 
-- [ ] Create `feature/bb-replay-idle-tail-v1` from the committed plan head, not from `master`.
+- [ ] Create the implementation branch from the plan head.
 
 ```bash
 git checkout design/bb-replay-idle-tail-v1
@@ -51,16 +49,14 @@ git checkout -b feature/bb-replay-idle-tail-v1
 git rev-parse HEAD
 ```
 
-- [ ] Confirm the implementation base and starting diff.
+- [ ] Confirm the starting diff contains only the approved design and plan.
 
 ```bash
 git merge-base HEAD proof/narrative-dynamics-v0
 git diff --stat proof/narrative-dynamics-v0...HEAD
 ```
 
-Expected starting diff: only the approved design spec and this implementation plan.
-
-- [ ] Re-read these files before editing:
+- [ ] Re-read the real runtime/replay/fixture surfaces before editing.
 
 ```text
 NarrativeDynamics/Core/FitnessABM.lean
@@ -80,8 +76,8 @@ tools/audit_fitness_trust.py
 - Create: `NarrativeDynamics/Core/IdleTail.lean`
 
 **Interfaces:**
-- Consumes: only core Lean/function iteration.
-- Produces:
+- Consumes: only function iteration.
+- Produces exactly:
 
 ```lean
 namespace NarrativeDynamics
@@ -99,23 +95,29 @@ def observedTrajectory
     (m : IdleTailModel State Obs) (s : State) (k : Nat) : Obs :=
   m.observe (trajectory m s k)
 
-@[simp] theorem trajectory_zero ...
-theorem trajectory_succ ...
-theorem trajectory_add ...
-@[simp] theorem observedTrajectory_zero ...
-theorem observedTrajectory_succ ...
+@[simp] theorem trajectory_zero
+    (m : IdleTailModel State Obs) (s : State) :
+    trajectory m s 0 = s
+
+theorem trajectory_succ
+    (m : IdleTailModel State Obs) (s : State) (k : Nat) :
+    trajectory m s (k + 1) = m.step (trajectory m s k)
+
+theorem trajectory_add
+    (m : IdleTailModel State Obs) (s : State) (a b : Nat) :
+    trajectory m s (a + b) = trajectory m (trajectory m s a) b
+
+@[simp] theorem observedTrajectory_zero
+    (m : IdleTailModel State Obs) (s : State) :
+    observedTrajectory m s 0 = m.observe s
+
+theorem observedTrajectory_succ
+    (m : IdleTailModel State Obs) (s : State) (k : Nat) :
+    observedTrajectory m s (k + 1) =
+      m.observe (m.step (trajectory m s k))
 ```
 
-Use the orientation:
-
-```lean
-trajectory m s (k + 1) = m.step (trajectory m s k)
-trajectory m s (a + b) = trajectory m (trajectory m s a) b
-```
-
-- [ ] **Step 1: Write the failing generic consumer before the core module exists.**
-
-Create `NarrativeDynamics/Tests/IdleTail.lean`:
+- [ ] **Step 1: Write the failing consumer before the core module exists.**
 
 ```lean
 import NarrativeDynamics.Core.IdleTail
@@ -146,20 +148,20 @@ example (k : Nat) :
   exact IdleTailModel.observedTrajectory_succ incrementModel 3 k
 ```
 
-- [ ] **Step 2: Run the consumer and verify genuine RED.**
+- [ ] **Step 2: Run RED.**
 
 ```bash
 timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 \
   NarrativeDynamics/Tests/IdleTail.lean
 ```
 
-Expected RED: missing `NarrativeDynamics.Core.IdleTail` / `IdleTailModel` declarations only.
+Expected RED: missing `NarrativeDynamics.Core.IdleTail` / `IdleTailModel` declarations.
 
-- [ ] **Step 3: Implement the minimal proof-neutral core.**
+- [ ] **Step 3: Implement the minimal core.**
 
-Create `NarrativeDynamics/Core/IdleTail.lean` with only the structure, the two definitions, and the five elementary iteration/observation laws above. Prefer `Function.iterate_succ_apply'` / `Function.iterate_add_apply`; do not introduce model-specific imports.
+Use only `Function.iterate_succ_apply'` and `Function.iterate_add_apply` (with an `add_comm` rewrite if required for the chosen orientation). Do not add BB/path/replay imports.
 
-- [ ] **Step 4: Build and run the consumer.**
+- [ ] **Step 4: Build and test.**
 
 ```bash
 timeout --kill-after=10s 240s lake build NarrativeDynamics.Core.IdleTail
@@ -167,18 +169,16 @@ timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 \
   NarrativeDynamics/Tests/IdleTail.lean
 ```
 
-Expected: both commands succeed.
-
-- [ ] **Step 5: Review the Task 1 boundary.**
+- [ ] **Step 5: Audit the generic boundary.**
 
 ```bash
 git grep -n -E 'Fitness|BB|Path|NetworkPropagation|advance|replay' -- \
   NarrativeDynamics/Core/IdleTail.lean
 ```
 
-Expected: no model-specific surface in the generic module.
+Expected: no matches.
 
-- [ ] **Step 6: Commit Task 1.**
+- [ ] **Step 6: Commit.**
 
 ```bash
 git add NarrativeDynamics/Core/IdleTail.lean \
@@ -188,15 +188,15 @@ git commit -m "feat(lean): add generic idle-tail iteration interface"
 
 ---
 
-### Task 2: Fitness ABM idle adapters with exact RunState bookkeeping
+### Task 2: Exact Fitness ABM idle adapters
 
 **Files:**
 - Create: `NarrativeDynamics/Core/FitnessABMIdleTail.lean`
 - Create: `NarrativeDynamics/Tests/FitnessABMIdleTail.lean`
 
 **Interfaces:**
-- Consumes: `IdleTailModel`, `FitnessABM.JointState`, `FitnessABM.RunState`, `FitnessABM.advance`.
-- Produces:
+- Consumes: `IdleTailModel`, `JointState`, `RunState`, `advance`.
+- Produces exactly:
 
 ```lean
 namespace NarrativeDynamics.FitnessABM
@@ -223,9 +223,13 @@ def runIdleTail : IdleTailModel RunState RunState :=
 
 def runIdleTrajectory (s : RunState) (k : Nat) : RunState :=
   IdleTailModel.trajectory runIdleTail s k
+
+theorem runIdleTrajectory_eq (s : RunState) (k : Nat) :
+    runIdleTrajectory s k =
+      ⟨s.nodeCount, s.roundIndex + k, (advance^[k]) s.state⟩
 ```
 
-Required theorems:
+The whole-record theorem is the authoritative bookkeeping statement. Derive these public corollaries from it:
 
 ```lean
 @[simp] theorem idleRunStep_nodeCount (s : RunState) :
@@ -237,27 +241,22 @@ Required theorems:
 @[simp] theorem idleRunStep_state (s : RunState) :
   (idleRunStep s).state = advance s.state
 
-theorem runIdleTrajectory_nodeCount (s : RunState) (k : Nat) :
+@[simp] theorem runIdleTrajectory_nodeCount (s : RunState) (k : Nat) :
   (runIdleTrajectory s k).nodeCount = s.nodeCount
 
-theorem runIdleTrajectory_roundIndex (s : RunState) (k : Nat) :
+@[simp] theorem runIdleTrajectory_roundIndex (s : RunState) (k : Nat) :
   (runIdleTrajectory s k).roundIndex = s.roundIndex + k
 ```
 
-For the dependent underlying state projection, prefer the strongest statement Lean accepts without casts. First try:
+No separate cast-heavy state theorem is required because `runIdleTrajectory_eq` already proves the dependent state field as part of the `RunState` equality.
+
+- [ ] **Step 1: Add RED consumers with arbitrary well-typed states; no concrete fixture is needed.**
 
 ```lean
-theorem runIdleTrajectory_state (s : RunState) (k : Nat) :
-  (runIdleTrajectory s k).state = (advance^[k]) s.state
-```
+import NarrativeDynamics.Core.FitnessABMIdleTail
 
-If elaboration requires transporting across the separately proved node-count equality, use `Fin.cast`/`Eq.ndrec` only at the dependent record boundary; do not weaken the theorem to beliefs-only equality.
+open NarrativeDynamics NarrativeDynamics.FitnessABM
 
-- [ ] **Step 1: Add RED consumers to `FitnessABMIdleTail.lean` test file.**
-
-Use a concrete `JointState 2` fixture already constructible from the test surface, or define a tiny valid one locally. Require:
-
-```lean
 example (s : RunState) :
     (idleRunStep s).nodeCount = s.nodeCount :=
   idleRunStep_nodeCount s
@@ -267,8 +266,9 @@ example (s : RunState) :
   idleRunStep_roundIndex s
 
 example (s : RunState) (k : Nat) :
-    (runIdleTrajectory s k).roundIndex = s.roundIndex + k :=
-  runIdleTrajectory_roundIndex s k
+    runIdleTrajectory s k =
+      ⟨s.nodeCount, s.roundIndex + k, (advance^[k]) s.state⟩ :=
+  runIdleTrajectory_eq s k
 
 example {n : Nat} (s : JointState n) (k : Nat) :
     IdleTailModel.trajectory (jointIdleTail n) s k = (advance^[k]) s := by
@@ -282,13 +282,11 @@ timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 \
   NarrativeDynamics/Tests/FitnessABMIdleTail.lean
 ```
 
-Expected RED: missing `FitnessABMIdleTail` declarations.
+Expected RED: missing adapter declarations.
 
-- [ ] **Step 3: Implement adapters only.**
+- [ ] **Step 3: Implement adapters and `runIdleTrajectory_eq`.**
 
-`FitnessABMIdleTail.lean` imports `IdleTail` and `FitnessABM`, not `FitnessABMReplay`. `idleRunStep` must be a literal packaging of the existing `advance`; do not duplicate the body of `advance`.
-
-Prove `runIdleTrajectory_roundIndex` by induction on `k` via `IdleTailModel.trajectory_succ`; prove state/node-count projections the same way if they are not definitional.
+`FitnessABMIdleTail.lean` imports only `IdleTail` and `FitnessABM`; it must not import `FitnessABMReplay`. Prove `runIdleTrajectory_eq` by induction on `k`, rewriting the successor case with `IdleTailModel.trajectory_succ` and `Nat.add_assoc`/`Nat.add_comm` only as needed.
 
 - [ ] **Step 4: Build and test.**
 
@@ -298,16 +296,16 @@ timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 \
   NarrativeDynamics/Tests/FitnessABMIdleTail.lean
 ```
 
-- [ ] **Step 5: Review for semantic duplication.**
+- [ ] **Step 5: Audit semantic duplication.**
 
 ```bash
-git grep -n 'propagate\|checkedBirth\|runInputs\|parseAgent\|orderedMass' -- \
+git grep -n -E 'propagate|checkedBirth|runInputs|parseAgent|orderedMass' -- \
   NarrativeDynamics/Core/FitnessABMIdleTail.lean
 ```
 
-Expected: none of these implementations appear in the adapter.
+Expected: no matches.
 
-- [ ] **Step 6: Commit Task 2.**
+- [ ] **Step 6: Commit.**
 
 ```bash
 git add NarrativeDynamics/Core/FitnessABMIdleTail.lean \
@@ -317,28 +315,22 @@ git commit -m "feat(lean): add Fitness ABM idle-tail adapters"
 
 ---
 
-### Task 3: Extract append-idle replay theorems from the existing recursion
+### Task 3: Append-idle theorems over existing replay recursion
 
 **Files:**
 - Modify: `NarrativeDynamics/Core/FitnessABMReplay.lean`
 - Modify: `NarrativeDynamics/Tests/FitnessABMIdleTail.lean`
 
 **Interfaces:**
-- Consumes: `runInputs`, `replay`, `runIdleTrajectory`.
-- Produces:
+- Consumes: existing `runInputs`, existing `replay`, `runIdleTrajectory`.
+- Produces exactly:
 
 ```lean
 theorem runInputs_replicate_idle
     (m tickIndex birthIndex k : Nat) (s : RunState) :
     runInputs m tickIndex birthIndex s (List.replicate k none) =
       .ok ⟨runIdleTrajectory s k, 1⟩
-```
 
-This is the production extraction of the existing Path4 test-local `private theorem run_idle`.
-
-Then:
-
-```lean
 theorem runInputs_append_idle
     (m tickIndex birthIndex : Nat)
     (s : RunState) (ticks : List RawTick)
@@ -347,11 +339,7 @@ theorem runInputs_append_idle
     runInputs m tickIndex birthIndex s
         (ticks ++ List.replicate k none) =
       .ok ⟨runIdleTrajectory out.final k, out.probability⟩
-```
 
-Finally:
-
-```lean
 theorem replay_append_idle
     (seed : FitnessAttachment.RawSeed) (m : Nat)
     (agents : Array RawAgent) (ticks : List RawTick)
@@ -361,95 +349,82 @@ theorem replay_append_idle
       .ok ⟨runIdleTrajectory out.final k, out.probability⟩
 ```
 
-The public theorem must preserve the whole `Result`, not just the projected beliefs.
+`runInputs_replicate_idle` is the production extraction of the existing Path4 test-local `private theorem run_idle`.
 
-- [ ] **Step 1: Add a RED consumer for the pure idle suffix.**
-
-In `NarrativeDynamics/Tests/FitnessABMIdleTail.lean`, add:
+- [ ] **Step 1: Add RED consumers for all three theorem signatures.**
 
 ```lean
 example (m tickIndex birthIndex k : Nat) (s : RunState) :
     runInputs m tickIndex birthIndex s (List.replicate k none) =
       .ok ⟨runIdleTrajectory s k, 1⟩ :=
   runInputs_replicate_idle m tickIndex birthIndex k s
+
+example (m tickIndex birthIndex : Nat)
+    (s : RunState) (ticks : List RawTick) (out : Result) (k : Nat)
+    (h : runInputs m tickIndex birthIndex s ticks = .ok out) :
+    runInputs m tickIndex birthIndex s
+        (ticks ++ List.replicate k none) =
+      .ok ⟨runIdleTrajectory out.final k, out.probability⟩ :=
+  runInputs_append_idle m tickIndex birthIndex s ticks out k h
+
+example (seed : FitnessAttachment.RawSeed) (m : Nat)
+    (agents : Array RawAgent) (ticks : List RawTick)
+    (out : Result) (k : Nat)
+    (h : replay seed m agents ticks = .ok out) :
+    replay seed m agents (ticks ++ List.replicate k none) =
+      .ok ⟨runIdleTrajectory out.final k, out.probability⟩ :=
+  replay_append_idle seed m agents ticks out k h
 ```
 
-Run the test. Expected RED: unknown `runInputs_replicate_idle` while the adapter tests remain GREEN.
+The second and third consumers encode probability preservation in their theorem types; no fixture can accidentally weaken it to state-only equality.
 
-- [ ] **Step 2: Implement `runInputs_replicate_idle`.**
-
-Import `FitnessABMIdleTail` into `FitnessABMReplay.lean`. Prove by induction on `k`, generalizing `s`, `tickIndex`, and `birthIndex`:
-
-```lean
-induction k generalizing s tickIndex with
-| zero => rfl
-| succ k ih =>
-    simp only [List.replicate_succ, runInputs]
-    rw [ih]
-    -- finish by `runIdleTrajectory` successor law / record equality
-```
-
-Do not introduce a second recursive runner.
-
-- [ ] **Step 3: Run GREEN for the pure suffix theorem.**
+- [ ] **Step 2: Run RED.**
 
 ```bash
-timeout --kill-after=10s 240s lake build NarrativeDynamics.Core.FitnessABMReplay
 timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 \
   NarrativeDynamics/Tests/FitnessABMIdleTail.lean
 ```
 
-- [ ] **Step 4: Add a RED consumer for successful-prefix append semantics.**
+Expected RED: unknown append-idle theorem declarations while Task 2 adapter consumers remain GREEN.
 
-Use a concrete valid replay fixture in the test file that has non-unit probability, so the consumer can catch accidental probability reset. The target assertion must reduce to a result of the form:
+- [ ] **Step 3: Implement `runInputs_replicate_idle`.**
 
-```lean
-replay seed 1 agents ticks = .ok out
-→ replay seed 1 agents (ticks ++ List.replicate 2 none) =
-    .ok ⟨runIdleTrajectory out.final 2, out.probability⟩
-```
+Import `FitnessABMIdleTail` into `FitnessABMReplay.lean`. Induct on `k`, generalizing `s` and `tickIndex`; each successor unfolds exactly one existing `none` branch and uses `runIdleTrajectory_eq`/`IdleTailModel.trajectory_succ`. Do not define another runner.
 
-Choose a fixture whose prefix contains at least one birth and whose known `out.probability ≠ 1`; reuse the simplest existing Path4 checked data rather than inventing another attachment implementation.
+- [ ] **Step 4: Implement `runInputs_append_idle`.**
 
-- [ ] **Step 5: Run RED.**
-
-Expected RED: missing `runInputs_append_idle` / `replay_append_idle`, not parser/fixture failure.
-
-- [ ] **Step 6: Implement `runInputs_append_idle`.**
-
-Prove by induction on `ticks`, generalizing `s`, indices, and `out`.
-
-Required proof shape:
+Induct on `ticks`, generalizing `s`, `tickIndex`, `birthIndex`, and `out`.
 
 ```text
-[]:
-  h fixes out = ⟨s,1⟩; reduce to runInputs_replicate_idle.
+nil:
+  successful h fixes out to ⟨s,1⟩;
+  reduce the suffix to runInputs_replicate_idle.
 
 none :: rest:
   unfold one existing none branch;
-  apply induction hypothesis to the recursive successful result.
+  feed the recursive success equality into the induction hypothesis.
 
 some raw :: rest:
-  split only on existing checkedBirth/runInputs results;
-  use h to eliminate error branches;
-  apply IH to the successful tail;
-  preserve the existing `next.2 * tail.probability` factor exactly.
+  split only on existing checkedBirth and recursive runInputs results;
+  h eliminates every error branch;
+  apply the induction hypothesis to the successful recursive tail;
+  rebuild the existing result with the unchanged next.2 * tail.probability factor.
 ```
 
-No probability algebra may replace `out.probability` with `1`.
+The final RHS must remain `out.probability`, never `1`.
 
-- [ ] **Step 7: Implement the thin `replay_append_idle` wrapper.**
+- [ ] **Step 5: Implement `replay_append_idle`.**
 
-Unfold `replay` only enough to expose its successful `runInputs` call. Split on existing `parseSeed`, `m` validity, and `parseAgents`; contradictory branches are eliminated by `h`. In the success branch, apply `runInputs_append_idle`.
+Unfold `replay` in `h` and the goal. Case-split on the existing `parseSeed`, `0 < m ∧ m ≤ seed.nodeCount`, and `parseAgents` branches. Use `h` to eliminate failure branches; in the unique successful branch apply `runInputs_append_idle`.
 
-- [ ] **Step 8: Add axiom reports in the test.**
+- [ ] **Step 6: Add mandatory axiom reports.**
 
 ```lean
 #print axioms NarrativeDynamics.FitnessABM.runInputs_append_idle
 #print axioms NarrativeDynamics.FitnessABM.replay_append_idle
 ```
 
-- [ ] **Step 9: Build and test.**
+- [ ] **Step 7: Build and run GREEN.**
 
 ```bash
 timeout --kill-after=10s 240s lake build NarrativeDynamics.Core.FitnessABMReplay
@@ -457,9 +432,13 @@ timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 \
   NarrativeDynamics/Tests/FitnessABMIdleTail.lean
 ```
 
-Expected: consumers GREEN; axiom reports contain only the standard allowlist.
+Expected: all Task 2/3 consumers pass; the two reports contain only the standard axiom allowlist.
 
-- [ ] **Step 10: Commit Task 3.**
+- [ ] **Step 8: Review for replay duplication.**
+
+Inspect the Task 3 diff. There must be no new `def` that recursively consumes `List RawTick`; only the existing `runInputs` remains the replay state machine.
+
+- [ ] **Step 9: Commit.**
 
 ```bash
 git add NarrativeDynamics/Core/FitnessABMReplay.lean \
@@ -467,19 +446,17 @@ git add NarrativeDynamics/Core/FitnessABMReplay.lean \
 git commit -m "feat(lean): bridge checked replay to idle tails"
 ```
 
-**Review gate:** search the diff for a new recursive replay implementation. Only proofs over the existing `runInputs`/`replay` definitions are allowed.
-
 ---
 
-### Task 4: Refactor Path4 tail fixture into a compatibility consumer
+### Task 4: Convert Path4 tail fixtures into compatibility consumers
 
 **Files:**
 - Modify: `NarrativeDynamics/Tests/FitnessABMPath4.lean`
 
 **Interfaces:**
 - Consumes: `jointIdleTail`, `observeJointWith`, `runIdleTrajectory`, `replay_append_idle`.
-- Preserves public/test theorem names: `replay_baseline`, `raw_tail_bridge`, activation theorems, common-clock theorems.
-- Produces compatibility theorems:
+- Preserves existing names/results for `replay_baseline`, `raw_tail_bridge`, activation theorems, and common-clock convergence.
+- Adds exactly:
 
 ```lean
 theorem tailState_idleTail (h : History) (k : Nat) :
@@ -495,45 +472,35 @@ theorem tailBelief_idleTail (h : History) (k : Nat) :
         (baseState h) k
 ```
 
-These should be `rfl`/small simp proofs if the adapter is aligned correctly.
+- [ ] **Step 1: Import the adapter and prove both compatibility theorems against the existing `tailState`/`tailBelief` definitions before changing replay proofs.**
 
-- [ ] **Step 1: Add compatibility consumers before changing old definitions.**
+Expected proof: `rfl` or a single unfold/simp using the adapter definitions. If more is required, fix the adapter interface rather than changing Path4 values.
 
-Import `NarrativeDynamics.Core.FitnessABMIdleTail` into the Path4 test and add `tailState_idleTail` / `tailBelief_idleTail` theorems against the current definitions.
-
-Run:
+- [ ] **Step 2: Run the full Path4 test once.**
 
 ```bash
 timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 \
   NarrativeDynamics/Tests/FitnessABMPath4.lean
 ```
 
-Expected: GREEN if the adapter is definitionally aligned. If not, fix only the adapter theorem interface; do not change Path4 expected values.
+Expected: GREEN.
 
-- [ ] **Step 2: Replace the test-local generic `private theorem run_idle`.**
+- [ ] **Step 3: Remove only the test-local recursive `private theorem run_idle`.**
 
-Delete the private recursive theorem:
+The production `runInputs_replicate_idle` now owns that generic fact.
 
-```lean
-private theorem run_idle ...
-```
-
-because Task 3 now supplies `runInputs_replicate_idle` / `replay_append_idle` in production.
-
-- [ ] **Step 3: Separate prefix replay from idle suffix proof.**
-
-Introduce a fixture-local theorem for the exact four-tick prefix only:
+- [ ] **Step 4: Move the existing fixed four-tick fixture proof into a prefix-only theorem.**
 
 ```lean
 private theorem replay_prefix (h : History) :
     FitnessABM.replay rawSeed 1 rawAgents (ticks h) =
-      .ok ⟨⟨4, 4, baseState h⟩, 1/8⟩ := by
-  -- retain the existing checked fixture proof for the finite prefix only
+      .ok ⟨⟨4,4,baseState h⟩,1/8⟩ := by
+  -- use the existing checked fixture lemmas for the four scheduled ticks
 ```
 
-Move the existing fixed birth/idle computation from `raw_tail_bridge` into this prefix theorem, but stop once the four scheduled ticks are proved.
+The body is obtained by taking the current `raw_tail_bridge` fixture calculation and deleting its generic `List.replicate k none` tail step. No new birth/network proof is introduced.
 
-- [ ] **Step 4: Rebuild `replay_baseline` as a zero-tail compatibility theorem.**
+- [ ] **Step 5: Preserve `replay_baseline` with the same exact statement.**
 
 ```lean
 theorem replay_baseline (h : History) :
@@ -541,11 +508,7 @@ theorem replay_baseline (h : History) :
   simpa [rawTail] using replay_prefix h
 ```
 
-Keep the theorem name and exact result unchanged.
-
-- [ ] **Step 5: Rebuild `raw_tail_bridge` from `replay_append_idle`.**
-
-Target remains unchanged:
+- [ ] **Step 6: Reprove `raw_tail_bridge` exclusively through the production append theorem.**
 
 ```lean
 theorem raw_tail_bridge (h : History) (k : Nat) :
@@ -553,59 +516,54 @@ theorem raw_tail_bridge (h : History) (k : Nat) :
   have hp := replay_append_idle
     rawSeed 1 rawAgents (ticks h)
     ⟨⟨4,4,baseState h⟩,1/8⟩ k (replay_prefix h)
-  -- rewrite runIdleTrajectory projections with the adapter laws
-  -- rewrite underlying state via `tailState_idleTail`
-  simpa [rawTail, tailState, runIdleTrajectory,
-    NarrativeDynamics.IdleTailModel.trajectory] using hp
+  rw [runIdleTrajectory_eq] at hp
+  simpa [rawTail, tailState] using hp
 ```
 
-Use whatever minimal simp set the actual definitions require; do not reintroduce recursive idle replay in the fixture.
+This is the concrete non-unit probability regression: `1/8` must remain `1/8` for every idle suffix length.
 
-- [ ] **Step 6: Keep all downstream activation/common-clock proofs untouched if possible.**
+- [ ] **Step 7: Keep downstream activation/common-clock theorem bodies unchanged.**
 
-Run the full Path4 test and inspect the diff. If downstream theorem bodies change solely because of a renamed helper, prefer compatibility wrappers so the old proof text stays stable.
+If a downstream proof no longer resolves, add a compatibility rewrite using `tailState_idleTail`/`tailBelief_idleTail`; do not change expected activation states, offsets, means, or limits.
 
-- [ ] **Step 7: Add one compatibility axiom report.**
+- [ ] **Step 8: Add a compatibility axiom report.**
 
 ```lean
 #print axioms NarrativeDynamics.Tests.FitnessABMPath4.tailState_idleTail
 ```
 
-Keep the existing `replay_baseline` and `raw_tail_bridge` reports.
+Keep all existing `replay_baseline` and `raw_tail_bridge` reports.
 
-- [ ] **Step 8: Run Path4 regression.**
+- [ ] **Step 9: Run Path4 regression.**
 
 ```bash
 timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 \
   NarrativeDynamics/Tests/FitnessABMPath4.lean
 ```
 
-Expected: all existing exact values and convergence tests pass unchanged.
+Expected: all existing exact activation and convergence values pass unchanged.
 
-- [ ] **Step 9: Commit Task 4.**
+- [ ] **Step 10: Commit.**
 
 ```bash
 git add NarrativeDynamics/Tests/FitnessABMPath4.lean
 git commit -m "refactor(lean): route Path4 replay tails through idle interface"
 ```
 
-**Review gate:** `History.bbii`, `.bibi`, `.iibb` appear only in test/fixture code, never in `IdleTail.lean`, `FitnessABMIdleTail.lean`, or production replay bridge declarations.
+**Review gate:** `History`, `.bbii`, `.bibi`, and `.iibb` remain test-only and do not appear in the new production modules.
 
 ---
 
-### Task 5: Integrate bounded Path4 trust/CI coverage
+### Task 5: Add bounded trust/CI coverage to the existing Path4 gate
 
 **Files:**
 - Modify: `tools/check_fitness_abm_path4.sh`
-- Test: all new and existing Path4/Path5 modules/tests
 
 **Interfaces:**
-- Preserve the existing Path4/Path5 generated replay gate and existing required theorem audit list.
-- Add a separate log/audit for the new interface so the old trust boundary remains readable.
+- Preserve the existing Path4/Path5 builds, generated replay comparison, Path4 test log, and existing required theorem list.
+- Add a separate `idle_tail_log` for the new replay theorem reports.
 
-- [ ] **Step 1: Extend source audit inputs.**
-
-Add:
+- [ ] **Step 1: Extend the source audit with these exact files.**
 
 ```text
 NarrativeDynamics/Core/IdleTail.lean
@@ -615,11 +573,19 @@ NarrativeDynamics/Tests/IdleTail.lean
 NarrativeDynamics/Tests/FitnessABMIdleTail.lean
 ```
 
-Do not remove any existing Path4/Path5 files from the audit.
+Do not remove any current Path4/Path5 audit input.
 
-- [ ] **Step 2: Add bounded builds for the two new core modules.**
+- [ ] **Step 2: Extend the temporary-file setup.**
 
-Extend the module loop or add explicit calls:
+Add:
+
+```bash
+idle_tail_log="$(mktemp)"
+```
+
+and include it in the existing `trap` cleanup alongside `path4_log` and `path5_vectors`.
+
+- [ ] **Step 3: Add exact bounded module builds before the existing Path4/Path5 test executions.**
 
 ```bash
 "$path4_time" -f 'NarrativeDynamics.Core.IdleTail elapsed=%e s peak_rss=%M KiB' \
@@ -627,13 +593,12 @@ Extend the module loop or add explicit calls:
 
 "$path4_time" -f 'NarrativeDynamics.Core.FitnessABMIdleTail elapsed=%e s peak_rss=%M KiB' \
   timeout --kill-after=10s 240s lake build NarrativeDynamics.Core.FitnessABMIdleTail
+
+"$path4_time" -f 'NarrativeDynamics.Core.FitnessABMReplay elapsed=%e s peak_rss=%M KiB' \
+  timeout --kill-after=10s 240s lake build NarrativeDynamics.Core.FitnessABMReplay
 ```
 
-`FitnessABMReplay` is already part of the project, but explicitly build it here if needed to ensure the new theorem surface is checked before tests.
-
-- [ ] **Step 3: Add bounded new consumers with a dedicated trust log.**
-
-Create a temporary `idle_tail_log` in the script and run:
+- [ ] **Step 4: Add the two new bounded consumers.**
 
 ```bash
 "$path4_time" -f 'IdleTail tests elapsed=%e s peak_rss=%M KiB' \
@@ -646,7 +611,7 @@ Create a temporary `idle_tail_log` in the script and run:
   2>&1 | tee "$idle_tail_log"
 ```
 
-- [ ] **Step 4: Audit mandatory new theorem reports.**
+- [ ] **Step 5: Add mandatory trust-log checks for the new production bridge.**
 
 ```bash
 python3 tools/audit_fitness_trust.py log "$idle_tail_log" \
@@ -654,15 +619,9 @@ python3 tools/audit_fitness_trust.py log "$idle_tail_log" \
   --require NarrativeDynamics.FitnessABM.replay_append_idle
 ```
 
-The Path4 log still requires its existing reports and additionally:
+Add `NarrativeDynamics.Tests.FitnessABMPath4.tailState_idleTail` to the existing `path4_required` list; do not remove any current requirement.
 
-```text
-NarrativeDynamics.Tests.FitnessABMPath4.tailState_idleTail
-```
-
-Do not remove `replay_baseline` or `raw_tail_bridge` from the old required list.
-
-- [ ] **Step 5: Run shell syntax check and the complete gate.**
+- [ ] **Step 6: Validate shell syntax and run the entire Path4 gate.**
 
 ```bash
 bash -n tools/check_fitness_abm_path4.sh
@@ -670,21 +629,21 @@ timeout --kill-after=10s 900s bash tools/check_fitness_abm_path4.sh
 ```
 
 Expected:
-- source trust audit passes;
-- new modules/tests pass within the per-command 240s bound;
-- existing Path5 generated JSON still exactly matches `conformance/bb_path5_runtime_v1.json`;
+- source audit GREEN;
+- each new direct Lean command stays within 240s;
+- Path5 generated replay still byte-compares with `conformance/bb_path5_runtime_v1.json`;
 - existing Path4 theorem/replay reports remain present;
-- new append-idle reports use only the standard axiom allowlist.
+- new theorem reports pass the standard axiom allowlist.
 
-- [ ] **Step 6: Run the already-merged PathN gate unchanged.**
+- [ ] **Step 7: Run the merged PathN gate unchanged.**
 
 ```bash
 timeout --kill-after=10s 900s bash tools/check_fitness_abm_pathn.sh
 ```
 
-Expected: GREEN; no PathN source changes.
+Expected: GREEN with no PathN/FiniteConsensus source changes.
 
-- [ ] **Step 7: Commit CI integration.**
+- [ ] **Step 8: Commit.**
 
 ```bash
 git add tools/check_fitness_abm_path4.sh
@@ -693,13 +652,11 @@ git commit -m "ci: audit replay idle-tail interfaces"
 
 ---
 
-### Task 6: Final exact-head verification, review, and #81 merge-readiness
+### Task 6: Final exact-head verification and #81 review readiness
 
-**Files:** no production changes expected unless review finds a blocker.
+**Files:** no planned production edits.
 
-**Interfaces:** final evidence only.
-
-- [ ] **Step 1: Run focused final verification on the exact candidate head.**
+- [ ] **Step 1: Run fresh focused verification on the exact candidate head.**
 
 ```bash
 git rev-parse HEAD
@@ -728,87 +685,78 @@ git grep -n -E 'sorry|admit|native_decide|set_option[[:space:]]+maxHeartbeats[[:
   NarrativeDynamics/Tests/FitnessABMPath4.lean
 ```
 
-Expected: no duplicate historical abstraction; no fixture leakage into the new core modules; no proof escapes.
+Expected: no historical abstraction, no fixture leakage, no proof escape.
 
-- [ ] **Step 3: Review the final diff against the approved spec.**
+- [ ] **Step 3: Verify the diff is within the approved file/scope boundary.**
 
 ```bash
 git diff --stat proof/narrative-dynamics-v0...HEAD
-git diff proof/narrative-dynamics-v0...HEAD -- \
-  NarrativeDynamics/Core/IdleTail.lean \
-  NarrativeDynamics/Core/FitnessABMIdleTail.lean \
-  NarrativeDynamics/Core/FitnessABMReplay.lean \
-  NarrativeDynamics/Tests/IdleTail.lean \
-  NarrativeDynamics/Tests/FitnessABMIdleTail.lean \
-  NarrativeDynamics/Tests/FitnessABMPath4.lean \
-  tools/check_fitness_abm_path4.sh
+git diff --name-only proof/narrative-dynamics-v0...HEAD
 ```
 
-Reject the candidate if it:
-- adds another propagation abstraction;
-- duplicates replay recursion;
-- ignores `roundIndex` or probability;
-- changes Path4/Path5 expected values;
-- changes PathN/FiniteConsensus production files.
+Reject the candidate if `NarrativeDynamics/Core/FitnessABMPathN.lean` or `NarrativeDynamics/Core/FiniteConsensus.lean` changed.
 
-- [ ] **Step 4: Request code review.**
-
-Review scope:
+- [ ] **Step 4: Request code review using this exact scope.**
 
 ```text
 Base: 798f868a5327d6dd48de4f7a2b54cdf7a1ffed2a
 Head: current feature head
-Requirements: docs/superpowers/specs/2026-09-15-bb-replay-idle-tail-design.md
-Focus: dependent RunState equality, probability preservation, no replay duplication, Path4 compatibility, bounded trust gate.
+Spec: docs/superpowers/specs/2026-09-15-bb-replay-idle-tail-design.md
+Review focus:
+- whole-RunState bookkeeping equality;
+- accumulated replay probability preservation;
+- no duplicate replay recursion;
+- unchanged Path4 activation/common-clock semantics;
+- bounded source/log trust gates.
 ```
 
-Fix every Critical/Important finding before proceeding; rerun exact-head gates after any fix.
+Fix every Critical/Important finding and rerun Steps 1–3 after any code change.
 
 - [ ] **Step 5: Open a draft PR against `proof/narrative-dynamics-v0`.**
 
-PR description must state:
+The PR body must state:
 - `FitnessABMPathN` remains canonical propagation/convergence;
-- new surface is replay→idle-tail only;
-- `runInputs_append_idle` / `replay_append_idle` preserve full result bookkeeping;
-- old unresolvable #81 SHAs are historical comments, not evidence;
-- exact head required before ready-for-review.
+- this PR adds replay→idle-tail reuse only;
+- `runInputs_append_idle`/`replay_append_idle` preserve full `Result` bookkeeping;
+- old #81 SHAs `72bfdda`/`fd2517c` are historical comments and do not resolve in the current repository;
+- exact-head CI is required before ready-for-review.
 
-- [ ] **Step 6: Require exact-head PR CI.**
+- [ ] **Step 6: Require exact-head PR CI before ready-for-review.**
 
-On the exact PR head, verify:
-- proof workflow: success;
-- World Studio: success;
-- existing `BB path-four convergence`: success;
-- existing `BB finite-path convergence`: success;
-- no skipped/newly missing required proof job is being mistaken for success.
+Verify on the PR head SHA:
+- proof workflow = `completed/success`;
+- World Studio = `completed/success`;
+- `BB path-four convergence` step = success;
+- `BB finite-path convergence` step = success;
+- Python tests = success;
+- no skipped/missing Lean proof job is being counted as proof evidence.
 
-- [ ] **Step 7: Update #81 with factual evidence and remaining boundaries.**
+- [ ] **Step 7: Update #81 with factual evidence.**
 
-The closing/ready comment must include:
-- exact head SHA;
+Record:
+- exact feature head SHA;
 - PR number;
-- exact proof/World Studio run IDs;
-- bounded elapsed/RSS evidence from the Path4 gate;
+- exact proof and World Studio run IDs;
+- Path4 gate elapsed/RSS lines for the new modules/tests;
 - trust axiom results;
-- preserved theorem names/values;
-- explicit non-goals: no `(α,τ)` parameter theorem, no exposure-dependent learning, no universal replay equivalence.
+- unchanged `replay_baseline`/`raw_tail_bridge` and activation/convergence results;
+- remaining non-goals: no `(α,τ)` theorem, no exposure-dependent learning, no universal replay equivalence.
 
-- [ ] **Step 8: Stop at merge-readiness unless the user explicitly requests merge.**
+- [ ] **Step 8: Mark the PR ready for review only after Step 6 is GREEN, then stop.**
 
-Do not auto-merge or close #81 merely because CI passes.
+Do not merge and do not close #81 until the user explicitly requests those actions.
 
 ---
 
 ## Plan Self-Review Checklist
 
-Before execution begins, confirm:
-
-- [ ] Every spec requirement maps to a task: generic interface (Task 1), exact runtime bookkeeping adapter (Task 2), append-idle replay/probability bridge (Task 3), Path4 compatibility (Task 4), bounded trust/CI (Task 5), exact-head review evidence (Task 6).
-- [ ] No task introduces `PropagationModel`, a second graph/operator abstraction, or a second replay runner.
-- [ ] `runInputs_replicate_idle` extracts the existing Path4 private `run_idle` theorem into production rather than creating new semantics.
-- [ ] `runInputs_append_idle` and `replay_append_idle` preserve `out.probability` exactly.
-- [ ] `RunState.roundIndex` is part of the authoritative bridge; `JointState` convenience models are projection-only.
-- [ ] Path4 theorem names and expected values remain unchanged.
-- [ ] No changes are planned for `FitnessABMPathN.lean` or `FiniteConsensus.lean`.
-- [ ] Existing Path5 generated replay and PathN gates are explicit final regressions.
-- [ ] No placeholder language (`TBD`, `TODO`, “similar to”, unspecified tests) remains in this plan.
+- [ ] Generic iteration/observation is isolated in Task 1.
+- [ ] Exact `RunState` bookkeeping is locked by `runIdleTrajectory_eq` in Task 2.
+- [ ] `runInputs_replicate_idle` explicitly extracts the existing Path4 private `run_idle` fact in Task 3.
+- [ ] `runInputs_append_idle` and `replay_append_idle` preserve `out.probability` in their exact signatures.
+- [ ] Concrete non-unit probability preservation (`1/8`) is exercised by the refactored Path4 `raw_tail_bridge` in Task 4.
+- [ ] BBII/BIBI/IIBB remain test-only.
+- [ ] Existing Path4/Path5 generated replay and PathN gates remain explicit regressions.
+- [ ] No task changes `FitnessABMPathN.lean` or `FiniteConsensus.lean`.
+- [ ] No task creates another replay runner or propagation abstraction.
+- [ ] Every code/test action has an exact file, interface, command, and expected result; no placeholder or alternate implementation branch remains.
