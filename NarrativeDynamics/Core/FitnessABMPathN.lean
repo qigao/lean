@@ -559,4 +559,159 @@ theorem mean_between
     coordMin x ≤ mean n x ∧ mean n x ≤ coordMax x := by
   exact weightedMean_between (path_stationary_weights n hn) x
 
+def block (n : Nat) : Nat := n - 1
+
+def delta (n : Nat) : Rat := (1/4 : Rat) ^ block n
+
+theorem block_pos (n : Nat) (hn : 2 ≤ n) : 0 < block n := by
+  simp [block]
+  omega
+
+theorem delta_pos (n : Nat) (hn : 2 ≤ n) : 0 < delta n := by
+  unfold delta
+  exact pow_pos (by norm_num) _
+
+theorem delta_lt_one (n : Nat) (hn : 2 ≤ n) : delta n < 1 := by
+  unfold delta
+  exact pow_lt_one₀ (by norm_num) (by norm_num) (Nat.ne_of_gt (block_pos n hn))
+
+theorem one_sub_delta_pos (n : Nat) (hn : 2 ≤ n) : 0 < 1 - delta n := by
+  linarith [delta_lt_one n hn]
+
+theorem one_sub_delta_lt_one (n : Nat) (hn : 2 ≤ n) : 1 - delta n < 1 := by
+  linarith [delta_pos n hn]
+
+private def originBasis {n : Nat} (z : Fin n) : Beliefs n :=
+  fun j => if j = z then 1 else 0
+
+private theorem kernelTrajectory_origin_nonneg
+    (n : Nat) (hn : 2 ≤ n) (z : Fin n) (k : Nat) (i : Fin n) :
+    0 ≤ kernelTrajectory (pathKernel n) (originBasis z) k i := by
+  induction k generalizing i with
+  | zero => simp [kernelTrajectory, originBasis]
+  | succ k ih =>
+      rw [show Nat.succ k = k + 1 by omega, kernelTrajectory_succ]
+      simp only [applyKernel, Matrix.mulVec_apply, dotProduct]
+      exact Finset.sum_nonneg fun j _ =>
+        mul_nonneg (pathKernel_nonneg n hn i j) (ih j)
+
+private theorem applyKernel_self_mass_lower
+    (n : Nat) (hn : 2 ≤ n) (x : Beliefs n)
+    (hx : ∀ j, 0 ≤ x j) (i : Fin n) :
+    (1/4 : Rat) * x i ≤ applyKernel (pathKernel n) x i := by
+  simp only [applyKernel, Matrix.mulVec_apply, dotProduct]
+  calc
+    (1/4 : Rat) * x i ≤ pathKernel n i i * x i :=
+      mul_le_mul_of_nonneg_right (pathKernel_self_lower n i) (hx i)
+    _ ≤ ∑ j : Fin n, pathKernel n i j * x j :=
+      Finset.single_le_sum
+        (fun j _ => mul_nonneg (pathKernel_nonneg n hn i j) (hx j))
+        (Finset.mem_univ i)
+
+private theorem left_reach_mass
+    (n : Nat) (hn : 2 ≤ n) (z : Fin n) (hz : z.val = 0)
+    (k : Nat) (hk : k < n) :
+    (1/4 : Rat) ^ k ≤
+      kernelTrajectory (pathKernel n) (originBasis z) k ⟨k, hk⟩ := by
+  induction k with
+  | zero =>
+      have hzero : (⟨0, hk⟩ : Fin n) = z := by
+        apply Fin.ext
+        simpa using hz.symm
+      simp [kernelTrajectory, originBasis, hzero]
+  | succ k ih =>
+      let p : Fin n := ⟨k, by omega⟩
+      let i : Fin n := ⟨k + 1, by omega⟩
+      have hreach :
+          (1/4 : Rat) ^ k ≤
+            kernelTrajectory (pathKernel n) (originBasis z) k p := by
+        exact ih (by omega)
+      have hmass_nonneg :
+          0 ≤ kernelTrajectory (pathKernel n) (originBasis z) k p :=
+        kernelTrajectory_origin_nonneg n hn z k p
+      have hadj : pathAdj n p i := by
+        left
+        rfl
+      have hkernel : (1/4 : Rat) ≤ pathKernel n i p :=
+        pathKernel_adj_lower n hn i p hadj
+      change
+        (1/4 : Rat) ^ (k + 1) ≤
+          kernelTrajectory (pathKernel n) (originBasis z) (k + 1) i
+      rw [kernelTrajectory_succ]
+      simp only [applyKernel, Matrix.mulVec_apply, dotProduct]
+      calc
+        (1/4 : Rat) ^ (k + 1) = (1/4 : Rat) ^ k * (1/4 : Rat) := by
+          rw [pow_succ]
+        _ ≤ kernelTrajectory (pathKernel n) (originBasis z) k p * (1/4 : Rat) :=
+          mul_le_mul_of_nonneg_right hreach (by norm_num)
+        _ ≤ kernelTrajectory (pathKernel n) (originBasis z) k p * pathKernel n i p :=
+          mul_le_mul_of_nonneg_left hkernel hmass_nonneg
+        _ = pathKernel n i p * kernelTrajectory (pathKernel n) (originBasis z) k p := by
+          ring
+        _ ≤ ∑ j : Fin n,
+            pathKernel n i j * kernelTrajectory (pathKernel n) (originBasis z) k j :=
+          Finset.single_le_sum
+            (fun j _ => mul_nonneg (pathKernel_nonneg n hn i j)
+              (kernelTrajectory_origin_nonneg n hn z k j))
+            (Finset.mem_univ p)
+
+private theorem self_pad_mass
+    (n : Nat) (hn : 2 ≤ n) (z i : Fin n)
+    (s t : Nat)
+    (hstart : (1/4 : Rat) ^ s ≤
+      kernelTrajectory (pathKernel n) (originBasis z) s i) :
+    (1/4 : Rat) ^ (s + t) ≤
+      kernelTrajectory (pathKernel n) (originBasis z) (s + t) i := by
+  induction t with
+  | zero => simpa using hstart
+  | succ t ih =>
+      rw [Nat.add_succ, kernelTrajectory_succ]
+      calc
+        (1/4 : Rat) ^ (s + t + 1) =
+            (1/4 : Rat) ^ (s + t) * (1/4 : Rat) := by
+          rw [pow_succ]
+        _ ≤ kernelTrajectory (pathKernel n) (originBasis z) (s + t) i *
+            (1/4 : Rat) :=
+          mul_le_mul_of_nonneg_right ih (by norm_num)
+        _ = (1/4 : Rat) *
+            kernelTrajectory (pathKernel n) (originBasis z) (s + t) i := by
+          ring
+        _ ≤ applyKernel (pathKernel n)
+            (kernelTrajectory (pathKernel n) (originBasis z) (s + t)) i :=
+          applyKernel_self_mass_lower n hn _
+            (fun j => kernelTrajectory_origin_nonneg n hn z (s + t) j) i
+
+private theorem applyKernel_originBasis
+    {n : Nat} (M : Kernel (Fin n)) (z i : Fin n) :
+    applyKernel M (originBasis z) i = M i z := by
+  classical
+  simp [applyKernel, Matrix.mulVec_apply, dotProduct, originBasis]
+
+theorem path_block_common_mass
+    (n : Nat) (hn : 2 ≤ n) :
+    CommonColumnMass ((pathKernel n) ^ block n) (delta n) := by
+  let z : Fin n := ⟨0, by omega⟩
+  refine ⟨z, ?_⟩
+  intro i
+  have hi : i.val ≤ block n := by
+    simp [block]
+    omega
+  have hreach :
+      (1/4 : Rat) ^ i.val ≤
+        kernelTrajectory (pathKernel n) (originBasis z) i.val i := by
+    have hz : z.val = 0 := by rfl
+    simpa using left_reach_mass n hn z hz i.val i.isLt
+  have hpad :=
+    self_pad_mass n hn z i i.val (block n - i.val) hreach
+  have htime : i.val + (block n - i.val) = block n := Nat.add_sub_of_le hi
+  have hmass :
+      delta n ≤ kernelTrajectory (pathKernel n) (originBasis z) (block n) i := by
+    simpa [delta, htime] using hpad
+  have hp := congrFun (kernelPow_apply (pathKernel n) (originBasis z) (block n)) i
+  calc
+    delta n ≤ kernelTrajectory (pathKernel n) (originBasis z) (block n) i := hmass
+    _ = applyKernel ((pathKernel n) ^ block n) (originBasis z) i := hp.symm
+    _ = ((pathKernel n) ^ block n) i z :=
+      applyKernel_originBasis ((pathKernel n) ^ block n) z i
+
 end NarrativeDynamics.FitnessABMPathN
