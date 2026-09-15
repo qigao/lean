@@ -146,7 +146,7 @@ private theorem neighbor_mass_sum (n : Nat) (hn : 2 ≤ n) (i : Fin n) :
   let c : Rat := 1 / (2 * (degree n i : Rat))
   have hsum :
       (∑ j : Fin n, if j ∈ neighbors n i then c else 0) =
-        ∑ j in neighbors n i, c := by
+        ∑ j ∈ neighbors n i, c := by
     simpa using
       (Finset.sum_ite_mem (Finset.univ : Finset (Fin n)) (neighbors n i)
         (fun _ => c))
