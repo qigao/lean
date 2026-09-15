@@ -588,9 +588,10 @@ private theorem kernelTrajectory_origin_nonneg
     (n : Nat) (hn : 2 ≤ n) (z : Fin n) (k : Nat) (i : Fin n) :
     0 ≤ kernelTrajectory (pathKernel n) (originBasis z) k i := by
   induction k generalizing i with
-  | zero => simp [kernelTrajectory, originBasis]
+  | zero =>
+      by_cases h : i = z <;> simp [kernelTrajectory, originBasis, h]
   | succ k ih =>
-      rw [show Nat.succ k = k + 1 by omega, kernelTrajectory_succ]
+      rw [kernelTrajectory_succ]
       simp only [applyKernel, Matrix.mulVec_apply, dotProduct]
       exact Finset.sum_nonneg fun j _ =>
         mul_nonneg (pathKernel_nonneg n hn i j) (ih j)
