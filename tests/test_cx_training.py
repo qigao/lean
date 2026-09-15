@@ -79,7 +79,7 @@ def _binding() -> CxDevelopmentBinding:
         dataset_content_hash="1" * 64,
         split_hash="2" * 64,
         event_encoder_hash="3" * 64,
-        dynamics_hash="4" * 64,
+        dynamics_hash=DYNAMICS.fingerprint,
         input_node_fingerprint="5" * 64,
         output_node_fingerprint="6" * 64,
         real_graph_fingerprint="a" * 64,
@@ -159,6 +159,18 @@ def test_artifact_must_match_arm_seed_binding_pin():
         train_validation_arm(
             _artifact("degree"), binding=binding, arm="real", seed=7,
             train_samples=train, validation_samples=validation, dynamics=DYNAMICS,
+        )
+
+
+def test_dynamics_must_match_binding_pin():
+    binding = _binding()
+    train, validation = _data()
+    changed = replace(DYNAMICS, recurrent_gain=0.2)
+    assert changed.fingerprint != binding.dynamics_hash
+    with pytest.raises(ValueError, match="dynamics fingerprint"):
+        train_validation_arm(
+            _artifact("real"), binding=binding, arm="real", seed=7,
+            train_samples=train, validation_samples=validation, dynamics=changed,
         )
 
 
