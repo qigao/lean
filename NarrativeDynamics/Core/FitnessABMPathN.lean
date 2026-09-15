@@ -12,6 +12,7 @@ namespace NarrativeDynamics.FitnessABMPathN
 
 open NarrativeDynamics.NetworkPropagation
 open NarrativeDynamics.FiniteConsensus
+open Filter Topology
 open scoped BigOperators
 
 abbrev Beliefs (n : Nat) := Fin n → Rat
@@ -714,5 +715,28 @@ theorem path_block_common_mass
     _ = applyKernel ((pathKernel n) ^ block n) (originBasis z) i := hp.symm
     _ = ((pathKernel n) ^ block n) i z :=
       applyKernel_originBasis ((pathKernel n) ^ block n) z i
+
+theorem trajectory_tendsto
+    (n : Nat) (hn : 2 ≤ n)
+    (x : Beliefs n) (hx : allBroadcast n x) (i : Fin n) :
+    Tendsto
+      (fun k : Nat => (trajectory n x k i : Real))
+      atTop
+      (nhds (mean n x : Real)) := by
+  let i0 : Fin n := ⟨0, by omega⟩
+  letI : Nonempty (Fin n) := ⟨i0⟩
+  have hkernel := block_contraction_tendsto
+    (pathKernel n) (stationaryWeight n)
+    (pathKernel_averaging n hn) (path_stationary_weights n hn)
+    (block n) (block_pos n hn)
+    (delta n) (delta_pos n hn) (delta_lt_one n hn)
+    (path_block_common_mass n hn) x i
+  have htraj :
+      (fun k : Nat => (trajectory n x k i : Real)) =
+        (fun k : Nat => (kernelTrajectory (pathKernel n) x k i : Real)) := by
+    funext k
+    rw [trajectory_eq_kernelTrajectory n hn x hx k]
+  rw [htraj]
+  simpa [mean] using hkernel
 
 end NarrativeDynamics.FitnessABMPathN
