@@ -155,6 +155,10 @@ jobs:
         timeout-minutes: 15
         run: bash tools/check_fitness_abm_runtime.sh
 
+      - name: BB path-four convergence
+        timeout-minutes: 15
+        run: bash tools/check_fitness_abm_path4.sh
+
       - name: BB-only naming audit
         run: |
           set -euo pipefail
