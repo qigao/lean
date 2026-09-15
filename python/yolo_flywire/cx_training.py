@@ -270,6 +270,8 @@ def train_validation_arm(
         raise ValueError("binding must be a CxDevelopmentBinding")
     if type(dynamics) is not CxDynamics:
         raise ValueError("dynamics must be a CxDynamics")
+    if dynamics.fingerprint != binding.dynamics_hash:
+        raise ValueError("dynamics fingerprint does not match development binding")
     if type(seed) is not int or seed not in binding.seeds:
         raise ValueError("seed is not part of the frozen development binding")
     expected_fingerprint = binding.graph_fingerprint_for(arm, seed)
