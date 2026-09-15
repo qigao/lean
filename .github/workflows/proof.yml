@@ -155,6 +155,17 @@ jobs:
         timeout-minutes: 15
         run: bash tools/check_fitness_abm_runtime.sh
 
+      - name: BB path-four convergence
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          /usr/bin/time -f 'FitnessABMPath4 build elapsed=%e s peak_rss=%M KiB' \
+            timeout --kill-after=10s 240s \
+            lake build NarrativeDynamics.Core.FitnessABMPath4
+          /usr/bin/time -f 'FitnessABMPath4 tests elapsed=%e s peak_rss=%M KiB' \
+            timeout --kill-after=10s 240s \
+            lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FitnessABMPath4.lean
+
       - name: BB-only naming audit
         run: |
           set -euo pipefail
