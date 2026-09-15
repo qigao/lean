@@ -37,7 +37,7 @@ jobs:
           -q
 
   models:
-    name: Graph SSM model and training contracts
+    name: Graph SSM model, training, and reducer contracts
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -51,7 +51,7 @@ jobs:
         run: |
           python -m pip install pytest numpy
           python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-      - name: Run model and training RED/GREEN gates
+      - name: Run model, training, and reducer RED/GREEN gates
         env:
           PYTHONPATH: pose_graph_ssm/src
         run: >-
@@ -63,4 +63,5 @@ jobs:
           pose_graph_ssm/tests/test_evaluation.py
           pose_graph_ssm/tests/test_final_test_seal.py
           pose_graph_ssm/tests/test_training_fairness.py
+          pose_graph_ssm/tests/test_development_runner.py
           -q
