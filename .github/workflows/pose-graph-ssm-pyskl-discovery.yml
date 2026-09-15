@@ -1,0 +1,106 @@
+name: pose-graph-ssm-pyskl-discovery
+
+on:
+  push:
+    branches:
+      - research/pose-graph-ssm-v1
+    paths:
+      - .github/workflows/pose-graph-ssm-pyskl-discovery.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pose-graph-ssm-pyskl-discovery
+  cancel-in-progress: false
+
+env:
+  PYSKL_NTU120_URL: https://download.openmmlab.com/mmaction/pyskl/data/nturgbd/ntu120_3danno.pkl
+  PROTOCOL_PATH: pose_graph_ssm/protocols/v1-development-preflight.json
+
+jobs:
+  discover:
+    name: Discover PYSKL NTU120 3D annotation identity
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install source-validation runtime
+        run: |
+          python -m pip install "numpy==2.4.6"
+          python -m pip install --no-deps -e ./pose_graph_ssm
+
+      - name: Download public PYSKL NTU120 3D annotations
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+            "$PYSKL_NTU120_URL" --output ntu120_3danno.pkl
+          test -s ntu120_3danno.pkl
+          ls -lh ntu120_3danno.pkl
+          sha256sum ntu120_3danno.pkl
+
+      - name: Validate exact annotation schema and frozen development inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from collections import Counter
+          from pathlib import Path
+          from pose_graph_ssm.protocol import load_protocol
+          from pose_graph_ssm.pyskl_source import read_pyskl_3d_annotations
+
+          protocol = load_protocol(Path("pose_graph_ssm/protocols/v1-development-preflight.json"))
+          source = read_pyskl_3d_annotations(Path("ntu120_3danno.pkl"), protocol)
+          split_counts = Counter(sample.split for sample in source.samples)
+          action_counts = {
+              split: {str(action): 0 for action in protocol.actions}
+              for split in ("train", "validation", "final_test")
+          }
+          for sample in source.samples:
+              action_counts[sample.split][str(sample.action)] += 1
+          for split in ("train", "validation"):
+              missing = [action for action in protocol.actions if action_counts[split][str(action)] == 0]
+              if missing:
+                  raise SystemExit(f"processed PYSKL source missing {split} actions: {missing}")
+          evidence = {
+              "format_version": 1,
+              "kind": "pyskl-ntu120-3danno-source-discovery",
+              "source_sha256": source.source_sha256,
+              "selected_sample_count": len(source.samples),
+              "split_counts": dict(sorted(split_counts.items())),
+              "action_counts": action_counts,
+              "source_semantics": {
+                  "shape": "[M,T,25,3]",
+                  "primary_track": "PYSKL person-0 after motion ranking/denoising",
+                  "zero_padding": "whole-frame linear interpolation in pose_graph_ssm adapter",
+                  "tracking_state_available": False,
+              },
+          }
+          Path("source-evidence.json").write_text(
+              json.dumps(evidence, sort_keys=True, separators=(",", ":")) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(evidence, sort_keys=True))
+          PY
+
+      - name: Remove downloaded annotation bytes
+        if: always()
+        run: rm -f ntu120_3danno.pkl
+
+      - name: Upload source identity only
+        uses: actions/upload-artifact@v4
+        with:
+          name: pose-graph-ssm-pyskl-source-${{ github.run_id }}
+          path: source-evidence.json
+          if-no-files-found: error
+          retention-days: 30
