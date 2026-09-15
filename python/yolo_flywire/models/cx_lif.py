@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import json
 import math
 from typing import NamedTuple
 
@@ -44,6 +46,30 @@ class CxDynamics:
     @property
     def membrane_decay(self) -> float:
         return math.exp(-1.0 / float(self.tau_membrane))
+
+    def fingerprint_payload(self) -> dict[str, object]:
+        return {
+            "format_version": 1,
+            "kind": "cx_lif_dynamics",
+            "tau_membrane": float(self.tau_membrane),
+            "synaptic_decay": float(self.synaptic_decay),
+            "refractory_steps": self.refractory_steps,
+            "threshold": float(self.threshold),
+            "reset": float(self.reset),
+            "recurrent_delay_steps": self.recurrent_delay_steps,
+            "recurrent_gain": float(self.recurrent_gain),
+            "magnitude_policy": self.magnitude_policy,
+        }
+
+    @property
+    def fingerprint(self) -> str:
+        encoded = json.dumps(
+            self.fingerprint_payload(),
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
 
 
 class CxLifState(NamedTuple):
