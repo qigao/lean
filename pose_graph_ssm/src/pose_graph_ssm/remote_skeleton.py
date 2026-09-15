@@ -8,10 +8,10 @@ from pathlib import Path
 import re
 import time
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
-from .ntu import split_for_subject
+from .ntu import build_manifest, split_for_subject
 from .protocol import ExperimentProtocol
 
 
@@ -67,6 +67,14 @@ def _https_locator(value: object) -> str:
     if parsed.scheme != "https" or not parsed.netloc:
         raise ValueError("remote skeleton locator must use HTTPS")
     return value
+
+
+def _https_prefix(value: object) -> str:
+    prefix = _https_locator(value)
+    parsed = urlparse(prefix)
+    if parsed.query or parsed.fragment:
+        raise ValueError("remote skeleton locator prefix must not contain query or fragment")
+    return prefix.rstrip("/")
 
 
 @dataclass(frozen=True)
@@ -164,6 +172,53 @@ def validate_remote_skeleton_manifest(
     )
 
 
+def build_remote_skeleton_transport(
+    root: str | Path,
+    protocol: ExperimentProtocol,
+    *,
+    locator_prefix: str,
+) -> dict[str, Any]:
+    if type(protocol) is not ExperimentProtocol:
+        raise ValueError("protocol must be an ExperimentProtocol")
+    prefix = _https_prefix(locator_prefix)
+    inventory = build_manifest(root, protocol)
+    rows: list[dict[str, Any]] = []
+    for source in inventory["samples"]:
+        filename = Path(source["relative_path"]).name
+        sample_id, setup, camera, subject, repetition, action = _parse_name(filename)
+        expected = {
+            "sample_id": sample_id,
+            "subject": subject,
+            "action": action,
+            "split": split_for_subject(subject, protocol),
+        }
+        for key, value in expected.items():
+            if source[key] != value:
+                raise ValueError(f"local skeleton manifest {key} differs from canonical identity")
+        rows.append(
+            {
+                "filename": filename,
+                "sample_id": sample_id,
+                "setup": setup,
+                "camera": camera,
+                "subject": subject,
+                "repetition": repetition,
+                "action": action,
+                "split": source["split"],
+                "size_bytes": source["size_bytes"],
+                "sha256": source["sha256"],
+                "locator": f"{prefix}/{quote(filename, safe='')}",
+            }
+        )
+    raw = {
+        "format_version": 1,
+        "kind": "ntu120_skeleton_remote_transport",
+        "samples": rows,
+    }
+    validate_remote_skeleton_manifest(raw, protocol)
+    return raw
+
+
 def require_development_coverage(
     manifest: VerifiedRemoteSkeletonManifest,
     protocol: ExperimentProtocol,
@@ -251,22 +306,48 @@ def _read_json(path: Path) -> dict[str, Any]:
 def main(argv: list[str] | None = None) -> int:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Validate/materialize private NTU skeleton transport")
+    parser = argparse.ArgumentParser(description="Build/validate/materialize private NTU skeleton transport")
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("validate", "materialize"):
-        command = sub.add_parser(name)
-        command.add_argument("--manifest", type=Path, required=True)
-        command.add_argument("--protocol", type=Path, required=True)
-        if name == "validate":
-            command.add_argument("--public-output", type=Path)
-        else:
-            command.add_argument("--root", type=Path, required=True)
+
+    build = sub.add_parser("build")
+    build.add_argument("--root", type=Path, required=True)
+    build.add_argument("--protocol", type=Path, required=True)
+    build.add_argument("--locator-prefix", required=True)
+    build.add_argument("--output", type=Path, required=True)
+
+    validate = sub.add_parser("validate")
+    validate.add_argument("--manifest", type=Path, required=True)
+    validate.add_argument("--protocol", type=Path, required=True)
+    validate.add_argument("--public-output", type=Path)
+
+    materialize = sub.add_parser("materialize")
+    materialize.add_argument("--manifest", type=Path, required=True)
+    materialize.add_argument("--protocol", type=Path, required=True)
+    materialize.add_argument("--root", type=Path, required=True)
 
     args = parser.parse_args(argv)
     try:
         from .protocol import load_protocol
 
         protocol = load_protocol(args.protocol)
+        if args.command == "build":
+            if args.output.exists() or args.output.is_symlink():
+                raise FileExistsError("transport manifest output already exists")
+            raw = build_remote_skeleton_transport(args.root, protocol, locator_prefix=args.locator_prefix)
+            verified = validate_remote_skeleton_manifest(raw, protocol)
+            require_development_coverage(verified, protocol)
+            args.output.write_text(_canonical_json(raw) + "\n", encoding="utf-8")
+            print(
+                _canonical_json(
+                    {
+                        "samples": len(verified.samples),
+                        "source_manifest_hash": verified.source_manifest_hash,
+                        "transport_manifest_hash": verified.transport_manifest_hash,
+                    }
+                )
+            )
+            return 0
+
         verified = validate_remote_skeleton_manifest(_read_json(args.manifest), protocol)
         require_development_coverage(verified, protocol)
         if args.command == "validate":
