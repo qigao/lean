@@ -6,23 +6,40 @@ cd "$path4_root"
 
 path4_time="$(type -P time)"
 path4_log="$(mktemp)"
-trap 'rm -f "$path4_log"' EXIT
+path5_vectors="$(mktemp)"
+trap 'rm -f "$path4_log" "$path5_vectors"' EXIT
 
 python3 tools/audit_fitness_trust.py source \
   NarrativeDynamics/Core/FitnessABMPath4.lean \
   NarrativeDynamics/Core/FitnessABMPath4Convergence.lean \
-  NarrativeDynamics/Tests/FitnessABMPath4.lean
+  NarrativeDynamics/Tests/FitnessABMPath4.lean \
+  NarrativeDynamics/Core/FitnessABMPath5.lean \
+  NarrativeDynamics/Conformance/FitnessABMPath5Vectors.lean \
+  NarrativeDynamics/Tests/FitnessABMPath5.lean
 
 for path4_module in NarrativeDynamics.Core.FitnessABMPath4 \
-    NarrativeDynamics.Core.FitnessABMPath4Convergence; do
+    NarrativeDynamics.Core.FitnessABMPath4Convergence \
+    NarrativeDynamics.Core.FitnessABMPath5 \
+    NarrativeDynamics.Conformance.FitnessABMPath5Vectors; do
   "$path4_time" -f "$path4_module elapsed=%e s peak_rss=%M KiB" \
     timeout --kill-after=10s 240s lake build "$path4_module"
 done
+
+"$path4_time" -f 'FitnessABMPath5 generated replay elapsed=%e s peak_rss=%M KiB' \
+  timeout --kill-after=10s 240s \
+  lake env lean --run NarrativeDynamics/Conformance/FitnessABMPath5Vectors.lean \
+  > "$path5_vectors"
+cat "$path5_vectors"
+cmp conformance/bb_path5_runtime_v1.json "$path5_vectors"
 
 "$path4_time" -f 'FitnessABMPath4 tests elapsed=%e s peak_rss=%M KiB' \
   timeout --kill-after=10s 240s \
   lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FitnessABMPath4.lean \
   2>&1 | tee "$path4_log"
+
+"$path4_time" -f 'FitnessABMPath5 tests elapsed=%e s peak_rss=%M KiB' \
+  timeout --kill-after=10s 240s \
+  lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FitnessABMPath5.lean
 
 path4_required=()
 for path4_name in propagate_independent_exposures propagate_eq_linear \
