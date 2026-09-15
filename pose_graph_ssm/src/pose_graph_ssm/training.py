@@ -54,6 +54,34 @@ def _hash_json(value: object) -> str:
     return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
+def training_protocol_fingerprint(protocol: ExperimentProtocol) -> str:
+    if type(protocol) is not ExperimentProtocol:
+        raise ValueError("protocol must be an ExperimentProtocol")
+    payload = {
+        "id": "pose-graph-ssm-v1-training-evaluation",
+        "model_kinds": list(protocol.model_kinds),
+        "seed_roster": list(protocol.seeds),
+        "parameter_ceiling": protocol.parameter_ceiling,
+        "optimizer": protocol.training.optimizer,
+        "learning_rate": protocol.training.learning_rate,
+        "weight_decay": protocol.training.weight_decay,
+        "batch_size": protocol.training.batch_size,
+        "epochs": protocol.training.epochs,
+        "max_updates": protocol.training.max_updates,
+        "checkpoint_rule": protocol.training.checkpoint_rule,
+        "observation_ratios": list(protocol.observation_ratios),
+        "retention_ratio": protocol.retention_ratio,
+        "retention_horizon": protocol.retention_horizon,
+        "dropout_burst": protocol.dropout_burst,
+        "recovery_horizon": protocol.recovery_horizon,
+        "primary_early_effect": protocol.primary_early_effect,
+        "temporal_effect": protocol.temporal_effect,
+        "attribution_effect": protocol.attribution_effect,
+        "positive_seed_count": protocol.positive_seed_count,
+    }
+    return _hash_json(payload)
+
+
 def architecture_fingerprint(model_kind: str, protocol: ExperimentProtocol) -> str:
     if model_kind not in protocol.model_kinds:
         raise ValueError(f"model kind is outside frozen roster: {model_kind!r}")
