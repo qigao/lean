@@ -64,6 +64,12 @@ jobs:
             exit 1
           fi
 
+      - name: Anonymous temporal credit theorem tests
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          lake build NarrativeDynamics.Core.AnonymousTemporalCredit
+          lake env lean NarrativeDynamics/Tests/AnonymousTemporalCredit.lean
+
       - name: Temporal credit theorem tests
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
