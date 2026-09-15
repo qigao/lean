@@ -1,4 +1,7 @@
 import NarrativeDynamics.Core.FitnessABMPathN
+import NarrativeDynamics.Core.FitnessABMPath4
+import NarrativeDynamics.Core.FitnessABMPath4Convergence
+import NarrativeDynamics.Core.FitnessABMPath5
 
 open NarrativeDynamics.FitnessABMPathN
 open NarrativeDynamics.NetworkPropagation
@@ -66,3 +69,43 @@ example
 #print axioms NarrativeDynamics.FitnessABMPathN.mean_step
 #print axioms NarrativeDynamics.FitnessABMPathN.path_block_common_mass
 #print axioms NarrativeDynamics.FitnessABMPathN.trajectory_tendsto
+
+example (i j : Fin 4) :
+    NarrativeDynamics.FitnessABMPathN.pathAdj 4 i j ↔
+      NarrativeDynamics.FitnessABMPath4.pathAdj i j :=
+  path4_adj_compat i j
+
+example (x : Fin 4 → Rat) :
+    NarrativeDynamics.FitnessABMPathN.beliefStep 4 x =
+      NarrativeDynamics.FitnessABMPath4.beliefStep x :=
+  path4_step_compat x
+
+example (x : Fin 4 → Rat) (k : Nat) :
+    NarrativeDynamics.FitnessABMPathN.trajectory 4 x k =
+      NarrativeDynamics.FitnessABMPath4.trajectory x k :=
+  path4_trajectory_compat x k
+
+example (x : Fin 4 → Rat) :
+    NarrativeDynamics.FitnessABMPathN.mean 4 x =
+      NarrativeDynamics.FitnessABMPath4.mean x :=
+  path4_mean_compat x
+
+example (i j : Fin 5) :
+    NarrativeDynamics.FitnessABMPathN.pathAdj 5 i j ↔
+      NarrativeDynamics.FitnessABMPath5.path5Adj i j :=
+  path5_adj_compat i j
+
+example (x : Fin 5 → Rat) :
+    NarrativeDynamics.FitnessABMPathN.beliefStep 5 x =
+      NarrativeDynamics.FitnessABMPath5.beliefStep x :=
+  path5_step_compat x
+
+example (x : Fin 5 → Rat) (k : Nat) :
+    NarrativeDynamics.FitnessABMPathN.trajectory 5 x k =
+      NarrativeDynamics.FitnessABMPath5.trajectory x k :=
+  path5_trajectory_compat x k
+
+example (x : Fin 5 → Rat) :
+    NarrativeDynamics.FitnessABMPathN.mean 5 x =
+      NarrativeDynamics.FitnessABMPath5.mean x :=
+  path5_mean_compat x
