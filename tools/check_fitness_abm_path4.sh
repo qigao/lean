@@ -24,6 +24,10 @@ done
   lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FitnessABMPath4.lean \
   2>&1 | tee "$path4_log"
 
+"$path4_time" -f 'FitnessABMPath5 tests elapsed=%e s peak_rss=%M KiB' \
+  timeout --kill-after=10s 240s \
+  lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FitnessABMPath5.lean
+
 path4_required=()
 for path4_name in propagate_independent_exposures propagate_eq_linear \
     allBroadcast_iterate mean_step iterate_closedForm trajectory_tendsto; do
