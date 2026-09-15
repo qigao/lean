@@ -74,18 +74,24 @@ theorem propagate_eq_linear (x : Beliefs) (e : Fin 4 → Nat)
   fin_cases i
   · change (nextAgent pathAdj (population x e) 0).belief = linearStep x 0
     simp only [nextAgent, incoming_eq x e hx 0]
-    norm_num [linearStep, population] <;> ring
+    norm_num [linearStep, population]
+    ring
   · change (nextAgent pathAdj (population x e) 1).belief = linearStep x 1
     simp only [nextAgent, incoming_eq x e hx 1]
     norm_num [linearStep, population,
-      Finset.sum_pair h02, Finset.card_pair h02] <;> ring
+      Finset.sum_pair h02, Finset.card_pair h02]
+    ring
   · change (nextAgent pathAdj (population x e) 2).belief = linearStep x 2
     simp only [nextAgent, incoming_eq x e hx 2]
-    norm_num [linearStep, population,
-      Finset.sum_pair h13, Finset.card_pair h13] <;> ring
+    dsimp only [linearStep, Matrix.cons_val]
+    norm_num [population,
+      Finset.sum_pair h13, Finset.card_pair h13]
+    ring
   · change (nextAgent pathAdj (population x e) 3).belief = linearStep x 3
     simp only [nextAgent, incoming_eq x e hx 3]
-    norm_num [linearStep, population] <;> ring
+    dsimp only [linearStep, Matrix.cons_val]
+    norm_num [population]
+    ring
 
 theorem allBroadcast_step (x : Beliefs) (hx : allBroadcast x) :
     allBroadcast (beliefStep x) := by
