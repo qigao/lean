@@ -51,7 +51,12 @@ jobs:
         run: |
           python -m pip install pytest numpy
           python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-      - name: Run graph RED/GREEN gate
+      - name: Run model RED/GREEN gates
         env:
           PYTHONPATH: pose_graph_ssm/src
-        run: python -m pytest pose_graph_ssm/tests/test_graph.py -q
+        run: >-
+          python -m pytest
+          pose_graph_ssm/tests/test_graph.py
+          pose_graph_ssm/tests/test_selective_ssm.py
+          pose_graph_ssm/tests/test_models.py
+          -q
