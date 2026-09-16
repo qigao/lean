@@ -283,8 +283,8 @@ theorem path2_consensus_iff_product_tendsto_zero
       intro k
       dsimp [P]
       field_simp [hd]
-    exact (abs_tendsto_zero_iff_raw P).2 hP |> (by
-      intro h
-      simpa [P] using h)
+    have habs : Tendsto (fun k => |P k|) atTop (nhds 0) :=
+      (abs_tendsto_zero_iff_raw P).2 hP
+    simpa [P] using habs
 
 end NarrativeDynamics.FitnessABMPathNExposureConvergence
