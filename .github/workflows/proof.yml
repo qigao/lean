@@ -163,6 +163,10 @@ jobs:
         timeout-minutes: 15
         run: bash tools/check_fitness_abm_pathn.sh
 
+      - name: PathN exposure consensus analyzer
+        timeout-minutes: 20
+        run: bash tools/check_narrative_analyzer.sh
+
       - name: BB-only naming audit
         run: |
           set -euo pipefail
