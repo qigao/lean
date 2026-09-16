@@ -54,7 +54,10 @@ theorem nearOneSchedule_valid : nearOneSchedule.Valid := by
   constructor
   · intro e
     have h := slowFraction_bounds e
-    simpa [nearOneSchedule] using And.intro (by linarith [h.2]) (by linarith [h.1])
+    change
+      0 ≤ (1 : Rat) - 1 / (2 * (((e + 1 : Nat) : Rat) ^ 2)) ∧
+        (1 : Rat) - 1 / (2 * (((e + 1 : Nat) : Rat) ^ 2)) ≤ 1
+    exact ⟨by linarith [h.2], by linarith [h.1]⟩
   · norm_num [nearOneSchedule]
 
 theorem harmonicSchedule_valid : harmonicSchedule.Valid := by
@@ -70,6 +73,7 @@ private theorem slowZero_factor (r : Nat) :
   dsimp [slowZeroSchedule]
   have h : (((r + 2 : Nat) : Rat)) ≠ 0 := by positivity
   field_simp [h]
+  push_cast
   ring
 
 private theorem nearOne_factor (r : Nat) :
@@ -84,6 +88,7 @@ private theorem harmonic_factor (r : Nat) :
   dsimp [harmonicSchedule]
   have h : (((r + 2 : Nat) : Rat)) ≠ 0 := by positivity
   field_simp [h]
+  push_cast
   ring
 
 theorem slowZero_product (k : Nat) :
@@ -155,9 +160,13 @@ theorem slowZero_product_tendsto_half :
     simpa using h
   refine hlim.congr' (Filter.Eventually.of_forall ?_)
   intro k
+  change
+    (1/2 : Real) + (1 / ((k : Real) + 1)) * (1/2 : Real) =
+      (path2MultiplierProduct slowZeroSchedule 0 k : Real)
   rw [slowZero_product]
   push_cast
-  field_simp
+  have hk1 : (k : Real) + 1 ≠ 0 := by positivity
+  field_simp [hk1]
   ring
 
 private theorem harmonic_product_tendsto_zero :
@@ -168,25 +177,23 @@ private theorem harmonic_product_tendsto_zero :
       atTop (nhds 0) := tendsto_one_div_add_atTop_nhds_zero_nat
   refine hbase.congr' (Filter.Eventually.of_forall ?_)
   intro k
+  change
+    (1 : Real) / ((k : Real) + 1) =
+      (path2MultiplierProduct harmonicSchedule 0 k : Real)
   rw [harmonic_product]
   push_cast
-  rfl
 
 private theorem evenIndex_tendsto :
     Tendsto (fun k : Nat => 2 * k) atTop atTop := by
   refine Filter.tendsto_atTop.2 ?_
   intro b
-  refine ⟨b, ?_⟩
-  intro a ha
-  omega
+  exact Filter.eventually_atTop.2 ⟨b, fun a ha => by omega⟩
 
 private theorem oddIndex_tendsto :
     Tendsto (fun k : Nat => 2 * k + 1) atTop atTop := by
   refine Filter.tendsto_atTop.2 ?_
   intro b
-  refine ⟨b, ?_⟩
-  intro a ha
-  omega
+  exact Filter.eventually_atTop.2 ⟨b, fun a ha => by omega⟩
 
 private theorem nearOne_even_product_tendsto_half :
     Tendsto
@@ -195,6 +202,9 @@ private theorem nearOne_even_product_tendsto_half :
   have h := slowZero_product_tendsto_half.comp evenIndex_tendsto
   refine h.congr' (Filter.Eventually.of_forall ?_)
   intro k
+  change
+    (path2MultiplierProduct slowZeroSchedule 0 (2 * k) : Real) =
+      (path2MultiplierProduct nearOneSchedule 0 (2 * k) : Real)
   rw [nearOne_product, slowZero_product]
   have hp : (-1 : Rat) ^ (2 * k) = 1 := by
     simp [pow_mul]
@@ -206,9 +216,16 @@ private theorem nearOne_odd_product_tendsto_neg_half :
       (fun k => (path2MultiplierProduct nearOneSchedule 0 (2 * k + 1) : Real))
       atTop (nhds (-1/2 : Real)) := by
   have hslow := slowZero_product_tendsto_half.comp oddIndex_tendsto
-  have hneg := hslow.neg
+  have hneg0 := hslow.neg
+  have hneg : Tendsto
+      (fun k => -(path2MultiplierProduct slowZeroSchedule 0 (2 * k + 1) : Real))
+      atTop (nhds (-1/2 : Real)) := by
+    simpa [Function.comp_def] using hneg0
   refine hneg.congr' (Filter.Eventually.of_forall ?_)
   intro k
+  change
+    -(path2MultiplierProduct slowZeroSchedule 0 (2 * k + 1) : Real) =
+      (path2MultiplierProduct nearOneSchedule 0 (2 * k + 1) : Real)
   rw [nearOne_product, slowZero_product]
   have hp : (-1 : Rat) ^ (2 * k + 1) = -1 := by
     rw [pow_succ]
@@ -275,6 +292,10 @@ theorem nearOne_not_convergent :
       atTop (nhds 0) := by
     refine hdiff.congr' (Filter.Eventually.of_forall ?_)
     intro k
+    change
+      (beliefs ((step nearOneSchedule 2)^[k] split2) 0 : Real) -
+          (beliefs ((step nearOneSchedule 2)^[k] split2) 1 : Real) =
+        (path2MultiplierProduct nearOneSchedule 0 k : Real)
     have h := path2_disagreement_product nearOneSchedule nearOneSchedule_valid
       split2 split2_equal_exposure nearOne_split2_allBroadcast k
     have h' :
@@ -282,7 +303,8 @@ theorem nearOne_not_convergent :
             beliefs ((step nearOneSchedule 2)^[k] split2) 1 =
           path2MultiplierProduct nearOneSchedule 0 k := by
       simpa [split2] using h
-    exact_mod_cast h'
+    have hReal := congrArg (fun q : Rat => (q : Real)) h'
+    simpa using hReal
   have heven0 := hproduct0.comp evenIndex_tendsto
   have huniq := tendsto_nhds_unique heven0 nearOne_even_product_tendsto_half
   norm_num at huniq
