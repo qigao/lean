@@ -19,7 +19,8 @@ python3 tools/audit_fitness_trust.py source \
 
 for pathn_module in \
     NarrativeDynamics.Core.FiniteConsensus \
-    NarrativeDynamics.Core.FitnessABMPathN; do
+    NarrativeDynamics.Core.FitnessABMPathN \
+    NarrativeDynamics.Core.FitnessABMPathNParameters; do
   "$pathn_time" -f "$pathn_module elapsed=%e s peak_rss=%M KiB" \
     timeout --kill-after=10s 240s lake build "$pathn_module"
 done
