@@ -174,7 +174,7 @@ private theorem neighbor_mass_sum
     simp [hcard, c, hd]
   · have hcard : (FitnessABMPathN.neighbors n i).card = 2 := by
       simpa [FitnessABMPathN.degree] using hd
-    simp [hcard, c, hd]
+    simp [hcard, c, hd] <;> ring
 
 /-- Every valid parameterized path-kernel row has exact mass one. -/
 theorem pathKernel_rowsum
@@ -300,8 +300,7 @@ theorem propagate_eq_kernel
       (1 - params.receptivity) * x i +
         (params.receptivity / (FitnessABMPathN.degree n i : Rat)) *
           (∑ j ∈ FitnessABMPathN.neighbors n i, x j)
-  field_simp [hdq]
-  ring
+  field_simp [hdq] <;> ring
 
 private theorem kernel_preserves_allBroadcast
     (params : ResponseParameters) (hvalid : params.Valid)
