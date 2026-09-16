@@ -16,6 +16,7 @@ trap 'rm -f "$consensus_log" "$time_varying_log" "$pathn_log" "$params_log" "$pa
 python3 tools/audit_fitness_trust.py source \
   NarrativeDynamics/Core/FiniteConsensus.lean \
   NarrativeDynamics/Tests/FiniteConsensus.lean \
+  NarrativeDynamics/Core/FiniteTimeVaryingConsensus.lean \
   NarrativeDynamics/Tests/FiniteTimeVaryingConsensus.lean \
   NarrativeDynamics/Core/FitnessABMPathN.lean \
   NarrativeDynamics/Tests/FitnessABMPathN.lean \
@@ -27,6 +28,7 @@ python3 tools/audit_fitness_trust.py source \
 
 for pathn_module in \
     NarrativeDynamics.Core.FiniteConsensus \
+    NarrativeDynamics.Core.FiniteTimeVaryingConsensus \
     NarrativeDynamics.Core.FitnessABMPathN \
     NarrativeDynamics.Core.FitnessABMPathNParameters \
     NarrativeDynamics.Core.FitnessABMPathNParameterConvergence \
@@ -79,6 +81,11 @@ done
 python3 tools/audit_fitness_trust.py log "$consensus_log" \
   --require NarrativeDynamics.FiniteConsensus.coordRange_apply_le_of_commonColumn \
   --require NarrativeDynamics.FiniteConsensus.block_contraction_tendsto
+
+python3 tools/audit_fitness_trust.py log "$time_varying_log" \
+  --require NarrativeDynamics.FiniteTimeVaryingConsensus.apply_windowKernel \
+  --require NarrativeDynamics.FiniteTimeVaryingConsensus.coordRange_tendsto_zero \
+  --require NarrativeDynamics.FiniteTimeVaryingConsensus.block_contraction_consensus_exists
 
 python3 tools/audit_fitness_trust.py log "$pathn_log" \
   --require NarrativeDynamics.FitnessABMPathN.propagate_independent_exposures \
