@@ -39,4 +39,32 @@ example : expectedAggregate registeredLaw (fun i => (i : ℝ)) 4 0 = 0 := by
 example : expectedAggregate registeredLaw (fun i => (i : ℝ)) 4 8 = 1 := by
   norm_num [expectedAggregate, registeredLaw, validSource]
 
+example (w z : Vector n) :
+    marginalizedPrediction w z = dot w z := by
+  exact current_weight_observation w z
+
+example (w feature : Vector n) (denominator alpha reward : ℝ) :
+    marginalizedUpdate w alpha reward feature
+        (AnonymousTemporalCredit.normalizedCredit feature denominator) =
+      AnonymousTemporalCredit.normalizedPhase3AUpdate
+        w alpha reward (dot w feature)
+        (AnonymousTemporalCredit.normalizedCredit feature denominator) := by
+  exact immediate_reduction_to_phase3a w feature denominator alpha reward
+
+example (law : DelayLaw) (x : Nat → Vector n) (count t : Nat)
+    (h : ∀ d ∈ law.support, ¬ validSource count t d) :
+    marginalizedFeature law x count t = zeroVector := by
+  exact invalid_candidates_zero law x count t h
+
+example (law : DelayLaw) (w : Vector n) (x c : Nat → Vector n)
+    (alpha feedback : ℝ) (count t : Nat) (hDrain : count ≤ t) :
+    marginalizedUpdate w alpha feedback
+        (marginalizedFeature law x count t)
+        (marginalizedFeature law c count t) =
+      fun i =>
+        w i + alpha *
+          (feedback - dot w (marginalizedFeature law x count t)) *
+          (marginalizedFeature law c count t) i := by
+  exact drain_uses_same_equation law w x c alpha feedback count t hDrain
+
 end NarrativeDynamics.MarginalizedTemporalCredit
