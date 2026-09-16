@@ -190,5 +190,48 @@ class BBRationalConformanceGeneratorTests(unittest.TestCase):
             self.assertEqual(len(first.read_text(encoding="utf-8").splitlines()), 5)
 
 
+class BBRationalConformanceDriftMutationTests(unittest.TestCase):
+    def _records(self):
+        from tools.generate_bb_rational_conformance import generate_records
+
+        return generate_records()
+
+    def test_schema_version_mutation_is_isolated_and_unsupported(self):
+        from tools.bb_rational_conformance import mutate_schema_version
+
+        original = self._records()
+        mutated = mutate_schema_version(original)
+        self.assertEqual(original[0]["schema"], SCHEMA)
+        self.assertEqual(mutated[0]["schema"], "bb-rational-conformance/v2")
+        self.assertEqual(original[1:], mutated[1:])
+
+    def test_contract_hash_mutation_changes_exactly_one_hex_nibble(self):
+        from tools.bb_rational_conformance import mutate_contract_hash
+
+        original = self._records()
+        mutated = mutate_contract_hash(original)
+        before = original[0]["provenance"]["generator_contract"]
+        after = mutated[0]["provenance"]["generator_contract"]
+        self.assertEqual(len(before), 64)
+        self.assertEqual(len(after), 64)
+        self.assertEqual(sum(a != b for a, b in zip(before, after)), 1)
+        self.assertTrue(all(ch in "0123456789abcdef" for ch in after))
+        self.assertEqual(original[0]["provenance"]["generator_contract"], before)
+
+    def test_expected_rational_mutation_stays_canonical_but_changes_value(self):
+        from tools.bb_rational_conformance import mutate_expected_rational
+
+        original = self._records()
+        mutated = mutate_expected_rational(original)
+        original_by_id = {record["case_id"]: record for record in original}
+        mutated_by_id = {record["case_id"]: record for record in mutated}
+        before = original_by_id["nontrivial-mean"]["expected"]["beliefs"][0]
+        after = mutated_by_id["nontrivial-mean"]["expected"]["beliefs"][0]
+        self.assertEqual(before, {"num": 1, "den": 1})
+        self.assertEqual(after, {"num": 2, "den": 1})
+        self.assertEqual(parse_rat(after), Fraction(2, 1))
+        self.assertEqual(parse_rat(before), Fraction(1, 1))
+
+
 if __name__ == "__main__":
     unittest.main()
