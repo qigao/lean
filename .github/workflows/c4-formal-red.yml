@@ -27,4 +27,5 @@ jobs:
       - name: C4 marginalized temporal credit theorem tests
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
+          lake build NarrativeDynamics.Core.MarginalizedTemporalCredit
           lake env lean NarrativeDynamics/Tests/MarginalizedTemporalCredit.lean
