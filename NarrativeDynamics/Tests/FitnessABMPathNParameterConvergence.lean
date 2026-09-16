@@ -22,8 +22,8 @@ example (n : Nat) (hn : 2 ≤ n) (x : Beliefs n) :
   exact mean_kernel_step p34
     (by norm_num [p34, ResponseParameters.Valid]) n hn x
 
--- Task 2 RED: strict-interior receptivity should provide a uniform positive
--- local mass and therefore a block common-column mass on every finite path.
+-- Task 2: strict-interior receptivity provides a uniform positive local mass
+-- and therefore a block common-column mass on every finite path.
 example : 0 < beta p34 := by
   exact beta_pos p34 (by norm_num [p34]) (by norm_num [p34])
 
@@ -45,3 +45,38 @@ example (n : Nat) (hn : 2 ≤ n) :
   exact path_block_common_mass p34
     (by norm_num [p34, ResponseParameters.Valid])
     (by norm_num [p34]) (by norm_num [p34]) n hn
+
+-- Task 3 RED: the real executable trajectory should agree with the proof
+-- kernel trajectory inside the invariant all-broadcast region and converge
+-- coordinatewise to the existing degree-weighted mean.
+private def p23 : ResponseParameters := ⟨2/3, 1/4⟩
+private def allBroadcast3 : Beliefs 3 := ![1/4, 3/4, 1]
+
+example : ResponseParameters.Valid p23 := by
+  norm_num [p23, ResponseParameters.Valid]
+
+example : allBroadcast p23 3 allBroadcast3 := by
+  intro i
+  fin_cases i <;> norm_num [p23, allBroadcast3]
+
+example (k : Nat) :
+    ((beliefStep p23 3)^[k] allBroadcast3) =
+      kernelTrajectory (pathKernel p23 3) allBroadcast3 k := by
+  exact trajectory_eq_kernelTrajectory p23
+    (by norm_num [p23, ResponseParameters.Valid]) 3 (by decide)
+    allBroadcast3 (by
+      intro i
+      fin_cases i <;> norm_num [p23, allBroadcast3]) k
+
+example (i : Fin 3) :
+    Tendsto
+      (fun k : Nat => ((((beliefStep p23 3)^[k] allBroadcast3) i : Rat) : Real))
+      atTop
+      (nhds (FitnessABMPathN.mean 3 allBroadcast3 : Real)) := by
+  exact trajectory_tendsto p23
+    (by norm_num [p23, ResponseParameters.Valid])
+    (by norm_num [p23]) (by norm_num [p23])
+    3 (by decide) allBroadcast3
+    (by
+      intro j
+      fin_cases j <;> norm_num [p23, allBroadcast3]) i
