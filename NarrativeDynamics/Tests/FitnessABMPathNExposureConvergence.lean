@@ -10,6 +10,16 @@ open Filter Topology
 private def indexSchedule : ExposureParameters :=
   ⟨fun e => if e = 1 then 1/4 else if e = 2 then 1/2 else 1/3, 0⟩
 
+private theorem indexSchedule_valid : indexSchedule.Valid := by
+  constructor
+  · intro e
+    by_cases h1 : e = 1
+    · norm_num [indexSchedule, h1]
+    · by_cases h2 : e = 2
+      · norm_num [indexSchedule, h1, h2]
+      · norm_num [indexSchedule, h1, h2]
+  · norm_num [indexSchedule]
+
 private def path3zero : State 3 :=
   ![⟨1, 0⟩, ⟨0, 0⟩, ⟨0, 0⟩]
 
@@ -34,8 +44,7 @@ example :
 example (k : Nat) (i : Fin 3) :
     (((step indexSchedule 3)^[k] path3zero) i).exposure =
       (path3zero i).exposure + k * FitnessABMPathN.degree 3 i := by
-  exact exposure_iterate indexSchedule
-    (by norm_num [indexSchedule, ExposureParameters.Valid]) 3 (by omega)
+  exact exposure_iterate indexSchedule indexSchedule_valid 3 (by omega)
     path3zero (by
       intro j
       fin_cases j <;> norm_num [allBroadcast, indexSchedule, path3zero]) k i
@@ -44,9 +53,8 @@ example (k : Nat) :
     beliefs ((step indexSchedule 3)^[k] path3zero) =
       varyingTrajectory (kernelSchedule indexSchedule 3 path3zero)
         (beliefs path3zero) k := by
-  exact beliefs_iterate_eq_varyingTrajectory indexSchedule
-    (by norm_num [indexSchedule, ExposureParameters.Valid]) 3 (by omega)
-    path3zero (by
+  exact beliefs_iterate_eq_varyingTrajectory indexSchedule indexSchedule_valid
+    3 (by omega) path3zero (by
       intro j
       fin_cases j <;> norm_num [allBroadcast, indexSchedule, path3zero]) k
 
