@@ -27,6 +27,17 @@ private def contractHash : String :=
 private def fail {α : Type} (message : String) : Except String α :=
   .error message
 
+private def checkExactKeys
+    (json : Json) (label : String) (expected : List String) : Except String Unit := do
+  let object ← json.getObj?
+  let actualCount := object.foldl (init := 0) (fun count _ _ => count + 1)
+  if actualCount != expected.length then
+    fail s!"{label}: expected exactly {expected.length} fields, got {actualCount}"
+  for key in expected do
+    if (object.get? key).isNone then
+      fail s!"{label}: missing required field {key}"
+  pure ()
+
 private def checkString (json : Json) (field expected : String) : Except String Unit := do
   let actual ← (← json.getObjVal? field).getStr?
   if actual = expected then
@@ -35,6 +46,7 @@ private def checkString (json : Json) (field expected : String) : Except String 
     fail s!"{field}: expected {expected}, got {actual}"
 
 private def parseRat (json : Json) : Except String Rat := do
+  checkExactKeys json "rational" ["num", "den"]
   let numerator ← (← json.getObjVal? "num").getInt?
   let denominator ← (← json.getObjVal? "den").getNat?
   if denominator = 0 then
@@ -82,6 +94,8 @@ private def parseBirths (json : Json) : Except String (List ParsedBirth) := do
   values.toList.mapM parseBirth
 
 private def checkProvenance (json : Json) : Except String Unit := do
+  checkExactKeys json "provenance"
+    ["schema", "generator", "generator_contract", "lean_checker", "case_set"]
   checkString json "schema" schema
   checkString json "generator" generatorPath
   checkString json "generator_contract" contractHash
@@ -242,6 +256,8 @@ private def checkDuplicateTarget (input expected : Json) : Except String Unit :=
   | .ok _ => fail "duplicate-target replay unexpectedly succeeded"
 
 private def checkCase (json : Json) : Except String Unit := do
+  checkExactKeys json "case"
+    ["schema", "case_id", "kind", "provenance", "input", "expected"]
   checkString json "schema" schema
   let caseId ← (← json.getObjVal? "case_id").getStr?
   let kind ← (← json.getObjVal? "kind").getStr?
