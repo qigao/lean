@@ -48,7 +48,9 @@ jobs:
       - name: Build checker dependencies
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
-          timeout --kill-after=10s 240s lake build NarrativeDynamics.Core.FitnessABMReplay
+          timeout --kill-after=10s 240s lake build \
+            NarrativeDynamics.Core.FitnessABMReplay \
+            NarrativeDynamics.Core.FitnessABMPathN
       - name: Run exact checker
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
