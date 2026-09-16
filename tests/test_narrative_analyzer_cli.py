@@ -105,6 +105,33 @@ value = "1/4"
         self.assertIn("DISPROVED", out.getvalue())
         self.assertEqual(err.getvalue(), "")
 
+    def test_unknown_named_schedule_is_input_error_exit_two(self):
+        temp, path = self._model_file()
+        self.addCleanup(temp.cleanup)
+        path.write_text('''
+[topology]
+kind = "path"
+n = 2
+[initial]
+beliefs = ["1", "0"]
+exposures = [0, 0]
+[dynamics]
+threshold = "0"
+[schedule]
+kind = "named"
+id = "untrustedSchedule"
+''', encoding="utf-8")
+        out, err = io.StringIO(), io.StringIO()
+        code = main(
+            [str(path)],
+            stdout=out,
+            stderr=err,
+            runner_factory=lambda root: FakeRunner(),
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("input error", err.getvalue().lower())
+        self.assertNotIn("internal analyzer error", err.getvalue().lower())
+
     def test_invalid_input_exits_two_without_traceback(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "bad.toml"
