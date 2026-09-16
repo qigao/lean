@@ -23,4 +23,4 @@ private def thresholdPopulation :=
 example :
     broadcasting (thresholdPopulation.profiles 0)
       (thresholdPopulation.agents 0) = true := by
-  decide
+  decide_cbv
