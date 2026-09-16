@@ -182,6 +182,7 @@ private theorem harmonic_product_tendsto_zero :
       (path2MultiplierProduct harmonicSchedule 0 k : Real)
   rw [harmonic_product]
   push_cast
+  rfl
 
 private theorem evenIndex_tendsto :
     Tendsto (fun k : Nat => 2 * k) atTop atTop := by
@@ -216,22 +217,25 @@ private theorem nearOne_odd_product_tendsto_neg_half :
       (fun k => (path2MultiplierProduct nearOneSchedule 0 (2 * k + 1) : Real))
       atTop (nhds (-1/2 : Real)) := by
   have hslow := slowZero_product_tendsto_half.comp oddIndex_tendsto
-  have hneg0 := hslow.neg
   have hneg : Tendsto
       (fun k => -(path2MultiplierProduct slowZeroSchedule 0 (2 * k + 1) : Real))
-      atTop (nhds (-1/2 : Real)) := by
-    simpa [Function.comp_def] using hneg0
-  refine hneg.congr' (Filter.Eventually.of_forall ?_)
-  intro k
-  change
-    -(path2MultiplierProduct slowZeroSchedule 0 (2 * k + 1) : Real) =
-      (path2MultiplierProduct nearOneSchedule 0 (2 * k + 1) : Real)
-  rw [nearOne_product, slowZero_product]
-  have hp : (-1 : Rat) ^ (2 * k + 1) = -1 := by
-    rw [pow_succ]
-    simp [pow_mul]
-  rw [hp]
-  norm_num
+      atTop (nhds (-(1/2 : Real))) := by
+    simpa only [Function.comp_apply] using hslow.neg
+  have hnear : Tendsto
+      (fun k => (path2MultiplierProduct nearOneSchedule 0 (2 * k + 1) : Real))
+      atTop (nhds (-(1/2 : Real))) := by
+    refine hneg.congr' (Filter.Eventually.of_forall ?_)
+    intro k
+    change
+      -(path2MultiplierProduct slowZeroSchedule 0 (2 * k + 1) : Real) =
+        (path2MultiplierProduct nearOneSchedule 0 (2 * k + 1) : Real)
+    rw [nearOne_product, slowZero_product]
+    have hp : (-1 : Rat) ^ (2 * k + 1) = -1 := by
+      rw [pow_succ]
+      simp [pow_mul]
+    rw [hp]
+    norm_num
+  simpa only [neg_div] using hnear
 
 private def split2 : State 2 := ![⟨1, 0⟩, ⟨0, 0⟩]
 
