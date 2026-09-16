@@ -2,7 +2,7 @@ import re
 import unittest
 
 from narrative_analyzer.certificate import CertificateBuilder
-from narrative_analyzer.model import ModelInputError, parse_model
+from narrative_analyzer.model import ExactRat, ModelInputError, parse_model
 from narrative_analyzer.result import ClaimStatus
 
 
@@ -185,6 +185,89 @@ class StructuralCertificateTests(unittest.TestCase):
         model = parse_model(model_document())
         with self.assertRaises(ValueError):
             self.builder.build_structural_negative(model, ("pathn_consensus_exists",))
+
+
+class GlobalInteriorCertificateTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.builder = CertificateBuilder()
+
+    def test_constant_candidate_is_exact_minimum_margin(self) -> None:
+        from narrative_analyzer.certificate import candidate_global_interior
+
+        model = parse_model(model_document(schedule={"kind": "constant", "value": "1/4"}))
+        self.assertEqual(candidate_global_interior(model), ExactRat(1, 4))
+
+    def test_piecewise_candidate_includes_default_and_all_branches(self) -> None:
+        from narrative_analyzer.certificate import candidate_global_interior
+
+        model = parse_model(
+            model_document(
+                schedule={
+                    "kind": "piecewise",
+                    "default": "1/4",
+                    "points": [
+                        {"exposure": 9, "value": "4/5"},
+                        {"exposure": 0, "value": "1/3"},
+                        {"exposure": 4, "value": "2/5"},
+                    ],
+                }
+            )
+        )
+        self.assertEqual(candidate_global_interior(model), ExactRat(1, 5))
+
+    def test_nonpositive_margin_returns_no_route_not_negative_evidence(self) -> None:
+        from narrative_analyzer.certificate import candidate_global_interior
+
+        for value in ("0", "1", "5/4"):
+            model = parse_model(model_document(schedule={"kind": "constant", "value": value}))
+            self.assertIsNone(candidate_global_interior(model))
+
+    def test_constant_pathn_certificate_records_global_interior_and_consensus(self) -> None:
+        from narrative_analyzer.certificate import candidate_global_interior
+
+        model = parse_model(model_document(n=7, schedule={"kind": "constant", "value": "1/4"}))
+        eps = candidate_global_interior(model)
+        self.assertEqual(eps, ExactRat(1, 4))
+        assert eps is not None
+        certificate = self.builder.build_pathn_consensus(model, eps)
+        self.assertEqual(
+            tuple(claim.claim_id for claim in certificate.claims),
+            ("reachable_interior", "pathn_consensus_exists"),
+        )
+        self.assertTrue(all(c.expected_status is ClaimStatus.PROVED for c in certificate.claims))
+        by_id = {claim.claim_id: claim for claim in certificate.claims}
+        self.assertEqual(by_id["reachable_interior"].exact_values["eps"], "1/4")
+        self.assertIn("ReachableInterior", by_id["reachable_interior"].theorem)
+        self.assertIn(
+            "trajectory_consensus_exists_of_global_interior",
+            by_id["pathn_consensus_exists"].theorem,
+        )
+        self.assertIn("∀ e", certificate.source)
+        self.assertIn("1 -", certificate.source)
+        self.assertNotIn("consensus_value_known", certificate.source)
+
+    def test_piecewise_certificate_uses_finite_exact_branch_proof(self) -> None:
+        from narrative_analyzer.certificate import candidate_global_interior
+
+        model = parse_model(
+            model_document(
+                n=7,
+                schedule={
+                    "kind": "piecewise",
+                    "default": "1/4",
+                    "points": [
+                        {"exposure": 4, "value": "2/5"},
+                        {"exposure": 0, "value": "1/3"},
+                    ],
+                },
+            )
+        )
+        eps = candidate_global_interior(model)
+        assert eps is not None
+        source = self.builder.build_pathn_consensus(model, eps).source
+        self.assertIn("split_ifs <;> norm_num", source)
+        self.assertIn("e = 0", source)
+        self.assertIn("e = 4", source)
 
 
 if __name__ == "__main__":
