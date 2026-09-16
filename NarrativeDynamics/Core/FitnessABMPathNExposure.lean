@@ -94,18 +94,17 @@ theorem constant_beliefStep (alpha tau : Rat) (n : Nat) (s : State n) :
         (NarrativeDynamics.FitnessABMPathN.pathAdj n)
         (NarrativeDynamics.FitnessABMPathNParameters.population
           ⟨alpha, tau⟩ n (beliefs s) (fun _ => 0)) i).belief
-  simp only [step]
-  simp only [incoming, broadcasterMean, Finset.card_eq_zero]
+  simp only [step, incoming, broadcasterMean]
   rw [hreceived]
   simp only [NarrativeDynamics.NetworkPropagation.nextAgent]
-  by_cases hzero :
-      NarrativeDynamics.NetworkPropagation.incoming
+  by_cases hcard :
+      (NarrativeDynamics.NetworkPropagation.incoming
         (NarrativeDynamics.FitnessABMPathN.pathAdj n)
         (NarrativeDynamics.FitnessABMPathNParameters.population
-          ⟨alpha, tau⟩ n (beliefs s) (fun _ => 0)) i = ∅
-  · simp only [if_pos hzero]
+          ⟨alpha, tau⟩ n (beliefs s) (fun _ => 0)) i).card = 0
+  · simp only [if_pos hcard]
     rfl
-  · simp only [if_neg hzero]
+  · simp only [if_neg hcard]
     rfl
 
 /-- The canonical half schedule therefore recovers the existing fixed PathN
