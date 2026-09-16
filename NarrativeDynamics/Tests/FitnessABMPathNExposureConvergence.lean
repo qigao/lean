@@ -23,13 +23,13 @@ example : incoming indexSchedule path3zero 1 = 2 := by decide_cbv
 -- First transition must query alpha(1) at endpoints and alpha(2) at the middle.
 example :
     exposureKernel indexSchedule 3 (fun _ => 0) 0 0 = 3/4 := by
-  norm_num [exposureKernel, indexSchedule, FitnessABMPathN.degree,
-    FitnessABMPathN.neighbors]
+  have hd : FitnessABMPathN.degree 3 (0 : Fin 3) = 1 := by decide_cbv
+  norm_num [exposureKernel, indexSchedule, hd]
 
 example :
     exposureKernel indexSchedule 3 (fun _ => 0) 1 1 = 1/2 := by
-  norm_num [exposureKernel, indexSchedule, FitnessABMPathN.degree,
-    FitnessABMPathN.neighbors]
+  have hd : FitnessABMPathN.degree 3 (1 : Fin 3) = 2 := by decide_cbv
+  norm_num [exposureKernel, indexSchedule, hd]
 
 example (k : Nat) (i : Fin 3) :
     (((step indexSchedule 3)^[k] path3zero) i).exposure =
