@@ -80,6 +80,38 @@ def _render_rat(q: ExactRat) -> str:
     return f"(({q.numerator} : Rat) / {q.denominator})"
 
 
+def _rat_text(q: ExactRat) -> str:
+    if q.denominator == 1:
+        return str(q.numerator)
+    return f"{q.numerator}/{q.denominator}"
+
+
+def candidate_global_interior(model: PathModel) -> ExactRat | None:
+    """Return the exact global-interior margin for the closed finite DSL.
+
+    This is route-selection data only. A returned witness becomes proof
+    evidence only after the generated Lean certificate compiles.
+    """
+    schedule = model.schedule
+    if isinstance(schedule, ConstantSchedule):
+        values = (schedule.value,)
+    elif isinstance(schedule, PiecewiseSchedule):
+        values = (schedule.default, *(value for _, value in schedule.points))
+    else:
+        return None
+
+    margins: list[Fraction] = []
+    for value in values:
+        q = _fraction(value)
+        margins.extend((q, 1 - q))
+    if not margins:
+        return None
+    eps = min(margins)
+    if eps <= 0:
+        return None
+    return ExactRat(eps.numerator, eps.denominator)
+
+
 def _schedule_data(model: PathModel) -> object:
     schedule = model.schedule
     if isinstance(schedule, ConstantSchedule):
@@ -151,6 +183,7 @@ def _header() -> list[str]:
         "open NarrativeDynamics",
         "open NarrativeDynamics.FitnessABMPathNExposure",
         "open NarrativeDynamics.FitnessABMPathNExposureConvergence",
+        "open Filter Topology",
         "",
     ]
 
@@ -426,7 +459,95 @@ class CertificateBuilder:
         return Certificate(source="\n".join(lines), claims=tuple(claim_records))
 
     def build_pathn_consensus(self, model: PathModel, eps: ExactRat) -> Certificate:
-        raise CertificateGenerationError("PathN consensus certificates are Task 5")
+        if not isinstance(model.schedule, (ConstantSchedule, PiecewiseSchedule)):
+            raise CertificateGenerationError(
+                "global-interior PathN certificates require constant or piecewise schedule"
+            )
+        heps = _fraction(eps)
+        candidate = candidate_global_interior(model)
+        if heps <= 0:
+            raise ValueError("global-interior witness must be positive")
+        if candidate is None or heps > _fraction(candidate):
+            raise ValueError("global-interior witness exceeds the exact DSL margin")
+
+        digest = _model_digest(model)
+        lines = _header()
+        definitions, params, state = _definitions(model, digest)
+        lines += definitions
+
+        valid_lemma = f"AnalyzerParamsValid_{digest}"
+        broadcast_lemma = f"AnalyzerAllBroadcast_{digest}"
+        global_lemma = f"AnalyzerGlobalInterior_{digest}"
+        reachable_lemma = f"AnalyzerReachableInterior_{digest}"
+        consensus_lemma = f"AnalyzerPathNConsensus_{digest}"
+        eps_source = _render_rat(eps)
+
+        lines += _validity_lines(model, params, valid_lemma)
+        lines += _all_broadcast_lines(params, state, broadcast_lemma)
+        lines += [
+            f"private theorem {global_lemma} :",
+            f"    ∀ e, {eps_source} ≤ {params}.receptivityAt e ∧",
+            f"      {params}.receptivityAt e ≤ 1 - {eps_source} := by",
+            "  intro e",
+        ]
+        if isinstance(model.schedule, ConstantSchedule):
+            lines += [f"  norm_num [{params}]", ""]
+        else:
+            lines += [
+                f"  simp only [{params}]",
+                "  split_ifs <;> norm_num",
+                "",
+            ]
+
+        lines += [
+            f"private theorem {reachable_lemma} :",
+            f"    ReachableInterior {params} {model.n} {state} {eps_source} := by",
+            "  intro k i",
+            f"  exact {global_lemma} _",
+            "",
+            f"private theorem {consensus_lemma} :",
+            f"    ∃ c : Real, ∀ i : Fin {model.n},",
+            f"      Tendsto (fun k => ((((step {params} {model.n})^[k] {state}) i).belief : Real))",
+            "        atTop (nhds c) := by",
+            "  exact trajectory_consensus_exists_of_global_interior",
+            f"    {params} {valid_lemma} {model.n} (by norm_num) {state}",
+            f"    {broadcast_lemma} {eps_source} (by norm_num) {global_lemma}",
+            "",
+            "end NarrativeAnalyzerCertificate",
+            "",
+        ]
+
+        eps_text = _rat_text(eps)
+        return Certificate(
+            source="\n".join(lines),
+            claims=(
+                CertificateClaim(
+                    claim_id="reachable_interior",
+                    expected_status=ClaimStatus.PROVED,
+                    theorem=(
+                        f"{reachable_lemma}; definition "
+                        f"{_CONVERGENCE_NS}.ReachableInterior"
+                    ),
+                    assumptions=("global interior bound",),
+                    exact_values={"eps": eps_text},
+                ),
+                CertificateClaim(
+                    claim_id="pathn_consensus_exists",
+                    expected_status=ClaimStatus.PROVED,
+                    theorem=(
+                        f"{consensus_lemma}; "
+                        f"{_CONVERGENCE_NS}.trajectory_consensus_exists_of_global_interior"
+                    ),
+                    assumptions=(
+                        "parameters_valid",
+                        "n >= 2",
+                        "initial_all_broadcast",
+                        "global interior bound",
+                    ),
+                    exact_values={"eps": eps_text},
+                ),
+            ),
+        )
 
     def build_named_path2(self, model: PathModel, route: object) -> Certificate:
         raise CertificateGenerationError("named Path2 certificates are Task 6")
