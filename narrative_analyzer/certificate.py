@@ -1,661 +1,142 @@
 """Deterministic closed-template Lean certificate generation."""
-
 from __future__ import annotations
-
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from fractions import Fraction
-import hashlib
-import json
+import hashlib, json
 from types import MappingProxyType
+from .model import ConstantSchedule, ExactRat, NamedSchedule, PathModel, PiecewiseSchedule
+from .named_schedules import LEAN_NAMESPACE, FixedFixtureRoute, fixed_fixture_route, resolve_named_schedule
+from .result import CertificateGenerationError, ClaimStatus
+from ._certificate_path2 import named_path2_body
 
-from .model import (
-    ConstantSchedule,
-    ExactRat,
-    NamedSchedule,
-    PathModel,
-    PiecewiseSchedule,
-)
-from .named_schedules import (
-    LEAN_NAMESPACE,
-    FixedFixtureRoute,
-    fixed_fixture_route,
-    resolve_named_schedule,
-)
-from .result import (
-    CertificateGenerationError,
-    ClaimStatus,
-)
-
-
-_PRODUCTION_IMPORT = "NarrativeDynamics.Core.FitnessABMPathNExposureConvergence"
-_EXPOSURE_NS = "NarrativeDynamics.FitnessABMPathNExposure"
-_CONVERGENCE_NS = "NarrativeDynamics.FitnessABMPathNExposureConvergence"
-_STRUCTURAL_ORDER = (
-    "parameters_valid",
-    "initial_all_broadcast",
-    "exposure_law",
-    "effective_alpha_lookup",
-)
-_NEGATIVE_STRUCTURAL = ("parameters_valid", "initial_all_broadcast")
-_NAMED_VALID_THEOREMS = {
-    "slowZeroSchedule": f"{LEAN_NAMESPACE}.slowZeroSchedule_valid",
-    "nearOneSchedule": f"{LEAN_NAMESPACE}.nearOneSchedule_valid",
-    "harmonicSchedule": f"{LEAN_NAMESPACE}.harmonicSchedule_valid",
-}
-
+PROD="NarrativeDynamics.Core.FitnessABMPathNExposureConvergence"
+EXP="NarrativeDynamics.FitnessABMPathNExposure"
+CONV="NarrativeDynamics.FitnessABMPathNExposureConvergence"
+STRUCT=("parameters_valid","initial_all_broadcast","exposure_law","effective_alpha_lookup")
+NEG=("parameters_valid","initial_all_broadcast")
+VALID={s:f"{LEAN_NAMESPACE}.{s}_valid" for s in ("slowZeroSchedule","nearOneSchedule","harmonicSchedule")}
 
 @dataclass(frozen=True)
 class CertificateClaim:
-    claim_id: str
-    expected_status: ClaimStatus
-    theorem: str
-    assumptions: tuple[str, ...]
-    exact_values: Mapping[str, str]
-
-    def __post_init__(self) -> None:
-        if not self.claim_id:
-            raise ValueError("certificate claim id must not be empty")
-        if self.expected_status is ClaimStatus.UNKNOWN:
-            raise ValueError("certificates cannot claim UNKNOWN")
-        if not self.theorem.strip():
-            raise ValueError("certificate claim requires theorem provenance")
-        object.__setattr__(self, "assumptions", tuple(self.assumptions))
-        object.__setattr__(
-            self, "exact_values", MappingProxyType(dict(self.exact_values))
-        )
-
-
+    claim_id:str; expected_status:ClaimStatus; theorem:str
+    assumptions:tuple[str,...]; exact_values:Mapping[str,str]
+    def __post_init__(self):
+        if not self.claim_id or not self.theorem.strip() or self.expected_status is ClaimStatus.UNKNOWN: raise ValueError("invalid certificate claim")
+        object.__setattr__(self,"assumptions",tuple(self.assumptions)); object.__setattr__(self,"exact_values",MappingProxyType(dict(self.exact_values)))
 @dataclass(frozen=True)
 class Certificate:
-    source: str
-    claims: tuple[CertificateClaim, ...]
+    source:str; claims:tuple[CertificateClaim,...]
+    def __post_init__(self): object.__setattr__(self,"claims",tuple(self.claims))
 
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "claims", tuple(self.claims))
-
-
-def _fraction(q: ExactRat) -> Fraction:
-    return Fraction(q.numerator, q.denominator)
-
-
-def _render_rat(q: ExactRat) -> str:
-    if q.denominator == 1:
-        return f"({q.numerator} : Rat)"
-    return f"(({q.numerator} : Rat) / {q.denominator})"
-
-
-def _rat_text(q: ExactRat) -> str:
-    if q.denominator == 1:
-        return str(q.numerator)
-    return f"{q.numerator}/{q.denominator}"
-
-
-def candidate_global_interior(model: PathModel) -> ExactRat | None:
-    """Return the exact global-interior margin for the closed finite DSL.
-
-    This is route-selection data only. A returned witness becomes proof
-    evidence only after the generated Lean certificate compiles.
-    """
-    schedule = model.schedule
-    if isinstance(schedule, ConstantSchedule):
-        values = (schedule.value,)
-    elif isinstance(schedule, PiecewiseSchedule):
-        values = (schedule.default, *(value for _, value in schedule.points))
-    else:
-        return None
-
-    margins: list[Fraction] = []
-    for value in values:
-        q = _fraction(value)
-        margins.extend((q, 1 - q))
-    if not margins:
-        return None
-    eps = min(margins)
-    if eps <= 0:
-        return None
-    return ExactRat(eps.numerator, eps.denominator)
-
-
-def _schedule_data(model: PathModel) -> object:
-    schedule = model.schedule
-    if isinstance(schedule, ConstantSchedule):
-        return ["constant", schedule.value.numerator, schedule.value.denominator]
-    if isinstance(schedule, PiecewiseSchedule):
-        return [
-            "piecewise",
-            [schedule.default.numerator, schedule.default.denominator],
-            [
-                [exposure, value.numerator, value.denominator]
-                for exposure, value in schedule.points
-            ],
-        ]
-    if isinstance(schedule, NamedSchedule):
-        entry = resolve_named_schedule(schedule.schedule_id)
-        return ["named", entry.schedule_id]
-    raise CertificateGenerationError(f"unsupported schedule AST: {schedule!r}")
-
-
-def _normalized_bytes(model: PathModel) -> bytes:
-    payload = {
-        "n": model.n,
-        "beliefs": [[q.numerator, q.denominator] for q in model.beliefs],
-        "exposures": list(model.exposures),
-        "threshold": [model.threshold.numerator, model.threshold.denominator],
-        "schedule": _schedule_data(model),
-    }
-    return json.dumps(
-        payload,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=True,
-    ).encode("ascii")
-
-
-def _model_digest(model: PathModel) -> str:
-    return hashlib.sha256(_normalized_bytes(model)).hexdigest()[:12]
-
-
-def _render_schedule(model: PathModel) -> str:
-    schedule = model.schedule
-    if isinstance(schedule, ConstantSchedule):
-        return f"fun _ => {_render_rat(schedule.value)}"
-    if isinstance(schedule, PiecewiseSchedule):
-        body = _render_rat(schedule.default)
-        for exposure, value in reversed(schedule.points):
-            body = f"if e = {exposure} then {_render_rat(value)} else {body}"
-        return f"fun e => {body}"
-    if isinstance(schedule, NamedSchedule):
-        entry = resolve_named_schedule(schedule.schedule_id)
-        return f"{entry.lean_definition}.receptivityAt"
-    raise CertificateGenerationError(f"unsupported schedule AST: {schedule!r}")
-
-
-def _render_state(model: PathModel) -> str:
-    entries = ", ".join(
-        f"⟨{_render_rat(belief)}, {exposure}⟩"
-        for belief, exposure in zip(model.beliefs, model.exposures, strict=True)
-    )
-    return f"![{entries}]"
-
-
-def _header() -> list[str]:
-    return [
-        f"import {_PRODUCTION_IMPORT}",
-        "",
-        "namespace NarrativeAnalyzerCertificate",
-        "",
-        "open NarrativeDynamics",
-        "open NarrativeDynamics.FitnessABMPathNExposure",
-        "open NarrativeDynamics.FitnessABMPathNExposureConvergence",
-        "open Filter Topology",
-        "",
-    ]
-
-
-def _definitions(model: PathModel, digest: str) -> tuple[list[str], str, str]:
-    params = f"AnalyzerParams_{digest}"
-    state = f"AnalyzerState_{digest}"
-    lines = [
-        f"private def {params} : ExposureParameters :=",
-        f"  ⟨{_render_schedule(model)}, {_render_rat(model.threshold)}⟩",
-        "",
-        f"private def {state} : State {model.n} := {_render_state(model)}",
-        "",
-    ]
-    return lines, params, state
-
-
-def _claim_order(claims: Iterable[str], allowed: tuple[str, ...]) -> tuple[str, ...]:
-    requested = tuple(claims)
-    if len(requested) != len(set(requested)):
-        raise ValueError("certificate claim ids must be unique")
-    unknown = [claim for claim in requested if claim not in allowed]
-    if unknown:
-        raise ValueError(f"unsupported certificate claim: {unknown[0]}")
-    return requested
-
-
-def _validity_lines(model: PathModel, params: str, lemma: str) -> list[str]:
-    schedule = model.schedule
-    lines = [f"private theorem {lemma} : {params}.Valid := by", "  constructor"]
-    if isinstance(schedule, ConstantSchedule):
-        lines += [
-            "  · intro e",
-            f"    norm_num [{params}]",
-        ]
-    elif isinstance(schedule, PiecewiseSchedule):
-        lines += [
-            "  · intro e",
-            f"    simp only [{params}]",
-            "    split_ifs <;> norm_num",
-        ]
-    elif isinstance(schedule, NamedSchedule):
-        entry = resolve_named_schedule(schedule.schedule_id)
-        valid_theorem = _NAMED_VALID_THEOREMS[entry.schedule_id]
-        lines += [
-            "  · intro e",
-            f"    exact ({valid_theorem}.1 e)",
-        ]
-    else:
-        raise CertificateGenerationError(f"unsupported schedule AST: {schedule!r}")
-    lines += [
-        f"  · norm_num [{params}]",
-        "",
-    ]
-    return lines
-
-
-def _all_broadcast_lines(params: str, state: str, lemma: str) -> list[str]:
-    return [
-        f"private theorem {lemma} : allBroadcast {params} {state} := by",
-        "  intro i",
-        f"  fin_cases i <;> norm_num [allBroadcast, {params}, {state}]",
-        "",
-    ]
-
-
-def _schedule_values(model: PathModel) -> tuple[tuple[int | None, ExactRat], ...]:
-    schedule = model.schedule
-    if isinstance(schedule, ConstantSchedule):
-        return ((0, schedule.value),)
-    if isinstance(schedule, PiecewiseSchedule):
-        values: list[tuple[int | None, ExactRat]] = list(schedule.points)
-        used = {exposure for exposure, _ in schedule.points}
-        default_witness = 0
-        while default_witness in used:
-            default_witness += 1
-        values.append((default_witness, schedule.default))
-        return tuple(values)
-    if isinstance(schedule, NamedSchedule):
-        resolve_named_schedule(schedule.schedule_id)
-        return ()
-    raise CertificateGenerationError(f"unsupported schedule AST: {schedule!r}")
-
-
-def _parameter_invalid_witness(model: PathModel) -> tuple[str, int | None] | None:
-    threshold = _fraction(model.threshold)
-    if threshold < 0 or threshold > 1:
-        return ("threshold", None)
-    for exposure, value in _schedule_values(model):
-        q = _fraction(value)
-        if q < 0 or q > 1:
-            return ("schedule", exposure)
+def F(q): return Fraction(q.numerator,q.denominator)
+def rat(q): return f"({q.numerator} : Rat)" if q.denominator==1 else f"(({q.numerator} : Rat) / {q.denominator})"
+def txt(q): return str(q.numerator) if q.denominator==1 else f"{q.numerator}/{q.denominator}"
+def schedule_values(m):
+    s=m.schedule
+    if isinstance(s,ConstantSchedule): return (s.value,)
+    if isinstance(s,PiecewiseSchedule): return (s.default,*(v for _,v in s.points))
+    return ()
+def candidate_global_interior(m):
+    vals=schedule_values(m)
+    if not vals:return None
+    x=min([z for q in vals for z in (F(q),1-F(q))])
+    return None if x<=0 else ExactRat(x.numerator,x.denominator)
+def sched_data(m):
+    s=m.schedule
+    if isinstance(s,ConstantSchedule): return ["constant",s.value.numerator,s.value.denominator]
+    if isinstance(s,PiecewiseSchedule): return ["piecewise",[s.default.numerator,s.default.denominator],[[e,v.numerator,v.denominator] for e,v in s.points]]
+    if isinstance(s,NamedSchedule): return ["named",resolve_named_schedule(s.schedule_id).schedule_id]
+    raise CertificateGenerationError("unsupported schedule")
+def digest(m):
+    p={"n":m.n,"beliefs":[[q.numerator,q.denominator] for q in m.beliefs],"exposures":list(m.exposures),"threshold":[m.threshold.numerator,m.threshold.denominator],"schedule":sched_data(m)}
+    return hashlib.sha256(json.dumps(p,sort_keys=True,separators=(",",":")).encode()).hexdigest()[:12]
+def render_schedule(m):
+    s=m.schedule
+    if isinstance(s,ConstantSchedule): return f"fun _ => {rat(s.value)}"
+    if isinstance(s,PiecewiseSchedule):
+        b=rat(s.default)
+        for e,v in reversed(s.points): b=f"if e = {e} then {rat(v)} else {b}"
+        return f"fun e => {b}"
+    if isinstance(s,NamedSchedule): return f"{resolve_named_schedule(s.schedule_id).lean_definition}.receptivityAt"
+    raise CertificateGenerationError("unsupported schedule")
+def render_state(m): return "!["+", ".join(f"⟨{rat(b)}, {e}⟩" for b,e in zip(m.beliefs,m.exposures,strict=True))+"]"
+def header(): return [f"import {PROD}","","namespace NarrativeAnalyzerCertificate","","open NarrativeDynamics","open NarrativeDynamics.FitnessABMPathNExposure","open NarrativeDynamics.FitnessABMPathNExposureConvergence","open Filter Topology",""]
+def defs(m,d):
+    p=f"AnalyzerParams_{d}"; s=f"AnalyzerState_{d}"
+    return [f"private def {p} : ExposureParameters :=",f"  ⟨{render_schedule(m)}, {rat(m.threshold)}⟩","",f"private def {s} : State {m.n} := {render_state(m)}",""],p,s
+def ordered(xs,allowed):
+    xs=tuple(xs)
+    if len(xs)!=len(set(xs)) or any(x not in allowed for x in xs): raise ValueError("unsupported or duplicate certificate claim")
+    return xs
+def valid_lines(m,p,l):
+    s=m.schedule; out=[f"private theorem {l} : {p}.Valid := by","  constructor"]
+    if isinstance(s,ConstantSchedule): out += ["  · intro e",f"    norm_num [{p}]"]
+    elif isinstance(s,PiecewiseSchedule): out += ["  · intro e",f"    simp only [{p}]","    split_ifs <;> norm_num"]
+    elif isinstance(s,NamedSchedule): out += ["  · intro e",f"    exact ({VALID[resolve_named_schedule(s.schedule_id).schedule_id]}.1 e)"]
+    else: raise CertificateGenerationError("unsupported schedule")
+    return out+[f"  · norm_num [{p}]",""]
+def broadcast_lines(p,s,l): return [f"private theorem {l} : allBroadcast {p} {s} := by","  intro i",f"  fin_cases i <;> norm_num [allBroadcast, {p}, {s}]",""]
+def param_bad(m):
+    if not 0<=F(m.threshold)<=1:return ("threshold",None)
+    s=m.schedule
+    if isinstance(s,NamedSchedule): resolve_named_schedule(s.schedule_id); return None
+    pairs=((0,s.value),) if isinstance(s,ConstantSchedule) else (*s.points,)
+    if isinstance(s,PiecewiseSchedule):
+        used={e for e,_ in s.points}; w=next(i for i in range(len(used)+1) if i not in used); pairs=(*s.points,(w,s.default))
+    for e,v in pairs:
+        if not 0<=F(v)<=1:return ("schedule",e)
     return None
-
-
-def _all_broadcast_invalid_index(model: PathModel) -> int | None:
-    threshold = _fraction(model.threshold)
-    for index, belief in enumerate(model.beliefs):
-        q = _fraction(belief)
-        if threshold > q or q > 1:
-            return index
+def broadcast_bad(m):
+    t=F(m.threshold)
+    for i,b in enumerate(m.beliefs):
+        if not t<=F(b)<=1:return i
     return None
-
 
 class CertificateBuilder:
-    def build_structural_positive(
-        self,
-        model: PathModel,
-        claims: Iterable[str],
-    ) -> Certificate:
-        requested = _claim_order(claims, _STRUCTURAL_ORDER)
-        digest = _model_digest(model)
-        lines = _header()
-        definitions, params, state = _definitions(model, digest)
-        lines += definitions
-
-        valid_lemma = f"AnalyzerParamsValid_{digest}"
-        broadcast_lemma = f"AnalyzerAllBroadcast_{digest}"
-        exposure_lemma = f"AnalyzerExposureLaw_{digest}"
-        alpha_lemma = f"AnalyzerEffectiveAlphaLookup_{digest}"
-
-        needs_valid = any(
-            claim in requested
-            for claim in ("parameters_valid", "exposure_law", "effective_alpha_lookup")
-        )
-        needs_broadcast = any(
-            claim in requested
-            for claim in (
-                "initial_all_broadcast",
-                "exposure_law",
-                "effective_alpha_lookup",
-            )
-        )
-        if needs_valid:
-            lines += _validity_lines(model, params, valid_lemma)
-        if needs_broadcast:
-            lines += _all_broadcast_lines(params, state, broadcast_lemma)
-
-        if "exposure_law" in requested:
-            lines += [
-                f"private theorem {exposure_lemma} (k : Nat) (i : Fin {model.n}) :",
-                f"    (((step {params} {model.n})^[k] {state}) i).exposure =",
-                f"      ({state} i).exposure + k * FitnessABMPathN.degree {model.n} i := by",
-                "  exact exposure_iterate",
-                f"    {params} {valid_lemma} {model.n} (by norm_num) {state}",
-                f"    {broadcast_lemma} k i",
-                "",
-            ]
-
-        if "effective_alpha_lookup" in requested:
-            lines += [
-                f"private theorem {alpha_lemma} (k : Nat) (i : Fin {model.n}) :",
-                f"    {params}.receptivityAt",
-                f"        ((((step {params} {model.n})^[k] {state}) i).exposure +",
-                f"          FitnessABMPathN.degree {model.n} i) =",
-                f"      {params}.receptivityAt",
-                f"        (({state} i).exposure +",
-                f"          (k + 1) * FitnessABMPathN.degree {model.n} i) := by",
-                f"  rw [exposure_iterate {params} {valid_lemma} {model.n} (by norm_num)",
-                f"    {state} {broadcast_lemma} k i]",
-                "  congr 1",
-                "  omega",
-                "",
-            ]
-
-        lines += ["end NarrativeAnalyzerCertificate", ""]
-
-        metadata = {
-            "parameters_valid": CertificateClaim(
-                claim_id="parameters_valid",
-                expected_status=ClaimStatus.PROVED,
-                theorem=(
-                    f"{valid_lemma}; definition "
-                    f"{_EXPOSURE_NS}.ExposureParameters.Valid"
-                ),
-                assumptions=(),
-                exact_values={},
-            ),
-            "initial_all_broadcast": CertificateClaim(
-                claim_id="initial_all_broadcast",
-                expected_status=ClaimStatus.PROVED,
-                theorem=f"{broadcast_lemma}; definition {_CONVERGENCE_NS}.allBroadcast",
-                assumptions=(),
-                exact_values={},
-            ),
-            "exposure_law": CertificateClaim(
-                claim_id="exposure_law",
-                expected_status=ClaimStatus.PROVED,
-                theorem=f"{exposure_lemma}; {_CONVERGENCE_NS}.exposure_iterate",
-                assumptions=("parameters_valid", "initial_all_broadcast", "n >= 2"),
-                exact_values={},
-            ),
-            "effective_alpha_lookup": CertificateClaim(
-                claim_id="effective_alpha_lookup",
-                expected_status=ClaimStatus.PROVED,
-                theorem=f"{alpha_lemma}; {_CONVERGENCE_NS}.exposure_iterate",
-                assumptions=("parameters_valid", "initial_all_broadcast", "n >= 2"),
-                exact_values={"lookup": "e0(i) + (k+1) * degree(i)"},
-            ),
-        }
-        return Certificate(
-            source="\n".join(lines),
-            claims=tuple(metadata[claim] for claim in requested),
-        )
-
-    def build_structural_negative(
-        self,
-        model: PathModel,
-        claims: Iterable[str],
-    ) -> Certificate:
-        requested = _claim_order(claims, _NEGATIVE_STRUCTURAL)
-        digest = _model_digest(model)
-        lines = _header()
-        definitions, params, state = _definitions(model, digest)
-        lines += definitions
-        claim_records: list[CertificateClaim] = []
-
-        for claim_id in requested:
-            if claim_id == "parameters_valid":
-                witness = _parameter_invalid_witness(model)
-                if witness is None:
-                    raise ValueError("model has no exact parameter-validity counter-witness")
-                lemma = f"AnalyzerParamsInvalid_{digest}"
-                kind, exposure = witness
-                lines += [f"private theorem {lemma} : ¬ {params}.Valid := by", "  intro h"]
-                if kind == "threshold":
-                    lines += [
-                        "  have hbad := h.2",
-                        f"  norm_num [{params}] at hbad",
-                    ]
-                else:
-                    assert exposure is not None
-                    lines += [
-                        f"  have hbad := h.1 {exposure}",
-                        f"  norm_num [{params}] at hbad",
-                    ]
-                lines += [""]
-                claim_records.append(
-                    CertificateClaim(
-                        claim_id=claim_id,
-                        expected_status=ClaimStatus.DISPROVED,
-                        theorem=(
-                            f"{lemma}; negation of "
-                            f"{_EXPOSURE_NS}.ExposureParameters.Valid"
-                        ),
-                        assumptions=(),
-                        exact_values={},
-                    )
-                )
-            elif claim_id == "initial_all_broadcast":
-                index = _all_broadcast_invalid_index(model)
-                if index is None:
-                    raise ValueError("model has no exact all-broadcast counter-witness")
-                lemma = f"AnalyzerAllBroadcastInvalid_{digest}"
-                lines += [
-                    f"private theorem {lemma} : ¬ allBroadcast {params} {state} := by",
-                    "  intro h",
-                    f"  have hbad := h ({index} : Fin {model.n})",
-                    f"  norm_num [allBroadcast, {params}, {state}] at hbad",
-                    "",
-                ]
-                claim_records.append(
-                    CertificateClaim(
-                        claim_id=claim_id,
-                        expected_status=ClaimStatus.DISPROVED,
-                        theorem=f"{lemma}; negation of {_CONVERGENCE_NS}.allBroadcast",
-                        assumptions=(),
-                        exact_values={"witness_index": str(index)},
-                    )
-                )
-
-        lines += ["end NarrativeAnalyzerCertificate", ""]
-        return Certificate(source="\n".join(lines), claims=tuple(claim_records))
-
-    def build_pathn_consensus(self, model: PathModel, eps: ExactRat) -> Certificate:
-        if not isinstance(model.schedule, (ConstantSchedule, PiecewiseSchedule)):
-            raise CertificateGenerationError(
-                "global-interior PathN certificates require constant or piecewise schedule"
-            )
-        heps = _fraction(eps)
-        candidate = candidate_global_interior(model)
-        if heps <= 0:
-            raise ValueError("global-interior witness must be positive")
-        if candidate is None or heps > _fraction(candidate):
-            raise ValueError("global-interior witness exceeds the exact DSL margin")
-
-        digest = _model_digest(model)
-        lines = _header()
-        definitions, params, state = _definitions(model, digest)
-        lines += definitions
-
-        valid_lemma = f"AnalyzerParamsValid_{digest}"
-        broadcast_lemma = f"AnalyzerAllBroadcast_{digest}"
-        global_lemma = f"AnalyzerGlobalInterior_{digest}"
-        reachable_lemma = f"AnalyzerReachableInterior_{digest}"
-        consensus_lemma = f"AnalyzerPathNConsensus_{digest}"
-        eps_source = _render_rat(eps)
-
-        lines += _validity_lines(model, params, valid_lemma)
-        lines += _all_broadcast_lines(params, state, broadcast_lemma)
-        lines += [
-            f"private theorem {global_lemma} :",
-            f"    ∀ e, {eps_source} ≤ {params}.receptivityAt e ∧",
-            f"      {params}.receptivityAt e ≤ 1 - {eps_source} := by",
-            "  intro e",
-        ]
-        if isinstance(model.schedule, ConstantSchedule):
-            lines += [f"  norm_num [{params}]", ""]
-        else:
-            lines += [
-                f"  simp only [{params}]",
-                "  split_ifs <;> norm_num",
-                "",
-            ]
-
-        lines += [
-            f"private theorem {reachable_lemma} :",
-            f"    ReachableInterior {params} {model.n} {state} {eps_source} := by",
-            "  intro k i",
-            f"  exact {global_lemma} _",
-            "",
-            f"private theorem {consensus_lemma} :",
-            f"    ∃ c : Real, ∀ i : Fin {model.n},",
-            f"      Tendsto (fun k => ((((step {params} {model.n})^[k] {state}) i).belief : Real))",
-            "        atTop (nhds c) := by",
-            "  exact trajectory_consensus_exists_of_global_interior",
-            f"    {params} {valid_lemma} {model.n} (by norm_num) {state}",
-            f"    {broadcast_lemma} {eps_source} (by norm_num) {global_lemma}",
-            "",
-            "end NarrativeAnalyzerCertificate",
-            "",
-        ]
-
-        eps_text = _rat_text(eps)
-        return Certificate(
-            source="\n".join(lines),
-            claims=(
-                CertificateClaim(
-                    claim_id="reachable_interior",
-                    expected_status=ClaimStatus.PROVED,
-                    theorem=(
-                        f"{reachable_lemma}; definition "
-                        f"{_CONVERGENCE_NS}.ReachableInterior"
-                    ),
-                    assumptions=("global interior bound",),
-                    exact_values={"eps": eps_text},
-                ),
-                CertificateClaim(
-                    claim_id="pathn_consensus_exists",
-                    expected_status=ClaimStatus.PROVED,
-                    theorem=(
-                        f"{consensus_lemma}; "
-                        f"{_CONVERGENCE_NS}.trajectory_consensus_exists_of_global_interior"
-                    ),
-                    assumptions=(
-                        "parameters_valid",
-                        "n >= 2",
-                        "initial_all_broadcast",
-                        "global interior bound",
-                    ),
-                    exact_values={"eps": eps_text},
-                ),
-            ),
-        )
-
-    def build_named_path2(
-        self, model: PathModel, route: FixedFixtureRoute
-    ) -> Certificate:
-        actual = fixed_fixture_route(model)
-        if actual is None:
-            raise ValueError("model does not match a fixed named Path2 theorem fixture")
-        if route != actual:
-            raise ValueError("theorem route does not match the concrete model fixture")
-        if not isinstance(model.schedule, NamedSchedule):
-            raise ValueError("named Path2 route requires a named schedule")
-
-        digest = _model_digest(model)
-        lines = _header()
-        definitions, params, state = _definitions(model, digest)
-        lines += definitions
-
-        params_eq = f"AnalyzerNamedParamsEq_{digest}"
-        state_eq = f"AnalyzerNamedStateEq_{digest}"
-        path2_lemma = f"AnalyzerPath2Consensus_{digest}"
-        production_schedule = route.schedule_id
-        theorem_tail = route.theorem.rsplit(".", 1)[-1]
-
-        lines += [
-            f"private theorem {params_eq} : {params} = {production_schedule} := by",
-            "  rfl",
-            "",
-            f"private theorem {state_eq} :",
-            f"    {state} = (![⟨1, 0⟩, ⟨0, 0⟩] : State 2) := by",
-            "  rfl",
-            "",
-        ]
-
-        if route.schedule_id == "harmonicSchedule":
-            lines += [
-                f"private theorem {path2_lemma} :",
-                "    ∀ i : Fin 2,",
-                f"      Tendsto (fun k => (beliefs ((step {params} 2)^[k] {state}) i : Real))",
-                "        atTop (nhds (1/2 : Real)) := by",
-                f"  rw [{params_eq}, {state_eq}]",
-                f"  exact {theorem_tail}",
-                "",
-                "end NarrativeAnalyzerCertificate",
-                "",
-            ]
-            return Certificate(
-                source="\n".join(lines),
-                claims=(
-                    CertificateClaim(
-                        claim_id="path2_consensus",
-                        expected_status=ClaimStatus.PROVED,
-                        theorem=route.theorem,
-                        assumptions=route.assumptions,
-                        exact_values={"value": "1/2"},
-                    ),
-                    CertificateClaim(
-                        claim_id="consensus_value_known",
-                        expected_status=ClaimStatus.PROVED,
-                        theorem=route.theorem,
-                        assumptions=route.assumptions,
-                        exact_values={"value": "1/2"},
-                    ),
-                ),
-            )
-
-        if route.schedule_id == "slowZeroSchedule":
-            lines += [
-                f"private theorem {path2_lemma} :",
-                "    ¬ ∀ i : Fin 2,",
-                f"      Tendsto (fun k => (beliefs ((step {params} 2)^[k] {state}) i : Real))",
-                "        atTop (nhds (1/2 : Real)) := by",
-                f"  rw [{params_eq}, {state_eq}]",
-                f"  exact {theorem_tail}",
-                "",
-                "end NarrativeAnalyzerCertificate",
-                "",
-            ]
-        elif route.schedule_id == "nearOneSchedule":
-            lines += [
-                f"private theorem {path2_lemma} :",
-                "    ¬ ∃ c : Real, ∀ i : Fin 2,",
-                f"      Tendsto (fun k => (beliefs ((step {params} 2)^[k] {state}) i : Real))",
-                "        atTop (nhds c) := by",
-                f"  rw [{params_eq}, {state_eq}]",
-                f"  exact {theorem_tail}",
-                "",
-                "end NarrativeAnalyzerCertificate",
-                "",
-            ]
-        else:
-            raise CertificateGenerationError(
-                f"fixed named route has no certificate template: {route.schedule_id}"
-            )
-
-        return Certificate(
-            source="\n".join(lines),
-            claims=(
-                CertificateClaim(
-                    claim_id="path2_consensus",
-                    expected_status=ClaimStatus.DISPROVED,
-                    theorem=route.theorem,
-                    assumptions=route.assumptions,
-                    exact_values={},
-                ),
-            ),
-        )
+    def build_structural_positive(self,m,claims):
+        req=ordered(claims,STRUCT); d=digest(m); L=header(); ds,p,s=defs(m,d); L+=ds
+        vl=f"AnalyzerParamsValid_{d}"; bl=f"AnalyzerAllBroadcast_{d}"; el=f"AnalyzerExposureLaw_{d}"; al=f"AnalyzerEffectiveAlphaLookup_{d}"
+        if any(x in req for x in ("parameters_valid","exposure_law","effective_alpha_lookup")): L+=valid_lines(m,p,vl)
+        if any(x in req for x in ("initial_all_broadcast","exposure_law","effective_alpha_lookup")): L+=broadcast_lines(p,s,bl)
+        if "exposure_law" in req:L += [f"private theorem {el} (k : Nat) (i : Fin {m.n}) :",f"    (((step {p} {m.n})^[k] {s}) i).exposure = ({s} i).exposure + k * FitnessABMPathN.degree {m.n} i := by",f"  exact exposure_iterate {p} {vl} {m.n} (by norm_num) {s} {bl} k i",""]
+        if "effective_alpha_lookup" in req:L += [f"private theorem {al} (k : Nat) (i : Fin {m.n}) :",f"    {p}.receptivityAt ((((step {p} {m.n})^[k] {s}) i).exposure + FitnessABMPathN.degree {m.n} i) =",f"      {p}.receptivityAt (({s} i).exposure + (k + 1) * FitnessABMPathN.degree {m.n} i) := by",f"  rw [exposure_iterate {p} {vl} {m.n} (by norm_num) {s} {bl} k i]","  congr 1","  omega",""]
+        L += ["end NarrativeAnalyzerCertificate",""]
+        meta={
+          "parameters_valid":CertificateClaim("parameters_valid",ClaimStatus.PROVED,f"{vl}; definition {EXP}.ExposureParameters.Valid",(),{}),
+          "initial_all_broadcast":CertificateClaim("initial_all_broadcast",ClaimStatus.PROVED,f"{bl}; definition {CONV}.allBroadcast",(),{}),
+          "exposure_law":CertificateClaim("exposure_law",ClaimStatus.PROVED,f"{el}; {CONV}.exposure_iterate",("parameters_valid","initial_all_broadcast","n >= 2"),{}),
+          "effective_alpha_lookup":CertificateClaim("effective_alpha_lookup",ClaimStatus.PROVED,f"{al}; {CONV}.exposure_iterate",("parameters_valid","initial_all_broadcast","n >= 2"),{"lookup":"e0(i) + (k+1) * degree(i)"})}
+        return Certificate("\n".join(L),tuple(meta[x] for x in req))
+    def build_structural_negative(self,m,claims):
+        req=ordered(claims,NEG); d=digest(m); L=header(); ds,p,s=defs(m,d);L+=ds; out=[]
+        for x in req:
+            if x=="parameters_valid":
+                w=param_bad(m)
+                if w is None: raise ValueError("no parameter counter-witness")
+                l=f"AnalyzerParamsInvalid_{d}"; kind,e=w; L += [f"private theorem {l} : ¬ {p}.Valid := by","  intro h"]
+                L += ["  have hbad := h.2",f"  norm_num [{p}] at hbad"] if kind=="threshold" else [f"  have hbad := h.1 {e}",f"  norm_num [{p}] at hbad"]
+                L += [""]; out.append(CertificateClaim(x,ClaimStatus.DISPROVED,f"{l}; negation of {EXP}.ExposureParameters.Valid",(),{}))
+            else:
+                i=broadcast_bad(m)
+                if i is None: raise ValueError("no broadcast counter-witness")
+                l=f"AnalyzerAllBroadcastInvalid_{d}"; L += [f"private theorem {l} : ¬ allBroadcast {p} {s} := by","  intro h",f"  have hbad := h ({i} : Fin {m.n})",f"  norm_num [allBroadcast, {p}, {s}] at hbad",""]
+                out.append(CertificateClaim(x,ClaimStatus.DISPROVED,f"{l}; negation of {CONV}.allBroadcast",(),{"witness_index":str(i)}))
+        L += ["end NarrativeAnalyzerCertificate",""]; return Certificate("\n".join(L),tuple(out))
+    def build_pathn_consensus(self,m,eps):
+        if not isinstance(m.schedule,(ConstantSchedule,PiecewiseSchedule)): raise CertificateGenerationError("global interior requires finite schedule")
+        c=candidate_global_interior(m)
+        if F(eps)<=0 or c is None or F(eps)>F(c): raise ValueError("invalid global-interior witness")
+        d=digest(m);L=header();ds,p,s=defs(m,d);L+=ds;vl=f"AnalyzerParamsValid_{d}";bl=f"AnalyzerAllBroadcast_{d}";gl=f"AnalyzerGlobalInterior_{d}";rl=f"AnalyzerReachableInterior_{d}";cl=f"AnalyzerPathNConsensus_{d}";e=rat(eps)
+        L+=valid_lines(m,p,vl)+broadcast_lines(p,s,bl)+[f"private theorem {gl} :",f"    ∀ e, {e} ≤ {p}.receptivityAt e ∧ {p}.receptivityAt e ≤ 1 - {e} := by","  intro e"]
+        L += [f"  norm_num [{p}]",""] if isinstance(m.schedule,ConstantSchedule) else [f"  simp only [{p}]","  split_ifs <;> norm_num",""]
+        L += [f"private theorem {rl} : ReachableInterior {p} {m.n} {s} {e} := by","  intro k i",f"  exact {gl} _","",f"private theorem {cl} :",f"    ∃ c : Real, ∀ i : Fin {m.n}, Tendsto (fun k => ((((step {p} {m.n})^[k] {s}) i).belief : Real)) atTop (nhds c) := by",f"  exact trajectory_consensus_exists_of_global_interior {p} {vl} {m.n} (by norm_num) {s} {bl} {e} (by norm_num) {gl}","","end NarrativeAnalyzerCertificate",""]
+        ev={"eps":txt(eps)}
+        return Certificate("\n".join(L),(CertificateClaim("reachable_interior",ClaimStatus.PROVED,f"{rl}; definition {CONV}.ReachableInterior",("global interior bound",),ev),CertificateClaim("pathn_consensus_exists",ClaimStatus.PROVED,f"{cl}; {CONV}.trajectory_consensus_exists_of_global_interior",("parameters_valid","n >= 2","initial_all_broadcast","global interior bound"),ev)))
+    def build_named_path2(self,m,route:FixedFixtureRoute):
+        actual=fixed_fixture_route(m)
+        if actual is None or route!=actual or not isinstance(m.schedule,NamedSchedule): raise ValueError("named Path2 route mismatch")
+        d=digest(m);L=header();ds,p,s=defs(m,d);L+=ds;pe=f"AnalyzerNamedParamsEq_{d}";se=f"AnalyzerNamedStateEq_{d}";pl=f"AnalyzerPath2Consensus_{d}";tail=route.theorem.rsplit('.',1)[-1]
+        L += [f"private theorem {pe} : {p} = {route.schedule_id} := by","  rfl","",f"private theorem {se} : {s} = (![⟨1, 0⟩, ⟨0, 0⟩] : State 2) := by","  rfl","",*named_path2_body(schedule_id=route.schedule_id,params=p,state=s,params_eq=pe,state_eq=se,lemma=pl,theorem_tail=tail),"","end NarrativeAnalyzerCertificate",""]
+        if route.schedule_id=="harmonicSchedule": return Certificate("\n".join(L),(CertificateClaim("path2_consensus",ClaimStatus.PROVED,route.theorem,route.assumptions,{"value":"1/2"}),CertificateClaim("consensus_value_known",ClaimStatus.PROVED,route.theorem,route.assumptions,{"value":"1/2"})))
+        return Certificate("\n".join(L),(CertificateClaim("path2_consensus",ClaimStatus.DISPROVED,route.theorem,route.assumptions,{}),))
