@@ -3,6 +3,7 @@ import unittest
 
 from narrative_analyzer.certificate import CertificateBuilder
 from narrative_analyzer.model import ExactRat, ModelInputError, parse_model
+from narrative_analyzer.named_schedules import fixed_fixture_route
 from narrative_analyzer.result import ClaimStatus
 
 
@@ -268,6 +269,73 @@ class GlobalInteriorCertificateTests(unittest.TestCase):
         self.assertIn("split_ifs <;> norm_num", source)
         self.assertIn("e = 0", source)
         self.assertIn("e = 4", source)
+
+
+class NamedPath2CertificateTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.builder = CertificateBuilder()
+
+    def _model(self, schedule_id: str, **overrides):
+        document = model_document(
+            n=overrides.pop("n", 2),
+            beliefs=overrides.pop("beliefs", ["1", "0"]),
+            exposures=overrides.pop("exposures", [0, 0]),
+            threshold=overrides.pop("threshold", "0"),
+            schedule={"kind": "named", "id": schedule_id},
+        )
+        self.assertFalse(overrides)
+        return parse_model(document)
+
+    def test_harmonic_fixture_certificate_proves_consensus_and_value(self) -> None:
+        model = self._model("harmonicSchedule")
+        route = fixed_fixture_route(model)
+        self.assertIsNotNone(route)
+        assert route is not None
+        certificate = self.builder.build_named_path2(model, route)
+        self.assertEqual(
+            tuple(claim.claim_id for claim in certificate.claims),
+            ("path2_consensus", "consensus_value_known"),
+        )
+        self.assertTrue(all(c.expected_status is ClaimStatus.PROVED for c in certificate.claims))
+        by_id = {claim.claim_id: claim for claim in certificate.claims}
+        self.assertIn("harmonic_consensus", by_id["path2_consensus"].theorem)
+        self.assertEqual(by_id["consensus_value_known"].exact_values["value"], "1/2")
+        self.assertIn("= harmonicSchedule", certificate.source)
+        self.assertIn("AnalyzerState_", certificate.source)
+
+    def test_slow_zero_fixture_certificate_is_theorem_backed_negative(self) -> None:
+        model = self._model("slowZeroSchedule")
+        route = fixed_fixture_route(model)
+        assert route is not None
+        certificate = self.builder.build_named_path2(model, route)
+        self.assertEqual(len(certificate.claims), 1)
+        claim = certificate.claims[0]
+        self.assertEqual(claim.claim_id, "path2_consensus")
+        self.assertIs(claim.expected_status, ClaimStatus.DISPROVED)
+        self.assertIn("slowZero_not_consensus", claim.theorem)
+        self.assertIn("slowZero_not_consensus", certificate.source)
+
+    def test_near_one_fixture_certificate_is_theorem_backed_negative(self) -> None:
+        model = self._model("nearOneSchedule")
+        route = fixed_fixture_route(model)
+        assert route is not None
+        certificate = self.builder.build_named_path2(model, route)
+        claim = certificate.claims[0]
+        self.assertIs(claim.expected_status, ClaimStatus.DISPROVED)
+        self.assertIn("nearOne_not_convergent", claim.theorem)
+        self.assertIn("¬ ∃ c : Real", certificate.source)
+
+    def test_builder_rejects_route_from_different_fixture(self) -> None:
+        harmonic = self._model("harmonicSchedule")
+        slow = self._model("slowZeroSchedule")
+        route = fixed_fixture_route(harmonic)
+        assert route is not None
+        with self.assertRaises(ValueError):
+            self.builder.build_named_path2(slow, route)
+
+    def test_changed_fixture_has_no_fixed_theorem_route(self) -> None:
+        changed = self._model("harmonicSchedule", exposures=[0, 1])
+        self.assertIsNone(fixed_fixture_route(changed))
 
 
 if __name__ == "__main__":
