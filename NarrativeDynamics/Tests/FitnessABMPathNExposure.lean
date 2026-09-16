@@ -48,8 +48,8 @@ example (n : Nat) (s : State n) :
       FitnessABMPathN.beliefStep n (beliefs s) := by
   exact half_beliefStep n s
 
--- Task 3 RED: cumulative exposure never decreases, and valid schedules keep
--- every exact rational belief inside [0,1].
+-- Cumulative exposure never decreases, and valid schedules keep every exact
+-- rational belief inside [0,1].
 example (p : ExposureParameters) (n : Nat) (s : State n) (i : Fin n) :
     (s i).exposure ≤ (step p n s i).exposure := by
   exact exposure_mono p n s i
@@ -84,3 +84,64 @@ example : BeliefsBounded (step halfSchedule 3 twoIncomingState) := by
     (by
       intro i
       fin_cases i <;> norm_num [twoIncomingState])
+
+-- The model selects α only after adding this round's incoming broadcasts.
+-- With one incoming neighbor, prior exposures 0 and 1 therefore query α(1)
+-- and α(2), respectively.
+private def historySchedule : ExposureParameters :=
+  ⟨fun e => if e ≤ 1 then 1/4 else 3/4, 1/2⟩
+
+private def lowExposureState : State 2 :=
+  ![⟨1, 0⟩, ⟨0, 0⟩]
+
+private def highExposureState : State 2 :=
+  ![⟨1, 0⟩, ⟨0, 1⟩]
+
+example : ExposureParameters.Valid historySchedule := by
+  constructor
+  · intro e
+    simp only [historySchedule]
+    split <;> norm_num
+  · norm_num [historySchedule]
+
+theorem exposure_history_same_beliefs :
+    beliefs lowExposureState = beliefs highExposureState := by
+  funext i
+  fin_cases i <;> rfl
+
+example : incoming historySchedule lowExposureState 1 = 1 := by
+  decide_cbv
+
+example : incoming historySchedule highExposureState 1 = 1 := by
+  decide_cbv
+
+example : (step historySchedule 2 lowExposureState 1).exposure = 1 := by
+  decide_cbv
+
+example : (step historySchedule 2 highExposureState 1).exposure = 2 := by
+  decide_cbv
+
+example : (step historySchedule 2 lowExposureState 1).belief = 1/4 := by
+  decide_cbv
+
+example : (step historySchedule 2 highExposureState 1).belief = 3/4 := by
+  decide_cbv
+
+theorem exposure_history_changes_next_belief :
+    (step historySchedule 2 lowExposureState 1).belief ≠
+      (step historySchedule 2 highExposureState 1).belief := by
+  decide_cbv
+
+/-- The exposure-independent parameterized baseline receives the same belief
+vector in both cases, so it has one common next-belief result regardless of
+which exposure history produced that vector. -/
+theorem baseline_exposure_history_control :
+    FitnessABMPathNParameters.beliefStep ⟨1/2, 1/2⟩ 2
+        (beliefs lowExposureState) =
+      FitnessABMPathNParameters.beliefStep ⟨1/2, 1/2⟩ 2
+        (beliefs highExposureState) := by
+  rw [exposure_history_same_beliefs]
+
+#print axioms NarrativeDynamics.FitnessABMPathNExposure.exposure_mono
+#print axioms NarrativeDynamics.FitnessABMPathNExposure.beliefs_bounded_step
+#print axioms exposure_history_changes_next_belief
