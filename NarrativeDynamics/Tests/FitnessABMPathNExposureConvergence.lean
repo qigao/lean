@@ -87,6 +87,82 @@ example (p : ExposureParameters) (hvalid : p.Valid)
         (nhds ((((s 0).belief + (s 1).belief) / 2 : Rat) : Real))) := by
   exact path2_consensus_iff_product_tendsto_zero p hvalid s he hb hne
 
+-- Task 4 RED: exact schedule boundaries and the Path3 mean counterexample.
+example : slowZeroSchedule.Valid := slowZeroSchedule_valid
+example : nearOneSchedule.Valid := nearOneSchedule_valid
+example : harmonicSchedule.Valid := harmonicSchedule_valid
+
+example (k : Nat) :
+    path2MultiplierProduct slowZeroSchedule 0 k =
+      (k + 2 : Rat) / (2 * (k + 1 : Rat)) := by
+  exact slowZero_product k
+
+-- The merged same-step ordering queries exposure 1 first, so k=1 is 3/4.
+example : path2MultiplierProduct slowZeroSchedule 0 1 = 3/4 := by
+  simpa using slowZero_product 1
+
+example (k : Nat) :
+    path2MultiplierProduct nearOneSchedule 0 k =
+      (-1 : Rat) ^ k * ((k + 2 : Rat) / (2 * (k + 1 : Rat))) := by
+  exact nearOne_product k
+
+example (k : Nat) :
+    path2MultiplierProduct harmonicSchedule 0 k =
+      1 / (k + 1 : Rat) := by
+  exact harmonic_product k
+
+example :
+    Tendsto
+      (fun k => (path2MultiplierProduct slowZeroSchedule 0 k : Real))
+      atTop (nhds (1/2 : Real)) := by
+  exact slowZero_product_tendsto_half
+
+example :
+    ¬ ∀ i : Fin 2,
+      Tendsto
+        (fun k =>
+          (beliefs ((step slowZeroSchedule 2)^[k]
+            (![⟨1, 0⟩, ⟨0, 0⟩] : State 2)) i : Real))
+        atTop (nhds (1/2 : Real)) := by
+  simpa using slowZero_not_consensus
+
+example :
+    ¬ ∃ c : Real, ∀ i : Fin 2,
+      Tendsto
+        (fun k =>
+          (beliefs ((step nearOneSchedule 2)^[k]
+            (![⟨1, 0⟩, ⟨0, 0⟩] : State 2)) i : Real))
+        atTop (nhds c) := by
+  simpa using nearOne_not_convergent
+
+example :
+    ∀ i : Fin 2,
+      Tendsto
+        (fun k =>
+          (beliefs ((step harmonicSchedule 2)^[k]
+            (![⟨1, 0⟩, ⟨0, 0⟩] : State 2)) i : Real))
+        atTop (nhds (1/2 : Real)) := by
+  simpa using harmonic_consensus
+
+example :
+    beliefs (step degreeSplitSchedule 3 degreeSplitState) =
+      ![3/4, 1/4, 0] := by
+  exact degreeSplit_step_beliefs
+
+example : FitnessABMPathN.mean 3 (beliefs degreeSplitState) = 1/4 := by
+  exact degreeSplit_mean_before
+
+example :
+    FitnessABMPathN.mean 3
+      (beliefs (step degreeSplitSchedule 3 degreeSplitState)) = 5/16 := by
+  exact degreeSplit_mean_after
+
+example :
+    FitnessABMPathN.mean 3
+        (beliefs (step degreeSplitSchedule 3 degreeSplitState)) ≠
+      FitnessABMPathN.mean 3 (beliefs degreeSplitState) := by
+  exact exposure_degree_weighted_mean_not_invariant
+
 #print axioms NarrativeDynamics.FitnessABMPathNExposureConvergence.exposure_iterate
 #print axioms NarrativeDynamics.FitnessABMPathNExposureConvergence.beliefs_iterate_eq_varyingTrajectory
 #print axioms NarrativeDynamics.FitnessABMPathNExposureConvergence.path2_disagreement_product
