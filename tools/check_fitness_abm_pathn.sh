@@ -7,13 +7,15 @@ cd "$pathn_root"
 pathn_time="$(type -P time)"
 consensus_log="$(mktemp)"
 pathn_log="$(mktemp)"
-trap 'rm -f "$consensus_log" "$pathn_log"' EXIT
+params_log="$(mktemp)"
+trap 'rm -f "$consensus_log" "$pathn_log" "$params_log"' EXIT
 
 python3 tools/audit_fitness_trust.py source \
   NarrativeDynamics/Core/FiniteConsensus.lean \
   NarrativeDynamics/Tests/FiniteConsensus.lean \
   NarrativeDynamics/Core/FitnessABMPathN.lean \
-  NarrativeDynamics/Tests/FitnessABMPathN.lean
+  NarrativeDynamics/Tests/FitnessABMPathN.lean \
+  NarrativeDynamics/Tests/FitnessABMPathNParameters.lean
 
 for pathn_module in \
     NarrativeDynamics.Core.FiniteConsensus \
@@ -41,6 +43,14 @@ done
   timeout --kill-after=10s 240s \
   lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FitnessABMPathN.lean \
   2>&1 | tee "$pathn_log"
+
+# RED harness for #82: this consumer intentionally imports the not-yet-existing
+# parameter module until Task 1 GREEN is implemented. Keeping it in the real
+# PathN gate proves the consumer is actually executed rather than merely tracked.
+"$pathn_time" -f 'FitnessABMPathNParameters tests elapsed=%e s peak_rss=%M KiB' \
+  timeout --kill-after=10s 240s \
+  lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FitnessABMPathNParameters.lean \
+  2>&1 | tee "$params_log"
 
 python3 tools/audit_fitness_trust.py log "$consensus_log" \
   --require NarrativeDynamics.FiniteConsensus.coordRange_apply_le_of_commonColumn \
