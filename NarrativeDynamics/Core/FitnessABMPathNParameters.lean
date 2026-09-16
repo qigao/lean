@@ -48,4 +48,22 @@ def beliefStep (params : ResponseParameters)
 def half : ResponseParameters :=
   ⟨1/2, 1/2⟩
 
+/-- The canonical half-response parameterization is exactly the existing fixed
+finite-path population, including supplied exposure counters. -/
+theorem population_half (n : Nat) (x : Beliefs n) (e : Fin n → Nat) :
+    population half n x e = FitnessABMPathN.population n x e := by
+  rfl
+
+/-- The canonical half-response executable step is exactly the existing fixed
+finite-path step. No second propagation implementation is introduced. -/
+theorem beliefStep_half (n : Nat) (x : Beliefs n) :
+    beliefStep half n x = FitnessABMPathN.beliefStep n x := by
+  rfl
+
+/-- The canonical half threshold has the same inclusive all-broadcast region
+as the existing fixed finite-path model. -/
+theorem allBroadcast_half (n : Nat) (x : Beliefs n) :
+    allBroadcast half n x ↔ FitnessABMPathN.allBroadcast n x := by
+  rfl
+
 end NarrativeDynamics.FitnessABMPathNParameters
