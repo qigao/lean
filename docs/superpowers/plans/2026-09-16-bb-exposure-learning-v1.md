@@ -117,7 +117,7 @@ theorem beliefs_bounded_step
 **Files:**
 - Modify: `NarrativeDynamics/Tests/FitnessABMPathNExposure.lean`
 
-**Fixture contract:** path of two or three vertices; identical graph, beliefs and threshold; receiver differs only in starting cumulative exposure. Use schedule `α(0)=1/4`, `α(e)=3/4` for positive `e`; provide a broadcasting neighbor with different belief.
+**Fixture contract:** path of two or three vertices; identical graph, beliefs and threshold; receiver differs only in starting cumulative exposure, for example `0` versus `1`. Give the receiver one current incoming broadcast, so the same-step lookup points are `e'=1` versus `e'=2`. Use a schedule that distinguishes those post-incoming counts, for example `α(e)=1/4` when `e ≤ 1` and `α(e)=3/4` when `e ≥ 2`; provide a broadcasting neighbor with different belief.
 
 - [ ] Add concrete definitions `lowExposureState` and `highExposureState` whose `beliefs` projections are equal before the step.
 - [ ] Prove the targeted receiver's next beliefs are unequal after one exposure-dependent step.
