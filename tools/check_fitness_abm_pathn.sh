@@ -8,19 +8,23 @@ pathn_time="$(type -P time)"
 consensus_log="$(mktemp)"
 pathn_log="$(mktemp)"
 params_log="$(mktemp)"
-trap 'rm -f "$consensus_log" "$pathn_log" "$params_log"' EXIT
+exposure_log="$(mktemp)"
+trap 'rm -f "$consensus_log" "$pathn_log" "$params_log" "$exposure_log"' EXIT
 
 python3 tools/audit_fitness_trust.py source \
   NarrativeDynamics/Core/FiniteConsensus.lean \
   NarrativeDynamics/Tests/FiniteConsensus.lean \
   NarrativeDynamics/Core/FitnessABMPathN.lean \
   NarrativeDynamics/Tests/FitnessABMPathN.lean \
-  NarrativeDynamics/Tests/FitnessABMPathNParameters.lean
+  NarrativeDynamics/Tests/FitnessABMPathNParameters.lean \
+  NarrativeDynamics/Core/FitnessABMPathNExposure.lean \
+  NarrativeDynamics/Tests/FitnessABMPathNExposure.lean
 
 for pathn_module in \
     NarrativeDynamics.Core.FiniteConsensus \
     NarrativeDynamics.Core.FitnessABMPathN \
-    NarrativeDynamics.Core.FitnessABMPathNParameters; do
+    NarrativeDynamics.Core.FitnessABMPathNParameters \
+    NarrativeDynamics.Core.FitnessABMPathNExposure; do
   "$pathn_time" -f "$pathn_module elapsed=%e s peak_rss=%M KiB" \
     timeout --kill-after=10s 240s lake build "$pathn_module"
 done
@@ -45,13 +49,15 @@ done
   lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FitnessABMPathN.lean \
   2>&1 | tee "$pathn_log"
 
-# RED harness for #82: this consumer intentionally imports the not-yet-existing
-# parameter module until Task 1 GREEN is implemented. Keeping it in the real
-# PathN gate proves the consumer is actually executed rather than merely tracked.
 "$pathn_time" -f 'FitnessABMPathNParameters tests elapsed=%e s peak_rss=%M KiB' \
   timeout --kill-after=10s 240s \
   lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FitnessABMPathNParameters.lean \
   2>&1 | tee "$params_log"
+
+"$pathn_time" -f 'FitnessABMPathNExposure tests elapsed=%e s peak_rss=%M KiB' \
+  timeout --kill-after=10s 240s \
+  lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FitnessABMPathNExposure.lean \
+  2>&1 | tee "$exposure_log"
 
 python3 tools/audit_fitness_trust.py log "$consensus_log" \
   --require NarrativeDynamics.FiniteConsensus.coordRange_apply_le_of_commonColumn \
@@ -65,3 +71,9 @@ python3 tools/audit_fitness_trust.py log "$pathn_log" \
   --require NarrativeDynamics.FitnessABMPathN.mean_step \
   --require NarrativeDynamics.FitnessABMPathN.path_block_common_mass \
   --require NarrativeDynamics.FitnessABMPathN.trajectory_tendsto
+
+python3 tools/audit_fitness_trust.py log "$exposure_log" \
+  --require NarrativeDynamics.FitnessABMPathNExposure.constant_beliefStep \
+  --require NarrativeDynamics.FitnessABMPathNExposure.exposure_mono \
+  --require NarrativeDynamics.FitnessABMPathNExposure.beliefs_bounded_step \
+  --require exposure_history_changes_next_belief
