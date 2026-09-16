@@ -60,4 +60,51 @@ def step (p : ExposureParameters) (n : Nat) (s : State n) : State n :=
       let mean := broadcasterMean p s i
       ⟨(1 - alpha) * (s i).belief + alpha * mean, exposure'⟩
 
+/-- A constant schedule recovers an exposure-independent response parameter. -/
+def constant (alpha tau : Rat) : ExposureParameters :=
+  ⟨fun _ => alpha, tau⟩
+
+private theorem broadcasters_constant_eq_incoming
+    (alpha tau : Rat) (n : Nat) (s : State n) (e : Fin n → Nat) (i : Fin n) :
+    broadcasters (constant alpha tau) n s i =
+      NarrativeDynamics.NetworkPropagation.incoming
+        (NarrativeDynamics.FitnessABMPathN.pathAdj n)
+        (NarrativeDynamics.FitnessABMPathNParameters.population
+          ⟨alpha, tau⟩ n (beliefs s) e) i := by
+  ext j
+  simp [broadcasters, NarrativeDynamics.FitnessABMPathN.neighbors,
+    NarrativeDynamics.NetworkPropagation.incoming,
+    NarrativeDynamics.NetworkPropagation.broadcasting,
+    NarrativeDynamics.FitnessABMPathNParameters.population,
+    broadcasting, beliefs, constant]
+
+/-- Under a constant schedule, the exposure-dependent model has exactly the
+same projected belief step as the parameterized baseline. Exposure bookkeeping
+is intentionally not part of this equality. -/
+theorem constant_beliefStep (alpha tau : Rat) (n : Nat) (s : State n) :
+    beliefs (step (constant alpha tau) n s) =
+      NarrativeDynamics.FitnessABMPathNParameters.beliefStep
+        ⟨alpha, tau⟩ n (beliefs s) := by
+  funext i
+  have hreceived :=
+    broadcasters_constant_eq_incoming alpha tau n s (fun _ => 0) i
+  change
+    (step (constant alpha tau) n s i).belief =
+      (NarrativeDynamics.NetworkPropagation.nextAgent
+        (NarrativeDynamics.FitnessABMPathN.pathAdj n)
+        (NarrativeDynamics.FitnessABMPathNParameters.population
+          ⟨alpha, tau⟩ n (beliefs s) (fun _ => 0)) i).belief
+  simp [step, incoming, broadcasterMean,
+    NarrativeDynamics.NetworkPropagation.nextAgent, hreceived,
+    NarrativeDynamics.FitnessABMPathNParameters.population,
+    beliefs, constant]
+
+/-- The canonical half schedule therefore recovers the existing fixed PathN
+belief step through the #82 exact specialization. -/
+theorem half_beliefStep (n : Nat) (s : State n) :
+    beliefs (step (constant (1/2) (1/2)) n s) =
+      NarrativeDynamics.FitnessABMPathN.beliefStep n (beliefs s) := by
+  rw [constant_beliefStep]
+  exact NarrativeDynamics.FitnessABMPathNParameters.beliefStep_half n (beliefs s)
+
 end NarrativeDynamics.FitnessABMPathNExposure
