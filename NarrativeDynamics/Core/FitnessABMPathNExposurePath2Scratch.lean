@@ -247,13 +247,17 @@ theorem path2_consensus_iff_product_tendsto_zero
         (fun k => (beliefs ((step p 2)^[k] s) 0 : Real))
         atTop (nhds m) := by
       have hlim := Filter.Tendsto.const_add m hscaled
-      exact hlim.congr'
+      have hlim' : Tendsto (fun k => m + d * P k / 2) atTop (nhds m) := by
+        simpa using hlim
+      exact hlim'.congr'
         (Filter.Eventually.of_forall fun k => (hzeroFormula k).symm)
     have ho : Tendsto
         (fun k => (beliefs ((step p 2)^[k] s) 1 : Real))
         atTop (nhds m) := by
       have hlim := Filter.Tendsto.const_sub m hscaled
-      exact hlim.congr'
+      have hlim' : Tendsto (fun k => m - d * P k / 2) atTop (nhds m) := by
+        simpa using hlim
+      exact hlim'.congr'
         (Filter.Eventually.of_forall fun k => (honeFormula k).symm)
     intro i
     fin_cases i
