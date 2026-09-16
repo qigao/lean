@@ -32,6 +32,7 @@ if [[ "$canonical_output" != "5 cases checked" ]]; then
 fi
 
 BB_RATIONAL_TMP_DIR="$TMP_DIR" python3 - <<'PY'
+import copy
 import os
 from pathlib import Path
 
@@ -45,17 +46,30 @@ from tools.generate_bb_rational_conformance import generate_records
 
 root = Path(os.environ["BB_RATIONAL_TMP_DIR"])
 records = generate_records()
+
+extra_top_level = copy.deepcopy(records)
+extra_top_level[0]["unexpected"] = 1
+
+extra_provenance = copy.deepcopy(records)
+extra_provenance[0]["provenance"]["unexpected"] = 1
+
+extra_rational = copy.deepcopy(records)
+extra_rational[0]["input"]["alpha"]["unexpected"] = 1
+
 mutations = {
     "schema.jsonl": mutate_schema_version(records),
     "contract-hash.jsonl": mutate_contract_hash(records),
     "expected-rational.jsonl": mutate_expected_rational(records),
+    "extra-top-level.jsonl": extra_top_level,
+    "extra-provenance.jsonl": extra_provenance,
+    "extra-rational.jsonl": extra_rational,
 }
 for name, mutated in mutations.items():
     payload = "".join(canonical_json_line(record) for record in mutated)
     (root / name).write_text(payload, encoding="utf-8", newline="\n")
 PY
 
-for name in schema contract-hash expected-rational; do
+for name in schema contract-hash expected-rational extra-top-level extra-provenance extra-rational; do
   corpus="$TMP_DIR/$name.jsonl"
   log="$TMP_DIR/$name.log"
   if run_checker "$corpus" >"$log" 2>&1; then
