@@ -13,18 +13,19 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA = "bb-rational-conformance/v1"
-CONTRACT_SOURCE = "tools/bb_rational_conformance.py"
+CONTRACT_SOURCE = "conformance/bb_rational_v1.contract"
 
 
 def contract_hash() -> str:
-    """Hash the normalized exact-semantics source that defines this contract.
+    """Hash the explicit normalized semantic contract source.
 
-    The digest deliberately excludes Git metadata and timestamps. The v1 case
-    definitions and evaluator live in this one named semantic source file, so
-    changing their executable contract changes the provenance digest.
+    Git metadata and timestamps are intentionally excluded. Updating exact v1
+    semantics requires an intentional edit of the reviewed contract source,
+    which in turn changes every generated record's provenance digest.
     """
 
-    source = Path(__file__).read_bytes().replace(b"\r\n", b"\n")
+    root = Path(__file__).resolve().parents[1]
+    source = (root / CONTRACT_SOURCE).read_bytes().replace(b"\r\n", b"\n")
     payload = SCHEMA.encode("utf-8") + b"\0" + CONTRACT_SOURCE.encode("utf-8") + b"\0" + source
     return hashlib.sha256(payload).hexdigest()
 
