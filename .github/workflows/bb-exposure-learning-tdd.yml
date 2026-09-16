@@ -45,6 +45,10 @@ jobs:
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
           lake build NarrativeDynamics.Core.FitnessABMPathNParameters
+      - name: Build exposure model
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          lake build NarrativeDynamics.Core.FitnessABMPathNExposure
       - name: Run exposure-model consumer
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
