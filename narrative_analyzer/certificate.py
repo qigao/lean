@@ -16,7 +16,12 @@ from .model import (
     PathModel,
     PiecewiseSchedule,
 )
-from .named_schedules import LEAN_NAMESPACE, resolve_named_schedule
+from .named_schedules import (
+    LEAN_NAMESPACE,
+    FixedFixtureRoute,
+    fixed_fixture_route,
+    resolve_named_schedule,
+)
 from .result import (
     CertificateGenerationError,
     ClaimStatus,
@@ -549,5 +554,108 @@ class CertificateBuilder:
             ),
         )
 
-    def build_named_path2(self, model: PathModel, route: object) -> Certificate:
-        raise CertificateGenerationError("named Path2 certificates are Task 6")
+    def build_named_path2(
+        self, model: PathModel, route: FixedFixtureRoute
+    ) -> Certificate:
+        actual = fixed_fixture_route(model)
+        if actual is None:
+            raise ValueError("model does not match a fixed named Path2 theorem fixture")
+        if route != actual:
+            raise ValueError("theorem route does not match the concrete model fixture")
+        if not isinstance(model.schedule, NamedSchedule):
+            raise ValueError("named Path2 route requires a named schedule")
+
+        digest = _model_digest(model)
+        lines = _header()
+        definitions, params, state = _definitions(model, digest)
+        lines += definitions
+
+        params_eq = f"AnalyzerNamedParamsEq_{digest}"
+        state_eq = f"AnalyzerNamedStateEq_{digest}"
+        path2_lemma = f"AnalyzerPath2Consensus_{digest}"
+        production_schedule = route.schedule_id
+        theorem_tail = route.theorem.rsplit(".", 1)[-1]
+
+        lines += [
+            f"private theorem {params_eq} : {params} = {production_schedule} := by",
+            "  rfl",
+            "",
+            f"private theorem {state_eq} :",
+            f"    {state} = (![⟨1, 0⟩, ⟨0, 0⟩] : State 2) := by",
+            "  rfl",
+            "",
+        ]
+
+        if route.schedule_id == "harmonicSchedule":
+            lines += [
+                f"private theorem {path2_lemma} :",
+                "    ∀ i : Fin 2,",
+                f"      Tendsto (fun k => (beliefs ((step {params} 2)^[k] {state}) i : Real))",
+                "        atTop (nhds (1/2 : Real)) := by",
+                f"  rw [{params_eq}, {state_eq}]",
+                f"  exact {theorem_tail}",
+                "",
+                "end NarrativeAnalyzerCertificate",
+                "",
+            ]
+            return Certificate(
+                source="\n".join(lines),
+                claims=(
+                    CertificateClaim(
+                        claim_id="path2_consensus",
+                        expected_status=ClaimStatus.PROVED,
+                        theorem=route.theorem,
+                        assumptions=route.assumptions,
+                        exact_values={"value": "1/2"},
+                    ),
+                    CertificateClaim(
+                        claim_id="consensus_value_known",
+                        expected_status=ClaimStatus.PROVED,
+                        theorem=route.theorem,
+                        assumptions=route.assumptions,
+                        exact_values={"value": "1/2"},
+                    ),
+                ),
+            )
+
+        if route.schedule_id == "slowZeroSchedule":
+            lines += [
+                f"private theorem {path2_lemma} :",
+                "    ¬ ∀ i : Fin 2,",
+                f"      Tendsto (fun k => (beliefs ((step {params} 2)^[k] {state}) i : Real))",
+                "        atTop (nhds (1/2 : Real)) := by",
+                f"  rw [{params_eq}, {state_eq}]",
+                f"  exact {theorem_tail}",
+                "",
+                "end NarrativeAnalyzerCertificate",
+                "",
+            ]
+        elif route.schedule_id == "nearOneSchedule":
+            lines += [
+                f"private theorem {path2_lemma} :",
+                "    ¬ ∃ c : Real, ∀ i : Fin 2,",
+                f"      Tendsto (fun k => (beliefs ((step {params} 2)^[k] {state}) i : Real))",
+                "        atTop (nhds c) := by",
+                f"  rw [{params_eq}, {state_eq}]",
+                f"  exact {theorem_tail}",
+                "",
+                "end NarrativeAnalyzerCertificate",
+                "",
+            ]
+        else:
+            raise CertificateGenerationError(
+                f"fixed named route has no certificate template: {route.schedule_id}"
+            )
+
+        return Certificate(
+            source="\n".join(lines),
+            claims=(
+                CertificateClaim(
+                    claim_id="path2_consensus",
+                    expected_status=ClaimStatus.DISPROVED,
+                    theorem=route.theorem,
+                    assumptions=route.assumptions,
+                    exact_values={},
+                ),
+            ),
+        )
