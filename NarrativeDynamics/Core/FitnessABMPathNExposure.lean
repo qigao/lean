@@ -70,7 +70,7 @@ theorem exposure_mono (p : ExposureParameters) (n : Nat) (s : State n)
     (s i).exposure ≤ (step p n s i).exposure := by
   unfold step
   dsimp only
-  split <;> omega
+  split <;> simp
 
 private theorem broadcasterMean_bounded
     (p : ExposureParameters) (n : Nat) (s : State n) (i : Fin n)
