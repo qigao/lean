@@ -1,4 +1,4 @@
-import NarrativeDynamics.Core.FitnessABMPathNExposurePath2Scratch
+import NarrativeDynamics.Core.FitnessABMPathNExposureConvergence
 
 open NarrativeDynamics
 open NarrativeDynamics.FiniteConsensus
