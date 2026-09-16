@@ -106,14 +106,19 @@ def pathKernel (params : ResponseParameters) (n : Nat) : Kernel (Fin n) :=
 kernel. -/
 theorem pathKernel_half (n : Nat) :
     pathKernel half n = FitnessABMPathN.pathKernel n := by
-  have hdiv : ∀ d : Rat, (1/2 : Rat) / d = 1 / (2 * d) := by
-    intro d
-    by_cases hd : d = 0
-    · simp [hd]
-    · field_simp [hd]
   funext i j
-  by_cases hij : i = j <;>
-    by_cases hmem : j ∈ FitnessABMPathN.neighbors n i <;>
-    simp [pathKernel, FitnessABMPathN.pathKernel, half, hij, hmem, hdiv]
+  by_cases hij : i = j
+  · subst j
+    have hself : i ∉ FitnessABMPathN.neighbors n i := by
+      intro h
+      exact FitnessABMPathN.pathAdj_self i
+        ((FitnessABMPathN.mem_neighbors_iff i i).mp h)
+    simp [pathKernel, FitnessABMPathN.pathKernel, half, hself]
+    norm_num
+  · by_cases hmem : j ∈ FitnessABMPathN.neighbors n i
+    · simp [pathKernel, FitnessABMPathN.pathKernel, half, hij, hmem]
+      rw [div_eq_mul_inv]
+      ring
+    · simp [pathKernel, FitnessABMPathN.pathKernel, half, hij, hmem]
 
 end NarrativeDynamics.FitnessABMPathNParameters
