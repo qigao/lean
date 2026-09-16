@@ -1,0 +1,53 @@
+name: BB rational conformance TDD
+
+on:
+  push:
+    branches:
+      - feature/bb-rational-conformance-v1
+    paths:
+      - "NarrativeDynamics/Conformance/BBRationalConformance.lean"
+      - "conformance/bb_rational_v1.jsonl"
+      - "conformance/bb_rational_v1.contract"
+      - "tools/bb_rational_conformance.py"
+      - "tools/generate_bb_rational_conformance.py"
+      - "tests/test_bb_rational_conformance.py"
+      - ".github/workflows/bb-rational-conformance-tdd.yml"
+  workflow_dispatch:
+
+jobs:
+  checker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record checked revision
+        run: git rev-parse HEAD
+      - name: Cache Lean toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.elan
+          key: ${{ runner.os }}-elan-${{ hashFiles('lean-toolchain') }}
+          restore-keys: |
+            ${{ runner.os }}-elan-
+      - name: Install Lean
+        run: |
+          if [ ! -x "$HOME/.elan/bin/elan" ]; then
+            curl https://elan.lean-lang.org/elan-init.sh -sSf | sh -s -- -y
+          fi
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Cache Lake dependencies
+        uses: actions/cache@v4
+        with:
+          path: .lake/packages
+          key: ${{ runner.os }}-lake-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lakefile.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-lake-${{ hashFiles('lean-toolchain') }}-
+      - name: Resolve Lean dependencies
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          lake update
+      - name: Run exact checker
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          timeout --kill-after=10s 240s \
+            lake env lean --run NarrativeDynamics/Conformance/BBRationalConformance.lean -- \
+              conformance/bb_rational_v1.jsonl
