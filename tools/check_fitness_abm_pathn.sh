@@ -26,6 +26,7 @@ python3 tools/audit_fitness_trust.py source \
   NarrativeDynamics/Tests/FitnessABMPathNParameterConvergence.lean \
   NarrativeDynamics/Core/FitnessABMPathNExposure.lean \
   NarrativeDynamics/Tests/FitnessABMPathNExposure.lean \
+  NarrativeDynamics/Core/FitnessABMPathNExposureConvergence.lean \
   NarrativeDynamics/Tests/FitnessABMPathNExposureConvergence.lean
 
 for pathn_module in \
@@ -34,7 +35,8 @@ for pathn_module in \
     NarrativeDynamics.Core.FitnessABMPathN \
     NarrativeDynamics.Core.FitnessABMPathNParameters \
     NarrativeDynamics.Core.FitnessABMPathNParameterConvergence \
-    NarrativeDynamics.Core.FitnessABMPathNExposure; do
+    NarrativeDynamics.Core.FitnessABMPathNExposure \
+    NarrativeDynamics.Core.FitnessABMPathNExposureConvergence; do
   "$pathn_time" -f "$pathn_module elapsed=%e s peak_rss=%M KiB" \
     timeout --kill-after=10s 240s lake build "$pathn_module"
 done
@@ -116,3 +118,7 @@ python3 tools/audit_fitness_trust.py log "$exposure_log" \
   --require NarrativeDynamics.FitnessABMPathNExposure.exposure_mono \
   --require NarrativeDynamics.FitnessABMPathNExposure.beliefs_bounded_step \
   --require exposure_history_changes_next_belief
+
+python3 tools/audit_fitness_trust.py log "$exposure_convergence_log" \
+  --require NarrativeDynamics.FitnessABMPathNExposureConvergence.exposure_iterate \
+  --require NarrativeDynamics.FitnessABMPathNExposureConvergence.beliefs_iterate_eq_varyingTrajectory
