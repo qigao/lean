@@ -97,9 +97,17 @@ theorem constant_beliefStep (alpha tau : Rat) (n : Nat) (s : State n) :
   simp only [step]
   simp only [incoming, broadcasterMean]
   rw [hreceived]
-  simp [NarrativeDynamics.NetworkPropagation.nextAgent,
-    NarrativeDynamics.FitnessABMPathNParameters.population,
-    beliefs, constant]
+  by_cases hzero :
+      NarrativeDynamics.NetworkPropagation.incoming
+        (NarrativeDynamics.FitnessABMPathN.pathAdj n)
+        (NarrativeDynamics.FitnessABMPathNParameters.population
+          ⟨alpha, tau⟩ n (beliefs s) (fun _ => 0)) i = ∅
+  · simp [hzero, NarrativeDynamics.NetworkPropagation.nextAgent,
+      NarrativeDynamics.FitnessABMPathNParameters.population,
+      beliefs, constant]
+  · simp [hzero, NarrativeDynamics.NetworkPropagation.nextAgent,
+      NarrativeDynamics.FitnessABMPathNParameters.population,
+      beliefs, constant]
 
 /-- The canonical half schedule therefore recovers the existing fixed PathN
 belief step through the #82 exact specialization. -/
