@@ -6,29 +6,37 @@ cd "$pathn_root"
 
 pathn_time="$(type -P time)"
 consensus_log="$(mktemp)"
+time_varying_log="$(mktemp)"
 pathn_log="$(mktemp)"
 params_log="$(mktemp)"
 parameter_convergence_log="$(mktemp)"
 exposure_log="$(mktemp)"
-trap 'rm -f "$consensus_log" "$pathn_log" "$params_log" "$parameter_convergence_log" "$exposure_log"' EXIT
+exposure_convergence_log="$(mktemp)"
+trap 'rm -f "$consensus_log" "$time_varying_log" "$pathn_log" "$params_log" "$parameter_convergence_log" "$exposure_log" "$exposure_convergence_log"' EXIT
 
 python3 tools/audit_fitness_trust.py source \
   NarrativeDynamics/Core/FiniteConsensus.lean \
   NarrativeDynamics/Tests/FiniteConsensus.lean \
+  NarrativeDynamics/Core/FiniteTimeVaryingConsensus.lean \
+  NarrativeDynamics/Tests/FiniteTimeVaryingConsensus.lean \
   NarrativeDynamics/Core/FitnessABMPathN.lean \
   NarrativeDynamics/Tests/FitnessABMPathN.lean \
   NarrativeDynamics/Tests/FitnessABMPathNParameters.lean \
   NarrativeDynamics/Core/FitnessABMPathNParameterConvergence.lean \
   NarrativeDynamics/Tests/FitnessABMPathNParameterConvergence.lean \
   NarrativeDynamics/Core/FitnessABMPathNExposure.lean \
-  NarrativeDynamics/Tests/FitnessABMPathNExposure.lean
+  NarrativeDynamics/Tests/FitnessABMPathNExposure.lean \
+  NarrativeDynamics/Core/FitnessABMPathNExposureConvergence.lean \
+  NarrativeDynamics/Tests/FitnessABMPathNExposureConvergence.lean
 
 for pathn_module in \
     NarrativeDynamics.Core.FiniteConsensus \
+    NarrativeDynamics.Core.FiniteTimeVaryingConsensus \
     NarrativeDynamics.Core.FitnessABMPathN \
     NarrativeDynamics.Core.FitnessABMPathNParameters \
     NarrativeDynamics.Core.FitnessABMPathNParameterConvergence \
-    NarrativeDynamics.Core.FitnessABMPathNExposure; do
+    NarrativeDynamics.Core.FitnessABMPathNExposure \
+    NarrativeDynamics.Core.FitnessABMPathNExposureConvergence; do
   "$pathn_time" -f "$pathn_module elapsed=%e s peak_rss=%M KiB" \
     timeout --kill-after=10s 240s lake build "$pathn_module"
 done
@@ -47,6 +55,11 @@ done
   timeout --kill-after=10s 240s \
   lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FiniteConsensus.lean \
   2>&1 | tee "$consensus_log"
+
+"$pathn_time" -f 'FiniteTimeVaryingConsensus tests elapsed=%e s peak_rss=%M KiB' \
+  timeout --kill-after=10s 240s \
+  lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FiniteTimeVaryingConsensus.lean \
+  2>&1 | tee "$time_varying_log"
 
 "$pathn_time" -f 'FitnessABMPathN tests elapsed=%e s peak_rss=%M KiB' \
   timeout --kill-after=10s 240s \
@@ -69,9 +82,20 @@ done
   lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FitnessABMPathNExposure.lean \
   2>&1 | tee "$exposure_log"
 
+"$pathn_time" -f 'FitnessABMPathNExposureConvergence tests elapsed=%e s peak_rss=%M KiB' \
+  timeout --kill-after=10s 240s \
+  lake env lean -DmaxErrors=1 \
+  NarrativeDynamics/Tests/FitnessABMPathNExposureConvergence.lean \
+  2>&1 | tee "$exposure_convergence_log"
+
 python3 tools/audit_fitness_trust.py log "$consensus_log" \
   --require NarrativeDynamics.FiniteConsensus.coordRange_apply_le_of_commonColumn \
   --require NarrativeDynamics.FiniteConsensus.block_contraction_tendsto
+
+python3 tools/audit_fitness_trust.py log "$time_varying_log" \
+  --require NarrativeDynamics.FiniteTimeVaryingConsensus.apply_windowKernel \
+  --require NarrativeDynamics.FiniteTimeVaryingConsensus.coordRange_tendsto_zero \
+  --require NarrativeDynamics.FiniteTimeVaryingConsensus.block_contraction_consensus_exists
 
 python3 tools/audit_fitness_trust.py log "$pathn_log" \
   --require NarrativeDynamics.FitnessABMPathN.propagate_independent_exposures \
@@ -94,3 +118,16 @@ python3 tools/audit_fitness_trust.py log "$exposure_log" \
   --require NarrativeDynamics.FitnessABMPathNExposure.exposure_mono \
   --require NarrativeDynamics.FitnessABMPathNExposure.beliefs_bounded_step \
   --require exposure_history_changes_next_belief
+
+python3 tools/audit_fitness_trust.py log "$exposure_convergence_log" \
+  --require NarrativeDynamics.FitnessABMPathNExposureConvergence.exposure_iterate \
+  --require NarrativeDynamics.FitnessABMPathNExposureConvergence.beliefs_iterate_eq_varyingTrajectory \
+  --require NarrativeDynamics.FitnessABMPathNExposureConvergence.path2_disagreement_product \
+  --require NarrativeDynamics.FitnessABMPathNExposureConvergence.path2_consensus_iff_product_tendsto_zero \
+  --require NarrativeDynamics.FitnessABMPathNExposureConvergence.slowZero_not_consensus \
+  --require NarrativeDynamics.FitnessABMPathNExposureConvergence.nearOne_not_convergent \
+  --require NarrativeDynamics.FitnessABMPathNExposureConvergence.harmonic_consensus \
+  --require NarrativeDynamics.FitnessABMPathNExposureConvergence.exposure_degree_weighted_mean_not_invariant \
+  --require NarrativeDynamics.FitnessABMPathNExposureConvergence.path_window_common_mass \
+  --require NarrativeDynamics.FitnessABMPathNExposureConvergence.trajectory_consensus_exists \
+  --require NarrativeDynamics.FitnessABMPathNExposureConvergence.trajectory_consensus_exists_of_global_interior
