@@ -199,6 +199,35 @@ private def rawSeedFrom (fitness : List Rat) (edges : List (Nat × Nat)) : RawSe
 private def rawBirthFrom (birth : ParsedBirth) : RawBirth :=
   ⟨birth.fitness, birth.targets.toArray⟩
 
+private def snapshotEdges {n : Nat} (snapshot : Snapshot n) : List (Nat × Nat) :=
+  letI := snapshot.adjDec
+  (List.ofFn fun i : Fin n => i).flatMap fun i =>
+    (List.ofFn fun j : Fin n => j).filterMap fun j =>
+      if i < j ∧ snapshot.graph.Adj i j then
+        some (i.val, j.val)
+      else
+        none
+
+private def recomputeBirthMasses
+    (seed : RawSeed) (m : Nat) (births : List ParsedBirth) :
+    Except String (List Rat) := do
+  let initial ←
+    match parseSeed seed with
+    | .error error => fail s!"production seed parse failed: {reprStr error}"
+    | .ok state => pure state
+  match births with
+  | [first, second] =>
+      let firstStep ←
+        match step initial m (rawBirthFrom first) with
+        | .error error => fail s!"production first birth failed: {reprStr error}"
+        | .ok out => pure out
+      let secondStep ←
+        match step firstStep.1 m (rawBirthFrom second) with
+        | .error error => fail s!"production second birth failed: {reprStr error}"
+        | .ok out => pure out
+      pure [firstStep.2, secondStep.2]
+  | _ => fail "success replay must contain exactly two births"
+
 private def checkSuccessfulReplay (input expected : Json) : Except String Unit := do
   let m ← (← input.getObjVal? "m").getNat?
   let seedFitness ← parseRatList (← input.getObjVal? "seed_fitness")
@@ -220,20 +249,20 @@ private def checkSuccessfulReplay (input expected : Json) : Except String Unit :
   let expectedBirthCount ← (← expected.getObjVal? "birth_count").getNat?
   let expectedTickCount ← (← expected.getObjVal? "tick_count").getNat?
   let expectedEdges ← parseEdges (← expected.getObjVal? "edges")
-  expectRats "expected.birth_masses" expectedBirthMasses [1/2, 1/4]
-  expectEdges "expected.edges" expectedEdges [(0, 1), (1, 2), (2, 3)]
   expectNat "expected.birth_count" expectedBirthCount births.length
   expectNat "expected.tick_count" expectedTickCount births.length
 
   let seed := rawSeedFrom seedFitness seedEdges
+  let actualBirthMasses ← recomputeBirthMasses seed m births
+  expectRats "expected.birth_masses" actualBirthMasses expectedBirthMasses
+
   let rawBirths := births.map rawBirthFrom
   match FitnessAttachment.replay seed m rawBirths with
   | .error error => fail s!"production replay failed: {reprStr error}"
   | .ok result =>
       expectRats "expected.trace_mass" [result.probability] [expectedTraceMass]
       expectNat "expected.node_count" result.final.nodeCount expectedNodeCount
-      expectNat "expected.edge_count"
-        (actualEdgeCount result.final.state.snapshot) expectedEdges.length
+      expectEdges "expected.edges" (snapshotEdges result.final.state.snapshot) expectedEdges
 
 private def checkDuplicateTarget (input expected : Json) : Except String Unit := do
   let m ← (← input.getObjVal? "m").getNat?
