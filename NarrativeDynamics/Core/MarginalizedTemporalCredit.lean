@@ -28,6 +28,10 @@ noncomputable def immediateLaw : DelayLaw :=
 def validSource (n t d : Nat) : Prop :=
   d ≤ t ∧ t - d < n
 
+instance validSourceDecidable (n t d : Nat) : Decidable (validSource n t d) := by
+  unfold validSource
+  infer_instance
+
 noncomputable def expectedAggregate
     (law : DelayLaw) (reward : Nat → ℝ) (n t : Nat) : ℝ :=
   ∑ d ∈ law.support,
@@ -49,7 +53,7 @@ theorem registered_law_valid : registeredLaw.Valid := by
       have hne : ¬ (d = 1 ∨ d = 3 ∨ d = 5) := by
         intro h
         apply hd
-        simpa using h
+        simpa [registeredLaw] using h
       simp [registeredLaw, hne]
     · norm_num [registeredLaw]
 
@@ -63,8 +67,9 @@ theorem immediate_law_valid : immediateLaw.Valid := by
     · intro d hd
       have hne : d ≠ 0 := by
         intro h
+        subst d
         apply hd
-        simpa [h]
+        simp [immediateLaw]
       simp [immediateLaw, hne]
     · norm_num [immediateLaw]
 
@@ -73,13 +78,13 @@ theorem expected_aggregate_decomposition
     expectedAggregate law reward n t =
       ∑ d ∈ law.support,
         if d ≤ t ∧ t - d < n then law.weight d * reward (t - d) else 0 := by
-  rfl
+  simp [expectedAggregate, validSource]
 
 theorem candidate_support_bounded
     (law : DelayLaw) (credit : Nat → ℝ) (n t j : Nat)
     (h : ∀ d ∈ law.support, ¬ (d ≤ t ∧ t - d = j ∧ j < n)) :
     candidateCredit law credit n t j = 0 := by
-  simp only [candidateCredit]
+  unfold candidateCredit
   apply Finset.sum_eq_zero
   intro d hd
   have hnot : ¬ (validSource n t d ∧ t - d = j) := by
