@@ -55,5 +55,5 @@ jobs:
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
           timeout --kill-after=10s 240s \
-            lake env lean --run NarrativeDynamics/Conformance/BBRationalConformance.lean -- \
+            lake env lean --run NarrativeDynamics/Conformance/BBRationalConformance.lean \
               conformance/bb_rational_v1.jsonl
