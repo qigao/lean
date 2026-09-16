@@ -1,0 +1,30 @@
+name: c4-formal-red
+
+on:
+  push:
+    branches:
+      - formal/marginalized-temporal-credit-v1
+
+jobs:
+  c4-formal:
+    name: C4 marginalized credit RED/GREEN
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Lean
+        run: |
+          if [ ! -x "$HOME/.elan/bin/elan" ]; then
+            curl https://elan.lean-lang.org/elan-init.sh -sSf | sh -s -- -y
+          fi
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Resolve Lean dependencies
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          lake update
+
+      - name: C4 marginalized temporal credit theorem tests
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          lake env lean NarrativeDynamics/Tests/MarginalizedTemporalCredit.lean
