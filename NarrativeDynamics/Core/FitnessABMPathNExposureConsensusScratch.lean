@@ -107,10 +107,16 @@ theorem exposureKernel_adj_lower
       FitnessABMPathN.degree n i = 2 := by
     omega
   rcases hd with hd | hd
-  · simp [kernelSchedule, exposureKernel, beta, hne, hmem, hd]
-    linarith [hri'.1, heps]
-  · simp [kernelSchedule, exposureKernel, beta, hne, hmem, hd]
-    linarith [hri'.1, heps]
+  · have hlow :
+        eps ≤ p.receptivityAt ((s0 i).exposure + k + 1) := by
+      simpa [hd] using hri'.1
+    simp [kernelSchedule, exposureKernel, beta, hne, hmem, hd]
+    linarith [hlow, heps]
+  · have hlow :
+        eps ≤ p.receptivityAt ((s0 i).exposure + k * 2 + 2) := by
+      simpa [hd] using hri'.1
+    simp [kernelSchedule, exposureKernel, beta, hne, hmem, hd]
+    linarith [hlow, heps]
 
 private def pathOrigin (n : Nat) (hn : 2 ≤ n) : Fin n :=
   ⟨0, by omega⟩
@@ -134,7 +140,7 @@ private theorem path_window_left_reach_mass
     beta eps ^ k ≤
       windowKernel (kernelSchedule p n s0) start k
         ⟨k, hk⟩ (pathOrigin n hn) := by
-  induction k generalizing hk with
+  induction k with
   | zero =>
       have hzero : (⟨0, hk⟩ : Fin n) = pathOrigin n hn := by
         apply Fin.ext
