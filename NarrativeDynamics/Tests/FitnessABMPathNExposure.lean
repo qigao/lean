@@ -38,8 +38,6 @@ example : (step exposureSensitive 2 sameStepState 1).exposure = 1 := by
 example : (step exposureSensitive 2 sameStepState 1).belief = 3/4 := by
   decide_cbv
 
--- Task 2 RED: a constant schedule must project to the existing parameterized
--- executable belief step. Whole-state equality is intentionally not required.
 example (alpha tau : Rat) (n : Nat) (s : State n) :
     beliefs (step ⟨fun _ => alpha, tau⟩ n s) =
       FitnessABMPathNParameters.beliefStep ⟨alpha, tau⟩ n (beliefs s) := by
@@ -49,3 +47,40 @@ example (n : Nat) (s : State n) :
     beliefs (step ⟨fun _ => 1/2, 1/2⟩ n s) =
       FitnessABMPathN.beliefStep n (beliefs s) := by
   exact half_beliefStep n s
+
+-- Task 3 RED: cumulative exposure never decreases, and valid schedules keep
+-- every exact rational belief inside [0,1].
+example (p : ExposureParameters) (n : Nat) (s : State n) (i : Fin n) :
+    (s i).exposure ≤ (step p n s i).exposure := by
+  exact exposure_mono p n s i
+
+example (p : ExposureParameters) (n : Nat) (s : State n)
+    (hvalid : p.Valid) (hbounded : BeliefsBounded s) :
+    BeliefsBounded (step p n s) := by
+  exact beliefs_bounded_step p n s hvalid hbounded
+
+private def twoIncomingState : State 3 :=
+  ![⟨1, 0⟩, ⟨0, 4⟩, ⟨1, 0⟩]
+
+example : incoming halfSchedule twoIncomingState 1 = 2 := by
+  decide_cbv
+
+example : BeliefsBounded twoIncomingState := by
+  intro i
+  fin_cases i <;> norm_num [twoIncomingState]
+
+example :
+    (twoIncomingState 1).exposure ≤
+      (step halfSchedule 3 twoIncomingState 1).exposure := by
+  exact exposure_mono halfSchedule 3 twoIncomingState 1
+
+example : BeliefsBounded (step halfSchedule 3 twoIncomingState) := by
+  exact beliefs_bounded_step halfSchedule 3 twoIncomingState
+    (by
+      constructor
+      · intro e
+        norm_num [halfSchedule]
+      · norm_num [halfSchedule])
+    (by
+      intro i
+      fin_cases i <;> norm_num [twoIncomingState])
