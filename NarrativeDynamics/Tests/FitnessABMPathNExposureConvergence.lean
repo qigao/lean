@@ -99,7 +99,8 @@ example (k : Nat) :
 
 -- The merged same-step ordering queries exposure 1 first, so k=1 is 3/4.
 example : path2MultiplierProduct slowZeroSchedule 0 1 = 3/4 := by
-  simpa using slowZero_product 1
+  rw [slowZero_product]
+  norm_num
 
 example (k : Nat) :
     path2MultiplierProduct nearOneSchedule 0 k =
