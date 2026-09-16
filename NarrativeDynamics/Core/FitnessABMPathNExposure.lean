@@ -34,6 +34,9 @@ abbrev State (n : Nat) := Fin n → AgentState
 def beliefs (s : State n) : NarrativeDynamics.FitnessABMPathN.Beliefs n :=
   fun i => (s i).belief
 
+def BeliefsBounded (s : State n) : Prop :=
+  ∀ i, 0 ≤ (s i).belief ∧ (s i).belief ≤ 1
+
 def broadcasting (p : ExposureParameters) (s : State n) (i : Fin n) : Bool :=
   decide (p.threshold ≤ (s i).belief)
 
@@ -59,6 +62,63 @@ def step (p : ExposureParameters) (n : Nat) (s : State n) : State n :=
       let alpha := p.receptivityAt exposure'
       let mean := broadcasterMean p s i
       ⟨(1 - alpha) * (s i).belief + alpha * mean, exposure'⟩
+
+/-- Exposure counts are cumulative: one step only adds the current incoming
+broadcast count. -/
+theorem exposure_mono (p : ExposureParameters) (n : Nat) (s : State n)
+    (i : Fin n) :
+    (s i).exposure ≤ (step p n s i).exposure := by
+  unfold step
+  dsimp only
+  split <;> omega
+
+private theorem broadcasterMean_bounded
+    (p : ExposureParameters) (n : Nat) (s : State n) (i : Fin n)
+    (hbounded : BeliefsBounded s) (hreceived : incoming p s i ≠ 0) :
+    0 ≤ broadcasterMean p s i ∧ broadcasterMean p s i ≤ 1 := by
+  have hpositive : 0 < ((incoming p s i : Nat) : Rat) := by
+    exact_mod_cast Nat.pos_of_ne_zero hreceived
+  have hsum_nonneg :
+      0 ≤ ∑ j ∈ broadcasters p n s i, (s j).belief :=
+    Finset.sum_nonneg fun j _ => (hbounded j).1
+  have hsum_le :
+      (∑ j ∈ broadcasters p n s i, (s j).belief) ≤
+        (incoming p s i : Rat) := by
+    calc
+      (∑ j ∈ broadcasters p n s i, (s j).belief) ≤
+          ∑ _j ∈ broadcasters p n s i, (1 : Rat) :=
+        Finset.sum_le_sum fun j _ => (hbounded j).2
+      _ = ((broadcasters p n s i).card : Rat) := by simp
+      _ = (incoming p s i : Rat) := by rfl
+  constructor
+  · unfold broadcasterMean
+    exact div_nonneg hsum_nonneg hpositive.le
+  · unfold broadcasterMean
+    apply (div_le_iff₀ hpositive).2
+    simpa using hsum_le
+
+/-- Valid schedules preserve the unit interval for every belief. -/
+theorem beliefs_bounded_step
+    (p : ExposureParameters) (n : Nat) (s : State n)
+    (hvalid : p.Valid) (hbounded : BeliefsBounded s) :
+    BeliefsBounded (step p n s) := by
+  intro i
+  unfold step
+  dsimp only
+  split
+  · exact hbounded i
+  · rename_i hreceived
+    have hmean := broadcasterMean_bounded p n s i hbounded hreceived
+    have ha := hvalid.1 ((s i).exposure + incoming p s i)
+    have hb := hbounded i
+    constructor
+    · exact add_nonneg
+        (mul_nonneg (sub_nonneg.mpr ha.2) hb.1)
+        (mul_nonneg ha.1 hmean.1)
+    · have hleft :=
+        mul_le_mul_of_nonneg_left hb.2 (sub_nonneg.mpr ha.2)
+      have hright := mul_le_mul_of_nonneg_left hmean.2 ha.1
+      nlinarith
 
 /-- A constant schedule recovers an exposure-independent response parameter. -/
 def constant (alpha tau : Rat) : ExposureParameters :=
