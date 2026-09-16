@@ -1,4 +1,4 @@
-import NarrativeDynamics.Core.FitnessABMPathNExposureConvergence
+import NarrativeDynamics.Core.FitnessABMPathNExposureSchedulesScratch
 
 open NarrativeDynamics
 open NarrativeDynamics.FiniteConsensus
@@ -87,7 +87,7 @@ example (p : ExposureParameters) (hvalid : p.Valid)
         (nhds ((((s 0).belief + (s 1).belief) / 2 : Rat) : Real))) := by
   exact path2_consensus_iff_product_tendsto_zero p hvalid s he hb hne
 
--- Task 4 RED: exact schedule boundaries and the Path3 mean counterexample.
+-- Task 4 exact schedule boundaries and the Path3 mean counterexample.
 example : slowZeroSchedule.Valid := slowZeroSchedule_valid
 example : nearOneSchedule.Valid := nearOneSchedule_valid
 example : harmonicSchedule.Valid := harmonicSchedule_valid
@@ -167,3 +167,7 @@ example :
 #print axioms NarrativeDynamics.FitnessABMPathNExposureConvergence.beliefs_iterate_eq_varyingTrajectory
 #print axioms NarrativeDynamics.FitnessABMPathNExposureConvergence.path2_disagreement_product
 #print axioms NarrativeDynamics.FitnessABMPathNExposureConvergence.path2_consensus_iff_product_tendsto_zero
+#print axioms NarrativeDynamics.FitnessABMPathNExposureConvergence.slowZero_not_consensus
+#print axioms NarrativeDynamics.FitnessABMPathNExposureConvergence.nearOne_not_convergent
+#print axioms NarrativeDynamics.FitnessABMPathNExposureConvergence.harmonic_consensus
+#print axioms NarrativeDynamics.FitnessABMPathNExposureConvergence.exposure_degree_weighted_mean_not_invariant
