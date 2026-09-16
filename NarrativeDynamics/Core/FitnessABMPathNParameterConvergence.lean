@@ -346,4 +346,54 @@ theorem path_block_common_mass
       applyKernel_originBasis
         ((pathKernel params n) ^ FitnessABMPathN.block n) z i
 
+theorem trajectory_eq_kernelTrajectory
+    (params : ResponseParameters) (hvalid : params.Valid)
+    (n : Nat) (hn : 2 ≤ n)
+    (x : Beliefs n) (hx : allBroadcast params n x)
+    (k : Nat) :
+    (beliefStep params n)^[k] x =
+      kernelTrajectory (pathKernel params n) x k := by
+  induction k with
+  | zero => simp [kernelTrajectory]
+  | succ k ih =>
+      have hk := FitnessABMPathNParameters.allBroadcast_iterate
+        params hvalid n hn x hx k
+      have hbridge :
+          beliefStep params n ((beliefStep params n)^[k] x) =
+            applyKernel (pathKernel params n) ((beliefStep params n)^[k] x) :=
+        FitnessABMPathNParameters.propagate_eq_kernel
+          params hvalid n hn ((beliefStep params n)^[k] x) hk
+      rw [Function.iterate_succ_apply', hbridge, ih]
+      simpa [Nat.succ_eq_add_one] using
+        (kernelTrajectory_succ (pathKernel params n) x k).symm
+
+theorem trajectory_tendsto
+    (params : ResponseParameters) (hvalid : params.Valid)
+    (ha0 : 0 < params.receptivity)
+    (ha1 : params.receptivity < 1)
+    (n : Nat) (hn : 2 ≤ n)
+    (x : Beliefs n) (hx : allBroadcast params n x)
+    (i : Fin n) :
+    Tendsto
+      (fun k : Nat => ((((beliefStep params n)^[k] x) i : Rat) : Real))
+      atTop
+      (nhds (FitnessABMPathN.mean n x : Real)) := by
+  let i0 : Fin n := ⟨0, by omega⟩
+  letI : Nonempty (Fin n) := ⟨i0⟩
+  have hkernel := block_contraction_tendsto
+    (pathKernel params n) (FitnessABMPathN.stationaryWeight n)
+    (pathKernel_averaging params hvalid n hn)
+    (path_stationary_weights params hvalid n hn)
+    (FitnessABMPathN.block n) (FitnessABMPathN.block_pos n hn)
+    (delta params n) (delta_pos params ha0 ha1 n hn)
+    (delta_lt_one params ha0 ha1 n hn)
+    (path_block_common_mass params hvalid ha0 ha1 n hn) x i
+  have htraj :
+      (fun k : Nat => ((((beliefStep params n)^[k] x) i : Rat) : Real)) =
+        (fun k : Nat => (kernelTrajectory (pathKernel params n) x k i : Real)) := by
+    funext k
+    rw [trajectory_eq_kernelTrajectory params hvalid n hn x hx k]
+  rw [htraj]
+  simpa [FitnessABMPathN.mean] using hkernel
+
 end NarrativeDynamics.FitnessABMPathNParameterConvergence
