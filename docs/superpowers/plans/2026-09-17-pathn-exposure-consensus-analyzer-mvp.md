@@ -1,12 +1,12 @@
 # PathN Exposure Consensus Analyzer MVP Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement the Phase 1 `narrative-analyze model.toml` analyzer from issue #97 so exact finite-Path exposure models receive claim-by-claim `PROVED`, `DISPROVED`, or `UNKNOWN` results backed by compiled Lean certificates and exact theorem provenance.
 
-**Architecture:** Python owns TOML parsing, exact normalization, theorem-route selection, certificate templating, bounded Lean invocation, result assembly, and CLI rendering. Lean remains the only proof authority: generated certificates import the merged `FitnessABMPathNExposure` / convergence theorem modules, instantiate exact data, discharge assumptions, and apply existing theorems. Python must never duplicate executable belief/exposure dynamics or infer proof verdicts from simulation.
+**Architecture:** Python owns TOML parsing, exact normalization, theorem-route selection, closed certificate templating, bounded Lean invocation, result assembly, and CLI rendering. Lean remains the only proof authority: generated certificates import the merged `FitnessABMPathNExposure` / convergence theorem modules, instantiate exact data, discharge assumptions, and apply existing theorems. Python must never duplicate executable belief/exposure dynamics or infer proof verdicts from simulation.
 
-**Tech Stack:** Python 3 standard library (`tomllib`, `fractions`, `dataclasses`, `enum`, `subprocess`, `tempfile`, `pathlib`, `unittest`), Lean 4.32.0, Mathlib, exact `Rat`, existing `NarrativeDynamics.FitnessABMPathNExposureConvergence`, repository 240-second Lean timeout convention, GitHub Actions `proof.yml`.
+**Tech Stack:** Python >= 3.11 standard library (`tomllib`, `fractions`, `dataclasses`, `enum`, `subprocess`, `tempfile`, `pathlib`, `unittest`), Lean 4.32.0, Mathlib, exact `Rat`, existing `NarrativeDynamics.FitnessABMPathNExposureConvergence`, repository 240-second focused Lean timeout convention, GitHub Actions `proof.yml`.
 
 **Spec:** `docs/superpowers/specs/2026-09-17-pathn-exposure-consensus-analyzer-mvp-design.md`
 
@@ -15,7 +15,7 @@
 ## Global Constraints
 
 - Base architecture is already approved. Do not reopen the Python-orchestration / Lean-certificate-authority decision while implementing this plan.
-- Implementation branch starts from `design/pathn-exposure-consensus-analyzer-mvp` after the spec and this plan are reviewed.
+- Implementation starts from `design/pathn-exposure-consensus-analyzer-mvp` only after this committed plan review gate is approved.
 - `NarrativeDynamics.FitnessABMPathNExposure.step` is the normative executable semantics and must remain unchanged.
 - Same-step lookup is fixed: incoming broadcasters -> accumulated exposure -> `receptivityAt` post-incoming exposure -> belief update.
 - Under all-broadcast, transition `k -> k+1` uses `receptivityAt (e0(i) + (k+1) * degree(i))`. A pre-incoming or `k * degree(i)` lookup is a correctness failure.
@@ -33,13 +33,14 @@
 - Generated Lean source is closed-template output. User input must never become an identifier, import path, theorem name, tactic, or arbitrary Lean expression.
 - No generated or production certificate may contain `sorry`, `admit`, user `axiom`, `unsafe`, `native_decide`, or an external proof oracle.
 - Focused Lean certificate commands use the repository convention `timeout --kill-after=10s 240s` and fail closed.
+- The existing `tools/check_fitness_abm_pathn.sh` gate stays independent. The new analyzer gate must not re-run that whole gate internally; final verification runs them separately so CI does not duplicate expensive proof work.
 - Every GREEN task must keep all earlier analyzer tests green before moving to the next task.
 
 ---
 
 ## Planned File Structure
 
-Create a focused Python package instead of adding more root-level scripts:
+Create a focused package instead of adding more root-level implementation scripts:
 
 ```text
 narrative_analyzer/
@@ -74,13 +75,13 @@ tests/
     unknown_path2.toml
 ```
 
-Modify only after the focused implementation is green:
+Modify only after focused implementation is green:
 
 ```text
 .github/workflows/proof.yml
 ```
 
-Do not modify the merged theorem modules merely to make the Python implementation easier. If an actually missing theorem blocks an acceptance criterion, stop at that point and open a separate theorem-gap review rather than silently broadening this implementation.
+Do not modify merged theorem modules merely to make Python implementation easier. If a genuinely missing theorem blocks an acceptance criterion, stop and open a separate theorem-gap review instead of silently broadening this implementation.
 
 ---
 
@@ -117,6 +118,7 @@ class PathModel:
     threshold: ExactRat
     schedule: Schedule
 
+
 def load_model(path: Path) -> PathModel: ...
 def parse_model(document: Mapping[str, object]) -> PathModel: ...
 ```
@@ -141,16 +143,17 @@ kind = "named"
 id = "harmonicSchedule"
 ```
 
-- [ ] **Step 1: Write RED tests for exact rational parsing and model shape**
+- [ ] **Step 1: Write the Task 1 RED tests**
 
-Test at minimum:
+Cover at minimum:
 
 ```python
 class ExactRatTests(unittest.TestCase):
     def test_accepts_integer_and_fraction_strings(self): ...
     def test_canonicalizes_sign_and_gcd(self): ...
-    def test_rejects_python_or_toml_float(self): ...
+    def test_rejects_toml_float(self): ...
     def test_rejects_decimal_string(self): ...
+    def test_rejects_scientific_notation(self): ...
     def test_rejects_zero_denominator(self): ...
 
 class PathModelTests(unittest.TestCase):
@@ -166,7 +169,7 @@ class PathModelTests(unittest.TestCase):
     def test_unsupported_schedule_kind_is_rejected(self): ...
 ```
 
-Use a strict grammar for theorem-bearing rational strings, equivalent to:
+Use a strict rational grammar equivalent to:
 
 ```text
 [+-]?DIGITS
@@ -175,26 +178,27 @@ Use a strict grammar for theorem-bearing rational strings, equivalent to:
 
 Do not allow decimal strings, scientific notation, whitespace-bearing expressions, or arbitrary `Fraction(...)` syntax.
 
-- [ ] **Step 2: Run RED and verify only missing package/declaration failures**
+- [ ] **Step 2: Verify Python preflight and RED**
 
 ```bash
+python3 -c 'import tomllib; print("tomllib-ok")'
 python3 -m unittest tests.test_narrative_analyzer_model -v
 ```
 
-Expected: failure because `narrative_analyzer.model` does not exist. Test syntax/import harness errors are not acceptable RED evidence.
+Expected RED: missing `narrative_analyzer.model`, not a malformed test harness.
 
-- [ ] **Step 3: Commit the valid RED**
+- [ ] **Step 3: Commit valid RED**
 
 ```bash
 git add tests/test_narrative_analyzer_model.py
 git commit -m "test(analyzer): add exact model parser RED"
 ```
 
-- [ ] **Step 4: Implement only the exact normalized model layer**
+- [ ] **Step 4: Implement only exact normalized model parsing**
 
-Use `tomllib` for TOML decoding and integer numerator/denominator arithmetic for normalized rationals. Keep the exact type independent of Lean rendering; `model.py` must not emit Lean syntax.
+Use `tomllib` for decoding and exact integer numerator/denominator normalization. `model.py` must not emit Lean syntax.
 
-Reject TOML float objects explicitly before any conversion. Enforce `n >= 2`, exact belief/exposure lengths, nonnegative natural exposures, schedule AST closure, duplicate piecewise-key rejection, and deterministic point sorting.
+Reject TOML `float` values explicitly. Enforce `n >= 2`, exact belief/exposure lengths, nonnegative natural exposures, schedule AST closure, duplicate piecewise-key rejection, and deterministic point sorting.
 
 - [ ] **Step 5: Run GREEN**
 
@@ -202,12 +206,11 @@ Reject TOML float objects explicitly before any conversion. Enforce `n >= 2`, ex
 python3 -m unittest tests.test_narrative_analyzer_model -v
 ```
 
-Expected: all Task 1 tests pass.
-
 - [ ] **Step 6: Commit GREEN**
 
 ```bash
-git add narrative_analyzer tests/test_narrative_analyzer_model.py
+git add narrative_analyzer/__init__.py narrative_analyzer/model.py \
+  tests/test_narrative_analyzer_model.py
 git commit -m "feat(analyzer): add exact Path model schema"
 ```
 
@@ -248,34 +251,29 @@ class CertificateTimeoutError(AnalyzerError): ...
 class ProvenanceMismatchError(AnalyzerError): ...
 ```
 
-- [ ] **Step 1: Write RED tests for invariants**
+- [ ] **Step 1: Write RED tests for result invariants**
 
 Required invariants:
 
 - `PROVED` and `DISPROVED` require nonempty theorem/proof provenance.
-- `UNKNOWN` may have no theorem but must carry an explanatory note.
+- `UNKNOWN` may have no theorem but requires an explanatory note.
 - claim IDs are unique inside `AnalysisResult`.
-- the consensus summary is derived from the strongest applicable exact consensus claim; it is never an independent mutable field.
-- analyzer failures are exceptions, not `ClaimStatus` members.
+- consensus summary is derived from the strongest applicable exact consensus claim; it is not an independently mutable field.
+- analyzer failures are exceptions, never `ClaimStatus` values.
 
-- [ ] **Step 2: Run RED**
+- [ ] **Step 2: Run RED and commit it**
 
 ```bash
 python3 -m unittest tests.test_narrative_analyzer_result -v
-```
-
-- [ ] **Step 3: Commit RED**
-
-```bash
 git add tests/test_narrative_analyzer_result.py
 git commit -m "test(analyzer): add verdict provenance RED"
 ```
 
-- [ ] **Step 4: Implement the minimal immutable result layer**
+- [ ] **Step 3: Implement the immutable result layer**
 
-Keep text rendering out of this task. Do not add theorem-selection logic here.
+Keep text rendering and theorem selection out of this task.
 
-- [ ] **Step 5: Run GREEN and all prior tests**
+- [ ] **Step 4: Run GREEN with prior suite**
 
 ```bash
 python3 -m unittest \
@@ -283,7 +281,7 @@ python3 -m unittest \
   tests.test_narrative_analyzer_result -v
 ```
 
-- [ ] **Step 6: Commit GREEN**
+- [ ] **Step 5: Commit GREEN**
 
 ```bash
 git add narrative_analyzer/result.py tests/test_narrative_analyzer_result.py
@@ -298,8 +296,6 @@ git commit -m "feat(analyzer): add proof verdict model"
 - Create: `narrative_analyzer/named_schedules.py`
 - Create: `tests/test_narrative_analyzer_named_schedules.py`
 
-**Purpose:** Keep user-provided `named(schedule_id)` as a lookup key only. It must never become a Lean identifier directly.
-
 **Initial whitelist:**
 
 ```text
@@ -308,68 +304,60 @@ nearOneSchedule
 harmonicSchedule
 ```
 
-All three resolve to definitions in namespace:
+All resolve through hard-coded developer metadata to definitions in:
 
 ```text
 NarrativeDynamics.FitnessABMPathNExposureConvergence
 ```
 
-The registry stores trusted static metadata, including:
+The registry stores only trusted static metadata:
 
 - canonical user-facing ID;
-- exact Lean definition chosen by the implementation, hard-coded by developers;
-- whether the existing theorem is tied to a specific fixture/model;
-- positive or negative theorem names available for that fixture;
-- exact preconditions the orchestrator must check before selecting that route.
+- exact predeclared Lean definition;
+- fixed-fixture requirements, where applicable;
+- positive/negative theorem names available for that fixture;
+- theorem assumptions the orchestrator must mechanically discharge.
 
-Important: the existing `slowZero_not_consensus`, `nearOne_not_convergent`, and `harmonic_consensus` theorems are concrete Path2 fixtures. Do not apply them to an arbitrary user model merely because the schedule ID matches.
+The existing `slowZero_not_consensus`, `nearOne_not_convergent`, and `harmonic_consensus` theorems are concrete Path2 fixtures. Matching only the schedule ID is never sufficient to apply them.
 
 - [ ] **Step 1: Write RED tests**
 
 Cover:
 
-- all three approved names resolve;
-- an unknown name returns an input error or unsupported-name error before certificate generation;
-- source-looking names such as `"slowZeroSchedule; axiom hacked : False"` do not resolve;
-- the registry returns only predeclared Lean identifiers;
-- fixed-fixture theorem routes are selected only when `n`, beliefs, exposures, threshold, and schedule requirements match exactly.
+- all three approved IDs resolve;
+- unknown IDs fail before certificate generation;
+- source-like IDs such as `slowZeroSchedule; axiom hacked : False` do not resolve;
+- registry returns only predeclared Lean names;
+- fixed-fixture routes require exact `n`, beliefs, exposures, threshold, and named schedule match.
 
-- [ ] **Step 2: Run RED**
+- [ ] **Step 2: Run RED and commit it**
 
 ```bash
 python3 -m unittest tests.test_narrative_analyzer_named_schedules -v
-```
-
-- [ ] **Step 3: Commit RED**
-
-```bash
 git add tests/test_narrative_analyzer_named_schedules.py
 git commit -m "test(analyzer): add trusted schedule registry RED"
 ```
 
-- [ ] **Step 4: Implement the closed registry**
+- [ ] **Step 3: Implement the closed registry**
 
-Do not use dynamic imports, `getattr` on user strings, string concatenation into theorem names, or a generic “Lean name” field populated from TOML.
+No dynamic imports, `getattr` on user strings, user-populated Lean names, or theorem-name string concatenation.
 
-- [ ] **Step 5: Run GREEN with prior suites**
+- [ ] **Step 4: Run GREEN and commit**
 
 ```bash
 python3 -m unittest \
   tests.test_narrative_analyzer_model \
   tests.test_narrative_analyzer_result \
   tests.test_narrative_analyzer_named_schedules -v
-```
 
-- [ ] **Step 6: Commit GREEN**
-
-```bash
-git add narrative_analyzer/named_schedules.py tests/test_narrative_analyzer_named_schedules.py
+git add narrative_analyzer/named_schedules.py \
+  tests/test_narrative_analyzer_named_schedules.py
 git commit -m "feat(analyzer): add trusted theorem schedule registry"
 ```
 
 ---
 
-### Task 4: Deterministic Lean certificate generator for exact model and structural claims
+### Task 4: Deterministic Lean certificate generator for structural claims
 
 **Files:**
 - Create: `narrative_analyzer/certificate.py`
@@ -381,6 +369,7 @@ git commit -m "feat(analyzer): add trusted theorem schedule registry"
 @dataclass(frozen=True)
 class CertificateClaim:
     claim_id: str
+    expected_status: ClaimStatus
     theorem: str
     assumptions: tuple[str, ...]
     exact_values: Mapping[str, str]
@@ -391,53 +380,51 @@ class Certificate:
     claims: tuple[CertificateClaim, ...]
 
 class CertificateBuilder:
-    def build_structural(self, model: PathModel) -> Certificate: ...
+    def build_structural_positive(self, model: PathModel, claims: ...) -> Certificate: ...
+    def build_structural_negative(self, model: PathModel, claims: ...) -> Certificate: ...
     def build_pathn_consensus(self, model: PathModel, eps: ExactRat) -> Certificate: ...
     def build_named_path2(self, model: PathModel, route: ...) -> Certificate: ...
 ```
 
-Keep certificate construction deterministic: the same normalized model and route produce byte-identical source.
+The same normalized model + route must produce byte-identical source.
 
-**Lean source boundary:** Every generated certificate imports the existing production theorem module:
+Every certificate imports production theorem code:
 
 ```lean
 import NarrativeDynamics.Core.FitnessABMPathNExposureConvergence
 ```
 
-and uses aliases from the existing namespaces. It must not reimplement `step`, `kernelSchedule`, `ReachableInterior`, or consensus proofs.
+It must not reimplement `step`, `kernelSchedule`, `ReachableInterior`, or consensus proofs.
 
-For `constant` / `piecewise`, render only the exact `ExposureParameters` definition and concrete `State n` data. For `named`, reference only hard-coded registry definitions; if the model threshold differs from the theorem fixture threshold, construct a local parameter value with the trusted `receptivityAt` and the exact input threshold, then use fixture-specific theorems only if a generated equality proof identifies it with the existing named definition.
+For `constant` / `piecewise`, render only exact `ExposureParameters` and concrete `State n` data. For `named`, use only hard-coded registry definitions. If model threshold differs from a named fixture definition, construct a local parameter using the trusted named `receptivityAt`; fixture-specific theorem use remains forbidden unless the certificate also proves exact equality to the production fixture parameter.
 
 - [ ] **Step 1: Write RED source-generation tests**
 
 Assert:
 
 - exact rationals render canonically without floats;
-- negative rationals are parenthesized unambiguously;
-- generated finite vectors have exactly `n` elements;
+- negative rationals are unambiguous;
+- generated vectors have exactly `n` elements;
 - piecewise schedules render deterministic nested `if` branches from sorted natural keys;
-- only the production convergence module is imported for this feature;
-- generated source contains the exact post-incoming provenance theorems for structural claims;
-- source never contains user-supplied identifiers;
-- source never contains forbidden tokens `sorry`, `admit`, `axiom`, `unsafe`, or `native_decide`;
-- source-like schedule payloads have already been rejected and cannot reach rendering.
+- production convergence module is imported;
+- user text never becomes an identifier/import/theorem/tactic;
+- source never contains `sorry`, `admit`, user `axiom`, `unsafe`, or `native_decide`;
+- generated helper names are deterministic internal names;
+- structural positive certificates can prove `parameters_valid`, `initial_all_broadcast`, `exposure_law`, and `effective_alpha_lookup` when exact prechecks say they hold;
+- structural negative certificates can prove `¬ p.Valid` or `¬ allBroadcast p s0` for concrete exact models when an exact counter-witness exists;
+- a negative structural certificate never implies a negative consensus verdict by itself.
 
-- [ ] **Step 2: Run RED**
+- [ ] **Step 2: Run RED and commit it**
 
 ```bash
 python3 -m unittest tests.test_narrative_analyzer_certificate -v
-```
-
-- [ ] **Step 3: Commit RED**
-
-```bash
 git add tests/test_narrative_analyzer_certificate.py
 git commit -m "test(analyzer): add Lean certificate generation RED"
 ```
 
-- [ ] **Step 4: Implement exact rendering primitives**
+- [ ] **Step 3: Implement exact rendering primitives**
 
-Add small private renderers such as:
+Private helpers may include:
 
 ```python
 _render_rat(q: ExactRat) -> str
@@ -446,28 +433,26 @@ _render_schedule(model: PathModel) -> str
 _internal_name(prefix: str, normalized_bytes: bytes) -> str
 ```
 
-Internal names may be deterministic hashes of normalized data but never raw user text.
+Internal names may use deterministic hashes of normalized data, never raw user text.
 
-Structural certificate facts should prove, where exact pre-checks show the route is expected to hold:
+Structural certificate facts use the existing proof surface:
 
-- `parameters_valid` using `ExposureParameters.Valid`;
-- `initial_all_broadcast` using the existing convergence `allBroadcast` predicate;
-- `exposure_law` by instantiating `exposure_iterate`;
-- `effective_alpha_lookup` using the existing executable-to-kernel bridge and/or a generated lemma unfolding the existing `kernelSchedule` / `exposureKernel` definitions so the `(k+1) * degree(i)` lookup is explicit.
+- `parameters_valid`: `ExposureParameters.Valid`;
+- `initial_all_broadcast`: convergence-module `allBroadcast`;
+- `exposure_law`: `exposure_iterate`;
+- `effective_alpha_lookup`: existing executable-to-kernel bridge and/or a generated lemma unfolding existing `kernelSchedule` / `exposureKernel` so the post-incoming `(k+1) * degree(i)` lookup is explicit.
 
-The proof source recorded for generated helper lemmas must include both the generated lemma name and the production theorem/definition dependency it instantiates.
+For `parameters_valid = DISPROVED`, generate a concrete Lean proof of `¬ p.Valid`, typically by choosing the exact failing schedule value or threshold bound. For `initial_all_broadcast = DISPROVED`, generate a concrete index witness and prove `¬ allBroadcast p s0`. These structural negatives may block dependent theorem routes but must not themselves set consensus `DISPROVED`.
 
-Do not compile certificates in this task; generation and execution remain separate boundaries.
+Recorded provenance for generated helper lemmas includes the generated lemma name plus the production theorem/definition dependency.
 
-- [ ] **Step 5: Run GREEN**
+Do not compile certificates in this task; generation and execution remain separate.
+
+- [ ] **Step 4: Run GREEN and commit**
 
 ```bash
 python3 -m unittest tests.test_narrative_analyzer_certificate -v
-```
 
-- [ ] **Step 6: Commit GREEN**
-
-```bash
 git add narrative_analyzer/certificate.py tests/test_narrative_analyzer_certificate.py
 git commit -m "feat(analyzer): generate closed Lean certificates"
 ```
@@ -482,25 +467,23 @@ git commit -m "feat(analyzer): generate closed Lean certificates"
 - Create: `tests/fixtures/narrative_analyzer/constant_path7.toml`
 - Create: `tests/fixtures/narrative_analyzer/piecewise_path7.toml`
 
-**Route contract:** Python may compute a candidate exact `eps` for the closed constant/piecewise DSL, but Lean must certify the global interior inequalities and the actual consensus theorem application.
+**Route contract:** Python may compute an exact candidate `eps` for the closed constant/piecewise DSL, but Lean certifies both the global interior inequalities and the actual consensus theorem application.
 
-For a finite set of branch/default values `q`, candidate:
+For all constant/piecewise branch and default values `q`, candidate:
 
 ```text
-eps = min(q, 1-q for every reachable branch representation)
+eps = min(q, 1-q for every branch/default value q)
 ```
 
-is only a route-selection/certificate-value calculation. It is not itself a proof verdict.
+is route-selection data only. If candidate `eps <= 0`, do not attempt this sufficient theorem route. That is not `DISPROVED` consensus and does not prove `¬ ReachableInterior`.
 
-If the candidate is not positive, do not attempt the generic global-interior consensus certificate. That is absence of this sufficient route, not `DISPROVED` consensus.
-
-**Production theorem target:** Prefer the existing convenience theorem when its stronger premise is exactly certified:
+**Production theorem target:**
 
 ```text
 NarrativeDynamics.FitnessABMPathNExposureConvergence.trajectory_consensus_exists_of_global_interior
 ```
 
-Its certificate must discharge:
+The certificate must discharge:
 
 ```text
 p.Valid
@@ -510,23 +493,19 @@ allBroadcast p s0
 forall e, eps <= p.receptivityAt e and p.receptivityAt e <= 1 - eps
 ```
 
-- [ ] **Step 1: Add RED tests for constant and piecewise certificates**
+- [ ] **Step 1: Add RED tests**
 
-Expected exact certificate metadata includes:
+Required metadata after successful compilation will include:
 
 ```text
-claim: reachable_interior
-status after successful compile: PROVED
-exact_values: eps=<exact rational>
-
-claim: pathn_consensus_exists
-production theorem: ...trajectory_consensus_exists_of_global_interior
-
-claim: consensus_value_known
-no positive theorem route -> UNKNOWN at orchestration layer
+reachable_interior      PROVED
+pathn_consensus_exists  PROVED
+consensus_value_known   UNKNOWN   # orchestration, absent another exact theorem
 ```
 
-Add a non-interior schedule test showing `candidate_global_interior(...) is None` and explicitly asserting that this function does not return a negative consensus conclusion.
+with exact `eps` and theorem provenance.
+
+Also test non-interior exact schedules return no candidate route and never synthesize negative consensus evidence.
 
 - [ ] **Step 2: Run RED**
 
@@ -534,21 +513,15 @@ Add a non-interior schedule test showing `candidate_global_interior(...) is None
 python3 -m unittest tests.test_narrative_analyzer_certificate -v
 ```
 
-- [ ] **Step 3: Implement the exact candidate and Lean proof template**
+- [ ] **Step 3: Implement exact candidate + Lean proof template**
 
-For constant schedules, generate direct `norm_num`/arithmetic discharge.
+For constant schedules, use direct exact arithmetic. For piecewise schedules, generate finite branch proofs (`by_cases` / `split_ifs`) over trusted integer keys plus default. Never inject a Python Boolean as proof authority.
 
-For piecewise schedules, generate a finite `by_cases` / `split_ifs` proof over trusted integer keys plus default, with exact rational inequalities. Do not generate a Python-computed Boolean and inject it as an axiom.
-
-- [ ] **Step 4: Run GREEN**
+- [ ] **Step 4: Run GREEN and commit**
 
 ```bash
 python3 -m unittest tests.test_narrative_analyzer_certificate -v
-```
 
-- [ ] **Step 5: Commit**
-
-```bash
 git add narrative_analyzer/certificate.py \
   tests/test_narrative_analyzer_certificate.py \
   tests/fixtures/narrative_analyzer
@@ -580,16 +553,17 @@ nearOne_not_convergent
 harmonic_consensus
 ```
 
-- [ ] **Step 1: Write RED tests for theorem-route eligibility**
+- [ ] **Step 1: Write RED eligibility tests**
 
 Cases:
 
-1. exact existing `split2` + `harmonicSchedule` fixture selects theorem-backed positive Path2 route;
-2. exact `split2` + `slowZeroSchedule` selects theorem-backed `DISPROVED` consensus route;
-3. exact `split2` + `nearOneSchedule` selects theorem-backed `DISPROVED` convergence/consensus route;
-4. same named schedule with changed beliefs, exposure, threshold, or `n` does not reuse fixed-fixture theorem and falls back to another valid route or `UNKNOWN`;
-5. generic Path2 iff route is only eligible when its explicit assumptions, including equal initial exposures where required, are satisfied;
-6. a Path2 route never reports the generic PathN sufficient theorem and the Path2 iff theorem as equivalent-strength evidence.
+1. exact production split2 + `harmonicSchedule` fixture selects theorem-backed positive Path2 route;
+2. exact split2 + `slowZeroSchedule` selects theorem-backed negative route;
+3. exact split2 + `nearOneSchedule` selects theorem-backed negative convergence route;
+4. same named schedule with changed beliefs, exposures, threshold, or `n` does not reuse a fixed-fixture theorem;
+5. generic Path2 product/iff route is eligible only when its explicit assumptions, including equal initial exposures where required, are satisfied and a supported exact product-limit proof route exists;
+6. no numerical product sampling is accepted as proof;
+7. result/provenance distinguishes generic PathN sufficient evidence from Path2 iff evidence.
 
 - [ ] **Step 2: Run RED**
 
@@ -601,23 +575,19 @@ python3 -m unittest \
 
 - [ ] **Step 3: Implement fixed theorem-backed certificate paths**
 
-Generated certificates must instantiate the concrete input and prove equality with the existing fixture before applying fixed-fixture theorems. The certificate provenance for negative verdicts must name the production theorem directly.
+Generated certificates instantiate concrete input and prove equality with the existing fixture before applying a fixture-specific theorem. Negative verdict provenance names the production theorem directly.
 
-For other Path2 inputs, expose product/iff machinery only if a supported exact product-limit theorem path exists. Do not attempt numerical product sampling.
+For other Path2 inputs, expose product/iff machinery only when a supported exact product-limit theorem path exists. Otherwise that stronger claim is `UNKNOWN`; do not sample or approximate the infinite product.
 
-For `consensus_value_known`, only mark `PROVED` when a concrete Lean proof identifies the limit. It is valid for generic PathN to remain `UNKNOWN`. Do not import the separate exposure-independent degree-weighted mean.
+For `consensus_value_known`, mark `PROVED` only if a concrete Lean proof identifies the limit. Generic PathN remains `UNKNOWN`. Never import the exposure-independent degree-weighted consensus value.
 
-- [ ] **Step 4: Run GREEN**
+- [ ] **Step 4: Run GREEN and commit**
 
 ```bash
 python3 -m unittest \
   tests.test_narrative_analyzer_named_schedules \
   tests.test_narrative_analyzer_certificate -v
-```
 
-- [ ] **Step 5: Commit**
-
-```bash
 git add narrative_analyzer \
   tests/test_narrative_analyzer_named_schedules.py \
   tests/test_narrative_analyzer_certificate.py \
@@ -647,7 +617,7 @@ class LeanCertificateRunner:
     def compile(self, certificate: Certificate) -> CompileEvidence: ...
 ```
 
-Default execution from repository root must be semantically equivalent to:
+Default execution from repository root is semantically equivalent to:
 
 ```bash
 timeout --kill-after=10s 240s \
@@ -655,52 +625,43 @@ timeout --kill-after=10s 240s \
   /absolute/path/to/ephemeral/AnalyzerCertificate.lean
 ```
 
-The implementation may use Python `subprocess.run(..., timeout=...)` in addition to the external `timeout` wrapper, but it must not weaken the existing 240-second upper bound. Keep the process working directory at the repository root so the generated certificate imports the checked-out project.
+The implementation may also use Python subprocess timeout as defense in depth but must not weaken the 240-second upper bound. Working directory stays at repository root so imports resolve against the checked-out project.
 
-- [ ] **Step 1: Write RED unit tests with an injected subprocess adapter**
+- [ ] **Step 1: Write RED unit tests with injected process adapter**
 
 Test:
 
 - exit 0 returns immutable compile evidence;
-- nonzero exit raises `CertificateCompileError` with captured diagnostics;
+- nonzero exit raises `CertificateCompileError` with diagnostics;
 - timeout raises `CertificateTimeoutError`;
-- generated file is deleted after success and failure by default;
-- optional debug-retention mode returns the retained path but does not alter verdict semantics;
+- ephemeral certificate is deleted after success/failure by default;
+- optional debug retention changes retention only, never verdict semantics;
 - runner never maps failure to `UNKNOWN`;
-- command contains the bounded timeout and exact Lean flags;
-- certificate digest binds evidence to the exact generated source.
+- command contains bounded timeout and exact Lean flags;
+- source digest binds evidence to the exact certificate.
 
-- [ ] **Step 2: Run RED**
+- [ ] **Step 2: Run RED and commit it**
 
 ```bash
 python3 -m unittest tests.test_narrative_analyzer_runner -v
-```
-
-- [ ] **Step 3: Commit RED**
-
-```bash
 git add tests/test_narrative_analyzer_runner.py
 git commit -m "test(analyzer): add certificate runner RED"
 ```
 
-- [ ] **Step 4: Implement the runner**
+- [ ] **Step 3: Implement runner**
 
-Use `tempfile.TemporaryDirectory()` by default. No shell interpolation of model data. Pass command arguments as an argv list.
+Use `tempfile.TemporaryDirectory()` by default. No shell interpolation of model data; pass argv as a list.
 
-- [ ] **Step 5: Add one real Lean smoke certificate**
+- [ ] **Step 4: Add one real Lean smoke certificate**
 
-The test creates a tiny generated certificate importing the production convergence module and proving a trivial exact fact. Gate it as an integration test but keep it in the same unittest module.
-
-Run:
+Compile a generated certificate importing the production convergence module and proving a trivial exact fact.
 
 ```bash
 timeout --kill-after=10s 240s \
   python3 -m unittest tests.test_narrative_analyzer_runner -v
 ```
 
-Expected: unit paths and real Lean smoke compile pass.
-
-- [ ] **Step 6: Commit GREEN**
+- [ ] **Step 5: Commit GREEN**
 
 ```bash
 git add narrative_analyzer/runner.py tests/test_narrative_analyzer_runner.py
@@ -727,15 +688,15 @@ def analyze_model(
 
 **Decision discipline:**
 
-1. exact Python checks may determine whether a supported certificate route is worth generating;
-2. a positive/negative verdict is emitted only after the associated certificate compiles;
-3. unsupported theorem coverage becomes `UNKNOWN` without invoking a doomed certificate;
-4. any certificate that was expected to prove its route but fails compilation is an analyzer failure;
-5. theorem/provenance metadata emitted to the user must exactly match the claims bound into the compiled certificate.
+1. exact Python checks decide whether a supported certificate route is worth generating;
+2. positive/negative verdict is emitted only after associated certificate compilation succeeds;
+3. unsupported theorem coverage becomes `UNKNOWN` without invoking a certificate known not to match its assumptions;
+4. an attempted certificate expected to prove its route that fails compilation is an analyzer failure;
+5. theorem/provenance metadata emitted to user exactly matches claims bound into compiled certificate.
 
-- [ ] **Step 1: Write RED orchestration tests with a fake runner**
+- [ ] **Step 1: Write RED orchestration tests with fake runner**
 
-Cover the full claim set:
+Cover full claim set:
 
 ```text
 parameters_valid
@@ -750,129 +711,106 @@ consensus_value_known
 
 Required scenarios:
 
-- valid constant Path7 -> structural claims + reachable interior + consensus become `PROVED` only after runner success; generic consensus value remains `UNKNOWN`;
+- valid constant Path7 -> structural/global-interior/consensus claims become `PROVED` only after runner success; generic value remains `UNKNOWN`;
 - valid piecewise global-interior Path7 -> same proof shape with exact `eps`;
-- failure to find a positive global-interior candidate -> `reachable_interior`/consensus remain `UNKNOWN` unless another theorem route exists;
-- invalid parameter exact model can mark `parameters_valid` `DISPROVED` only if a negative certificate route is compiled; dependent consensus remains `UNKNOWN` absent an independent theorem;
-- `slowZero` exact Path2 fixture -> theorem-backed `DISPROVED` consensus;
-- `nearOne` exact Path2 fixture -> theorem-backed non-convergence/consensus `DISPROVED`;
-- `harmonic` exact Path2 fixture -> theorem-backed `PROVED`;
-- any fake compile error propagates as `AnalyzerError`, never `UNKNOWN`;
-- provenance mismatch between requested claim and compiled certificate raises `ProvenanceMismatchError`.
+- nonpositive global-interior candidate -> reachable-interior/consensus stay `UNKNOWN` unless another theorem route applies;
+- exact invalid `ExposureParameters.Valid` -> `parameters_valid DISPROVED` only after negative structural certificate compiles; dependent consensus remains `UNKNOWN` absent independent theorem;
+- exact false all-broadcast -> `initial_all_broadcast DISPROVED` only after negative structural certificate compiles; dependent all-broadcast theorem claims are `UNKNOWN`, not `DISPROVED`;
+- slow-zero exact Path2 fixture -> theorem-backed `DISPROVED` consensus;
+- near-one exact Path2 fixture -> theorem-backed non-convergence / consensus `DISPROVED`;
+- harmonic exact Path2 fixture -> theorem-backed `PROVED`;
+- any compile error propagates as analyzer failure, never `UNKNOWN`;
+- provenance mismatch raises `ProvenanceMismatchError`.
 
-- [ ] **Step 2: Run RED**
+- [ ] **Step 2: Run RED and commit it**
 
 ```bash
 python3 -m unittest tests.test_narrative_analyzer_analysis -v
-```
-
-- [ ] **Step 3: Commit RED**
-
-```bash
 git add tests/test_narrative_analyzer_analysis.py
 git commit -m "test(analyzer): add proof orchestration RED"
 ```
 
-- [ ] **Step 4: Implement the smallest route orchestrator**
+- [ ] **Step 3: Implement smallest explicit route orchestrator**
 
-Keep theorem selection explicit and finite; do not build a generic theorem search engine.
-
-Prefer separate candidate functions such as:
+Prefer finite candidate functions:
 
 ```python
-_structural_route(model)
+_structural_routes(model)
 _global_interior_route(model)
 _named_path2_route(model)
 ```
 
-The orchestrator merges claim evidence deterministically and rejects conflicting proven statuses rather than silently choosing one.
+Do not build a generic theorem-search engine. Merge evidence deterministically; conflicting compiled statuses are an invariant error, not a priority choice.
 
-- [ ] **Step 5: Run GREEN plus all analyzer unit suites**
+- [ ] **Step 4: Run GREEN + all analyzer suites and commit**
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_narrative_analyzer_*.py' -v
-```
 
-- [ ] **Step 6: Commit GREEN**
-
-```bash
 git add narrative_analyzer/analyze.py tests/test_narrative_analyzer_analysis.py
 git commit -m "feat(analyzer): compose certificate-backed verdicts"
 ```
 
 ---
 
-### Task 9: CLI contract and stable human-readable output
+### Task 9: CLI contract and deterministic human-readable output
 
 **Files:**
 - Create: `narrative_analyzer/cli.py`
 - Create: `tools/narrative-analyze`
 - Create: `tests/test_narrative_analyzer_cli.py`
 
-**CLI contract:**
+**CLI:**
 
 ```bash
 tools/narrative-analyze model.toml
 ```
 
-The wrapper may execute:
+Wrapper may be:
 
 ```bash
 exec python3 -m narrative_analyzer.cli "$@"
 ```
 
-Keep the structured `AnalysisResult` authoritative. CLI text is only a renderer.
+Structured `AnalysisResult` is authoritative; text is a rendering.
 
 Exit classes:
 
 ```text
-0  analyzer completed and emitted claim statuses, including UNKNOWN claims
+0  analyzer completed and emitted valid claim statuses, including UNKNOWN/DISPROVED
 2  invalid/unsupported user input
 3  certificate generation/compile/timeout failure
 4  internal provenance/invariant failure
 ```
 
-Do not use the exit code to encode `PROVED` vs `DISPROVED`; those are valid analysis outcomes represented in the result.
-
 - [ ] **Step 1: Write RED CLI tests**
 
-Test:
+Test deterministic claim ordering and that:
 
-- usage requires exactly one model path for MVP;
-- claim table has deterministic ordering;
-- every `PROVED`/`DISPROVED` detail shows theorem provenance;
-- generic PathN prints `Consensus value: unknown in closed form` when appropriate;
+- every `PROVED`/`DISPROVED` detail shows provenance;
+- generic PathN reports unknown closed-form value when appropriate;
 - input error exits 2 without traceback by default;
-- certificate failure exits 3 and is not rendered as `UNKNOWN`;
-- internal provenance mismatch exits 4;
-- valid results containing `DISPROVED` or `UNKNOWN` still exit 0.
+- certificate failure exits 3 and is never printed as `UNKNOWN`;
+- provenance/invariant failure exits 4;
+- valid analyses containing `DISPROVED` or `UNKNOWN` still exit 0.
 
-- [ ] **Step 2: Run RED**
+- [ ] **Step 2: Run RED and commit it**
 
 ```bash
 python3 -m unittest tests.test_narrative_analyzer_cli -v
-```
-
-- [ ] **Step 3: Commit RED**
-
-```bash
 git add tests/test_narrative_analyzer_cli.py
 git commit -m "test(analyzer): add CLI contract RED"
 ```
 
-- [ ] **Step 4: Implement CLI and wrapper**
+- [ ] **Step 3: Implement CLI and wrapper**
 
-No JSON mode, plotting, simulation output, automatic certificate retention, or extra topology flags in Phase 1.
+No JSON mode, plots, simulation output, automatic certificate retention, or extra topology flags in Phase 1.
 
-- [ ] **Step 5: Run GREEN**
+- [ ] **Step 4: Run GREEN and commit**
 
 ```bash
 python3 -m unittest tests.test_narrative_analyzer_cli -v
-```
 
-- [ ] **Step 6: Commit GREEN**
-
-```bash
 git add narrative_analyzer/cli.py tools/narrative-analyze \
   tests/test_narrative_analyzer_cli.py
 git commit -m "feat(analyzer): add narrative-analyze CLI"
@@ -880,14 +818,14 @@ git commit -m "feat(analyzer): add narrative-analyze CLI"
 
 ---
 
-### Task 10: Real certificate golden matrix and trust regressions
+### Task 10: Real-certificate golden matrix and analyzer-only permanent gate
 
 **Files:**
 - Create: `tests/test_narrative_analyzer_golden.py`
-- Modify/add fixtures under: `tests/fixtures/narrative_analyzer/`
+- Modify/add: `tests/fixtures/narrative_analyzer/`
 - Create: `tools/check_narrative_analyzer.sh`
 
-This task is the first acceptance-level test of the complete Python -> generated Lean -> theorem -> structured result pipeline. Do not mock the Lean runner here.
+This is the first acceptance-level test of Python -> generated Lean -> theorem -> structured result. Do not mock Lean here.
 
 - [ ] **Step 1: Add positive golden models**
 
@@ -896,69 +834,56 @@ Required real-certificate cases:
 - constant-alpha Path2 consensus;
 - constant-alpha PathN consensus;
 - finite-piecewise global-interior PathN consensus;
-- exact post-incoming lookup regression showing transition `k -> k+1` uses `(k+1) * degree(i)`;
-- exact existing harmonic Path2 theorem-backed consensus.
+- exact post-incoming lookup regression proving `(k+1) * degree(i)` convention;
+- existing harmonic Path2 theorem-backed consensus.
 
 - [ ] **Step 2: Add negative golden models**
 
-Required real-certificate cases:
+- exact `slowZeroSchedule` fixture -> theorem-backed non-consensus;
+- exact `nearOneSchedule` fixture -> theorem-backed non-convergence.
 
-- exact existing `slowZeroSchedule` fixture -> theorem-backed non-consensus;
-- exact existing `nearOneSchedule` fixture -> theorem-backed non-convergence.
-
-- [ ] **Step 3: Add UNKNOWN models**
-
-Required cases:
+- [ ] **Step 3: Add UNKNOWN golden models**
 
 - valid schedule outside available proof criteria -> consensus `UNKNOWN`;
-- conservative global-interior candidate failure does not become `DISPROVED`;
+- global-interior sufficient-route failure never becomes `DISPROVED`;
 - generic PathN proven consensus keeps `consensus_value_known = UNKNOWN`;
-- Path2 model failing current iff assumptions and lacking another theorem route remains `UNKNOWN` for that stronger claim.
+- Path2 model outside current iff/theorem assumptions remains `UNKNOWN` for stronger claim.
 
 - [ ] **Step 4: Add invalid/security cases**
 
-Required cases:
-
-- TOML float where exact rational string is required;
+- TOML float instead of exact rational string;
 - malformed rational;
 - state length mismatch;
 - unsupported schedule kind;
 - duplicate piecewise key;
 - source-like schedule payload;
 - deliberately corrupted generated certificate -> analyzer failure, not `UNKNOWN`;
-- generated source scan confirms no forbidden proof escape hatch.
+- generated source has no forbidden proof escape hatch.
 
-- [ ] **Step 5: Run the real golden suite under the repository timeout convention**
+- [ ] **Step 5: Run real golden suite**
 
 ```bash
 timeout --kill-after=10s 240s \
   python3 -m unittest tests.test_narrative_analyzer_golden -v
 ```
 
-Expected: all positive, negative, unknown, and invalid/security expectations pass with real Lean certificate compilation where a proof verdict is claimed.
+If the complete golden matrix legitimately needs more than 240 seconds because it compiles multiple individually bounded certificates, keep each certificate bounded at 240 seconds and let the outer CI step use its own workflow-level timeout. Do not increase any individual certificate limit.
 
-- [ ] **Step 6: Add permanent analyzer gate script**
+- [ ] **Step 6: Add analyzer-only gate script**
 
-Create `tools/check_narrative_analyzer.sh` with `set -euo pipefail` and, at minimum:
+Create `tools/check_narrative_analyzer.sh` with `set -euo pipefail`. It runs only analyzer tests, for example:
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_narrative_analyzer_*.py' -v
-bash tools/check_fitness_abm_pathn.sh
 ```
 
-The script may split fast unit tests and bounded real Lean golden tests for clearer logs, but every proof-bearing golden must remain in the permanent gate.
+Do **not** call `tools/check_fitness_abm_pathn.sh` from this script. The existing PathN proof gate already runs independently and remains authoritative for theorem-library regressions.
 
-- [ ] **Step 7: Run permanent gate locally**
+- [ ] **Step 7: Run analyzer gate and commit**
 
 ```bash
 bash tools/check_narrative_analyzer.sh
-```
 
-Do not proceed on partial green. Record failing test/certificate if any.
-
-- [ ] **Step 8: Commit acceptance gate**
-
-```bash
 git add tests/test_narrative_analyzer_golden.py \
   tests/fixtures/narrative_analyzer \
   tools/check_narrative_analyzer.sh
@@ -975,7 +900,7 @@ git commit -m "test(analyzer): add proof-backed golden gate"
 
 - [ ] **Step 1: Add one additive proof workflow step**
 
-After the existing finite-Path proof gate, add a bounded step equivalent to:
+Immediately after existing `BB finite-path convergence`, add:
 
 ```yaml
 - name: PathN exposure consensus analyzer
@@ -983,9 +908,9 @@ After the existing finite-Path proof gate, add a bounded step equivalent to:
   run: bash tools/check_narrative_analyzer.sh
 ```
 
-Do not remove, bypass, or weaken `BB finite-path convergence`. Do not add a second full `lake build` unless evidence shows the existing build is insufficient for the analyzer gate.
+Do not remove, bypass, weaken, or duplicate the existing PathN gate. The new step is analyzer-only.
 
-- [ ] **Step 2: Run Python analyzer suites**
+- [ ] **Step 2: Run analyzer suites fresh**
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_narrative_analyzer_*.py' -v
@@ -993,13 +918,13 @@ python3 -m unittest discover -s tests -p 'test_narrative_analyzer_*.py' -v
 
 Expected: zero failures/errors.
 
-- [ ] **Step 3: Run existing PathN proof gate fresh**
+- [ ] **Step 3: Run existing PathN theorem/trust gate fresh and separately**
 
 ```bash
 bash tools/check_fitness_abm_pathn.sh
 ```
 
-Expected: all existing exact theorem builds/tests/trust audits pass, including:
+Expected existing required theorem evidence includes:
 
 ```text
 exposure_iterate
@@ -1020,28 +945,38 @@ trajectory_consensus_exists_of_global_interior
 bash tools/check_narrative_analyzer.sh
 ```
 
-Expected: zero failures; real certificates compile within bounded execution.
+Expected: zero failures; proof-bearing golden cases compile real Lean certificates under bounded execution.
 
-- [ ] **Step 5: Run full repository Lean build before claiming merge readiness**
+- [ ] **Step 5: Run full Lean build before merge-readiness claim**
+
+Use the repository's normal full build:
 
 ```bash
-timeout --kill-after=10s 240s lake build
+lake build
 ```
 
-If the repository's normal full build legitimately exceeds this single-command budget, use the exact existing CI `lake build` step and record the GitHub Actions exact-head result instead of raising the limit locally.
+Do not substitute a partial module build for this acceptance evidence. The focused 240-second convention remains on individual proof/certificate commands; the existing CI full-build step is the authoritative fallback if local full build duration is longer.
 
-- [ ] **Step 6: Scope audit**
+- [ ] **Step 6: Scope and trust audit**
 
 ```bash
 git diff --name-status proof/narrative-dynamics-v0...HEAD
+
 git grep -n -E 'sorry|admit|axiom|unsafe|native_decide' -- \
   narrative_analyzer tools/narrative-analyze tools/check_narrative_analyzer.sh \
   tests/test_narrative_analyzer_*.py || true
 ```
 
-Review every match manually; string literals in negative security tests are allowed only when they explicitly verify rejection. There must be no production proof escape hatch.
+Review every match manually; negative security-test literals are allowed only when explicitly verifying rejection. There must be no production proof escape hatch.
 
-Also verify there is no Python implementation with semantics equivalent to `FitnessABMPathNExposure.step`. Search likely names such as `belief_step`, `update_belief`, `simulate`, `incoming`, and `exposure_step`; any hit must be reviewed for orchestration-only behavior.
+Also audit for forbidden duplicate dynamics:
+
+```bash
+git grep -n -E 'belief_step|update_belief|simulate|incoming|exposure_step' -- \
+  narrative_analyzer tools/narrative-analyze
+```
+
+Any hit must be orchestration/naming only, not an implementation equivalent to `FitnessABMPathNExposure.step`.
 
 - [ ] **Step 7: Commit CI integration**
 
@@ -1056,57 +991,58 @@ git commit -m "ci: gate PathN exposure consensus analyzer"
 git push
 ```
 
-Required before merge-readiness claim:
+Before any merge-readiness claim require:
 
 - exact-head `proof.yml` has a real non-skipped `Lean proof` job;
+- `Build Lean library` is green;
 - existing `BB finite-path convergence` is green;
 - new `PathN exposure consensus analyzer` step is green;
-- full `Build Lean library` is green;
 - no workflow startup failure or skipped-only run is counted as proof evidence.
 
-Record workflow run ID, job ID, and exact head SHA on #97.
+Record exact head SHA, workflow run ID, and job ID on #97.
 
 ---
 
 ## Acceptance Checklist
 
-Do not mark #97 implementation complete until every item below has fresh evidence:
+Do not mark #97 implementation complete until every item has fresh evidence:
 
 - [ ] `model.toml` accepts only finite Path `n >= 2` and exact theorem-bearing rational strings.
 - [ ] Constant, finite-piecewise+default, and trusted named schedule ASTs are closed and deterministic.
 - [ ] TOML floats and source-like schedule payloads fail before certificate generation.
 - [ ] Python contains no duplicate executable belief/exposure dynamics used to authorize verdicts.
-- [ ] Generated certificates import the actual merged theorem modules and compile independently.
-- [ ] Every `PROVED`/`DISPROVED` claim records theorem/proof provenance bound to the compiled certificate.
+- [ ] Generated certificates import actual merged theorem modules and compile independently.
+- [ ] Every `PROVED`/`DISPROVED` claim records provenance bound to the compiled certificate.
+- [ ] `parameters_valid` and `initial_all_broadcast` can be theorem-backed negative structural claims without incorrectly turning dependent consensus into `DISPROVED`.
 - [ ] `UNKNOWN` means unavailable theorem coverage, not certificate failure.
 - [ ] Certificate compile/timeout/provenance failures are nonzero analyzer errors.
 - [ ] Post-incoming `(k+1) * degree(i)` lookup has a permanent real-certificate regression.
 - [ ] Generic PathN global-interior consensus is theorem-backed and keeps generic consensus value unknown.
-- [ ] Path2 theorem routes expose stronger exact machinery only under actual theorem assumptions.
+- [ ] Path2 routes expose stronger exact machinery only under actual theorem assumptions.
 - [ ] `slowZeroSchedule` and `nearOneSchedule` negative fixtures are theorem-backed, not simulation-backed.
 - [ ] Failure of global interior alone never produces `DISPROVED` consensus.
 - [ ] No arbitrary graph, dynamic topology, counterexample search, convergence-rate UX, simulation UI, floating-point proof, all-broadcast-entry proof, or BB co-evolution scope entered Phase 1.
-- [ ] Existing PathN proof/trust/resource gate remains green.
-- [ ] Analyzer unit/golden/security tests are green.
+- [ ] Existing PathN proof/trust/resource gate remains green independently.
+- [ ] Analyzer unit/golden/security gate is green independently.
 - [ ] Full Lean build is green on exact head.
 - [ ] GitHub Actions exact-head evidence is recorded on #97.
 
 ## Stop Conditions / Review Gates
 
-Stop and request architecture/theorem review instead of improvising if any of these occurs:
+Stop and request architecture/theorem review instead of improvising if any occurs:
 
-1. an acceptance claim cannot be expressed using the existing merged theorem surface without changing theorem semantics;
+1. an acceptance claim cannot be expressed using existing merged theorem surface without changing theorem semantics;
 2. a named negative theorem applies only to a narrower fixture than expected;
 3. generated certificate compilation requires copying `step`, `kernelSchedule`, or consensus proof logic;
 4. a desired `DISPROVED` result is available only from failed sufficient conditions or numerical evidence;
-5. actual CI resource limits require weakening the repository's current fail-fast policy;
-6. implementing exact TOML support would require accepting theorem-bearing floating-point input;
+5. actual CI resource limits require weakening current fail-fast policy;
+6. exact TOML support would require accepting theorem-bearing floating-point input;
 7. Path2 consensus-value identification requires importing the exposure-independent degree-weighted invariant.
 
 At any stop condition, preserve the last green commit and open a focused design/theorem-gap issue. Do not hide the gap inside Python orchestration.
 
 ## Completion Boundary
 
-This plan authorizes implementation only after the plan review gate is explicitly approved. It does not itself authorize merging.
+This plan authorizes implementation only after the committed-plan review gate is explicitly approved. It does not authorize merging.
 
-After implementation reaches the final acceptance checklist, use `superpowers:verification-before-completion`, then `superpowers:requesting-code-review`, and only then evaluate PR/merge readiness.
+After implementation reaches the acceptance checklist, use `superpowers:verification-before-completion`, then `superpowers:requesting-code-review`, and only then evaluate PR/merge readiness.
