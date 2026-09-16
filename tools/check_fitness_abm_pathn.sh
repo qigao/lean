@@ -8,8 +8,9 @@ pathn_time="$(type -P time)"
 consensus_log="$(mktemp)"
 pathn_log="$(mktemp)"
 params_log="$(mktemp)"
+parameter_convergence_log="$(mktemp)"
 exposure_log="$(mktemp)"
-trap 'rm -f "$consensus_log" "$pathn_log" "$params_log" "$exposure_log"' EXIT
+trap 'rm -f "$consensus_log" "$pathn_log" "$params_log" "$parameter_convergence_log" "$exposure_log"' EXIT
 
 python3 tools/audit_fitness_trust.py source \
   NarrativeDynamics/Core/FiniteConsensus.lean \
@@ -17,6 +18,8 @@ python3 tools/audit_fitness_trust.py source \
   NarrativeDynamics/Core/FitnessABMPathN.lean \
   NarrativeDynamics/Tests/FitnessABMPathN.lean \
   NarrativeDynamics/Tests/FitnessABMPathNParameters.lean \
+  NarrativeDynamics/Core/FitnessABMPathNParameterConvergence.lean \
+  NarrativeDynamics/Tests/FitnessABMPathNParameterConvergence.lean \
   NarrativeDynamics/Core/FitnessABMPathNExposure.lean \
   NarrativeDynamics/Tests/FitnessABMPathNExposure.lean
 
@@ -24,6 +27,7 @@ for pathn_module in \
     NarrativeDynamics.Core.FiniteConsensus \
     NarrativeDynamics.Core.FitnessABMPathN \
     NarrativeDynamics.Core.FitnessABMPathNParameters \
+    NarrativeDynamics.Core.FitnessABMPathNParameterConvergence \
     NarrativeDynamics.Core.FitnessABMPathNExposure; do
   "$pathn_time" -f "$pathn_module elapsed=%e s peak_rss=%M KiB" \
     timeout --kill-after=10s 240s lake build "$pathn_module"
@@ -54,6 +58,12 @@ done
   lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FitnessABMPathNParameters.lean \
   2>&1 | tee "$params_log"
 
+"$pathn_time" -f 'FitnessABMPathNParameterConvergence tests elapsed=%e s peak_rss=%M KiB' \
+  timeout --kill-after=10s 240s \
+  lake env lean -DmaxErrors=1 \
+  NarrativeDynamics/Tests/FitnessABMPathNParameterConvergence.lean \
+  2>&1 | tee "$parameter_convergence_log"
+
 "$pathn_time" -f 'FitnessABMPathNExposure tests elapsed=%e s peak_rss=%M KiB' \
   timeout --kill-after=10s 240s \
   lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FitnessABMPathNExposure.lean \
@@ -71,6 +81,13 @@ python3 tools/audit_fitness_trust.py log "$pathn_log" \
   --require NarrativeDynamics.FitnessABMPathN.mean_step \
   --require NarrativeDynamics.FitnessABMPathN.path_block_common_mass \
   --require NarrativeDynamics.FitnessABMPathN.trajectory_tendsto
+
+python3 tools/audit_fitness_trust.py log "$parameter_convergence_log" \
+  --require NarrativeDynamics.FitnessABMPathNParameterConvergence.path_stationary_weights \
+  --require NarrativeDynamics.FitnessABMPathNParameterConvergence.path_block_common_mass \
+  --require NarrativeDynamics.FitnessABMPathNParameterConvergence.trajectory_tendsto \
+  --require zero_response_path2_iterate \
+  --require one_response_path2_even
 
 python3 tools/audit_fitness_trust.py log "$exposure_log" \
   --require NarrativeDynamics.FitnessABMPathNExposure.constant_beliefStep \
