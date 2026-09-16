@@ -27,7 +27,6 @@ python3 tools/audit_fitness_trust.py source \
   NarrativeDynamics/Core/FitnessABMPathNExposure.lean \
   NarrativeDynamics/Tests/FitnessABMPathNExposure.lean \
   NarrativeDynamics/Core/FitnessABMPathNExposureConvergence.lean \
-  NarrativeDynamics/Core/FitnessABMPathNExposureConsensusScratch.lean \
   NarrativeDynamics/Tests/FitnessABMPathNExposureConvergence.lean
 
 for pathn_module in \
@@ -37,8 +36,7 @@ for pathn_module in \
     NarrativeDynamics.Core.FitnessABMPathNParameters \
     NarrativeDynamics.Core.FitnessABMPathNParameterConvergence \
     NarrativeDynamics.Core.FitnessABMPathNExposure \
-    NarrativeDynamics.Core.FitnessABMPathNExposureConvergence \
-    NarrativeDynamics.Core.FitnessABMPathNExposureConsensusScratch; do
+    NarrativeDynamics.Core.FitnessABMPathNExposureConvergence; do
   "$pathn_time" -f "$pathn_module elapsed=%e s peak_rss=%M KiB" \
     timeout --kill-after=10s 240s lake build "$pathn_module"
 done
