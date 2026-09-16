@@ -79,6 +79,9 @@ def main(
     factory = _default_runner_factory if runner_factory is None else runner_factory
     try:
         result = analyze(model, runner=factory(repo_root))
+    except ModelInputError as exc:
+        print(f"input error: {exc}", file=stderr)
+        return 2
     except ProvenanceMismatchError as exc:
         print(f"internal analyzer error: {exc}", file=stderr)
         return 4
