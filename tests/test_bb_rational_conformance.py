@@ -227,10 +227,10 @@ class BBRationalConformanceDriftMutationTests(unittest.TestCase):
         mutated_by_id = {record["case_id"]: record for record in mutated}
         before = original_by_id["nontrivial-mean"]["expected"]["beliefs"][0]
         after = mutated_by_id["nontrivial-mean"]["expected"]["beliefs"][0]
-        self.assertEqual(before, {"num": 1, "den": 1})
-        self.assertEqual(after, {"num": 2, "den": 1})
-        self.assertEqual(parse_rat(after), Fraction(2, 1))
-        self.assertEqual(parse_rat(before), Fraction(1, 1))
+        self.assertEqual(before, {"num": 3, "den": 4})
+        self.assertEqual(after, {"num": 1, "den": 1})
+        self.assertEqual(parse_rat(before), Fraction(3, 4))
+        self.assertEqual(parse_rat(after), Fraction(1, 1))
 
 
 if __name__ == "__main__":
