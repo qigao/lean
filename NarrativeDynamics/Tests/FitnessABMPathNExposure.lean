@@ -37,3 +37,15 @@ example : (step exposureSensitive 2 sameStepState 1).exposure = 1 := by
 
 example : (step exposureSensitive 2 sameStepState 1).belief = 3/4 := by
   decide_cbv
+
+-- Task 2 RED: a constant schedule must project to the existing parameterized
+-- executable belief step. Whole-state equality is intentionally not required.
+example (alpha tau : Rat) (n : Nat) (s : State n) :
+    beliefs (step ⟨fun _ => alpha, tau⟩ n s) =
+      FitnessABMPathNParameters.beliefStep ⟨alpha, tau⟩ n (beliefs s) := by
+  exact constant_beliefStep alpha tau n s
+
+example (n : Nat) (s : State n) :
+    beliefs (step ⟨fun _ => 1/2, 1/2⟩ n s) =
+      FitnessABMPathN.beliefStep n (beliefs s) := by
+  exact half_beliefStep n s
