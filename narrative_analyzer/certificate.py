@@ -138,5 +138,7 @@ class CertificateBuilder:
         if actual is None or route!=actual or not isinstance(m.schedule,NamedSchedule): raise ValueError("named Path2 route mismatch")
         d=digest(m);L=header();ds,p,s=defs(m,d);L+=ds;pe=f"AnalyzerNamedParamsEq_{d}";se=f"AnalyzerNamedStateEq_{d}";pl=f"AnalyzerPath2Consensus_{d}";tail=route.theorem.rsplit('.',1)[-1]
         L += [f"private theorem {pe} : {p} = {route.schedule_id} := by","  rfl","",f"private theorem {se} : {s} = (![⟨1, 0⟩, ⟨0, 0⟩] : State 2) := by","  rfl","",*named_path2_body(schedule_id=route.schedule_id,params=p,state=s,params_eq=pe,state_eq=se,lemma=pl,theorem_tail=tail),"","end NarrativeAnalyzerCertificate",""]
-        if route.schedule_id=="harmonicSchedule": return Certificate("\n".join(L),(CertificateClaim("path2_consensus",ClaimStatus.PROVED,route.theorem,route.assumptions,{"value":"1/2"}),CertificateClaim("consensus_value_known",ClaimStatus.PROVED,route.theorem,route.assumptions,{"value":"1/2"})))
-        return Certificate("\n".join(L),(CertificateClaim("path2_consensus",ClaimStatus.DISPROVED,route.theorem,route.assumptions,{}),))
+        direct_provenance=f"{pl}; {route.theorem}"
+        if route.schedule_id=="harmonicSchedule": return Certificate("\n".join(L),(CertificateClaim("path2_consensus",ClaimStatus.PROVED,direct_provenance,route.assumptions,{"value":"1/2"}),CertificateClaim("consensus_value_known",ClaimStatus.PROVED,direct_provenance,route.assumptions,{"value":"1/2"})))
+        provenance=(f"{pl}; {CONV}.path2_mean_iterate; {route.theorem}" if route.schedule_id=="slowZeroSchedule" else direct_provenance)
+        return Certificate("\n".join(L),(CertificateClaim("path2_consensus",ClaimStatus.DISPROVED,provenance,route.assumptions,{}),))
