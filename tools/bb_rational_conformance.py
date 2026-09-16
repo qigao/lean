@@ -6,6 +6,7 @@ field. Production floating-point belief values are outside this contract.
 
 from __future__ import annotations
 
+import copy
 from fractions import Fraction
 import hashlib
 import json
@@ -69,6 +70,53 @@ def canonical_json_line(case: dict[str, Any]) -> str:
         separators=(",", ":"),
         sort_keys=True,
     ) + "\n"
+
+
+def mutate_schema_version(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return a detached corpus with one unsupported top-level schema value."""
+
+    mutated = copy.deepcopy(records)
+    if not mutated:
+        raise ValueError("cannot mutate an empty conformance corpus")
+    mutated[0]["schema"] = "bb-rational-conformance/v2"
+    return mutated
+
+
+def mutate_contract_hash(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return a detached corpus with exactly one provenance hash nibble changed."""
+
+    mutated = copy.deepcopy(records)
+    if not mutated:
+        raise ValueError("cannot mutate an empty conformance corpus")
+    provenance = mutated[0].get("provenance")
+    if not isinstance(provenance, dict):
+        raise ValueError("first record has no provenance object")
+    digest = provenance.get("generator_contract")
+    if not isinstance(digest, str) or len(digest) != 64:
+        raise ValueError("generator_contract must be a 64-character digest")
+    replacement = "1" if digest[0] == "0" else "0"
+    provenance["generator_contract"] = replacement + digest[1:]
+    return mutated
+
+
+def mutate_expected_rational(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return a detached corpus with one canonical expected rational changed."""
+
+    mutated = copy.deepcopy(records)
+    for record in mutated:
+        if record.get("case_id") != "nontrivial-mean":
+            continue
+        expected = record.get("expected")
+        if not isinstance(expected, dict):
+            raise ValueError("nontrivial-mean expected value must be an object")
+        beliefs = expected.get("beliefs")
+        if not isinstance(beliefs, list) or not beliefs:
+            raise ValueError("nontrivial-mean expected beliefs must be nonempty")
+        if parse_rat(beliefs[0]) != Fraction(1, 1):
+            raise ValueError("nontrivial-mean first expected belief drifted from 1/1")
+        beliefs[0] = rat(2)
+        return mutated
+    raise ValueError("nontrivial-mean case not found")
 
 
 CASES: tuple[dict[str, Any], ...] = (
