@@ -20,5 +20,7 @@ private def thresholdBeliefs : Beliefs 2 :=
 private def thresholdPopulation :=
   population half 2 thresholdBeliefs (fun _ => 0)
 
-example : broadcasting thresholdPopulation 0 = true := by
+example :
+    broadcasting (thresholdPopulation.profiles 0)
+      (thresholdPopulation.agents 0) = true := by
   decide
