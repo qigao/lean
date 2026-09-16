@@ -100,4 +100,64 @@ theorem candidate_support_bounded
     simpa [heq] using hlt
   simp [hnot]
 
+abbrev Vector (n : Nat) := Fin n → ℝ
+
+def zeroVector : Vector n := fun _ => 0
+
+noncomputable def dot (left right : Vector n) : ℝ :=
+  ∑ i, left i * right i
+
+noncomputable def marginalizedFeature
+    (law : DelayLaw) (feature : Nat → Vector n) (count t : Nat) : Vector n :=
+  fun i => ∑ d ∈ law.support,
+    if validSource count t d then law.weight d * feature (t - d) i else 0
+
+noncomputable def marginalizedPrediction (weights feature : Vector n) : ℝ :=
+  dot weights feature
+
+noncomputable def marginalizedUpdate
+    (weights : Vector n) (alpha feedback : ℝ)
+    (expectedFeature normalizedCredit : Vector n) : Vector n :=
+  fun i => weights i +
+    alpha * (feedback - marginalizedPrediction weights expectedFeature) *
+      normalizedCredit i
+
+theorem current_weight_observation (weights feature : Vector n) :
+    marginalizedPrediction weights feature = dot weights feature := by
+  rfl
+
+theorem immediate_reduction_to_phase3a
+    (weights feature : Vector n)
+    (denominator alpha reward : ℝ) :
+    marginalizedUpdate weights alpha reward feature
+        (AnonymousTemporalCredit.normalizedCredit feature denominator) =
+      AnonymousTemporalCredit.normalizedPhase3AUpdate
+        weights alpha reward (dot weights feature)
+        (AnonymousTemporalCredit.normalizedCredit feature denominator) := by
+  funext i
+  rfl
+
+theorem invalid_candidates_zero
+    (law : DelayLaw) (feature : Nat → Vector n) (count t : Nat)
+    (h : ∀ d ∈ law.support, ¬ validSource count t d) :
+    marginalizedFeature law feature count t = zeroVector := by
+  funext i
+  unfold marginalizedFeature zeroVector
+  apply Finset.sum_eq_zero
+  intro d hd
+  have hnot := h d hd
+  simp [hnot]
+
+theorem drain_uses_same_equation
+    (law : DelayLaw) (weights : Vector n) (feature credit : Nat → Vector n)
+    (alpha feedback : ℝ) (count t : Nat) (_hDrain : count ≤ t) :
+    marginalizedUpdate weights alpha feedback
+        (marginalizedFeature law feature count t)
+        (marginalizedFeature law credit count t) =
+      fun i =>
+        weights i + alpha *
+          (feedback - dot weights (marginalizedFeature law feature count t)) *
+          (marginalizedFeature law credit count t) i := by
+  rfl
+
 end NarrativeDynamics.MarginalizedTemporalCredit
