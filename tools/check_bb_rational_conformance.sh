@@ -47,6 +47,9 @@ from tools.generate_bb_rational_conformance import generate_records
 root = Path(os.environ["BB_RATIONAL_TMP_DIR"])
 records = generate_records()
 
+def case(records, case_id):
+    return next(record for record in records if record["case_id"] == case_id)
+
 extra_top_level = copy.deepcopy(records)
 extra_top_level[0]["unexpected"] = 1
 
@@ -54,7 +57,7 @@ extra_provenance = copy.deepcopy(records)
 extra_provenance[0]["provenance"]["unexpected"] = 1
 
 extra_rational = copy.deepcopy(records)
-extra_rational[0]["input"]["alpha"]["unexpected"] = 1
+case(extra_rational, "inclusive-threshold")["input"]["alpha"]["unexpected"] = 1
 
 mutations = {
     "schema.jsonl": mutate_schema_version(records),
