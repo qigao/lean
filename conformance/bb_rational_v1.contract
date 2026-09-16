@@ -1,0 +1,8 @@
+schema=bb-rational-conformance/v1
+rational=reduced-int-num-positive-int-den
+broadcast=threshold<=belief
+propagation=belief'=(1-alpha)*belief+alpha*mean(broadcasting-neighbors);exposure'=exposure+incoming-count
+attachment=ordered-without-replacement;weight=fitness*degree
+replay=seed-two-node-edge;m=1;births=(fitness=1,targets=[1]),(fitness=1,targets=[2])
+error=seed-two-node-edge;m=2;birth=(fitness=1,targets=[0,0]);expect=tick_network/duplicateTarget/targets
+cases=bb-successive-births,duplicate-target-error,inclusive-threshold,no-broadcast,nontrivial-mean
