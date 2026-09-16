@@ -262,8 +262,14 @@ private theorem split2_beliefs_ne :
 theorem slowZero_not_consensus :
     ¬ ∀ i : Fin 2,
       Tendsto
-        (fun k => (beliefs ((step slowZeroSchedule 2)^[k] split2) i : Real))
+        (fun k =>
+          (beliefs ((step slowZeroSchedule 2)^[k]
+            (![⟨1, 0⟩, ⟨0, 0⟩] : State 2)) i : Real))
         atTop (nhds (1/2 : Real)) := by
+  change ¬ ∀ i : Fin 2,
+    Tendsto
+      (fun k => (beliefs ((step slowZeroSchedule 2)^[k] split2) i : Real))
+      atTop (nhds (1/2 : Real))
   intro hcons
   have habs0 :=
     (path2_consensus_iff_product_tendsto_zero
@@ -281,8 +287,14 @@ theorem slowZero_not_consensus :
 theorem nearOne_not_convergent :
     ¬ ∃ c : Real, ∀ i : Fin 2,
       Tendsto
-        (fun k => (beliefs ((step nearOneSchedule 2)^[k] split2) i : Real))
+        (fun k =>
+          (beliefs ((step nearOneSchedule 2)^[k]
+            (![⟨1, 0⟩, ⟨0, 0⟩] : State 2)) i : Real))
         atTop (nhds c) := by
+  change ¬ ∃ c : Real, ∀ i : Fin 2,
+    Tendsto
+      (fun k => (beliefs ((step nearOneSchedule 2)^[k] split2) i : Real))
+      atTop (nhds c)
   rintro ⟨c, hcons⟩
   have hdiff : Tendsto
       (fun k =>
@@ -316,8 +328,14 @@ theorem nearOne_not_convergent :
 theorem harmonic_consensus :
     ∀ i : Fin 2,
       Tendsto
-        (fun k => (beliefs ((step harmonicSchedule 2)^[k] split2) i : Real))
+        (fun k =>
+          (beliefs ((step harmonicSchedule 2)^[k]
+            (![⟨1, 0⟩, ⟨0, 0⟩] : State 2)) i : Real))
         atTop (nhds (1/2 : Real)) := by
+  change ∀ i : Fin 2,
+    Tendsto
+      (fun k => (beliefs ((step harmonicSchedule 2)^[k] split2) i : Real))
+      atTop (nhds (1/2 : Real))
   have habs0 : Tendsto
       (fun k => |(path2MultiplierProduct harmonicSchedule 0 k : Real)|)
       atTop (nhds 0) := by
