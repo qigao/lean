@@ -68,3 +68,11 @@ example (law : DelayLaw) (w : Vector n) (x c : Nat → Vector n)
   exact drain_uses_same_equation law w x c alpha feedback count t hDrain
 
 end NarrativeDynamics.MarginalizedTemporalCredit
+
+#print axioms NarrativeDynamics.MarginalizedTemporalCredit.registered_law_valid
+#print axioms NarrativeDynamics.MarginalizedTemporalCredit.expected_aggregate_decomposition
+#print axioms NarrativeDynamics.MarginalizedTemporalCredit.candidate_support_bounded
+#print axioms NarrativeDynamics.MarginalizedTemporalCredit.current_weight_observation
+#print axioms NarrativeDynamics.MarginalizedTemporalCredit.immediate_reduction_to_phase3a
+#print axioms NarrativeDynamics.MarginalizedTemporalCredit.invalid_candidates_zero
+#print axioms NarrativeDynamics.MarginalizedTemporalCredit.drain_uses_same_equation
