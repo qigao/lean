@@ -31,3 +31,4 @@ import NarrativeDynamics.Core.StoryState
 import NarrativeDynamics.Core.Testimony
 import NarrativeDynamics.Core.TemporalCredit
 import NarrativeDynamics.Core.AnonymousTemporalCredit
+import NarrativeDynamics.Core.MarginalizedTemporalCredit
