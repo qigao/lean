@@ -30,3 +30,7 @@ example {ι : Type*} [Fintype ι] [Nonempty ι] [DecidableEq ι]
     ∃ c : Real, ∀ i,
       Tendsto (fun k => (varyingTrajectory K x k i : Real)) atTop (nhds c) := by
   exact block_contraction_consensus_exists K hK x b hb δ hδ0 hδ1 hc
+
+#print axioms NarrativeDynamics.FiniteTimeVaryingConsensus.apply_windowKernel
+#print axioms NarrativeDynamics.FiniteTimeVaryingConsensus.coordRange_tendsto_zero
+#print axioms NarrativeDynamics.FiniteTimeVaryingConsensus.block_contraction_consensus_exists
