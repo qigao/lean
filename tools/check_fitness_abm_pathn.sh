@@ -11,7 +11,8 @@ pathn_log="$(mktemp)"
 params_log="$(mktemp)"
 parameter_convergence_log="$(mktemp)"
 exposure_log="$(mktemp)"
-trap 'rm -f "$consensus_log" "$time_varying_log" "$pathn_log" "$params_log" "$parameter_convergence_log" "$exposure_log"' EXIT
+exposure_convergence_log="$(mktemp)"
+trap 'rm -f "$consensus_log" "$time_varying_log" "$pathn_log" "$params_log" "$parameter_convergence_log" "$exposure_log" "$exposure_convergence_log"' EXIT
 
 python3 tools/audit_fitness_trust.py source \
   NarrativeDynamics/Core/FiniteConsensus.lean \
@@ -24,7 +25,8 @@ python3 tools/audit_fitness_trust.py source \
   NarrativeDynamics/Core/FitnessABMPathNParameterConvergence.lean \
   NarrativeDynamics/Tests/FitnessABMPathNParameterConvergence.lean \
   NarrativeDynamics/Core/FitnessABMPathNExposure.lean \
-  NarrativeDynamics/Tests/FitnessABMPathNExposure.lean
+  NarrativeDynamics/Tests/FitnessABMPathNExposure.lean \
+  NarrativeDynamics/Tests/FitnessABMPathNExposureConvergence.lean
 
 for pathn_module in \
     NarrativeDynamics.Core.FiniteConsensus \
@@ -77,6 +79,12 @@ done
   timeout --kill-after=10s 240s \
   lake env lean -DmaxErrors=1 NarrativeDynamics/Tests/FitnessABMPathNExposure.lean \
   2>&1 | tee "$exposure_log"
+
+"$pathn_time" -f 'FitnessABMPathNExposureConvergence tests elapsed=%e s peak_rss=%M KiB' \
+  timeout --kill-after=10s 240s \
+  lake env lean -DmaxErrors=1 \
+  NarrativeDynamics/Tests/FitnessABMPathNExposureConvergence.lean \
+  2>&1 | tee "$exposure_convergence_log"
 
 python3 tools/audit_fitness_trust.py log "$consensus_log" \
   --require NarrativeDynamics.FiniteConsensus.coordRange_apply_le_of_commonColumn \
