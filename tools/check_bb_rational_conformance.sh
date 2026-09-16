@@ -12,7 +12,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 bash -n "$0"
 python3 -m unittest discover -s tests -p 'test_bb_rational_conformance.py' -v
 
-python3 tools/generate_bb_rational_conformance.py --output "$TMP_DIR/generated.jsonl"
+python3 -m tools.generate_bb_rational_conformance --output "$TMP_DIR/generated.jsonl"
 cmp -- "$GOLDEN" "$TMP_DIR/generated.jsonl"
 
 export PATH="$HOME/.elan/bin:$PATH"
