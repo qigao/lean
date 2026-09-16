@@ -1,4 +1,4 @@
-import NarrativeDynamics.Core.FitnessABMPathNExposureConvergence
+import NarrativeDynamics.Core.FitnessABMPathNExposureConsensusScratch
 
 open NarrativeDynamics
 open NarrativeDynamics.FiniteConsensus
@@ -196,3 +196,6 @@ example (p : ExposureParameters) (hvalid : p.Valid)
 #print axioms NarrativeDynamics.FitnessABMPathNExposureConvergence.nearOne_not_convergent
 #print axioms NarrativeDynamics.FitnessABMPathNExposureConvergence.harmonic_consensus
 #print axioms NarrativeDynamics.FitnessABMPathNExposureConvergence.exposure_degree_weighted_mean_not_invariant
+#print axioms NarrativeDynamics.FitnessABMPathNExposureConvergence.path_window_common_mass
+#print axioms NarrativeDynamics.FitnessABMPathNExposureConvergence.trajectory_consensus_exists
+#print axioms NarrativeDynamics.FitnessABMPathNExposureConvergence.trajectory_consensus_exists_of_global_interior
