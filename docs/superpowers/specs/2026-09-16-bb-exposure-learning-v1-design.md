@@ -154,11 +154,12 @@ Construct a small fixed-path fixture with:
 - identical graph;
 - identical beliefs;
 - identical threshold;
-- different starting exposure at one receiving vertex;
-- a nonconstant schedule such as `α(0)=1/4` and `α(e)=3/4` for positive `e`;
+- different starting exposure at one receiving vertex, for example `0` versus `1`;
+- one current incoming broadcast at that receiver, so the same-step lookup points are `e'=1` versus `e'=2`;
+- a nonconstant schedule that distinguishes those post-incoming counts, for example `α(e)=1/4` when `e ≤ 1` and `α(e)=3/4` when `e ≥ 2`;
 - at least one broadcasting neighbor whose belief differs from the receiver.
 
-Prove the two next-step projected beliefs differ at that vertex.
+Prove the two next-step projected beliefs differ at that vertex. The schedule is deliberately stated over the post-incoming counts because the model contract selects `α(e')` only after recording the current round's incoming broadcasts.
 
 This explicitly shows why the baseline theorem `FitnessABMPathN.propagate_independent_exposures` does not extend to this new model. The baseline theorem itself remains true and unchanged.
 
