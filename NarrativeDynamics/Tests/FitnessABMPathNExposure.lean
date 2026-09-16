@@ -142,6 +142,7 @@ theorem baseline_exposure_history_control :
         (beliefs highExposureState) := by
   rw [exposure_history_same_beliefs]
 
+#print axioms NarrativeDynamics.FitnessABMPathNExposure.constant_beliefStep
 #print axioms NarrativeDynamics.FitnessABMPathNExposure.exposure_mono
 #print axioms NarrativeDynamics.FitnessABMPathNExposure.beliefs_bounded_step
 #print axioms exposure_history_changes_next_belief
