@@ -1,4 +1,4 @@
-"""RED consumers for the exact BB rational conformance schema."""
+"""TDD consumers for the exact BB rational conformance contract."""
 
 from fractions import Fraction
 import json
@@ -7,6 +7,7 @@ import unittest
 from tools.bb_rational_conformance import (
     SCHEMA,
     canonical_json_line,
+    evaluate_named,
     parse_rat,
     rat,
 )
@@ -68,6 +69,43 @@ class BBRationalConformanceSchemaTests(unittest.TestCase):
         )
         self.assertLess(line.index('"a"'), line.index('"schema"'))
         self.assertLess(line.index('"schema"'), line.index('"z"'))
+
+
+class BBRationalConformanceEvaluatorTests(unittest.TestCase):
+    def test_inclusive_threshold_broadcasts_and_updates_receiver_exactly(self):
+        out = evaluate_named("inclusive-threshold")
+        self.assertEqual(out["expected"]["broadcasting"], [True, False])
+        self.assertEqual(
+            out["expected"]["beliefs"],
+            [rat(Fraction(1, 2)), rat(Fraction(1, 4))],
+        )
+        self.assertEqual(out["expected"]["exposures"], [0, 1])
+
+    def test_no_broadcast_preserves_beliefs_and_exposures(self):
+        out = evaluate_named("no-broadcast")
+        self.assertEqual(
+            out["expected"]["beliefs"],
+            [rat(Fraction(1, 4)), rat(Fraction(1, 8))],
+        )
+        self.assertEqual(out["expected"]["exposures"], [0, 0])
+
+    def test_nontrivial_mean_is_exact(self):
+        out = evaluate_named("nontrivial-mean")
+        self.assertEqual(parse_rat(out["expected"]["beliefs"][1]), Fraction(2, 3))
+        for value in out["expected"]["beliefs"]:
+            self.assertIsInstance(parse_rat(value), Fraction)
+
+    def test_successive_birth_mass_is_one_eighth(self):
+        out = evaluate_named("bb-successive-births")
+        self.assertEqual(parse_rat(out["expected"]["trace_mass"]), Fraction(1, 8))
+        self.assertEqual(out["expected"]["node_count"], 4)
+
+    def test_duplicate_target_has_stable_error(self):
+        out = evaluate_named("duplicate-target-error")
+        self.assertEqual(
+            out["expected"]["error"],
+            {"stage": "tick_network", "code": "duplicateTarget", "field": "targets"},
+        )
 
 
 if __name__ == "__main__":
