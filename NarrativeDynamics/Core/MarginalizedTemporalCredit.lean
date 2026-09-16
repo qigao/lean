@@ -78,7 +78,12 @@ theorem expected_aggregate_decomposition
     expectedAggregate law reward n t =
       ∑ d ∈ law.support,
         if d ≤ t ∧ t - d < n then law.weight d * reward (t - d) else 0 := by
-  simp [expectedAggregate, validSource]
+  unfold expectedAggregate
+  apply Finset.sum_congr rfl
+  intro d hd
+  by_cases h : d ≤ t ∧ t - d < n
+  · simp [validSource, h]
+  · simp [validSource, h]
 
 theorem candidate_support_bounded
     (law : DelayLaw) (credit : Nat → ℝ) (n t j : Nat)
