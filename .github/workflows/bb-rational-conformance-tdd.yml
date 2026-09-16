@@ -10,6 +10,7 @@ on:
       - "conformance/bb_rational_v1.contract"
       - "tools/bb_rational_conformance.py"
       - "tools/generate_bb_rational_conformance.py"
+      - "tools/check_bb_rational_conformance.sh"
       - "tests/test_bb_rational_conformance.py"
       - ".github/workflows/bb-rational-conformance-tdd.yml"
   workflow_dispatch:
@@ -21,8 +22,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: Record checked revision
         run: git rev-parse HEAD
-      - name: Run focused Python conformance tests
-        run: python3 -m unittest discover -s tests -p 'test_bb_rational_conformance.py' -v
       - name: Cache Lean toolchain
         uses: actions/cache@v4
         with:
@@ -47,15 +46,5 @@ jobs:
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
           lake update
-      - name: Build checker dependencies
-        run: |
-          export PATH="$HOME/.elan/bin:$PATH"
-          timeout --kill-after=10s 240s lake build \
-            NarrativeDynamics.Core.FitnessABMReplay \
-            NarrativeDynamics.Core.FitnessABMPathN
-      - name: Run exact checker
-        run: |
-          export PATH="$HOME/.elan/bin:$PATH"
-          timeout --kill-after=10s 240s \
-            lake env lean --run NarrativeDynamics/Conformance/BBRationalConformance.lean \
-              conformance/bb_rational_v1.jsonl
+      - name: Run permanent BB rational conformance gate
+        run: bash tools/check_bb_rational_conformance.sh
