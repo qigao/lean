@@ -3,6 +3,7 @@ import NarrativeDynamics.Core.FitnessABMPathNParameters
 open NarrativeDynamics
 open NarrativeDynamics.NetworkPropagation
 open NarrativeDynamics.FitnessABMPathNParameters
+open scoped BigOperators
 
 example : ResponseParameters.Valid half := by
   norm_num [half, ResponseParameters.Valid]
@@ -37,7 +38,7 @@ example (n : Nat) (x : Beliefs n) :
     allBroadcast half n x ↔ FitnessABMPathN.allBroadcast n x := by
   exact allBroadcast_half n x
 
--- Task 3 RED: projected beliefs remain independent of stored exposures for
+-- Task 3: projected beliefs remain independent of stored exposures for
 -- arbitrary response parameters, because baseline broadcasting and belief
 -- arithmetic do not read the old exposure counters.
 example (params : ResponseParameters) (n : Nat) (x : Beliefs n)
@@ -58,8 +59,55 @@ example (params : ResponseParameters) (x : Beliefs 3) :
   rw [propagate_independent_exposures params 3 x exposureA,
     propagate_independent_exposures params 3 x exposureB]
 
--- The proof-only parameter kernel must specialize exactly to the existing
--- fixed half-response path kernel.
 example (n : Nat) :
     pathKernel half n = FitnessABMPathN.pathKernel n := by
   exact pathKernel_half n
+
+-- Task 4 RED: valid parameter kernels are stochastic, the real executable
+-- propagation agrees with the proof kernel inside the inclusive broadcast
+-- region, and that region is preserved by one step and finite iteration.
+private def threeQuarterThird : ResponseParameters :=
+  ⟨3/4, 1/3⟩
+
+private def thresholdVector : Beliefs 3 :=
+  ![1/3, 1/2, 1]
+
+example : ResponseParameters.Valid threeQuarterThird := by
+  norm_num [threeQuarterThird, ResponseParameters.Valid]
+
+example : allBroadcast threeQuarterThird 3 thresholdVector := by
+  intro i
+  fin_cases i <;> norm_num [threeQuarterThird, thresholdVector]
+
+example (params : ResponseParameters) (hvalid : params.Valid)
+    (n : Nat) (hn : 2 ≤ n) (i j : Fin n) :
+    0 ≤ pathKernel params n i j := by
+  exact pathKernel_nonneg params hvalid n hn i j
+
+example (params : ResponseParameters) (hvalid : params.Valid)
+    (n : Nat) (hn : 2 ≤ n) (i : Fin n) :
+    ∑ j, pathKernel params n i j = 1 := by
+  exact pathKernel_rowsum params hvalid n hn i
+
+example (params : ResponseParameters) (hvalid : params.Valid)
+    (n : Nat) (hn : 2 ≤ n) (x : Beliefs n)
+    (hall : allBroadcast params n x) :
+    beliefStep params n x =
+      FiniteConsensus.applyKernel (pathKernel params n) x := by
+  exact propagate_eq_kernel params hvalid n hn x hall
+
+example : allBroadcast threeQuarterThird 3
+    (beliefStep threeQuarterThird 3 thresholdVector) := by
+  exact allBroadcast_step threeQuarterThird
+    (by norm_num [threeQuarterThird, ResponseParameters.Valid]) 3 (by decide)
+    thresholdVector (by
+      intro i
+      fin_cases i <;> norm_num [threeQuarterThird, thresholdVector])
+
+example (k : Nat) : allBroadcast threeQuarterThird 3
+    ((beliefStep threeQuarterThird 3)^[k] thresholdVector) := by
+  exact allBroadcast_iterate threeQuarterThird
+    (by norm_num [threeQuarterThird, ResponseParameters.Valid]) 3 (by decide)
+    thresholdVector (by
+      intro i
+      fin_cases i <;> norm_num [threeQuarterThird, thresholdVector]) k
