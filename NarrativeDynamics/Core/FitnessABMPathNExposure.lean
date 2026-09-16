@@ -94,8 +94,11 @@ theorem constant_beliefStep (alpha tau : Rat) (n : Nat) (s : State n) :
         (NarrativeDynamics.FitnessABMPathN.pathAdj n)
         (NarrativeDynamics.FitnessABMPathNParameters.population
           ⟨alpha, tau⟩ n (beliefs s) (fun _ => 0)) i).belief
-  simp [step, incoming, broadcasterMean,
-    NarrativeDynamics.NetworkPropagation.nextAgent, hreceived,
+  simp only [step]
+  dsimp only
+  simp only [incoming, broadcasterMean]
+  rw [hreceived]
+  simp [NarrativeDynamics.NetworkPropagation.nextAgent,
     NarrativeDynamics.FitnessABMPathNParameters.population,
     beliefs, constant]
 
