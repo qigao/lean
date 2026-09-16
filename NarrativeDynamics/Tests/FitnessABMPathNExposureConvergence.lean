@@ -6,6 +6,7 @@ open NarrativeDynamics.FiniteTimeVaryingConsensus
 open NarrativeDynamics.FitnessABMPathNExposure
 open NarrativeDynamics.FitnessABMPathNExposureConvergence
 open Filter Topology
+open scoped BigOperators
 
 private def indexSchedule : ExposureParameters :=
   ⟨fun e => if e = 1 then 1/4 else if e = 2 then 1/2 else 1/3, 0⟩
@@ -57,6 +58,39 @@ example (k : Nat) :
     3 (by omega) path3zero (by
       intro j
       fin_cases j <;> norm_num [allBroadcast, indexSchedule, path3zero]) k
+
+private def path2Product (p : ExposureParameters) (e0 k : Nat) : Rat :=
+  ∏ r ∈ Finset.range k,
+    (1 - 2 * p.receptivityAt (e0 + r + 1))
+
+example (p : ExposureParameters) (hvalid : p.Valid)
+    (s : State 2) (he : (s 0).exposure = (s 1).exposure)
+    (hb : allBroadcast p s) (k : Nat) :
+    (beliefs ((step p 2)^[k] s) 0 - beliefs ((step p 2)^[k] s) 1) =
+      ((s 0).belief - (s 1).belief) *
+        path2Product p (s 0).exposure k := by
+  exact path2_disagreement_product p hvalid s he hb k
+
+example (p : ExposureParameters) (hvalid : p.Valid)
+    (s : State 2) (he : (s 0).exposure = (s 1).exposure)
+    (hb : allBroadcast p s) (k : Nat) :
+    (beliefs ((step p 2)^[k] s) 0 + beliefs ((step p 2)^[k] s) 1) / 2 =
+      ((s 0).belief + (s 1).belief) / 2 := by
+  exact path2_mean_iterate p hvalid s he hb k
+
+example (p : ExposureParameters) (hvalid : p.Valid)
+    (s : State 2) (he : (s 0).exposure = (s 1).exposure)
+    (hb : allBroadcast p s)
+    (hne : (s 0).belief ≠ (s 1).belief) :
+    (Tendsto
+      (fun k => |((path2Product p (s 0).exposure k : Rat) : Real)|)
+      atTop (nhds 0)) ↔
+    (∀ i : Fin 2,
+      Tendsto
+        (fun k => (beliefs ((step p 2)^[k] s) i : Real))
+        atTop
+        (nhds ((((s 0).belief + (s 1).belief) / 2 : Rat) : Real))) := by
+  exact path2_consensus_iff_product_tendsto_zero p hvalid s he hb hne
 
 #print axioms NarrativeDynamics.FitnessABMPathNExposureConvergence.exposure_iterate
 #print axioms NarrativeDynamics.FitnessABMPathNExposureConvergence.beliefs_iterate_eq_varyingTrajectory
