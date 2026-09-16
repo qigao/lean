@@ -100,7 +100,12 @@ def mutate_contract_hash(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def mutate_expected_rational(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Return a detached corpus with one canonical expected rational changed."""
+    """Change one expected rational by one raw numerator unit, then canonicalize.
+
+    The reviewed nontrivial-mean fixture begins with `3/4`. The mutation first
+    changes the mathematical fraction to `4/4`, then uses `rat` to emit the
+    required reduced structural representation `1/1`.
+    """
 
     mutated = copy.deepcopy(records)
     for record in mutated:
@@ -112,9 +117,11 @@ def mutate_expected_rational(records: list[dict[str, Any]]) -> list[dict[str, An
         beliefs = expected.get("beliefs")
         if not isinstance(beliefs, list) or not beliefs:
             raise ValueError("nontrivial-mean expected beliefs must be nonempty")
-        if parse_rat(beliefs[0]) != Fraction(1, 1):
-            raise ValueError("nontrivial-mean first expected belief drifted from 1/1")
-        beliefs[0] = rat(2)
+        before = parse_rat(beliefs[0])
+        if before != Fraction(3, 4):
+            raise ValueError("nontrivial-mean first expected belief drifted from 3/4")
+        raw = beliefs[0]
+        beliefs[0] = rat(Fraction(raw["num"] + 1, raw["den"]))
         return mutated
     raise ValueError("nontrivial-mean case not found")
 
