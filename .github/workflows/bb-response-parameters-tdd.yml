@@ -1,0 +1,48 @@
+name: BB response parameters TDD
+
+on:
+  push:
+    branches:
+      - feature/bb-response-parameters-v1
+    paths:
+      - "NarrativeDynamics/Core/FitnessABMPathNParameters.lean"
+      - "NarrativeDynamics/Tests/FitnessABMPathNParameters.lean"
+      - "tools/check_fitness_abm_pathn.sh"
+      - ".github/workflows/bb-response-parameters-tdd.yml"
+  workflow_dispatch:
+
+jobs:
+  pathn:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record checked revision
+        run: git rev-parse HEAD
+      - name: Cache Lean toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.elan
+          key: ${{ runner.os }}-elan-${{ hashFiles('lean-toolchain') }}
+          restore-keys: |
+            ${{ runner.os }}-elan-
+      - name: Install Lean
+        run: |
+          if [ ! -x "$HOME/.elan/bin/elan" ]; then
+            curl https://elan.lean-lang.org/elan-init.sh -sSf | sh -s -- -y
+          fi
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Cache Lake dependencies
+        uses: actions/cache@v4
+        with:
+          path: .lake/packages
+          key: ${{ runner.os }}-lake-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lakefile.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-lake-${{ hashFiles('lean-toolchain') }}-
+      - name: Resolve Lean dependencies
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          lake update
+      - name: Run focused PathN gate
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          bash tools/check_fitness_abm_pathn.sh
