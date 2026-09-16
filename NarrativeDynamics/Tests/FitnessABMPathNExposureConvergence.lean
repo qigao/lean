@@ -164,6 +164,30 @@ example :
       FitnessABMPathN.mean 3 (beliefs degreeSplitState) := by
   exact exposure_degree_weighted_mean_not_invariant
 
+-- Task 5: uniform-interior finite-PathN executable consensus.
+example (p : ExposureParameters) (hvalid : p.Valid)
+    (n : Nat) (hn : 2 ≤ n) (s0 : State n)
+    (hb : allBroadcast p s0)
+    (eps : Rat) (heps : 0 < eps)
+    (hi : ReachableInterior p n s0 eps) :
+    ∃ c : Real, ∀ i,
+      Tendsto
+        (fun k => ((((step p n)^[k] s0) i).belief : Rat : Real))
+        atTop (nhds c) := by
+  exact trajectory_consensus_exists p hvalid n hn s0 hb eps heps hi
+
+example (p : ExposureParameters) (hvalid : p.Valid)
+    (n : Nat) (hn : 2 ≤ n) (s0 : State n)
+    (hb : allBroadcast p s0)
+    (eps : Rat) (heps : 0 < eps)
+    (hi : ∀ e, eps ≤ p.receptivityAt e ∧ p.receptivityAt e ≤ 1 - eps) :
+    ∃ c : Real, ∀ i,
+      Tendsto
+        (fun k => ((((step p n)^[k] s0) i).belief : Rat : Real))
+        atTop (nhds c) := by
+  exact trajectory_consensus_exists_of_global_interior
+    p hvalid n hn s0 hb eps heps hi
+
 #print axioms NarrativeDynamics.FitnessABMPathNExposureConvergence.exposure_iterate
 #print axioms NarrativeDynamics.FitnessABMPathNExposureConvergence.beliefs_iterate_eq_varyingTrajectory
 #print axioms NarrativeDynamics.FitnessABMPathNExposureConvergence.path2_disagreement_product
