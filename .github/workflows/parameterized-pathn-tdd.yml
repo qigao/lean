@@ -38,6 +38,10 @@ jobs:
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
           timeout --kill-after=10s 240s lake build NarrativeDynamics.Core.FitnessABMPathNParameters
+      - name: Build parameterized PathN convergence module
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          timeout --kill-after=10s 240s lake build NarrativeDynamics.Core.FitnessABMPathNParameterConvergence
       - name: Focused parameterized PathN convergence consumer
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
