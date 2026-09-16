@@ -172,7 +172,7 @@ example (p : ExposureParameters) (hvalid : p.Valid)
     (hi : ReachableInterior p n s0 eps) :
     ∃ c : Real, ∀ i,
       Tendsto
-        (fun k => ((((step p n)^[k] s0) i).belief : Rat : Real))
+        (fun k => ((((step p n)^[k] s0) i).belief : Real))
         atTop (nhds c) := by
   exact trajectory_consensus_exists p hvalid n hn s0 hb eps heps hi
 
@@ -183,7 +183,7 @@ example (p : ExposureParameters) (hvalid : p.Valid)
     (hi : ∀ e, eps ≤ p.receptivityAt e ∧ p.receptivityAt e ≤ 1 - eps) :
     ∃ c : Real, ∀ i,
       Tendsto
-        (fun k => ((((step p n)^[k] s0) i).belief : Rat : Real))
+        (fun k => ((((step p n)^[k] s0) i).belief : Real))
         atTop (nhds c) := by
   exact trajectory_consensus_exists_of_global_interior
     p hvalid n hn s0 hb eps heps hi
