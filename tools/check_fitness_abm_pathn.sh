@@ -27,6 +27,7 @@ python3 tools/audit_fitness_trust.py source \
   NarrativeDynamics/Core/FitnessABMPathNExposure.lean \
   NarrativeDynamics/Tests/FitnessABMPathNExposure.lean \
   NarrativeDynamics/Core/FitnessABMPathNExposureConvergence.lean \
+  NarrativeDynamics/Core/FitnessABMPathNExposureSchedulesScratch.lean \
   NarrativeDynamics/Tests/FitnessABMPathNExposureConvergence.lean
 
 for pathn_module in \
@@ -36,7 +37,8 @@ for pathn_module in \
     NarrativeDynamics.Core.FitnessABMPathNParameters \
     NarrativeDynamics.Core.FitnessABMPathNParameterConvergence \
     NarrativeDynamics.Core.FitnessABMPathNExposure \
-    NarrativeDynamics.Core.FitnessABMPathNExposureConvergence; do
+    NarrativeDynamics.Core.FitnessABMPathNExposureConvergence \
+    NarrativeDynamics.Core.FitnessABMPathNExposureSchedulesScratch; do
   "$pathn_time" -f "$pathn_module elapsed=%e s peak_rss=%M KiB" \
     timeout --kill-after=10s 240s lake build "$pathn_module"
 done
@@ -123,4 +125,8 @@ python3 tools/audit_fitness_trust.py log "$exposure_convergence_log" \
   --require NarrativeDynamics.FitnessABMPathNExposureConvergence.exposure_iterate \
   --require NarrativeDynamics.FitnessABMPathNExposureConvergence.beliefs_iterate_eq_varyingTrajectory \
   --require NarrativeDynamics.FitnessABMPathNExposureConvergence.path2_disagreement_product \
-  --require NarrativeDynamics.FitnessABMPathNExposureConvergence.path2_consensus_iff_product_tendsto_zero
+  --require NarrativeDynamics.FitnessABMPathNExposureConvergence.path2_consensus_iff_product_tendsto_zero \
+  --require NarrativeDynamics.FitnessABMPathNExposureConvergence.slowZero_not_consensus \
+  --require NarrativeDynamics.FitnessABMPathNExposureConvergence.nearOne_not_convergent \
+  --require NarrativeDynamics.FitnessABMPathNExposureConvergence.harmonic_consensus \
+  --require NarrativeDynamics.FitnessABMPathNExposureConvergence.exposure_degree_weighted_mean_not_invariant
