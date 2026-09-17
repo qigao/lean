@@ -55,8 +55,12 @@ private theorem polynomial_decay_cast_summable_of_two_le_p
       ((c / (((e0 + r + 1 + offset : Nat) : Rat) ^ p) : Rat) : Real)
   dsimp [shift]
   push_cast
-  rw [show e0 + r + 1 + offset = r + (e0 + offset + 1) by omega]
-  ring
+  have hden :
+      (r : Real) + ((e0 : Real) + (offset : Real) + 1) =
+        (e0 : Real) + (r : Real) + 1 + (offset : Real) := by
+    ring
+  rw [hden]
+  simp [div_eq_mul_inv]
 
 theorem polynomial_abs_product_has_nonzero_limit_of_two_le_p
     (c : Rat) (p offset e0 : Nat) (target : DecayTarget)
