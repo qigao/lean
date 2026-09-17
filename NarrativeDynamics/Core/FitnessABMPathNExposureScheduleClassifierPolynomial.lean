@@ -142,4 +142,17 @@ theorem polynomial_abs_product_has_nonzero_limit_of_two_le_p
   rw [hprodEq]
   exact hprod
 
+theorem harmonic_abs_product_tendsto_zero
+    (c : Rat) (offset e0 : Nat) (target : DecayTarget)
+    (hoffset : 1 ≤ offset)
+    (hc0 : 0 < c)
+    (hcvalid : c ≤ offset) :
+    Tendsto
+      (fun k => |(path2MultiplierProduct
+        ⟨harmonicReceptivity c offset target, 0⟩ e0 k : Real)|)
+      atTop (nhds 0) := by
+  simpa [harmonicReceptivity] using
+    (polynomial_abs_product_tendsto_zero_of_p_eq_one
+      c offset e0 target hoffset hc0 hcvalid)
+
 end NarrativeDynamics.FitnessABMPathNExposureScheduleClassifier
