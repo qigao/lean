@@ -85,4 +85,37 @@ example (f : Nat → Real)
         atTop (nhds 0) := by
   exact tendsto_zero_prod_range_add_iff f 2 hprefix
 
+private def periodContracting : Fin 2 → Rat := ![1/4, 3/4]
+private def periodBoundary : Fin 2 → Rat := ![0, 1]
+
+private def periodContractingParams : ExposureParameters :=
+  ⟨periodicReceptivity 2 (by decide) periodContracting, 0⟩
+
+private def periodBoundaryParams : ExposureParameters :=
+  ⟨periodicReceptivity 2 (by decide) periodBoundary, 0⟩
+
+example :
+    Tendsto
+      (fun k => |(path2MultiplierProduct periodContractingParams 0 k : Real)|)
+      atTop (nhds 0) := by
+  exact periodic_abs_product_tendsto_zero_of_contracting_entry
+    2 (by decide) periodContracting
+    (by
+      intro i
+      fin_cases i <;> norm_num [periodContracting])
+    (0 : Fin 2)
+    (by norm_num [periodContracting])
+    0
+
+example :
+    ¬ Tendsto
+      (fun k => |(path2MultiplierProduct periodBoundaryParams 0 k : Real)|)
+      atTop (nhds 0) := by
+  exact periodic_abs_product_not_tendsto_zero_of_boundary_values
+    2 (by decide) periodBoundary
+    (by
+      intro i
+      fin_cases i <;> norm_num [periodBoundary])
+    0
+
 end NarrativeDynamics.FitnessABMPathNExposureScheduleClassifierTests
