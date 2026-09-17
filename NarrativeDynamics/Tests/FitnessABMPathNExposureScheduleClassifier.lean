@@ -141,4 +141,62 @@ example :
       (by norm_num [periodContracting])
       0)
 
+private def piecewiseOverrides : Finset Nat := {1, 2}
+
+private def piecewiseOverrideValue (e : Nat) : Rat :=
+  if e = 1 then 1/8 else if e = 2 then 3/8 else 0
+
+private def piecewiseInteriorParams : ExposureParameters :=
+  ⟨piecewiseConstantTailReceptivity
+      piecewiseOverrides piecewiseOverrideValue (1/4), 0⟩
+
+private def piecewiseBoundaryParams : ExposureParameters :=
+  ⟨piecewiseConstantTailReceptivity
+      piecewiseOverrides piecewiseOverrideValue 0, 0⟩
+
+private def zeroPrefixOverrideValue (e : Nat) : Rat :=
+  if e = 1 then 1/2 else 0
+
+private def piecewiseZeroPrefixParams : ExposureParameters :=
+  ⟨piecewiseConstantTailReceptivity {1} zeroPrefixOverrideValue 0, 0⟩
+
+example :
+    Tendsto
+      (fun k => |(path2MultiplierProduct piecewiseInteriorParams 0 k : Real)|)
+      atTop (nhds 0) := by
+  exact piecewise_constant_tail_abs_product_tendsto_zero_of_interior_tail
+    piecewiseInteriorParams 0 2 (1/4)
+    (by norm_num)
+    (by
+      intro r hr
+      simp [piecewiseInteriorParams, piecewiseConstantTailReceptivity,
+        piecewiseOverrides]
+      omega)
+
+example :
+    ¬ Tendsto
+      (fun k => |(path2MultiplierProduct piecewiseBoundaryParams 0 k : Real)|)
+      atTop (nhds 0) := by
+  exact piecewise_constant_tail_abs_product_not_tendsto_zero_of_boundary_tail
+    piecewiseBoundaryParams 0 2 0
+    (Or.inl rfl)
+    (by
+      intro r hr
+      simp [piecewiseBoundaryParams, piecewiseConstantTailReceptivity,
+        piecewiseOverrides]
+      omega)
+    (by
+      norm_num [piecewiseBoundaryParams, piecewiseConstantTailReceptivity,
+        piecewiseOverrides, piecewiseOverrideValue, path2MultiplierProduct])
+
+example :
+    Tendsto
+      (fun k => |(path2MultiplierProduct piecewiseZeroPrefixParams 0 k : Real)|)
+      atTop (nhds 0) := by
+  exact piecewise_constant_tail_abs_product_tendsto_zero_of_zero_prefix
+    piecewiseZeroPrefixParams 0 1
+    (by
+      norm_num [piecewiseZeroPrefixParams, piecewiseConstantTailReceptivity,
+        zeroPrefixOverrideValue, path2MultiplierProduct])
+
 end NarrativeDynamics.FitnessABMPathNExposureScheduleClassifierTests
