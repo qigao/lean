@@ -2,49 +2,45 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Extend the proof-backed PathN analyzer with exact, theorem-backed receptivity schedule-family classification for harmonic, polynomial, exponential, periodic, alternating, finite-piecewise, and named schedules while preserving the Phase 1 `PROVED / DISPROVED / UNKNOWN` trust boundary.
+**Goal:** Extend the proof-backed PathN analyzer with exact theorem-backed receptivity schedule-family classification for harmonic, polynomial, exponential, periodic, alternating, finite-piecewise, and named schedules while preserving the Phase 1 `PROVED / DISPROVED / UNKNOWN` trust boundary.
 
-**Architecture:** Add one focused Lean theorem layer that proves reusable mixing-mass/product facts and parameterized family classifications, then extend the existing Python analyzer only as orchestration: exact closed AST parsing, family recognition, theorem-route selection, closed certificate generation, and result rendering. Path2 product classification remains necessary-and-sufficient only under the existing equal-exposure/all-broadcast/nontrivial-belief assumptions; PathN remains on sufficient theorem routes only.
+**Architecture:** Build the mathematics first in one focused Lean module: mixing-mass identities, finite-prefix product lemmas, parameterized schedule families, exact Path2 product classifications, and stable-vs-oscillatory consequences. Only after those theorems are independently green, extend Python as orchestration: exact closed AST parsing, family recognition, hard-coded theorem-route selection, closed certificate generation, result assembly, CLI rendering, and additive CI.
 
-**Tech Stack:** Lean 4.32.0, Mathlib exact `Rat`/`Real` analysis and finite products, existing `NarrativeDynamics.FitnessABMPathNExposureConvergence`, Python >= 3.11 standard library (`dataclasses`, `enum`, `fractions`, `tomllib`, `unittest`), generated Lean certificates, repository `timeout --kill-after=10s 240s` focused proof convention, GitHub Actions `proof.yml`.
+**Tech Stack:** Lean 4.32.0, Mathlib exact `Rat`/`Real` analysis, existing `NarrativeDynamics.FitnessABMPathNExposureConvergence`, Python >= 3.11 standard library, generated Lean certificates, repository `timeout --kill-after=10s 240s` proof convention, GitHub Actions `proof.yml`.
 
 **Spec:** `docs/superpowers/specs/2026-09-17-receptivity-schedule-classifier-design.md`
 
-**Issue:** #99, parent roadmap #96. Phase 1 baseline: PR #98 merged as `b9a5e1fc3ccb6c3a253b01eb18c5296e3973a24b`.
+**Issue:** #99, parent #96. Exact Phase 1 base: `proof/narrative-dynamics-v0@b9a5e1fc3ccb6c3a253b01eb18c5296e3973a24b`.
 
 ## Global Constraints
 
 - Start implementation only after this committed plan is reviewed and approved.
-- Implement from exact base `proof/narrative-dynamics-v0@b9a5e1fc3ccb6c3a253b01eb18c5296e3973a24b` or a descendant that contains no conflicting Phase 2 changes.
-- `NarrativeDynamics.FitnessABMPathNExposure.step` remains the single executable theorem-bearing semantics; do not duplicate or alter it for classifier convenience.
-- Preserve post-incoming lookup exactly: Path2 multiplier term at round `r` uses `alpha(e0 + r + 1)`, never `alpha(e0 + r)`.
-- Python may parse, normalize, recognize families, select theorem routes, render trusted templates, and compute finite exact witnesses only. Python must not decide infinite-product convergence numerically.
-- Every theorem-bearing `PROVED` or `DISPROVED` result requires a successfully compiled generated Lean certificate and theorem provenance.
-- A recognized family without a certified applicable theorem route yields theorem claim `UNKNOWN`, not a guessed verdict.
-- Certificate generation failure, Lean compile failure, timeout/resource failure, or digest/provenance mismatch is an analyzer error, never `UNKNOWN`.
-- Keep theorem-bearing values exact. Rational values are string-encoded in TOML; reject floats, decimals, scientific notation, source expressions, and user Lean fragments.
-- Phase 1 schedule kinds `constant`, `piecewise`, and trusted `named` remain backward compatible.
-- Phase 2 adds only closed `harmonic`, `polynomial`, `exponential`, `periodic`, and `alternating` forms.
-- Polynomial exponent is `Nat` with `p >= 1`; no rational/real exponents in Phase 2.
-- Decay target is a closed enum `{zero, one}`; do not add a generic symbolic complement expression.
-- `criterion_strength` is theorem-route metadata, not a new truth status. Allowed values are `SUFFICIENT`, `NECESSARY_AND_SUFFICIENT`, `COUNTEREXAMPLE`, or absent.
-- Path2 product iff classification is used only after Lean certifies parameter validity, equal initial exposures, initial all-broadcast, and unequal initial beliefs.
-- Equal initial beliefs use a separate direct theorem route; do not misuse the nontrivial iff theorem.
-- PathN remains conservative. Do not expose a PathN necessary-and-sufficient schedule criterion in this phase.
-- `alpha -> 0` and `alpha -> 1` are schedule facts, not consensus verdicts.
-- Distinguish stable non-consensus/nodewise convergence from oscillatory nodewise non-convergence.
-- A reached factor `alpha = 1/2` forces the Path2 disagreement product to zero from that factor onward and must be handled before asymptotic no-zero-factor routes.
-- New generic schedule theorem code belongs in `NarrativeDynamics/Core/FitnessABMPathNExposureScheduleClassifier.lean`; do not grow Python into mathematical proof logic.
-- Existing fixed fixtures (`slowZeroSchedule`, `nearOneSchedule`, `harmonicSchedule`) remain regression oracles; do not delete or weaken them.
-- Existing proof/trust/resource gates remain unchanged or are extended additively.
-- Use TDD: each task starts with a failing focused test/proof fixture, demonstrates RED, implements the minimum GREEN change, reruns all earlier focused checks, then commits.
-- Do not modify `.github/workflows/proof.yml` until all focused Lean and Python classifier checks are green.
+- `NarrativeDynamics.FitnessABMPathNExposure.step` remains the only executable theorem-bearing semantics. Do not duplicate or alter it.
+- Preserve the post-incoming Path2 multiplier index exactly: `alpha(e0 + r + 1)`.
+- Python never proves infinite-product or asymptotic facts. It may only parse exact data, recognize closed families, select fixed theorem routes, render trusted certificates, and assemble results after Lean compilation.
+- Every theorem-bearing `PROVED` or `DISPROVED` claim requires a successfully compiled exact Lean certificate with provenance.
+- Missing theorem coverage is `UNKNOWN`. Certificate generation/compile/timeout/digest errors remain analyzer failures.
+- All rational inputs remain exact integer/fraction strings. No floats, decimal syntax, scientific notation, user Lean source, predicates, theorem names, tactics, or import paths are accepted from input.
+- Keep Phase 1 `constant`, `piecewise`, and trusted `named` forms backward compatible.
+- Add only `harmonic`, `polynomial`, `exponential`, `periodic`, and `alternating` closed forms.
+- Polynomial exponent is `Nat` with `p >= 1`.
+- Decay target is the closed enum `{zero, one}`.
+- `criterion_strength` is metadata only: `SUFFICIENT`, `NECESSARY_AND_SUFFICIENT`, `COUNTEREXAMPLE`, or absent.
+- Path2 product iff is used only after Lean certifies parameter validity, equal initial exposures, all-broadcast, and unequal initial beliefs.
+- Equal initial beliefs use a direct theorem route.
+- PathN remains sufficient-only in Phase 2; do not invent a PathN iff criterion.
+- `alpha -> 0` and `alpha -> 1` are descriptive schedule facts, not consensus verdicts.
+- Stable non-consensus/nodewise convergence and oscillatory nodewise non-convergence are distinct claims.
+- A reached `alpha = 1/2` zeroes the disagreement product from that point onward and must be handled before no-zero-factor asymptotic routes.
+- Generic family theorem code belongs in `NarrativeDynamics/Core/FitnessABMPathNExposureScheduleClassifier.lean`.
+- Existing fixed `slowZeroSchedule`, `nearOneSchedule`, and `harmonicSchedule` theorems remain regression oracles.
+- Existing proof/trust/resource gates stay unchanged or are extended additively.
+- TDD is mandatory: RED focused test, minimum GREEN implementation, rerun earlier focused gates, commit.
+- Do not touch `.github/workflows/proof.yml` until focused Lean and Python Phase 2 gates are green.
 
 ---
 
 ## Planned File Structure
-
-### Lean theorem foundation
 
 Create:
 
@@ -52,21 +48,7 @@ Create:
 NarrativeDynamics/Core/FitnessABMPathNExposureScheduleClassifier.lean
 NarrativeDynamics/Tests/FitnessABMPathNExposureScheduleClassifier.lean
 tools/check_fitness_abm_schedule_classifier.sh
-```
 
-Responsibilities:
-
-- `...ScheduleClassifier.lean`: exact family definitions/normal forms, mixing-mass lemmas, finite-prefix/product lemmas, polynomial/exponential/periodic/piecewise classification theorems, equal-belief Path2 route, stable-vs-oscillatory consequences.
-- `...Tests/...ScheduleClassifier.lean`: theorem-level regression examples only; no analyzer/Python concerns.
-- `tools/check_fitness_abm_schedule_classifier.sh`: bounded focused Lean gate for the new theorem module and theorem tests.
-
-Do not move or rewrite the existing convergence foundation during this phase.
-
-### Python analyzer extension
-
-Create:
-
-```text
 narrative_analyzer/families.py
 narrative_analyzer/family_certificate.py
 
@@ -89,43 +71,29 @@ tests/test_narrative_analyzer_model.py
 tests/test_narrative_analyzer_result.py
 tests/test_narrative_analyzer_analysis.py
 tests/test_narrative_analyzer_cli.py
+.github/workflows/proof.yml
 ```
 
-Responsibilities:
-
-- `model.py`: closed exact schedule AST only.
-- `families.py`: syntactic family recognition/canonicalization and trusted theorem-route registry metadata; no proof verdict authority.
-- `result.py`: additive `ScheduleFamilyInfo` and optional `CriterionStrength` metadata.
-- `family_certificate.py`: Phase 2 closed Lean certificate templates.
-- `certificate.py`: retain Phase 1 structural/global-interior certificates and delegate family-specific certificate generation.
-- `analyze.py`: merge independent compiled evidence without converting missing theorem coverage into errors.
-- `cli.py`: render family information and criterion strength without changing exit taxonomy.
-
-### Fixtures
-
-Create exact fixtures under:
+Create fixtures:
 
 ```text
-tests/fixtures/narrative_analyzer/
-  harmonic_family_path2.toml
-  harmonic_near_one_path2.toml
-  polynomial_p2_zero_path2.toml
-  polynomial_p2_one_path2.toml
-  exponential_zero_path2.toml
-  exponential_one_path2.toml
-  periodic_contracting_path2.toml
-  periodic_identity_path2.toml
-  alternating_contracting_path2.toml
-  piecewise_constant_tail_path2.toml
-  family_unequal_exposure_path2.toml
-  family_equal_beliefs_path2.toml
+tests/fixtures/narrative_analyzer/harmonic_family_path2.toml
+tests/fixtures/narrative_analyzer/harmonic_near_one_path2.toml
+tests/fixtures/narrative_analyzer/polynomial_p2_zero_path2.toml
+tests/fixtures/narrative_analyzer/polynomial_p2_one_path2.toml
+tests/fixtures/narrative_analyzer/exponential_zero_path2.toml
+tests/fixtures/narrative_analyzer/exponential_one_path2.toml
+tests/fixtures/narrative_analyzer/periodic_contracting_path2.toml
+tests/fixtures/narrative_analyzer/periodic_identity_path2.toml
+tests/fixtures/narrative_analyzer/alternating_contracting_path2.toml
+tests/fixtures/narrative_analyzer/piecewise_constant_tail_path2.toml
+tests/fixtures/narrative_analyzer/family_unequal_exposure_path2.toml
+tests/fixtures/narrative_analyzer/family_equal_beliefs_path2.toml
 ```
-
-Phase 1 fixtures remain untouched and continue to run.
 
 ---
 
-### Task 1: Establish the Lean schedule-classifier foundation and mixing-mass bridge
+### Task 1: Lean classifier foundation — closed target, mixing mass, equal-belief route, finite-prefix helpers
 
 **Files:**
 - Create: `NarrativeDynamics/Core/FitnessABMPathNExposureScheduleClassifier.lean`
@@ -133,18 +101,10 @@ Phase 1 fixtures remain untouched and continue to run.
 - Create: `tools/check_fitness_abm_schedule_classifier.sh`
 
 **Interfaces:**
-- Consumes: `NarrativeDynamics.FitnessABMPathNExposureConvergence.path2MultiplierProduct`, `path2_disagreement_product`, `path2_mean_iterate`, `path2_consensus_iff_product_tendsto_zero`.
-- Produces public Lean definitions/lemmas used by later tasks:
-  - `DecayTarget`
-  - `applyDecayTarget`
-  - `mixingMass`
-  - `abs_one_sub_two_mul_eq_one_sub_two_mul_mixingMass`
-  - `path2_equal_belief_consensus`
-  - finite-prefix helper lemmas for product limits.
+- Consumes existing `path2MultiplierProduct`, `path2_disagreement_product`, `path2_mean_iterate`, `path2_consensus_iff_product_tendsto_zero`.
+- Produces `DecayTarget`, `applyDecayTarget`, `mixingMass`, `abs_one_sub_two_mul_eq_one_sub_two_mul_mixingMass`, `path2_equal_belief_consensus`, and finite-prefix/tail product adapters.
 
-- [ ] **Step 1: Write the failing theorem tests for the closed target and mixing-mass identity**
-
-Add to the new test file:
+- [ ] **Step 1: Add failing theorem tests**
 
 ```lean
 import NarrativeDynamics.Core.FitnessABMPathNExposureScheduleClassifier
@@ -167,28 +127,25 @@ example : mixingMass (3/4 : Rat) = 1/4 := by
   norm_num [mixingMass]
 
 example : |(1 : Rat) - 2 * (3/4 : Rat)| = 1 - 2 * mixingMass (3/4 : Rat) := by
-  exact abs_one_sub_two_mul_eq_one_sub_two_mul_mixingMass (by norm_num) (by norm_num)
+  exact abs_one_sub_two_mul_eq_one_sub_two_mul_mixingMass
+    (a := 3/4) (by norm_num) (by norm_num)
 
 end NarrativeDynamics.FitnessABMPathNExposureScheduleClassifierTests
 ```
 
-- [ ] **Step 2: Run the new test file and verify RED**
-
-Run:
+- [ ] **Step 2: Verify RED**
 
 ```bash
-timeout --kill-after=10s 240s lake env lean -DmaxErrors=1 -DstderrAsMessages=false NarrativeDynamics/Tests/FitnessABMPathNExposureScheduleClassifier.lean
+timeout --kill-after=10s 240s lake env lean \
+  -DmaxErrors=1 -DstderrAsMessages=false \
+  NarrativeDynamics/Tests/FitnessABMPathNExposureScheduleClassifier.lean
 ```
 
-Expected: FAIL because the new module/public definitions do not exist.
+Expected: missing module/public definitions.
 
-- [ ] **Step 3: Add the minimal closed family primitives**
-
-In the new core module, define exactly:
+- [ ] **Step 3: Add exact closed primitives**
 
 ```lean
-namespace NarrativeDynamics.FitnessABMPathNExposureScheduleClassifier
-
 inductive DecayTarget
   | zero
   | one
@@ -202,20 +159,19 @@ def applyDecayTarget (target : DecayTarget) (d : Rat) : Rat :=
 noncomputable def mixingMass (a : Rat) : Rat := min a (1 - a)
 ```
 
-Prove:
+Add theorem with exact public signature:
 
 ```lean
 theorem abs_one_sub_two_mul_eq_one_sub_two_mul_mixingMass
     {a : Rat} (ha0 : 0 ≤ a) (ha1 : a ≤ 1) :
-    |1 - 2 * a| = 1 - 2 * mixingMass a := by
-  -- split on a ≤ 1/2 and normalize min/abs in each branch
+    |1 - 2 * a| = 1 - 2 * mixingMass a
 ```
 
-The implementation must use exact ordered-field reasoning (`by_cases`, `simp`, `linarith`/`nlinarith`) and not decimal approximation.
+Proof strategy: split on `a ≤ 1/2`, simplify `min` and absolute value in each branch, discharge by `linarith`/`nlinarith`. No approximation.
 
-- [ ] **Step 4: Add direct equal-belief Path2 consensus theorem**
+- [ ] **Step 4: Add the direct equal-belief Path2 theorem**
 
-Expose:
+Public signature:
 
 ```lean
 theorem path2_equal_belief_consensus
@@ -227,29 +183,37 @@ theorem path2_equal_belief_consensus
     ∀ i : Fin 2,
       Tendsto
         (fun k => (beliefs ((step p 2)^[k] s) i : Real))
-        atTop (nhds ((s 0).belief : Real)) := by
-  -- prove one-step preservation from the existing Path2 formulas,
-  -- then iterate and conclude the sequence is constant.
+        atTop (nhds ((s 0).belief : Real))
 ```
 
-Do not weaken `p.Valid`, equal exposure, or `allBroadcast` assumptions merely to simplify the proof.
+Proof strategy: use existing Path2 one-step formulas to prove both beliefs remain equal and unchanged; induct over iterate count; conclude each belief sequence is constant. Keep all stated assumptions explicit.
 
-- [ ] **Step 5: Add finite-prefix product limit helpers**
+- [ ] **Step 5: Add exact finite-prefix helpers**
 
-Expose helper theorems with these logical contracts:
+Public signatures:
 
 ```lean
-theorem tendsto_zero_mul_const_iff
+theorem tendsto_zero_const_mul_iff
     {f : Nat → Real} {c : Real} (hc : c ≠ 0) :
     Tendsto (fun k => c * f k) atTop (nhds 0) ↔
       Tendsto f atTop (nhds 0)
+
+theorem tendsto_const_mul
+    {f : Nat → Real} {x c : Real}
+    (hf : Tendsto f atTop (nhds x)) :
+    Tendsto (fun k => c * f k) atTop (nhds (c * x))
 ```
 
-and a finite-prefix adapter that permits replacing a product sequence by a nonzero constant prefix times a tail product. If the prefix is zero, expose a separate theorem concluding eventual product zero. Keep zero-prefix and nonzero-prefix routes separate so later piecewise classification cannot divide by zero.
+Also add two finite-product adapters with explicit natural prefix length `N`:
 
-- [ ] **Step 6: Implement the focused gate script**
+- nonzero prefix: rewrite the full product after `N` as a fixed nonzero prefix times a shifted tail product;
+- zero prefix: prove the full product is zero for every `k >= N`.
 
-Create executable `tools/check_fitness_abm_schedule_classifier.sh`:
+These adapters must carry concrete equality hypotheses; do not hide product decomposition behind automation.
+
+- [ ] **Step 6: Add the focused gate**
+
+`tools/check_fitness_abm_schedule_classifier.sh`:
 
 ```bash
 #!/usr/bin/env bash
@@ -260,18 +224,16 @@ timeout --kill-after=10s 240s lake env lean \
   NarrativeDynamics/Tests/FitnessABMPathNExposureScheduleClassifier.lean
 ```
 
-- [ ] **Step 7: Run focused Lean GREEN plus existing PathN foundation gate**
-
-Run:
+- [ ] **Step 7: Run GREEN gates**
 
 ```bash
 bash tools/check_fitness_abm_schedule_classifier.sh
 bash tools/check_fitness_abm_pathn.sh
 ```
 
-Expected: both PASS.
+Expected: PASS.
 
-- [ ] **Step 8: Commit Task 1**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add NarrativeDynamics/Core/FitnessABMPathNExposureScheduleClassifier.lean \
@@ -282,54 +244,38 @@ git commit -m "feat(lean): add schedule classifier proof foundation"
 
 ---
 
-### Task 2: Add exact periodic, alternating, and finite-piecewise-tail classification theorems
+### Task 2: Periodic, alternating, and finite-piecewise constant-tail exact classification
 
 **Files:**
-- Modify: `NarrativeDynamics/Core/FitnessABMPathNExposureScheduleClassifier.lean`
-- Modify: `NarrativeDynamics/Tests/FitnessABMPathNExposureScheduleClassifier.lean`
+- Modify the Task 1 Lean core/test files.
 
 **Interfaces:**
-- Consumes: Task 1 mixing-mass and finite-prefix helpers.
-- Produces:
-  - `periodicReceptivity`
-  - `periodic_abs_product_tendsto_zero_of_contracting_entry`
-  - `periodic_abs_product_not_tendsto_zero_of_boundary_values`
-  - `alternatingReceptivity`
-  - `piecewiseConstantTailReceptivity`
-  - `piecewise_constant_tail_product_tendsto_zero_iff`.
+- Produces `periodicReceptivity`, `periodic_abs_product_tendsto_zero_of_contracting_entry`, `periodic_abs_product_not_tendsto_zero_of_boundary_values`, `alternatingReceptivity`, `piecewiseConstantTailReceptivity`, `piecewise_constant_tail_abs_product_tendsto_zero_of_interior_tail`, `piecewise_constant_tail_abs_product_not_tendsto_zero_of_boundary_tail`.
 
-- [ ] **Step 1: Add RED examples for periodic contraction and identity boundary**
-
-Add theorem tests using period-two vectors:
+- [ ] **Step 1: Add RED period-two tests**
 
 ```lean
 private def periodContracting : Fin 2 → Rat := ![1/4, 3/4]
 private def periodBoundary : Fin 2 → Rat := ![0, 1]
 
-example :
-    Tendsto
-      (fun k => |(path2MultiplierProduct
-        ⟨periodicReceptivity 2 (by decide) periodContracting, 0⟩ 0 k : Real)|)
-      atTop (nhds 0) := by
-  exact periodic_abs_product_tendsto_zero_of_contracting_entry
-    (period := 2) (by decide) periodContracting (by
-      intro i; fin_cases i <;> norm_num) ⟨0, by decide⟩ (by norm_num)
+private def periodContractingParams : ExposureParameters :=
+  ⟨periodicReceptivity 2 (by decide) periodContracting, 0⟩
 
-example :
-    ¬ Tendsto
-      (fun k => |(path2MultiplierProduct
-        ⟨periodicReceptivity 2 (by decide) periodBoundary, 0⟩ 0 k : Real)|)
-      atTop (nhds 0) := by
-  exact periodic_abs_product_not_tendsto_zero_of_boundary_values
-    (period := 2) (by decide) periodBoundary (by
-      intro i; fin_cases i <;> norm_num)
+private def periodBoundaryParams : ExposureParameters :=
+  ⟨periodicReceptivity 2 (by decide) periodBoundary, 0⟩
 ```
 
-Run the focused gate and verify RED because theorem names are absent.
+Add examples proving `|path2MultiplierProduct periodContractingParams 0 k| -> 0` and disproving zero convergence for `periodBoundaryParams`.
 
-- [ ] **Step 2: Implement periodic receptivity and exact cycle reasoning**
+- [ ] **Step 2: Verify RED**
 
-Define:
+```bash
+bash tools/check_fitness_abm_schedule_classifier.sh
+```
+
+Expected: missing periodic definitions/theorems.
+
+- [ ] **Step 3: Implement periodic receptivity**
 
 ```lean
 def periodicReceptivity
@@ -338,57 +284,92 @@ def periodicReceptivity
   values ⟨e % period, Nat.mod_lt _ hperiod⟩
 ```
 
-Prove the positive route by grouping factors into full periods plus a bounded remainder. The proof must show that one strict interior entry produces a cycle absolute multiplier `q` with `0 ≤ q < 1`, hence powers `q^m -> 0`. Do not use numerical sampling.
+For valid values `0 ≤ values i ≤ 1`, prove:
 
-Prove the boundary route under `∀ i, values i = 0 ∨ values i = 1`: every absolute multiplier is exactly `1`, so the absolute product is exactly `1` for all `k` and cannot tend to zero.
+```lean
+theorem periodic_abs_product_tendsto_zero_of_contracting_entry
+    (period : Nat) (hperiod : 0 < period)
+    (values : Fin period → Rat)
+    (hvalid : ∀ i, 0 ≤ values i ∧ values i ≤ 1)
+    (j : Fin period) (hj : 0 < values j ∧ values j < 1)
+    (e0 : Nat) :
+    Tendsto
+      (fun k => |(path2MultiplierProduct
+        ⟨periodicReceptivity period hperiod values, 0⟩ e0 k : Real)|)
+      atTop (nhds 0)
+```
 
-- [ ] **Step 3: Add alternating as a thin period-two specialization**
+Proof strategy: product over every complete period has absolute value `q` with `0 ≤ q < 1`; decompose into `q^m` times a bounded remainder; use geometric decay.
 
-Define:
+For boundary-only values, expose:
+
+```lean
+theorem periodic_abs_product_not_tendsto_zero_of_boundary_values
+    (period : Nat) (hperiod : 0 < period)
+    (values : Fin period → Rat)
+    (hboundary : ∀ i, values i = 0 ∨ values i = 1)
+    (e0 : Nat) :
+    ¬ Tendsto
+      (fun k => |(path2MultiplierProduct
+        ⟨periodicReceptivity period hperiod values, 0⟩ e0 k : Real)|)
+      atTop (nhds 0)
+```
+
+Proof strategy: every absolute multiplier is exactly one, therefore every absolute product is one.
+
+- [ ] **Step 4: Add alternating as period-two only**
 
 ```lean
 def alternatingReceptivity (a b : Rat) : Nat → Rat :=
   periodicReceptivity 2 (by decide) ![a, b]
 ```
 
-Expose corollaries that delegate to periodic theorems; do not reprove product asymptotics.
+Any alternating theorem must be a corollary of periodic infrastructure, not a duplicate asymptotic proof.
 
-- [ ] **Step 4: Add RED tests for finite piecewise + constant tail**
+- [ ] **Step 5: Add RED finite-piecewise-tail tests**
 
-Use a concrete override map encoded in the theorem test (for example exposure 1 -> `1/4`, exposure 2 -> `3/4`, tail -> `1/4`) and verify:
+Construct a theorem-test schedule with two finite overrides and a constant tail. Cover:
+
+- tail `1/4`: absolute product tends to zero;
+- tail `0`, no reached `1/2` override: absolute product does not tend to zero;
+- one reached `1/2` override: product is eventually zero regardless of the boundary tail.
+
+- [ ] **Step 6: Implement concrete-start finite-prefix/tail theorems**
+
+Define a theorem-friendly `piecewiseConstantTailReceptivity` matching Phase 1 semantics: exact finite exposure overrides, exact default tail. Public classification theorems must include concrete `e0` and a finite bound `N` after which no reachable override remains.
+
+Positive theorem signature:
 
 ```lean
-example :
+theorem piecewise_constant_tail_abs_product_tendsto_zero_of_interior_tail
+    (p : ExposureParameters) (e0 N : Nat) (tail : Rat)
+    (htail : 0 < tail ∧ tail < 1)
+    (heventual : ∀ r, N ≤ r → p.receptivityAt (e0 + r + 1) = tail) :
     Tendsto
-      (fun k => |(path2MultiplierProduct piecewiseExampleParams 0 k : Real)|)
-      atTop (nhds 0) := by
-  exact piecewise_constant_tail_product_tendsto_zero_iff.mp ...
+      (fun k => |(path2MultiplierProduct p e0 k : Real)|)
+      atTop (nhds 0)
 ```
 
-Also add a boundary tail fixture with tail `0` and no reached `1/2` override, and prove the absolute product does not tend to zero.
+Boundary theorem signature:
 
-- [ ] **Step 5: Implement finite-prefix + constant-tail classification**
+```lean
+theorem piecewise_constant_tail_abs_product_not_tendsto_zero_of_boundary_tail
+    (p : ExposureParameters) (e0 N : Nat) (tail : Rat)
+    (htail : tail = 0 ∨ tail = 1)
+    (heventual : ∀ r, N ≤ r → p.receptivityAt (e0 + r + 1) = tail)
+    (hprefix : path2MultiplierProduct p e0 N ≠ 0) :
+    ¬ Tendsto
+      (fun k => |(path2MultiplierProduct p e0 k : Real)|)
+      atTop (nhds 0)
+```
 
-Define a theorem-friendly receptivity function that accepts finite exact overrides and a tail value, but keep the existing Python Phase 1 AST semantics unchanged. The key public theorem must distinguish:
+Use Task 1 prefix lemmas; add a separate zero-prefix theorem for reached `1/2`.
 
-1. some reached finite factor equals `1/2` -> product eventually exactly zero;
-2. no zero factor and tail strictly interior -> absolute product tends to zero;
-3. no zero factor and tail in `{0,1}` -> absolute product does not tend to zero.
-
-The concrete starting exposure `e0` is part of the theorem statement so overrides below `e0 + 1` do not affect the result.
-
-- [ ] **Step 6: Run GREEN gates**
+- [ ] **Step 7: Run GREEN gates and commit**
 
 ```bash
 bash tools/check_fitness_abm_schedule_classifier.sh
 bash tools/check_fitness_abm_pathn.sh
-```
-
-Expected: PASS.
-
-- [ ] **Step 7: Commit Task 2**
-
-```bash
 git add NarrativeDynamics/Core/FitnessABMPathNExposureScheduleClassifier.lean \
   NarrativeDynamics/Tests/FitnessABMPathNExposureScheduleClassifier.lean
 git commit -m "feat(lean): classify periodic and piecewise schedules"
@@ -396,52 +377,29 @@ git commit -m "feat(lean): classify periodic and piecewise schedules"
 
 ---
 
-### Task 3: Add the reusable infinite-product criterion and polynomial/harmonic family regimes
+### Task 3: Reusable infinite-product criterion plus polynomial/harmonic regimes
 
 **Files:**
-- Modify: `NarrativeDynamics/Core/FitnessABMPathNExposureScheduleClassifier.lean`
-- Modify: `NarrativeDynamics/Tests/FitnessABMPathNExposureScheduleClassifier.lean`
+- Modify the Lean core/test files.
 
 **Interfaces:**
-- Consumes: Task 1 mixing-mass bridge.
-- Produces:
-  - `polynomialReceptivity`
-  - `harmonicReceptivity`
-  - a reusable absolute-product theorem reducing product-to-zero/nonzero behavior to divergent/summable nonnegative mixing mass under `m_k < 1/2` after explicit zero-factor handling
-  - `polynomial_abs_product_tendsto_zero_of_p_eq_one`
-  - `polynomial_abs_product_has_nonzero_limit_of_two_le_p`
-  - harmonic corollaries.
+- Produces `polynomialDecay`, `polynomialReceptivity`, `harmonicReceptivity`, `abs_product_tendsto_zero_of_mixing_sum_tendsto_atTop`, `abs_product_has_nonzero_limit_of_summable_mixing`, `polynomial_abs_product_tendsto_zero_of_p_eq_one`, `polynomial_abs_product_has_nonzero_limit_of_two_le_p`.
 
-- [ ] **Step 1: Add RED theorem tests for p=1 and p=2 using generic parameters**
+- [ ] **Step 1: Add RED generic-parameter tests**
 
-Use parameters that are not equal to the old fixed fixture constants, so the tests prove the family is genuinely parameterized:
+Use parameters different from old fixed fixtures:
 
 ```lean
-example :
-    Tendsto
-      (fun k => |(path2MultiplierProduct
-        ⟨polynomialReceptivity (1/3) 1 2 DecayTarget.zero, 0⟩ 0 k : Real)|)
-      atTop (nhds 0) := by
-  exact polynomial_abs_product_tendsto_zero_of_p_eq_one
-    (c := 1/3) (offset := 2) (target := .zero) (e0 := 0)
-    (by norm_num) (by norm_num)
+private def polyP1Params : ExposureParameters :=
+  ⟨polynomialReceptivity (1/3) 1 2 DecayTarget.zero, 0⟩
 
-example :
-    ∃ L : Real, L ≠ 0 ∧
-      Tendsto
-        (fun k => |(path2MultiplierProduct
-          ⟨polynomialReceptivity (1/4) 2 2 DecayTarget.zero, 0⟩ 0 k : Real)|)
-        atTop (nhds L) := by
-  exact polynomial_abs_product_has_nonzero_limit_of_two_le_p
-    (c := 1/4) (p := 2) (offset := 2) (target := .zero) (e0 := 0)
-    (by norm_num) (by norm_num) (by norm_num)
+private def polyP2Params : ExposureParameters :=
+  ⟨polynomialReceptivity (1/4) 2 2 DecayTarget.zero, 0⟩
 ```
 
-Run focused Lean and verify RED.
+Test `|product| -> 0` for `polyP1Params` and existence of a nonzero absolute-product limit for `polyP2Params`.
 
-- [ ] **Step 2: Define exact polynomial/harmonic receptivity**
-
-Define:
+- [ ] **Step 2: Define exact polynomial forms**
 
 ```lean
 def polynomialDecay (c : Rat) (p offset e : Nat) : Rat :=
@@ -456,48 +414,100 @@ def harmonicReceptivity
   polynomialReceptivity c 1 offset target
 ```
 
-Do not define harmonic with a second formula.
+- [ ] **Step 3: Prove reusable validity bounds**
 
-- [ ] **Step 3: Prove validity bounds as reusable assumptions/corollaries**
+Under `1 ≤ p`, `1 ≤ offset`, `0 < c`, `c ≤ offset^p`, prove `0 < polynomialDecay c p offset e ≤ 1` for every `e`, and then prove both targets are valid receptivities in `[0,1]`.
 
-For `offset >= 1`, `p >= 1`, `0 < c`, and `c ≤ offset^p`, prove `0 < polynomialDecay ... ≤ 1` for all exposures and therefore both decay targets remain in `[0,1]`.
+Use public theorem names:
 
-Expose theorem names used by certificates rather than forcing generated certificates to rebuild monotonic denominator arithmetic.
+```text
+polynomialDecay_pos
+polynomialDecay_le_one
+polynomialReceptivity_bounds
+```
 
 - [ ] **Step 4: Prove the reusable infinite-product criterion**
 
-Implement one exact theorem over a nonnegative Real sequence `m : Nat → Real` satisfying eventually `0 ≤ 2*m k < 1`:
+Public divergent-mixing theorem:
 
-- if partial sums of `m` diverge to `+∞`, then `∏_{r<k} (1 - 2*m r) -> 0`;
-- if `∑ m` converges and no factor is zero, the partial products converge to a positive/nonzero limit.
+```lean
+theorem abs_product_tendsto_zero_of_mixing_sum_tendsto_atTop
+    (m : Nat → Real)
+    (hm0 : ∀ k, 0 ≤ m k)
+    (hmhalf : ∀ k, m k < 1/2)
+    (hdiv : Tendsto (fun n => ∑ k ∈ Finset.range n, m k) atTop atTop) :
+    Tendsto
+      (fun n => ∏ k ∈ Finset.range n, (1 - 2 * m k))
+      atTop (nhds 0)
+```
 
-Use Mathlib infinite product/series results if their hypotheses match exactly. If they do not, prove the local bridge using `Real.log` inequalities (`log (1-x) ≤ -x` for the divergent direction and a two-sided small-`x` bound for the summable direction). The final public API must be independent of numerical truncation and expose all hypotheses explicitly.
+Public summable-mixing theorem:
+
+```lean
+theorem abs_product_has_nonzero_limit_of_summable_mixing
+    (m : Nat → Real)
+    (hm0 : ∀ k, 0 ≤ m k)
+    (hmhalf : ∀ k, m k < 1/2)
+    (hsum : Summable m) :
+    ∃ L : Real, 0 < L ∧
+      Tendsto
+        (fun n => ∏ k ∈ Finset.range n, (1 - 2 * m k))
+        atTop (nhds L)
+```
+
+Implementation order:
+
+1. search Mathlib locally for an infinite-product theorem with these hypotheses;
+2. if it matches, wrap it behind these stable project theorem names;
+3. otherwise prove the divergent direction from `Real.log (1-x) ≤ -x` and the summable direction from a two-sided small-`x` logarithm bound plus Cauchy/convergence of the log series;
+4. keep all bounds exact and theorem-local.
+
+No finite truncation or float estimate is acceptable.
 
 - [ ] **Step 5: Instantiate p-series regimes**
 
-Use exact comparison with the harmonic series / p-series infrastructure:
+Prove:
 
-- `p = 1`: mixing mass series diverges -> absolute product tends to zero;
-- `p >= 2`: mixing mass series converges -> absent a reached zero factor, absolute product has a nonzero limit.
+```lean
+theorem polynomial_abs_product_tendsto_zero_of_p_eq_one
+    (c : Rat) (offset e0 : Nat) (target : DecayTarget)
+    (hoffset : 1 ≤ offset)
+    (hc0 : 0 < c)
+    (hcvalid : c ≤ offset) :
+    Tendsto
+      (fun k => |(path2MultiplierProduct
+        ⟨polynomialReceptivity c 1 offset target, 0⟩ e0 k : Real)|)
+      atTop (nhds 0)
+```
 
-Handle `target=zero` and `target=one` through the mixing-mass identity instead of duplicating absolute-product proofs.
+For `2 ≤ p`, prove a theorem returning a nonzero absolute-product limit under validity and a no-zero-factor hypothesis:
 
-- [ ] **Step 6: Expose harmonic corollaries and regress old fixture**
+```lean
+theorem polynomial_abs_product_has_nonzero_limit_of_two_le_p
+    (c : Rat) (p offset e0 : Nat) (target : DecayTarget)
+    (hp : 2 ≤ p)
+    (hoffset : 1 ≤ offset)
+    (hc0 : 0 < c)
+    (hcvalid : c ≤ ((offset : Rat) ^ p))
+    (hnozero : ∀ r, polynomialReceptivity c p offset target (e0 + r + 1) ≠ 1/2) :
+    ∃ L : Real, 0 < L ∧
+      Tendsto
+        (fun k => |(path2MultiplierProduct
+          ⟨polynomialReceptivity c p offset target, 0⟩ e0 k : Real)|)
+        atTop (nhds L)
+```
 
-Prove the parameterized harmonic route with `p=1`, then add a theorem test showing the old `harmonicSchedule` product result is compatible with the generic harmonic classification. Do not delete the existing exact `harmonic_product` theorem.
+Use harmonic divergence for `p=1` and p-series summability for `p>=2`.
 
-- [ ] **Step 7: Run GREEN gates**
+- [ ] **Step 6: Add harmonic corollaries and old-fixture regression**
+
+Expose harmonic theorem names that delegate to polynomial `p=1`. Add a theorem test showing the existing fixed `harmonicSchedule` still satisfies the new generic classification. Keep the old exact telescoping theorem intact.
+
+- [ ] **Step 7: Run GREEN gates and commit**
 
 ```bash
 bash tools/check_fitness_abm_schedule_classifier.sh
 bash tools/check_fitness_abm_pathn.sh
-```
-
-Expected: PASS.
-
-- [ ] **Step 8: Commit Task 3**
-
-```bash
 git add NarrativeDynamics/Core/FitnessABMPathNExposureScheduleClassifier.lean \
   NarrativeDynamics/Tests/FitnessABMPathNExposureScheduleClassifier.lean
 git commit -m "feat(lean): classify polynomial receptivity schedules"
@@ -505,24 +515,15 @@ git commit -m "feat(lean): classify polynomial receptivity schedules"
 
 ---
 
-### Task 4: Add exponential regimes and stable-vs-oscillatory Path2 consequences
+### Task 4: Exponential regimes and stable-vs-oscillatory Path2 consequences
 
 **Files:**
-- Modify: `NarrativeDynamics/Core/FitnessABMPathNExposureScheduleClassifier.lean`
-- Modify: `NarrativeDynamics/Tests/FitnessABMPathNExposureScheduleClassifier.lean`
+- Modify the Lean core/test files.
 
 **Interfaces:**
-- Consumes: Task 3 reusable summable-mixing-mass theorem and existing Path2 disagreement/mean formulas.
-- Produces:
-  - `exponentialReceptivity`
-  - `exponential_abs_product_has_nonzero_limit`
-  - `path2_nodewise_converges_of_signed_product_tendsto`
-  - `path2_not_consensus_of_signed_product_tendsto_nonzero`
-  - `path2_oscillatory_nonconvergence_of_even_odd_product_limits`.
+- Produces `exponentialDecay`, `exponentialReceptivity`, `exponential_abs_product_has_nonzero_limit`, `path2_nodewise_converges_of_signed_product_tendsto`, `path2_not_consensus_of_signed_product_tendsto_nonzero`, `path2_oscillatory_nonconvergence_of_even_odd_product_limits`.
 
-- [ ] **Step 1: Add RED tests for exponential zero-target and one-target**
-
-Use:
+- [ ] **Step 1: Add RED exponential tests**
 
 ```lean
 private def expZeroParams : ExposureParameters :=
@@ -532,14 +533,9 @@ private def expOneParams : ExposureParameters :=
   ⟨exponentialReceptivity (1/4) (1/2) 0 DecayTarget.one, 0⟩
 ```
 
-Test that both absolute products have nonzero limits, then test distinct signed behavior:
+Require nonzero absolute-product limits for both. Add separate tests that zero-target signed products converge to one nonzero limit while one-target signed products have incompatible even/odd subsequential limits.
 
-- zero-target signed product converges to a nonzero `L`;
-- one-target even and odd subsequences have limits `L` and `-L` for some `L ≠ 0`.
-
-- [ ] **Step 2: Implement exponential receptivity and exact geometric summability**
-
-Define:
+- [ ] **Step 2: Define exact exponential forms**
 
 ```lean
 def exponentialDecay (c base : Rat) (offset e : Nat) : Rat :=
@@ -550,50 +546,82 @@ def exponentialReceptivity
   applyDecayTarget target (exponentialDecay c base offset e)
 ```
 
-Under `0 < base < 1`, prove the mixing-mass series is summable by comparison/equality to an exact geometric series, then apply Task 3's reusable product criterion.
+- [ ] **Step 3: Prove exact geometric summability and validity**
 
-- [ ] **Step 3: Prove stable signed-product consequence for zero-target decay**
+Under `0 < base < 1`, `0 < c`, and `c * base^offset ≤ 1`, prove valid receptivity bounds and summability of the mixing-mass sequence. Apply Task 3's reusable summable-product theorem.
 
-For valid zero-target polynomial `p>=2` and exponential families, prove the signed factors are eventually positive and, after handling any finite prefix, the signed product converges to a nonzero `L`.
-
-Expose:
+Public absolute-product theorem:
 
 ```lean
-theorem path2_nodewise_converges_of_signed_product_tendsto ...
+theorem exponential_abs_product_has_nonzero_limit
+    (c base : Rat) (offset e0 : Nat) (target : DecayTarget)
+    (hc0 : 0 < c)
+    (hbase0 : 0 < base)
+    (hbase1 : base < 1)
+    (hcvalid : c * base ^ offset ≤ 1)
+    (hnozero : ∀ r, exponentialReceptivity c base offset target (e0 + r + 1) ≠ 1/2) :
+    ∃ L : Real, 0 < L ∧
+      Tendsto
+        (fun k => |(path2MultiplierProduct
+          ⟨exponentialReceptivity c base offset target, 0⟩ e0 k : Real)|)
+        atTop (nhds L)
 ```
 
-Using `path2_mean_iterate` + disagreement formula, conclude each node converges to an exact expression involving the initial mean and `L * initialDisagreement / 2`.
+- [ ] **Step 4: Prove stable signed-product consequences**
 
-Then expose a corollary proving common consensus is false when initial beliefs differ and `L ≠ 0`.
-
-- [ ] **Step 4: Prove oscillatory consequence for target-one decay**
-
-When the target-one family is eventually above `1/2`, signed multipliers are eventually negative. Combine nonzero absolute-product limit with parity to prove incompatible even/odd disagreement subsequential limits.
-
-Expose:
+Public theorem:
 
 ```lean
-theorem path2_oscillatory_nonconvergence_of_even_odd_product_limits ...
+theorem path2_nodewise_converges_of_signed_product_tendsto
+    (p : ExposureParameters) (hvalid : p.Valid)
+    (s : State 2)
+    (he : (s 0).exposure = (s 1).exposure)
+    (hb : allBroadcast p s)
+    {L : Real}
+    (hprod : Tendsto
+      (fun k => (path2MultiplierProduct p (s 0).exposure k : Real))
+      atTop (nhds L)) :
+    ∃ c0 c1 : Real,
+      Tendsto (fun k => (beliefs ((step p 2)^[k] s) 0 : Real)) atTop (nhds c0) ∧
+      Tendsto (fun k => (beliefs ((step p 2)^[k] s) 1 : Real)) atTop (nhds c1)
 ```
 
-whose conclusion is nodewise non-convergence, stronger than merely non-consensus.
+Derive limits from the invariant mean plus the disagreement product formula. Add `path2_not_consensus_of_signed_product_tendsto_nonzero` requiring unequal initial beliefs and `L ≠ 0`.
 
-- [ ] **Step 5: Regress existing near-one fixture through the generic consequence**
+- [ ] **Step 5: Prove oscillatory consequence**
 
-Add a theorem test showing the old `nearOneSchedule` remains non-convergent and that the new generic oscillation lemma can reproduce the qualitative result without deleting `nearOne_not_convergent`.
+Public theorem:
 
-- [ ] **Step 6: Run GREEN gates**
+```lean
+theorem path2_oscillatory_nonconvergence_of_even_odd_product_limits
+    (p : ExposureParameters) (hvalid : p.Valid)
+    (s : State 2)
+    (he : (s 0).exposure = (s 1).exposure)
+    (hb : allBroadcast p s)
+    (hne : (s 0).belief ≠ (s 1).belief)
+    {L : Real} (hL : L ≠ 0)
+    (heven : Tendsto
+      (fun k => (path2MultiplierProduct p (s 0).exposure (2*k) : Real))
+      atTop (nhds L))
+    (hodd : Tendsto
+      (fun k => (path2MultiplierProduct p (s 0).exposure (2*k+1) : Real))
+      atTop (nhds (-L))) :
+    ¬ ∃ c0 c1 : Real,
+      Tendsto (fun k => (beliefs ((step p 2)^[k] s) 0 : Real)) atTop (nhds c0) ∧
+      Tendsto (fun k => (beliefs ((step p 2)^[k] s) 1 : Real)) atTop (nhds c1)
+```
+
+Use disagreement subsequences and uniqueness of limits.
+
+- [ ] **Step 6: Instantiate target-zero stable and target-one oscillatory corollaries**
+
+For polynomial `p>=2` and exponential target zero, prove signed-product nonzero-limit corollaries. For target one, prove even/odd signed-product corollaries. Add regression showing the existing `nearOneSchedule` qualitative non-convergence is reproduced by the generic oscillatory route.
+
+- [ ] **Step 7: Run GREEN gates and commit**
 
 ```bash
 bash tools/check_fitness_abm_schedule_classifier.sh
 bash tools/check_fitness_abm_pathn.sh
-```
-
-Expected: PASS.
-
-- [ ] **Step 7: Commit Task 4**
-
-```bash
 git add NarrativeDynamics/Core/FitnessABMPathNExposureScheduleClassifier.lean \
   NarrativeDynamics/Tests/FitnessABMPathNExposureScheduleClassifier.lean
 git commit -m "feat(lean): prove exponential and oscillatory schedule regimes"
@@ -601,46 +629,77 @@ git commit -m "feat(lean): prove exponential and oscillatory schedule regimes"
 
 ---
 
-### Task 5: Extend the exact Python schedule AST and result metadata
+### Task 5: Exact Python schedule AST, family recognition, and result metadata
 
 **Files:**
-- Modify: `narrative_analyzer/model.py`
-- Modify: `narrative_analyzer/result.py`
-- Create: `narrative_analyzer/families.py`
-- Modify: `narrative_analyzer/__init__.py`
-- Modify: `tests/test_narrative_analyzer_model.py`
-- Modify: `tests/test_narrative_analyzer_result.py`
-- Create: `tests/test_narrative_analyzer_families.py`
+- Modify: `narrative_analyzer/model.py`, `narrative_analyzer/result.py`, `narrative_analyzer/__init__.py`
+- Create: `narrative_analyzer/families.py`, `tests/test_narrative_analyzer_families.py`
+- Modify: `tests/test_narrative_analyzer_model.py`, `tests/test_narrative_analyzer_result.py`
 
 **Interfaces:**
-- Consumes: Phase 1 `ExactRat`, `PathModel`, existing schedule variants and immutable result classes.
-- Produces Python types:
+
+Add exact public types:
 
 ```python
-class DecayTarget(Enum): ZERO = "zero"; ONE = "one"
-@dataclass(frozen=True) class HarmonicSchedule: c: ExactRat; offset: int; target: DecayTarget
-@dataclass(frozen=True) class PolynomialSchedule: c: ExactRat; p: int; offset: int; target: DecayTarget
-@dataclass(frozen=True) class ExponentialSchedule: c: ExactRat; base: ExactRat; offset: int; target: DecayTarget
-@dataclass(frozen=True) class PeriodicSchedule: values: tuple[ExactRat, ...]
-@dataclass(frozen=True) class AlternatingSchedule: a: ExactRat; b: ExactRat
+class DecayTarget(Enum):
+    ZERO = "zero"
+    ONE = "one"
+
+@dataclass(frozen=True)
+class HarmonicSchedule:
+    c: ExactRat
+    offset: int
+    target: DecayTarget
+
+@dataclass(frozen=True)
+class PolynomialSchedule:
+    c: ExactRat
+    p: int
+    offset: int
+    target: DecayTarget
+
+@dataclass(frozen=True)
+class ExponentialSchedule:
+    c: ExactRat
+    base: ExactRat
+    offset: int
+    target: DecayTarget
+
+@dataclass(frozen=True)
+class PeriodicSchedule:
+    values: tuple[ExactRat, ...]
+
+@dataclass(frozen=True)
+class AlternatingSchedule:
+    a: ExactRat
+    b: ExactRat
+
+class FamilyRecognitionStatus(Enum):
+    RECOGNIZED = "RECOGNIZED"
+    UNRECOGNIZED = "UNRECOGNIZED"
 
 class CriterionStrength(Enum):
     SUFFICIENT = "SUFFICIENT"
     NECESSARY_AND_SUFFICIENT = "NECESSARY_AND_SUFFICIENT"
     COUNTEREXAMPLE = "COUNTEREXAMPLE"
 
-@dataclass(frozen=True) class ScheduleFamilyInfo:
+@dataclass(frozen=True)
+class ScheduleFamilyInfo:
     status: FamilyRecognitionStatus
     family_id: str
     canonical_family_id: str
     exact_parameters: Mapping[str, str]
 ```
 
-`ClaimResult` gains `criterion_strength: CriterionStrength | None = None` as a backward-compatible final/default field.
+Append to `ClaimResult`:
 
-- [ ] **Step 1: Write RED parser tests for every new family**
+```python
+criterion_strength: CriterionStrength | None = None
+```
 
-Add exact input cases including:
+- [ ] **Step 1: RED parser tests**
+
+Test exact parsing of:
 
 ```python
 {'kind': 'harmonic', 'c': '1/2', 'offset': 1, 'target': 'zero'}
@@ -650,70 +709,42 @@ Add exact input cases including:
 {'kind': 'alternating', 'a': '1/4', 'b': '3/4'}
 ```
 
-Assert exact dataclass equality.
+- [ ] **Step 2: RED validation tests**
 
-- [ ] **Step 2: Write RED validation tests**
+Reject polynomial `p=0`, harmonic/polynomial `offset=0`, nonpositive decay `c`, exponential base `<=0` or `>=1`, empty periodic values, unknown target, rational TOML floats, and source-like kind/target strings.
 
-Reject:
+- [ ] **Step 3: Implement the closed parser additions**
 
-- polynomial `p=0`;
-- harmonic `offset=0`;
-- polynomial `offset=0`;
-- nonpositive `c` for decay families;
-- exponential base `0`, `1`, negative, or `>1`;
-- empty periodic list;
-- unknown target;
-- TOML float in any rational field;
-- source-like strings as target/kind.
+Extend the existing `Schedule` union with only the five approved dataclasses. Reuse `_exact_rat` for every rational field. Add one closed target parser. Do not evaluate expressions.
 
-These are input errors, not theorem `UNKNOWN`.
+- [ ] **Step 4: Add result backward-compatibility tests**
 
-- [ ] **Step 3: Implement minimal immutable AST/parser additions**
+Verify old `ClaimResult` construction without `criterion_strength` still works and new metadata is immutable.
 
-Extend the closed `Schedule` union only with the five approved dataclasses. Keep `_exact_rat` unchanged as the only rational parser. Add a closed target parser; never evaluate expressions.
+- [ ] **Step 5: Implement syntactic family recognition only**
 
-- [ ] **Step 4: Write and implement result metadata tests**
-
-Verify:
-
-```python
-ClaimResult(
-    claim_id='path2_consensus',
-    status=ClaimStatus.PROVED,
-    theorem='T',
-    assumptions=(),
-    exact_values={},
-    note=None,
-    criterion_strength=CriterionStrength.NECESSARY_AND_SUFFICIENT,
-)
-```
-
-is immutable and serially/renderably distinct from the truth status.
-
-Verify old Phase 1 constructors that omit `criterion_strength` still work unchanged.
-
-- [ ] **Step 5: Implement `families.py` recognition only**
-
-Expose:
+Public API:
 
 ```python
 def recognize_family(schedule: Schedule) -> ScheduleFamilyInfo
 ```
 
-Rules:
+Canonical mapping:
 
-- harmonic -> `family_id='harmonic'`, `canonical_family_id='polynomial'`, include `p='1'`;
-- polynomial -> canonical `polynomial`;
-- exponential -> canonical `exponential`;
-- periodic -> canonical `periodic`;
-- alternating -> `family_id='alternating'`, canonical `periodic`;
-- Phase 1 piecewise -> recognized `piecewise_constant_tail`;
-- trusted named -> `family_id='named'`, canonical family only from trusted registry metadata;
-- constant -> recognized `constant`.
+```text
+harmonic -> polynomial, add p=1
+polynomial -> polynomial
+exponential -> exponential
+periodic -> periodic
+alternating -> periodic
+piecewise -> piecewise_constant_tail
+constant -> constant
+trusted named -> named or trusted registry canonical family
+```
 
-This function must not return any theorem verdict.
+No truth verdict is returned by this function.
 
-- [ ] **Step 6: Run Python GREEN plus Phase 1 regression**
+- [ ] **Step 6: Run GREEN and commit**
 
 ```bash
 python -m unittest \
@@ -721,13 +752,6 @@ python -m unittest \
   tests.test_narrative_analyzer_result \
   tests.test_narrative_analyzer_families
 bash tools/check_narrative_analyzer.sh
-```
-
-Expected: PASS.
-
-- [ ] **Step 7: Commit Task 5**
-
-```bash
 git add narrative_analyzer/model.py narrative_analyzer/result.py \
   narrative_analyzer/families.py narrative_analyzer/__init__.py \
   tests/test_narrative_analyzer_model.py tests/test_narrative_analyzer_result.py \
@@ -737,18 +761,13 @@ git commit -m "feat(analyzer): add exact schedule family model"
 
 ---
 
-### Task 6: Add trusted Phase 2 theorem registry and closed family certificate templates
+### Task 6: Hard-coded theorem registry and closed family certificate templates
 
 **Files:**
-- Create: `narrative_analyzer/family_certificate.py`
-- Modify: `narrative_analyzer/certificate.py`
-- Modify: `narrative_analyzer/families.py`
-- Create: `tests/test_narrative_analyzer_family_certificate.py`
-- Modify: `tests/test_narrative_analyzer_certificate.py`
+- Create: `narrative_analyzer/family_certificate.py`, `tests/test_narrative_analyzer_family_certificate.py`
+- Modify: `narrative_analyzer/families.py`, `narrative_analyzer/certificate.py`, `tests/test_narrative_analyzer_certificate.py`
 
 **Interfaces:**
-- Consumes: Task 5 family AST and Task 1-4 public Lean theorem names.
-- Produces:
 
 ```python
 @dataclass(frozen=True)
@@ -759,160 +778,147 @@ class FamilyRoute:
     criterion_strength: CriterionStrength | None
 
 class FamilyCertificateBuilder:
-    def build_schedule_facts(self, model: PathModel, claims: tuple[str, ...]) -> Certificate
-    def build_path2_classification(self, model: PathModel, route: FamilyRoute) -> Certificate
+    def build_schedule_facts(
+        self, model: PathModel, claims: tuple[str, ...]
+    ) -> Certificate: ...
+
+    def build_path2_classification(
+        self, model: PathModel, route: FamilyRoute
+    ) -> Certificate: ...
 ```
 
-- [ ] **Step 1: Write RED source-injection and rendering tests**
+The method bodies are implemented in this task; the signatures above are the stable cross-task contract.
 
-For each family, assert generated source contains only canonical exact literals and fixed Lean identifiers. Explicitly test that malicious strings cannot become theorem names/imports/tactics because the parser rejects them before certificate generation.
+- [ ] **Step 1: RED closed-rendering/source-injection tests**
 
-- [ ] **Step 2: Implement fixed Lean renderer for each closed AST**
+Verify each schedule renders only normalized integer/rational literals plus fixed Lean identifiers. Malicious family strings must fail in `model.py` before rendering.
 
-Render only trusted forms, for example:
+- [ ] **Step 2: Implement fixed Lean family renderers**
 
-```python
-PolynomialSchedule(...) ->
-  "polynomialReceptivity <rat c> <p> <offset> DecayTarget.zero"
-```
-
-and:
-
-```python
-AlternatingSchedule(a, b) ->
-  "alternatingReceptivity <rat a> <rat b>"
-```
-
-Periodic rendering must produce a closed `Fin n -> Rat` vector from exact values and a fixed positive-period proof; user text never becomes Lean syntax except validated integer/rational digits already normalized by `ExactRat`.
-
-- [ ] **Step 3: Implement theorem registry metadata**
-
-Map only approved theorem kinds to hard-coded fully qualified names from `FitnessABMPathNExposureScheduleClassifier`. Route selection may use exact parameter relations such as `p == 1`, `p >= 2`, target enum, periodic boundary/interior values, piecewise tail, and reached `1/2` witnesses.
-
-Missing coverage returns no route; it must not synthesize theorem names.
-
-- [ ] **Step 4: Build schedule-fact certificates**
-
-Certificates for `alpha_tends_to_zero` / `alpha_tends_to_one` must instantiate the exact family theorem and compile independently. Periodic/constant schedules normally have neither limit claim unless constant/trivial; do not infer a limit from visual pattern recognition.
-
-- [ ] **Step 5: Build Path2 classification certificates**
-
-Each certificate must re-prove/instantiate:
-
-- parameter validity;
-- equal initial exposures for the product iff route;
-- initial all-broadcast;
-- unequal initial beliefs, or select the direct equal-belief theorem;
-- exact family/product theorem;
-- final consensus/stable-non-consensus/oscillatory theorem.
-
-For unequal initial exposures, do not generate the product-iff certificate.
-
-- [ ] **Step 6: Verify provenance metadata**
-
-Every produced `CertificateClaim` records the exact generated helper theorem plus the production theorem chain. Examples:
+Examples of required output shapes:
 
 ```text
-...polynomial_abs_product_tendsto_zero_of_p_eq_one;
-...path2_consensus_iff_product_tendsto_zero
+polynomialReceptivity (1/3 : Rat) 2 2 DecayTarget.zero
+exponentialReceptivity (1/4 : Rat) (1/2 : Rat) 0 DecayTarget.one
+alternatingReceptivity (1/4 : Rat) (3/4 : Rat)
 ```
 
-and for target-one p>=2/exponential:
+Periodic rendering builds a fixed `Fin n -> Rat` vector from normalized values and a fixed positivity proof for literal `n > 0`.
+
+- [ ] **Step 3: Implement fixed theorem registry metadata**
+
+Route only to public theorem names created in Tasks 1-4. Parameter-based routing may inspect exact AST fields (`p == 1`, `p >= 2`, target, periodic values, reached `1/2`, piecewise tail), but missing coverage returns `None` rather than generating a theorem name.
+
+- [ ] **Step 4: Implement schedule-fact certificates**
+
+`alpha_tends_to_zero` and `alpha_tends_to_one` compile independently of Path2 model applicability. Periodic schedules do not receive a limit claim unless a specific exact theorem applies.
+
+- [ ] **Step 5: Implement Path2 classification certificates**
+
+Every nontrivial product-iff certificate proves/instantiates:
 
 ```text
-...path2_oscillatory_nonconvergence_of_even_odd_product_limits
+ExposureParameters.Valid
+equal initial exposures
+initial allBroadcast
+unequal initial beliefs
+exact family/product theorem
+path2_consensus_iff_product_tendsto_zero or stronger stable/oscillatory theorem
 ```
 
-- [ ] **Step 7: Run GREEN tests**
+Equal beliefs select `path2_equal_belief_consensus`. Unequal exposures produce no product-iff route.
+
+- [ ] **Step 6: Verify theorem provenance**
+
+Every `CertificateClaim` records the generated helper theorem and the exact production theorem chain. `criterion_strength` is attached from `FamilyRoute`, not inferred from status.
+
+- [ ] **Step 7: Run GREEN and commit**
 
 ```bash
 python -m unittest \
   tests.test_narrative_analyzer_family_certificate \
   tests.test_narrative_analyzer_certificate
 bash tools/check_narrative_analyzer.sh
-```
-
-Expected: PASS.
-
-- [ ] **Step 8: Commit Task 6**
-
-```bash
-git add narrative_analyzer/family_certificate.py narrative_analyzer/certificate.py \
-  narrative_analyzer/families.py tests/test_narrative_analyzer_family_certificate.py \
+git add narrative_analyzer/family_certificate.py narrative_analyzer/families.py \
+  narrative_analyzer/certificate.py tests/test_narrative_analyzer_family_certificate.py \
   tests/test_narrative_analyzer_certificate.py
 git commit -m "feat(analyzer): generate schedule family certificates"
 ```
 
 ---
 
-### Task 7: Integrate family claims into analyzer orchestration without weakening Phase 1 semantics
+### Task 7: Analyzer orchestration — independent schedule facts and strongest applicable Path2 claim
 
 **Files:**
-- Modify: `narrative_analyzer/analyze.py`
-- Modify: `narrative_analyzer/result.py`
-- Modify: `tests/test_narrative_analyzer_analysis.py`
+- Modify: `narrative_analyzer/analyze.py`, `narrative_analyzer/result.py`, `tests/test_narrative_analyzer_analysis.py`
 
-**Interfaces:**
-- Consumes: Task 5 recognition and Task 6 compiled family certificates.
-- Produces additive claims:
-  - `alpha_tends_to_zero`
-  - `alpha_tends_to_one`
-  - `multiplier_abs_product_tends_to_zero`
-  - `multiplier_nonzero_limit`
-  - `path2_nodewise_convergence`
-  - `path2_oscillatory_nonconvergence`
-  - existing `path2_consensus` updated by strongest applicable certified route.
+**Produces additive claims:**
 
-- [ ] **Step 1: Write RED orchestration tests for representative regimes**
+```text
+alpha_tends_to_zero
+alpha_tends_to_one
+multiplier_abs_product_tends_to_zero
+multiplier_nonzero_limit
+path2_nodewise_convergence
+path2_oscillatory_nonconvergence
+```
 
-Use `FakeRunner` only to test routing/result assembly, not theorem correctness. Cover:
+Existing `path2_consensus` remains the primary common-consensus Path2 claim.
 
-- harmonic p=1 -> product zero PROVED, Path2 consensus PROVED, criterion N&S;
-- polynomial p=2 target zero -> product-zero DISPROVED or nonzero-limit PROVED, Path2 consensus DISPROVED, nodewise convergence PROVED;
-- polynomial p=2 target one -> Path2 consensus DISPROVED, oscillatory nonconvergence PROVED;
-- exponential target zero -> stable non-consensus;
-- periodic interior -> consensus PROVED;
-- periodic all boundary `{0,1}` -> consensus DISPROVED when initial beliefs unequal;
-- equal beliefs -> direct consensus PROVED without using nontrivial product iff;
-- unequal initial exposures -> product claims/path2 iff UNKNOWN while generic PathN sufficient route may still independently prove consensus;
-- recognized family with intentionally absent theorem route -> claim UNKNOWN, not analyzer error.
+- [ ] **Step 1: RED routing/result tests**
 
-- [ ] **Step 2: Add `schedule_family` to `AnalysisResult`**
+Cover exact expected routing for:
 
-Make it an optional/additive immutable field so Phase 1 callers/tests stay valid. Populate it for all recognized closed schedule types.
+1. harmonic p=1 -> product-to-zero PROVED, Path2 consensus PROVED, N&S metadata;
+2. polynomial p=2 target zero -> nonzero signed limit, consensus DISPROVED, nodewise convergence PROVED;
+3. polynomial p=2 target one -> consensus DISPROVED, oscillatory nonconvergence PROVED;
+4. exponential zero target -> stable non-consensus;
+5. exponential one target -> oscillatory non-convergence;
+6. periodic interior -> consensus PROVED;
+7. periodic `{0,1}` boundary -> consensus DISPROVED for unequal initial beliefs;
+8. equal beliefs -> direct consensus PROVED;
+9. unequal initial exposures -> Path2 product claims UNKNOWN while independent generic PathN route may still apply;
+10. recognized family with no theorem route -> theorem claim UNKNOWN.
 
-- [ ] **Step 3: Add family schedule facts independently**
+`FakeRunner` is allowed here only to test orchestration; theorem correctness remains covered by Lean/golden tests.
 
-Compile schedule-fact certificates separately from Path2 classification so a valid `alpha_tends_to_zero` proof can survive when Path2 assumptions are unavailable.
+- [ ] **Step 2: Add optional immutable family metadata to `AnalysisResult`**
 
-- [ ] **Step 4: Add Path2 route precedence**
+Use:
 
-Use this precedence:
+```python
+schedule_family: ScheduleFamilyInfo | None = None
+```
 
-1. equal-belief direct consensus theorem;
-2. reached zero-factor exact consensus route;
-3. applicable family product iff route;
-4. existing trusted named fixed-fixture route;
-5. otherwise `UNKNOWN` for `path2_consensus`.
+as a defaulted additive field.
 
-Do not allow a weaker UNKNOWN route to overwrite an already compiled PROVED/DISPROVED result. Conflicting compiled evidence remains `ProvenanceMismatchError`.
+- [ ] **Step 3: Compile schedule facts independently**
 
-- [ ] **Step 5: Keep generic PathN consensus independent**
+A certified `alpha_tends_to_zero` or `alpha_tends_to_one` claim must remain available even when equal-exposure/all-broadcast Path2 prerequisites fail.
 
-Existing `pathn_consensus_exists` global-interior logic stays unchanged. A Path2 family negative result is authoritative for the concrete Path2 common-consensus claim; a positive generic PathN route and negative Path2 route must never both compile for the same valid concrete model. Treat such a conflict as an internal provenance/invariant error rather than picking one silently.
+- [ ] **Step 4: Implement Path2 route precedence**
 
-- [ ] **Step 6: Run GREEN analysis regression**
+Exact order:
+
+```text
+1 equal-belief direct theorem
+2 reached zero-factor exact consensus
+3 applicable parameterized family product/stable/oscillatory route
+4 existing trusted named fixed-fixture route
+5 UNKNOWN
+```
+
+Do not let an UNKNOWN route overwrite compiled evidence. Conflicting compiled truth evidence raises `ProvenanceMismatchError`.
+
+- [ ] **Step 5: Preserve generic PathN independence**
+
+Do not change existing `pathn_consensus_exists` global-interior logic. A contradictory compiled Path2 negative and generic PathN positive for the same concrete model is an internal invariant/provenance failure, not a precedence choice.
+
+- [ ] **Step 6: Run GREEN and commit**
 
 ```bash
 python -m unittest tests.test_narrative_analyzer_analysis
 bash tools/check_narrative_analyzer.sh
-```
-
-Expected: PASS.
-
-- [ ] **Step 7: Commit Task 7**
-
-```bash
 git add narrative_analyzer/analyze.py narrative_analyzer/result.py \
   tests/test_narrative_analyzer_analysis.py
 git commit -m "feat(analyzer): classify schedule consensus regimes"
@@ -920,64 +926,48 @@ git commit -m "feat(analyzer): classify schedule consensus regimes"
 
 ---
 
-### Task 8: Extend CLI rendering and add exact TOML fixtures
+### Task 8: CLI rendering and exact Phase 2 TOML fixtures
 
 **Files:**
-- Modify: `narrative_analyzer/cli.py`
-- Modify: `tests/test_narrative_analyzer_cli.py`
-- Create: Phase 2 fixture files listed in Planned File Structure.
+- Modify: `narrative_analyzer/cli.py`, `tests/test_narrative_analyzer_cli.py`
+- Create all Phase 2 fixtures listed above.
 
-**Interfaces:**
-- Consumes: additive `ScheduleFamilyInfo`, `CriterionStrength`, and new claims.
-- Produces deterministic text output only; exit codes remain Phase 1 compatible.
+- [ ] **Step 1: RED rendering tests**
 
-- [ ] **Step 1: Write RED CLI rendering tests**
-
-Expected output additions should include lines such as:
+Require deterministic additions such as:
 
 ```text
 Schedule family: polynomial
 Canonical family: polynomial
 Family parameters: c=1/4, offset=2, p=2, target=zero
-...
 path2_consensus              DISPROVED
   criterion: NECESSARY_AND_SUFFICIENT
-path2_nodewise_convergence   PROVED
 ```
 
-For an alternating schedule, preserve user family `alternating` while showing canonical family `periodic`.
+Alternating preserves user family `alternating` and canonical family `periodic`.
 
-- [ ] **Step 2: Preserve exit taxonomy**
+- [ ] **Step 2: Preserve exit taxonomy tests**
 
-Verify:
-
-- theorem verdicts including DISPROVED/UNKNOWN -> exit `0`;
-- malformed family input -> `2`;
-- certificate compile/timeout/generation failure -> `3`;
-- provenance/internal invariant error -> `4`.
+```text
+valid theorem verdicts including DISPROVED/UNKNOWN -> 0
+malformed family input -> 2
+certificate generation/compile/timeout -> 3
+provenance/internal invariant failure -> 4
+```
 
 - [ ] **Step 3: Implement deterministic rendering**
 
-Sort exact parameter keys. Print `criterion:` only when `criterion_strength` is present. Do not print a numerical product estimate.
+Sort exact parameter keys. Print `criterion:` only when present. Never print a truncated numerical product as proof evidence.
 
 - [ ] **Step 4: Add exact fixtures**
 
-Create all Phase 2 TOML fixtures with rational strings only. Each fixture must document one regime through its file name and contain no redundant data outside the existing model schema.
+Every theorem-bearing rational is a quoted integer/fraction string. Reuse the existing model schema for topology, initial state, and threshold.
 
-- [ ] **Step 5: Run GREEN CLI/model regression**
+- [ ] **Step 5: Run GREEN and commit**
 
 ```bash
-python -m unittest \
-  tests.test_narrative_analyzer_cli \
-  tests.test_narrative_analyzer_model
+python -m unittest tests.test_narrative_analyzer_cli tests.test_narrative_analyzer_model
 bash tools/check_narrative_analyzer.sh
-```
-
-Expected: PASS.
-
-- [ ] **Step 6: Commit Task 8**
-
-```bash
 git add narrative_analyzer/cli.py tests/test_narrative_analyzer_cli.py \
   tests/fixtures/narrative_analyzer
 git commit -m "feat(analyzer): render schedule family classifications"
@@ -985,60 +975,51 @@ git commit -m "feat(analyzer): render schedule family classifications"
 
 ---
 
-### Task 9: Add real Lean golden certificates for every theorem-bearing family regime
+### Task 9: Real Lean Phase 2 golden certificates and backward compatibility
 
 **Files:**
 - Create: `tests/test_narrative_analyzer_phase2_golden.py`
-- Modify: `tools/check_narrative_analyzer.sh` only if its discovery pattern does not already include the new file.
+- Modify `tools/check_narrative_analyzer.sh` only if its existing unittest discovery does not pick up the new file.
 
-**Interfaces:**
-- Consumes: real `LeanCertificateRunner`, all Phase 2 fixtures, family certificate builder.
-- Produces end-to-end evidence that Python routing plus generated source compiles against the real Lean theorem layer.
+- [ ] **Step 1: Add real-runner golden tests**
 
-- [ ] **Step 1: Write real golden tests**
+Required concrete cases:
 
-For each fixture, call the real analyzer with the real runner and assert the compiled verdict/provenance. Required cases:
+```text
+harmonic target zero p=1 consensus
+harmonic target one p=1 consensus despite alpha -> 1
+polynomial p=2 zero target stable non-consensus + nodewise convergence
+polynomial p=2 one target oscillatory non-convergence
+exponential zero target stable non-consensus
+exponential one target oscillatory non-convergence
+periodic interior consensus
+periodic boundary non-consensus
+alternating contracting consensus
+piecewise interior constant-tail consensus
+unequal Path2 exposures -> product iff UNKNOWN without certificate failure
+equal initial beliefs -> direct consensus theorem
+```
 
-1. harmonic target zero p=1 consensus;
-2. harmonic target one p=1 consensus by absolute product despite `alpha -> 1`;
-3. polynomial p=2 target zero stable non-consensus + nodewise convergence;
-4. polynomial p=2 target one oscillatory non-convergence;
-5. exponential target zero stable non-consensus;
-6. exponential target one oscillatory non-convergence;
-7. periodic interior consensus;
-8. periodic boundary non-consensus;
-9. alternating contracting consensus;
-10. finite piecewise + interior constant tail consensus;
-11. unequal Path2 exposures -> product iff UNKNOWN without compile failure;
-12. equal initial beliefs -> direct consensus theorem.
+Each PROVED/DISPROVED claim asserts expected theorem provenance text.
 
-Every PROVED/DISPROVED claim must assert a nonempty theorem provenance string containing the expected public theorem name.
+- [ ] **Step 2: Add Phase 1 compatibility goldens**
 
-- [ ] **Step 2: Add backwards-compatibility goldens**
+Run all existing Phase 1 fixtures through the same public API. Prior truth statuses and exact values remain unchanged except additive family metadata.
 
-Re-run all existing Phase 1 fixtures through the unchanged public CLI/analyzer API. Assert prior statuses and exact values remain unchanged except for additive family metadata.
+- [ ] **Step 3: Add broken-certificate fail-closed regression**
 
-- [ ] **Step 3: Add deliberate broken-certificate regression**
+Intentionally corrupt one generated Phase 2 certificate in test-only code and assert `CertificateCompileError`; never accept `UNKNOWN`.
 
-Corrupt one Phase 2 generated certificate in a controlled test and verify `CertificateCompileError`, not `UNKNOWN`.
-
-- [ ] **Step 4: Run the analyzer gate and record exact count**
+- [ ] **Step 4: Run real gates**
 
 ```bash
 bash tools/check_narrative_analyzer.sh
-```
-
-Expected: all tests PASS with zero skipped theorem-bearing goldens. Record the actual final test count in the PR body later; do not hard-code an expected total before implementation.
-
-- [ ] **Step 5: Run focused Lean gate**
-
-```bash
 bash tools/check_fitness_abm_schedule_classifier.sh
 ```
 
-Expected: PASS.
+Expected: all tests PASS, no skipped theorem-bearing golden cases. Record the actual analyzer test count for the PR body; do not predeclare a count.
 
-- [ ] **Step 6: Commit Task 9**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add tests/test_narrative_analyzer_phase2_golden.py tools/check_narrative_analyzer.sh
@@ -1047,19 +1028,13 @@ git commit -m "test(analyzer): verify Phase 2 Lean family certificates"
 
 ---
 
-### Task 10: Integrate additive CI and complete exact-head acceptance verification
+### Task 10: Additive CI, exact-head verification, formal review, review-ready PR
 
 **Files:**
 - Modify: `.github/workflows/proof.yml`
-- Modify: issue #99 status comment through GitHub after evidence exists.
+- Update #99 only after real evidence exists.
 
-**Interfaces:**
-- Consumes: all focused gates from Tasks 1-9.
-- Produces permanent CI evidence and review-ready PR state; no automatic merge.
-
-- [ ] **Step 1: Add the focused theorem gate before the analyzer gate**
-
-In `.github/workflows/proof.yml`, keep existing order and add:
+- [ ] **Step 1: Add the focused theorem gate immediately before the existing analyzer gate**
 
 ```yaml
       - name: Receptivity schedule classifier proofs
@@ -1071,11 +1046,9 @@ In `.github/workflows/proof.yml`, keep existing order and add:
         run: bash tools/check_narrative_analyzer.sh
 ```
 
-Do not remove, weaken, or merge the existing `BB finite-path convergence` gate.
+Do not remove or weaken `BB finite-path convergence`.
 
-- [ ] **Step 2: Run local/focused acceptance suite**
-
-Run in this order:
+- [ ] **Step 2: Run focused/full pre-push verification**
 
 ```bash
 bash tools/check_fitness_abm_schedule_classifier.sh
@@ -1084,117 +1057,109 @@ bash tools/check_narrative_analyzer.sh
 lake build
 ```
 
+Then run the exact Python test command currently present in `.github/workflows/proof.yml`.
+
 Expected: all PASS.
 
-- [ ] **Step 3: Run all Python tests used by the proof workflow**
+- [ ] **Step 3: Audit scope against exact base**
 
-Use the same Python command currently configured in `.github/workflows/proof.yml`; do not invent a narrower replacement. Expected: PASS.
+Confirm base `b9a5e1fc3ccb6c3a253b01eb18c5296e3973a24b` -> head changes only:
 
-- [ ] **Step 4: Audit scope before push**
+```text
+Phase 2 Lean theorem/test files
+Phase 2 analyzer code/tests/fixtures
+additive proof workflow step
+approved spec + plan
+```
 
-Compare against exact base `b9a5e1fc3ccb6c3a253b01eb18c5296e3973a24b` and confirm changes are limited to:
+Confirm no modification to `FitnessABMPathNExposure.step` or unrelated BB/World Studio modules.
 
-- new schedule-classifier Lean theorem/test files;
-- Phase 2 analyzer files/tests/fixtures;
-- additive proof workflow step;
-- committed spec/plan.
-
-Confirm no changes to `FitnessABMPathNExposure.step` or unrelated BB/world-studio modules.
-
-- [ ] **Step 5: Commit CI integration**
+- [ ] **Step 4: Commit CI integration**
 
 ```bash
 git add .github/workflows/proof.yml
 git commit -m "ci: verify receptivity schedule classifier"
 ```
 
-- [ ] **Step 6: Push implementation branch and open a draft PR against `proof/narrative-dynamics-v0`**
+- [ ] **Step 5: Push implementation branch and create a draft PR against `proof/narrative-dynamics-v0`**
 
-PR body must include:
+PR body must contain issue #99, spec/plan paths, exact base SHA, trust-boundary statement, theorem families added, N&S Path2 vs sufficient PathN distinction, and focused verification evidence.
 
-- issue #99;
-- spec and plan paths;
-- exact base SHA;
-- trust-boundary statement;
-- theorem families added;
-- distinction between N&S Path2 routes and sufficient PathN routes;
-- focused local verification results.
+- [ ] **Step 6: Require exact-head CI**
 
-Keep the PR draft until exact-head CI and code review pass.
+For the exact final PR head SHA require:
 
-- [ ] **Step 7: Require exact-head GitHub CI evidence**
+```text
+World Studio = success
+proof / Select proof event = success
+proof / Python tests = success
+proof / Lean proof = success
+Build Lean library = success
+BB finite-path convergence = success
+Receptivity schedule classifier proofs = success
+PathN exposure consensus analyzer = success
+all downstream proof/trust/story/testimony steps = success
+```
 
-For the exact final PR head SHA, require:
+Any new code/test/workflow commit invalidates old exact-head evidence.
 
-- `World Studio`: success;
-- `proof / Select proof event`: success;
-- `proof / Python tests`: success;
-- `proof / Lean proof`: success;
-- `Build Lean library`: success;
-- `BB finite-path convergence`: success;
-- `Receptivity schedule classifier proofs`: success;
-- `PathN exposure consensus analyzer`: success;
-- every downstream proof/trust/story/testimony step: success.
+- [ ] **Step 7: Perform formal review**
 
-If any code/test/workflow commit is added, old exact-head evidence is invalid and must be regenerated.
+Review exact base -> head for:
 
-- [ ] **Step 8: Perform formal review before ready-for-review**
+```text
+theorem assumptions and overclaiming
+mixing-mass identity and zero-factor handling
+p=1 vs p>=2 polynomial regimes
+zero-target stable vs one-target oscillatory semantics
+periodic/piecewise concrete e0 handling
+equal-exposure and unequal-belief iff assumptions
+no Python proof authority
+source-injection safety
+fail-closed certificate/provenance behavior
+Phase 1 backward compatibility
+additive CI only
+```
 
-Review base -> exact head for:
+Fix Critical/Important findings and regenerate exact-head CI.
 
-- theorem assumptions and overclaiming;
-- mixing-mass identity and zero-factor handling;
-- p=1 vs p>=2 polynomial regimes;
-- target-zero stable vs target-one oscillatory semantics;
-- periodic/piecewise concrete `e0` handling;
-- equal-exposure/nontrivial-belief iff assumptions;
-- no Python proof authority;
-- source-injection safety;
-- fail-closed runner/provenance behavior;
-- Phase 1 backward compatibility;
-- additive CI only.
+- [ ] **Step 8: Mark review-ready only after all gates**
 
-Critical/Important findings must be fixed before proceeding, followed by new exact-head CI.
-
-- [ ] **Step 9: Mark PR ready only after all gates pass**
-
-Update #99 with exact head, workflow run IDs, focused test counts, theorem coverage, scope compare, and review findings. Mark PR Ready for review. Do not merge automatically; merge remains a separate explicit user gate.
+Update #99 with exact head, workflow run IDs, actual focused test counts, theorem coverage, scope compare, and review findings. Mark PR Ready for review. Do not merge automatically; merge remains a separate explicit user gate.
 
 ---
 
 ## Final Acceptance Matrix
 
-Before declaring Phase 2 implementation complete, verify all rows:
-
 | Requirement | Required evidence |
 |---|---|
-| Phase 1 inputs remain compatible | existing analyzer test/golden suite green |
-| Closed exact family DSL only | parser rejection tests + source-injection tests |
-| Harmonic parameterized route | real Lean golden, not only old named fixture |
-| Polynomial p=1 consensus | public Lean theorem + real certificate |
-| Polynomial p>=2 stable/oscillatory split | public Lean theorems + zero/one target goldens |
-| Exponential stable/oscillatory split | public Lean theorems + real goldens |
+| Phase 1 inputs compatible | existing analyzer tests/goldens green |
+| Closed exact family DSL | parser rejection + source-injection tests |
+| Parameterized harmonic | public theorem + real Lean certificate |
+| Polynomial p=1 consensus | public theorem + real Lean certificate |
+| Polynomial p>=2 stable/oscillatory split | public theorems + zero/one target goldens |
+| Exponential stable/oscillatory split | public theorems + real goldens |
 | Periodic exact classification | cycle theorem + interior/boundary goldens |
-| Alternating reuses periodic theorem | canonical family metadata + theorem provenance |
-| Piecewise finite-prefix/tail | concrete `e0` theorem + golden |
-| Equal beliefs handled directly | direct Lean theorem + golden |
+| Alternating delegates to periodic | canonical metadata + periodic provenance |
+| Piecewise finite-prefix/tail | concrete-e0 theorem + golden |
+| Equal beliefs handled directly | direct theorem + golden |
 | Unequal exposures do not misuse iff | UNKNOWN regression |
-| `PROVED/DISPROVED/UNKNOWN` unchanged | result tests + CLI tests |
-| Criterion strength is metadata only | immutable result tests |
-| Python never proves asymptotics | architecture/source review + real certificate requirement |
-| Compile/timeouts fail closed | runner/golden failure tests |
-| PathN not upgraded to iff | review + claim metadata tests |
-| Existing trust/resource gates intact | exact-head proof workflow success |
+| Truth states unchanged | result + CLI tests |
+| Criterion strength is metadata | immutable result tests |
+| Python does not prove asymptotics | source review + real certificate requirement |
+| Compile/timeout fails closed | failure regression |
+| PathN not upgraded to iff | review + metadata tests |
+| Existing gates intact | exact-head proof workflow success |
 
 ## Implementation Stop Conditions
 
-Stop implementation and return to the design/spec gate instead of improvising if any of these occur:
+Stop and return to the design/spec gate instead of broadening scope if:
 
-- the required polynomial/exponential infinite-product theorem cannot be stated/proved with the frozen family semantics without materially changing assumptions;
-- a proposed theorem would need floating-point or numerical truncation as proof authority;
-- the current `path2_consensus_iff_product_tendsto_zero` assumptions are insufficient for the intended conclusion and require semantic changes to the executable model;
-- family validity requires a broader symbolic expression language;
-- implementation would require weakening existing trust gates;
-- a PathN necessary-and-sufficient claim appears necessary to satisfy Phase 2 acceptance.
+- the polynomial/exponential infinite-product theorem cannot be proved with the frozen family semantics without materially changing assumptions;
+- a theorem would require floating-point or numerical truncation as proof authority;
+- the current Path2 iff assumptions are insufficient and would require changing executable semantics;
+- validity requires a generic symbolic expression language;
+- implementation would weaken existing trust gates;
+- satisfying Phase 2 would require a PathN necessary-and-sufficient theorem.
 
-A stop condition is a design finding, not permission to silently broaden scope.
+A stop condition is a design finding, not permission to improvise a broader implementation.
