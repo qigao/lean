@@ -185,7 +185,10 @@ example :
       simp [piecewiseBoundaryParams, piecewiseConstantTailReceptivity,
         piecewiseOverrides]
       omega)
-    (by native_decide)
+    (by
+      norm_num [piecewiseBoundaryParams, piecewiseConstantTailReceptivity,
+        piecewiseOverrides, piecewiseOverrideValue, path2MultiplierProduct,
+        Finset.prod_range_succ])
 
 example :
     Tendsto
