@@ -70,22 +70,30 @@ theorem path2_equal_belief_consensus
       ring
     rw [hmean] at hm
     constructor <;> linarith
+  have hcoord : ∀ (k : Nat) (i : Fin 2),
+      beliefs ((step p 2)^[k] s) i = (s 0).belief := by
+    intro k i
+    have hi : i = (0 : Fin 2) ∨ i = (1 : Fin 2) := by
+      have hval : i.val = 0 ∨ i.val = 1 := by
+        omega
+      rcases hval with h0 | h1
+      · left
+        apply Fin.ext
+        exact h0
+      · right
+        apply Fin.ext
+        exact h1
+    rcases hi with rfl | rfl
+    · exact (hconst k).1
+    · exact (hconst k).2
   intro i
-  fin_cases i
-  · have hseq :
-        (fun k => (beliefs ((step p 2)^[k] s) 0 : Real)) =
-          (fun _ : Nat => ((s 0).belief : Real)) := by
-      funext k
-      exact congrArg (fun q : Rat => (q : Real)) (hconst k).1
-    rw [hseq]
-    exact tendsto_const_nhds
-  · have hseq :
-        (fun k => (beliefs ((step p 2)^[k] s) 1 : Real)) =
-          (fun _ : Nat => ((s 0).belief : Real)) := by
-      funext k
-      exact congrArg (fun q : Rat => (q : Real)) (hconst k).2
-    rw [hseq]
-    exact tendsto_const_nhds
+  have hseq :
+      (fun k => (beliefs ((step p 2)^[k] s) i : Real)) =
+        (fun _ : Nat => ((s 0).belief : Real)) := by
+    funext k
+    exact congrArg (fun q : Rat => (q : Real)) (hcoord k i)
+  rw [hseq]
+  exact tendsto_const_nhds
 
 theorem tendsto_zero_const_mul_iff
     {f : Nat → Real} {c : Real} (hc : c ≠ 0) :
