@@ -263,4 +263,16 @@ example
       (by norm_num) (by norm_num) (by norm_num) (by norm_num)
       (by simpa using hnozero))
 
+private def harmonicGenericParams : ExposureParameters :=
+  ⟨harmonicReceptivity (1/2) 1 DecayTarget.zero, 0⟩
+
+example :
+    Tendsto
+      (fun k => |(path2MultiplierProduct harmonicGenericParams 0 k : Real)|)
+      atTop (nhds 0) := by
+  simpa [harmonicGenericParams] using
+    (harmonic_abs_product_tendsto_zero
+      (1/2) 1 0 DecayTarget.zero
+      (by norm_num) (by norm_num) (by norm_num))
+
 end NarrativeDynamics.FitnessABMPathNExposureScheduleClassifierTests
