@@ -30,7 +30,7 @@ def no_common_limit_lines(
         "  have hm_to_c : Tendsto m atTop (nhds c) := by",
         "    have hsum := (hc (0 : Fin 2)).add (hc (1 : Fin 2))",
         "    have hscaled := hsum.mul_const (1/2 : Real)",
-        "    convert hscaled using 1 <;> simp only [m] <;> ring",
+        "    convert hscaled using 1 <;> try simp only [m] <;> ring",
         "  have hm_eq (k : Nat) : m k = (1/2 : Real) := by",
         "    dsimp [m]",
         f"    have hrat := path2_mean_iterate {params} hvalid {state} he hb k",
