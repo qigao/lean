@@ -1,0 +1,11 @@
+[topology]
+kind = "path"
+n = 2
+[initial]
+beliefs = ["1", "0"]
+exposures = [0, 1]
+[dynamics]
+threshold = "0"
+[schedule]
+kind = "named"
+id = "harmonicSchedule"
