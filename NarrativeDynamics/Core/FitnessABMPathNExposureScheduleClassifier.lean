@@ -410,4 +410,141 @@ theorem periodic_abs_product_not_tendsto_zero_of_boundary_values
   have h10 : (1 : Real) = 0 := tendsto_nhds_unique hone hzero
   norm_num at h10
 
+def piecewiseConstantTailReceptivity
+    (overrides : Finset Nat) (overrideValue : Nat → Rat)
+    (tail : Rat) (e : Nat) : Rat :=
+  if e ∈ overrides then overrideValue e else tail
+
+private theorem path2MultiplierProduct_add_constant_tail
+    (p : ExposureParameters) (e0 N k : Nat) (tail : Rat)
+    (heventual : ∀ r, N ≤ r → p.receptivityAt (e0 + r + 1) = tail) :
+    path2MultiplierProduct p e0 (N + k) =
+      path2MultiplierProduct p e0 N * (1 - 2 * tail) ^ k := by
+  unfold path2MultiplierProduct
+  rw [Finset.prod_range_add]
+  have htail :
+      (∏ r ∈ Finset.range k,
+          (1 - 2 * p.receptivityAt (e0 + (N + r) + 1))) =
+        (1 - 2 * tail) ^ k := by
+    calc
+      (∏ r ∈ Finset.range k,
+          (1 - 2 * p.receptivityAt (e0 + (N + r) + 1))) =
+          ∏ r ∈ Finset.range k, (1 - 2 * tail) := by
+            apply Finset.prod_congr rfl
+            intro r hr
+            rw [heventual (N + r) (Nat.le_add_right N r)]
+      _ = (1 - 2 * tail) ^ k := by simp
+  rw [htail]
+
+theorem piecewise_constant_tail_abs_product_tendsto_zero_of_interior_tail
+    (p : ExposureParameters) (e0 N : Nat) (tail : Rat)
+    (htail : 0 < tail ∧ tail < 1)
+    (heventual : ∀ r, N ≤ r → p.receptivityAt (e0 + r + 1) = tail) :
+    Tendsto
+      (fun k => |(path2MultiplierProduct p e0 k : Real)|)
+      atTop (nhds 0) := by
+  let m : Real := |(((1 - 2 * tail : Rat) : Real))|
+  have hm_nonneg : 0 ≤ m := abs_nonneg _
+  have hm_lt : m < 1 := by
+    exact abs_cast_multiplier_lt_one tail htail
+  have hm_abs_lt : |m| < 1 := by
+    simpa [abs_of_nonneg hm_nonneg] using hm_lt
+  have hpow : Tendsto (fun k : Nat => m ^ k) atTop (nhds 0) :=
+    tendsto_pow_atTop_nhds_zero_of_abs_lt_one hm_abs_lt
+  let c : Real := |(path2MultiplierProduct p e0 N : Real)|
+  have heq :
+      (fun k => |(path2MultiplierProduct p e0 (N + k) : Real)|) =
+        (fun k => c * m ^ k) := by
+    funext k
+    rw [path2MultiplierProduct_add_constant_tail p e0 N k tail heventual]
+    simp [c, m, abs_mul, abs_pow]
+  have hshift :
+      Tendsto
+        (fun k => |(path2MultiplierProduct p e0 (N + k) : Real)|)
+        atTop (nhds 0) := by
+    rw [heq]
+    simpa using tendsto_const_mul (c := c) hpow
+  have hshift' :
+      Tendsto
+        (fun k => |(path2MultiplierProduct p e0 (k + N) : Real)|)
+        atTop (nhds 0) := by
+    simpa [Nat.add_comm] using hshift
+  exact
+    (Filter.tendsto_add_atTop_iff_nat
+      (f := fun k => |(path2MultiplierProduct p e0 k : Real)|) N).mp hshift'
+
+theorem piecewise_constant_tail_abs_product_not_tendsto_zero_of_boundary_tail
+    (p : ExposureParameters) (e0 N : Nat) (tail : Rat)
+    (htail : tail = 0 ∨ tail = 1)
+    (heventual : ∀ r, N ≤ r → p.receptivityAt (e0 + r + 1) = tail)
+    (hprefix : path2MultiplierProduct p e0 N ≠ 0) :
+    ¬ Tendsto
+      (fun k => |(path2MultiplierProduct p e0 k : Real)|)
+      atTop (nhds 0) := by
+  have hm : |(((1 - 2 * tail : Rat) : Real))| = 1 := by
+    rcases htail with h0 | h1
+    · subst tail
+      norm_num
+    · subst tail
+      norm_num
+  let c : Real := |(path2MultiplierProduct p e0 N : Real)|
+  have heq :
+      (fun k => |(path2MultiplierProduct p e0 (N + k) : Real)|) =
+        (fun _ : Nat => c) := by
+    funext k
+    rw [path2MultiplierProduct_add_constant_tail p e0 N k tail heventual]
+    simp [c, abs_mul, abs_pow, hm]
+  intro hzero
+  have hshift0 :
+      Tendsto
+        (fun k => |(path2MultiplierProduct p e0 (k + N) : Real)|)
+        atTop (nhds 0) :=
+    (Filter.tendsto_add_atTop_iff_nat
+      (f := fun k => |(path2MultiplierProduct p e0 k : Real)|) N).mpr hzero
+  have hshift0' :
+      Tendsto
+        (fun k => |(path2MultiplierProduct p e0 (N + k) : Real)|)
+        atTop (nhds 0) := by
+    simpa [Nat.add_comm] using hshift0
+  rw [heq] at hshift0'
+  have hc : Tendsto (fun _ : Nat => c) atTop (nhds c) :=
+    tendsto_const_nhds
+  have hceq : c = 0 := tendsto_nhds_unique hc hshift0'
+  have hcast : (path2MultiplierProduct p e0 N : Real) ≠ 0 := by
+    exact_mod_cast hprefix
+  have hcpos : 0 < c := by
+    exact abs_pos.mpr hcast
+  linarith
+
+theorem piecewise_constant_tail_abs_product_tendsto_zero_of_zero_prefix
+    (p : ExposureParameters) (e0 N : Nat)
+    (hprefix : path2MultiplierProduct p e0 N = 0) :
+    Tendsto
+      (fun k => |(path2MultiplierProduct p e0 k : Real)|)
+      atTop (nhds 0) := by
+  have hzero : ∀ k : Nat, path2MultiplierProduct p e0 (N + k) = 0 := by
+    intro k
+    unfold path2MultiplierProduct at hprefix ⊢
+    rw [Finset.prod_range_add, hprefix, zero_mul]
+  have hshift :
+      Tendsto
+        (fun k => |(path2MultiplierProduct p e0 (N + k) : Real)|)
+        atTop (nhds 0) := by
+    have heq :
+        (fun k => |(path2MultiplierProduct p e0 (N + k) : Real)|) =
+          (fun _ : Nat => (0 : Real)) := by
+      funext k
+      rw [hzero k]
+      norm_num
+    rw [heq]
+    exact tendsto_const_nhds
+  have hshift' :
+      Tendsto
+        (fun k => |(path2MultiplierProduct p e0 (k + N) : Real)|)
+        atTop (nhds 0) := by
+    simpa [Nat.add_comm] using hshift
+  exact
+    (Filter.tendsto_add_atTop_iff_nat
+      (f := fun k => |(path2MultiplierProduct p e0 k : Real)|) N).mp hshift'
+
 end NarrativeDynamics.FitnessABMPathNExposureScheduleClassifier
