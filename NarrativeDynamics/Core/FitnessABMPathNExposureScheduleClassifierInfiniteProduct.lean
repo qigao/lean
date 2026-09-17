@@ -51,7 +51,10 @@ theorem abs_product_tendsto_zero_of_mixing_sum_tendsto_atTop
           (fun n => (-2 : Real) * (∑ k ∈ Finset.range n, m k))
           atTop atBot :=
       hdiv.const_mul_atTop_of_neg (by norm_num)
-    simpa [E] using Real.tendsto_exp_atBot.comp hneg
+    change Tendsto
+      (fun n => Real.exp ((-2 : Real) * (∑ k ∈ Finset.range n, m k)))
+      atTop (nhds 0)
+    exact Real.tendsto_exp_atBot.comp hneg
   have hPzero : Tendsto P atTop (nhds 0) :=
     squeeze_zero hP0 hPE hE0
   simpa [P] using hPzero
