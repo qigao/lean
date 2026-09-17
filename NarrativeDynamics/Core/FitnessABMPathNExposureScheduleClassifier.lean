@@ -42,6 +42,53 @@ def harmonicReceptivity
     (c : Rat) (offset : Nat) (target : DecayTarget) : Nat → Rat :=
   polynomialReceptivity c 1 offset target
 
+theorem polynomialDecay_pos
+    (c : Rat) (p offset e : Nat)
+    (_hp : 1 ≤ p) (hoffset : 1 ≤ offset) (hc0 : 0 < c) :
+    0 < polynomialDecay c p offset e := by
+  have hbaseNat : 0 < e + offset := by omega
+  have hbase : (0 : Rat) < ((e + offset : Nat) : Rat) := by
+    exact_mod_cast hbaseNat
+  unfold polynomialDecay
+  exact div_pos hc0 (pow_pos hbase p)
+
+theorem polynomialDecay_le_one
+    (c : Rat) (p offset e : Nat)
+    (_hp : 1 ≤ p) (hoffset : 1 ≤ offset) (_hc0 : 0 < c)
+    (hcvalid : c ≤ ((offset : Rat) ^ p)) :
+    polynomialDecay c p offset e ≤ 1 := by
+  have hbaseNat : offset ≤ e + offset := by omega
+  have hbase : (offset : Rat) ≤ ((e + offset : Nat) : Rat) := by
+    exact_mod_cast hbaseNat
+  have hoff0 : (0 : Rat) ≤ (offset : Rat) := by positivity
+  have hpow : (offset : Rat) ^ p ≤ ((e + offset : Nat) : Rat) ^ p := by
+    exact pow_le_pow_left₀ hoff0 hbase p
+  have hbasePosNat : 0 < e + offset := by omega
+  have hbasePos : (0 : Rat) < ((e + offset : Nat) : Rat) := by
+    exact_mod_cast hbasePosNat
+  have hdenPos : (0 : Rat) < ((e + offset : Nat) : Rat) ^ p :=
+    pow_pos hbasePos p
+  unfold polynomialDecay
+  exact (div_le_iff₀ hdenPos).2 (by simpa using hcvalid.trans hpow)
+
+theorem polynomialReceptivity_bounds
+    (c : Rat) (p offset : Nat) (target : DecayTarget) (e : Nat)
+    (hp : 1 ≤ p) (hoffset : 1 ≤ offset) (hc0 : 0 < c)
+    (hcvalid : c ≤ ((offset : Rat) ^ p)) :
+    0 ≤ polynomialReceptivity c p offset target e ∧
+      polynomialReceptivity c p offset target e ≤ 1 := by
+  have hd0 : 0 < polynomialDecay c p offset e :=
+    polynomialDecay_pos c p offset e hp hoffset hc0
+  have hd1 : polynomialDecay c p offset e ≤ 1 :=
+    polynomialDecay_le_one c p offset e hp hoffset hc0 hcvalid
+  cases target with
+  | zero =>
+      simp only [polynomialReceptivity, applyDecayTarget]
+      exact ⟨hd0.le, hd1⟩
+  | one =>
+      simp only [polynomialReceptivity, applyDecayTarget]
+      constructor <;> linarith
+
 noncomputable def mixingMass (a : Rat) : Rat :=
   min a (1 - a)
 
