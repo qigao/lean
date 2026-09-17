@@ -283,8 +283,8 @@ theorem polynomial_abs_product_tendsto_zero_of_p_eq_one
       have h := mixingMass_lt_half_of_ne
         (p.receptivityAt (e0 + r + 1)) (hnozero r)
       dsimp [m]
-      change ((mixingMass (p.receptivityAt (e0 + r + 1)) : Rat) : Real) <
-        ((1 / 2 : Rat) : Real)
+      have hhalf : (1 / 2 : Real) = ((1 / 2 : Rat) : Real) := by norm_num
+      rw [hhalf]
       exact_mod_cast h
     have hlower : ∀ r,
         (((polynomialDecay c 1 offset (e0 + r + 1) /
