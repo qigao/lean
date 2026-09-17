@@ -100,7 +100,7 @@ class CertificateBuilder:
         if any(x in req for x in ("parameters_valid","exposure_law","effective_alpha_lookup")): L+=valid_lines(m,p,vl)
         if any(x in req for x in ("initial_all_broadcast","exposure_law","effective_alpha_lookup")): L+=broadcast_lines(p,s,bl)
         if "exposure_law" in req:L += [f"private theorem {el} (k : Nat) (i : Fin {m.n}) :",f"    (((step {p} {m.n})^[k] {s}) i).exposure = ({s} i).exposure + k * FitnessABMPathN.degree {m.n} i := by",f"  exact exposure_iterate {p} {vl} {m.n} (by norm_num) {s} {bl} k i",""]
-        if "effective_alpha_lookup" in req:L += [f"private theorem {al} (k : Nat) (i : Fin {m.n}) :",f"    {p}.receptivityAt ((((step {p} {m.n})^[k] {s}) i).exposure + FitnessABMPathN.degree {m.n} i) =",f"      {p}.receptivityAt (({s} i).exposure + (k + 1) * FitnessABMPathN.degree {m.n} i) := by",f"  rw [exposure_iterate {p} {vl} {m.n} (by norm_num) {s} {bl} k i]","  congr 1","  omega",""]
+        if "effective_alpha_lookup" in req:L += [f"private theorem {al} (k : Nat) (i : Fin {m.n}) :",f"    {p}.receptivityAt ((((step {p} {m.n})^[k] {s}) i).exposure + FitnessABMPathN.degree {m.n} i) =",f"      {p}.receptivityAt (({s} i).exposure + (k + 1) * FitnessABMPathN.degree {m.n} i) := by",f"  rw [exposure_iterate {p} {vl} {m.n} (by norm_num) {s} {bl} k i]","  congr 1","  simp only [Nat.add_mul, Nat.one_mul, Nat.add_assoc]",""]
         L += ["end NarrativeAnalyzerCertificate",""]
         meta={
           "parameters_valid":CertificateClaim("parameters_valid",ClaimStatus.PROVED,f"{vl}; definition {EXP}.ExposureParameters.Valid",(),{}),
