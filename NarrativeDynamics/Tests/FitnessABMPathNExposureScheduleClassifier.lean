@@ -200,6 +200,20 @@ example :
       norm_num [piecewiseZeroPrefixParams, piecewiseConstantTailReceptivity,
         zeroPrefixOverrideValue, path2MultiplierProduct])
 
+example (e : Nat) : 0 < polynomialDecay (1/4) 2 2 e := by
+  exact polynomialDecay_pos (1/4) 2 2 e
+    (by norm_num) (by norm_num) (by norm_num)
+
+example (e : Nat) : polynomialDecay (1/4) 2 2 e ≤ 1 := by
+  exact polynomialDecay_le_one (1/4) 2 2 e
+    (by norm_num) (by norm_num) (by norm_num) (by norm_num)
+
+example (e : Nat) (target : DecayTarget) :
+    0 ≤ polynomialReceptivity (1/4) 2 2 target e ∧
+      polynomialReceptivity (1/4) 2 2 target e ≤ 1 := by
+  exact polynomialReceptivity_bounds (1/4) 2 2 target e
+    (by norm_num) (by norm_num) (by norm_num) (by norm_num)
+
 private def polyP1Params : ExposureParameters :=
   ⟨polynomialReceptivity (1/3) 1 2 DecayTarget.zero, 0⟩
 
