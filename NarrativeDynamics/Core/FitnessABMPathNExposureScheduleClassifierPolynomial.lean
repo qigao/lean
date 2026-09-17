@@ -51,8 +51,8 @@ private theorem polynomial_decay_cast_summable_of_two_le_p
   refine hscaled.congr ?_
   intro r
   change
-    ((c / (((e0 + r + 1 + offset : Nat) : Rat) ^ p) : Rat) : Real) =
-      (c : Real) * (1 / (((r + shift : Nat) : Real) ^ p))
+    (c : Real) * (1 / (((r + shift : Nat) : Real) ^ p)) =
+      ((c / (((e0 + r + 1 + offset : Nat) : Rat) ^ p) : Rat) : Real)
   dsimp [shift]
   push_cast
   rw [show e0 + r + 1 + offset = r + (e0 + offset + 1) by omega]
