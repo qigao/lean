@@ -1,4 +1,4 @@
-import NarrativeDynamics.Core.FitnessABMPathNExposureScheduleClassifier
+import NarrativeDynamics.Core.FitnessABMPathNExposureScheduleClassifierInfiniteProduct
 
 namespace NarrativeDynamics.FitnessABMPathNExposureScheduleClassifierTests
 
