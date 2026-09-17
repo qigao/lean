@@ -14,6 +14,7 @@ open NarrativeDynamics
 open NarrativeDynamics.FitnessABMPathNExposure
 open NarrativeDynamics.FitnessABMPathNExposureConvergence
 open Filter Topology
+open scoped BigOperators
 
 inductive DecayTarget
   | zero
@@ -111,5 +112,37 @@ theorem tendsto_const_mul
     (hf : Tendsto f atTop (nhds x)) :
     Tendsto (fun k => c * f k) atTop (nhds (c * x)) := by
   simpa using Filter.Tendsto.const_mul c hf
+
+theorem prod_range_add_split
+    (f : Nat → Real) (N k : Nat) :
+    (∏ r ∈ Finset.range (N + k), f r) =
+      (∏ r ∈ Finset.range N, f r) *
+        (∏ r ∈ Finset.range k, f (N + r)) := by
+  exact Finset.prod_range_add f N k
+
+theorem prod_range_add_eq_zero_of_prefix_zero
+    (f : Nat → Real) (N k : Nat)
+    (hzero : (∏ r ∈ Finset.range N, f r) = 0) :
+    (∏ r ∈ Finset.range (N + k), f r) = 0 := by
+  rw [prod_range_add_split f N k, hzero, zero_mul]
+
+theorem tendsto_zero_prod_range_add_iff
+    (f : Nat → Real) (N : Nat)
+    (hprefix : (∏ r ∈ Finset.range N, f r) ≠ 0) :
+    Tendsto
+        (fun k => ∏ r ∈ Finset.range (N + k), f r)
+        atTop (nhds 0) ↔
+      Tendsto
+        (fun k => ∏ r ∈ Finset.range k, f (N + r))
+        atTop (nhds 0) := by
+  have hseq :
+      (fun k => ∏ r ∈ Finset.range (N + k), f r) =
+        (fun k =>
+          (∏ r ∈ Finset.range N, f r) *
+            (∏ r ∈ Finset.range k, f (N + r))) := by
+    funext k
+    exact prod_range_add_split f N k
+  rw [hseq]
+  exact tendsto_zero_const_mul_iff hprefix
 
 end NarrativeDynamics.FitnessABMPathNExposureScheduleClassifier
