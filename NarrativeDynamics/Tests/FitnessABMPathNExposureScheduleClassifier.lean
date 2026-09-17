@@ -1,4 +1,4 @@
-import NarrativeDynamics.Core.FitnessABMPathNExposureScheduleClassifierInfiniteProduct
+import NarrativeDynamics.Core.FitnessABMPathNExposureScheduleClassifierPolynomial
 
 namespace NarrativeDynamics.FitnessABMPathNExposureScheduleClassifierTests
 
