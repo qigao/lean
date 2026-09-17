@@ -155,6 +155,9 @@ def periodicReceptivity
     (values : Fin period → Rat) (e : Nat) : Rat :=
   values ⟨e % period, Nat.mod_lt _ hperiod⟩
 
+def alternatingReceptivity (a b : Rat) : Nat → Rat :=
+  periodicReceptivity 2 (by decide) ![a, b]
+
 private theorem periodicReceptivity_add_period
     (period : Nat) (hperiod : 0 < period)
     (values : Fin period → Rat) (e : Nat) :
