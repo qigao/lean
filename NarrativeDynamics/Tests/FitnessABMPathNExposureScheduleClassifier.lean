@@ -7,6 +7,7 @@ open NarrativeDynamics.FitnessABMPathNExposure
 open NarrativeDynamics.FitnessABMPathNExposureConvergence
 open NarrativeDynamics.FitnessABMPathNExposureScheduleClassifier
 open Filter Topology
+open scoped BigOperators
 
 example : applyDecayTarget DecayTarget.zero (1/4 : Rat) = 1/4 := by
   norm_num [applyDecayTarget]
@@ -62,5 +63,26 @@ example :
   have h : Tendsto (fun _ : Nat => (2 : Real)) atTop (nhds 2) :=
     tendsto_const_nhds
   exact tendsto_const_mul (c := 3) h
+
+example (f : Nat → Real) :
+    (∏ r in Finset.range (2 + 3), f r) =
+      (∏ r in Finset.range 2, f r) *
+        (∏ r in Finset.range 3, f (2 + r)) := by
+  exact prod_range_add_split f 2 3
+
+example (f : Nat → Real)
+    (hzero : (∏ r in Finset.range 2, f r) = 0) :
+    (∏ r in Finset.range (2 + 3), f r) = 0 := by
+  exact prod_range_add_eq_zero_of_prefix_zero f 2 3 hzero
+
+example (f : Nat → Real)
+    (hprefix : (∏ r in Finset.range 2, f r) ≠ 0) :
+    Tendsto
+        (fun k => ∏ r in Finset.range (2 + k), f r)
+        atTop (nhds 0) ↔
+      Tendsto
+        (fun k => ∏ r in Finset.range k, f (2 + r))
+        atTop (nhds 0) := by
+  exact tendsto_zero_prod_range_add_iff f 2 hprefix
 
 end NarrativeDynamics.FitnessABMPathNExposureScheduleClassifierTests
