@@ -1,4 +1,7 @@
 import NarrativeDynamics.Core.FitnessABMPathNExposureConvergence
+import Mathlib.Analysis.SpecificLimits.Normed
+import Mathlib.Logic.Equiv.Fin.Rotate
+import Mathlib.Order.Filter.AtTopBot.Finite
 
 /-!
 # Exact receptivity schedule classification foundations
@@ -144,5 +147,229 @@ theorem tendsto_zero_prod_range_add_iff
     exact prod_range_add_split f N k
   rw [hseq]
   exact tendsto_zero_const_mul_iff hprefix
+
+def periodicReceptivity
+    (period : Nat) (hperiod : 0 < period)
+    (values : Fin period → Rat) (e : Nat) : Rat :=
+  values ⟨e % period, Nat.mod_lt _ hperiod⟩
+
+private theorem periodicReceptivity_add_period
+    (period : Nat) (hperiod : 0 < period)
+    (values : Fin period → Rat) (e : Nat) :
+    periodicReceptivity period hperiod values (e + period) =
+      periodicReceptivity period hperiod values e := by
+  apply congrArg values
+  apply Fin.ext
+  simp [periodicReceptivity, Nat.add_mod]
+
+private theorem periodic_multiplier_add_period
+    (period : Nat) (hperiod : 0 < period)
+    (values : Fin period → Rat) (e0 r : Nat) :
+    1 - 2 * periodicReceptivity period hperiod values (e0 + period + r + 1) =
+      1 - 2 * periodicReceptivity period hperiod values (e0 + r + 1) := by
+  congr 1
+  rw [show e0 + period + r + 1 = (e0 + r + 1) + period by omega]
+  exact periodicReceptivity_add_period period hperiod values (e0 + r + 1)
+
+private theorem periodic_path2_product_blocks
+    (period : Nat) (hperiod : 0 < period)
+    (values : Fin period → Rat) (e0 n r : Nat) :
+    path2MultiplierProduct
+        ⟨periodicReceptivity period hperiod values, 0⟩ e0 (period * n + r) =
+      (path2MultiplierProduct
+        ⟨periodicReceptivity period hperiod values, 0⟩ e0 period) ^ n *
+        path2MultiplierProduct
+          ⟨periodicReceptivity period hperiod values, 0⟩ e0 r := by
+  induction n with
+  | zero => simp
+  | succ n ih =>
+      rw [show period * Nat.succ n + r = period + (period * n + r) by omega]
+      simp only [path2MultiplierProduct, Finset.prod_range_add]
+      have htail :
+          (∏ x ∈ Finset.range (period * n + r),
+              (1 - 2 * periodicReceptivity period hperiod values
+                (e0 + (period + x) + 1))) =
+            (∏ x ∈ Finset.range (period * n + r),
+              (1 - 2 * periodicReceptivity period hperiod values
+                (e0 + x + 1))) := by
+        apply Finset.prod_congr rfl
+        intro x hx
+        simpa [Nat.add_assoc] using
+          periodic_multiplier_add_period period hperiod values e0 x
+      rw [htail]
+      change
+        path2MultiplierProduct
+            ⟨periodicReceptivity period hperiod values, 0⟩ e0 period *
+            path2MultiplierProduct
+              ⟨periodicReceptivity period hperiod values, 0⟩ e0 (period * n + r) =
+          _
+      rw [ih, pow_succ]
+      ring
+
+private theorem abs_cast_multiplier_le_one
+    (a : Rat) (ha : 0 ≤ a ∧ a ≤ 1) :
+    |(((1 - 2 * a : Rat) : Real))| ≤ 1 := by
+  have h0 : (0 : Real) ≤ (a : Real) := by exact_mod_cast ha.1
+  have h1 : (a : Real) ≤ 1 := by exact_mod_cast ha.2
+  rw [abs_le]
+  constructor <;> norm_num <;> linarith
+
+private theorem abs_cast_multiplier_lt_one
+    (a : Rat) (ha : 0 < a ∧ a < 1) :
+    |(((1 - 2 * a : Rat) : Real))| < 1 := by
+  have h0 : (0 : Real) < (a : Real) := by exact_mod_cast ha.1
+  have h1 : (a : Real) < 1 := by exact_mod_cast ha.2
+  rw [abs_lt]
+  constructor <;> norm_num <;> linarith
+
+theorem periodic_abs_product_tendsto_zero_of_contracting_entry
+    (period : Nat) (hperiod : 0 < period)
+    (values : Fin period → Rat)
+    (hvalid : ∀ i, 0 ≤ values i ∧ values i ≤ 1)
+    (j : Fin period) (hj : 0 < values j ∧ values j < 1)
+    (e0 : Nat) :
+    Tendsto
+      (fun k => |(path2MultiplierProduct
+        ⟨periodicReceptivity period hperiod values, 0⟩ e0 k : Real)|)
+      atTop (nhds 0) := by
+  let p : ExposureParameters :=
+    ⟨periodicReceptivity period hperiod values, 0⟩
+  let g : Nat → Real := fun r =>
+    |(((1 - 2 * periodicReceptivity period hperiod values (e0 + r + 1) : Rat) : Real))|
+  let offset : Fin period :=
+    ⟨(e0 + 1) % period, Nat.mod_lt _ hperiod⟩
+  let r0 : Fin period := (finCycle offset).symm j
+  have hphase (r : Fin period) :
+      periodicReceptivity period hperiod values (e0 + r.1 + 1) =
+        values (finCycle offset r) := by
+    apply congrArg values
+    apply Fin.ext
+    change (e0 + r.1 + 1) % period = (finCycle offset r).1
+    rw [finCycle_apply]
+    change (e0 + r.1 + 1) % period = (r.1 + offset.1) % period
+    rw [show e0 + r.1 + 1 = r.1 + (e0 + 1) by omega]
+    simp [offset, Nat.add_mod, Nat.mod_eq_of_lt r.2]
+  have hr0phase :
+      periodicReceptivity period hperiod values (e0 + r0.1 + 1) = values j := by
+    rw [hphase r0]
+    simp [r0]
+  have hgle : ∀ r, g r ≤ 1 := by
+    intro r
+    let i : Fin period :=
+      ⟨(e0 + r + 1) % period, Nat.mod_lt _ hperiod⟩
+    have hi := hvalid i
+    simpa [g, periodicReceptivity, i] using abs_cast_multiplier_le_one (values i) hi
+  have hgr0 : g r0.1 < 1 := by
+    change |(((1 - 2 * periodicReceptivity period hperiod values
+      (e0 + r0.1 + 1) : Rat) : Real))| < 1
+    rw [hr0phase]
+    exact abs_cast_multiplier_lt_one (values j) hj
+  have hr0mem : r0.1 ∈ Finset.range period :=
+    Finset.mem_range.mpr r0.2
+  have hrest_nonneg :
+      0 ≤ ∏ r ∈ (Finset.range period).erase r0.1, g r := by
+    exact Finset.prod_nonneg fun r hr => abs_nonneg _
+  have hrest_le :
+      (∏ r ∈ (Finset.range period).erase r0.1, g r) ≤ 1 := by
+    exact Finset.prod_le_one₀
+      (fun r hr => abs_nonneg _)
+      (fun r hr => hgle r)
+  have hcycle_lt : (∏ r ∈ Finset.range period, g r) < 1 := by
+    rw [← (Finset.range period).mul_prod_erase g hr0mem]
+    calc
+      g r0.1 * (∏ r ∈ (Finset.range period).erase r0.1, g r) ≤
+          g r0.1 * 1 :=
+        mul_le_mul_of_nonneg_left hrest_le (abs_nonneg _)
+      _ = g r0.1 := by ring
+      _ < 1 := hgr0
+  let B : Rat := path2MultiplierProduct p e0 period
+  let q : Real := |(B : Real)|
+  have hBabs : q = ∏ r ∈ Finset.range period, g r := by
+    simp [q, B, p, g, path2MultiplierProduct, abs_prod]
+  have hq_nonneg : 0 ≤ q := abs_nonneg _
+  have hq_lt : q < 1 := by
+    rw [hBabs]
+    exact hcycle_lt
+  have hq_abs_lt : |q| < 1 := by
+    simpa [abs_of_nonneg hq_nonneg] using hq_lt
+  have hqpow : Tendsto (fun n : Nat => q ^ n) atTop (nhds 0) :=
+    tendsto_pow_atTop_nhds_zero_of_abs_lt_one hq_abs_lt
+  have hresidue : ∀ r < period,
+      Tendsto
+        (fun n => |(path2MultiplierProduct p e0 (period * n + r) : Real)|)
+        atTop (nhds 0) := by
+    intro r hr
+    let c : Real := |(path2MultiplierProduct p e0 r : Real)|
+    have hmul : Tendsto (fun n : Nat => c * q ^ n) atTop (nhds 0) := by
+      simpa using tendsto_const_mul (c := c) hqpow
+    have heq :
+        (fun n => |(path2MultiplierProduct p e0 (period * n + r) : Real)|) =
+          (fun n => c * q ^ n) := by
+      funext n
+      have hp := periodic_path2_product_blocks period hperiod values e0 n r
+      change
+        |((path2MultiplierProduct p e0 (period * n + r) : Rat) : Real)| = _
+      change p = ⟨periodicReceptivity period hperiod values, 0⟩ at hp
+      rw [hp]
+      simp [c, q, B, p, abs_mul, abs_pow, mul_comm]
+    rw [heq]
+    exact hmul
+  refine Metric.tendsto_atTop.2 ?_
+  intro ε hε
+  have harith : ∀ r < period,
+      ∀ᶠ n in atTop,
+        dist |(path2MultiplierProduct p e0 (period * n + r) : Real)| 0 < ε := by
+    intro r hr
+    exact (Metric.tendsto_atTop.1 (hresidue r hr)) ε hε |> fun h =>
+      eventually_atTop.2 h
+  have hall : ∀ᶠ k in atTop,
+      dist |(path2MultiplierProduct p e0 k : Real)| 0 < ε :=
+    Filter.Eventually.atTop_of_arithmetic hperiod.ne' harith
+  exact eventually_atTop.1 hall
+
+theorem periodic_abs_product_not_tendsto_zero_of_boundary_values
+    (period : Nat) (hperiod : 0 < period)
+    (values : Fin period → Rat)
+    (hboundary : ∀ i, values i = 0 ∨ values i = 1)
+    (e0 : Nat) :
+    ¬ Tendsto
+      (fun k => |(path2MultiplierProduct
+        ⟨periodicReceptivity period hperiod values, 0⟩ e0 k : Real)|)
+      atTop (nhds 0) := by
+  let p : ExposureParameters :=
+    ⟨periodicReceptivity period hperiod values, 0⟩
+  have hfactor : ∀ r : Nat,
+      |1 - 2 * p.receptivityAt (e0 + r + 1)| = 1 := by
+    intro r
+    let i : Fin period :=
+      ⟨(e0 + r + 1) % period, Nat.mod_lt _ hperiod⟩
+    change |1 - 2 * values i| = 1
+    rcases hboundary i with h0 | h1
+    · rw [h0]
+      norm_num
+    · rw [h1]
+      norm_num
+  have honeRat : ∀ k : Nat, |path2MultiplierProduct p e0 k| = 1 := by
+    intro k
+    induction k with
+    | zero => simp [path2MultiplierProduct]
+    | succ k ih =>
+        rw [path2MultiplierProduct, Finset.prod_range_succ]
+        rw [abs_mul, hfactor k]
+        change |path2MultiplierProduct p e0 k| * 1 = 1
+        rw [ih]
+        norm_num
+  intro hzero
+  have honeReal :
+      (fun k => |(path2MultiplierProduct p e0 k : Real)|) =
+        (fun _ : Nat => (1 : Real)) := by
+    funext k
+    have hk := honeRat k
+    exact_mod_cast hk
+  rw [honeReal] at hzero
+  have hone : Tendsto (fun _ : Nat => (1 : Real)) atTop (nhds 1) :=
+    tendsto_const_nhds
+  have h10 : (1 : Real) = 0 := tendsto_nhds_unique hone hzero
+  norm_num at h10
 
 end NarrativeDynamics.FitnessABMPathNExposureScheduleClassifier
