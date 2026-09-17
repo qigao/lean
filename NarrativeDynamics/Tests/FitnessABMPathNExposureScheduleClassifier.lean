@@ -118,4 +118,27 @@ example :
       fin_cases i <;> norm_num [periodBoundary])
     0
 
+private def alternatingContractingParams : ExposureParameters :=
+  ⟨alternatingReceptivity (1/4) (3/4), 0⟩
+
+example : alternatingReceptivity (1/4) (3/4) 0 = 1/4 := by
+  norm_num [alternatingReceptivity, periodicReceptivity]
+
+example : alternatingReceptivity (1/4) (3/4) 1 = 3/4 := by
+  norm_num [alternatingReceptivity, periodicReceptivity]
+
+example :
+    Tendsto
+      (fun k => |(path2MultiplierProduct alternatingContractingParams 0 k : Real)|)
+      atTop (nhds 0) := by
+  simpa [alternatingContractingParams, alternatingReceptivity, periodContracting] using
+    (periodic_abs_product_tendsto_zero_of_contracting_entry
+      2 (by decide) periodContracting
+      (by
+        intro i
+        fin_cases i <;> norm_num [periodContracting])
+      (0 : Fin 2)
+      (by norm_num [periodContracting])
+      0)
+
 end NarrativeDynamics.FitnessABMPathNExposureScheduleClassifierTests
