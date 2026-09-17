@@ -43,3 +43,4 @@ import NarrativeDynamics.Core.NetworkPropagation
 import NarrativeDynamics.Core.FitnessABM
 import NarrativeDynamics.Core.FitnessABMReplay
 import NarrativeDynamics.Core.FitnessABMDistribution
+import NarrativeDynamics.Core.FitnessABMPathNExposureScheduleClassifier
