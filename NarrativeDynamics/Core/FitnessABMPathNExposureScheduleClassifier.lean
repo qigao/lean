@@ -31,6 +31,17 @@ def applyDecayTarget (target : DecayTarget) (d : Rat) : Rat :=
   | .zero => d
   | .one => 1 - d
 
+def polynomialDecay (c : Rat) (p offset e : Nat) : Rat :=
+  c / (((e + offset : Nat) : Rat) ^ p)
+
+def polynomialReceptivity
+    (c : Rat) (p offset : Nat) (target : DecayTarget) (e : Nat) : Rat :=
+  applyDecayTarget target (polynomialDecay c p offset e)
+
+def harmonicReceptivity
+    (c : Rat) (offset : Nat) (target : DecayTarget) : Nat → Rat :=
+  polynomialReceptivity c 1 offset target
+
 noncomputable def mixingMass (a : Rat) : Rat :=
   min a (1 - a)
 
