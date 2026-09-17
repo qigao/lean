@@ -57,9 +57,10 @@ example :
   exact tendsto_zero_const_mul_iff (f := fun _ : Nat => (0 : Real))
     (c := 2) (by norm_num)
 
-example : Tendsto (fun _ : Nat => (3 : Real) * 2) atTop (nhds 6) := by
+example :
+    Tendsto (fun _ : Nat => (3 : Real) * 2) atTop (nhds ((3 : Real) * 2)) := by
   have h : Tendsto (fun _ : Nat => (2 : Real)) atTop (nhds 2) :=
     tendsto_const_nhds
-  simpa using (tendsto_const_mul (c := 3) h)
+  exact tendsto_const_mul (c := 3) h
 
 end NarrativeDynamics.FitnessABMPathNExposureScheduleClassifierTests
