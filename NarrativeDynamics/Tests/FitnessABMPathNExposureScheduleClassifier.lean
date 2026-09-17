@@ -200,4 +200,32 @@ example :
       norm_num [piecewiseZeroPrefixParams, piecewiseConstantTailReceptivity,
         zeroPrefixOverrideValue, path2MultiplierProduct])
 
+private def polyP1Params : ExposureParameters :=
+  ⟨polynomialReceptivity (1/3) 1 2 DecayTarget.zero, 0⟩
+
+private def polyP2Params : ExposureParameters :=
+  ⟨polynomialReceptivity (1/4) 2 2 DecayTarget.zero, 0⟩
+
+example :
+    Tendsto
+      (fun k => |(path2MultiplierProduct polyP1Params 0 k : Real)|)
+      atTop (nhds 0) := by
+  simpa [polyP1Params] using
+    (polynomial_abs_product_tendsto_zero_of_p_eq_one
+      (1/3) 2 0 DecayTarget.zero
+      (by norm_num) (by norm_num) (by norm_num))
+
+example
+    (hnozero : ∀ r,
+      polynomialReceptivity (1/4) 2 2 DecayTarget.zero (r + 1) ≠ 1/2) :
+    ∃ L : Real, 0 < L ∧
+      Tendsto
+        (fun k => |(path2MultiplierProduct polyP2Params 0 k : Real)|)
+        atTop (nhds L) := by
+  simpa [polyP2Params] using
+    (polynomial_abs_product_has_nonzero_limit_of_two_le_p
+      (1/4) 2 2 0 DecayTarget.zero
+      (by norm_num) (by norm_num) (by norm_num) (by norm_num)
+      (by simpa using hnozero))
+
 end NarrativeDynamics.FitnessABMPathNExposureScheduleClassifierTests
