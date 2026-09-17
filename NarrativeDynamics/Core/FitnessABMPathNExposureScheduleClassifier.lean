@@ -227,6 +227,33 @@ private theorem abs_cast_multiplier_lt_one
   rw [abs_lt]
   constructor <;> norm_num <;> linarith
 
+private theorem prod_le_one_of_nonneg_le_one
+    (s : Finset Nat) (f : Nat → Real)
+    (hnonneg : ∀ x ∈ s, 0 ≤ f x)
+    (hle : ∀ x ∈ s, f x ≤ 1) :
+    ∏ x ∈ s, f x ≤ 1 := by
+  classical
+  induction s using Finset.induction with
+  | empty => simp
+  | @insert a s ha ih =>
+      rw [Finset.prod_insert ha]
+      have ha0 : 0 ≤ f a := hnonneg a (by simp)
+      have ha1 : f a ≤ 1 := hle a (by simp)
+      have hs0 : 0 ≤ ∏ x ∈ s, f x := by
+        exact Finset.prod_nonneg fun x hx =>
+          hnonneg x (Finset.mem_insert_of_mem hx)
+      have hs1 : (∏ x ∈ s, f x) ≤ 1 := by
+        apply ih
+        · intro x hx
+          exact hnonneg x (Finset.mem_insert_of_mem hx)
+        · intro x hx
+          exact hle x (Finset.mem_insert_of_mem hx)
+      calc
+        f a * ∏ x ∈ s, f x ≤ 1 * ∏ x ∈ s, f x :=
+          mul_le_mul_of_nonneg_right ha1 hs0
+        _ ≤ 1 * 1 := mul_le_mul_of_nonneg_left hs1 (by norm_num)
+        _ = 1 := by norm_num
+
 theorem periodic_abs_product_tendsto_zero_of_contracting_entry
     (period : Nat) (hperiod : 0 < period)
     (values : Fin period → Rat)
@@ -276,7 +303,8 @@ theorem periodic_abs_product_tendsto_zero_of_contracting_entry
     exact Finset.prod_nonneg fun r hr => abs_nonneg _
   have hrest_le :
       (∏ r ∈ (Finset.range period).erase r0.1, g r) ≤ 1 := by
-    exact Finset.prod_le_one₀
+    exact prod_le_one_of_nonneg_le_one
+      ((Finset.range period).erase r0.1) g
       (fun r hr => abs_nonneg _)
       (fun r hr => hgle r)
   have hcycle_lt : (∏ r ∈ Finset.range period, g r) < 1 := by
@@ -307,14 +335,20 @@ theorem periodic_abs_product_tendsto_zero_of_contracting_entry
     let c : Real := |(path2MultiplierProduct p e0 r : Real)|
     have hmul : Tendsto (fun n : Nat => c * q ^ n) atTop (nhds 0) := by
       simpa using tendsto_const_mul (c := c) hqpow
-    have hp :
-        path2MultiplierProduct p e0 (period * n + r) =
-          (path2MultiplierProduct p e0 period) ^ n *
-            path2MultiplierProduct p e0 r := by
-      simpa [p] using
-        periodic_path2_product_blocks period hperiod values e0 n r
-    rw [hp]
-    simpa [c, q, B, abs_mul, abs_pow, mul_comm]
+    have heq :
+        (fun n => |(path2MultiplierProduct p e0 (period * n + r) : Real)|) =
+          (fun n => c * q ^ n) := by
+      funext n
+      have hp :
+          path2MultiplierProduct p e0 (period * n + r) =
+            (path2MultiplierProduct p e0 period) ^ n *
+              path2MultiplierProduct p e0 r := by
+        simpa [p] using
+          periodic_path2_product_blocks period hperiod values e0 n r
+      rw [hp]
+      simp [c, q, B, p, abs_mul, abs_pow, mul_comm]
+    rw [heq]
+    exact hmul
   refine Metric.tendsto_atTop.2 ?_
   intro ε hε
   have harith : ∀ r < period,
