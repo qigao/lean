@@ -481,7 +481,7 @@ theorem piecewise_constant_tail_abs_product_not_tendsto_zero_of_boundary_tail
     ¬ Tendsto
       (fun k => |(path2MultiplierProduct p e0 k : Real)|)
       atTop (nhds 0) := by
-  have hm : |(((1 - 2 * tail : Rat) : Real))| = 1 := by
+  have hmReal : |(1 : Real) - 2 * (tail : Real)| = 1 := by
     rcases htail with h0 | h1
     · subst tail
       norm_num
@@ -493,7 +493,7 @@ theorem piecewise_constant_tail_abs_product_not_tendsto_zero_of_boundary_tail
         (fun _ : Nat => c) := by
     funext k
     rw [path2MultiplierProduct_add_constant_tail p e0 N k tail heventual]
-    simp [c, abs_mul, abs_pow, hm]
+    simp [c, abs_mul, abs_pow, hmReal]
   intro hzero
   have hshift0 :
       Tendsto
