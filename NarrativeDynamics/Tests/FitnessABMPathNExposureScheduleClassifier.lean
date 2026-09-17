@@ -214,6 +214,27 @@ example (e : Nat) (target : DecayTarget) :
   exact polynomialReceptivity_bounds (1/4) 2 2 target e
     (by norm_num) (by norm_num) (by norm_num) (by norm_num)
 
+example (m : Nat → Real)
+    (hm0 : ∀ k, 0 ≤ m k)
+    (hmhalf : ∀ k, m k < 1/2)
+    (hdiv : Tendsto (fun n => ∑ k ∈ Finset.range n, m k) atTop atTop) :
+    Tendsto
+      (fun n => ∏ k ∈ Finset.range n, (1 - 2 * m k))
+      atTop (nhds 0) := by
+  exact abs_product_tendsto_zero_of_mixing_sum_tendsto_atTop
+    m hm0 hmhalf hdiv
+
+example (m : Nat → Real)
+    (hm0 : ∀ k, 0 ≤ m k)
+    (hmhalf : ∀ k, m k < 1/2)
+    (hsum : Summable m) :
+    ∃ L : Real, 0 < L ∧
+      Tendsto
+        (fun n => ∏ k ∈ Finset.range n, (1 - 2 * m k))
+        atTop (nhds L) := by
+  exact abs_product_has_nonzero_limit_of_summable_mixing
+    m hm0 hmhalf hsum
+
 private def polyP1Params : ExposureParameters :=
   ⟨polynomialReceptivity (1/3) 1 2 DecayTarget.zero, 0⟩
 
