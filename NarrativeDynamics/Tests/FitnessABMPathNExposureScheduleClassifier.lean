@@ -411,4 +411,73 @@ example
     (by norm_num) (by norm_num) (by norm_num) (by norm_num)
     (by simpa using hnozero)
 
+
+example :
+    ¬ ∃ c0 c1 : Real,
+      Tendsto
+          (fun k => (beliefs ((step nearOneSchedule 2)^[k]
+            (![⟨1, 0⟩, ⟨0, 0⟩] : State 2)) 0 : Real))
+          atTop (nhds c0) ∧
+        Tendsto
+          (fun k => (beliefs ((step nearOneSchedule 2)^[k]
+            (![⟨1, 0⟩, ⟨0, 0⟩] : State 2)) 1 : Real))
+          atTop (nhds c1) := by
+  let s : State 2 := ![⟨1, 0⟩, ⟨0, 0⟩]
+  have he : (s 0).exposure = (s 1).exposure := by
+    norm_num [s]
+  have hb : allBroadcast nearOneSchedule s := by
+    intro i
+    fin_cases i <;> norm_num [allBroadcast, nearOneSchedule, s]
+  have hne : (s 0).belief ≠ (s 1).belief := by
+    norm_num [s]
+  have hevenIndex : Tendsto (fun k : Nat => 2 * k) atTop atTop := by
+    refine Filter.tendsto_atTop.2 ?_
+    intro b
+    exact Filter.eventually_atTop.2 ⟨b, fun a ha => by omega⟩
+  have hoddIndex : Tendsto (fun k : Nat => 2 * k + 1) atTop atTop := by
+    refine Filter.tendsto_atTop.2 ?_
+    intro b
+    exact Filter.eventually_atTop.2 ⟨b, fun a ha => by omega⟩
+  have heven :
+      Tendsto
+        (fun k => (path2MultiplierProduct nearOneSchedule 0 (2 * k) : Real))
+        atTop (nhds (1 / 2 : Real)) := by
+    have h := slowZero_product_tendsto_half.comp hevenIndex
+    refine h.congr' (Filter.Eventually.of_forall ?_)
+    intro k
+    change
+      (path2MultiplierProduct slowZeroSchedule 0 (2 * k) : Real) =
+        (path2MultiplierProduct nearOneSchedule 0 (2 * k) : Real)
+    rw [nearOne_product, slowZero_product]
+    have hp : (-1 : Rat) ^ (2 * k) = 1 := by
+      simp [pow_mul]
+    rw [hp]
+    norm_num
+  have hodd :
+      Tendsto
+        (fun k => (path2MultiplierProduct nearOneSchedule 0 (2 * k + 1) : Real))
+        atTop (nhds (-(1 / 2 : Real))) := by
+    have hslow := slowZero_product_tendsto_half.comp hoddIndex
+    have hneg :
+        Tendsto
+          (fun k => -(path2MultiplierProduct slowZeroSchedule 0 (2 * k + 1) : Real))
+          atTop (nhds (-(1 / 2 : Real))) := by
+      simpa only [Function.comp_apply] using hslow.neg
+    refine hneg.congr' (Filter.Eventually.of_forall ?_)
+    intro k
+    change
+      -(path2MultiplierProduct slowZeroSchedule 0 (2 * k + 1) : Real) =
+        (path2MultiplierProduct nearOneSchedule 0 (2 * k + 1) : Real)
+    rw [nearOne_product, slowZero_product]
+    have hp : (-1 : Rat) ^ (2 * k + 1) = -1 := by
+      rw [pow_succ]
+      simp [pow_mul]
+    rw [hp]
+    norm_num
+  have hgeneric :=
+    path2_oscillatory_nonconvergence_of_even_odd_product_limits
+      nearOneSchedule nearOneSchedule_valid s he hb hne
+      (L := (1 / 2 : Real)) (by norm_num) heven hodd
+  simpa [s] using hgeneric
+
 end NarrativeDynamics.FitnessABMPathNExposureScheduleClassifierTests
