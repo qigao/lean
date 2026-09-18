@@ -57,7 +57,7 @@ theorem path2_nodewise_converges_of_signed_product_tendsto
         beliefs ((step p 2)^[k] s) 0 =
           ((s 0).belief + (s 1).belief) / 2 +
             (((s 0).belief - (s 1).belief) *
-              path2MultiplierProduct p (s 0).exposure k) / 2) := by
+              path2MultiplierProduct p (s 0).exposure k) / 2 := by
       linarith [hsum, hd]
     have hReal := congrArg (fun q : Rat => (q : Real)) hRat
     push_cast at hReal
@@ -76,7 +76,7 @@ theorem path2_nodewise_converges_of_signed_product_tendsto
         beliefs ((step p 2)^[k] s) 1 =
           ((s 0).belief + (s 1).belief) / 2 -
             (((s 0).belief - (s 1).belief) *
-              path2MultiplierProduct p (s 0).exposure k) / 2) := by
+              path2MultiplierProduct p (s 0).exposure k) / 2 := by
       linarith [hsum, hd]
     have hReal := congrArg (fun q : Rat => (q : Real)) hRat
     push_cast at hReal
@@ -111,7 +111,7 @@ theorem path2_not_consensus_of_signed_product_tendsto_nonzero
       Tendsto
         (fun k => (beliefs ((step p 2)^[k] s) i : Real))
         atTop
-        (nhds ((((s 0).belief + (s 1).belief) / 2 : Rat) : Real))) := by
+        (nhds ((((s 0).belief : Real) + ((s 1).belief : Real)) / 2)) := by
   intro hcons
   have habs0 :=
     (path2_consensus_iff_product_tendsto_zero
