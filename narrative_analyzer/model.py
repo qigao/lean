@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from enum import Enum
 from fractions import Fraction
 from pathlib import Path
 import re
@@ -30,6 +31,45 @@ class ExactRat:
         object.__setattr__(self, "denominator", value.denominator)
 
 
+class DecayTarget(Enum):
+    ZERO = "zero"
+    ONE = "one"
+
+
+@dataclass(frozen=True)
+class HarmonicSchedule:
+    c: ExactRat
+    offset: int
+    target: DecayTarget
+
+
+@dataclass(frozen=True)
+class PolynomialSchedule:
+    c: ExactRat
+    p: int
+    offset: int
+    target: DecayTarget
+
+
+@dataclass(frozen=True)
+class ExponentialSchedule:
+    c: ExactRat
+    base: ExactRat
+    offset: int
+    target: DecayTarget
+
+
+@dataclass(frozen=True)
+class PeriodicSchedule:
+    values: tuple[ExactRat, ...]
+
+
+@dataclass(frozen=True)
+class AlternatingSchedule:
+    a: ExactRat
+    b: ExactRat
+
+
 @dataclass(frozen=True)
 class ConstantSchedule:
     value: ExactRat
@@ -46,7 +86,16 @@ class NamedSchedule:
     schedule_id: str
 
 
-Schedule = ConstantSchedule | PiecewiseSchedule | NamedSchedule
+Schedule = (
+    ConstantSchedule
+    | PiecewiseSchedule
+    | NamedSchedule
+    | HarmonicSchedule
+    | PolynomialSchedule
+    | ExponentialSchedule
+    | PeriodicSchedule
+    | AlternatingSchedule
+)
 
 
 @dataclass(frozen=True)
@@ -104,9 +153,92 @@ def _list(value: object, context: str) -> Sequence[object]:
     return value
 
 
+def _positive_exact_rat(value: object, context: str) -> ExactRat:
+    result = _exact_rat(value, context)
+    if result.numerator <= 0:
+        raise ModelInputError(f"{context} must be positive")
+    return result
+
+
+def _positive_natural(value: object, context: str) -> int:
+    result = _natural(value, context)
+    if result == 0:
+        raise ModelInputError(f"{context} must be at least 1")
+    return result
+
+
+def _decay_target(value: object, context: str) -> DecayTarget:
+    target = _string(value, context)
+    try:
+        return DecayTarget(target)
+    except ValueError as exc:
+        raise ModelInputError(f"unsupported {context}: {target}") from exc
+
+
 def _parse_schedule(value: object) -> Schedule:
     schedule = _mapping(value, "schedule")
     kind = _string(_field(schedule, "kind", "schedule"), "schedule.kind")
+
+
+    if kind == "harmonic":
+        return HarmonicSchedule(
+            c=_positive_exact_rat(_field(schedule, "c", "schedule"), "schedule.c"),
+            offset=_positive_natural(
+                _field(schedule, "offset", "schedule"), "schedule.offset"
+            ),
+            target=_decay_target(
+                _field(schedule, "target", "schedule"), "schedule.target"
+            ),
+        )
+
+    if kind == "polynomial":
+        return PolynomialSchedule(
+            c=_positive_exact_rat(_field(schedule, "c", "schedule"), "schedule.c"),
+            p=_positive_natural(_field(schedule, "p", "schedule"), "schedule.p"),
+            offset=_positive_natural(
+                _field(schedule, "offset", "schedule"), "schedule.offset"
+            ),
+            target=_decay_target(
+                _field(schedule, "target", "schedule"), "schedule.target"
+            ),
+        )
+
+    if kind == "exponential":
+        c = _positive_exact_rat(_field(schedule, "c", "schedule"), "schedule.c")
+        base = _positive_exact_rat(
+            _field(schedule, "base", "schedule"), "schedule.base"
+        )
+        if Fraction(base.numerator, base.denominator) >= 1:
+            raise ModelInputError("schedule.base must be strictly less than 1")
+        return ExponentialSchedule(
+            c=c,
+            base=base,
+            offset=_natural(
+                _field(schedule, "offset", "schedule"), "schedule.offset"
+            ),
+            target=_decay_target(
+                _field(schedule, "target", "schedule"), "schedule.target"
+            ),
+        )
+
+    if kind == "periodic":
+        raw_values = _list(
+            _field(schedule, "values", "schedule"), "schedule.values"
+        )
+        if not raw_values:
+            raise ModelInputError("schedule.values must not be empty")
+        return PeriodicSchedule(
+            tuple(
+                _exact_rat(item, f"schedule.values[{index}]")
+                for index, item in enumerate(raw_values)
+            )
+        )
+
+    if kind == "alternating":
+        return AlternatingSchedule(
+            a=_exact_rat(_field(schedule, "a", "schedule"), "schedule.a"),
+            b=_exact_rat(_field(schedule, "b", "schedule"), "schedule.b"),
+        )
 
     if kind == "constant":
         return ConstantSchedule(
