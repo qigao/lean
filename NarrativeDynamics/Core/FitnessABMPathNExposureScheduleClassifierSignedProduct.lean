@@ -58,17 +58,7 @@ theorem path2_nodewise_converges_of_signed_product_tendsto
           ((s 0).belief + (s 1).belief) / 2 +
             (((s 0).belief - (s 1).belief) *
               path2MultiplierProduct p (s 0).exposure k) / 2) := by
-      calc
-        beliefs ((step p 2)^[k] s) 0 =
-            ((beliefs ((step p 2)^[k] s) 0 +
-                beliefs ((step p 2)^[k] s) 1) +
-              (beliefs ((step p 2)^[k] s) 0 -
-                beliefs ((step p 2)^[k] s) 1)) / 2 := by ring
-        _ = ((s 0).belief + (s 1).belief) / 2 +
-            (((s 0).belief - (s 1).belief) *
-              path2MultiplierProduct p (s 0).exposure k) / 2) := by
-          rw [hsum, hd]
-          ring
+      linarith [hsum, hd]
     have hReal := congrArg (fun q : Rat => (q : Real)) hRat
     push_cast at hReal
     simpa [μ, d, P] using hReal
@@ -87,17 +77,7 @@ theorem path2_nodewise_converges_of_signed_product_tendsto
           ((s 0).belief + (s 1).belief) / 2 -
             (((s 0).belief - (s 1).belief) *
               path2MultiplierProduct p (s 0).exposure k) / 2) := by
-      calc
-        beliefs ((step p 2)^[k] s) 1 =
-            ((beliefs ((step p 2)^[k] s) 0 +
-                beliefs ((step p 2)^[k] s) 1) -
-              (beliefs ((step p 2)^[k] s) 0 -
-                beliefs ((step p 2)^[k] s) 1)) / 2 := by ring
-        _ = ((s 0).belief + (s 1).belief) / 2 -
-            (((s 0).belief - (s 1).belief) *
-              path2MultiplierProduct p (s 0).exposure k) / 2) := by
-          rw [hsum, hd]
-          ring
+      linarith [hsum, hd]
     have hReal := congrArg (fun q : Rat => (q : Real)) hRat
     push_cast at hReal
     simpa [μ, d, P] using hReal
@@ -131,7 +111,7 @@ theorem path2_not_consensus_of_signed_product_tendsto_nonzero
       Tendsto
         (fun k => (beliefs ((step p 2)^[k] s) i : Real))
         atTop
-        (nhds ((((s 0).belief + (s 1).belief) / 2 : Rat) : Real)) := by
+        (nhds ((((s 0).belief + (s 1).belief) / 2 : Rat) : Real))) := by
   intro hcons
   have habs0 :=
     (path2_consensus_iff_product_tendsto_zero
@@ -142,7 +122,7 @@ theorem path2_not_consensus_of_signed_product_tendsto_nonzero
         atTop (nhds |L|) := by
     simpa using hprod.abs
   have huniq := tendsto_nhds_unique habs0 habsL
-  have hz : |L| = 0 := huniq
+  have hz : |L| = 0 := huniq.symm
   exact hL (abs_eq_zero.mp hz)
 
 theorem path2_oscillatory_nonconvergence_of_even_odd_product_limits
