@@ -218,6 +218,117 @@ theorem polynomial_signed_product_has_nonzero_limit_of_two_le_p_zero
   simpa [L] using hmul.hasProd.tendsto_prod_nat
 
 
+
+theorem polynomial_signed_product_even_odd_limits_of_two_le_p_one
+    (c : Rat) (p offset e0 : Nat)
+    (hp : 2 ≤ p)
+    (hoffset : 1 ≤ offset)
+    (hc0 : 0 < c)
+    (hcvalid : c ≤ ((offset : Rat) ^ p))
+    (hnozero : ∀ r,
+      polynomialReceptivity c p offset DecayTarget.one (e0 + r + 1) ≠ 1 / 2) :
+    ∃ L : Real, L ≠ 0 ∧
+      Tendsto
+        (fun k => (path2MultiplierProduct
+          ⟨polynomialReceptivity c p offset DecayTarget.one, 0⟩ e0 (2 * k) : Real))
+        atTop (nhds L) ∧
+      Tendsto
+        (fun k => (path2MultiplierProduct
+          ⟨polynomialReceptivity c p offset DecayTarget.one, 0⟩ e0 (2 * k + 1) : Real))
+        atTop (nhds (-L)) := by
+  have hnozero0 : ∀ r,
+      polynomialReceptivity c p offset DecayTarget.zero (e0 + r + 1) ≠ 1 / 2 := by
+    intro r hzero
+    apply hnozero r
+    simp [polynomialReceptivity, applyDecayTarget] at hzero ⊢
+    linarith
+  obtain ⟨L, hL, hzeroLim⟩ :=
+    polynomial_signed_product_has_nonzero_limit_of_two_le_p_zero
+      c p offset e0 hp hoffset hc0 hcvalid hnozero0
+  have hfactor (r : Nat) :
+      1 - 2 * polynomialReceptivity c p offset DecayTarget.one (e0 + r + 1) =
+        -(1 - 2 * polynomialReceptivity c p offset DecayTarget.zero (e0 + r + 1)) := by
+    simp [polynomialReceptivity, applyDecayTarget]
+    ring
+  have hprod : ∀ k,
+      path2MultiplierProduct
+          ⟨polynomialReceptivity c p offset DecayTarget.one, 0⟩ e0 k =
+        (-1 : Rat) ^ k *
+          path2MultiplierProduct
+            ⟨polynomialReceptivity c p offset DecayTarget.zero, 0⟩ e0 k := by
+    intro k
+    induction k with
+    | zero =>
+        simp [path2MultiplierProduct]
+    | succ k ih =>
+        rw [show
+          path2MultiplierProduct
+              ⟨polynomialReceptivity c p offset DecayTarget.one, 0⟩ e0
+                (Nat.succ k) =
+            path2MultiplierProduct
+                ⟨polynomialReceptivity c p offset DecayTarget.one, 0⟩ e0 k *
+              (1 - 2 * polynomialReceptivity c p offset DecayTarget.one
+                (e0 + k + 1)) by
+          simp [path2MultiplierProduct, Finset.prod_range_succ]]
+        rw [show
+          path2MultiplierProduct
+              ⟨polynomialReceptivity c p offset DecayTarget.zero, 0⟩ e0
+                (Nat.succ k) =
+            path2MultiplierProduct
+                ⟨polynomialReceptivity c p offset DecayTarget.zero, 0⟩ e0 k *
+              (1 - 2 * polynomialReceptivity c p offset DecayTarget.zero
+                (e0 + k + 1)) by
+          simp [path2MultiplierProduct, Finset.prod_range_succ]]
+        rw [ih, hfactor k, pow_succ]
+        ring
+  have hevenIndex : Tendsto (fun k : Nat => 2 * k) atTop atTop := by
+    refine Filter.tendsto_atTop.2 ?_
+    intro b
+    exact Filter.eventually_atTop.2 ⟨b, fun a ha => by omega⟩
+  have hoddIndex : Tendsto (fun k : Nat => 2 * k + 1) atTop atTop := by
+    refine Filter.tendsto_atTop.2 ?_
+    intro b
+    exact Filter.eventually_atTop.2 ⟨b, fun a ha => by omega⟩
+  have hzeroEven := hzeroLim.comp hevenIndex
+  have hzeroOdd := hzeroLim.comp hoddIndex
+  have honeEven :
+      Tendsto
+        (fun k => (path2MultiplierProduct
+          ⟨polynomialReceptivity c p offset DecayTarget.one, 0⟩ e0 (2 * k) : Real))
+        atTop (nhds L) := by
+    refine hzeroEven.congr' (Filter.Eventually.of_forall ?_)
+    intro k
+    change
+      (path2MultiplierProduct
+        ⟨polynomialReceptivity c p offset DecayTarget.zero, 0⟩ e0 (2 * k) : Real) =
+      (path2MultiplierProduct
+        ⟨polynomialReceptivity c p offset DecayTarget.one, 0⟩ e0 (2 * k) : Real)
+    rw [hprod]
+    push_cast
+    simp [pow_mul]
+  have hnegZeroOdd :
+      Tendsto
+        (fun k => -(path2MultiplierProduct
+          ⟨polynomialReceptivity c p offset DecayTarget.zero, 0⟩ e0 (2 * k + 1) : Real))
+        atTop (nhds (-L)) := by
+    simpa using hzeroOdd.neg
+  have honeOdd :
+      Tendsto
+        (fun k => (path2MultiplierProduct
+          ⟨polynomialReceptivity c p offset DecayTarget.one, 0⟩ e0 (2 * k + 1) : Real))
+        atTop (nhds (-L)) := by
+    refine hnegZeroOdd.congr' (Filter.Eventually.of_forall ?_)
+    intro k
+    change
+      -(path2MultiplierProduct
+        ⟨polynomialReceptivity c p offset DecayTarget.zero, 0⟩ e0 (2 * k + 1) : Real) =
+      (path2MultiplierProduct
+        ⟨polynomialReceptivity c p offset DecayTarget.one, 0⟩ e0 (2 * k + 1) : Real)
+    rw [hprod]
+    push_cast
+    simp [pow_succ, pow_mul]
+  exact ⟨L, hL, honeEven, honeOdd⟩
+
 theorem harmonic_abs_product_tendsto_zero
     (c : Rat) (offset e0 : Nat) (target : DecayTarget)
     (hoffset : 1 ≤ offset)
