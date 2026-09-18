@@ -48,27 +48,59 @@ theorem path2_nodewise_converges_of_signed_product_tendsto
     intro k
     have hm := path2_mean_iterate p hvalid s he hb k
     have hd := path2_disagreement_product p hvalid s he hb k
+    have hsum :
+        beliefs ((step p 2)^[k] s) 0 +
+            beliefs ((step p 2)^[k] s) 1 =
+          (s 0).belief + (s 1).belief := by
+      linarith [hm]
     have hRat :
         beliefs ((step p 2)^[k] s) 0 =
           ((s 0).belief + (s 1).belief) / 2 +
             (((s 0).belief - (s 1).belief) *
               path2MultiplierProduct p (s 0).exposure k) / 2) := by
-      linarith
-    dsimp [μ, d, P]
-    exact_mod_cast hRat
+      calc
+        beliefs ((step p 2)^[k] s) 0 =
+            ((beliefs ((step p 2)^[k] s) 0 +
+                beliefs ((step p 2)^[k] s) 1) +
+              (beliefs ((step p 2)^[k] s) 0 -
+                beliefs ((step p 2)^[k] s) 1)) / 2 := by ring
+        _ = ((s 0).belief + (s 1).belief) / 2 +
+            (((s 0).belief - (s 1).belief) *
+              path2MultiplierProduct p (s 0).exposure k) / 2) := by
+          rw [hsum, hd]
+          ring
+    have hReal := congrArg (fun q : Rat => (q : Real)) hRat
+    push_cast at hReal
+    simpa [μ, d, P] using hReal
   have honeFormula : ∀ k,
       (beliefs ((step p 2)^[k] s) 1 : Real) = μ - d * P k / 2 := by
     intro k
     have hm := path2_mean_iterate p hvalid s he hb k
     have hd := path2_disagreement_product p hvalid s he hb k
+    have hsum :
+        beliefs ((step p 2)^[k] s) 0 +
+            beliefs ((step p 2)^[k] s) 1 =
+          (s 0).belief + (s 1).belief := by
+      linarith [hm]
     have hRat :
         beliefs ((step p 2)^[k] s) 1 =
           ((s 0).belief + (s 1).belief) / 2 -
             (((s 0).belief - (s 1).belief) *
               path2MultiplierProduct p (s 0).exposure k) / 2) := by
-      linarith
-    dsimp [μ, d, P]
-    exact_mod_cast hRat
+      calc
+        beliefs ((step p 2)^[k] s) 1 =
+            ((beliefs ((step p 2)^[k] s) 0 +
+                beliefs ((step p 2)^[k] s) 1) -
+              (beliefs ((step p 2)^[k] s) 0 -
+                beliefs ((step p 2)^[k] s) 1)) / 2 := by ring
+        _ = ((s 0).belief + (s 1).belief) / 2 -
+            (((s 0).belief - (s 1).belief) *
+              path2MultiplierProduct p (s 0).exposure k) / 2) := by
+          rw [hsum, hd]
+          ring
+    have hReal := congrArg (fun q : Rat => (q : Real)) hRat
+    push_cast at hReal
+    simpa [μ, d, P] using hReal
   refine ⟨μ + d * L / 2, μ - d * L / 2, ?_, ?_⟩
   · have hlim := Filter.Tendsto.const_add μ hscaled
     have hlim' :
