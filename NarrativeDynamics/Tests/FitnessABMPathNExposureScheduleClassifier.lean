@@ -1,4 +1,4 @@
-import NarrativeDynamics.Core.FitnessABMPathNExposureScheduleClassifierPolynomial
+import NarrativeDynamics.Core.FitnessABMPathNExposureScheduleClassifierExponential
 
 namespace NarrativeDynamics.FitnessABMPathNExposureScheduleClassifierTests
 
