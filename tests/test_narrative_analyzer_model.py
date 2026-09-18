@@ -3,11 +3,17 @@ import unittest
 from pathlib import Path
 
 from narrative_analyzer.model import (
+    AlternatingSchedule,
     ConstantSchedule,
+    DecayTarget,
     ExactRat,
+    ExponentialSchedule,
+    HarmonicSchedule,
     ModelInputError,
     NamedSchedule,
+    PeriodicSchedule,
     PiecewiseSchedule,
+    PolynomialSchedule,
     load_model,
     parse_model,
 )
@@ -116,6 +122,77 @@ class PathModelTests(unittest.TestCase):
         document["schedule"] = {"kind": "named", "id": "harmonicSchedule"}
         model = parse_model(document)
         self.assertEqual(model.schedule, NamedSchedule("harmonicSchedule"))
+
+
+    def test_closed_phase2_schedule_families_parse_exactly(self) -> None:
+        cases = (
+            (
+                {"kind": "harmonic", "c": "1/2", "offset": 1, "target": "zero"},
+                HarmonicSchedule(ExactRat(1, 2), 1, DecayTarget.ZERO),
+            ),
+            (
+                {"kind": "polynomial", "c": "1/3", "p": 2, "offset": 2, "target": "one"},
+                PolynomialSchedule(ExactRat(1, 3), 2, 2, DecayTarget.ONE),
+            ),
+            (
+                {
+                    "kind": "exponential",
+                    "c": "1/4",
+                    "base": "1/2",
+                    "offset": 0,
+                    "target": "zero",
+                },
+                ExponentialSchedule(
+                    ExactRat(1, 4), ExactRat(1, 2), 0, DecayTarget.ZERO
+                ),
+            ),
+            (
+                {"kind": "periodic", "values": ["1/4", "3/4"]},
+                PeriodicSchedule((ExactRat(1, 4), ExactRat(3, 4))),
+            ),
+            (
+                {"kind": "alternating", "a": "1/4", "b": "3/4"},
+                AlternatingSchedule(ExactRat(1, 4), ExactRat(3, 4)),
+            ),
+        )
+        for schedule, expected in cases:
+            with self.subTest(kind=schedule["kind"]):
+                document = base_document()
+                document["schedule"] = schedule
+                self.assertEqual(parse_model(document).schedule, expected)
+
+    def test_phase2_schedule_validation_is_closed_and_exact(self) -> None:
+        invalid_schedules = (
+            {"kind": "polynomial", "c": "1/3", "p": 0, "offset": 2, "target": "zero"},
+            {"kind": "polynomial", "c": "1/3", "p": 2, "offset": 0, "target": "zero"},
+            {"kind": "harmonic", "c": "1/2", "offset": 0, "target": "zero"},
+            {"kind": "harmonic", "c": "0", "offset": 1, "target": "zero"},
+            {
+                "kind": "exponential",
+                "c": "1/4",
+                "base": "0",
+                "offset": 0,
+                "target": "zero",
+            },
+            {
+                "kind": "exponential",
+                "c": "1/4",
+                "base": "1",
+                "offset": 0,
+                "target": "zero",
+            },
+            {"kind": "periodic", "values": []},
+            {"kind": "harmonic", "c": "1/2", "offset": 1, "target": "other"},
+            {"kind": "harmonic; import Evil", "c": "1/2", "offset": 1, "target": "zero"},
+            {"kind": "harmonic", "c": "1/2", "offset": 1, "target": "zero; theorem Evil"},
+            {"kind": "harmonic", "c": 0.5, "offset": 1, "target": "zero"},
+        )
+        for schedule in invalid_schedules:
+            with self.subTest(schedule=schedule):
+                document = base_document()
+                document["schedule"] = schedule
+                with self.assertRaises(ModelInputError):
+                    parse_model(document)
 
     def test_n_less_than_two_is_rejected(self) -> None:
         document = base_document()
