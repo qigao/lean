@@ -14,6 +14,12 @@ class ClaimStatus(Enum):
     UNKNOWN = "UNKNOWN"
 
 
+class CriterionStrength(Enum):
+    SUFFICIENT = "SUFFICIENT"
+    NECESSARY_AND_SUFFICIENT = "NECESSARY_AND_SUFFICIENT"
+    COUNTEREXAMPLE = "COUNTEREXAMPLE"
+
+
 @dataclass(frozen=True)
 class ClaimResult:
     claim_id: str
@@ -22,6 +28,7 @@ class ClaimResult:
     assumptions: tuple[str, ...]
     exact_values: Mapping[str, str]
     note: str | None
+    criterion_strength: CriterionStrength | None = None
 
     def __post_init__(self) -> None:
         if not self.claim_id:
