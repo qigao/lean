@@ -180,9 +180,8 @@ theorem polynomial_signed_product_has_nonzero_limit_of_two_le_p_zero
     refine hscaled.congr ?_
     intro r
     dsimp [f]
-    rw [norm_mul]
+    rw [abs_mul, abs_of_nonneg (hdecay0 r)]
     norm_num
-    rw [Real.norm_eq_abs, abs_of_nonneg (hdecay0 r)]
   have hfactor : ∀ r, 1 + f r ≠ 0 := by
     intro r hzero
     apply hnozero r
