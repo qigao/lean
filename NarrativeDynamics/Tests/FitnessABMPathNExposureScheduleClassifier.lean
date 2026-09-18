@@ -1,4 +1,4 @@
-import NarrativeDynamics.Core.FitnessABMPathNExposureScheduleClassifierExponential
+import NarrativeDynamics.Core.FitnessABMPathNExposureScheduleClassifierSignedProduct
 
 namespace NarrativeDynamics.FitnessABMPathNExposureScheduleClassifierTests
 
