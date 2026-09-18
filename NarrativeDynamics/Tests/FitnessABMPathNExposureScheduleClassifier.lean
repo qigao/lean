@@ -362,7 +362,7 @@ example
   exact polynomial_signed_product_has_nonzero_limit_of_two_le_p_zero
     (1/4) 2 2 0
     (by norm_num) (by norm_num) (by norm_num) (by norm_num)
-    hnozero
+    (by simpa using hnozero)
 
 example
     (hnozero : ∀ r,
@@ -379,7 +379,7 @@ example
   exact polynomial_signed_product_even_odd_limits_of_two_le_p_one
     (1/4) 2 2 0
     (by norm_num) (by norm_num) (by norm_num) (by norm_num)
-    hnozero
+    (by simpa using hnozero)
 
 example
     (hnozero : ∀ r,
@@ -392,7 +392,7 @@ example
   exact exponential_signed_product_has_nonzero_limit_zero
     (1/4) (1/2) 0 0
     (by norm_num) (by norm_num) (by norm_num) (by norm_num)
-    hnozero
+    (by simpa using hnozero)
 
 example
     (hnozero : ∀ r,
@@ -409,6 +409,6 @@ example
   exact exponential_signed_product_even_odd_limits_one
     (1/4) (1/2) 0 0
     (by norm_num) (by norm_num) (by norm_num) (by norm_num)
-    hnozero
+    (by simpa using hnozero)
 
 end NarrativeDynamics.FitnessABMPathNExposureScheduleClassifierTests
