@@ -8,6 +8,7 @@ from narrative_analyzer.result import (
     CertificateTimeoutError,
     ClaimResult,
     ClaimStatus,
+    CriterionStrength,
     ProvenanceMismatchError,
 )
 
@@ -41,6 +42,31 @@ class ClaimResultTests(unittest.TestCase):
     def test_unknown_requires_explanatory_note(self) -> None:
         with self.assertRaises(ValueError):
             claim("consensus_value_known", ClaimStatus.UNKNOWN)
+
+    def test_old_claim_construction_defaults_criterion_strength(self) -> None:
+        result = claim(
+            "parameters_valid",
+            ClaimStatus.PROVED,
+            theorem="Example.theorem",
+        )
+        self.assertIsNone(result.criterion_strength)
+
+    def test_criterion_strength_is_immutable_metadata(self) -> None:
+        result = ClaimResult(
+            claim_id="path2_consensus",
+            status=ClaimStatus.PROVED,
+            theorem="Example.theorem",
+            assumptions=(),
+            exact_values={},
+            note=None,
+            criterion_strength=CriterionStrength.NECESSARY_AND_SUFFICIENT,
+        )
+        self.assertEqual(
+            result.criterion_strength,
+            CriterionStrength.NECESSARY_AND_SUFFICIENT,
+        )
+        with self.assertRaises(Exception):
+            result.criterion_strength = CriterionStrength.SUFFICIENT  # type: ignore[misc]
 
     def test_valid_claim_snapshots_exact_values(self) -> None:
         values = {"eps": "1/4"}
