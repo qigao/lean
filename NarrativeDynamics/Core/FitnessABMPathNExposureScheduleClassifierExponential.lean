@@ -25,25 +25,20 @@ theorem exponentialDecay_pos
 
 theorem exponentialDecay_le_one
     (c base : Rat) (offset e : Nat)
+    (hc0 : 0 < c)
     (hbase0 : 0 < base) (hbase1 : base < 1)
     (hcvalid : c * base ^ offset ≤ 1) :
     exponentialDecay c base offset e ≤ 1 := by
   have hpow0 : 0 ≤ base ^ e := pow_nonneg hbase0.le _
   have hpow1 : base ^ e ≤ 1 := pow_le_one₀ hbase0.le hbase1.le
-  have hcvalid0 : 0 ≤ c * base ^ offset := by
-    have hc_nonneg : 0 ≤ c := by
-      by_contra h
-      have hcneg : c < 0 := lt_of_not_ge h
-      have hpowoff : 0 < base ^ offset := pow_pos hbase0 _
-      have : c * base ^ offset < 0 := mul_neg_of_neg_of_pos hcneg hpowoff
-      linarith
-    exact mul_nonneg hc_nonneg (pow_nonneg hbase0.le _)
+  have hcvalid0 : 0 ≤ c * base ^ offset :=
+    mul_nonneg hc0.le (pow_nonneg hbase0.le _)
   unfold exponentialDecay
   rw [pow_add]
   calc
     c * (base ^ e * base ^ offset) =
         (c * base ^ offset) * base ^ e := by ring
-    _ ≤ 1 * 1 := mul_le_mul hcvalid hpow1 hpow0 hcvalid0
+    _ ≤ 1 * 1 := mul_le_mul hcvalid hpow1 hpow0 (by norm_num)
     _ = 1 := by norm_num
 
 theorem exponentialReceptivity_bounds
@@ -57,7 +52,7 @@ theorem exponentialReceptivity_bounds
   have hd0 : 0 < exponentialDecay c base offset e :=
     exponentialDecay_pos c base offset e hc0 hbase0
   have hd1 : exponentialDecay c base offset e ≤ 1 :=
-    exponentialDecay_le_one c base offset e hbase0 hbase1 hcvalid
+    exponentialDecay_le_one c base offset e hc0 hbase0 hbase1 hcvalid
   cases target with
   | zero =>
       simp only [exponentialReceptivity, applyDecayTarget]
@@ -108,9 +103,15 @@ private theorem exponential_decay_cast_summable
   dsimp [K]
   simp only [exponentialDecay]
   push_cast
-  rw [← pow_add]
-  congr 1
-  omega
+  calc
+    (c : Real) * (base : Real) ^ (e0 + 1 + offset) * (base : Real) ^ r =
+        (c : Real) * ((base : Real) ^ (e0 + 1 + offset) * (base : Real) ^ r) := by
+          ring
+    _ = (c : Real) * (base : Real) ^ ((e0 + 1 + offset) + r) := by
+          rw [← pow_add]
+    _ = (c : Real) * (base : Real) ^ (e0 + r + 1 + offset) := by
+          congr 2
+          omega
 
 theorem exponential_abs_product_has_nonzero_limit
     (c base : Rat) (offset e0 : Nat) (target : DecayTarget)
