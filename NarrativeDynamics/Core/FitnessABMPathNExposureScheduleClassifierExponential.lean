@@ -195,4 +195,78 @@ theorem exponential_abs_product_has_nonzero_limit
   rw [hprodEq]
   exact hprod
 
+
+theorem exponential_signed_product_has_nonzero_limit_zero
+    (c base : Rat) (offset e0 : Nat)
+    (hc0 : 0 < c)
+    (hbase0 : 0 < base)
+    (hbase1 : base < 1)
+    (hcvalid : c * base ^ offset ≤ 1)
+    (hnozero : ∀ r,
+      exponentialReceptivity c base offset DecayTarget.zero (e0 + r + 1) ≠ 1 / 2) :
+    ∃ L : Real, L ≠ 0 ∧
+      Tendsto
+        (fun k => (path2MultiplierProduct
+          ⟨exponentialReceptivity c base offset DecayTarget.zero, 0⟩ e0 k : Real))
+        atTop (nhds L) := by
+  let params : ExposureParameters :=
+    ⟨exponentialReceptivity c base offset DecayTarget.zero, 0⟩
+  let f : Nat → Real := fun r =>
+    (-2 : Real) *
+      ((exponentialDecay c base offset (e0 + r + 1) : Rat) : Real)
+  have hdecay0 : ∀ r,
+      0 ≤ ((exponentialDecay c base offset (e0 + r + 1) : Rat) : Real) := by
+    intro r
+    have hpos :=
+      exponentialDecay_pos c base offset (e0 + r + 1) hc0 hbase0
+    exact le_of_lt (by exact_mod_cast hpos)
+  have hdecaySum :=
+    exponential_decay_cast_summable c base offset e0 hbase0 hbase1
+  have hscaled :
+      Summable
+        (fun r =>
+          (2 : Real) *
+            ((exponentialDecay c base offset (e0 + r + 1) : Rat) : Real)) :=
+    Summable.mul_left (2 : Real) hdecaySum
+  have hnorm : Summable (fun r => ‖f r‖) := by
+    refine hscaled.congr ?_
+    intro r
+    dsimp [f]
+    rw [abs_mul, abs_of_nonneg (hdecay0 r)]
+    norm_num
+  have hfactor : ∀ r, 1 + f r ≠ 0 := by
+    intro r hzero
+    apply hnozero r
+    have hcast :
+        (1 : Real) -
+            2 * ((exponentialDecay c base offset (e0 + r + 1) : Rat) : Real) = 0 := by
+      dsimp [f] at hzero
+      linarith
+    have hrat :
+        (1 : Rat) - 2 * exponentialDecay c base offset (e0 + r + 1) = 0 := by
+      exact_mod_cast hcast
+    have hd :
+        exponentialDecay c base offset (e0 + r + 1) = (1 / 2 : Rat) := by
+      linarith
+    simpa [exponentialReceptivity, applyDecayTarget] using hd
+  have hmul : Multipliable (fun r => 1 + f r) :=
+    multipliable_one_add_of_summable hnorm
+  let L : Real := ∏' r, (1 + f r)
+  have hL : L ≠ 0 := by
+    dsimp [L]
+    exact tprod_one_add_ne_zero_of_summable hfactor hnorm
+  have hseq :
+      (fun k => (path2MultiplierProduct params e0 k : Real)) =
+        (fun k => ∏ r ∈ Finset.range k, (1 + f r)) := by
+    funext k
+    unfold path2MultiplierProduct
+    push_cast
+    apply Finset.prod_congr rfl
+    intro r hr
+    simp [params, f, exponentialReceptivity, applyDecayTarget]
+    ring
+  refine ⟨L, hL, ?_⟩
+  rw [hseq]
+  simpa [L] using hmul.hasProd.tendsto_prod_nat
+
 end NarrativeDynamics.FitnessABMPathNExposureScheduleClassifier
