@@ -275,4 +275,79 @@ example :
       (1/2) 1 0 DecayTarget.zero
       (by norm_num) (by norm_num) (by norm_num))
 
+
+private def expZeroParams : ExposureParameters :=
+  ⟨exponentialReceptivity (1/4) (1/2) 0 DecayTarget.zero, 0⟩
+
+private def expOneParams : ExposureParameters :=
+  ⟨exponentialReceptivity (1/4) (1/2) 0 DecayTarget.one, 0⟩
+
+example
+    (hnozero : ∀ r,
+      exponentialReceptivity (1/4) (1/2) 0 DecayTarget.zero (r + 1) ≠ 1/2) :
+    ∃ L : Real, 0 < L ∧
+      Tendsto
+        (fun k => |(path2MultiplierProduct expZeroParams 0 k : Real)|)
+        atTop (nhds L) := by
+  simpa [expZeroParams] using
+    (exponential_abs_product_has_nonzero_limit
+      (1/4) (1/2) 0 0 DecayTarget.zero
+      (by norm_num) (by norm_num) (by norm_num) (by norm_num)
+      (by simpa using hnozero))
+
+example
+    (hnozero : ∀ r,
+      exponentialReceptivity (1/4) (1/2) 0 DecayTarget.one (r + 1) ≠ 1/2) :
+    ∃ L : Real, 0 < L ∧
+      Tendsto
+        (fun k => |(path2MultiplierProduct expOneParams 0 k : Real)|)
+        atTop (nhds L) := by
+  simpa [expOneParams] using
+    (exponential_abs_product_has_nonzero_limit
+      (1/4) (1/2) 0 0 DecayTarget.one
+      (by norm_num) (by norm_num) (by norm_num) (by norm_num)
+      (by simpa using hnozero))
+
+example
+    (p : ExposureParameters) (hvalid : p.Valid)
+    (s : State 2)
+    (he : (s 0).exposure = (s 1).exposure)
+    (hb : allBroadcast p s)
+    {L : Real}
+    (hprod : Tendsto
+      (fun k => (path2MultiplierProduct p (s 0).exposure k : Real))
+      atTop (nhds L)) :
+    ∃ c0 c1 : Real,
+      Tendsto
+          (fun k => (beliefs ((step p 2)^[k] s) 0 : Real))
+          atTop (nhds c0) ∧
+        Tendsto
+          (fun k => (beliefs ((step p 2)^[k] s) 1 : Real))
+          atTop (nhds c1) := by
+  exact path2_nodewise_converges_of_signed_product_tendsto
+    p hvalid s he hb hprod
+
+example
+    (p : ExposureParameters) (hvalid : p.Valid)
+    (s : State 2)
+    (he : (s 0).exposure = (s 1).exposure)
+    (hb : allBroadcast p s)
+    (hne : (s 0).belief ≠ (s 1).belief)
+    {L : Real} (hL : L ≠ 0)
+    (heven : Tendsto
+      (fun k => (path2MultiplierProduct p (s 0).exposure (2*k) : Real))
+      atTop (nhds L))
+    (hodd : Tendsto
+      (fun k => (path2MultiplierProduct p (s 0).exposure (2*k+1) : Real))
+      atTop (nhds (-L))) :
+    ¬ ∃ c0 c1 : Real,
+      Tendsto
+          (fun k => (beliefs ((step p 2)^[k] s) 0 : Real))
+          atTop (nhds c0) ∧
+        Tendsto
+          (fun k => (beliefs ((step p 2)^[k] s) 1 : Real))
+          atTop (nhds c1) := by
+  exact path2_oscillatory_nonconvergence_of_even_odd_product_limits
+    p hvalid s he hb hne hL heven hodd
+
 end NarrativeDynamics.FitnessABMPathNExposureScheduleClassifierTests
