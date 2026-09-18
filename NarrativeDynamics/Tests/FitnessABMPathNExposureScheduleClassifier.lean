@@ -350,4 +350,65 @@ example
   exact path2_oscillatory_nonconvergence_of_even_odd_product_limits
     p hvalid s he hb hne hL heven hodd
 
+
+example
+    (hnozero : ∀ r,
+      polynomialReceptivity (1/4) 2 2 DecayTarget.zero (r + 1) ≠ 1/2) :
+    ∃ L : Real, L ≠ 0 ∧
+      Tendsto
+        (fun k => (path2MultiplierProduct
+          ⟨polynomialReceptivity (1/4) 2 2 DecayTarget.zero, 0⟩ 0 k : Real))
+        atTop (nhds L) := by
+  exact polynomial_signed_product_has_nonzero_limit_of_two_le_p_zero
+    (1/4) 2 2 0
+    (by norm_num) (by norm_num) (by norm_num) (by norm_num)
+    hnozero
+
+example
+    (hnozero : ∀ r,
+      polynomialReceptivity (1/4) 2 2 DecayTarget.one (r + 1) ≠ 1/2) :
+    ∃ L : Real, L ≠ 0 ∧
+      Tendsto
+        (fun k => (path2MultiplierProduct
+          ⟨polynomialReceptivity (1/4) 2 2 DecayTarget.one, 0⟩ 0 (2*k) : Real))
+        atTop (nhds L) ∧
+      Tendsto
+        (fun k => (path2MultiplierProduct
+          ⟨polynomialReceptivity (1/4) 2 2 DecayTarget.one, 0⟩ 0 (2*k+1) : Real))
+        atTop (nhds (-L)) := by
+  exact polynomial_signed_product_even_odd_limits_of_two_le_p_one
+    (1/4) 2 2 0
+    (by norm_num) (by norm_num) (by norm_num) (by norm_num)
+    hnozero
+
+example
+    (hnozero : ∀ r,
+      exponentialReceptivity (1/4) (1/2) 0 DecayTarget.zero (r + 1) ≠ 1/2) :
+    ∃ L : Real, L ≠ 0 ∧
+      Tendsto
+        (fun k => (path2MultiplierProduct
+          ⟨exponentialReceptivity (1/4) (1/2) 0 DecayTarget.zero, 0⟩ 0 k : Real))
+        atTop (nhds L) := by
+  exact exponential_signed_product_has_nonzero_limit_zero
+    (1/4) (1/2) 0 0
+    (by norm_num) (by norm_num) (by norm_num) (by norm_num)
+    hnozero
+
+example
+    (hnozero : ∀ r,
+      exponentialReceptivity (1/4) (1/2) 0 DecayTarget.one (r + 1) ≠ 1/2) :
+    ∃ L : Real, L ≠ 0 ∧
+      Tendsto
+        (fun k => (path2MultiplierProduct
+          ⟨exponentialReceptivity (1/4) (1/2) 0 DecayTarget.one, 0⟩ 0 (2*k) : Real))
+        atTop (nhds L) ∧
+      Tendsto
+        (fun k => (path2MultiplierProduct
+          ⟨exponentialReceptivity (1/4) (1/2) 0 DecayTarget.one, 0⟩ 0 (2*k+1) : Real))
+        atTop (nhds (-L)) := by
+  exact exponential_signed_product_even_odd_limits_one
+    (1/4) (1/2) 0 0
+    (by norm_num) (by norm_num) (by norm_num) (by norm_num)
+    hnozero
+
 end NarrativeDynamics.FitnessABMPathNExposureScheduleClassifierTests
