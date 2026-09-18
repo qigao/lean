@@ -111,7 +111,7 @@ theorem path2_not_consensus_of_signed_product_tendsto_nonzero
       Tendsto
         (fun k => (beliefs ((step p 2)^[k] s) i : Real))
         atTop
-        (nhds ((((s 0).belief : Real) + ((s 1).belief : Real)) / 2)) := by
+        (nhds ((((s 0).belief + (s 1).belief) / 2 : Rat) : Real))) := by
   intro hcons
   have habs0 :=
     (path2_consensus_iff_product_tendsto_zero
