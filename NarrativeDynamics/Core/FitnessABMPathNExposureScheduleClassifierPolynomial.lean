@@ -142,6 +142,83 @@ theorem polynomial_abs_product_has_nonzero_limit_of_two_le_p
   rw [hprodEq]
   exact hprod
 
+
+theorem polynomial_signed_product_has_nonzero_limit_of_two_le_p_zero
+    (c : Rat) (p offset e0 : Nat)
+    (hp : 2 ≤ p)
+    (hoffset : 1 ≤ offset)
+    (hc0 : 0 < c)
+    (hcvalid : c ≤ ((offset : Rat) ^ p))
+    (hnozero : ∀ r,
+      polynomialReceptivity c p offset DecayTarget.zero (e0 + r + 1) ≠ 1 / 2) :
+    ∃ L : Real, L ≠ 0 ∧
+      Tendsto
+        (fun k => (path2MultiplierProduct
+          ⟨polynomialReceptivity c p offset DecayTarget.zero, 0⟩ e0 k : Real))
+        atTop (nhds L) := by
+  let params : ExposureParameters :=
+    ⟨polynomialReceptivity c p offset DecayTarget.zero, 0⟩
+  let f : Nat → Real := fun r =>
+    (-2 : Real) *
+      ((polynomialDecay c p offset (e0 + r + 1) : Rat) : Real)
+  have hp1 : 1 ≤ p := by omega
+  have hdecay0 : ∀ r,
+      0 ≤ ((polynomialDecay c p offset (e0 + r + 1) : Rat) : Real) := by
+    intro r
+    have hpos :=
+      polynomialDecay_pos c p offset (e0 + r + 1) hp1 hoffset hc0
+    exact le_of_lt (by exact_mod_cast hpos)
+  have hdecaySum :=
+    polynomial_decay_cast_summable_of_two_le_p c p offset e0 hp
+  have hscaled :
+      Summable
+        (fun r =>
+          (2 : Real) *
+            ((polynomialDecay c p offset (e0 + r + 1) : Rat) : Real)) :=
+    Summable.mul_left (2 : Real) hdecaySum
+  have hnorm : Summable (fun r => ‖f r‖) := by
+    refine hscaled.congr ?_
+    intro r
+    dsimp [f]
+    rw [norm_mul]
+    norm_num
+    rw [Real.norm_eq_abs, abs_of_nonneg (hdecay0 r)]
+  have hfactor : ∀ r, 1 + f r ≠ 0 := by
+    intro r hzero
+    apply hnozero r
+    have hcast :
+        (1 : Real) -
+            2 * ((polynomialDecay c p offset (e0 + r + 1) : Rat) : Real) = 0 := by
+      dsimp [f] at hzero
+      linarith
+    have hrat :
+        (1 : Rat) - 2 * polynomialDecay c p offset (e0 + r + 1) = 0 := by
+      exact_mod_cast hcast
+    have hd :
+        polynomialDecay c p offset (e0 + r + 1) = (1 / 2 : Rat) := by
+      linarith
+    simpa [polynomialReceptivity, applyDecayTarget] using hd
+  have hmul : Multipliable (fun r => 1 + f r) :=
+    multipliable_one_add_of_summable hnorm
+  let L : Real := ∏' r, (1 + f r)
+  have hL : L ≠ 0 := by
+    dsimp [L]
+    exact tprod_one_add_ne_zero_of_summable hfactor hnorm
+  have hseq :
+      (fun k => (path2MultiplierProduct params e0 k : Real)) =
+        (fun k => ∏ r ∈ Finset.range k, (1 + f r)) := by
+    funext k
+    unfold path2MultiplierProduct
+    push_cast
+    apply Finset.prod_congr rfl
+    intro r hr
+    simp [params, f, polynomialReceptivity, applyDecayTarget]
+    ring
+  refine ⟨L, hL, ?_⟩
+  rw [hseq]
+  simpa [L] using hmul.hasProd.tendsto_prod_nat
+
+
 theorem harmonic_abs_product_tendsto_zero
     (c : Rat) (offset e0 : Nat) (target : DecayTarget)
     (hoffset : 1 ≤ offset)
