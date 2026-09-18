@@ -269,4 +269,115 @@ theorem exponential_signed_product_has_nonzero_limit_zero
   rw [hseq]
   simpa [L] using hmul.hasProd.tendsto_prod_nat
 
+
+theorem exponential_signed_product_even_odd_limits_one
+    (c base : Rat) (offset e0 : Nat)
+    (hc0 : 0 < c)
+    (hbase0 : 0 < base)
+    (hbase1 : base < 1)
+    (hcvalid : c * base ^ offset ≤ 1)
+    (hnozero : ∀ r,
+      exponentialReceptivity c base offset DecayTarget.one (e0 + r + 1) ≠ 1 / 2) :
+    ∃ L : Real, L ≠ 0 ∧
+      Tendsto
+        (fun k => (path2MultiplierProduct
+          ⟨exponentialReceptivity c base offset DecayTarget.one, 0⟩ e0 (2 * k) : Real))
+        atTop (nhds L) ∧
+      Tendsto
+        (fun k => (path2MultiplierProduct
+          ⟨exponentialReceptivity c base offset DecayTarget.one, 0⟩ e0 (2 * k + 1) : Real))
+        atTop (nhds (-L)) := by
+  have hnozero0 : ∀ r,
+      exponentialReceptivity c base offset DecayTarget.zero (e0 + r + 1) ≠ 1 / 2 := by
+    intro r hzero
+    apply hnozero r
+    simp [exponentialReceptivity, applyDecayTarget] at hzero ⊢
+    linarith
+  obtain ⟨L, hL, hzeroLim⟩ :=
+    exponential_signed_product_has_nonzero_limit_zero
+      c base offset e0 hc0 hbase0 hbase1 hcvalid hnozero0
+  have hfactor (r : Nat) :
+      1 - 2 * exponentialReceptivity c base offset DecayTarget.one (e0 + r + 1) =
+        -(1 - 2 * exponentialReceptivity c base offset DecayTarget.zero (e0 + r + 1)) := by
+    simp [exponentialReceptivity, applyDecayTarget]
+    ring
+  have hprod : ∀ k,
+      path2MultiplierProduct
+          ⟨exponentialReceptivity c base offset DecayTarget.one, 0⟩ e0 k =
+        (-1 : Rat) ^ k *
+          path2MultiplierProduct
+            ⟨exponentialReceptivity c base offset DecayTarget.zero, 0⟩ e0 k := by
+    intro k
+    induction k with
+    | zero =>
+        simp [path2MultiplierProduct]
+    | succ k ih =>
+        rw [show
+          path2MultiplierProduct
+              ⟨exponentialReceptivity c base offset DecayTarget.one, 0⟩ e0
+                (Nat.succ k) =
+            path2MultiplierProduct
+                ⟨exponentialReceptivity c base offset DecayTarget.one, 0⟩ e0 k *
+              (1 - 2 * exponentialReceptivity c base offset DecayTarget.one
+                (e0 + k + 1)) by
+          simp [path2MultiplierProduct, Finset.prod_range_succ]]
+        rw [show
+          path2MultiplierProduct
+              ⟨exponentialReceptivity c base offset DecayTarget.zero, 0⟩ e0
+                (Nat.succ k) =
+            path2MultiplierProduct
+                ⟨exponentialReceptivity c base offset DecayTarget.zero, 0⟩ e0 k *
+              (1 - 2 * exponentialReceptivity c base offset DecayTarget.zero
+                (e0 + k + 1)) by
+          simp [path2MultiplierProduct, Finset.prod_range_succ]]
+        rw [ih, hfactor k, pow_succ]
+        ring
+  have hevenIndex : Tendsto (fun k : Nat => 2 * k) atTop atTop := by
+    refine Filter.tendsto_atTop.2 ?_
+    intro b
+    exact Filter.eventually_atTop.2 ⟨b, fun a ha => by omega⟩
+  have hoddIndex : Tendsto (fun k : Nat => 2 * k + 1) atTop atTop := by
+    refine Filter.tendsto_atTop.2 ?_
+    intro b
+    exact Filter.eventually_atTop.2 ⟨b, fun a ha => by omega⟩
+  have hzeroEven := hzeroLim.comp hevenIndex
+  have hzeroOdd := hzeroLim.comp hoddIndex
+  have honeEven :
+      Tendsto
+        (fun k => (path2MultiplierProduct
+          ⟨exponentialReceptivity c base offset DecayTarget.one, 0⟩ e0 (2 * k) : Real))
+        atTop (nhds L) := by
+    refine hzeroEven.congr' (Filter.Eventually.of_forall ?_)
+    intro k
+    change
+      (path2MultiplierProduct
+        ⟨exponentialReceptivity c base offset DecayTarget.zero, 0⟩ e0 (2 * k) : Real) =
+      (path2MultiplierProduct
+        ⟨exponentialReceptivity c base offset DecayTarget.one, 0⟩ e0 (2 * k) : Real)
+    rw [hprod]
+    push_cast
+    simp [pow_mul]
+  have hnegZeroOdd :
+      Tendsto
+        (fun k => -(path2MultiplierProduct
+          ⟨exponentialReceptivity c base offset DecayTarget.zero, 0⟩ e0 (2 * k + 1) : Real))
+        atTop (nhds (-L)) := by
+    simpa using hzeroOdd.neg
+  have honeOdd :
+      Tendsto
+        (fun k => (path2MultiplierProduct
+          ⟨exponentialReceptivity c base offset DecayTarget.one, 0⟩ e0 (2 * k + 1) : Real))
+        atTop (nhds (-L)) := by
+    refine hnegZeroOdd.congr' (Filter.Eventually.of_forall ?_)
+    intro k
+    change
+      -(path2MultiplierProduct
+        ⟨exponentialReceptivity c base offset DecayTarget.zero, 0⟩ e0 (2 * k + 1) : Real) =
+      (path2MultiplierProduct
+        ⟨exponentialReceptivity c base offset DecayTarget.one, 0⟩ e0 (2 * k + 1) : Real)
+    rw [hprod]
+    push_cast
+    simp [pow_succ, pow_mul]
+  exact ⟨L, hL, honeEven, honeOdd⟩
+
 end NarrativeDynamics.FitnessABMPathNExposureScheduleClassifier
