@@ -12,7 +12,7 @@ example (nodeCount radius : Nat) :
 
 example : localClusteringCoefficient
     (wattsStrogatzRing 6 2) (0 : Fin 6) = (2 : ℚ) / 3 := by
-  native_decide
+  decide
 
 example (nodeCount radius : Nat) (positive : 1 ≤ radius) :
     GlobalHopBound (wattsStrogatzRing nodeCount radius) (nodeCount - 1) := by
