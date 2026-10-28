@@ -269,6 +269,10 @@ jobs:
             NarrativeDynamics/Core/Fitness*.lean \
             NarrativeDynamics/Tests/Fitness*.lean
 
+      - name: Mesh theorem trust audit
+        timeout-minutes: 10
+        run: bash tools/check_mesh_proof_trust.sh
+
       - name: Lean theorem tests
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
