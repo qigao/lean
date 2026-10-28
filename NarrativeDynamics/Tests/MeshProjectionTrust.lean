@@ -1,0 +1,12 @@
+import NarrativeDynamics.Core.MeshProjection
+
+#print axioms NarrativeDynamics.projectedMesh_source
+#print axioms NarrativeDynamics.projectedMesh_walk_lifts
+#print axioms NarrativeDynamics.projectedMesh_reach_lifts
+#print axioms NarrativeDynamics.projectedMesh_universal_society
+#print axioms NarrativeDynamics.projectedMesh_bridge_mono
+#print axioms NarrativeDynamics.projectedMesh_reach_mono_bridges
+#print axioms NarrativeDynamics.projectedMesh_selected_only
+#print axioms NarrativeDynamics.membershipQualifiedReach_source
+#print axioms NarrativeDynamics.membershipQualifiedReach_outsider
+#print axioms NarrativeDynamics.projectedMesh_no_unsourced_edge
