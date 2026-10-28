@@ -21,4 +21,5 @@ python3 tools/audit_fitness_trust.py log "$log" \
   --require NarrativeDynamics.projectedMesh_selected_only \
   --require NarrativeDynamics.membershipQualifiedReach_source \
   --require NarrativeDynamics.membershipQualifiedReach_outsider \
-  --require NarrativeDynamics.projectedMesh_no_unsourced_edge
+  --require NarrativeDynamics.projectedMesh_no_unsourced_edge \
+  --require NarrativeDynamics.projectedMesh_global_six_hop_bound
