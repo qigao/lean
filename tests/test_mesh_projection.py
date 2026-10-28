@@ -235,5 +235,31 @@ class MeshProjectionTests(unittest.TestCase):
             )
 
 
+
+    def test_real_runtime_projection_retains_source_identity(self) -> None:
+        from narrative_dynamics.abm.situated_network import project_situated_network_snapshot
+        from narrative_dynamics.abm.mesh_contracts import source_relation_edges
+        from tests.test_network_abm_situated_network import initial_runtime_case
+        model, story, cognitive_state, social_state = initial_runtime_case()
+        source = project_situated_network_snapshot(model, story, cognitive_state, social_state)
+        before = source.to_dict()
+        original_hash = source.content_hash
+        mesh = MeshSnapshot(
+            source, (MeshSociety("office", tuple(node.agent_id for node in source.nodes)),)
+        )
+        self.assertIs(mesh.source_snapshot, source)
+        for relation in MeshRelation:
+            self.assertEqual(mesh_edges(mesh, relation), source_relation_edges(source, relation))
+        for node in source.nodes:
+            witness = find_mesh_path(mesh, node.agent_id, node.agent_id,
+                                     relation=R, max_hops=0, society_id="office")
+            self.assertTrue(mesh_path_is_valid(
+                mesh, witness, node.agent_id, node.agent_id,
+                relation=R, max_hops=0, society_id="office"))
+        self.assertEqual(before, source.to_dict())
+        self.assertEqual(original_hash, source.content_hash)
+        self.assertEqual(mesh.source_snapshot.round_index, story.current_state.round_index)
+
+
 if __name__ == "__main__":
     unittest.main()
