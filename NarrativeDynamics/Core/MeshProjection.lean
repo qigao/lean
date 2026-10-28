@@ -159,4 +159,54 @@ theorem projectedMesh_no_unsourced_edge {Agent Society Relation : Type*}
   intro edge
   exact missing (projectedMesh_source source member bridge relation edge)
 
+
+/-- A society-to-society hop is admitted only if its designated gateways have
+an actual projected Agent edge. Self reachability uses MeshWalk.refl rather
+than manufacturing a reflexive Agent edge. -/
+def projectedGatewaySocietyGraph {Agent Society Relation : Type*}
+    (source : Relation → MeshGraph Agent)
+    (member : Agent → Society → Prop)
+    (bridge : Relation → Society → Society → Agent → Agent → Prop)
+    (relation : Relation) (gateway : Society → Agent) : MeshGraph Society :=
+  fun s t => s ≠ t ∧
+    projectedMesh source member bridge relation (gateway s) (gateway t)
+
+/-- A concrete selected-relation society overlay satisfies the existing
+1 + 4 + 1 theorem when its real gateway model, assignment cover and
+four-hop society graph are explicitly witnessed. Nothing about an arbitrary
+runtime snapshot establishes these premises automatically. -/
+theorem projectedMesh_global_six_hop_bound {Agent Society Relation : Type*}
+    (source : Relation → MeshGraph Agent)
+    (member : Agent → Society → Prop)
+    (bridge : Relation → Society → Society → Agent → Agent → Prop)
+    (relation : Relation)
+    (gateway : Society → Agent)
+    (gatewayMember : ∀ s, member (gateway s) s)
+    (societyOf : Agent → Society)
+    (assignedMember : ∀ a, member a (societyOf a))
+    (toGateway : ∀ a,
+      ReachWithin (projectedMesh source member bridge relation) 1
+        a (gateway (societyOf a)))
+    (fromGateway : ∀ a,
+      ReachWithin (projectedMesh source member bridge relation) 1
+        (gateway (societyOf a)) a)
+    (societyBound : GlobalHopBound
+      (projectedGatewaySocietyGraph source member bridge relation gateway) 4) :
+    GlobalHopBound (projectedMesh source member bridge relation) 6 := by
+  let model : SocietyGatewayModel
+      (projectedMesh source member bridge relation)
+      (projectedGatewaySocietyGraph source member bridge relation gateway) :=
+    { member := member
+      gateway := gateway
+      gatewayMember := gatewayMember
+      bridge := by
+        intro s t edge
+        exact edge.2 }
+  let cover : OneHopGatewayCover model :=
+    { societyOf := societyOf
+      assignedMember := assignedMember
+      toGateway := toGateway
+      fromGateway := fromGateway }
+  exact global_six_hop_bound model cover societyBound
+
 end NarrativeDynamics
