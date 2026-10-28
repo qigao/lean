@@ -34,3 +34,7 @@ Lean `MeshProjection` proves the abstract source/edge/walk lift, selected-relati
 ## Later boundary
 
 A production UI/consumer may request society snapshots from the V19 projector but cannot use the mesh to bypass the existing action/perception/admission pipeline. Persistence, distributed execution, and changes in BB/ABM agent evolution require separate explicit contracts and tests.
+
+## Explicit Lean theorem link
+
+`projectedGatewaySocietyGraph` admits only directed source-backed edges between designated society gateways. The new `projectedMesh_global_six_hop_bound` constructs the existing `SocietyGatewayModel` / `OneHopGatewayCover` and invokes `global_six_hop_bound`. Python `assess_six_hop_prerequisites` checks the same finite, selected-relation obligations for the particular source snapshot. This remains an executable correspondence, not a Lean proof of the Python checker; the extra theorem is included in the kernel axiom audit.
