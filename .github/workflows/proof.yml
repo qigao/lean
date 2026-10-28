@@ -275,6 +275,10 @@ jobs:
           export PATH="$HOME/.elan/bin:$PATH"
           lake env lean NarrativeDynamics/Tests/MeshProjection.lean
 
+      - name: V24 projection theorem trust audit
+        timeout-minutes: 5
+        run: bash tools/check_mesh_projection_trust.sh
+
       - name: Lean theorem tests
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
