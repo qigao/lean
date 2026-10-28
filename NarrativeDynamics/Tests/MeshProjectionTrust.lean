@@ -10,3 +10,4 @@ import NarrativeDynamics.Core.MeshProjection
 #print axioms NarrativeDynamics.membershipQualifiedReach_source
 #print axioms NarrativeDynamics.membershipQualifiedReach_outsider
 #print axioms NarrativeDynamics.projectedMesh_no_unsourced_edge
+#print axioms NarrativeDynamics.projectedMesh_global_six_hop_bound
