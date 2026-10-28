@@ -105,7 +105,7 @@ def assess_six_hop_prerequisites(
     for source_society, source_gate in sorted(frozen_gateways.items()):
         links[source_society] = sorted(
             target_society
-            for target_society, target_gate in gateways.items()
+            for target_society, target_gate in frozen_gateways.items()
             if source_society != target_society and (source_gate, target_gate) in edges
         )
     routes: list[tuple[str, str, tuple[str, ...]]] = []
