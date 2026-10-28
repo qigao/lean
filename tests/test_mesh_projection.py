@@ -185,5 +185,55 @@ class MeshProjectionTests(unittest.TestCase):
                                            relation=R, max_hops=2))
 
 
+    def test_six_hop_premise_checker_rejects_uncovered_chain(self) -> None:
+        from narrative_dynamics.abm.mesh_six_hop import assess_six_hop_prerequisites
+        mesh = two_societies(fixture())
+        result = assess_six_hop_prerequisites(
+            mesh, relation=R,
+            gateways={"left": "a2", "right": "a3"},
+            assigned_societies={
+                **{f"a{i}": "left" for i in range(3)},
+                **{f"a{i}": "right" for i in range(3, 7)},
+            },
+        )
+        self.assertFalse(result.premises_satisfied)
+        self.assertEqual(result.mesh_hash, mesh.content_hash)
+        self.assertTrue(any("missing one-hop" in reason for reason in result.failures))
+        self.assertTrue(any("no <=4-hop" in reason for reason in result.failures))
+
+    def test_six_hop_premise_checker_accepts_realized_gateway_cover(self) -> None:
+        from narrative_dynamics.abm.mesh_six_hop import assess_six_hop_prerequisites
+        source = fixture(3)
+        complete = tuple(
+            SituatedNetworkRelationshipEdge(f"a{i}", f"a{j}", 1.0, 0.0, 0, 0, True)
+            for i in range(3) for j in range(3) if i != j
+        )
+        source = replace(source, relationship_edges=complete)
+        mesh = MeshSnapshot(
+            source, (MeshSociety("s0", ("a0",)),
+                     MeshSociety("s1", ("a1", "a2"))),
+            (MeshBridge(R, "s0", "s1", "a0", "a1"),
+             MeshBridge(R, "s1", "s0", "a1", "a0")),
+        )
+        result = assess_six_hop_prerequisites(
+            mesh, relation=R,
+            gateways={"s0": "a0", "s1": "a1"},
+            assigned_societies={"a0": "s0", "a1": "s1", "a2": "s1"},
+        )
+        self.assertTrue(result.premises_satisfied, result.failures)
+        self.assertEqual(result.failures, ())
+        self.assertFalse(assess_six_hop_prerequisites(
+            mesh, relation=D,
+            gateways={"s0": "a0", "s1": "a1"},
+            assigned_societies={"a0": "s0", "a1": "s1", "a2": "s1"},
+        ).premises_satisfied)
+        with self.assertRaises(ValueError):
+            assess_six_hop_prerequisites(
+                mesh, relation=R,
+                gateways={"s0": "a0"},
+                assigned_societies={"a0": "s0", "a1": "s1", "a2": "s1"},
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
