@@ -64,3 +64,25 @@ example {Agent Society Relation : Type*}
     (notInSource : ¬ source r a b) :
     ¬ projectedMesh source member bridge r a b := by
   exact projectedMesh_no_unsourced_edge source member bridge r notInSource
+
+
+example {Agent Society Relation : Type*}
+    (source : Relation → MeshGraph Agent)
+    (member : Agent → Society → Prop)
+    (bridge : Relation → Society → Society → Agent → Agent → Prop)
+    (r : Relation) (gateway : Society → Agent)
+    (gatewayMember : ∀ s, member (gateway s) s)
+    (societyOf : Agent → Society)
+    (assignedMember : ∀ a, member a (societyOf a))
+    (toGateway : ∀ a,
+      ReachWithin (projectedMesh source member bridge r) 1
+        a (gateway (societyOf a)))
+    (fromGateway : ∀ a,
+      ReachWithin (projectedMesh source member bridge r) 1
+        (gateway (societyOf a)) a)
+    (between : GlobalHopBound
+      (projectedGatewaySocietyGraph source member bridge r gateway) 4) :
+    GlobalHopBound (projectedMesh source member bridge r) 6 := by
+  exact projectedMesh_global_six_hop_bound
+    source member bridge r gateway gatewayMember societyOf
+    assignedMember toGateway fromGateway between
