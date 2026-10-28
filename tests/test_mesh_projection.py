@@ -327,5 +327,69 @@ class MeshProjectionTests(unittest.TestCase):
         self.assertTrue(any("right->left" in f for f in first.failures))
 
 
+
+    def test_mutating_caller_mappings_cannot_diverge_from_evidence_hash(self):
+        from collections.abc import Mapping
+        from narrative_dynamics.abm.mesh_six_hop import assess_six_hop_prerequisites
+
+        class ChangingMapping(Mapping):
+            """Expose one mapping for hashing and a different one on reread."""
+            def __init__(self, first, second):
+                self.first, self.second, self.items_reads = first, second, 0
+
+            def __iter__(self):
+                return iter(self.first)
+
+            def __len__(self):
+                return len(self.first)
+
+            def __getitem__(self, key):
+                return self.first[key]
+
+            def items(self):
+                self.items_reads += 1
+                return (self.first if self.items_reads == 1 else self.second).items()
+
+        source = fixture(3)
+        complete = tuple(
+            SituatedNetworkRelationshipEdge(
+                f"a{i}", f"a{j}", 1.0, 0.0, 0, 0, True
+            )
+            for i in range(3) for j in range(3) if i != j
+        )
+        mesh = MeshSnapshot(
+            replace(source, relationship_edges=complete),
+            (MeshSociety("s0", ("a0",)),
+             MeshSociety("s1", ("a1", "a2"))),
+            (MeshBridge(R, "s0", "s1", "a0", "a1"),
+             MeshBridge(R, "s1", "s0", "a1", "a0")),
+        )
+        gateways = {"s0": "a0", "s1": "a1"}
+        assignments = {"a0": "s0", "a1": "s1", "a2": "s1"}
+        baseline = assess_six_hop_prerequisites(
+            mesh, relation=R, gateways=gateways,
+            assigned_societies=assignments,
+        )
+        self.assertTrue(baseline.premises_satisfied, baseline.failures)
+        for field in ("gateways", "assigned_societies"):
+            with self.subTest(field=field):
+                changed = ChangingMapping(
+                    gateways if field == "gateways" else assignments,
+                    {"s0": "a0", "s1": "a2"} if field == "gateways"
+                    else {"a0": "s0", "a1": "s0", "a2": "s1"},
+                )
+                result = assess_six_hop_prerequisites(
+                    mesh, relation=R,
+                    gateways=changed if field == "gateways" else gateways,
+                    assigned_societies=(
+                        changed if field == "assigned_societies" else assignments
+                    ),
+                )
+                self.assertEqual(changed.items_reads, 1)
+                self.assertTrue(result.premises_satisfied, result.failures)
+                self.assertEqual(result.configuration_hash, baseline.configuration_hash)
+                self.assertEqual(result.society_paths, baseline.society_paths)
+
+
 if __name__ == "__main__":
     unittest.main()

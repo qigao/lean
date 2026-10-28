@@ -44,15 +44,21 @@ def assess_six_hop_prerequisites(
     _relation(relation)
     if not isinstance(gateways, Mapping) or not isinstance(assigned_societies, Mapping):
         raise TypeError("gateway and assignment inputs must be mappings")
+
+    # Capture both caller-owned mappings exactly once. Validation, identity
+    # hashing and graph assessment must use the same bounded configuration
+    # even when a Mapping changes its returned values between reads.
+    frozen_gateways = dict(gateways.items())
+    frozen_assignments = dict(assigned_societies.items())
     societies = {s.society_id: frozenset(s.member_agent_ids) for s in snapshot.societies}
     agents = frozenset(node.agent_id for node in snapshot.source_snapshot.nodes)
-    if set(gateways) != set(societies):
+    if set(frozen_gateways) != set(societies):
         raise ValueError("gateways must name each and only each society")
-    if set(assigned_societies) != agents:
+    if set(frozen_assignments) != agents:
         raise ValueError("assignments must name each and only each source agent")
-    if any(not isinstance(g, str) or g not in agents for g in gateways.values()):
+    if any(not isinstance(g, str) or g not in agents for g in frozen_gateways.values()):
         raise ValueError("gateways must name known source agents")
-    if any(not isinstance(s, str) or s not in societies for s in assigned_societies.values()):
+    if any(not isinstance(s, str) or s not in societies for s in frozen_assignments.values()):
         raise ValueError("assignments must name known societies")
 
     # Immutable evidence identity includes *all* selected gateway/assignment
@@ -61,8 +67,8 @@ def assess_six_hop_prerequisites(
         "schema": "mesh-six-hop-premises-v24",
         "mesh_hash": snapshot.content_hash,
         "relation": relation.value,
-        "gateways": sorted(gateways.items()),
-        "assigned_societies": sorted(assigned_societies.items()),
+        "gateways": sorted(frozen_gateways.items()),
+        "assigned_societies": sorted(frozen_assignments.items()),
     })
     if not societies or not agents:
         return MeshSixHopAssessment(
@@ -72,10 +78,10 @@ def assess_six_hop_prerequisites(
         )
 
     failures = []
-    for society_id, gateway in sorted(gateways.items()):
+    for society_id, gateway in sorted(frozen_gateways.items()):
         if gateway not in societies[society_id]:
             failures.append(f"gateway {society_id}:{gateway} is not a member")
-    for agent_id, society_id in sorted(assigned_societies.items()):
+    for agent_id, society_id in sorted(frozen_assignments.items()):
         if agent_id not in societies[society_id]:
             failures.append(f"agent {agent_id} is not a member of assigned society {society_id}")
     if failures:
@@ -85,8 +91,8 @@ def assess_six_hop_prerequisites(
         )
 
     edges = set(mesh_edges(snapshot, relation))
-    for agent_id, society_id in sorted(assigned_societies.items()):
-        gate = gateways[society_id]
+    for agent_id, society_id in sorted(frozen_assignments.items()):
+        gate = frozen_gateways[society_id]
         if agent_id != gate:
             if (agent_id, gate) not in edges:
                 failures.append(f"missing one-hop to gateway: {agent_id}->{gate}")
@@ -96,7 +102,7 @@ def assess_six_hop_prerequisites(
     # The society graph is materialized from the *projected* directed edges
     # between designated gateways. Overlap never creates a synthetic edge.
     links: dict[str, list[str]] = {}
-    for source_society, source_gate in sorted(gateways.items()):
+    for source_society, source_gate in sorted(frozen_gateways.items()):
         links[source_society] = sorted(
             target_society
             for target_society, target_gate in gateways.items()
