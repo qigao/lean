@@ -292,5 +292,40 @@ class MeshProjectionTests(unittest.TestCase):
             ), (MeshBridge(R, "s0", "s1", "a0", "a1"),))
 
 
+
+    def test_six_hop_assessment_identity_tracks_gateway_choices(self) -> None:
+        from narrative_dynamics.abm.mesh_six_hop import assess_six_hop_prerequisites
+        mesh = two_societies(fixture())
+        assignments = {
+            **{f"a{i}": "left" for i in range(3)},
+            **{f"a{i}": "right" for i in range(3, 7)},
+        }
+        first = assess_six_hop_prerequisites(
+            mesh, relation=R,
+            gateways={"left": "a2", "right": "a3"},
+            assigned_societies=assignments,
+        )
+        same = assess_six_hop_prerequisites(
+            mesh, relation=R,
+            gateways={"right": "a3", "left": "a2"},
+            assigned_societies=dict(reversed(list(assignments.items()))),
+        )
+        different = assess_six_hop_prerequisites(
+            mesh, relation=R,
+            gateways={"left": "a1", "right": "a3"},
+            assigned_societies=assignments,
+        )
+        self.assertEqual(first.configuration_hash, same.configuration_hash)
+        self.assertEqual(first.society_paths, same.society_paths)
+        self.assertNotEqual(first.configuration_hash, different.configuration_hash)
+        self.assertEqual(first.mesh_hash, different.mesh_hash)
+        self.assertEqual(first.society_paths, (
+            ("left", "left", ("left",)),
+            ("left", "right", ("left", "right")),
+            ("right", "right", ("right",)),
+        ))
+        self.assertTrue(any("right->left" in f for f in first.failures))
+
+
 if __name__ == "__main__":
     unittest.main()
