@@ -2,13 +2,39 @@ import NarrativeDynamics.Core.SocialMesh
 import NarrativeDynamics.Core.SmallWorld
 import NarrativeDynamics.Core.WattsStrogatz
 
--- Transitive, kernel-generated dependency reports; source scanning alone is
--- not a proof of theorem trust.
+-- Kernel transitive axiom reports for every public theorem in the three core modules.
+#print axioms NarrativeDynamics.MeshWalk.single
+#print axioms NarrativeDynamics.MeshWalk.append
+#print axioms NarrativeDynamics.reachWithin_mono
 #print axioms NarrativeDynamics.restricted_walk_lifts
+#print axioms NarrativeDynamics.closed_walk_target_inside
+#print axioms NarrativeDynamics.closed_walk_restricts
 #print axioms NarrativeDynamics.closed_no_cross_reach
+#print axioms NarrativeDynamics.reachWithin_bridge
 #print axioms NarrativeDynamics.six_degrees_of_two_three_bridge
+#print axioms NarrativeDynamics.physical_world_unique
+#print axioms NarrativeDynamics.multiple_social_memberships_compatible
+#print axioms NarrativeDynamics.MeshWalk.mapNodes
+#print axioms NarrativeDynamics.reachWithin_append
+#print axioms NarrativeDynamics.reachWithin_of_subgraph
+#print axioms NarrativeDynamics.globalHopBound_of_subgraph
+#print axioms NarrativeDynamics.SocietyGatewayModel.walk_lifts
+#print axioms NarrativeDynamics.SocietyGatewayModel.reach_lifts
+#print axioms NarrativeDynamics.reachWithin_via_societies
 #print axioms NarrativeDynamics.global_six_hop_bound
+#print axioms NarrativeDynamics.SmallWorldCertificate.closes_neighbor_wedge
+#print axioms NarrativeDynamics.SmallWorldCertificate.short_paths_survive_edge_addition
 #print axioms NarrativeDynamics.smallWorld_of_gateway_cover
+#print axioms NarrativeDynamics.wattsStrogatzRing_symmetric
+#print axioms NarrativeDynamics.wattsStrogatzRing_loopless
+#print axioms NarrativeDynamics.MeshWalk.ofSimpleGraphWalk
+#print axioms NarrativeDynamics.cycleGraph_globalHopBound
+#print axioms NarrativeDynamics.cycleGraph_subgraph_wattsStrogatzRing
 #print axioms NarrativeDynamics.wattsStrogatzRing_globalHopBound
+#print axioms NarrativeDynamics.WattsStrogatzParameters.globalHopBound
+#print axioms NarrativeDynamics.base_subgraph_addUndirectedShortcut
+#print axioms NarrativeDynamics.addUndirectedShortcut_symmetric
+#print axioms NarrativeDynamics.addUndirectedShortcut_loopless
+#print axioms NarrativeDynamics.shortestHopCount_mono_edges
 #print axioms NarrativeDynamics.meshDiameter_mono_edges
 #print axioms NarrativeDynamics.averageShortestPathLength_mono_edges
