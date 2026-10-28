@@ -38,3 +38,7 @@ A production UI/consumer may request society snapshots from the V19 projector bu
 ## Explicit Lean theorem link
 
 `projectedGatewaySocietyGraph` admits only directed source-backed edges between designated society gateways. The new `projectedMesh_global_six_hop_bound` constructs the existing `SocietyGatewayModel` / `OneHopGatewayCover` and invokes `global_six_hop_bound`. Python `assess_six_hop_prerequisites` checks the same finite, selected-relation obligations for the particular source snapshot. This remains an executable correspondence, not a Lean proof of the Python checker; the extra theorem is included in the kernel axiom audit.
+
+## Bound checker evidence identity
+
+The concrete `MeshSixHopAssessment` now binds both the immutable `mesh_hash` and a separate `configuration_hash` containing the selected relation, the complete sorted society-gateway assignment, and each source-Agent's assigned society. Its `society_paths` are deterministic, shortest directed witnesses for every reachable ordered society pair (including zero-hop self paths), each bounded at four hops. Missing paths and missing bidirectional one-hop Agent cover conditions remain explicit failures. These are replayable Python artifacts, not signed or Lean-verified certificates.
