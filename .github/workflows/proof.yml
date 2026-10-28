@@ -269,6 +269,12 @@ jobs:
             NarrativeDynamics/Core/Fitness*.lean \
             NarrativeDynamics/Tests/Fitness*.lean
 
+      - name: V24 Lean mesh projection tests
+        timeout-minutes: 5
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          lake env lean NarrativeDynamics/Tests/MeshProjection.lean
+
       - name: Lean theorem tests
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
@@ -318,6 +324,25 @@ jobs:
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
           lake env lean NarrativeDynamics/Tests/Testimony.lean
+
+  mesh-projection:
+    name: V24 situated mesh Python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-world-studio.txt
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements-world-studio.txt
+      - name: Check exact revision
+        run: git rev-parse HEAD
+      - name: Runtime-derived mesh regression
+        run: python -m unittest tests.test_mesh_projection -v
 
   python-tests:
     # BB branches exclude peripheral discovery (Blender, providers and Studio).
