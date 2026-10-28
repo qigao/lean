@@ -261,5 +261,36 @@ class MeshProjectionTests(unittest.TestCase):
         self.assertEqual(mesh.source_snapshot.round_index, story.current_state.round_index)
 
 
+
+    def test_inactive_and_unavailable_edges_never_enter_mesh(self) -> None:
+        source = fixture(3)
+        source = replace(
+            source,
+            relationship_edges=(
+                SituatedNetworkRelationshipEdge("a0", "a1", 0.9, 0.0, 0, 0, False),
+                SituatedNetworkRelationshipEdge("a1", "a2", 0.9, 0.0, 0, 0, True),
+            ),
+            access_edges=(SituatedNetworkAccessEdge("a0", "a1", None, None, False),),
+            transmissions=(
+                SituatedNetworkTransmission(
+                    "event-1", "a1", "a2", SituatedPerceptFidelity.IDENTIFIED,
+                    (ObservationChannel.AUDITORY,)),
+                SituatedNetworkTransmission(
+                    "event-2", "a1", "a2", SituatedPerceptFidelity.EXACT,
+                    (ObservationChannel.VISUAL,)),
+            ),
+            latest_tell_event_count=2,
+        )
+        mesh = MeshSnapshot(source, (MeshSociety("all", ("a0", "a1", "a2")),))
+        self.assertEqual(mesh_edges(mesh, R), (("a1", "a2"),))
+        self.assertEqual(mesh_edges(mesh, D), ())
+        self.assertEqual(mesh_edges(mesh, T), (("a1", "a2"),))
+        with self.assertRaises(ValueError):
+            MeshSnapshot(source, (
+                MeshSociety("s0", ("a0",)),
+                MeshSociety("s1", ("a1", "a2")),
+            ), (MeshBridge(R, "s0", "s1", "a0", "a1"),))
+
+
 if __name__ == "__main__":
     unittest.main()
