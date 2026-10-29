@@ -379,5 +379,36 @@ class MeshEvidenceTests(unittest.TestCase):
             render_path_case("Unbounded", stale)
 
 
+    def test_source_identity_claims_checked_in_extended_lean_corpus(self):
+        from tools.render_mesh_reach_lean import render_path_corpus
+        corpus = render_path_corpus()
+        self.assertEqual(corpus.count(
+            "example : reportedSourceHash = authoritativeSourceHash := by decide"
+        ), 5)
+        self.assertEqual(corpus.count("private def authoritativeSourceHash : String"), 5)
+        self.assertNotIn("native_decide", corpus)
+        self.assertNotIn("sorry", corpus)
+
+    def test_stale_path_and_rehashed_identity_generate_real_lean_counterclaims(self):
+        from tools.mutate_mesh_reach_lean import render_false_reach_obligation
+        old_path = render_false_reach_obligation("stale-path")
+        self.assertIn("namespace StaleSourcePath", old_path)
+        self.assertIn(
+            "example : ReachWithin projected 1 (0 : Fin 7) (1 : Fin 7)",
+            old_path,
+        )
+        self.assertIn("MeshWalk.single (by decide_cbv)", old_path)
+        wrong_identity = render_false_reach_obligation("identity")
+        self.assertIn("namespace StaleSourceIdentity", wrong_identity)
+        self.assertIn(
+            "example : reportedSourceHash = authoritativeSourceHash := by decide",
+            wrong_identity,
+        )
+        self.assertNotIn("native_decide", wrong_identity)
+        self.assertNotIn("sorry", wrong_identity)
+        with self.assertRaises(ValueError):
+            render_false_reach_obligation("other")
+
+
 if __name__ == "__main__":
     unittest.main()

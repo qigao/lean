@@ -8,6 +8,7 @@ source owner, native_decide, sorry, axiom, or Python truth assertion is a proof.
 from __future__ import annotations
 
 from narrative_dynamics.abm.mesh_contracts import MeshRelation, MeshSnapshot, MeshSociety
+import re
 from narrative_dynamics.abm.mesh_evidence import (
     export_mesh_proof_input, validate_mesh_proof_input,
 )
@@ -162,7 +163,8 @@ def _gateway_proofs(evidence: dict[str, object]) -> list[str]:
 
 def render_path_case(name: str, evidence: dict[str, object], *,
                      gateway_cover: bool = False,
-                     outsider: tuple[int, int] | None = None) -> str:
+                     outsider: tuple[int, int] | None = None,
+                     authoritative_source_hash: str | None = None) -> str:
     base = render_case(name, evidence)
     suffix = f"\nend {name}\n"
     if not base.endswith(suffix):
@@ -170,6 +172,19 @@ def render_path_case(name: str, evidence: dict[str, object], *,
     n = len(evidence["agents"])
     budget = evidence["max_hops"]
     extra = ["", "-- Every exported V19 projected path rechecked as a Lean MeshWalk."]
+    if authoritative_source_hash is not None:
+        # These are only supplied finite source-identity literals. Lean checks
+        # equality, not the cryptographic hash algorithm or process origin.
+        reported = evidence["source_lineage"]["source_snapshot_hash"]
+        for value in (reported, authoritative_source_hash):
+            if type(value) is not str or re.fullmatch(r"sha256:[0-9a-f]{64}", value) is None:
+                raise ValueError("finite source identity must be canonical sha256")
+        extra.extend([
+            f'private def reportedSourceHash : String := "{reported}"',
+            f'private def authoritativeSourceHash : String := "{authoritative_source_hash}"',
+            "example : reportedSourceHash = authoritativeSourceHash := by decide",
+            "",
+        ])
     # Each source-backed edge is independently checked once by Lean.
     # The named proof is reused in long paths; no Python edge claim
     # is ever inserted as an axiom or a trusted assumption.
@@ -250,8 +265,10 @@ def render_path_corpus() -> str:
             raise AssertionError("non-authoritative runtime path proof input")
         if name.startswith("Nonempty") and not evidence["projected_edges"]:
             raise AssertionError("expected selected relation positive fixture is empty")
-        pieces.append(render_path_case(name, evidence,
-                                      gateway_cover=prove_gateway, outsider=outsider))
+        pieces.append(render_path_case(
+            name, evidence, gateway_cover=prove_gateway, outsider=outsider,
+            authoritative_source_hash=mesh.source_snapshot.content_hash,
+        ))
     return "\n".join(pieces)
 
 
