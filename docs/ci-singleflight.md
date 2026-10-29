@@ -7,10 +7,22 @@ their push checks. `workflow_dispatch` permits an explicit acceptance rerun.
 
 A PR source ref is a workflow concurrency group with
 `cancel-in-progress: true`: later commits supersede older queued and running
-runs for that PR. Other PR groups do not cancel one another. All three jobs
-(Python, Lean, World Studio) use one repository-wide job concurrency group,
-`queue: max` and `cancel-in-progress: false`: only one CI runner job is
-active, with unrelated PR jobs retained in the shared queue.
+runs for that PR. Other PR groups do not cancel one another.
+
+Full Python and Lean run **in parallel**, each with a repository-wide
+`queue: max`, `cancel-in-progress: false` concurrency lane. The existing
+`lean-ci-runner-${{ github.repository }}` lane serializes full Python and
+World Studio and is backward-compatible with other branches still on the old
+single-runner configuration. The additional proof lane is
+`lean-ci-runner-lean-${{ github.repository }}`. This bounds managed CI to at
+most two concurrent jobs across the repository while preserving queued jobs
+from unrelated PRs.
+
+World Studio has `needs: [python-tests, lean-proof]`: it runs only after
+both independent test families finish. The `!cancelled()` job predicates
+preserve Lean and Studio diagnostic evidence even when Python fails, with the
+overall workflow still RED. The original test commands and strict proofs
+remain unchanged.
 
 The pipeline preserves all prior Python, Lean, BB/PathN, Studio and real
 Playwright checks, plus exact-head checkouts. Previous fitness branch
