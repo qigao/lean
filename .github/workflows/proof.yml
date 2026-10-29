@@ -43,8 +43,22 @@ jobs:
         run: python -m pip install --disable-pip-version-check -r requirements-world-studio.txt
       - name: Check exact revision
         run: git rev-parse HEAD
+      - name: Canonical V24 runtime vector conformance
+        run: |
+          set -euo pipefail
+          pinned=conformance/mesh_runtime_vectors_v1.json
+          mkdir -p .generated-conformance
+          generated=.generated-conformance/mesh_runtime_vectors_v1.json
+          # The checked-in vector is mandatory: this is no longer a bootstrap.
+          test -f "$pinned"
+          python3 -m tools.render_mesh_proof_vectors > "$generated"
+          if ! cmp -s "$pinned" "$generated"; then
+            diff -u "$pinned" "$generated" || true
+            echo 'RED: reviewed V24 runtime vectors differ from authoritative export'
+            exit 1
+          fi
       - name: Runtime-derived mesh regression
-        run: python -m unittest tests.test_mesh_projection -v
+        run: python -m unittest tests.test_mesh_projection tests.test_mesh_evidence -v
 
   python-tests:
     needs: mesh-projection
@@ -165,6 +179,10 @@ jobs:
           export PATH="$HOME/.elan/bin:$PATH"
           printf 'Lean build product exact-key cache hit=%s\n' '${{ steps.lean_products_cache.outputs.cache-hit }}'
           /usr/bin/time -f 'Lean full library build elapsed=%e s peak_rss=%M KiB' lake build
+
+      - name: V24 finite runtime mesh Lean conformance
+        timeout-minutes: 8
+        run: bash tools/check_mesh_evidence_lean.sh
 
       - name: BB ABM joint evolution contracts
         timeout-minutes: 25

@@ -71,6 +71,35 @@ class SingleflightCIContractTests(unittest.TestCase):
             with self.subTest(required=required):
                 self.assertIn(required, self.content)
 
+    def test_extended_mesh_pin_and_negative_kernel_checks(self):
+        script = (ROOT / "tools/check_mesh_evidence_lean.sh").read_text(encoding="utf-8")
+        self.assertIn("mesh_reach_lean.sha256", script)
+        self.assertIn("sha256sum", script)
+        self.assertIn("tools.mutate_mesh_reach_lean", script)
+        self.assertIn("stale-path identity", script)
+        self.assertIn("expected_failure", script)
+        self.assertNotIn("sha256sum \"$paths\" > tests/fixtures", script)
+
+    def test_runtime_review_vectors_gate_precedes_mesh_regressions(self):
+        self.assertIn("Canonical V24 runtime vector conformance", self.content)
+        self.assertIn("tools.render_mesh_proof_vectors", self.content)
+        self.assertIn("conformance/mesh_runtime_vectors_v1.json", self.content)
+        self.assertNotIn("--transport", self.content)
+        self.assertIn('cmp -s "$pinned" "$generated"', self.content)
+        self.assertLess(
+            self.content.index("Canonical V24 runtime vector conformance"),
+            self.content.index("Runtime-derived mesh regression"),
+        )
+
+    def test_runtime_generated_lean_gate(self):
+        self.assertIn("python -m unittest tests.test_mesh_projection tests.test_mesh_evidence -v", self.content)
+        self.assertIn("V24 finite runtime mesh Lean conformance", self.content)
+        self.assertIn("tools/check_mesh_evidence_lean.sh", self.content)
+        self.assertLess(
+            self.content.index("V24 finite runtime mesh Lean conformance"),
+            self.content.index("BB ABM joint evolution contracts"),
+        )
+
     def test_full_gate_unchanged(self):
         for command in ("python -m unittest discover -s tests -v",
                         "lake build", "tools/check_fitness_abm.sh",
