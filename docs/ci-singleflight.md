@@ -201,3 +201,20 @@ The two existing Lean corpus SHA-256 pins remain mandatory; an intentional
 change to the extended corpus requires recording and reviewing its new
 actual digest on an exact-head CI run. No hashes or vectors are silently
 updated.
+
+## Cleanup HEAD corpus revision — 2026-10-30
+
+The per-fixture application of the *already established* abstract six-hop
+bound was removed from the concrete Lean generator, while all directed
+source-edge, Gateway assignment, one-hop, Society-path, `MeshWalk`,
+`ReachWithin`, revision identity and four negative mutation validations
+remain. The mathematical theorem, API contracts and original 70-edge corpus
+are untouched.
+
+The recomputed exact-HEAD extended generated Lean text was reported by
+[focused CI #40970529829](https://github.com/qigao/lean/actions/runs/40970529829).
+Its reviewed SHA-256 is now
+`315a65191865cab737969b3b40e2491c2bd7258dd55f9919f9e754336441fe86`, replacing the previous
+`69890c34922216660ce0ce79727ebfdcccc5bbbbba212a932a0d843e4ca09216` that included the redundant proof.
+This deliberate corpus change must satisfy the full exact-head CI; the prior
+full-success workflow cannot be treated as validation of the new HEAD.
