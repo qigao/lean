@@ -114,3 +114,26 @@ A replay proof requires the actual caller-supplied initial source. This still
 does **not** authenticate arbitrary remote actors or prove the real historical
 execution took place; it verifies that the claimed event sequence is
 reproducible from the stated authoritative starting state.
+
+## Authoritative V19 social-memory admission boundary (real runtime test)
+
+A **real** `SituatedSocialMemoryState` contains exactly one relationship
+record per ordered pair of distinct Agents. V19's
+`project_situated_network_snapshot` computes each source relationship's
+`active` bit from `trust >= relationship_trust_threshold`, while
+`_validate_runtime_state` insists the runtime's embedded snapshot equal
+this exact projection. A sparse synthetic R1 fixture may admit an `ADD`
+of a previously missing pair, but a genuine V19 runtime snapshot has no
+such missing pair: `ADD` conflicts on its existing source record. A
+snapshot-only `DEACTIVATE` with unchanged social-memory trust is likewise
+not a persistent social-memory update.
+
+The new test builds a real V19 runtime checkpoint from model, story,
+cognition, social memory and a SQLite memory store, produces an altered
+snapshot, fabricates internally consistent metrics, and then verifies that
+the real V19 simulation **refuses** that forged state before any transition.
+An actual persistent relationship change must be represented in the
+authoritative social-memory transition/threshold contract and validated
+across the next runtime round. Never bypass that by patching the V19
+snapshot or duplicating the social graph. This boundary is a required
+follow-up in Issue #107, not proof of a new six-hop property.

@@ -387,6 +387,61 @@ class TopologyRevisionTests(unittest.TestCase):
         with self.assertRaises(TypeError):
             verify_topology_replay(source, object())
 
+
+    def test_v19_runtime_rejects_snapshot_only_topology_edits(self):
+        """A derived V19 edge edit is not an authorized social-memory round."""
+        from tempfile import TemporaryDirectory
+
+        from narrative_dynamics.abm.situated_network import (
+            initialize_situated_network_runtime,
+            measure_situated_network_emergence,
+            project_situated_network_snapshot,
+            simulate_situated_network_round,
+        )
+        from tests.test_network_abm_situated_network import initial_runtime_case
+
+        model, story, cognition, social = initial_runtime_case()
+        with TemporaryDirectory() as temp:
+            database = f"{temp}/network.sqlite3"
+            runtime = initialize_situated_network_runtime(
+                database, model, story, cognition, social,
+            )
+            source = runtime.snapshot
+            # Unlike synthetic sparse fixtures, actual V19 social memory has
+            # a relationship record for *every* directed ordered agent pair.
+            self.assertEqual(len(source.relationship_edges), 2)
+            self.assertEqual(len(source.nodes), 2)
+            edited = apply_topology_change(
+                source, change(source, "view-deactivate-alice-bob",
+                               TopologyOperation.DEACTIVATE, "alice", "bob"),
+            ).source_snapshot
+            self.assertNotEqual(edited.content_hash, source.content_hash)
+            self.assertEqual(edited.social_state_hash, social.content_hash)
+            self.assertEqual(
+                project_situated_network_snapshot(model, story, cognition, social),
+                source,
+            )
+
+            # A fabricated replacement metrics field can pass the dataclass
+            # shape/lineage checks, but cannot satisfy the runtime's required
+            # exact re-projection from the one authoritative social state.
+            metrics = measure_situated_network_emergence(model, edited, social)
+            forged = replace(runtime, snapshot=edited, metrics=metrics)
+            with self.assertRaisesRegex(ValueError, "authoritative snapshot"):
+                simulate_situated_network_round(database, model, forged)
+            self.assertEqual(runtime.snapshot, source)
+            self.assertEqual(runtime.social_state, social)
+
+            for edge in source.relationship_edges:
+                with self.subTest(pair=(edge.source_agent_id, edge.observer_agent_id)):
+                    request = change(
+                        source, "fabricated-add", TopologyOperation.ADD,
+                        edge.source_agent_id, edge.observer_agent_id,
+                        edge=replace(edge, active=True),
+                    )
+                    with self.assertRaises(TopologyEdgeConflict):
+                        apply_topology_change(source, request)
+
     def test_reviewed_replay_vectors_match_exact_runtime_output(self):
         from pathlib import Path
         from tools.render_topology_revision_vectors import render_vector_corpus
