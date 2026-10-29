@@ -319,5 +319,27 @@ class MeshEvidenceTests(unittest.TestCase):
         self.assertIn(target, output)
 
 
+    def test_generated_lean_corpus_matches_checked_in_sha256_pin(self):
+        from hashlib import sha256
+        from pathlib import Path
+        from tools.render_mesh_evidence_lean import render_corpus
+
+        corpus = render_corpus().encode("utf-8")
+        pinned = (Path(__file__).parent / "fixtures" /
+                  "mesh_evidence_lean.sha256").read_text(encoding="ascii").strip()
+        self.assertEqual(len(pinned), 64)
+        self.assertEqual(sha256(corpus).hexdigest(), pinned)
+
+    def test_real_lean_red_inputs_are_inconsistent_with_authority(self):
+        from tools.mutate_mesh_evidence_lean import render_false_obligation
+
+        for kind in ("source", "bridge"):
+            with self.subTest(kind=kind):
+                generated = render_false_obligation(kind)
+                self.assertIn("import NarrativeDynamics.Core.MeshProjection", generated)
+                self.assertIn("example : projected (0 : Fin 3) (1 : Fin 3) := by", generated)
+                self.assertIn("decide_cbv", generated)
+
+
 if __name__ == "__main__":
     unittest.main()

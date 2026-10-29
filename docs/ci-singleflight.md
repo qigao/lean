@@ -73,3 +73,23 @@ full Lean library build and before costly BB/PathN theorem suites, using
 `tools/check_mesh_evidence_lean.sh` and computable `decide_cbv` on generated
 relations. Full Python and Lean retain their separate bounded concurrency
 lanes, and World Studio waits for both families.
+
+## Exact-byte corpus pin and real Lean mutation RED
+
+The SHA-256 of the entire regenerated Lean input is checked against
+`tests/fixtures/mesh_evidence_lean.sha256` before acceptance. Both the
+focused Python regression and the proof job check the same canonical UTF-8
+bytes. This is a pinned digest, **not** a separately checked-in Lean corpus;
+any intentional generator or fixture change must be reviewed and re-pinned,
+never silently auto-updated by CI.
+
+After the unmodified corpus passes the Lean kernel, two independent negative
+corpora remove (1) an actual selected-relation source edge and (2) the
+associated source-backed directed bridge from the two-society gateway case.
+Each deliberately retains the original *positive* projected-edge claim.
+They must fail under real `lake env lean` (not merely a Python assertion),
+while the authoritative evidence validator also rejects both. A compiler
+timeout or missing Lean diagnostic is **not** counted as a negative success.
+
+This adds counterfactual mutation gates; it does not yet kernel-check the
+full concrete gateway-cover premises or every runtime path witness.
