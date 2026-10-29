@@ -13,7 +13,7 @@ from narrative_dynamics.abm.mesh_queries import find_mesh_path, mesh_path_is_val
 from narrative_dynamics.abm.mesh_evidence import export_mesh_proof_input, validate_mesh_proof_input
 from narrative_dynamics.abm.mesh_topology_events import (
     TopologyOperation, apply_topology_change, observe_topology,
-    replay_topology_changes,
+    replay_topology_changes, verify_topology_replay,
 )
 from narrative_dynamics.abm.situated_mesh import mesh_edges
 from tests.test_mesh_projection import fixture, two_societies
@@ -36,6 +36,8 @@ def build_vector_manifest() -> dict[str, object]:
     second = change(middle, "add-10", TopologyOperation.ADD, "a1", "a0",
                     edge=reverse_edge())
     replay = replay_topology_changes(source, (first, second))
+    if not verify_topology_replay(source, replay):
+        raise AssertionError("reviewed vector does not replay from authoritative V19 source")
     final = full_mesh(replay.source_snapshot)
     if mesh_path_is_valid(final, old_path, "a0", "a2",
                           relation=MeshRelation.RELATIONSHIP, max_hops=2):
