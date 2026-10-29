@@ -78,7 +78,7 @@ def _gateway_proofs(evidence: dict[str, object]) -> list[str]:
         "",
         "private instance : DecidableRel societyGraph := by",
         "  intro s t",
-        "  unfold societyGraph projectedGatewaySocietyGraph projected "
+        "  unfold societyGraph projectedGatewaySocietyGraph "
         "projectedMesh sourceGraph member bridge gateway",
         "  infer_instance",
         "",
