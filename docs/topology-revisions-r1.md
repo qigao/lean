@@ -81,3 +81,20 @@ a *new* snapshot. The original runtime-derived source and its provenance
 are unmodified, the reverse directed edge remains, and direct-interaction
 and realized-transmission records remain unchanged. This does not imply
 the underlying social-memory state has been advanced.
+
+## Resume integrity and untrusted in-memory ledgers
+
+A frozen Python dataclass is not by itself an authenticated or validated
+receipt. `TopologyReplayResult` now validates the entire bounded source hash
+and event/receipt chain on construction, including exact typed tuples,
+consecutive ordinals, unique event IDs, exact per-event hashes, predecessor
+receipt linkage and the final authoritative source snapshot digest. A
+`TopologyRevisionReceipt` also rejects malformed hashes, non-typed operation
+and noncanonical source identities. `append_topology_change` rechecks its
+inbound state even if callers bypassed dataclass freezing.
+
+These checks are **consistency checks**, not cryptographic authentication of
+an external process or semantic proof that a remotely asserted prior event
+was actually executed. Versioned golden replay output is intentionally
+unchanged; newly added negative tests exercise reordering, truncation,
+duplication, mismatched receipt/hash/actor and illegally edited frozen state.

@@ -14,6 +14,8 @@ from narrative_dynamics.abm.mesh_evidence import (
 )
 from narrative_dynamics.abm.mesh_topology_events import (
     TopologyChange, TopologyOperation, TopologyChangeError,
+    TopologyReplayIntegrityError, TopologyReplayResult,
+    TopologyTransitionResult,
     TopologyDuplicateEvent, TopologyVersionConflict, TopologyUnknownAgent,
     TopologyEdgeConflict, TopologyUnsupportedRelation,
     apply_topology_change, begin_topology_replay,
@@ -267,6 +269,77 @@ class TopologyRevisionTests(unittest.TestCase):
                 model, story, cognition, social,
             ).to_dict(), sort_keys=True),
         )
+
+
+    def test_injected_replay_receipt_and_event_tampering_fail_closed(self):
+        original = fixture(3)
+        first = change(original, "e1", TopologyOperation.ADD, "a1", "a0",
+                       edge=reverse_edge())
+        intermediate = apply_topology_change(original, first).source_snapshot
+        second = change(intermediate, "e2", TopologyOperation.DEACTIVATE, "a0", "a1")
+        replay = replay_topology_changes(original, (first, second))
+        old_hash = replay.source_snapshot.content_hash
+        corruptions = (
+            {"initial_source_hash": replay.source_snapshot.content_hash},
+            {"source_snapshot": original},
+            {"changes": replay.changes[::-1]},
+            {"changes": (replay.changes[0],)},
+            {"receipts": replay.receipts[::-1]},
+            {"receipts": (replay.receipts[0],)},
+            {"receipts": (replay.receipts[0],
+                          replace(replay.receipts[1], event_hash="sha256:" + "f"*64))},
+            {"receipts": (replay.receipts[0],
+                          replace(replay.receipts[1], prior_receipt_hash="sha256:" + "f"*64))},
+            {"changes": (replay.changes[0],
+                         replace(replay.changes[1], actor_id="fabricated"))},
+            {"changes": (replay.changes[0],
+                         replace(replay.changes[1], event_id="e1"))},
+        )
+        for candidate in corruptions:
+            with self.subTest(tampered=tuple(candidate)), self.assertRaises(
+                TopologyReplayIntegrityError
+            ):
+                replace(replay, **candidate)
+        self.assertEqual(replay.source_snapshot.content_hash, old_hash)
+        self.assertEqual(replay_topology_changes(original, (first, second)).to_dict(),
+                         replay.to_dict())
+
+    def test_receipt_and_transition_constructor_validation(self):
+        source = fixture(3)
+        first = change(source, "e1", TopologyOperation.DEACTIVATE, "a0", "a1")
+        applied = apply_topology_change(source, first)
+        receipt = applied.receipt
+        for values in (
+            {"ordinal": True},
+            {"ordinal": -1},
+            {"prior_receipt_hash": "sha256:" + "f"*64},
+            {"event_hash": "invalid"},
+            {"source_hash_before": receipt.source_hash_after},
+            {"operation": "deactivate"},
+            {"source_agent_id": "a0", "target_agent_id": "a0"},
+        ):
+            with self.subTest(values=values), self.assertRaises(
+                TopologyReplayIntegrityError
+            ):
+                replace(receipt, **values)
+        with self.assertRaises(TopologyReplayIntegrityError):
+            TopologyTransitionResult(source, receipt)
+        with self.assertRaises(TopologyReplayIntegrityError):
+            TopologyReplayResult(source.content_hash, applied.source_snapshot, (), ())
+
+    def test_append_rechecks_illegally_modified_frozen_replay(self):
+        source = fixture(3)
+        first = change(source, "e1", TopologyOperation.DEACTIVATE, "a0", "a1")
+        saved = replay_topology_changes(source, (first,))
+        next_event = change(saved.source_snapshot, "e2", TopologyOperation.ADD,
+                            "a1", "a0", edge=reverse_edge())
+        # Mutation bypassing dataclass freezing is outside the public API,
+        # but append must still reject corrupted object provenance.
+        object.__setattr__(saved, "initial_source_hash",
+                           saved.source_snapshot.content_hash)
+        with self.assertRaises(TopologyReplayIntegrityError):
+            append_topology_change(saved, next_event)
+        self.assertEqual(source.relationship_edges[0].active, True)
 
     def test_reviewed_replay_vectors_match_exact_runtime_output(self):
         from pathlib import Path

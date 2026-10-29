@@ -51,6 +51,10 @@ class TopologyUnsupportedRelation(TopologyChangeError):
     """Only relationship topology changes are supported in the R1 slice."""
 
 
+class TopologyReplayIntegrityError(TopologyChangeError):
+    """Untrusted or inconsistent event/receipt lineage cannot be resumed."""
+
+
 class TopologyOperation(str, Enum):
     ADD = "add"
     DEACTIVATE = "deactivate"
@@ -145,6 +149,30 @@ class TopologyRevisionReceipt:
     source_agent_id: str
     target_agent_id: str
 
+    def __post_init__(self) -> None:
+        """Reject malformed receipt fields before their hash becomes reusable."""
+        if type(self.ordinal) is not int or self.ordinal < 0:
+            raise TopologyReplayIntegrityError("receipt ordinal must be a nonnegative integer")
+        for field in ("event_id", "source_agent_id", "target_agent_id"):
+            value = getattr(self, field)
+            if type(value) is not str or not value.strip() or value != value.strip() or len(value) > 128:
+                raise TopologyReplayIntegrityError(f"receipt {field} must be canonical")
+        if self.source_agent_id == self.target_agent_id:
+            raise TopologyReplayIntegrityError("receipt source and target must differ")
+        for field in ("event_hash", "source_hash_before", "source_hash_after"):
+            value = getattr(self, field)
+            if type(value) is not str or _HASH.fullmatch(value) is None:
+                raise TopologyReplayIntegrityError(f"receipt {field} must be canonical sha256")
+        if self.source_hash_before == self.source_hash_after:
+            raise TopologyReplayIntegrityError("accepted event must change source revision")
+        if self.ordinal == 0:
+            if self.prior_receipt_hash is not None:
+                raise TopologyReplayIntegrityError("first receipt must not name a predecessor")
+        elif type(self.prior_receipt_hash) is not str or _HASH.fullmatch(self.prior_receipt_hash) is None:
+            raise TopologyReplayIntegrityError("subsequent receipt requires prior receipt sha256")
+        if not isinstance(self.operation, TopologyOperation):
+            raise TopologyReplayIntegrityError("receipt operation must be typed")
+
     def to_dict(self) -> dict[str, object]:
         return {
             "schema": _RECEIPT_SCHEMA,
@@ -170,6 +198,13 @@ class TopologyTransitionResult:
     source_snapshot: SituatedNetworkSnapshot
     receipt: TopologyRevisionReceipt
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.source_snapshot, SituatedNetworkSnapshot):
+            raise TopologyReplayIntegrityError("transition requires authoritative source snapshot")
+        if (not isinstance(self.receipt, TopologyRevisionReceipt)
+                or self.receipt.source_hash_after != self.source_snapshot.content_hash):
+            raise TopologyReplayIntegrityError("transition receipt must match new source hash")
+
 
 @dataclass(frozen=True)
 class TopologyReplayResult:
@@ -179,6 +214,9 @@ class TopologyReplayResult:
     source_snapshot: SituatedNetworkSnapshot
     changes: tuple[TopologyChange, ...]
     receipts: tuple[TopologyRevisionReceipt, ...]
+
+    def __post_init__(self) -> None:
+        _validate_replay_lineage(self)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -190,6 +228,52 @@ class TopologyReplayResult:
             "receipts": [receipt.to_dict() | {"receipt_hash": receipt.content_hash}
                          for receipt in self.receipts],
         }
+
+
+
+def _validate_replay_lineage(replay: TopologyReplayResult) -> None:
+    """Check the entire bounded, typed event/receipt chain before resumption.
+
+    Every event must bind the preceding authoritative source hash. Each
+    receipt must bind its event hash, consecutive ordinal and predecessor
+    receipt hash, and the final receipt must match the final V19 snapshot.
+    This is *internal consistency*, not authentication of an outside actor.
+    """
+    if not isinstance(replay.source_snapshot, SituatedNetworkSnapshot):
+        raise TopologyReplayIntegrityError("replay requires an authoritative V19 snapshot")
+    if (type(replay.initial_source_hash) is not str
+            or _HASH.fullmatch(replay.initial_source_hash) is None):
+        raise TopologyReplayIntegrityError("replay initial source hash must be canonical")
+    if type(replay.changes) is not tuple or type(replay.receipts) is not tuple:
+        raise TopologyReplayIntegrityError("replay requires immutable event/receipt tuples")
+    if len(replay.changes) != len(replay.receipts) or len(replay.changes) > _MAX_EVENTS:
+        raise TopologyReplayIntegrityError("replay event/receipt length or budget mismatch")
+
+    previous_source = replay.initial_source_hash
+    previous_receipt: str | None = None
+    seen: set[str] = set()
+    for index, (event, receipt) in enumerate(zip(replay.changes, replay.receipts)):
+        if type(event) is not TopologyChange or type(receipt) is not TopologyRevisionReceipt:
+            raise TopologyReplayIntegrityError("replay entries must have exact event/receipt types")
+        if event.event_id in seen:
+            raise TopologyReplayIntegrityError("replay contains duplicate event identity")
+        seen.add(event.event_id)
+        if (
+            receipt.ordinal != index
+            or receipt.event_id != event.event_id
+            or receipt.event_hash != event.content_hash
+            or receipt.operation is not event.operation
+            or receipt.source_agent_id != event.source_agent_id
+            or receipt.target_agent_id != event.target_agent_id
+            or event.expected_source_hash != previous_source
+            or receipt.source_hash_before != previous_source
+            or receipt.prior_receipt_hash != previous_receipt
+        ):
+            raise TopologyReplayIntegrityError("replay event/receipt lineage mismatch")
+        previous_source = receipt.source_hash_after
+        previous_receipt = receipt.content_hash
+    if previous_source != replay.source_snapshot.content_hash:
+        raise TopologyReplayIntegrityError("replay final source is not the committed revision")
 
 
 def _apply(
@@ -260,6 +344,8 @@ def append_topology_change(
 ) -> TopologyReplayResult:
     if not isinstance(replay, TopologyReplayResult):
         raise TypeError("append requires a TopologyReplayResult")
+    # Defensive recheck catches even illegally mutated frozen objects.
+    _validate_replay_lineage(replay)
     if not isinstance(change, TopologyChange):
         raise TypeError("append requires a TopologyChange")
     if len(replay.changes) >= _MAX_EVENTS:
