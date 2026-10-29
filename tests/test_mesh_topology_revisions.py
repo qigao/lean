@@ -19,7 +19,8 @@ from narrative_dynamics.abm.mesh_topology_events import (
     TopologyDuplicateEvent, TopologyVersionConflict, TopologyUnknownAgent,
     TopologyEdgeConflict, TopologyUnsupportedRelation,
     apply_topology_change, begin_topology_replay,
-    append_topology_change, replay_topology_changes, observe_topology,
+    append_topology_change, replay_topology_changes, verify_topology_replay,
+    observe_topology,
 )
 from narrative_dynamics.abm.situated_network_contracts import SituatedNetworkRelationshipEdge
 from narrative_dynamics.abm.situated_mesh import mesh_edges
@@ -340,6 +341,51 @@ class TopologyRevisionTests(unittest.TestCase):
         with self.assertRaises(TopologyReplayIntegrityError):
             append_topology_change(saved, next_event)
         self.assertEqual(source.relationship_edges[0].active, True)
+
+
+    def test_source_reexecution_detects_hash_coherent_but_false_final_topology(self):
+        source = fixture(3)
+        event = change(source, "retire-first", TopologyOperation.DEACTIVATE,
+                       "a0", "a1")
+        genuine = replay_topology_changes(source, (event,))
+        self.assertTrue(verify_topology_replay(source, genuine))
+        self.assertTrue(verify_topology_replay(source, begin_topology_replay(source)))
+        self.assertEqual(genuine.source_snapshot.content_hash,
+                         replay_topology_changes(source, (event,)).source_snapshot.content_hash)
+
+        # A deliberately forged receipt can have a perfectly consistent
+        # event/ordinal/hash chain but claim a different final graph.
+        fabricated_edges = tuple(
+            replace(edge, active=False)
+            if (edge.source_agent_id, edge.observer_agent_id) == ("a1", "a2")
+            else edge for edge in source.relationship_edges
+        )
+        fabricated_source = replace(source, relationship_edges=fabricated_edges)
+        fake_receipt = replace(
+            genuine.receipts[0], source_hash_after=fabricated_source.content_hash,
+        )
+        invented = TopologyReplayResult(
+            source.content_hash, fabricated_source, genuine.changes, (fake_receipt,),
+        )
+        # The original structural hash-chain checker cannot know the
+        # true event semantics; independent execution must reject it.
+        with self.assertRaises(TopologyReplayIntegrityError):
+            verify_topology_replay(source, invented)
+        with self.assertRaises(TopologyVersionConflict):
+            verify_topology_replay(genuine.source_snapshot, genuine)
+        self.assertEqual(source.relationship_edges[0].active, True)
+
+    def test_source_reexecution_rejects_injected_replay_state(self):
+        source = fixture(3)
+        event = change(source, "remove", TopologyOperation.DEACTIVATE, "a0", "a1")
+        genuine = replay_topology_changes(source, (event,))
+        object.__setattr__(genuine, "receipts", ())
+        with self.assertRaises(TopologyReplayIntegrityError):
+            verify_topology_replay(source, genuine)
+        with self.assertRaises(TypeError):
+            verify_topology_replay(None, genuine)
+        with self.assertRaises(TypeError):
+            verify_topology_replay(source, object())
 
     def test_reviewed_replay_vectors_match_exact_runtime_output(self):
         from pathlib import Path

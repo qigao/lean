@@ -98,3 +98,19 @@ an external process or semantic proof that a remotely asserted prior event
 was actually executed. Versioned golden replay output is intentionally
 unchanged; newly added negative tests exercise reordering, truncation,
 duplication, mismatched receipt/hash/actor and illegally edited frozen state.
+
+## Independent replay-from-source verification
+
+A chained ledger whose internal `event_hash`, prior-receipt hash and final
+source hash agree is not necessarily a ledger of transitions that truly
+happened. `verify_topology_replay(initial_snapshot, recorded)` takes the
+authoritative initial `SituatedNetworkSnapshot`, re-executes the recorded
+events **through `replay_topology_changes`** and checks the resulting snapshot
+and receipt payloads exactly. It rejects a forged but internally
+self-consistent final topology, incorrect initial-source binding or mutated
+ledger without constructing a second graph algorithm.
+
+A replay proof requires the actual caller-supplied initial source. This still
+does **not** authenticate arbitrary remote actors or prove the real historical
+execution took place; it verifies that the claimed event sequence is
+reproducible from the stated authoritative starting state.

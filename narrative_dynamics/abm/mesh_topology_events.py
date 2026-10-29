@@ -376,6 +376,43 @@ def replay_topology_changes(
     return replay
 
 
+
+def verify_topology_replay(
+    initial_snapshot: SituatedNetworkSnapshot,
+    recorded: TopologyReplayResult,
+) -> bool:
+    """Re-execute the bounded event sequence from a caller's real V19 source.
+
+    A hash-linked receipt ledger alone can be internally consistent while
+    claiming a fabricated final topology. Replay through the ONE existing
+    transition implementation checks that the supplied initial snapshot
+    actually produces the recorded source, event hashes and receipts.
+    This is not a signature or authentication of the caller/actor.
+    """
+    if not isinstance(initial_snapshot, SituatedNetworkSnapshot):
+        raise TypeError("verification requires an authoritative initial V19 snapshot")
+    if not isinstance(recorded, TopologyReplayResult):
+        raise TypeError("verification requires a TopologyReplayResult")
+    _validate_replay_lineage(recorded)
+    if initial_snapshot.content_hash != recorded.initial_source_hash:
+        raise TopologyVersionConflict("replay initial source identity mismatch")
+    try:
+        verified = replay_topology_changes(initial_snapshot, recorded.changes)
+    except TopologyChangeError as exc:
+        raise TopologyReplayIntegrityError(
+            "recorded event stream does not execute from authoritative source"
+        ) from exc
+    if (
+        verified.source_snapshot.content_hash != recorded.source_snapshot.content_hash
+        or verified.to_dict() != recorded.to_dict()
+        or verified.source_snapshot.to_dict() != recorded.source_snapshot.to_dict()
+    ):
+        raise TopologyReplayIntegrityError(
+            "claimed replay output or receipt chain differs from actual execution"
+        )
+    return True
+
+
 def observe_topology(
     mesh: MeshSnapshot, *, relation: MeshRelation,
 ) -> dict[str, object]:
