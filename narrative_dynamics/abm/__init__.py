@@ -426,6 +426,14 @@ from narrative_dynamics.abm.situated_network_contracts import (
     SituatedNetworkTrajectory,
     SituatedNetworkTransmission,
 )
+from narrative_dynamics.abm.mesh_topology_events import (
+    TopologyChange, TopologyOperation, TopologyChangeError,
+    TopologyVersionConflict, TopologyDuplicateEvent,
+    TopologyUnknownAgent, TopologyEdgeConflict, TopologyUnsupportedRelation,
+    TopologyRevisionReceipt, TopologyTransitionResult, TopologyReplayResult,
+    apply_topology_change, begin_topology_replay,
+    append_topology_change, replay_topology_changes, observe_topology,
+)
 from narrative_dynamics.abm.situated_network import (
     initialize_situated_network_runtime,
     measure_situated_network_emergence,
