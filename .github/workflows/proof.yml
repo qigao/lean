@@ -79,12 +79,13 @@ jobs:
 
   lean-proof:
     name: Lean proof
-    needs: python-tests
-    # Collect independent proof evidence after Python RED; stop on cancellation.
+    needs: mesh-projection
+    # Run independently of full Python to overlap their expensive acceptance gates.
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     concurrency:
-      group: lean-ci-runner-${{ github.repository }}
+      # A bounded proof lane allows overlap with Python on another runner.
+      group: lean-ci-runner-lean-${{ github.repository }}
       queue: max
       cancel-in-progress: false
     steps:
@@ -353,7 +354,8 @@ jobs:
 
 
   verify:
-    needs: lean-proof
+    # Join both independent test families even when one finishes RED.
+    needs: [python-tests, lean-proof]
     # BB branches exclude peripheral UI, WebSocket and browser integration tests.
     # These jobs remain enabled on other branches; skipped does not mean tested.
     if: ${{ !cancelled() && !startsWith(github.head_ref || github.ref_name, 'feature/fitness-') }}
