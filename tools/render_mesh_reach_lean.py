@@ -15,17 +15,18 @@ from tests.test_mesh_projection import fixture, two_societies
 from tools.render_mesh_evidence_lean import covered_case, render_case
 
 
-def _walk_term(path: list[int], domain: int) -> str:
+def _walk_term(path: list[int], domain: int, edge_prefix: str) -> str:
     if not path:
         raise ValueError("an exact walk requires its starting node")
     term = f"MeshWalk.refl ({path[-1]} : Fin {domain})"
-    for _source, _target in reversed(list(zip(path, path[1:]))):
-        term = f"MeshWalk.step (by decide_cbv) ({term})"
+    for source, target in reversed(list(zip(path, path[1:]))):
+        term = f"MeshWalk.step {edge_prefix}_{source}_{target} ({term})"
     return term
 
 
 def _reach(name: str, graph: str, domain: int, budget: int,
-           source: int, target: int, path: list[int]) -> list[str]:
+           source: int, target: int, path: list[int],
+           edge_prefix: str = "projected_edge") -> list[str]:
     if (
         not path or path[0] != source or path[-1] != target
         or len(path) - 1 > budget
@@ -35,7 +36,7 @@ def _reach(name: str, graph: str, domain: int, budget: int,
     return [
         f"private theorem {name} : ReachWithin {graph} {budget} "
         f"({source} : Fin {domain}) ({target} : Fin {domain}) := by",
-        f"  exact ⟨{len(path) - 1}, by decide, {_walk_term(path, domain)}⟩",
+        f"  exact ⟨{len(path) - 1}, by decide, {_walk_term(path, domain, edge_prefix)}⟩",
         "",
     ]
 
@@ -114,13 +115,28 @@ def _gateway_proofs(evidence: dict[str, object]) -> list[str]:
             lines.append("  · exact " + statement)
         lines.append("")
     paths = cover["society_paths"]
+    # Kernel-check each concrete directed gateway edge once. Reuse opaque
+    # edge lemmas in MeshWalk terms to avoid repeated exponential reduction
+    # of source/membership/bridge predicates during nested elaboration.
+    society_links = {
+        (s, t)
+        for _origin, _target, path in paths
+        for s, t in zip(path, path[1:])
+    }
+    for s, t in sorted(society_links):
+        lines.extend([
+            f"private theorem society_edge_{s}_{t} : societyGraph "
+            f"({s} : Fin {m}) ({t} : Fin {m}) := by",
+            "  decide_cbv",
+            "",
+        ])
     route_ids = set()
     for s, t, path in paths:
         if (s, t) in route_ids:
             raise ValueError("duplicate concrete society witness")
         route_ids.add((s, t))
         lines.extend(_reach(f"society_path_{s}_{t}", "societyGraph", m, 4,
-                            s, t, path))
+                            s, t, path, edge_prefix="society_edge"))
     if route_ids != {(s, t) for s in range(m) for t in range(m)}:
         raise ValueError("missing one of the directed society witness pairs")
     lines.extend([
@@ -154,6 +170,16 @@ def render_path_case(name: str, evidence: dict[str, object], *,
     n = len(evidence["agents"])
     budget = evidence["max_hops"]
     extra = ["", "-- Every exported V19 projected path rechecked as a Lean MeshWalk."]
+    # Each source-backed edge is independently checked once by Lean.
+    # The named proof is reused in long paths; no Python edge claim
+    # is ever inserted as an axiom or a trusted assumption.
+    for source, target in evidence["projected_edges"]:
+        extra.extend([
+            f"private theorem projected_edge_{source}_{target} : projected "
+            f"({source} : Fin {n}) ({target} : Fin {n}) := by",
+            "  decide_cbv",
+            "",
+        ])
     seen = set()
     for source, target, path in evidence["paths"]:
         if (source, target) in seen:
