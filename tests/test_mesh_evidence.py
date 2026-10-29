@@ -113,7 +113,14 @@ class MeshEvidenceTests(unittest.TestCase):
         data = export_mesh_proof_input(
             mesh, relation=R, gateways=gateways, assigned_societies=assigned
         )
-        self.assertEqual(data["projected_edges"], data["source_edges"])
+        # Cross-society 0<->2 source edges are deliberately omitted:
+        # the only declared cross-society bridge is between 0 and 1.
+        self.assertEqual(data["source_edges"], [
+            [0, 1], [0, 2], [1, 0], [1, 2], [2, 0], [2, 1],
+        ])
+        self.assertEqual(data["projected_edges"], [
+            [0, 1], [1, 0], [1, 2], [2, 1],
+        ])
         self.assertTrue(data["gateway_cover"]["premises_satisfied"])
         self.assertEqual(data["gateway_cover"]["failures"], [])
         self.assertEqual(len(data["gateway_cover"]["society_paths"]), 4)
