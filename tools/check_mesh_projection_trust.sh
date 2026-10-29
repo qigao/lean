@@ -8,18 +8,20 @@ python3 tools/audit_fitness_trust.py source \
   NarrativeDynamics/Tests/MeshProjection.lean \
   NarrativeDynamics/Tests/MeshProjectionTrust.lean
 
+required="$(mktemp)"
 log="$(mktemp)"
-trap 'rm -f "$log"' EXIT
+trap 'rm -f "$required" "$log"' EXIT
+
+# One authoritative audit policy for both the old mesh foundations and V24.
+# Any new public projection theorem without a corresponding Lean report is RED.
+python3 tools/check_mesh_proof_coverage.py \
+  --reports NarrativeDynamics/Tests/MeshProjectionTrust.lean \
+  NarrativeDynamics/Core/MeshProjection.lean > "$required"
+mapfile -t theorems < "$required"
+args=()
+for theorem in "${theorems[@]}"; do
+  args+=(--require "$theorem")
+done
+
 lake env lean NarrativeDynamics/Tests/MeshProjectionTrust.lean 2>&1 | tee "$log"
-python3 tools/audit_fitness_trust.py log "$log" \
-  --require NarrativeDynamics.projectedMesh_source \
-  --require NarrativeDynamics.projectedMesh_walk_lifts \
-  --require NarrativeDynamics.projectedMesh_reach_lifts \
-  --require NarrativeDynamics.projectedMesh_universal_society \
-  --require NarrativeDynamics.projectedMesh_bridge_mono \
-  --require NarrativeDynamics.projectedMesh_reach_mono_bridges \
-  --require NarrativeDynamics.projectedMesh_selected_only \
-  --require NarrativeDynamics.membershipQualifiedReach_source \
-  --require NarrativeDynamics.membershipQualifiedReach_outsider \
-  --require NarrativeDynamics.projectedMesh_no_unsourced_edge \
-  --require NarrativeDynamics.projectedMesh_global_six_hop_bound
+python3 tools/audit_fitness_trust.py log "$log" "${args[@]}"

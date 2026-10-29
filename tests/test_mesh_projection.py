@@ -391,5 +391,29 @@ class MeshProjectionTests(unittest.TestCase):
                 self.assertEqual(result.society_paths, baseline.society_paths)
 
 
+
+    def test_v24_public_theorems_are_covered_by_kernel_reports(self):
+        from pathlib import Path
+        from tools.check_mesh_proof_coverage import required_theorems
+
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "NarrativeDynamics/Core/MeshProjection.lean").read_text(
+            encoding="utf-8"
+        )
+        reports = (root / "NarrativeDynamics/Tests/MeshProjectionTrust.lean").read_text(
+            encoding="utf-8"
+        )
+        names = required_theorems([source], reports)
+        self.assertIn(
+            "NarrativeDynamics.projectedMesh_global_six_hop_bound", names
+        )
+        self.assertEqual(len(names), 11)
+        with self.assertRaisesRegex(ValueError, "missing="):
+            required_theorems(
+                [source + "\ntheorem newlyAddedButUnaudited : True := by trivial\n"],
+                reports,
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
