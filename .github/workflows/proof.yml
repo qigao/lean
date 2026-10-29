@@ -26,6 +26,7 @@ jobs:
   mesh-projection:
     name: V24 situated mesh Python
     runs-on: ubuntu-latest
+    # Shared lane serializes focused Python, full Python and Studio across PRs.
     concurrency:
       group: lean-ci-runner-${{ github.repository }}
       queue: max
@@ -79,12 +80,13 @@ jobs:
 
   lean-proof:
     name: Lean proof
-    needs: python-tests
-    # Collect independent proof evidence after Python RED; stop on cancellation.
+    needs: mesh-projection
+    # Check proofs alongside full Python; preserve proof RED even if Python fails.
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     concurrency:
-      group: lean-ci-runner-${{ github.repository }}
+      # One Lean job per repository; full Python uses the independent shared lane.
+      group: lean-ci-runner-lean-${{ github.repository }}
       queue: max
       cancel-in-progress: false
     steps:
@@ -357,7 +359,8 @@ jobs:
 
 
   verify:
-    needs: lean-proof
+    # Studio runs only after both independent test families finish, even if RED.
+    needs: [python-tests, lean-proof]
     # BB branches exclude peripheral UI, WebSocket and browser integration tests.
     # These jobs remain enabled on other branches; skipped does not mean tested.
     if: ${{ !cancelled() && !startsWith(github.head_ref || github.ref_name, 'feature/fitness-') }}

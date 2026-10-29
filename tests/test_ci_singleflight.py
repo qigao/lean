@@ -1,4 +1,4 @@
-"""CI policy regression: exactly one serial superseding workflow."""
+"""CI policy: one superseding workflow, two bounded parallel runner lanes."""
 from pathlib import Path
 import unittest
 
@@ -20,12 +20,34 @@ class SingleflightCIContractTests(unittest.TestCase):
         self.assertIn("  pull_request:", self.content)
         self.assertIn("    branches:\n      - master\n      - proof/narrative-dynamics-v0", self.content)
 
-    def test_repo_runner_queue_preserves_other_prs(self):
+    def test_two_bounded_runner_lanes_and_join(self):
+        # Retain pending jobs from other PRs rather than cancelling their CI.
         self.assertEqual(self.content.count("      queue: max"), 4)
         self.assertEqual(self.content.count("      cancel-in-progress: false"), 4)
-        self.assertIn("    needs: mesh-projection", self.content)
-        self.assertIn("    needs: python-tests", self.content)
-        self.assertIn("    needs: lean-proof", self.content)
+        # The existing shared lane also serializes older baseline workflows.
+        self.assertEqual(
+            self.content.count("group: lean-ci-runner-${{ github.repository }}"), 3
+        )
+        self.assertEqual(
+            self.content.count("group: lean-ci-runner-lean-${{ github.repository }}"), 1
+        )
+        self.assertEqual(self.content.count("    needs: mesh-projection"), 2)
+        self.assertIn(
+            "  lean-proof:\n    name: Lean proof\n    needs: mesh-projection",
+            self.content,
+        )
+        self.assertIn(
+            "  verify:\n    # Studio runs only after both independent test families finish, even if RED.\n"
+            "    needs: [python-tests, lean-proof]",
+            self.content,
+        )
+        self.assertNotIn("    needs: python-tests\n", self.content)
+        # Even after an upstream RED, independent proof/UI evidence still runs.
+        self.assertIn("    if: ${{ !cancelled() }}", self.content)
+        self.assertIn(
+            "    if: ${{ !cancelled() && !startsWith(github.head_ref || github.ref_name, 'feature/fitness-') }}",
+            self.content,
+        )
 
     def test_warm_cache_inputs(self):
         for name in ("cache: pip", "cache: npm", "~/.elan",

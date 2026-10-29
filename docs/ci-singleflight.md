@@ -7,10 +7,23 @@ their push checks. `workflow_dispatch` permits an explicit acceptance rerun.
 
 A PR source ref is a workflow concurrency group with
 `cancel-in-progress: true`: later commits supersede older queued and running
-runs for that PR. Other PR groups do not cancel one another. All four jobs
-(V24 focused Python, full Python, Lean, World Studio) use one repository-wide job concurrency group,
-`queue: max` and `cancel-in-progress: false`: only one CI runner job is
-active, with unrelated PR jobs retained in the shared queue.
+runs for that PR. Other PR groups do not cancel one another.
+
+The single workflow has **two bounded runner lanes**, both using
+`queue: max` and `cancel-in-progress: false`:
+- **Shared lane** (`lean-ci-runner-${{ github.repository }}`): V24 focused
+  Python, full Python, and World Studio; compatible with the older baseline
+  repository-wide lock.
+- **Proof lane** (`lean-ci-runner-lean-${{ github.repository }}`): the Lean
+  kernel/proof suite, one concurrent Lean job per repository.
+
+The V24 focused Python gate runs first. Full Python and Lean **both depend
+on the focused gate** and may then execute concurrently on separate runners.
+World Studio explicitly waits for **both** complete Python and Lean to
+finish before running. Even if one family fails, `!cancelled()` allows
+independent tests and UI evidence to finish, and the overall run stays RED.
+This bounds concurrency to two managed runner jobs while retaining queued
+work from unrelated PRs.
 
 The pipeline preserves all prior Python, Lean, BB/PathN, Studio and real
 Playwright checks, plus exact-head checkouts. Previous fitness branch
@@ -46,10 +59,11 @@ Original design-spec and plan path exclusions remain on push and PR events.
 
 ## V24 focused gate
 
-The V24 source projection adds a focused Python gate before complete Python.
-It retains both the 35-theorem foundation trust audit and the V24 projected
-mesh proof audit in the Lean job, with the same single runner concurrency
-and exact-head source checks. The four stages do not bypass any full tests.
+The V24 source projection adds a focused Python gate before complete Python
+and Lean start independently. It retains both the 35-theorem foundation trust
+audit and the V24 projected mesh proof audit in the Lean job, with the
+two bounded runner lanes and exact-head source checks. No test is dropped;
+World Studio joins the two independent families before running.
 
 ## Runtime-derived finite Lean conformance
 
@@ -57,4 +71,4 @@ The next V24 increment adds the bounded source-derived graph witness generator.
 It runs a kernel-checked finite Lean gate immediately after `lake build`,
 before the existing BB proofs, and expands the focused Python suite with
 source provenance and malicious evidence mutation tests. It preserves the
-four-stage global runner queue and single-PR cancellation policy.
+two-lane concurrency bound, World Studio join and single-PR cancellation policy.
