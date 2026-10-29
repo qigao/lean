@@ -2,15 +2,19 @@ name: proof
 
 on:
   push:
-    # PR heads are verified by pull_request only: no duplicate push run.
     branches:
       - master
       - proof/narrative-dynamics-v0
+    paths-ignore:
+      - "docs/superpowers/specs/**"
+      - "docs/superpowers/plans/**"
   pull_request:
+    paths-ignore:
+      - "docs/superpowers/specs/**"
+      - "docs/superpowers/plans/**"
   workflow_dispatch:
 
-# One current run per PR/source ref. Superseding commits cancel old runs.
-# Other PRs have independent workflow groups, not mutual cancellation.
+# A new head supersedes previous queued/in-progress runs for the same PR.
 concurrency:
   group: lean-ci-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
@@ -23,7 +27,6 @@ jobs:
     name: V24 situated mesh Python
     runs-on: ubuntu-latest
     concurrency:
-      # A repo-wide runner queue serializes the stages of different PRs.
       group: lean-ci-runner-${{ github.repository }}
       queue: max
       cancel-in-progress: false
@@ -40,18 +43,8 @@ jobs:
         run: python -m pip install --disable-pip-version-check -r requirements-world-studio.txt
       - name: Check exact revision
         run: git rev-parse HEAD
-      - name: Runtime-derived mesh regression (when V24 sources exist)
-        run: |
-          if [ -f tests/test_mesh_projection.py ]; then
-            suites=(tests.test_mesh_projection)
-            if [ -f tests/test_mesh_evidence.py ]; then
-              suites+=(tests.test_mesh_evidence)
-            fi
-            python -m unittest "${suites[@]}" -v
-          else
-            echo 'V24 suite not present on this earlier source revision'
-          fi
-
+      - name: Runtime-derived mesh regression
+        run: python -m unittest tests.test_mesh_projection tests.test_mesh_evidence -v
 
   python-tests:
     needs: mesh-projection
@@ -61,7 +54,6 @@ jobs:
     name: Python tests
     runs-on: ubuntu-latest
     concurrency:
-      # A repo-wide runner queue serializes the stages of different PRs.
       group: lean-ci-runner-${{ github.repository }}
       queue: max
       cancel-in-progress: false
@@ -88,11 +80,10 @@ jobs:
   lean-proof:
     name: Lean proof
     needs: python-tests
-    # Run after the previous stage even if it failed; cancellation stops the chain.
+    # Collect independent proof evidence after Python RED; stop on cancellation.
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     concurrency:
-      # A repo-wide runner queue serializes the stages of different PRs.
       group: lean-ci-runner-${{ github.repository }}
       queue: max
       cancel-in-progress: false
@@ -139,6 +130,7 @@ jobs:
           git -C .lake/packages/mathlib rev-parse HEAD
 
       - name: Cache checked Lean build products
+        id: lean_products_cache
         uses: actions/cache@v4
         with:
           path: .lake/build
@@ -170,7 +162,8 @@ jobs:
       - name: Build Lean library
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
-          lake build
+          printf 'Lean build product exact-key cache hit=%s\n' '${{ steps.lean_products_cache.outputs.cache-hit }}'
+          /usr/bin/time -f 'Lean full library build elapsed=%e s peak_rss=%M KiB' lake build
 
       - name: V24 finite runtime mesh Lean conformance
         timeout-minutes: 8
@@ -298,15 +291,15 @@ jobs:
             NarrativeDynamics/Core/Fitness*.lean \
             NarrativeDynamics/Tests/Fitness*.lean
 
+      - name: Mesh theorem trust audit
+        timeout-minutes: 10
+        run: bash tools/check_mesh_proof_trust.sh
+
       - name: V24 Lean mesh projection tests
         timeout-minutes: 5
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
           lake env lean NarrativeDynamics/Tests/MeshProjection.lean
-
-      - name: Mesh theorem trust audit
-        timeout-minutes: 10
-        run: bash tools/check_mesh_proof_trust.sh
 
       - name: V24 projection theorem trust audit
         timeout-minutes: 5
@@ -370,7 +363,6 @@ jobs:
     if: ${{ !cancelled() && !startsWith(github.head_ref || github.ref_name, 'feature/fitness-') }}
     runs-on: ubuntu-latest
     concurrency:
-      # A repo-wide runner queue serializes the stages of different PRs.
       group: lean-ci-runner-${{ github.repository }}
       queue: max
       cancel-in-progress: false
@@ -404,13 +396,16 @@ jobs:
         run: npm ci
 
       - name: Cache Playwright Chromium
+        id: chromium_cache
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-chromium-v1-${{ hashFiles('world_studio_web/package-lock.json') }}
       - name: Install Chromium
         working-directory: world_studio_web
-        run: npx playwright install --with-deps chromium
+        run: |
+          printf 'Chromium exact-key cache hit=%s\n' '${{ steps.chromium_cache.outputs.cache-hit }}'
+          npx playwright install --with-deps chromium
 
       - name: Verify Python studio and coordinator
         run: |

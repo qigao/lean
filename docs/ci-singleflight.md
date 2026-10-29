@@ -1,60 +1,60 @@
-# Single-flight Lean CI policy
+# Proof CI — one current run per PR
 
-This repository uses **one authoritative CI workflow**:
-`.github/workflows/proof.yml`. The former standalone World Studio workflow
-is incorporated as its final `verify` job.
+The repository's proof and World Studio workflows have been consolidated
+into `.github/workflows/proof.yml`. Feature branches are verified once from
+`pull_request`, while `master` and `proof/narrative-dynamics-v0` retain
+their push checks. `workflow_dispatch` permits an explicit acceptance rerun.
 
-## Which event runs CI?
+A PR source ref is a workflow concurrency group with
+`cancel-in-progress: true`: later commits supersede older queued and running
+runs for that PR. Other PR groups do not cancel one another. All four jobs
+(V24 focused Python, full Python, Lean, World Studio) use one repository-wide job concurrency group,
+`queue: max` and `cancel-in-progress: false`: only one CI runner job is
+active, with unrelated PR jobs retained in the shared queue.
 
-- Pull requests: **one** workflow per current PR head. All tests are executed
-  against the exact source head SHA rather than the synthetic merge ref.
-- Push: only `master` and `proof/narrative-dynamics-v0`. A feature branch
-  with an open PR does **not** also launch a second push workflow.
-- A new commit on the same PR source ref supersedes earlier queued/running
-  workflow instances with `cancel-in-progress: true`. Historical runs made
-  under the previous workflow config cannot be retroactively canceled by
-  this declaration.
+The pipeline preserves all prior Python, Lean, BB/PathN, Studio and real
+Playwright checks, plus exact-head checkouts. Previous fitness branch
+exclusions remain in effect. Failed Python or Lean jobs remain RED while later
+independent proof/UI jobs can continue; cancellation stops the chain.
 
-## One runner, all required gates
+Caches: setup-python pip, setup-node npm, `~/.elan`,
+`.lake/packages`, the new `.lake/build` cache keyed by pinned Lean and
+revision with a compatible restore prefix, and Chromium at
+`~/.cache/ms-playwright` keyed by the frontend lockfile. Restoring caches
+never substitutes for compiling, proof checking or running the real browser.
 
-Stages run in the following strict order using `needs`:
+The cancellation policy applies only to runs created after this workflow is
+present on their source ref. Unmerged historical PR branches using the old
+workflow continue with their old policy; their old runs are not retroactively
+cancelled. Once this PR is merged, subsequent branches from this base inherit
+the policy.
 
-1. V24 focused Python regression (when the V24 tests exist on that ref).
-2. Complete Python `unittest discover` (retaining the original fitness-branch
-   exclusion).
-3. Lean library build, BB/PathN contracts, mesh trust audits and runtime
-   conformance, including the old complete theorem suite.
-4. World Studio server, browser, typecheck/build and real Playwright flow
-   (retaining the original fitness-branch exclusion).
+Acceptance requires exact-head full CI success; a warm run must exhibit
+cache restore HIT logs before measured speedup may be claimed.
 
-Jobs share `lean-ci-runner-${{ github.repository }}` with
-`queue: max` and `cancel-in-progress: false`. The shared group limits
-this workflow to **one active runner job across PRs** without discarding jobs
-from unrelated PRs. Each stage uses `if: !cancelled()` where it depends
-on an earlier stage, so a failed earlier gate remains RED but later gates
-continue collecting independent evidence; cancellation stops the chain.
+## Warm-cache acceptance
 
-## Warm caches
+The first run on a cache scope can MISS and save correctly. Subsequent
+commits restore Lean products by the pinned-toolchain cache prefix, while
+Chromium uses the frontend lockfile as its key. Build time and exact-key
+cache-hit outputs are logged explicitly. Note: an exact-key result of false
+can still accompany a successful Lean *prefix restore*. Read the cache
+restore-key log before asserting cold vs warm behavior, and compare actual
+elapsed times before asserting a speedup.
 
-- Existing `~/.elan` and `.lake/packages` caches remain keyed by the pinned
-  Lean toolchain and Lake project dependency configuration.
-- `.lake/build` has a revision-keyed cache with a matching toolchain and
-  project-key prefix for cross-commit warm reuse. Lean still checks source
-  dependencies; cached compilation does not skip proof or axiom gates.
-- Python `setup-python` pip and Node `setup-node` npm caches remain pinned
-  to the corresponding requirements/lockfile.
-- Playwright browser binaries in `~/.cache/ms-playwright` are cached by
-  `world_studio_web/package-lock.json`. The locked `npm ci`, Chromium
-  installation/dependency check and real browser flow still run.
+Original design-spec and plan path exclusions remain on push and PR events.
 
-## Acceptance
+## V24 focused gate
 
-Confirm that (a) a PR head generates a **single** CI workflow, (b) a
-subsequent commit cancels the prior CI run in the same PR group, (c) the
-latest head passes the focused, full Python, Lean and World Studio jobs,
-(d) the warm runs show actual cache restore evidence in job logs, and
-(e) no test was disabled or hidden via `continue-on-error`.
+The V24 source projection adds a focused Python gate before complete Python.
+It retains both the 35-theorem foundation trust audit and the V24 projected
+mesh proof audit in the Lean job, with the same single runner concurrency
+and exact-head source checks. The four stages do not bypass any full tests.
 
-The global job lock applies to this consolidated workflow. Other unrelated
-GitHub Actions workflows that do not use the same runner group are not
-covered by this repository-local policy.
+## Runtime-derived finite Lean conformance
+
+The next V24 increment adds the bounded source-derived graph witness generator.
+It runs a kernel-checked finite Lean gate immediately after `lake build`,
+before the existing BB proofs, and expands the focused Python suite with
+source provenance and malicious evidence mutation tests. It preserves the
+four-stage global runner queue and single-PR cancellation policy.
