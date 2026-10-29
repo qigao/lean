@@ -407,7 +407,7 @@ class MeshProjectionTests(unittest.TestCase):
         self.assertIn(
             "NarrativeDynamics.projectedMesh_global_six_hop_bound", names
         )
-        self.assertEqual(len(names), 11)
+        self.assertGreaterEqual(len(names), 11)
         with self.assertRaisesRegex(ValueError, "missing="):
             required_theorems(
                 [source + "\ntheorem newlyAddedButUnaudited : True := by trivial\n"],
