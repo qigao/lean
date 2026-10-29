@@ -31,3 +31,15 @@ the policy.
 
 Acceptance requires exact-head full CI success; a warm run must exhibit
 cache restore HIT logs before measured speedup may be claimed.
+
+## Warm-cache acceptance
+
+The first run on a cache scope can MISS and save correctly. Subsequent
+commits restore Lean products by the pinned-toolchain cache prefix, while
+Chromium uses the frontend lockfile as its key. Build time and exact-key
+cache-hit outputs are logged explicitly. Note: an exact-key result of false
+can still accompany a successful Lean *prefix restore*. Read the cache
+restore-key log before asserting cold vs warm behavior, and compare actual
+elapsed times before asserting a speedup.
+
+Original design-spec and plan path exclusions remain on push and PR events.

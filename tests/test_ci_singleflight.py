@@ -32,6 +32,20 @@ class SingleflightCIContractTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertIn(name, self.content)
 
+
+    def test_preserves_design_doc_exclusions(self):
+        self.assertEqual(self.content.count('      - "docs/superpowers/specs/**"'), 2)
+        self.assertEqual(self.content.count('      - "docs/superpowers/plans/**"'), 2)
+
+    def test_warm_cache_logs_and_build_wall_time(self):
+        for marker in ("id: lean_products_cache",
+                       "steps.lean_products_cache.outputs.cache-hit",
+                       "Lean full library build elapsed=",
+                       "id: chromium_cache",
+                       "steps.chromium_cache.outputs.cache-hit"):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, self.content)
+
     def test_full_gate_unchanged(self):
         for command in ("python -m unittest discover -s tests -v",
                         "lake build", "tools/check_fitness_abm.sh",

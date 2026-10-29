@@ -5,7 +5,13 @@ on:
     branches:
       - master
       - proof/narrative-dynamics-v0
+    paths-ignore:
+      - "docs/superpowers/specs/**"
+      - "docs/superpowers/plans/**"
   pull_request:
+    paths-ignore:
+      - "docs/superpowers/specs/**"
+      - "docs/superpowers/plans/**"
   workflow_dispatch:
 
 # A new head supersedes previous queued/in-progress runs for the same PR.
@@ -100,6 +106,7 @@ jobs:
           git -C .lake/packages/mathlib rev-parse HEAD
 
       - name: Cache checked Lean build products
+        id: lean_products_cache
         uses: actions/cache@v4
         with:
           path: .lake/build
@@ -131,7 +138,8 @@ jobs:
       - name: Build Lean library
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
-          lake build
+          printf 'Lean build product exact-key cache hit=%s\n' '${{ steps.lean_products_cache.outputs.cache-hit }}'
+          /usr/bin/time -f 'Lean full library build elapsed=%e s peak_rss=%M KiB' lake build
 
       - name: BB ABM joint evolution contracts
         timeout-minutes: 25
@@ -346,13 +354,16 @@ jobs:
         run: npm ci
 
       - name: Cache Playwright Chromium
+        id: chromium_cache
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-chromium-v1-${{ hashFiles('world_studio_web/package-lock.json') }}
       - name: Install Chromium
         working-directory: world_studio_web
-        run: npx playwright install --with-deps chromium
+        run: |
+          printf 'Chromium exact-key cache hit=%s\n' '${{ steps.chromium_cache.outputs.cache-hit }}'
+          npx playwright install --with-deps chromium
 
       - name: Verify Python studio and coordinator
         run: |
