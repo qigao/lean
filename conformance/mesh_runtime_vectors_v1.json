@@ -1,0 +1,1242 @@
+{
+  "cases": [
+    {
+      "evidence": {
+        "agents": [
+          "alice",
+          "bob"
+        ],
+        "bridges": [],
+        "evidence_hash": "sha256:bbe1e70d3d5c9de8330de95fd7d830a9d8ec1000bd330a915d9c2bbe4198b2a3",
+        "gateway_cover": null,
+        "max_hops": 6,
+        "membership": [
+          [
+            0,
+            0
+          ],
+          [
+            1,
+            0
+          ]
+        ],
+        "mesh_hash": "sha256:2271bbd5519868eac09ec4f70d70ed9ec47f1b6841d833d82a2ce3b2f4745ce8",
+        "paths": [
+          [
+            0,
+            0,
+            [
+              0
+            ]
+          ],
+          [
+            0,
+            1,
+            [
+              0,
+              1
+            ]
+          ],
+          [
+            1,
+            0,
+            [
+              1,
+              0
+            ]
+          ],
+          [
+            1,
+            1,
+            [
+              1
+            ]
+          ]
+        ],
+        "places": [
+          "records",
+          "open"
+        ],
+        "projected_edges": [
+          [
+            0,
+            1
+          ],
+          [
+            1,
+            0
+          ]
+        ],
+        "relation": "relationship",
+        "schema": "situated-mesh-proof-input-v24",
+        "societies": [
+          "office"
+        ],
+        "source_edges": [
+          [
+            0,
+            1
+          ],
+          [
+            1,
+            0
+          ]
+        ],
+        "source_lineage": {
+          "cognitive_state_hash": "sha256:b59ead038cd1f0b3cb55a08b9eb7aebbbe06bc210c178603d1505978c18c723a",
+          "model_hash": "sha256:75644713f5b6214d860d5ab2c2c6d83b76641048678b5df1f583cfc48ce929ef",
+          "model_id": "office-network",
+          "round_index": 0,
+          "social_state_hash": "sha256:326f17b84ec72335b4fdcf5b7660045d663f2d2718febf7a22338bcbd1a87572",
+          "source_snapshot_hash": "sha256:08047c4ca8483a5470f209e5516d3b3b0bb45d1b7874b8d889a3ba234f94eb9c",
+          "story_hash": "sha256:0b42c395646f90bafbe4e9d61d504b846b515d451a8d58b8ba8ae4fa935b6a45"
+        }
+      },
+      "name": "OfficeRelationship",
+      "proof_scope": "edge",
+      "source_snapshot_hash": "sha256:08047c4ca8483a5470f209e5516d3b3b0bb45d1b7874b8d889a3ba234f94eb9c"
+    },
+    {
+      "evidence": {
+        "agents": [
+          "alice",
+          "bob"
+        ],
+        "bridges": [],
+        "evidence_hash": "sha256:e2392afa4131cc535f5d5cf700a48402e1846b999cef61f70cfba5a83161f012",
+        "gateway_cover": null,
+        "max_hops": 6,
+        "membership": [
+          [
+            0,
+            0
+          ],
+          [
+            1,
+            0
+          ]
+        ],
+        "mesh_hash": "sha256:2271bbd5519868eac09ec4f70d70ed9ec47f1b6841d833d82a2ce3b2f4745ce8",
+        "paths": [
+          [
+            0,
+            0,
+            [
+              0
+            ]
+          ],
+          [
+            1,
+            1,
+            [
+              1
+            ]
+          ]
+        ],
+        "places": [
+          "records",
+          "open"
+        ],
+        "projected_edges": [],
+        "relation": "direct_interaction",
+        "schema": "situated-mesh-proof-input-v24",
+        "societies": [
+          "office"
+        ],
+        "source_edges": [],
+        "source_lineage": {
+          "cognitive_state_hash": "sha256:b59ead038cd1f0b3cb55a08b9eb7aebbbe06bc210c178603d1505978c18c723a",
+          "model_hash": "sha256:75644713f5b6214d860d5ab2c2c6d83b76641048678b5df1f583cfc48ce929ef",
+          "model_id": "office-network",
+          "round_index": 0,
+          "social_state_hash": "sha256:326f17b84ec72335b4fdcf5b7660045d663f2d2718febf7a22338bcbd1a87572",
+          "source_snapshot_hash": "sha256:08047c4ca8483a5470f209e5516d3b3b0bb45d1b7874b8d889a3ba234f94eb9c",
+          "story_hash": "sha256:0b42c395646f90bafbe4e9d61d504b846b515d451a8d58b8ba8ae4fa935b6a45"
+        }
+      },
+      "name": "OfficeInteraction",
+      "proof_scope": "edge",
+      "source_snapshot_hash": "sha256:08047c4ca8483a5470f209e5516d3b3b0bb45d1b7874b8d889a3ba234f94eb9c"
+    },
+    {
+      "evidence": {
+        "agents": [
+          "alice",
+          "bob"
+        ],
+        "bridges": [],
+        "evidence_hash": "sha256:79c88e3095c6437894c3246db65af59d2e77919d9a4c19e56ff04cfb8e7fc432",
+        "gateway_cover": null,
+        "max_hops": 6,
+        "membership": [
+          [
+            0,
+            0
+          ],
+          [
+            1,
+            0
+          ]
+        ],
+        "mesh_hash": "sha256:2271bbd5519868eac09ec4f70d70ed9ec47f1b6841d833d82a2ce3b2f4745ce8",
+        "paths": [
+          [
+            0,
+            0,
+            [
+              0
+            ]
+          ],
+          [
+            1,
+            1,
+            [
+              1
+            ]
+          ]
+        ],
+        "places": [
+          "records",
+          "open"
+        ],
+        "projected_edges": [],
+        "relation": "transmission",
+        "schema": "situated-mesh-proof-input-v24",
+        "societies": [
+          "office"
+        ],
+        "source_edges": [],
+        "source_lineage": {
+          "cognitive_state_hash": "sha256:b59ead038cd1f0b3cb55a08b9eb7aebbbe06bc210c178603d1505978c18c723a",
+          "model_hash": "sha256:75644713f5b6214d860d5ab2c2c6d83b76641048678b5df1f583cfc48ce929ef",
+          "model_id": "office-network",
+          "round_index": 0,
+          "social_state_hash": "sha256:326f17b84ec72335b4fdcf5b7660045d663f2d2718febf7a22338bcbd1a87572",
+          "source_snapshot_hash": "sha256:08047c4ca8483a5470f209e5516d3b3b0bb45d1b7874b8d889a3ba234f94eb9c",
+          "story_hash": "sha256:0b42c395646f90bafbe4e9d61d504b846b515d451a8d58b8ba8ae4fa935b6a45"
+        }
+      },
+      "name": "OfficeTransmission",
+      "proof_scope": "edge",
+      "source_snapshot_hash": "sha256:08047c4ca8483a5470f209e5516d3b3b0bb45d1b7874b8d889a3ba234f94eb9c"
+    },
+    {
+      "evidence": {
+        "agents": [
+          "a0",
+          "a1",
+          "a2",
+          "a3",
+          "a4",
+          "a5",
+          "a6"
+        ],
+        "bridges": [
+          [
+            0,
+            1,
+            2,
+            3
+          ]
+        ],
+        "evidence_hash": "sha256:f42dca6c018ad48d8d3a8708537046761d2124046cdf051af8b8e9c4a514f334",
+        "gateway_cover": {
+          "assignments": [
+            [
+              0,
+              0
+            ],
+            [
+              1,
+              0
+            ],
+            [
+              2,
+              0
+            ],
+            [
+              3,
+              1
+            ],
+            [
+              4,
+              1
+            ],
+            [
+              5,
+              1
+            ],
+            [
+              6,
+              1
+            ]
+          ],
+          "configuration_hash": "sha256:b53dcc516095ccde0750461527fdbbd9c24e0b85e7816cdbf175f992d6579c2c",
+          "failures": [
+            "missing one-hop to gateway: a0->a2",
+            "missing one-hop from gateway: a2->a0",
+            "missing one-hop from gateway: a2->a1",
+            "missing one-hop to gateway: a4->a3",
+            "missing one-hop to gateway: a5->a3",
+            "missing one-hop from gateway: a3->a5",
+            "missing one-hop to gateway: a6->a3",
+            "missing one-hop from gateway: a3->a6",
+            "no <=4-hop gateway-society path: right->left"
+          ],
+          "gateways": [
+            [
+              0,
+              2
+            ],
+            [
+              1,
+              3
+            ]
+          ],
+          "premises_satisfied": false,
+          "society_paths": [
+            [
+              0,
+              0,
+              [
+                0
+              ]
+            ],
+            [
+              0,
+              1,
+              [
+                0,
+                1
+              ]
+            ],
+            [
+              1,
+              1,
+              [
+                1
+              ]
+            ]
+          ]
+        },
+        "max_hops": 6,
+        "membership": [
+          [
+            0,
+            0
+          ],
+          [
+            1,
+            0
+          ],
+          [
+            2,
+            0
+          ],
+          [
+            3,
+            1
+          ],
+          [
+            4,
+            1
+          ],
+          [
+            5,
+            1
+          ],
+          [
+            6,
+            1
+          ]
+        ],
+        "mesh_hash": "sha256:e62940cefda9b04c9b95cf039212676b1136e6df9bb157feaa8b28e0d309c35e",
+        "paths": [
+          [
+            0,
+            0,
+            [
+              0
+            ]
+          ],
+          [
+            0,
+            1,
+            [
+              0,
+              1
+            ]
+          ],
+          [
+            0,
+            2,
+            [
+              0,
+              1,
+              2
+            ]
+          ],
+          [
+            0,
+            3,
+            [
+              0,
+              1,
+              2,
+              3
+            ]
+          ],
+          [
+            0,
+            4,
+            [
+              0,
+              1,
+              2,
+              3,
+              4
+            ]
+          ],
+          [
+            0,
+            5,
+            [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          ],
+          [
+            0,
+            6,
+            [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ]
+          ],
+          [
+            1,
+            1,
+            [
+              1
+            ]
+          ],
+          [
+            1,
+            2,
+            [
+              1,
+              2
+            ]
+          ],
+          [
+            1,
+            3,
+            [
+              1,
+              2,
+              3
+            ]
+          ],
+          [
+            1,
+            4,
+            [
+              1,
+              2,
+              3,
+              4
+            ]
+          ],
+          [
+            1,
+            5,
+            [
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          ],
+          [
+            1,
+            6,
+            [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ]
+          ],
+          [
+            2,
+            2,
+            [
+              2
+            ]
+          ],
+          [
+            2,
+            3,
+            [
+              2,
+              3
+            ]
+          ],
+          [
+            2,
+            4,
+            [
+              2,
+              3,
+              4
+            ]
+          ],
+          [
+            2,
+            5,
+            [
+              2,
+              3,
+              4,
+              5
+            ]
+          ],
+          [
+            2,
+            6,
+            [
+              2,
+              3,
+              4,
+              5,
+              6
+            ]
+          ],
+          [
+            3,
+            3,
+            [
+              3
+            ]
+          ],
+          [
+            3,
+            4,
+            [
+              3,
+              4
+            ]
+          ],
+          [
+            3,
+            5,
+            [
+              3,
+              4,
+              5
+            ]
+          ],
+          [
+            3,
+            6,
+            [
+              3,
+              4,
+              5,
+              6
+            ]
+          ],
+          [
+            4,
+            4,
+            [
+              4
+            ]
+          ],
+          [
+            4,
+            5,
+            [
+              4,
+              5
+            ]
+          ],
+          [
+            4,
+            6,
+            [
+              4,
+              5,
+              6
+            ]
+          ],
+          [
+            5,
+            5,
+            [
+              5
+            ]
+          ],
+          [
+            5,
+            6,
+            [
+              5,
+              6
+            ]
+          ],
+          [
+            6,
+            6,
+            [
+              6
+            ]
+          ]
+        ],
+        "places": [
+          "p0",
+          "p1",
+          "p2",
+          "p3",
+          "p4",
+          "p5",
+          "p6"
+        ],
+        "projected_edges": [
+          [
+            0,
+            1
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            2,
+            3
+          ],
+          [
+            3,
+            4
+          ],
+          [
+            4,
+            5
+          ],
+          [
+            5,
+            6
+          ]
+        ],
+        "relation": "relationship",
+        "schema": "situated-mesh-proof-input-v24",
+        "societies": [
+          "left",
+          "right"
+        ],
+        "source_edges": [
+          [
+            0,
+            1
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            2,
+            3
+          ],
+          [
+            3,
+            4
+          ],
+          [
+            4,
+            5
+          ],
+          [
+            5,
+            6
+          ]
+        ],
+        "source_lineage": {
+          "cognitive_state_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "model_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "model_id": "fixture",
+          "round_index": 1,
+          "social_state_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "source_snapshot_hash": "sha256:9f7c4ac99114ae434183df66a7e89d002ece78ef66af24cb34db7dccce595680",
+          "story_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "name": "RuntimeChainReach",
+      "proof_scope": "path",
+      "source_snapshot_hash": "sha256:9f7c4ac99114ae434183df66a7e89d002ece78ef66af24cb34db7dccce595680"
+    },
+    {
+      "evidence": {
+        "agents": [
+          "a0",
+          "a1",
+          "a2"
+        ],
+        "bridges": [
+          [
+            0,
+            1,
+            0,
+            1
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ]
+        ],
+        "evidence_hash": "sha256:ce4778bb858dd1631ba793b26b99e0f185f2b4340aacfe56aad9331da4c902d3",
+        "gateway_cover": {
+          "assignments": [
+            [
+              0,
+              0
+            ],
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              1
+            ]
+          ],
+          "configuration_hash": "sha256:72b879271dc853770fd4c04b81b9fc71aff2e08eb67204b3648842045c968797",
+          "failures": [],
+          "gateways": [
+            [
+              0,
+              0
+            ],
+            [
+              1,
+              1
+            ]
+          ],
+          "premises_satisfied": true,
+          "society_paths": [
+            [
+              0,
+              0,
+              [
+                0
+              ]
+            ],
+            [
+              0,
+              1,
+              [
+                0,
+                1
+              ]
+            ],
+            [
+              1,
+              0,
+              [
+                1,
+                0
+              ]
+            ],
+            [
+              1,
+              1,
+              [
+                1
+              ]
+            ]
+          ]
+        },
+        "max_hops": 6,
+        "membership": [
+          [
+            0,
+            0
+          ],
+          [
+            1,
+            1
+          ],
+          [
+            2,
+            1
+          ]
+        ],
+        "mesh_hash": "sha256:eba4e971f0aafc26984e46b3c22336c3e76926250605aea78c3d9cb770df004b",
+        "paths": [
+          [
+            0,
+            0,
+            [
+              0
+            ]
+          ],
+          [
+            0,
+            1,
+            [
+              0,
+              1
+            ]
+          ],
+          [
+            0,
+            2,
+            [
+              0,
+              1,
+              2
+            ]
+          ],
+          [
+            1,
+            0,
+            [
+              1,
+              0
+            ]
+          ],
+          [
+            1,
+            1,
+            [
+              1
+            ]
+          ],
+          [
+            1,
+            2,
+            [
+              1,
+              2
+            ]
+          ],
+          [
+            2,
+            0,
+            [
+              2,
+              1,
+              0
+            ]
+          ],
+          [
+            2,
+            1,
+            [
+              2,
+              1
+            ]
+          ],
+          [
+            2,
+            2,
+            [
+              2
+            ]
+          ]
+        ],
+        "places": [
+          "p0",
+          "p1",
+          "p2"
+        ],
+        "projected_edges": [
+          [
+            0,
+            1
+          ],
+          [
+            1,
+            0
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            2,
+            1
+          ]
+        ],
+        "relation": "relationship",
+        "schema": "situated-mesh-proof-input-v24",
+        "societies": [
+          "s0",
+          "s1"
+        ],
+        "source_edges": [
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            2
+          ],
+          [
+            1,
+            0
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            2,
+            0
+          ],
+          [
+            2,
+            1
+          ]
+        ],
+        "source_lineage": {
+          "cognitive_state_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "model_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "model_id": "fixture",
+          "round_index": 1,
+          "social_state_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "source_snapshot_hash": "sha256:54b475ab55a6d37b0d3e60794218dc6f5103e007c58bd6c33c2bc2dd0fa681b3",
+          "story_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "name": "RuntimeCoveredGateway",
+      "proof_scope": "gateway",
+      "source_snapshot_hash": "sha256:54b475ab55a6d37b0d3e60794218dc6f5103e007c58bd6c33c2bc2dd0fa681b3"
+    },
+    {
+      "evidence": {
+        "agents": [
+          "a0",
+          "a1",
+          "a2"
+        ],
+        "bridges": [],
+        "evidence_hash": "sha256:6ad865f4c46c85fa93204496cadc568d0fe7c2b95a587cffb4b662b95f13838c",
+        "gateway_cover": null,
+        "max_hops": 6,
+        "membership": [
+          [
+            0,
+            0
+          ],
+          [
+            1,
+            0
+          ],
+          [
+            1,
+            1
+          ],
+          [
+            2,
+            1
+          ]
+        ],
+        "mesh_hash": "sha256:ae9f4aee01351171decba72b3917ed8bfefed4794286ac07f315932a774dc079",
+        "paths": [
+          [
+            0,
+            0,
+            [
+              0
+            ]
+          ],
+          [
+            0,
+            1,
+            [
+              0,
+              1
+            ]
+          ],
+          [
+            0,
+            2,
+            [
+              0,
+              1,
+              2
+            ]
+          ],
+          [
+            1,
+            1,
+            [
+              1
+            ]
+          ],
+          [
+            1,
+            2,
+            [
+              1,
+              2
+            ]
+          ],
+          [
+            2,
+            2,
+            [
+              2
+            ]
+          ]
+        ],
+        "places": [
+          "p0",
+          "p1",
+          "p2"
+        ],
+        "projected_edges": [
+          [
+            0,
+            1
+          ],
+          [
+            1,
+            2
+          ]
+        ],
+        "relation": "relationship",
+        "schema": "situated-mesh-proof-input-v24",
+        "societies": [
+          "left",
+          "right"
+        ],
+        "source_edges": [
+          [
+            0,
+            1
+          ],
+          [
+            1,
+            2
+          ]
+        ],
+        "source_lineage": {
+          "cognitive_state_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "model_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "model_id": "fixture",
+          "round_index": 1,
+          "social_state_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "source_snapshot_hash": "sha256:6066230dcade99960c08b0587adcaf8125c9dd45323f050c5e8c8f5455481eae",
+          "story_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "name": "OverlappingMembership",
+      "proof_scope": "outsider",
+      "source_snapshot_hash": "sha256:6066230dcade99960c08b0587adcaf8125c9dd45323f050c5e8c8f5455481eae"
+    },
+    {
+      "evidence": {
+        "agents": [
+          "a0",
+          "a1",
+          "a2"
+        ],
+        "bridges": [],
+        "evidence_hash": "sha256:1c84f02a4fdd99229e2f6da2b647f9b55b8141c1af4358efbc73ae9b8cb362c5",
+        "gateway_cover": null,
+        "max_hops": 6,
+        "membership": [
+          [
+            0,
+            0
+          ],
+          [
+            1,
+            0
+          ],
+          [
+            2,
+            0
+          ]
+        ],
+        "mesh_hash": "sha256:1beb39a6939d3e2a0adae69e8d3db4b2f6ec6c5baad78f8b04fdeed224d70ca5",
+        "paths": [
+          [
+            0,
+            0,
+            [
+              0
+            ]
+          ],
+          [
+            0,
+            1,
+            [
+              0,
+              1
+            ]
+          ],
+          [
+            1,
+            1,
+            [
+              1
+            ]
+          ],
+          [
+            2,
+            2,
+            [
+              2
+            ]
+          ]
+        ],
+        "places": [
+          "p0",
+          "p1",
+          "p2"
+        ],
+        "projected_edges": [
+          [
+            0,
+            1
+          ]
+        ],
+        "relation": "direct_interaction",
+        "schema": "situated-mesh-proof-input-v24",
+        "societies": [
+          "all"
+        ],
+        "source_edges": [
+          [
+            0,
+            1
+          ]
+        ],
+        "source_lineage": {
+          "cognitive_state_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "model_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "model_id": "fixture",
+          "round_index": 1,
+          "social_state_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "source_snapshot_hash": "sha256:6066230dcade99960c08b0587adcaf8125c9dd45323f050c5e8c8f5455481eae",
+          "story_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "name": "NonemptyInteraction",
+      "proof_scope": "path",
+      "source_snapshot_hash": "sha256:6066230dcade99960c08b0587adcaf8125c9dd45323f050c5e8c8f5455481eae"
+    },
+    {
+      "evidence": {
+        "agents": [
+          "a0",
+          "a1",
+          "a2"
+        ],
+        "bridges": [],
+        "evidence_hash": "sha256:db07327c849154c9fc4a40631a575489245fed318670d701b0ce3f3f39b674b2",
+        "gateway_cover": null,
+        "max_hops": 6,
+        "membership": [
+          [
+            0,
+            0
+          ],
+          [
+            1,
+            0
+          ],
+          [
+            2,
+            0
+          ]
+        ],
+        "mesh_hash": "sha256:1beb39a6939d3e2a0adae69e8d3db4b2f6ec6c5baad78f8b04fdeed224d70ca5",
+        "paths": [
+          [
+            0,
+            0,
+            [
+              0
+            ]
+          ],
+          [
+            1,
+            1,
+            [
+              1
+            ]
+          ],
+          [
+            1,
+            2,
+            [
+              1,
+              2
+            ]
+          ],
+          [
+            2,
+            2,
+            [
+              2
+            ]
+          ]
+        ],
+        "places": [
+          "p0",
+          "p1",
+          "p2"
+        ],
+        "projected_edges": [
+          [
+            1,
+            2
+          ]
+        ],
+        "relation": "transmission",
+        "schema": "situated-mesh-proof-input-v24",
+        "societies": [
+          "all"
+        ],
+        "source_edges": [
+          [
+            1,
+            2
+          ]
+        ],
+        "source_lineage": {
+          "cognitive_state_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "model_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "model_id": "fixture",
+          "round_index": 1,
+          "social_state_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "source_snapshot_hash": "sha256:6066230dcade99960c08b0587adcaf8125c9dd45323f050c5e8c8f5455481eae",
+          "story_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "name": "NonemptyTransmission",
+      "proof_scope": "path",
+      "source_snapshot_hash": "sha256:6066230dcade99960c08b0587adcaf8125c9dd45323f050c5e8c8f5455481eae"
+    }
+  ],
+  "notice": "Finite V19 evidence for V24 Lean conformance only; not authenticated external source identity, asynchronous delivery, or a universal six-hop bound",
+  "schema": "situated-mesh-runtime-proof-vectors-v1"
+}
