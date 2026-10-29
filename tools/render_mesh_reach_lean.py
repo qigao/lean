@@ -202,6 +202,7 @@ def render_path_case(name: str, evidence: dict[str, object], *,
             f"({society} : Fin {len(evidence['societies'])}) 0 "
             f"({agent} : Fin {n}) ({agent} : Fin {n}) := by",
             "  apply membershipQualifiedReach_outsider",
+            "  unfold member",
             "  decide_cbv",
             "",
         ])
