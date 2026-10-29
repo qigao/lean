@@ -57,28 +57,6 @@ python3 -m tools.render_mesh_reach_lean > "$paths"
 extended_sha="$(sha256sum "$paths" | cut -d' ' -f1)"
 printf 'V24 extended Lean corpus SHA-256=%s\n' "$extended_sha"
 
-# Mutations must be rejected by the real Lean tactic, not by Python alone.
-for kind in stale-path identity; do
-  mutated="$tmpdir/reach-$kind.lean"
-  log="$tmpdir/reach-$kind.log"
-  python3 -m tools.mutate_mesh_reach_lean --kind "$kind" > "$mutated"
-  if timeout --kill-after=10s 120s lake env lean -DmaxErrors=1 "$mutated" > "$log" 2>&1; then
-    printf 'FAIL: stale %s claim unexpectedly proved in Lean\n' "$kind" >&2
-    exit 1
-  else
-    status=$?
-    if [[ "$status" == 124 || "$status" == 137 ]] ||
-       ! grep -q 'error:' "$log" ||
-       grep -Eq 'unknown identifier|maximum recursion depth|unexpected token' "$log"; then
-      printf 'FAIL: %s mutation lacked a valid Lean counterexample (exit=%s)\n' "$kind" "$status" >&2
-      cat "$log" >&2
-      exit 1
-    fi
-  fi
-  grep -m1 'error:' "$log"
-  printf 'Expected Lean RED confirmed for %s mutation\n' "$kind"
-done
-
 # This pin is deliberately NOT auto-generated or refreshed by CI.
 pin=tests/fixtures/mesh_reach_lean.sha256
 if [[ ! -f "$pin" ]]; then
@@ -90,3 +68,31 @@ if [[ ! "$pinned" =~ ^[0-9a-f]{64}$ || "$pinned" != "$extended_sha" ]]; then
   printf 'FAIL: extended Lean corpus digest differs: pinned=%s actual=%s\n' "$pinned" "$extended_sha" >&2
   exit 1
 fi
+
+# Mutations must be rejected by the real Lean tactic, not by Python alone.
+for kind in stale-path identity; do
+  mutated="$tmpdir/reach-$kind.lean"
+  log="$tmpdir/reach-$kind.log"
+  python3 -m tools.mutate_mesh_reach_lean --kind "$kind" > "$mutated"
+  if timeout --kill-after=10s 120s lake env lean -DmaxErrors=1 "$mutated" > "$log" 2>&1; then
+    printf 'FAIL: stale %s claim unexpectedly proved in Lean\n' "$kind" >&2
+    exit 1
+  else
+    status=$?
+    expected_failure='Tactic `decide` proved that the proposition'
+    if [[ "$kind" == "stale-path" ]]; then
+      expected_failure='`decide_cbv` failed: the proposition evaluates to `false`'
+    fi
+    if [[ "$status" == 124 || "$status" == 137 ]] ||
+       ! grep -q 'error:' "$log" ||
+       ! grep -Fq "$expected_failure" "$log" ||
+       grep -Eq 'unknown identifier|maximum recursion depth|unexpected token' "$log"; then
+      printf 'FAIL: %s mutation lacked a valid Lean counterexample (exit=%s)\n' "$kind" "$status" >&2
+      cat "$log" >&2
+      exit 1
+    fi
+  fi
+  grep -m1 'error:' "$log"
+  printf 'Expected Lean RED confirmed for %s mutation\n' "$kind"
+done
+

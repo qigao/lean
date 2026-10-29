@@ -142,3 +142,19 @@ updates this reviewed pin; the rollout's initial digest-discovery run must
 fail closed if no checked-in pin exists. No earlier source/bridge mutation
 tests, fixed 70-edge corpus pin, 35+11 trust audits, or full workflow steps
 are removed.
+
+## Exact-head extended corpus pin — accepted digest candidate
+
+The full extended runtime path/Gateway/identity Lean corpus is committed by
+SHA-256 in `tests/fixtures/mesh_reach_lean.sha256`:
+`69890c34922216660ce0ce79727ebfdcccc5bbbbba212a932a0d843e4ca09216`. The digest was read from actual CI proof job #40903497184,
+before its intentionally fail-closed missing-pin result. Both focused Python
+and the Lean proof script now independently recompute the canonical exact
+UTF-8 bytes and compare them to the reviewed pin; the shell aborts on a
+mismatch before executing negative mutation tests.
+
+Negative mutation admission also requires the real Lean diagnostic from
+the deliberately false `decide_cbv` path or source-hash `decide` equality;
+a generic compiler diagnostic, timeout, or missing Lean tool is not enough.
+The positive runtime source/graph ownership, existing 70-obligation pinned
+corpus and all independent trust/World Studio gates remain unchanged.

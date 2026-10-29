@@ -71,6 +71,15 @@ class SingleflightCIContractTests(unittest.TestCase):
             with self.subTest(required=required):
                 self.assertIn(required, self.content)
 
+    def test_extended_mesh_pin_and_negative_kernel_checks(self):
+        script = (ROOT / "tools/check_mesh_evidence_lean.sh").read_text(encoding="utf-8")
+        self.assertIn("mesh_reach_lean.sha256", script)
+        self.assertIn("sha256sum", script)
+        self.assertIn("tools.mutate_mesh_reach_lean", script)
+        self.assertIn("stale-path identity", script)
+        self.assertIn("expected_failure", script)
+        self.assertNotIn("sha256sum \"$paths\" > tests/fixtures", script)
+
     def test_runtime_generated_lean_gate(self):
         self.assertIn("python -m unittest tests.test_mesh_projection tests.test_mesh_evidence -v", self.content)
         self.assertIn("V24 finite runtime mesh Lean conformance", self.content)

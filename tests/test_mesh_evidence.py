@@ -410,5 +410,17 @@ class MeshEvidenceTests(unittest.TestCase):
             render_false_reach_obligation("other")
 
 
+    def test_extended_runtime_lean_corpus_has_reviewed_byte_pin(self):
+        from hashlib import sha256
+        from pathlib import Path
+        from tools.render_mesh_reach_lean import render_path_corpus
+
+        corpus = render_path_corpus().encode("utf-8")
+        pinned = (Path(__file__).parent / "fixtures" /
+                  "mesh_reach_lean.sha256").read_text(encoding="ascii").strip()
+        self.assertRegex(pinned, r"^[a-f0-9]{64}$")
+        self.assertEqual(sha256(corpus).hexdigest(), pinned)
+
+
 if __name__ == "__main__":
     unittest.main()
