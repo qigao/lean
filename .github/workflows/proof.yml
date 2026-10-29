@@ -283,6 +283,10 @@ jobs:
         timeout-minutes: 5
         run: bash tools/check_mesh_projection_trust.sh
 
+      - name: V24 finite runtime mesh Lean conformance
+        timeout-minutes: 8
+        run: bash tools/check_mesh_evidence_lean.sh
+
       - name: Lean theorem tests
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
