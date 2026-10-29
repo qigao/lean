@@ -91,6 +91,20 @@ class SingleflightCIContractTests(unittest.TestCase):
             self.content.index("Runtime-derived mesh regression"),
         )
 
+    def test_r1_source_revision_and_replay_gate(self):
+        self.assertIn("R1 immutable topology replay regression", self.content)
+        self.assertIn("tools.render_topology_revision_vectors", self.content)
+        self.assertIn("tests.test_mesh_topology_revisions", self.content)
+        self.assertIn("conformance/topology_revision_v1.json", self.content)
+        self.assertLess(
+            self.content.index("R1 immutable topology replay regression"),
+            self.content.index("Runtime-derived mesh regression"),
+        )
+        script = (ROOT / "tools/check_mesh_evidence_lean.sh").read_text(encoding="utf-8")
+        self.assertIn("tools.render_topology_revision_vectors", script)
+        self.assertIn("topology_revision_v1.json", script)
+        self.assertIn("cmp -s", script)
+
     def test_runtime_generated_lean_gate(self):
         self.assertIn("python -m unittest tests.test_mesh_projection tests.test_mesh_evidence -v", self.content)
         self.assertIn("V24 finite runtime mesh Lean conformance", self.content)

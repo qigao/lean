@@ -14,6 +14,14 @@ if ! cmp -s conformance/mesh_runtime_vectors_v1.json "$tmpdir/mesh_runtime_vecto
   diff -u conformance/mesh_runtime_vectors_v1.json "$tmpdir/mesh_runtime_vectors_v1.json" || true
   exit 1
 fi
+# Independent Lean-lane input check: runtime events and revision hashes must
+# agree exactly with the reviewed authoritative Python replay corpus.
+python3 -m tools.render_topology_revision_vectors > "$tmpdir/topology_revision_v1.json"
+if ! cmp -s conformance/topology_revision_v1.json "$tmpdir/topology_revision_v1.json"; then
+  echo 'FAIL: R1 topology replay vector mismatch' >&2
+  diff -u conformance/topology_revision_v1.json "$tmpdir/topology_revision_v1.json" || true
+  exit 1
+fi
 generated="$tmpdir/authoritative.lean"
 
 # Always regenerate from the actual V19 snapshot, then enforce the immutable

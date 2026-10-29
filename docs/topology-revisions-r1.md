@@ -57,3 +57,17 @@ This does not prove graph evolution preserves six hops, update arbitrary
 human social facts, authenticate an external event, or implement a general
 persistent event store. Reuse established network mathematical methods for
 topology and empirical comparisons, not as new theorem claims.
+
+## Versioned replay vectors and CI
+
+`tools/render_topology_revision_vectors.py` deterministically generates
+`conformance/topology_revision_v1.json` from real source fixtures and the
+production topology edit/replay API. The fixture includes a two-event stream
+with explicit expected source hashes, chained receipts, before/after selected
+edges and directed reachability/component observations, stale path/proof
+rejection, unchanged interaction/transmission and fail-closed invalid Bridge.
+
+The focused R1 Python CI, full Python tests and independent Lean acceptance
+lane compare regenerated **UTF-8 bytes** against the checked-in file. The
+initial unpinned-vector run must report RED and expose the reviewed generated
+contents; no CI task may silently accept or overwrite a missing vector.

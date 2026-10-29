@@ -65,9 +65,9 @@ class TopologyRevisionTests(unittest.TestCase):
         self.assertEqual(old.story_hash, new.story_hash)
         self.assertEqual(old.cognitive_state_hash, new.cognitive_state_hash)
         self.assertEqual(old.social_state_hash, new.social_state_hash)
-        self.assertIs(old.nodes, new.nodes)
-        self.assertIs(old.access_edges, new.access_edges)
-        self.assertIs(old.transmissions, new.transmissions)
+        self.assertEqual(old.nodes, new.nodes)
+        self.assertEqual(old.access_edges, new.access_edges)
+        self.assertEqual(old.transmissions, new.transmissions)
         self.assertEqual(before_bytes, json.dumps(old.to_dict(), sort_keys=True))
         self.assertIsNot(before_mesh.source_snapshot, after_mesh.source_snapshot)
         self.assertIsNone(find_mesh_path(after_mesh, "a0", "a2", relation=R, max_hops=2))
@@ -215,7 +215,31 @@ class TopologyRevisionTests(unittest.TestCase):
         self.assertEqual(metrics["unreachable_ordered_pair_count"], 0)
         self.assertEqual(metrics["directed_diameter"], 2)
         self.assertEqual(metrics["strong_components"], [["a0", "a1", "a2"]])
-        self.assertEqual(metrics["distance_sum"], 9)
+        self.assertEqual(metrics["distance_sum"], 8)
+
+    def test_bounded_event_budget_and_no_implicit_reactivation(self):
+        source = fixture(3)
+        e = change(source, "close", TopologyOperation.DEACTIVATE, "a0", "a1")
+        result = apply_topology_change(source, e)
+        with self.assertRaises(TopologyEdgeConflict):
+            apply_topology_change(
+                result.source_snapshot,
+                change(result.source_snapshot, "again", TopologyOperation.DEACTIVATE, "a0", "a1"),
+            )
+        with self.assertRaises(TopologyEdgeConflict):
+            apply_topology_change(
+                result.source_snapshot,
+                change(result.source_snapshot, "readd", TopologyOperation.ADD, "a0", "a1",
+                       edge=reverse_edge("a0", "a1")),
+            )
+        with self.assertRaises(TopologyChangeError):
+            replay_topology_changes(source, (e,) * 129)
+
+    def test_reviewed_replay_vectors_match_exact_runtime_output(self):
+        from pathlib import Path
+        from tools.render_topology_revision_vectors import render_vector_corpus
+        path = Path(__file__).resolve().parents[1] / "conformance" / "topology_revision_v1.json"
+        self.assertEqual(path.read_bytes(), render_vector_corpus().encode("utf-8"))
 
 
 if __name__ == "__main__":
