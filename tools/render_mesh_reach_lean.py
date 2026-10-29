@@ -85,11 +85,11 @@ def _gateway_proofs(evidence: dict[str, object]) -> list[str]:
         "",
         "private theorem gatewayMember : ∀ s, member (gateway s) s := by",
         "  intro s",
-        "  fin_cases s <;> decide_cbv",
+        "  fin_cases s <;> (unfold member gateway; decide_cbv)",
         "",
         "private theorem assignedMember : ∀ a, member a (societyOf a) := by",
         "  intro a",
-        "  fin_cases a <;> decide_cbv",
+        "  fin_cases a <;> (unfold member societyOf; decide_cbv)",
         "",
     ])
     edges = {tuple(edge) for edge in evidence["projected_edges"]}
