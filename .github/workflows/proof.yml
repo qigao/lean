@@ -49,12 +49,8 @@ jobs:
           pinned=conformance/mesh_runtime_vectors_v1.json
           mkdir -p .generated-conformance
           generated=.generated-conformance/mesh_runtime_vectors_v1.json
-          if [ ! -f "$pinned" ]; then
-            # Initial review-only handoff. Never silently trust an unpinned vector.
-            python3 -m tools.render_mesh_proof_vectors --transport
-            echo 'RED: reviewed canonical V24 runtime vectors are missing'
-            exit 1
-          fi
+          # The checked-in vector is mandatory: this is no longer a bootstrap.
+          test -f "$pinned"
           python3 -m tools.render_mesh_proof_vectors > "$generated"
           if ! cmp -s "$pinned" "$generated"; then
             diff -u "$pinned" "$generated" || true

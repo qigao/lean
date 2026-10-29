@@ -357,7 +357,8 @@ class MeshEvidenceTests(unittest.TestCase):
         for premise in ("gatewayMember", "assignedMember", "toGateway",
                         "fromGateway", "societyBound"):
             self.assertIn(f"private theorem {premise} :", lean)
-        self.assertIn("projectedMesh_global_six_hop_bound", lean)
+        self.assertNotIn("projectedMesh_global_six_hop_bound", lean)
+        self.assertNotIn("example : GlobalHopBound projected 6", lean)
         self.assertIn("MeshWalk.step projected_edge_", lean)
         corpus = render_path_corpus()
         for name in ("RuntimeChainReach", "RuntimeCoveredGateway",

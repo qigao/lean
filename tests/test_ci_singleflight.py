@@ -84,6 +84,7 @@ class SingleflightCIContractTests(unittest.TestCase):
         self.assertIn("Canonical V24 runtime vector conformance", self.content)
         self.assertIn("tools.render_mesh_proof_vectors", self.content)
         self.assertIn("conformance/mesh_runtime_vectors_v1.json", self.content)
+        self.assertNotIn("--transport", self.content)
         self.assertIn('cmp -s "$pinned" "$generated"', self.content)
         self.assertLess(
             self.content.index("Canonical V24 runtime vector conformance"),

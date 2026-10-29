@@ -7,7 +7,6 @@ a claim that Lean authenticates external processes.
 """
 from __future__ import annotations
 
-import argparse
 import json
 
 from narrative_dynamics.abm.mesh_contracts import MeshRelation
@@ -71,21 +70,7 @@ def render_vector_corpus() -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--transport", action="store_true",
-        help="Print numbered small ASCII chunks for the initial reviewed vector commit",
-    )
-    args = parser.parse_args()
-    if args.transport:
-        compact = json.dumps(
-            build_vector_manifest(), ensure_ascii=True,
-            sort_keys=True, separators=(",", ":"),
-        )
-        for index, offset in enumerate(range(0, len(compact), 1800)):
-            print(f"V24_VECTOR_CHUNK_{index:04d}={compact[offset:offset + 1800]}")
-    else:
-        print(render_vector_corpus(), end="")
+    print(render_vector_corpus(), end="")
 
 
 if __name__ == "__main__":

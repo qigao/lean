@@ -103,13 +103,12 @@ by the kernel and a concrete `ReachWithin` hop bound.
 
 For the fully covered directed two-society fixture, Lean checks the designated
 gateway's society membership, every agent assignment, both directions of
-the one-hop cover, and every directed society route under four hops. Only then
-does the generated proof apply `projectedMesh_global_six_hop_bound`; the Python
-`premises_satisfied` flag is used only for choosing a positive fixture, not
-as a Lean theorem or admitted hypothesis. Other fixtures cover an uncovered
-directed chain (local paths only), overlapping memberships, an outsider's
-impossible local zero-hop claim, and nonempty selected interaction and
-transmission relations.
+the one-hop cover, and every directed society route under four hops. The
+generator **does not** repeat the already-known conditional six-hop bound
+for each fixture. The Python `premises_satisfied` flag selects a positive
+fixture but is not admitted as a Lean premise. Other fixtures cover a directed
+chain (local paths only), overlapping memberships, an outsider's impossible
+local zero-hop claim, and nonempty selected interaction and transmission.
 
 The original pinned 70-edge corpus and its digest stay unchanged. The
 additional concrete generator runs in the same bounded Lean CI step and
@@ -183,3 +182,22 @@ RED, not silently regenerated into the repository. Digest pins of the two
 generated Lean corpora and all real mutation-to-RED / source trust audits
 remain in force. These vectors do not constitute cryptographic authentication
 of an external process or a universal theorem about changing runtime graphs.
+
+## Research direction and retired proof/bootstrap duplication (2026-10-30)
+
+Canonical direction: [network-research-direction.md](network-research-direction.md),
+Issue #96. Established six-degree methods are **reference tools**, not
+research to re-prove. We continue to check the runtime-derived Agent/Society
+relationship, source-backed edges, concrete paths, gateway assignment,
+source lineage and observed-data versions. Re-running the existing abstract
+six-hop result on every fixture added no new model correctness guarantee,
+so that generated redundant example has been removed. The original
+foundational mathematical library and its trust audit remain in place.
+
+The initial `--transport` JSON-chunk bootstrap and corresponding CI
+fallback are now deleted: the reviewed versioned JSON file exists and must
+be checked against a fresh authoritative export with strict `cmp`.
+The two existing Lean corpus SHA-256 pins remain mandatory; an intentional
+change to the extended corpus requires recording and reviewing its new
+actual digest on an exact-head CI run. No hashes or vectors are silently
+updated.

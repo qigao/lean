@@ -60,16 +60,15 @@ python3 -m tools.render_mesh_reach_lean > "$paths"
   timeout --kill-after=10s 240s \
   lake env lean -DmaxErrors=1 "$paths"
 
-# Record the entire extended runtime-to-Lean byte corpus before pinning it.
-# During initial rollout, allow the real positive/negative Lean execution to
-# run first; then fail closed if its checked-in digest is missing.
+# Require exact byte identity with the reviewed finite conformance corpus.
+# An intentional generator change must be separately reviewed and re-pinned.
 extended_sha="$(sha256sum "$paths" | cut -d' ' -f1)"
 printf 'V24 extended Lean corpus SHA-256=%s\n' "$extended_sha"
 
-# This pin is deliberately NOT auto-generated or refreshed by CI.
+# The pin is required and never silently regenerated.
 pin=tests/fixtures/mesh_reach_lean.sha256
 if [[ ! -f "$pin" ]]; then
-  printf 'FAIL: extended Lean corpus is not yet pinned: SHA-256=%s\n' "$extended_sha" >&2
+  printf 'FAIL: missing reviewed extended Lean corpus pin; actual SHA-256=%s\n' "$extended_sha" >&2
   exit 1
 fi
 pinned="$(tr -d '[:space:]' < "$pin")"

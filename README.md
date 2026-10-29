@@ -2,6 +2,19 @@
 
 A formalization and simulation research spike for a human–social–historical narrative engine.
 
+## Current network-research direction
+
+We **use** established graph theory (including six degrees, small-world metrics
+and common growth models) rather than treating repeated proofs of those known
+results as new discoveries. Our research work is executable network topology,
+agent/network coevolution and empirical model evaluation, with Lean used for
+new consequential runtime invariants and source-to-result consistency.
+
+See [network research direction](docs/network-research-direction.md) and the
+[canonical roadmap (Issue #96)](https://github.com/qigao/lean/issues/96).
+Existing proof and trust audits remain part of regression acceptance, not
+standalone mathematical novelty claims.
+
 ## Boundary
 
 - **Lean** defines and proves the semantic kernel: typed world structure, epistemic isolation, provenance, admissibility, motivational identities, and invariants.
