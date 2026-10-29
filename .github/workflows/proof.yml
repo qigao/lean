@@ -350,7 +350,7 @@ jobs:
       - name: Check exact revision
         run: git rev-parse HEAD
       - name: Runtime-derived mesh regression
-        run: python -m unittest tests.test_mesh_projection -v
+        run: python -m unittest tests.test_mesh_projection tests.test_mesh_evidence -v
 
   python-tests:
     # BB branches exclude peripheral discovery (Blender, providers and Studio).
