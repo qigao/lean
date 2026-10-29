@@ -5,6 +5,15 @@ export PATH="$HOME/.elan/bin:$PATH"
 
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
+
+# Independent Lean-lane check: exact authoritative V19 records must be
+# identical to the human-reviewable versioned input vectors.
+python3 -m tools.render_mesh_proof_vectors > "$tmpdir/mesh_runtime_vectors_v1.json"
+if ! cmp -s conformance/mesh_runtime_vectors_v1.json "$tmpdir/mesh_runtime_vectors_v1.json"; then
+  echo 'FAIL: versioned runtime source vectors disagree with exact-head export' >&2
+  diff -u conformance/mesh_runtime_vectors_v1.json "$tmpdir/mesh_runtime_vectors_v1.json" || true
+  exit 1
+fi
 generated="$tmpdir/authoritative.lean"
 
 # Always regenerate from the actual V19 snapshot, then enforce the immutable

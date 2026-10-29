@@ -43,6 +43,24 @@ jobs:
         run: python -m pip install --disable-pip-version-check -r requirements-world-studio.txt
       - name: Check exact revision
         run: git rev-parse HEAD
+      - name: Canonical V24 runtime vector conformance
+        run: |
+          set -euo pipefail
+          pinned=conformance/mesh_runtime_vectors_v1.json
+          mkdir -p .generated-conformance
+          generated=.generated-conformance/mesh_runtime_vectors_v1.json
+          if [ ! -f "$pinned" ]; then
+            # Initial review-only handoff. Never silently trust an unpinned vector.
+            python3 -m tools.render_mesh_proof_vectors --transport
+            echo 'RED: reviewed canonical V24 runtime vectors are missing'
+            exit 1
+          fi
+          python3 -m tools.render_mesh_proof_vectors > "$generated"
+          if ! cmp -s "$pinned" "$generated"; then
+            diff -u "$pinned" "$generated" || true
+            echo 'RED: reviewed V24 runtime vectors differ from authoritative export'
+            exit 1
+          fi
       - name: Runtime-derived mesh regression
         run: python -m unittest tests.test_mesh_projection tests.test_mesh_evidence -v
 

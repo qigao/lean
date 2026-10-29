@@ -224,7 +224,8 @@ def render_path_case(name: str, evidence: dict[str, object], *,
     return base[:-len(suffix)] + "\n".join(extra) + suffix
 
 
-def render_path_corpus() -> str:
+def runtime_proof_cases():
+    """Common authoritative runtime cases for Lean and reviewed JSON vectors."""
     chain = two_societies(fixture())
     covered, gates, assigned = covered_case()
     overlap = MeshSnapshot(fixture(3), (
@@ -233,7 +234,7 @@ def render_path_corpus() -> str:
     ))
     all_members = MeshSnapshot(fixture(3), (
         MeshSociety("all", ("a0", "a1", "a2")),))
-    cases = (
+    return (
         ("RuntimeChainReach", chain, MeshRelation.RELATIONSHIP,
          {"left": "a2", "right": "a3"},
          {**{f"a{i}": "left" for i in range(3)},
@@ -247,6 +248,10 @@ def render_path_corpus() -> str:
         ("NonemptyTransmission", all_members, MeshRelation.TRANSMISSION,
          None, None, False, None),
     )
+
+
+def render_path_corpus() -> str:
+    cases = runtime_proof_cases()
     pieces = [
         "import NarrativeDynamics.Core.MeshProjection",
         "-- Authoritative V19 runtime paths and concrete V24 gateway premises.",

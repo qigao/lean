@@ -158,3 +158,28 @@ the deliberately false `decide_cbv` path or source-hash `decide` equality;
 a generic compiler diagnostic, timeout, or missing Lean tool is not enough.
 The positive runtime source/graph ownership, existing 70-obligation pinned
 corpus and all independent trust/World Studio gates remain unchanged.
+
+## Reviewable versioned V19/V24 runtime proof vectors
+
+`conformance/mesh_runtime_vectors_v1.json` is the **full, readable, ordered**
+versioned canonical evidence corpus, not just a SHA-256 commitment. It is
+regenerated from the same immutable authoritative `MeshSnapshot` fixtures
+used by both `render_mesh_evidence_lean.py` and
+`render_mesh_reach_lean.py`: three real office source-relation cases plus the
+directed chain, positive gateway cover, overlapping memberships, nonempty
+selected direct interaction and nonempty transmission examples.
+
+Each vector includes the version/schema, selected relation, source model /
+round / story / cognitive / social hashes, agent roster, society membership,
+source/projected edges, directed bridges, path witnesses, gateway configuration
+and check results, and evidence digest. No new runtime graph owner exists.
+
+On every PR HEAD the focused Python job first regenerates the canonical UTF-8
+JSON and performs strict **byte-for-byte `cmp`** with the checked-in vectors.
+The independent Lean lane repeats that comparison before it generates the
+kernel-checked source/bridge/path/Gateway proof obligations; focused and full
+Python tests also validate the same bytes. Any missing or altered bytes are
+RED, not silently regenerated into the repository. Digest pins of the two
+generated Lean corpora and all real mutation-to-RED / source trust audits
+remain in force. These vectors do not constitute cryptographic authentication
+of an external process or a universal theorem about changing runtime graphs.

@@ -80,6 +80,16 @@ class SingleflightCIContractTests(unittest.TestCase):
         self.assertIn("expected_failure", script)
         self.assertNotIn("sha256sum \"$paths\" > tests/fixtures", script)
 
+    def test_runtime_review_vectors_gate_precedes_mesh_regressions(self):
+        self.assertIn("Canonical V24 runtime vector conformance", self.content)
+        self.assertIn("tools.render_mesh_proof_vectors", self.content)
+        self.assertIn("conformance/mesh_runtime_vectors_v1.json", self.content)
+        self.assertIn('cmp -s "$pinned" "$generated"', self.content)
+        self.assertLess(
+            self.content.index("Canonical V24 runtime vector conformance"),
+            self.content.index("Runtime-derived mesh regression"),
+        )
+
     def test_runtime_generated_lean_gate(self):
         self.assertIn("python -m unittest tests.test_mesh_projection tests.test_mesh_evidence -v", self.content)
         self.assertIn("V24 finite runtime mesh Lean conformance", self.content)

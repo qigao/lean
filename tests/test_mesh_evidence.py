@@ -421,6 +421,26 @@ class MeshEvidenceTests(unittest.TestCase):
         self.assertRegex(pinned, r"^[a-f0-9]{64}$")
         self.assertEqual(sha256(corpus).hexdigest(), pinned)
 
+    def test_versioned_runtime_vectors_match_authoritative_source_bytes(self):
+        from pathlib import Path
+        from tools.render_mesh_proof_vectors import (
+            SCHEMA, render_vector_corpus, build_vector_manifest,
+        )
+        path = Path(__file__).resolve().parents[1] / "conformance" / "mesh_runtime_vectors_v1.json"
+        rendered = render_vector_corpus()
+        self.assertEqual(path.read_bytes(), rendered.encode("utf-8"))
+        vectors = build_vector_manifest()
+        self.assertEqual(vectors["schema"], SCHEMA)
+        self.assertEqual(len(vectors["cases"]), 8)
+        self.assertEqual(
+            len({case["name"] for case in vectors["cases"]}), 8,
+        )
+        for case in vectors["cases"]:
+            self.assertEqual(
+                case["source_snapshot_hash"],
+                case["evidence"]["source_lineage"]["source_snapshot_hash"],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
