@@ -195,5 +195,43 @@ class MeshEvidenceTests(unittest.TestCase):
         ))
 
 
+
+    def test_generated_lean_obligations_use_authoritative_selected_graph(self):
+        from tools.render_mesh_evidence_lean import (
+            real_runtime_case, render_case, render_corpus,
+        )
+        mesh = real_runtime_case()
+        proof_input = export_mesh_proof_input(
+            mesh, relation=MeshRelation.RELATIONSHIP,
+        )
+        generated = render_case("OfficeRuntime", proof_input)
+        self.assertIn("projectedMesh", generated)
+        self.assertEqual(
+            generated.count("\nexample : "),
+            len(proof_input["agents"]) ** 2,
+        )
+        corpus = render_corpus()
+        for case_name in ("OfficeRelationship", "OfficeInteraction",
+                          "OfficeTransmission", "DirectedChain", "CoveredGateways"):
+            self.assertIn(f"namespace {case_name}", corpus)
+        self.assertNotIn("native_decide", corpus)
+        self.assertNotIn("sorry", corpus)
+
+    def test_corrupt_lean_expected_edge_is_not_silently_repaired(self):
+        from tools.render_mesh_evidence_lean import render_case
+        data = export_mesh_proof_input(two_societies(fixture()), relation=R)
+        first = data["projected_edges"][0]
+        tampered = deepcopy(data)
+        tampered["projected_edges"] = [
+            edge for edge in data["projected_edges"] if edge != first
+        ]
+        self.assertFalse(validate_mesh_proof_input(
+            two_societies(fixture()), tampered, relation=R
+        ))
+        output = render_case("Tampered", tampered)
+        target = f"¬ projected ({first[0]} : Fin 7) ({first[1]} : Fin 7)"
+        self.assertIn(target, output)
+
+
 if __name__ == "__main__":
     unittest.main()
