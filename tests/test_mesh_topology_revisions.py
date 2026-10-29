@@ -239,7 +239,16 @@ class TopologyRevisionTests(unittest.TestCase):
         from pathlib import Path
         from tools.render_topology_revision_vectors import render_vector_corpus
         path = Path(__file__).resolve().parents[1] / "conformance" / "topology_revision_v1.json"
-        self.assertEqual(path.read_bytes(), render_vector_corpus().encode("utf-8"))
+        rendered = render_vector_corpus().encode("utf-8")
+        if not path.exists():
+            # One-time fail-closed review handoff. Remove after the actual
+            # versioned artifact is committed; never synthesize the pin in CI.
+            raise AssertionError(
+                "V19_TOPOLOGY_VECTOR_BEGIN\\n"
+                + rendered.decode("utf-8")
+                + "V19_TOPOLOGY_VECTOR_END"
+            )
+        self.assertEqual(path.read_bytes(), rendered)
 
 
 if __name__ == "__main__":
