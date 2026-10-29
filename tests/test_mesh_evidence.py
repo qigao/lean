@@ -206,6 +206,7 @@ class MeshEvidenceTests(unittest.TestCase):
         )
         generated = render_case("OfficeRuntime", proof_input)
         self.assertIn("projectedMesh", generated)
+        self.assertIn("private instance : DecidableRel projected", generated)
         self.assertEqual(
             generated.count("\nexample : "),
             len(proof_input["agents"]) ** 2,

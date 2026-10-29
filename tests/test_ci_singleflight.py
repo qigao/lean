@@ -38,6 +38,12 @@ class SingleFlightCIContractTests(unittest.TestCase):
             with self.subTest(entry=entry):
                 self.assertIn(entry, self.workflow)
 
+    def test_finite_lean_conformance_fails_before_expensive_bb_stages(self):
+        self.assertLess(
+            self.workflow.index("V24 finite runtime mesh Lean conformance"),
+            self.workflow.index("BB ABM joint evolution contracts"),
+        )
+
     def test_no_test_gate_weakening(self):
         for entry in ("python -m unittest discover -s tests -v",
                       "python -m unittest", "lake build",

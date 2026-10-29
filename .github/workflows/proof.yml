@@ -172,6 +172,10 @@ jobs:
           export PATH="$HOME/.elan/bin:$PATH"
           lake build
 
+      - name: V24 finite runtime mesh Lean conformance
+        timeout-minutes: 8
+        run: bash tools/check_mesh_evidence_lean.sh
+
       - name: BB ABM joint evolution contracts
         timeout-minutes: 25
         run: bash tools/check_fitness_abm.sh
@@ -307,10 +311,6 @@ jobs:
       - name: V24 projection theorem trust audit
         timeout-minutes: 5
         run: bash tools/check_mesh_projection_trust.sh
-
-      - name: V24 finite runtime mesh Lean conformance
-        timeout-minutes: 8
-        run: bash tools/check_mesh_evidence_lean.sh
 
       - name: Lean theorem tests
         run: |

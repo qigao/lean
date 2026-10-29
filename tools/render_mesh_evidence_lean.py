@@ -61,6 +61,12 @@ def render_case(name: str, evidence: dict[str, object]) -> str:
         f"private def projected : MeshGraph (Fin {n}) :=",
         "  projectedMesh (fun (_ : Unit) => sourceGraph) member bridge ()",
         "",
+        "-- Compute the finite relation; no Classical/native_decide shortcut.",
+        "private instance : DecidableRel projected := by",
+        "  intro a b",
+        "  unfold projected projectedMesh sourceGraph member bridge",
+        "  infer_instance",
+        "",
     ]
     for i in range(n):
         for j in range(n):
