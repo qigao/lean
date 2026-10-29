@@ -303,7 +303,10 @@ class SubprocessExecutionTests(unittest.TestCase):
         source = self.source(
             "process-busy",
             "tests.subprocess_fixtures:create_busy_model",
-            timeout_seconds=5.0,
+            # CPU seconds are scheduled execution time, not wall time. Give a
+            # throttled CI worker time to consume its original 1 CPU second;
+            # the typed CPU resource limit and assertion remain unchanged.
+            timeout_seconds=20.0,
             max_cpu_seconds=1,
         )
 
@@ -317,6 +320,29 @@ class SubprocessExecutionTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.resource, "cpu")
         self.assertIn("busy started", raised.exception.stdout)
+
+    @unittest.skipUnless(
+        os.name == "posix" and hasattr(signal, "SIGXCPU"),
+        "POSIX CPU resource limits are required",
+    )
+    def test_wall_timeout_is_not_misclassified_as_cpu_resource_limit(self):
+        api = execution_api(self)
+        source = self.source(
+            "process-sleep",
+            "tests.subprocess_fixtures:create_sleep_model",
+            timeout_seconds=1.0,
+            max_cpu_seconds=1,
+        )
+
+        with self.assertRaises(api.ModelTimeout) as raised:
+            self.runner.run_once(
+                source,
+                self.scenario,
+                {"seconds": 5.0},
+                seed=70,
+            )
+
+        self.assertEqual(raised.exception.timeout_seconds, 1.0)
 
     def test_limits_reject_non_positive_or_non_finite_values(self):
         api = execution_api(self)
