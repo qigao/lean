@@ -41,3 +41,12 @@ for kind in source bridge; do
   fi
   printf 'Expected Lean RED confirmed for %s premise mutation\n' "$kind"
 done
+
+# Independently kernel-check concrete MeshWalk paths, positive nonempty
+# interaction/transmission, overlapping memberships, outsider zero-hop,
+# and all premises required for the existing six-hop gateway theorem.
+paths="$tmpdir/concrete-paths-gateways.lean"
+python3 -m tools.render_mesh_reach_lean > "$paths"
+/usr/bin/time -f 'V24 concrete ReachWithin/Gateway elapsed=%e s peak_rss=%M KiB' \
+  timeout --kill-after=10s 240s \
+  lake env lean -DmaxErrors=1 "$paths"

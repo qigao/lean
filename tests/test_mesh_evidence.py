@@ -341,5 +341,43 @@ class MeshEvidenceTests(unittest.TestCase):
                 self.assertIn("decide_cbv", generated)
 
 
+    def test_runtime_paths_and_gateway_premises_generate_finite_lean(self):
+        from tools.render_mesh_reach_lean import (
+            render_path_case, render_path_corpus,
+        )
+        from tools.render_mesh_evidence_lean import covered_case
+        covered, gates, assignments = covered_case()
+        evidence = export_mesh_proof_input(
+            covered, relation=R, gateways=gates,
+            assigned_societies=assignments,
+        )
+        lean = render_path_case("ConcreteGateway", evidence, gateway_cover=True)
+        self.assertEqual(lean.count("private theorem runtime_path_"),
+                         len(evidence["paths"]))
+        for premise in ("gatewayMember", "assignedMember", "toGateway",
+                        "fromGateway", "societyBound"):
+            self.assertIn(f"private theorem {premise} :", lean)
+        self.assertIn("projectedMesh_global_six_hop_bound", lean)
+        self.assertIn("MeshWalk.step (by decide_cbv)", lean)
+        corpus = render_path_corpus()
+        for name in ("RuntimeChainReach", "RuntimeCoveredGateway",
+                     "OverlappingMembership", "NonemptyInteraction",
+                     "NonemptyTransmission"):
+            self.assertIn(f"namespace {name}", corpus)
+        self.assertIn("membershipQualifiedReach_outsider", corpus)
+        self.assertNotIn("native_decide", corpus)
+        self.assertNotIn("sorry", corpus)
+        self.assertNotIn("axiom ", corpus)
+        self.assertEqual(corpus, render_path_corpus())
+
+    def test_runtime_path_generator_rejects_unbounded_witness(self):
+        from tools.render_mesh_reach_lean import render_path_case
+        evidence = export_mesh_proof_input(two_societies(fixture()), relation=R)
+        stale = deepcopy(evidence)
+        stale["paths"][0][2].append(99)
+        with self.assertRaises(ValueError):
+            render_path_case("Unbounded", stale)
+
+
 if __name__ == "__main__":
     unittest.main()

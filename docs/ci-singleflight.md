@@ -93,3 +93,25 @@ timeout or missing Lean diagnostic is **not** counted as a negative success.
 
 This adds counterfactual mutation gates; it does not yet kernel-check the
 full concrete gateway-cover premises or every runtime path witness.
+
+## Concrete runtime paths and gateway kernel witnesses
+
+`tools/render_mesh_reach_lean.py` reuses the *same* authoritative evidence
+and existing `projectedMesh` finite renderer. Every exported path now becomes
+an exact-length Lean `MeshWalk` with each projected edge independently checked
+by the kernel and a concrete `ReachWithin` hop bound.
+
+For the fully covered directed two-society fixture, Lean checks the designated
+gateway's society membership, every agent assignment, both directions of
+the one-hop cover, and every directed society route under four hops. Only then
+does the generated proof apply `projectedMesh_global_six_hop_bound`; the Python
+`premises_satisfied` flag is used only for choosing a positive fixture, not
+as a Lean theorem or admitted hypothesis. Other fixtures cover an uncovered
+directed chain (local paths only), overlapping memberships, an outsider's
+impossible local zero-hop claim, and nonempty selected interaction and
+transmission relations.
+
+The original pinned 70-edge corpus and its digest stay unchanged. The
+additional concrete generator runs in the same bounded Lean CI step and
+must produce real kernel GREEN. Exact-byte pinning of this extended corpus,
+and additional identity/path mutation-to-RED cases, remain future work.
