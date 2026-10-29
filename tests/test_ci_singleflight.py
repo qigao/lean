@@ -1,4 +1,4 @@
-"""CI policy regression: exactly one serial superseding workflow."""
+"""CI policy: one superseding workflow and two bounded parallel runner lanes."""
 from pathlib import Path
 import unittest
 
@@ -20,11 +20,24 @@ class SingleflightCIContractTests(unittest.TestCase):
         self.assertIn("  pull_request:", self.content)
         self.assertIn("    branches:\n      - master\n      - proof/narrative-dynamics-v0", self.content)
 
-    def test_repo_runner_queue_preserves_other_prs(self):
+    def test_two_parallel_bounded_runner_lanes_and_join(self):
+        # Both lanes preserve unrelated PR jobs in their respective queues.
         self.assertEqual(self.content.count("      queue: max"), 3)
         self.assertEqual(self.content.count("      cancel-in-progress: false"), 3)
-        self.assertIn("    needs: python-tests", self.content)
-        self.assertIn("    needs: lean-proof", self.content)
+        self.assertEqual(
+            self.content.count("group: lean-ci-runner-${{ github.repository }}"), 2
+        )
+        self.assertEqual(
+            self.content.count("group: lean-ci-runner-lean-${{ github.repository }}"), 1
+        )
+        self.assertIn(
+            "  verify:\n    # Join both independent test families even when one finishes RED.\n"
+            "    needs: [python-tests, lean-proof]",
+            self.content,
+        )
+        self.assertIn("  lean-proof:\n    name: Lean proof\n", self.content)
+        self.assertNotIn("    needs: python-tests\n", self.content)
+        self.assertIn("    if: ${{ !cancelled() }}", self.content)
 
     def test_warm_cache_inputs(self):
         for name in ("cache: pip", "cache: npm", "~/.elan",
