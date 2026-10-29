@@ -55,3 +55,11 @@ restore-key log before asserting cold vs warm behavior, and compare actual
 elapsed times before asserting a speedup.
 
 Original design-spec and plan path exclusions remain on push and PR events.
+
+## V24 source-backed projection
+
+A V24-focused source-backed Python regression runs first using the shared
+runner queue. Full Python and Lean Proof both depend on that admission gate
+and then run in parallel on their separate bounded lanes. World Studio waits
+for both. The complete 35-declaration foundational audit and V24 projection
+Lean tests/11-declaration trust audit remain strict and unchanged.

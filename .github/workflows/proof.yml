@@ -23,7 +23,31 @@ permissions:
   contents: read
 
 jobs:
+  mesh-projection:
+    name: V24 situated mesh Python
+    runs-on: ubuntu-latest
+    concurrency:
+      group: lean-ci-runner-${{ github.repository }}
+      queue: max
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-world-studio.txt
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements-world-studio.txt
+      - name: Check exact revision
+        run: git rev-parse HEAD
+      - name: Runtime-derived mesh regression
+        run: python -m unittest tests.test_mesh_projection -v
+
   python-tests:
+    needs: mesh-projection
     # BB branches exclude peripheral discovery (Blender, providers and Studio).
     # These jobs remain enabled on other branches; skipped does not mean tested.
     if: ${{ !cancelled() && !startsWith(github.head_ref || github.ref_name, 'feature/fitness-') }}
@@ -55,6 +79,7 @@ jobs:
 
   lean-proof:
     name: Lean proof
+    needs: mesh-projection
     # Run independently of full Python to overlap their expensive acceptance gates.
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
@@ -262,6 +287,20 @@ jobs:
           python3 tools/audit_fitness_trust.py source \
             NarrativeDynamics/Core/Fitness*.lean \
             NarrativeDynamics/Tests/Fitness*.lean
+
+      - name: Mesh theorem trust audit
+        timeout-minutes: 10
+        run: bash tools/check_mesh_proof_trust.sh
+
+      - name: V24 Lean mesh projection tests
+        timeout-minutes: 5
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          lake env lean NarrativeDynamics/Tests/MeshProjection.lean
+
+      - name: V24 projection theorem trust audit
+        timeout-minutes: 5
+        run: bash tools/check_mesh_projection_trust.sh
 
       - name: Lean theorem tests
         run: |
