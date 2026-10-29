@@ -1,0 +1,207 @@
+{
+  "bridge_rejection": {
+    "new_source_hash": "sha256:2c20a9fb227ee5cf9c869fdb6d4efe04b577329e281e25adecd60156d108c9cd",
+    "original_directed_bridge": [
+      {
+        "relation": "relationship",
+        "source_agent_id": "a2",
+        "source_society_id": "left",
+        "target_agent_id": "a3",
+        "target_society_id": "right"
+      }
+    ],
+    "original_source_untouched": true,
+    "prior_source_hash": "sha256:9f7c4ac99114ae434183df66a7e89d002ece78ef66af24cb34db7dccce595680",
+    "rebuild_with_stale_bridge_rejected": "bridge lacks a directed source relation",
+    "removed_directed_source_edge": [
+      "a2",
+      "a3"
+    ]
+  },
+  "notice": "Finite directed topology-edit/replay evidence, not general six-hop proof or authentication",
+  "relationship_revision": {
+    "final_observation": {
+      "agent_count": 3,
+      "directed_diameter": null,
+      "directed_edges": [
+        [
+          "a1",
+          "a0"
+        ],
+        [
+          "a1",
+          "a2"
+        ]
+      ],
+      "distance_sum": 2,
+      "max_finite_distance": 1,
+      "mesh_hash": "sha256:443ad38776916a0d81a9b72cb2a407863468270559cd88793c13dafb477dcc17",
+      "reachable_ordered_pair_count": 2,
+      "relation": "relationship",
+      "source_snapshot_hash": "sha256:ca968cb80b6ed209b2d6c4e7f02307d06e38008741a5760fd0f472b94f7e3102",
+      "strong_components": [
+        [
+          "a0"
+        ],
+        [
+          "a1"
+        ],
+        [
+          "a2"
+        ]
+      ],
+      "unreachable_ordered_pair_count": 4
+    },
+    "final_selected_edges": [
+      [
+        "a1",
+        "a0"
+      ],
+      [
+        "a1",
+        "a2"
+      ]
+    ],
+    "final_source_hash": "sha256:ca968cb80b6ed209b2d6c4e7f02307d06e38008741a5760fd0f472b94f7e3102",
+    "initial_observation": {
+      "agent_count": 3,
+      "directed_diameter": null,
+      "directed_edges": [
+        [
+          "a0",
+          "a1"
+        ],
+        [
+          "a1",
+          "a2"
+        ]
+      ],
+      "distance_sum": 4,
+      "max_finite_distance": 2,
+      "mesh_hash": "sha256:1beb39a6939d3e2a0adae69e8d3db4b2f6ec6c5baad78f8b04fdeed224d70ca5",
+      "reachable_ordered_pair_count": 3,
+      "relation": "relationship",
+      "source_snapshot_hash": "sha256:6066230dcade99960c08b0587adcaf8125c9dd45323f050c5e8c8f5455481eae",
+      "strong_components": [
+        [
+          "a0"
+        ],
+        [
+          "a1"
+        ],
+        [
+          "a2"
+        ]
+      ],
+      "unreachable_ordered_pair_count": 3
+    },
+    "initial_round_index": 1,
+    "initial_selected_edges": [
+      [
+        "a0",
+        "a1"
+      ],
+      [
+        "a1",
+        "a2"
+      ]
+    ],
+    "initial_source_hash": "sha256:6066230dcade99960c08b0587adcaf8125c9dd45323f050c5e8c8f5455481eae",
+    "old_path": {
+      "agent_ids": [
+        "a0",
+        "a1",
+        "a2"
+      ],
+      "hop_count": 2,
+      "mesh_hash": "sha256:1beb39a6939d3e2a0adae69e8d3db4b2f6ec6c5baad78f8b04fdeed224d70ca5"
+    },
+    "replay": {
+      "changes": [
+        {
+          "actor_id": "fixture-author",
+          "edge": null,
+          "event_id": "deactivate-01",
+          "expected_source_hash": "sha256:6066230dcade99960c08b0587adcaf8125c9dd45323f050c5e8c8f5455481eae",
+          "operation": "deactivate",
+          "reason": "R1 revision test",
+          "relation": "relationship",
+          "schema": "v19-relationship-topology-change-v1",
+          "source_agent_id": "a0",
+          "target_agent_id": "a1"
+        },
+        {
+          "actor_id": "fixture-author",
+          "edge": {
+            "active": true,
+            "affinity": 0.1,
+            "confirmation_count": 1,
+            "contradiction_count": 0,
+            "observer_agent_id": "a0",
+            "source_agent_id": "a1",
+            "trust": 0.6
+          },
+          "event_id": "add-10",
+          "expected_source_hash": "sha256:217626eae8c981c68ced2fb6e541253ca10b8046c5567e105ed32efad747fbfc",
+          "operation": "add",
+          "reason": "R1 revision test",
+          "relation": "relationship",
+          "schema": "v19-relationship-topology-change-v1",
+          "source_agent_id": "a1",
+          "target_agent_id": "a0"
+        }
+      ],
+      "final_source_hash": "sha256:ca968cb80b6ed209b2d6c4e7f02307d06e38008741a5760fd0f472b94f7e3102",
+      "initial_source_hash": "sha256:6066230dcade99960c08b0587adcaf8125c9dd45323f050c5e8c8f5455481eae",
+      "receipts": [
+        {
+          "event_hash": "sha256:bb8ea838f6b5abd71fe6ee26f55603ee8d1e7f2723bbde61b614be20c6443f34",
+          "event_id": "deactivate-01",
+          "operation": "deactivate",
+          "ordinal": 0,
+          "prior_receipt_hash": null,
+          "receipt_hash": "sha256:b1eda941df7f01d3f52f60e2c0c9abd9b3ca8280a0673a25b09ac3bde0c39329",
+          "relation": "relationship",
+          "schema": "v19-relationship-topology-receipt-v1",
+          "source_agent_id": "a0",
+          "source_hash_after": "sha256:217626eae8c981c68ced2fb6e541253ca10b8046c5567e105ed32efad747fbfc",
+          "source_hash_before": "sha256:6066230dcade99960c08b0587adcaf8125c9dd45323f050c5e8c8f5455481eae",
+          "target_agent_id": "a1"
+        },
+        {
+          "event_hash": "sha256:834043d1cb4ceb1ea9f640179fc9bf0872e2f99443f9d2f74de520e76b23362d",
+          "event_id": "add-10",
+          "operation": "add",
+          "ordinal": 1,
+          "prior_receipt_hash": "sha256:b1eda941df7f01d3f52f60e2c0c9abd9b3ca8280a0673a25b09ac3bde0c39329",
+          "receipt_hash": "sha256:e0481ba67276ca91cd2e9224acf3547ea6ad4faa07673cd88e4cc2b067d42ed7",
+          "relation": "relationship",
+          "schema": "v19-relationship-topology-receipt-v1",
+          "source_agent_id": "a1",
+          "source_hash_after": "sha256:ca968cb80b6ed209b2d6c4e7f02307d06e38008741a5760fd0f472b94f7e3102",
+          "source_hash_before": "sha256:217626eae8c981c68ced2fb6e541253ca10b8046c5567e105ed32efad747fbfc",
+          "target_agent_id": "a0"
+        }
+      ],
+      "round_index": 1,
+      "schema": "v19-topology-replay-v1"
+    },
+    "stale_old_path_valid": false,
+    "stale_old_proof_accepted": false,
+    "unchanged_other_relations": {
+      "direct_interaction": [
+        [
+          "a0",
+          "a1"
+        ]
+      ],
+      "transmission": [
+        [
+          "a1",
+          "a2"
+        ]
+      ]
+    }
+  },
+  "schema": "v19-topology-replay-vectors-v1"
+}
