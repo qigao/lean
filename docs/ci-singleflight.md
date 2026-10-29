@@ -9,21 +9,20 @@ A PR source ref is a workflow concurrency group with
 `cancel-in-progress: true`: later commits supersede older queued and running
 runs for that PR. Other PR groups do not cancel one another.
 
-The single workflow has **two bounded runner lanes**, both using
-`queue: max` and `cancel-in-progress: false`:
-- **Shared lane** (`lean-ci-runner-${{ github.repository }}`): V24 focused
-  Python, full Python, and World Studio; compatible with the older baseline
-  repository-wide lock.
-- **Proof lane** (`lean-ci-runner-lean-${{ github.repository }}`): the Lean
-  kernel/proof suite, one concurrent Lean job per repository.
+Full Python and Lean run **in parallel**, each with a repository-wide
+`queue: max`, `cancel-in-progress: false` concurrency lane. The existing
+`lean-ci-runner-${{ github.repository }}` lane serializes full Python and
+World Studio and is backward-compatible with other branches still on the old
+single-runner configuration. The additional proof lane is
+`lean-ci-runner-lean-${{ github.repository }}`. This bounds managed CI to at
+most two concurrent jobs across the repository while preserving queued jobs
+from unrelated PRs.
 
-The V24 focused Python gate runs first. Full Python and Lean **both depend
-on the focused gate** and may then execute concurrently on separate runners.
-World Studio explicitly waits for **both** complete Python and Lean to
-finish before running. Even if one family fails, `!cancelled()` allows
-independent tests and UI evidence to finish, and the overall run stays RED.
-This bounds concurrency to two managed runner jobs while retaining queued
-work from unrelated PRs.
+World Studio has `needs: [python-tests, lean-proof]`: it runs only after
+both independent test families finish. The `!cancelled()` job predicates
+preserve Lean and Studio diagnostic evidence even when Python fails, with the
+overall workflow still RED. The original test commands and strict proofs
+remain unchanged.
 
 The pipeline preserves all prior Python, Lean, BB/PathN, Studio and real
 Playwright checks, plus exact-head checkouts. Previous fitness branch
@@ -57,18 +56,20 @@ elapsed times before asserting a speedup.
 
 Original design-spec and plan path exclusions remain on push and PR events.
 
-## V24 focused gate
+## V24 source-backed projection
 
-The V24 source projection adds a focused Python gate before complete Python
-and Lean start independently. It retains both the 35-theorem foundation trust
-audit and the V24 projected mesh proof audit in the Lean job, with the
-two bounded runner lanes and exact-head source checks. No test is dropped;
-World Studio joins the two independent families before running.
+A V24-focused source-backed Python regression runs first using the shared
+runner queue. Full Python and Lean Proof both depend on that admission gate
+and then run in parallel on their separate bounded lanes. World Studio waits
+for both. The complete 35-declaration foundational audit and V24 projection
+Lean tests/11-declaration trust audit remain strict and unchanged.
 
-## Runtime-derived finite Lean conformance
+## Runtime V19 evidence and finite Lean conformance
 
-The next V24 increment adds the bounded source-derived graph witness generator.
-It runs a kernel-checked finite Lean gate immediately after `lake build`,
-before the existing BB proofs, and expands the focused Python suite with
-source provenance and malicious evidence mutation tests. It preserves the
-two-lane concurrency bound, World Studio join and single-PR cancellation policy.
+The focused Python admission also validates genuine V19 source-derived
+membership, bridge, selected relation, gateway cover and negative mutation
+vectors. A separate finite Lean conformance stage runs immediately after the
+full Lean library build and before costly BB/PathN theorem suites, using
+`tools/check_mesh_evidence_lean.sh` and computable `decide_cbv` on generated
+relations. Full Python and Lean retain their separate bounded concurrency
+lanes, and World Studio waits for both families.
