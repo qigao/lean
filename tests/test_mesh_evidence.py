@@ -3,8 +3,10 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import replace
+import json
 import unittest
 
+from narrative_dynamics.contracts import stable_content_hash
 from narrative_dynamics.abm.mesh_contracts import (
     MeshBridge, MeshRelation, MeshSnapshot, MeshSociety,
 )
@@ -171,6 +173,89 @@ class MeshEvidenceTests(unittest.TestCase):
         self.assertFalse(validate_mesh_proof_input(
             disconnected, data, relation=R
         ))
+
+    def test_equal_numeric_type_mutations_are_rejected(self):
+        mesh = two_societies(fixture())
+        gateways = {"left": "a2", "right": "a3"}
+        assignments = {
+            **{f"a{i}": "left" for i in range(3)},
+            **{f"a{i}": "right" for i in range(3, 7)},
+        }
+        data = export_mesh_proof_input(
+            mesh, relation=R, gateways=gateways,
+            assigned_societies=assignments,
+        )
+        for path, replacement in (
+            (("source_lineage", "round_index"), True),
+            (("source_lineage", "round_index"), 1.0),
+            (("max_hops",), 6.0),
+            (("source_edges", 0, 0), False),
+            (("paths", 0, 2, 0), False),
+            (("gateway_cover", "premises_satisfied"), 0),
+        ):
+            for rehash in (False, True):
+                with self.subTest(path=path, kind=type(replacement), rehash=rehash):
+                    corrupted = deepcopy(data)
+                    container = corrupted
+                    for key in path[:-1]:
+                        container = container[key]
+                    container[path[-1]] = replacement
+                    # Ordinary Python equality misses this typed corruption.
+                    self.assertEqual(corrupted, data)
+                    changed_hash = stable_content_hash({
+                        key: value for key, value in corrupted.items()
+                        if key != "evidence_hash"
+                    })
+                    self.assertNotEqual(changed_hash, data["evidence_hash"])
+                    if rehash:
+                        corrupted["evidence_hash"] = changed_hash
+                    self.assertFalse(validate_mesh_proof_input(
+                        mesh, corrupted, relation=R, gateways=gateways,
+                        assigned_societies=assignments,
+                    ))
+
+    def test_canonical_json_round_trip_remains_valid(self):
+        mesh = two_societies(fixture())
+        data = export_mesh_proof_input(mesh, relation=R)
+        decoded = json.loads(json.dumps(data, sort_keys=True))
+        self.assertTrue(validate_mesh_proof_input(mesh, decoded, relation=R))
+
+    def test_noncanonical_candidate_values_are_rejected(self):
+        mesh = two_societies(fixture())
+        data = export_mesh_proof_input(mesh, relation=R)
+
+        class EqualityTrap:
+            def __eq__(self, other):
+                raise AssertionError("candidate equality must not be invoked")
+
+        class IntegerSubclass(int):
+            pass
+
+        class ForgedDict(dict):
+            def __eq__(self, other):
+                return True
+
+        cycle = []
+        cycle.append(cycle)
+        for case, corrupted in (
+            ("tuple", {**data, "paths": tuple(data["paths"])}),
+            ("custom_equality", {**data, "max_hops": EqualityTrap()}),
+            ("integer_subclass", {**data, "max_hops": IntegerSubclass(6)}),
+            ("cycle", {**data, "paths": cycle}),
+            ("dict_subclass", ForgedDict(data, mesh_hash="invented")),
+        ):
+            with self.subTest(case=case):
+                self.assertFalse(validate_mesh_proof_input(
+                    mesh, corrupted, relation=R
+                ))
+
+    def test_validator_preserves_authoritative_input_errors(self):
+        mesh = two_societies(fixture())
+        data = export_mesh_proof_input(mesh, relation=R)
+        with self.assertRaises(ValueError):
+            validate_mesh_proof_input(mesh, data, relation=R, max_hops=True)
+        with self.assertRaises(TypeError):
+            validate_mesh_proof_input(None, data, relation=R)
 
     def test_errors_are_bounded_and_explicit(self):
         mesh = two_societies(fixture())

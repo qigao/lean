@@ -147,6 +147,30 @@ def export_mesh_proof_input(
     return payload
 
 
+def _matches_canonical_value(value: object, expected: object) -> bool:
+    """Compare exact JSON types, bounded by the authoritative finite shape."""
+    kind = type(expected)
+    if type(value) is not kind:
+        return False
+    if kind is dict:
+        if (
+            len(value) != len(expected)
+            or any(type(key) is not str for key in value)
+            or value.keys() != expected.keys()
+        ):
+            return False
+        return all(
+            _matches_canonical_value(value[key], item)
+            for key, item in expected.items()
+        )
+    if kind is list:
+        return len(value) == len(expected) and all(
+            _matches_canonical_value(item, required)
+            for item, required in zip(value, expected)
+        )
+    return kind in (str, int, bool, type(None)) and value == expected
+
+
 def validate_mesh_proof_input(
     snapshot: MeshSnapshot, evidence: object, *, relation: MeshRelation,
     max_hops: int = 6, gateways: Mapping[str, str] | None = None,
@@ -157,10 +181,15 @@ def validate_mesh_proof_input(
     The hash alone is not trusted; changing a source edge, round, identity,
     membership, bridge or witness must fail unless the caller explicitly
     requests a new, independently recomputed evidence input.
+    Exact built-in types are required: Python's bool/int/float coercive
+    equality does not preserve the typed content hash or finite schema.
     """
     if not isinstance(evidence, dict):
         return False
-    return evidence == export_mesh_proof_input(
+    expected = export_mesh_proof_input(
         snapshot, relation=relation, max_hops=max_hops,
         gateways=gateways, assigned_societies=assigned_societies,
     )
+    # Matching every typed field includes the freshly computed evidence_hash;
+    # accepting a caller-supplied digest alone would not check its payload.
+    return _matches_canonical_value(evidence, expected)
