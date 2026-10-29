@@ -49,8 +49,8 @@ input. All failures leave the original snapshot unchanged.
       `MeshBridge` fail closed (not silently pruned).
 - [ ] Identical event stream / initial source produces identical source hash,
       receipts and V24 projection; conflicting event order/identity fails.
-- [ ] Canonical checked-in versioned input/output vector with SHA/lineage
-      checked byte-for-byte in focused and full Python CI.
+- [x] Canonical checked-in versioned input/output vector with SHA/lineage
+      checked byte-for-byte in focused/full Python and independent Lean CI.
 - [ ] Full exact-head Python/Lean/BB/PathN/World Studio/Playwright CI.
 
 This does not prove graph evolution preserves six hops, update arbitrary
@@ -71,3 +71,13 @@ The focused R1 Python CI, full Python tests and independent Lean acceptance
 lane compare regenerated **UTF-8 bytes** against the checked-in file. The
 initial unpinned-vector run must report RED and expose the reviewed generated
 contents; no CI task may silently accept or overwrite a missing vector.
+
+## Real V19 model-source integration acceptance
+
+The model/story/cognition/social state is projected by
+`project_situated_network_snapshot` into the original immutable V19
+snapshot. R1 then edits only an explicitly selected relationship pair in
+a *new* snapshot. The original runtime-derived source and its provenance
+are unmodified, the reverse directed edge remains, and direct-interaction
+and realized-transmission records remain unchanged. This does not imply
+the underlying social-memory state has been advanced.

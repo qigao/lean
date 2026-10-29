@@ -235,20 +235,46 @@ class TopologyRevisionTests(unittest.TestCase):
         with self.assertRaises(TopologyChangeError):
             replay_topology_changes(source, (e,) * 129)
 
+
+    def test_real_v19_model_snapshot_remains_source_of_truth(self):
+        from narrative_dynamics.abm.situated_network import project_situated_network_snapshot
+        from tests.test_network_abm_situated_network import initial_runtime_case
+
+        model, story, cognition, social = initial_runtime_case()
+        source = project_situated_network_snapshot(model, story, cognition, social)
+        expected_hash = source.content_hash
+        before = full_mesh(source)
+        self.assertIsNotNone(find_mesh_path(
+            before, "alice", "bob", relation=R, max_hops=1,
+        ))
+        event = change(source, "office-retire-ab", TopologyOperation.DEACTIVATE,
+                       "alice", "bob")
+        after_source = apply_topology_change(source, event).source_snapshot
+        after = full_mesh(after_source)
+        self.assertNotIn(("alice", "bob"), mesh_edges(after, R))
+        self.assertIn(("bob", "alice"), mesh_edges(after, R))
+        self.assertEqual(mesh_edges(before, D), mesh_edges(after, D))
+        self.assertEqual(mesh_edges(before, T), mesh_edges(after, T))
+        self.assertEqual(source.model_hash, model.content_hash)
+        self.assertEqual(source.round_index, story.current_state.round_index)
+        self.assertEqual(after_source.model_hash, model.content_hash)
+        self.assertEqual(after_source.round_index, source.round_index)
+        self.assertEqual(source.content_hash, expected_hash)
+        self.assertNotEqual(after_source.content_hash, expected_hash)
+        self.assertEqual(
+            json.dumps(source.to_dict(), sort_keys=True),
+            json.dumps(project_situated_network_snapshot(
+                model, story, cognition, social,
+            ).to_dict(), sort_keys=True),
+        )
+
     def test_reviewed_replay_vectors_match_exact_runtime_output(self):
         from pathlib import Path
         from tools.render_topology_revision_vectors import render_vector_corpus
         path = Path(__file__).resolve().parents[1] / "conformance" / "topology_revision_v1.json"
-        rendered = render_vector_corpus().encode("utf-8")
-        if not path.exists():
-            # One-time fail-closed review handoff. Remove after the actual
-            # versioned artifact is committed; never synthesize the pin in CI.
-            raise AssertionError(
-                "V19_TOPOLOGY_VECTOR_BEGIN\\n"
-                + rendered.decode("utf-8")
-                + "V19_TOPOLOGY_VECTOR_END"
-            )
-        self.assertEqual(path.read_bytes(), rendered)
+        self.assertEqual(
+            path.read_bytes(), render_vector_corpus().encode("utf-8"),
+        )
 
 
 if __name__ == "__main__":

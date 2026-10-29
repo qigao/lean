@@ -65,13 +65,8 @@ jobs:
           generated=.generated-conformance/topology_revision_v1.json
           pinned=conformance/topology_revision_v1.json
           python3 -m tools.render_topology_revision_vectors > "$generated"
-          if [ ! -f "$pinned" ]; then
-            echo 'RED: required reviewed R1 topology vector missing'
-            echo 'V19_TOPOLOGY_VECTOR_BEGIN'
-            cat "$generated"
-            echo 'V19_TOPOLOGY_VECTOR_END'
-            exit 1
-          fi
+          # Required reviewed source/replay vector; no bootstrap fallback.
+          test -f "$pinned"
           if ! cmp -s "$pinned" "$generated"; then
             diff -u "$pinned" "$generated" || true
             echo 'RED: R1 topology replay vectors differ from authoritative execution'
