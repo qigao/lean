@@ -91,6 +91,14 @@ class SingleflightCIContractTests(unittest.TestCase):
             self.content.index("Runtime-derived mesh regression"),
         )
 
+    def test_r11_real_social_memory_checkpoint_gate(self):
+        self.assertIn("tests.test_social_topology_checkpoint", self.content)
+        self.assertIn("tests.test_mesh_topology_revisions", self.content)
+        self.assertLess(
+            self.content.index("R1 immutable topology replay regression"),
+            self.content.index("Runtime-derived mesh regression"),
+        )
+
     def test_r1_source_revision_and_replay_gate(self):
         self.assertIn("R1 immutable topology replay regression", self.content)
         self.assertIn("tools.render_topology_revision_vectors", self.content)

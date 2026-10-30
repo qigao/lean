@@ -60,7 +60,7 @@ jobs:
       - name: R1 immutable topology replay regression
         run: |
           set -euo pipefail
-          python -m unittest tests.test_mesh_topology_revisions -v
+          python -m unittest tests.test_mesh_topology_revisions tests.test_social_topology_checkpoint -v
           mkdir -p .generated-conformance
           generated=.generated-conformance/topology_revision_v1.json
           pinned=conformance/topology_revision_v1.json
