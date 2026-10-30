@@ -52,6 +52,14 @@ if ! cmp -s conformance/network_environment_action_v1.json "$tmpdir/network_envi
   diff -u conformance/network_environment_action_v1.json "$tmpdir/network_environment_action_v1.json" || true
   exit 1
 fi
+# R2.M3: independently regenerate exact-percept V19 social testimony,
+# verification, claim status and directed trust evidence against reviewed bytes.
+python3 -m tools.render_agent_content_evidence_vectors > "$tmpdir/agent_content_evidence_v1.json"
+if ! cmp -s conformance/agent_content_evidence_v1.json "$tmpdir/agent_content_evidence_v1.json"; then
+  echo 'FAIL: R2.M3 exact-percept V19 content vectors changed' >&2
+  diff -u conformance/agent_content_evidence_v1.json "$tmpdir/agent_content_evidence_v1.json" || true
+  exit 1
+fi
 generated="$tmpdir/authoritative.lean"
 
 # Always regenerate from the actual V19 snapshot, then enforce the immutable

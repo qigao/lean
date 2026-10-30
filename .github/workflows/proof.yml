@@ -134,6 +134,23 @@ jobs:
             echo 'RED: R2.M2 environment action source vectors differ'
             exit 1
           fi
+      - name: R2 M3 exact V19 multi-Agent content evidence
+        run: |
+          set -euo pipefail
+          python -m unittest tests.test_agent_content_evidence -v
+          mkdir -p .generated-conformance
+          generated=.generated-conformance/agent_content_evidence_v1.json
+          pinned=conformance/agent_content_evidence_v1.json
+          python3 -m tools.render_agent_content_evidence_vectors > "$generated"
+          if [ ! -f "$pinned" ]; then
+            echo 'RED: reviewed V19 content evidence vectors are missing'
+            exit 1
+          fi
+          if ! cmp -s "$pinned" "$generated"; then
+            diff -u "$pinned" "$generated" || true
+            echo 'RED: V19 Agent content evidence differs from exact source'
+            exit 1
+          fi
       - name: Runtime-derived mesh regression
         run: python -m unittest tests.test_mesh_projection tests.test_mesh_evidence -v
 
