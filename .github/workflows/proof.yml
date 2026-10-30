@@ -65,13 +65,8 @@ jobs:
           social_generated=.generated-conformance/social_topology_checkpoint_v1.json
           social_pinned=conformance/social_topology_checkpoint_v1.json
           python3 -m tools.render_social_topology_checkpoint_vectors > "$social_generated"
-          if [ ! -f "$social_pinned" ]; then
-            echo 'RED: required reviewed V19 social-topology checkpoint vectors are missing'
-            echo 'V19_SOCIAL_TOPOLOGY_BEGIN'
-            cat "$social_generated"
-            echo 'V19_SOCIAL_TOPOLOGY_END'
-            exit 1
-          fi
+          # Required reviewed input; no bootstrap / auto-regeneration bypass.
+          test -f "$social_pinned"
           if ! cmp -s "$social_pinned" "$social_generated"; then
             diff -u "$social_pinned" "$social_generated" || true
             echo 'RED: V19 social-topology source vectors changed'

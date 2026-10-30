@@ -67,6 +67,7 @@ and existing source-backed path/metric APIs determine observed edge changes.
 
 The focused Python and independent Lean verification lanes compare these
 canonical UTF-8 bytes against
-`conformance/social_topology_checkpoint_v1.json`. The first run intentionally
-fails closed until the output has been reviewed and committed. No source
-graph duplication or cryptographic authentication is implied.
+`conformance/social_topology_checkpoint_v1.json`. The canonical file is checked in from real focused CI output and is mandatory.
+Missing, stale or edited bytes are RED in both the focused Python and
+independent Lean input-acceptance lanes. No hidden source graph or
+external actor authentication is implied.

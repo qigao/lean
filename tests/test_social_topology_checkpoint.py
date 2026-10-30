@@ -217,8 +217,7 @@ class SocialTopologyCheckpointTests(unittest.TestCase):
             manifest["deactivate"]["next_source_hash"],
         )
         reviewed = Path(__file__).resolve().parents[1] / "conformance" / "social_topology_checkpoint_v1.json"
-        if reviewed.exists():
-            self.assertEqual(reviewed.read_bytes(), render_vector_corpus().encode("utf-8"))
+        self.assertEqual(reviewed.read_bytes(), render_vector_corpus().encode("utf-8"))
 
     def test_original_authoritative_source_rejects_tampered_snapshot(self):
         old = self.runtime
