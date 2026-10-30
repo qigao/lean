@@ -265,9 +265,20 @@ class CoupledNetworkEvolutionTests(unittest.TestCase):
     def test_boundary_and_environment_change_opportunity_not_past_content(self):
         x = self.case["arms"]
         c, i = x["control_no_gate_change"], x["intervention_open_gate"]
-        self.assertEqual(c["direct_interaction_edges_at_tell"], [])
-        self.assertIn(["alice", "bob"], i["direct_interaction_edges_at_tell"])
-        self.assertIn(["bob", "alice"], i["direct_interaction_edges_at_tell"])
+        control_edges = {tuple(edge) for edge in c["direct_interaction_edges_at_tell"]}
+        treated_edges = {tuple(edge) for edge in i["direct_interaction_edges_at_tell"]}
+        # Bob and Carol are co-located *in both branches*; their existing
+        # opportunity must not be erased to exaggerate the intervention.
+        self.assertIn(("bob", "carol"), control_edges)
+        self.assertIn(("carol", "bob"), control_edges)
+        self.assertNotIn(("alice", "bob"), control_edges)
+        self.assertNotIn(("bob", "alice"), control_edges)
+        self.assertEqual(
+            treated_edges - control_edges,
+            {("alice", "bob"), ("bob", "alice"),
+             ("alice", "carol"), ("carol", "alice")},
+        )
+        self.assertEqual(control_edges - treated_edges, set())
         self.assertEqual(c["realized_transmission_edges_at_tell"], [])
         self.assertIn(["alice", "bob"], i["realized_transmission_edges_at_tell"])
         self.assertFalse(self.case["cross_branch"]["observed_axes"]["social_trust"])
