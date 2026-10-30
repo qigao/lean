@@ -364,12 +364,36 @@ def observe_verified_trust_then_new_tell() -> SourceHistoryNewTellReport:
             if len(new_tells) != 1:
                 raise ValueError("M5e.1 no new Alice TELL after native trust learning")
             new_tell = new_tells[0]
-            # The original planner must name the most recently actually
-            # observed eligible source: its own native round-8 TELL. This
-            # is stricter than accepting an arbitrary earlier event hash.
-            if (new_tell.round_index != 9 or
-                    new_tell.cause_event_ids != (prior_native_tells[0].event_id,)):
-                raise ValueError("M5e.1 new native TELL lacks preceding source event")
+            # A native TELL may cite Alice's observed INSPECT or a
+            # previous real TELL (including an observed other-Agent
+            # TELL). Bind the actual selected source to this Story,
+            # the prior Agent perspective and original native decision.
+            alice_decision = next(
+                item for item in second.decisions if item.agent_id == "alice"
+            )
+            alice_mind = next(
+                item for item in first.next_cognitive_state.minds
+                if item.agent_id == "alice"
+            )
+            historical_events = {
+                item.event_id: item
+                for frame in first.next_story.rounds
+                for item in frame.events
+            }
+            chosen_source = (
+                new_tell.cause_event_ids[0]
+                if len(new_tell.cause_event_ids) == 1 else None
+            )
+            if (new_tell.round_index != 9
+                    or chosen_source is None
+                    or chosen_source not in historical_events
+                    or historical_events[chosen_source].kind not in (
+                        SituatedActionKind.INSPECT, SituatedActionKind.TELL
+                    )
+                    or chosen_source not in alice_mind.observed_event_ids
+                    or alice_decision.intent.source_event_ids
+                       != new_tell.cause_event_ids):
+                raise ValueError("M5e.1 new native TELL lacks an observed real source")
             current_trust = next(
                 x.trust for x in second.next_social_state.relationships
                 if x.observer_agent_id == "bob"
