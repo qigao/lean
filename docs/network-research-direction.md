@@ -134,6 +134,30 @@ passage controller Alice is not automatically a central or trusted
 Agent. One deterministic paired run cannot identify societal causal
 effects, and no universal leadership score is defined.
 
+## R2.M5d — post-evidence actual action qualification
+
+A recorded Agent belief above an adoption threshold cannot establish
+that any source action occurred, nor prove one trusted person caused
+another's choice. The first actual M5d extension reruns the same
+original V19/SQLite private cognitive-social engine after the M5c
+source evidence update, **then runs one additional native decision
+round** and reads the emitted \`SituatedCognitiveDecision\` plus
+V19 \`SituatedWorldEvent\`. This is a subsequent, executed source
+action (possibly unsuccessful); if actions differ between original
+WAIT/OPEN branches, the cause is *not identified as trust alone*
+because world location, observed facts, claims and beliefs also differ.
+
+The source report binds model/story/social/decision/event hashes,
+native selected/feasible actions, actual world outcome, and any
+trust-weighted new Alice TELL recall. Zero such recall means
+there is no proven trust-to-memory-to-choice path in that round.
+No extra policy executor, synthetic social owner, or automatic
+trust from centrality. Keep finite deterministic
+\`TRUST_ONLY_CAUSAL_EFFECT_NOT_ESTABLISHED\`,
+\`UNATTRIBUTED\`, \`NOT_ESTIMABLE\`, and
+\`NO_EXTERNAL_VALIDATION\` until qualified matched source
+interventions and population data exist.
+
 ## Code and PR acceptance rules
 
 1. One implementation per model; prefer existing
