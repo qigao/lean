@@ -292,10 +292,7 @@ jobs:
           pinned=conformance/network_native_direct_tell_trust_v1.json
           python3 -m tools.render_native_direct_tell_trust_vectors > "$generated"
           if [ ! -f "$pinned" ]; then
-            echo 'R2_M5E0_NATIVE_VECTOR_BEGIN'
-            cat "$generated"
-            echo 'R2_M5E0_NATIVE_VECTOR_END'
-            echo 'RED: reviewed direct V19 source trust vector is missing'
+            echo 'RED: required reviewed native V19 direct TELL trust vector is missing'
             exit 1
           fi
           python3 -m unittest tests.test_network_direct_tell_trust -v

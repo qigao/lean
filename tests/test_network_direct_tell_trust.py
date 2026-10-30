@@ -137,6 +137,33 @@ class DirectTellSourceTrustAcceptance(unittest.TestCase):
         self.assertNotIn("The restructuring is denied.", raw)
         self.assertNotIn('"private_inspect_content"', raw)
 
+    def test_model_local_negative_result_same_real_action_across_trust_policies(self):
+        """No artificial 'leader caused the action' narrative: TELL stays TELL."""
+        d = self.data
+        arms = d["arms"]
+        self.assertEqual(
+            {a["native_bob_selected_action"] for a in arms.values()},
+            {"tell"},
+        )
+        self.assertTrue(all(a["native_bob_event_outcome"] == "told"
+                            and a["native_bob_event_success"]
+                            and a["native_new_tell_round"] == 4
+                            and a["native_tell_admitted_to_bob_decision"]
+                            and a["native_bob_admitted_testimony"] == 1
+                            for a in arms.values()))
+        for a in arms.values():
+            self.assertEqual(
+                a["native_bob_posterior_approved"],
+                a["direct_tell_posterior_approved"],
+            )
+        self.assertAlmostEqual(
+            arms["weighted_half"]["native_bob_posterior_approved"],
+            0.6333333333333333,
+        )
+        self.assertEqual(arms["weighted_zero"]["native_bob_posterior_approved"], 0.5)
+        self.assertEqual(arms["weighted_one"]["native_bob_posterior_approved"], 0.9)
+        self.assertEqual(d["trust_only_causal_claim"], "NOT_ESTABLISHED")
+
     def test_immutable_source_anti_forgery_and_causal_firewall(self):
         def reject(change):
             d = self.report.to_dict()
