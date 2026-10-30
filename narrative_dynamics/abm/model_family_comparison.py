@@ -121,9 +121,7 @@ def observe_bb_growth(
         "trust_semantics": "NOT_REPRESENTED_AS_V19_SOCIAL_TRUST",
         "initial_frame_hash": replay.initial.content_hash,
         "final_frame_hash": replay.final.content_hash,
-        "seed_hash": stable_content_hash({
-            "network":seed.network.to_dict(), "agents":[a.to_dict() for a in seed.agents]
-        }),
+        "validated_seed_frame_hash": replay.initial.content_hash,
         "m": m,
         "initial_undirected_topology": [
             [replay.initial.agent_ids[u], replay.initial.agent_ids[v]]
