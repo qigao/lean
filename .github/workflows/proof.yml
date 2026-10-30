@@ -284,6 +284,23 @@ jobs:
             echo 'RED: V19 post-evidence actual actions differ from source review'
             exit 1
           fi
+      - name: R2 M5e0 direct V19 EXACT TELL source trust protocol
+        run: |
+          set -euo pipefail
+          mkdir -p .generated-conformance
+          generated=.generated-conformance/network_native_direct_tell_trust_v1.json
+          pinned=conformance/network_native_direct_tell_trust_v1.json
+          python3 -m tools.render_native_direct_tell_trust_vectors > "$generated"
+          if [ ! -f "$pinned" ]; then
+            echo 'RED: required reviewed native V19 direct TELL trust vector is missing'
+            exit 1
+          fi
+          python3 -m unittest tests.test_network_direct_tell_trust -v
+          if ! cmp -s "$pinned" "$generated"; then
+            diff -u "$pinned" "$generated" || true
+            echo 'RED: direct TELL source-trust native replay differs from source review'
+            exit 1
+          fi
       - name: Runtime-derived mesh regression
         run: python -m unittest tests.test_mesh_projection tests.test_mesh_evidence -v
 

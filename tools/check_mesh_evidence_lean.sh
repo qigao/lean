@@ -121,6 +121,14 @@ if ! cmp -s conformance/network_post_evidence_actual_actions_v1.json "$tmpdir/ne
   diff -u conformance/network_post_evidence_actual_actions_v1.json "$tmpdir/network_post_evidence_actual_actions_v1.json" || true
   exit 1
 fi
+# R2.M5e.0: source-owned opt-in direct TELL trust consistency.
+# Legacy model source hashes and all original corpus gates remain strict.
+python3 -m tools.render_native_direct_tell_trust_vectors > "$tmpdir/network_native_direct_tell_trust_v1.json"
+if ! cmp -s conformance/network_native_direct_tell_trust_v1.json "$tmpdir/network_native_direct_tell_trust_v1.json"; then
+  echo 'FAIL: R2.M5e.0 direct TELL V19 source-vector changed' >&2
+  diff -u conformance/network_native_direct_tell_trust_v1.json "$tmpdir/network_native_direct_tell_trust_v1.json" || true
+  exit 1
+fi
 generated="$tmpdir/authoritative.lean"
 
 # Always regenerate from the actual V19 snapshot, then enforce the immutable

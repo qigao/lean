@@ -484,11 +484,16 @@ def _simulate_situated_percept_memory_cognitive_round(
     state: SituatedCognitiveState,
     *,
     source_trust_by_observer: Mapping[str, Mapping[str, float]] | None,
+    trust_weight_direct_tell: bool = False,
     claim_topic_by_symbol: Mapping[str, str] | None = None,
     consolidated_claim_keys_by_observer: Mapping[str, frozenset[tuple[str, str, str]]] | None = None,
 ) -> SituatedPerceptMemoryCognitiveRoundResult:
     if not isinstance(model, SituatedPerceptMemoryCognitiveModel):
         raise TypeError("percept memory simulation requires its bound model")
+    if type(trust_weight_direct_tell) is not bool:
+        raise TypeError("direct TELL trust policy must be boolean")
+    if trust_weight_direct_tell and source_trust_by_observer is None:
+        raise ValueError("direct trust must be supplied by actual source social state")
     if story.perception_model != model.perception_model:
         raise ValueError("percept memory simulation story must bind the exact perception model")
     cognition = model.cognitive_model
@@ -512,6 +517,10 @@ def _simulate_situated_percept_memory_cognitive_round(
             private,
             _claim_topic_by_symbol=claim_topic_by_symbol,
             _consolidated_claim_keys=frozenset(claim_keys),
+            _source_trust_by_source=(
+                source_trust_by_observer.get(agent_id, {})
+                if trust_weight_direct_tell else None
+            ),
         )
         private_by_id = {item.percept_id: item for item in private}
         if claim_topic_by_symbol is not None:

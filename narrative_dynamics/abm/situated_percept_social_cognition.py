@@ -333,6 +333,7 @@ def simulate_situated_percept_social_cognitive_round(
         story,
         cognitive_state,
         source_trust_by_observer=_trust_by_observer(social_state),
+        trust_weight_direct_tell=social_model.policy.trust_weight_direct_testimony,
         claim_topic_by_symbol=_topic_by_symbol(social_model),
         consolidated_claim_keys_by_observer=_active_claims(social_state),
     )

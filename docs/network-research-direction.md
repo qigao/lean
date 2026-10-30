@@ -158,6 +158,36 @@ trust from centrality. Keep finite deterministic
 \`NO_EXTERNAL_VALIDATION\` until qualified matched source
 interventions and population data exist.
 
+## R2.M5e.0 — native exact TELL must not bypass source trust
+
+V19 source memory already tempers **recalled** other-Agent testimony
+with the current directed observer→source trust, but direct
+\`admit_situated_percepts\` historically applies full likelihood to
+new EXACT TELL without consulting that trust. M5d's zero new trust-
+weighted recalls consequently cannot demonstrate trust→new evidence
+→choice and should not be relabeled as such.
+
+Register an explicit source social-policy switch
+\`trust_weight_direct_testimony\` (default **False**, omitted from
+serialized legacy model). Under True, only original native source
+social memory may supply Bob's trust in Alice to the *same direct
+percept/cognitive admission routine*. The original Bayesian likelihood
+is tempered by (1-trust)+trust×likelihood. Bob's private INSPECT,
+SELF and non-TELL observations remain unchanged; default legacy
+bytes and all previously reviewed evidence remain exact.
+
+The first deterministic M5e.0 source protocol qualification keeps
+one actual V19 world, Story, cognitive model, perception, same Bob
+EXACT TELL and private INSPECT across four source-declared social
+policy variants (legacy, trust=0, trust=0.5, trust=1). It records
+native admission and actually executed Agent decision/World event;
+no alternate updater or hand-edited trust. Changing policy IDs
+is not an isolated trust-only real-world intervention. It is
+a model-local consistency test. The actual trust-update-then-new-
+TELL path and matched post-trust behavior remain a **separate**
+M5e.1 gate. No universal score, unsupported causal estimate or
+new six-hop theorem.
+
 ## Code and PR acceptance rules
 
 1. One implementation per model; prefer existing

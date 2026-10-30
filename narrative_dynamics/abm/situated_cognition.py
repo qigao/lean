@@ -53,10 +53,15 @@ class SituatedBeliefAdmission:
     prior_belief: PlanningBeliefState
     posterior_belief: PlanningBeliefState
     consolidated: bool = False
+    source_trust: float = 1.0
 
     def __post_init__(self) -> None:
         if not isinstance(self.consolidated, bool):
             raise TypeError("situated belief admission consolidated must be boolean")
+        if (type(self.source_trust) not in (int, float)
+                or not math.isfinite(self.source_trust)
+                or not 0 <= self.source_trust <= 1):
+            raise ValueError("direct testimony source trust must be finite in [0,1]")
         if self.consolidated and self.prior_belief != self.posterior_belief:
             raise ValueError("consolidated situated belief admission cannot change belief")
 
@@ -68,6 +73,8 @@ class SituatedBeliefAdmission:
         }
         if self.consolidated:
             result["consolidated"] = True
+        if self.source_trust != 1.0:
+            result["source_trust"] = self.source_trust
         return result
 
     @property
