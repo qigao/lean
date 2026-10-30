@@ -70,3 +70,15 @@ claim, a trust change, a transmission or a reverse directed relationship.
 This implements the **physical** boundary slice only. Society membership,
 institutional policies, mutable environment models and concurrent shared
 content merge remain separate follow-ons under Issue #110.
+
+## Source-derived CI and immutable baseline
+
+The dedicated `tests.test_network_boundary_events` target and
+`tools.render_network_boundary_events` regenerate an exact versioned
+`conformance/network_boundary_events_v1.json` from the same actual V19
+world/story/perception and V24 edge-projection fixtures used by Python.
+Focused Python and independent Lean acceptance lanes reject a missing or
+changed reviewed vector with strict byte equality; the original full
+Python/Lean/BB/PathN/Studio tests remain unchanged. Initial RED is
+intentional until CI output is reviewed and pinned. No installer or
+downstream consumer project is introduced.

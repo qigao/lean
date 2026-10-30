@@ -36,6 +36,14 @@ if ! cmp -s conformance/network_evolution_observation_v1.json "$tmpdir/network_e
   diff -u conformance/network_evolution_observation_v1.json "$tmpdir/network_evolution_observation_v1.json" || true
   exit 1
 fi
+# R2.M1: independently re-run real V19 boundary actions, Story and V24
+# projection against the versioned reviewed source-derived corpus.
+python3 -m tools.render_network_boundary_events > "$tmpdir/network_boundary_events_v1.json"
+if ! cmp -s conformance/network_boundary_events_v1.json "$tmpdir/network_boundary_events_v1.json"; then
+  echo 'FAIL: R2.M1 source-derived passage-boundary event vectors changed' >&2
+  diff -u conformance/network_boundary_events_v1.json "$tmpdir/network_boundary_events_v1.json" || true
+  exit 1
+fi
 generated="$tmpdir/authoritative.lean"
 
 # Always regenerate from the actual V19 snapshot, then enforce the immutable
