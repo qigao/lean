@@ -426,6 +426,10 @@ from narrative_dynamics.abm.situated_network_contracts import (
     SituatedNetworkTrajectory,
     SituatedNetworkTransmission,
 )
+from narrative_dynamics.abm.model_family_comparison import (
+    NativeModelFamilyComparison, observe_bb_growth,
+    observe_rewiring, observe_evolving, compare_native_model_families,
+)
 from narrative_dynamics.abm.mesh_agent_content_evidence import (
     AgentContentEvidenceTrace, observe_agent_content_evidence,
 )

@@ -68,6 +68,14 @@ if ! cmp -s conformance/network_coupled_evolution_v1.json "$tmpdir/network_coupl
   diff -u conformance/network_coupled_evolution_v1.json "$tmpdir/network_coupled_evolution_v1.json" || true
   exit 1
 fi
+# R2.M4b: separate verified native BB, directed rewiring, evolving
+# and V19 control reference; no cross-family graph normalization.
+python3 -m tools.render_model_family_comparison_vectors > "$tmpdir/network_model_family_comparison_v1.json"
+if ! cmp -s conformance/network_model_family_comparison_v1.json "$tmpdir/network_model_family_comparison_v1.json"; then
+  echo 'FAIL: R2.M4b model-native reviewed source vector changed' >&2
+  diff -u conformance/network_model_family_comparison_v1.json "$tmpdir/network_model_family_comparison_v1.json" || true
+  exit 1
+fi
 generated="$tmpdir/authoritative.lean"
 
 # Always regenerate from the actual V19 snapshot, then enforce the immutable
