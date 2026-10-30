@@ -91,3 +91,19 @@ checked through this independent replay method without changing their bytes.
 
 This remains deterministic in-process correctness evidence, not external
 actor authentication, cryptographic proof of history or a second trust graph.
+
+## Bounded deterministic social-state checkpoint replay
+
+`replay_social_trust_checkpoints(database, model, original, tuple(events))`
+returns the ordered immutable checkpoint-admission results, reusing
+`admit_social_trust_checkpoint` for each event. Every event binds the
+exact previous runtime/source/social state; duplicate event IDs, reversed
+stale requests, untyped changes and streams exceeding 128 interventions
+are rejected without changing the caller's authoritative checkpoint.
+The gold vector generator checks that two ordered interventions replay to
+**identical full source/runtime/receipt results** without regenerating any
+versioned fixture bytes.
+
+This is only an explicit intervention stream between checkpoints.
+A later full V19 story/cognition/social round still uses the existing
+`simulate_situated_network_round` and normal social-evidence learning.

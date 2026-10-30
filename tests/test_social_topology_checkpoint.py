@@ -21,9 +21,11 @@ from narrative_dynamics.abm.situated_social_topology import (
     SocialTopologyBoundaryError, SocialTopologyTrustConflict,
     SocialTopologyIntegrityError, SocialTrustCheckpointResult,
     admit_social_trust_checkpoint, verify_social_trust_checkpoint,
+    replay_social_trust_checkpoints,
 )
 from narrative_dynamics.abm.mesh_topology_events import (
     TopologyChangeError, TopologyVersionConflict, TopologyUnknownAgent,
+    TopologyDuplicateEvent,
 )
 from tests.test_network_abm_situated_network import initial_runtime_case
 
@@ -262,6 +264,54 @@ class SocialTopologyCheckpointTests(unittest.TestCase):
                 replace(result, receipt=bad_receipt)
         with self.assertRaises(SocialTopologyIntegrityError):
             replace(result, next_runtime_state=previous)
+
+    def test_bounded_duplicate_free_source_social_checkpoint_replay(self):
+        prior = self.runtime
+        deactivate = event_for(
+            prior, "deactivate-ab", SocialTrustOperation.DEACTIVATE,
+            "alice", "bob", 0.0,
+        )
+        middle = admit_social_trust_checkpoint(
+            self.path, self.model, prior, deactivate,
+        ).next_runtime_state
+        reactivate = event_for(
+            middle, "reactivate-ab", SocialTrustOperation.ACTIVATE,
+            "alice", "bob", 1.0,
+        )
+        results = replay_social_trust_checkpoints(
+            self.path, self.model, prior, (deactivate, reactivate),
+        )
+        self.assertEqual(len(results), 2)
+        self.assertTrue(verify_social_trust_checkpoint(
+            self.path, self.model, prior, results[0],
+        ))
+        self.assertTrue(verify_social_trust_checkpoint(
+            self.path, self.model, results[0].next_runtime_state, results[1],
+        ))
+        again = replay_social_trust_checkpoints(
+            self.path, self.model, prior, (deactivate, reactivate),
+        )
+        self.assertEqual(tuple(x.to_dict() for x in results),
+                         tuple(x.to_dict() for x in again))
+        self.assertEqual(results[-1].next_runtime_state.snapshot,
+                         again[-1].next_runtime_state.snapshot)
+        with self.assertRaises(TopologyDuplicateEvent):
+            replay_social_trust_checkpoints(
+                self.path, self.model, prior,
+                (deactivate, replace(reactivate, event_id=deactivate.event_id)),
+            )
+        with self.assertRaises(TopologyVersionConflict):
+            replay_social_trust_checkpoints(
+                self.path, self.model, prior,
+                (reactivate, deactivate),
+            )
+        with self.assertRaises(TypeError):
+            replay_social_trust_checkpoints(self.path, self.model, prior, [deactivate])
+        with self.assertRaises(TopologyChangeError):
+            replay_social_trust_checkpoints(
+                self.path, self.model, prior, (deactivate,) * 129,
+            )
+        self.assertEqual(self.runtime, prior)
 
     def test_checked_in_social_trust_checkpoint_vectors_match_runtime(self):
         from pathlib import Path

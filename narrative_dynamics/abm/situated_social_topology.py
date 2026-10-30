@@ -17,6 +17,7 @@ import re
 from narrative_dynamics.contracts import stable_content_hash
 from narrative_dynamics.abm.mesh_topology_events import (
     TopologyChangeError, TopologyVersionConflict, TopologyUnknownAgent,
+    TopologyDuplicateEvent,
 )
 from narrative_dynamics.abm.situated_network import (
     _validate_runtime_state,
@@ -367,3 +368,39 @@ def verify_social_trust_checkpoint(
             "recorded trust effect or receipt differs from actual source-authoritative admission"
         )
     return True
+
+
+def replay_social_trust_checkpoints(
+    database_path: str | Path,
+    model: SituatedNetworkRuntimeModel,
+    original: SituatedNetworkRuntimeState,
+    events: tuple[SocialTrustCheckpointIntervention, ...],
+) -> tuple[SocialTrustCheckpointResult, ...]:
+    """Deterministically replay a bounded, unique-event source-trust series.
+
+    Every event binds the *current* runtime/source/social hashes; a reversed,
+    duplicate or stale event is rejected before any partial result escapes.
+    The ledger consists only of immutable V19 checkpoint results, not another
+    graph state owner or an independently implemented update engine.
+    """
+    if type(events) is not tuple:
+        raise TypeError("social trust replay requires an immutable tuple of interventions")
+    if len(events) > 128:
+        raise TopologyChangeError("R1.1 social trust replay budget exceeded")
+    if not isinstance(original, SituatedNetworkRuntimeState):
+        raise TypeError("social trust replay requires a V19 original checkpoint")
+    seen: set[str] = set()
+    current = original
+    results: list[SocialTrustCheckpointResult] = []
+    for event in events:
+        if type(event) is not SocialTrustCheckpointIntervention:
+            raise TypeError("social trust replay requires exact typed interventions")
+        if event.event_id in seen:
+            raise TopologyDuplicateEvent("duplicate social topology intervention id")
+        seen.add(event.event_id)
+        item = admit_social_trust_checkpoint(
+            database_path, model, current, event,
+        )
+        results.append(item)
+        current = item.next_runtime_state
+    return tuple(results)

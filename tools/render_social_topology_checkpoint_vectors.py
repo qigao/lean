@@ -20,6 +20,7 @@ from narrative_dynamics.abm.situated_network import (
 from narrative_dynamics.abm.situated_social_topology import (
     SocialTrustOperation, SocialTrustCheckpointIntervention,
     admit_social_trust_checkpoint, verify_social_trust_checkpoint,
+    replay_social_trust_checkpoints,
 )
 from tests.test_network_abm_situated_network import initial_runtime_case
 
@@ -72,6 +73,17 @@ def build_vector_manifest() -> dict[str, object]:
         if not verify_social_trust_checkpoint(db, model, middle, activate):
             raise AssertionError("real trust reactivation failed authoritative reexecution")
         last = activate.next_runtime_state
+        # Independent bounded replay follows the exact source/social CAS chain
+        # and must yield identical real V19 checkpoint effects and receipts.
+        replayed = replay_social_trust_checkpoints(
+            db, model, prior, (deactivate.intervention, activate.intervention),
+        )
+        if (
+            len(replayed) != 2
+            or replayed[0].to_dict() != deactivate.to_dict()
+            or replayed[1].to_dict() != activate.to_dict()
+        ):
+            raise AssertionError("social-topology checkpoint replay disagrees with authoritative source")
         final_mesh = MeshSnapshot(last.snapshot, societies)
         if ("alice", "bob") not in mesh_edges(final_mesh, MeshRelation.RELATIONSHIP):
             raise AssertionError("authoritative reactivation did not restore edge")
