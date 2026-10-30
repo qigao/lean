@@ -1,0 +1,347 @@
+"""R2.M4c.1 source-owned within-family paired finite experiments.
+
+This module observes existing BB, rewiring and evolving owners. It does not
+create an alternative simulator, common social graph or causal inference engine.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from fractions import Fraction
+import json
+
+from narrative_dynamics.contracts import stable_content_hash
+from narrative_dynamics.abm.bb_runtime_contracts import BBRuntimeSeed, BBRuntimeTick
+from narrative_dynamics.abm.rewiring_contracts import (
+    EndogenousRewiringModel, initialize_rewiring_population,
+)
+from narrative_dynamics.abm.evolving_contracts import (
+    EvolvingNetworkModel, EvolvingPopulationState,
+)
+from narrative_dynamics.abm.lifecycle_contracts import (
+    LifecycleEventKind, PopulationLifecycleEvent,
+)
+from narrative_dynamics.abm.model_family_comparison import (
+    observe_bb_growth, observe_rewiring, observe_evolving,
+)
+from narrative_dynamics.abm.native_metric_protocol import (
+    _bb_frames, _rewiring_frames, _evolving_frames,
+)
+
+_SCHEMA = "r2-m4c1-native-within-family-paired-v1"
+_FAMILIES = {
+    "bb_fitness_growth": ("BIRTH_TARGET_ONLY", "SAME_NATIVE_SEED_FRAME"),
+    "directed_rewiring": ("FORMATION_THRESHOLD_ONLY", "MATCHED_INITIAL_COMPONENTS_DIFFERENT_MODEL_HASH"),
+    "lifecycle_feedback": ("ENTER_EVENT_ONLY", "SAME_NATIVE_MODEL_AND_STATE"),
+}
+
+
+def _native_metrics(records: list) -> list[dict[str, object]]:
+    return [metric.to_dict() for metric in records]
+
+
+def _delta(control: list, intervention: list) -> list[str]:
+    if len(control) != len(intervention):
+        raise ValueError("paired metric horizons must match")
+    result = []
+    for left, right in zip(control, intervention, strict=True):
+        if (left.family != right.family or left.metric_id != right.metric_id
+                or left.native_time != right.native_time
+                or left.unit != right.unit or left.phase != right.phase
+                or left.denominator_kind != right.denominator_kind
+                or left.denominator != right.denominator
+                or left.population_scope != right.population_scope):
+            raise ValueError("within-family pair requires identical units, phases, rosters and denominators")
+        result.append(str(Fraction(right.exact_fraction) - Fraction(left.exact_fraction)))
+    return result
+
+
+def run_bb_target_pair(
+    seed: BBRuntimeSeed,
+    control_program: tuple[BBRuntimeTick, ...],
+    intervention_program: tuple[BBRuntimeTick, ...],
+) -> dict[str, object]:
+    """Author exactly one birth-target change, with identical later idle tick."""
+    if not isinstance(seed, BBRuntimeSeed) or any(
+        type(program) is not tuple or len(program) != 2
+        or any(not isinstance(x, BBRuntimeTick) for x in program)
+        for program in (control_program, intervention_program)
+    ):
+        raise TypeError("BB paired birth requires typed source and two native ticks per arm")
+    c0, c1 = control_program
+    i0, i1 = intervention_program
+    if (c0.kind != "birth" or i0.kind != "birth"
+            or c1.kind != "idle" or i1.kind != "idle"
+            or c1.birth is not None or i1.birth is not None
+            or c0.birth is None or i0.birth is None
+            or c0.birth.fitness != i0.birth.fitness
+            or c0.birth.agent != i0.birth.agent
+            or c0.birth.targets == i0.birth.targets):
+        raise ValueError("BB intervention must change only ordered birth targets")
+    control = observe_bb_growth(seed, 1, control_program)
+    altered = observe_bb_growth(seed, 1, intervention_program)
+    if control["initial_frame_hash"] != altered["initial_frame_hash"]:
+        raise ValueError("BB paired runs must start at identical native genesis")
+    for arm in (control, altered):
+        if [x["tick_kind"] for x in arm["steps"]] != ["birth", "idle"]:
+            raise ValueError("BB pair requires birth-then-idle native clock")
+    c_metrics, i_metrics = _bb_frames(control), _bb_frames(altered)
+    c_last, i_last = control["steps"][-1], altered["steps"][-1]
+    if c_last["native_undirected_topology"] == i_last["native_undirected_topology"]:
+        raise ValueError("BB target intervention did not change actual undirected topology")
+    return {
+        "family": "bb_fitness_growth",
+        "intervention_kind": "BIRTH_TARGET_ONLY",
+        "origin_identity": "SAME_NATIVE_SEED_FRAME",
+        "initial_source_hash": control["initial_frame_hash"],
+        "horizon": 2,
+        "clock": "GLOBAL_BB_TICK",
+        "control": {
+            "source_program_tick_hashes": [x["tick_hash"] for x in control["steps"]],
+            "final_source_hash": control["final_frame_hash"],
+            "metrics": _native_metrics(c_metrics),
+            "last_native_topology": c_last["native_undirected_topology"],
+            "native_transmissions_per_tick": [
+                x["native_transmissions"] for x in control["steps"]
+            ],
+        },
+        "intervention": {
+            "source_program_tick_hashes": [x["tick_hash"] for x in altered["steps"]],
+            "final_source_hash": altered["final_frame_hash"],
+            "metrics": _native_metrics(i_metrics),
+            "last_native_topology": i_last["native_undirected_topology"],
+            "native_transmissions_per_tick": [
+                x["native_transmissions"] for x in altered["steps"]
+            ],
+        },
+        "native_metric_delta": _delta(c_metrics, i_metrics),
+        "topology_changed": True,
+    }
+
+
+def run_rewiring_threshold_pair(
+    control_model: EndogenousRewiringModel,
+    intervention_model: EndogenousRewiringModel,
+    *,
+    initial_beliefs: dict[str, float],
+) -> dict[str, object]:
+    """Vary one model-native formation threshold; retain all initial components."""
+    if (not isinstance(control_model, EndogenousRewiringModel)
+            or not isinstance(intervention_model, EndogenousRewiringModel)
+            or type(initial_beliefs) is not dict):
+        raise TypeError("rewiring pair requires exact native models and initial beliefs")
+    if (control_model.base_model.content_hash != intervention_model.base_model.content_hash
+            or control_model.model_id != intervention_model.model_id
+            or control_model.version != intervention_model.version
+            or control_model.dissolution_similarity != intervention_model.dissolution_similarity
+            or control_model.formation_similarity == intervention_model.formation_similarity):
+        raise ValueError("rewiring pair may change only formation similarity")
+    ctrl_initial = initialize_rewiring_population(
+        control_model, beliefs=initial_beliefs
+    )
+    alt_initial = initialize_rewiring_population(
+        intervention_model, beliefs=initial_beliefs
+    )
+    if (ctrl_initial.agents != alt_initial.agents
+            or ctrl_initial.edge_topology != alt_initial.edge_topology
+            or ctrl_initial.model_hash == alt_initial.model_hash):
+        raise ValueError("rewiring initial Agent/topology components must match")
+    control = observe_rewiring(control_model, ctrl_initial, 2)
+    altered = observe_rewiring(intervention_model, alt_initial, 2)
+    c_metrics, i_metrics = _rewiring_frames(control), _rewiring_frames(altered)
+    c0, i0 = control["steps"][0], altered["steps"][0]
+    if c0["prior_active_candidate_edges"] != i0["prior_active_candidate_edges"]:
+        raise ValueError("rewiring pair must share pre-intervention candidate activity")
+    if c0["native_transmissions"] != i0["native_transmissions"]:
+        raise ValueError("rewiring first round must propagate using same prior edges")
+    return {
+        "family": "directed_rewiring",
+        "intervention_kind": "FORMATION_THRESHOLD_ONLY",
+        "origin_identity": "MATCHED_INITIAL_COMPONENTS_DIFFERENT_MODEL_HASH",
+        "shared_base_model_hash": control_model.base_model.content_hash,
+        "shared_native_initial_components_hash": stable_content_hash({
+            "agents": [x.to_dict() for x in ctrl_initial.agents],
+            "topology": [x.to_dict() for x in ctrl_initial.edge_topology],
+        }),
+        "horizon": 2,
+        "clock": "NATIVE_REWIRING_ROUND",
+        "control": {
+            "native_formation_threshold": control_model.formation_similarity,
+            "model_hash": control_model.content_hash,
+            "initial_source_hash": ctrl_initial.content_hash,
+            "final_source_hash": control["final_state_hash"],
+            "metrics": _native_metrics(c_metrics),
+            "prior_active_edges_per_round": [
+                x["prior_active_candidate_edges"] for x in control["steps"]
+            ],
+            "next_active_edges_per_round": [
+                x["next_active_candidate_edges"] for x in control["steps"]
+            ],
+            "native_transmissions_per_round": [
+                x["native_transmissions"] for x in control["steps"]
+            ],
+        },
+        "intervention": {
+            "native_formation_threshold": intervention_model.formation_similarity,
+            "model_hash": intervention_model.content_hash,
+            "initial_source_hash": alt_initial.content_hash,
+            "final_source_hash": altered["final_state_hash"],
+            "metrics": _native_metrics(i_metrics),
+            "prior_active_edges_per_round": [
+                x["prior_active_candidate_edges"] for x in altered["steps"]
+            ],
+            "next_active_edges_per_round": [
+                x["next_active_candidate_edges"] for x in altered["steps"]
+            ],
+            "native_transmissions_per_round": [
+                x["native_transmissions"] for x in altered["steps"]
+            ],
+        },
+        "native_metric_delta": _delta(c_metrics, i_metrics),
+        "first_round_transmission_equal": True,
+    }
+
+
+def run_evolving_entry_pair(
+    model: EvolvingNetworkModel,
+    initial: EvolvingPopulationState,
+    *,
+    entrant: PopulationLifecycleEvent,
+) -> dict[str, object]:
+    """Only change one ENTER event; hold feedback absent in both native arms."""
+    if (not isinstance(model, EvolvingNetworkModel)
+            or not isinstance(initial, EvolvingPopulationState)
+            or not isinstance(entrant, PopulationLifecycleEvent)):
+        raise TypeError("evolving pair requires exact typed lifecycle source")
+    if entrant.kind is not LifecycleEventKind.ENTER or entrant.belief is not None:
+        raise ValueError("evolving intervention must be one default-belief ENTER")
+    no_events = ((), ())
+    enter_events = ((entrant,), ())
+    no_feedback = ((), ())
+    control = observe_evolving(model, initial, no_events, no_feedback)
+    altered = observe_evolving(model, initial, enter_events, no_feedback)
+    if (control["initial_state_hash"] != altered["initial_state_hash"]
+            or control["model_hash"] != altered["model_hash"]):
+        raise ValueError("evolving pair must share exact initial source and model")
+    if (any(step["feedback_targets"] for step in control["steps"])
+            or any(step["feedback_targets"] for step in altered["steps"])):
+        raise ValueError("entry-only experiment must not add external feedback")
+    c_metrics, i_metrics = _evolving_frames(control), _evolving_frames(altered)
+    return {
+        "family": "lifecycle_feedback",
+        "intervention_kind": "ENTER_EVENT_ONLY",
+        "origin_identity": "SAME_NATIVE_MODEL_AND_STATE",
+        "initial_source_hash": initial.content_hash,
+        "model_hash": model.content_hash,
+        "shared_feedback_schedule": "EMPTY_BOTH_ARMS",
+        "horizon": 2,
+        "clock": "NATIVE_EVOLVING_ROUND",
+        "control": {
+            "event_schedule_hash": stable_content_hash([[], []]),
+            "final_source_hash": control["final_state_hash"],
+            "metrics": _native_metrics(c_metrics),
+            "native_members_after": [x["native_members_after"] for x in control["steps"]],
+            "native_transmissions_per_round": [
+                x["native_transmissions"] for x in control["steps"]
+            ],
+            "external_feedback_targets": [x["feedback_targets"] for x in control["steps"]],
+        },
+        "intervention": {
+            "event_schedule_hash": stable_content_hash([[entrant.to_dict()], []]),
+            "final_source_hash": altered["final_state_hash"],
+            "metrics": _native_metrics(i_metrics),
+            "native_members_after": [x["native_members_after"] for x in altered["steps"]],
+            "native_transmissions_per_round": [
+                x["native_transmissions"] for x in altered["steps"]
+            ],
+            "external_feedback_targets": [x["feedback_targets"] for x in altered["steps"]],
+        },
+        "native_metric_delta": _delta(c_metrics, i_metrics),
+    }
+
+
+@dataclass(frozen=True)
+class NativePairedExperiment:
+    """Audited immutable source dossier; not a graph model or statistical result."""
+    _canonical_json: str
+
+    def __post_init__(self) -> None:
+        if type(self._canonical_json) is not str:
+            raise TypeError("paired dossier must store canonical JSON")
+        d = json.loads(self._canonical_json)
+        if (type(d) is not dict or d.get("schema") != _SCHEMA
+                or d.get("source_owner") != "INDEPENDENT_NATIVE_PAIRED_REPLAYS"
+                or d.get("normalization") != "NONE"
+                or d.get("cross_family_numeric_ranking") != "FORBIDDEN"
+                or d.get("causal_attribution") != "UNATTRIBUTED"
+                or d.get("sample_size_per_arm") != 1
+                or d.get("confidence_interval") != "NOT_ESTIMABLE"
+                or d.get("external_validation") != "NO_EXTERNAL_VALIDATION"
+                or d.get("paired_estimand_scope") != "MODEL_LOCAL_DETERMINISTIC_DESCRIPTION"
+                or type(d.get("families")) is not dict
+                or set(d["families"]) != set(_FAMILIES)
+                or type(d.get("v19_reference")) is not dict
+                or d["v19_reference"].get("story_lineage") != "DIVERGENT_STORY_BRANCH"
+                or d["v19_reference"].get("comparison_status") != "SEPARATE_SOURCE_REFERENCE_ONLY"):
+            raise ValueError("paired dossier cannot assert universal graph or population causality")
+        for family, (kind, origin) in _FAMILIES.items():
+            case = d["families"][family]
+            if (type(case) is not dict or case.get("family") != family
+                    or case.get("intervention_kind") != kind
+                    or case.get("origin_identity") != origin
+                    or case.get("horizon") != 2
+                    or type(case.get("native_metric_delta")) is not list
+                    or len(case["native_metric_delta"]) != 2):
+                raise ValueError("paired source case violates native family contract")
+            for arm in ("control", "intervention"):
+                data = case.get(arm)
+                if type(data) is not dict or type(data.get("metrics")) is not list:
+                    raise ValueError("paired native source arms must be complete")
+                if len(data["metrics"]) != 2:
+                    raise ValueError("paired native metric horizon cannot be altered")
+
+    def to_dict(self) -> dict[str, object]:
+        return json.loads(self._canonical_json)
+
+    @property
+    def content_hash(self) -> str:
+        return stable_content_hash(self.to_dict())
+
+
+def compare_native_paired_experiments(
+    bb: dict[str, object],
+    rewiring: dict[str, object],
+    evolving: dict[str, object],
+    v19_reference: dict[str, object],
+) -> NativePairedExperiment:
+    if (not all(type(x) is dict for x in (bb, rewiring, evolving, v19_reference))
+            or v19_reference.get("schema") != "v19-controlled-coupled-evolution-v1"
+            or v19_reference.get("cross_branch", {}).get("story_lineage") != "DIVERGENT_STORY_BRANCH"
+            or v19_reference.get("cross_branch", {}).get("causal_attribution") != "UNATTRIBUTED"):
+        raise ValueError("paired dossier requires independent native families and source-owned V19")
+    root = {
+        "schema": _SCHEMA,
+        "source_owner": "INDEPENDENT_NATIVE_PAIRED_REPLAYS",
+        "normalization": "NONE",
+        "cross_family_numeric_ranking": "FORBIDDEN",
+        "causal_attribution": "UNATTRIBUTED",
+        "sample_size_per_arm": 1,
+        "confidence_interval": "NOT_ESTIMABLE",
+        "external_validation": "NO_EXTERNAL_VALIDATION",
+        "paired_estimand_scope": "MODEL_LOCAL_DETERMINISTIC_DESCRIPTION",
+        "families": {
+            "bb_fitness_growth": bb,
+            "directed_rewiring": rewiring,
+            "lifecycle_feedback": evolving,
+        },
+        "v19_reference": {
+            "source_owner": "SITUATED_V19_STORY_COGNITION_SOCIAL_MEMORY",
+            "story_lineage": v19_reference["cross_branch"]["story_lineage"],
+            "initial_world_hash": v19_reference["initial_world_hash"],
+            "control_story_hash": v19_reference["arms"]["control_no_gate_change"]["story_hash"],
+            "intervention_story_hash": v19_reference["arms"]["intervention_open_gate"]["story_hash"],
+            "comparison_status": "SEPARATE_SOURCE_REFERENCE_ONLY",
+        },
+    }
+    return NativePairedExperiment(
+        json.dumps(root, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    )
