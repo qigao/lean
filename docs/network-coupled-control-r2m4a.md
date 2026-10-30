@@ -71,7 +71,7 @@ transmissions or new graph topology owner.
   realized-transmission edges but no invented trust edge.
 - [ ] Cross-branch lineage is **DIVERGENT_STORY_BRANCH** and is never
   falsely asserted to be one real history or a universal causal claim.
-- [ ] Reviewed `conformance/network_coupled_evolution_v1.json`
+- [x] Reviewed `conformance/network_coupled_evolution_v1.json`
   committed from actual native test execution; focused Python
   and independent Lean lanes compare exact UTF-8 bytes.
 - [ ] All prior V19/V24/R1/R2.M0–M3, 35+11 theorem trust,
@@ -83,3 +83,30 @@ comparison, statistical significance, graph ownership replacement,
 shared-document merge and external actor authentication. Compare the
 existing independent ABM families only in a separately qualified
 M4b slice, without substituting them as the canonical V19 source.
+
+## Verified first-run model contrast
+
+Native [focused CI #41021688456](https://github.com/qigao/lean/actions/runs/41021688456)
+passed **all three new scenario/behavior tests** and failed only on
+the deliberately absent reviewed JSON. Its exact 10,469-byte source
+result was inspected for one common world hash, event/source identity,
+both control and intervention cases, source-directed relation graphs,
+private message redaction and UNATTRIBUTED scope, then checked in.
+
+- Control: Alice's MOVE fails; two other Agents only DETECT sound;
+  **zero** admitted TESTIMONY, **zero** claim revisions. Bob↔Carol
+  interaction exists in the common baseline.
+- Intervention: real OPEN permits MOVE, producing new Alice↔Bob/Carol
+  interaction; a later identical TELL gives two other-Agent EXACT
+  percepts, but just **one** admitted Bob testimony and one ACTIVE claim.
+  Historically realized `alice→bob` and `alice→carol`
+  TELL transmission edges are present; original relationship/trust
+  remains unchanged and no verification is invented.
+- Both: event ID `r0002:e0001` may coincide across divergent
+  story branches despite different event/content hashes. The branch's
+  story/source revision remains a required part of provenance.
+
+The temporary missing-vector transfer has been removed. Full Python
+and Lean lanes compare exactly the reviewed native bytes, do not
+reconstruct or replace the pin. This controlled model contrast does
+not establish a general causal effect size or six-hop theorem.

@@ -313,9 +313,7 @@ class CoupledNetworkEvolutionTests(unittest.TestCase):
             json.loads(content)["schema"], SCHEMA,
         )
         pin=Path(__file__).resolve().parents[1]/"conformance/network_coupled_evolution_v1.json"
-        if not pin.exists():
-            # One-time reviewed vector handoff; strictly RED on first run.
-            raise AssertionError("R2_COUPLED_VECTOR_BEGIN\n"+content+"R2_COUPLED_VECTOR_END")
+        # Mandatory reviewed V19 source vector, never created in CI.
         self.assertEqual(pin.read_bytes(),content.encode("utf-8"))
 
 
