@@ -309,10 +309,7 @@ jobs:
           pinned=conformance/network_native_verified_trust_new_tell_v1.json
           python3 -m tools.render_native_verified_trust_new_tell_vectors > "$generated"
           if [ ! -f "$pinned" ]; then
-            echo 'R2_M5E1_NATIVE_VECTOR_BEGIN'
-            cat "$generated"
-            echo 'R2_M5E1_NATIVE_VECTOR_END'
-            echo 'RED: source-reviewed V19 learned-trust new-TELL vector is missing'
+            echo 'RED: exact reviewed M5e.1 trust-history source vector is missing'
             exit 1
           fi
           python3 -m unittest tests.test_network_trust_history_new_tell -v

@@ -123,3 +123,52 @@ A later empirical/causal study must explicitly match eligible
 real-world opportunity, pre-treatment social/cognitive history,
 external observation/data and independent sampling before any
 uncertainty or generalized effect claim.
+
+## First native source run and registered limitation (2026-10-31)
+
+[Initial CI #41146076722](https://github.com/qigao/lean/actions/runs/41146076722)
+executed the original V19 native round-8 social learning,
+round-9 new source TELL and round-10 Bob cognitive/world action
+successfully. It intentionally stopped at the *absent reviewed
+source vector*. Its actual **7,146 UTF-8 bytes**, digest
+sha256:d633cafe93e4d164aee49567403d8cbc8718fac94fcee426768044037c89248d,
+are pinned in
+conformance/network_native_verified_trust_new_tell_v1.json.
+
+Confirmed versus contradicted history in that source:
+- Same V19 world and current physical positions, but different
+  historical Story, private memories and beliefs.
+- Bob's actual initial trust of Alice 0.5 learned to
+  **0.6** (confirmed) vs **0.3** (contradicted) through the
+  original native testimony and independent INSPECT.
+- Alice's new TELL in round 9 cites real previously observed
+  native source event r0008:e0002. Its content and source hash
+  agree across branches despite divergent history identities.
+- Bob's new EXACT TELL admission in round 10 uses source
+  trust 0.6/0.3, producing posterior belief approximately
+  **0.9848288916** vs **0.9019590566**.
+
+**Critical negative choice result:** In round 10 the original
+one-shot action model leaves Bob **only WAIT feasible** in both
+branches. Both select WAIT, execute it successfully, and emit
+world event outcome waited. This is **not a test capable of
+detecting a trust-caused action-choice difference**. It cannot
+support either a positive or a negative general claim about
+trust's effect on behavior. The trust→new-evidence→updated
+belief source mechanism is accepted, subject to full CI; a
+meaningful choice test is still missing.
+
+The next separate gate should use one explicitly preregistered
+source cognitive model that keeps **at least two genuinely
+feasible original actions** at the post-trust decision time,
+with no post-hoc reward tuning to manufacture desired action
+divergence, and should report both selected action and
+counterfactual limitations. It must still keep physical
+world states identical while recording unmatched previous
+beliefs and claim histories. Independent samples and external
+ground truth are needed for any population causal claim.
+
+The first-run stdout bootstrap was removed; existing
+Python and independent Lean conformance gates now compare
+exact reviewed bytes. Full Python/Lean theorem trust and
+Studio remain mandatory at the newer precise commit.

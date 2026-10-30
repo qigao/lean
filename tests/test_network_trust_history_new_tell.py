@@ -98,6 +98,30 @@ class NativeHistoryBeforeNewTellAcceptance(unittest.TestCase):
             self.assertTrue(0 <= arm["native_bob_prior_action_belief"] <= 1)
             self.assertTrue(0 <= arm["native_bob_posterior_action_belief"] <= 1)
 
+    def test_native_decision_lacks_choice_so_no_behavior_comparison(self):
+        """Genuine source negative: round-10 decision cannot compare choices
+        when only WAIT survives the original one-shot action schedule."""
+        d = self.data
+        self.assertEqual(d["historical_context_match"],
+                         "NOT_MATCHED_PRIVATE_EVIDENCE_OR_BELIEF")
+        self.assertEqual(d["trust_only_causal_effect"], "NOT_IDENTIFIED")
+        c = d["arms"]["confirmed_history"]
+        x = d["arms"]["contradicted_history"]
+        self.assertAlmostEqual(c["native_bob_direct_tell_posterior_approved"],
+                               0.9848288915887558)
+        self.assertAlmostEqual(x["native_bob_direct_tell_posterior_approved"],
+                               0.9019590565697919)
+        for arm in (c, x):
+            self.assertEqual(arm["native_new_tell_round"], 9)
+            self.assertEqual(arm["native_bob_feasible_actions"], ["wait"])
+            self.assertEqual(arm["native_bob_selected_action"], "wait")
+            self.assertEqual(arm["native_bob_actual_outcome"], "waited")
+            self.assertTrue(arm["native_bob_actual_success"])
+        self.assertNotEqual(c["native_bob_direct_tell_source_trust"],
+                            x["native_bob_direct_tell_source_trust"])
+        # No nontrivial choice was present. Neither a measured action
+        # divergence nor a claim of no trust effects is admissible.
+
     def test_no_synthetic_private_claim_or_trust_causation(self):
         def rejected(change):
             d = self.report.to_dict()
