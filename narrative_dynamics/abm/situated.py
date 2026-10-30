@@ -34,6 +34,8 @@ def _optional_text(value: object, *, label: str) -> str | None:
 class SituatedActionKind(str, Enum):
     WAIT = "wait"
     MOVE = "move"
+    OPEN_PASSAGE = "open_passage"
+    CLOSE_PASSAGE = "close_passage"
     LOOK = "look"
     INSPECT = "inspect"
     TAKE = "take"
@@ -70,7 +72,11 @@ class SituatedActionIntent:
         if len(set(refs)) != len(refs):
             raise ValueError("situated action source event ids must be unique")
         object.__setattr__(self, "source_event_ids", tuple(sorted(refs)))
-        targeted = {SituatedActionKind.MOVE, SituatedActionKind.INSPECT, SituatedActionKind.TAKE, SituatedActionKind.DROP}
+        targeted = {
+            SituatedActionKind.MOVE, SituatedActionKind.OPEN_PASSAGE,
+            SituatedActionKind.CLOSE_PASSAGE, SituatedActionKind.INSPECT,
+            SituatedActionKind.TAKE, SituatedActionKind.DROP,
+        }
         if self.kind in targeted and self.target_id is None:
             raise ValueError(f"{self.kind.value} action requires a target id")
         if self.kind not in targeted and self.target_id is not None:
@@ -205,7 +211,10 @@ def _expected_observation_channels(
     if event.kind is SituatedActionKind.TELL:
         observable_places = {event.place_id}
         channel = ObservationChannel.AUDITORY
-    elif event.kind in {SituatedActionKind.TAKE, SituatedActionKind.DROP}:
+    elif event.kind in {
+        SituatedActionKind.TAKE, SituatedActionKind.DROP,
+        SituatedActionKind.OPEN_PASSAGE, SituatedActionKind.CLOSE_PASSAGE,
+    }:
         observable_places = {event.place_id}
         channel = ObservationChannel.VISUAL
     elif event.kind is SituatedActionKind.MOVE:
@@ -296,6 +305,25 @@ class SituatedRoundResult:
             raise ValueError("situated round must advance exactly one round")
         if self.next_state.parent_state_hash != self.prior_state.content_hash:
             raise ValueError("situated round next state must reference its prior state")
+        # No action other than an accepted, explicit boundary event may
+        # change the canonical world passage state. This also prevents callers
+        # from constructing a forged SituatedRoundResult with a silently
+        # modified physical boundary and unchanged event history.
+        expected_passages = {p.passage_id: p.open for p in self.prior_state.passages}
+        for event in self.events:
+            if event.success and event.kind in {
+                SituatedActionKind.OPEN_PASSAGE, SituatedActionKind.CLOSE_PASSAGE,
+            }:
+                if event.target_id not in expected_passages:
+                    raise ValueError("successful boundary event must name an existing passage")
+                expected_passages[event.target_id] = (
+                    event.kind is SituatedActionKind.OPEN_PASSAGE
+                )
+        actual_passages = {p.passage_id: p.open for p in self.next_state.passages}
+        if expected_passages != actual_passages:
+            raise ValueError(
+                "situated world passage change must match successful boundary events"
+            )
         _validate_round_observation_projection(
             self.prior_state,
             self.events,
@@ -373,6 +401,7 @@ def resolve_situated_round(
 
     resolutions: dict[str, _Resolution] = {}
     eligible_takes: dict[str, list[SituatedActionIntent]] = {}
+    eligible_passage_changes: dict[str, list[SituatedActionIntent]] = {}
     for intent in canonical:
         body = bodies[intent.agent_id]
         place_id = body.place_id
@@ -397,6 +426,22 @@ def resolve_situated_round(
                 resolutions[intent.action_id] = _Resolution(False, "passage_closed", place_id)
             else:
                 resolutions[intent.action_id] = _Resolution(True, "moved", place_id, (EvidenceFact("destination_place_id", passage.target_place_id),))
+        elif intent.kind in {
+            SituatedActionKind.OPEN_PASSAGE, SituatedActionKind.CLOSE_PASSAGE,
+        }:
+            passage = passages.get(intent.target_id)
+            if passage is None:
+                resolutions[intent.action_id] = _Resolution(
+                    False, "unknown_passage", place_id,
+                )
+            elif passage.source_place_id != place_id:
+                resolutions[intent.action_id] = _Resolution(
+                    False, "not_at_passage_source", place_id,
+                )
+            else:
+                # Competing boundary changes, including an attempted no-op,
+                # are rejected as a unit: never last-writer-wins.
+                eligible_passage_changes.setdefault(passage.passage_id, []).append(intent)
         elif intent.kind is SituatedActionKind.INSPECT:
             obj = objects.get(intent.target_id)
             if obj is None:
@@ -427,13 +472,36 @@ def resolve_situated_round(
                 resolutions[intent.action_id] = _Resolution(False, "object_not_held", place_id)
             else:
                 resolutions[intent.action_id] = _Resolution(True, "dropped", place_id)
-        else:
+        elif intent.kind is SituatedActionKind.TELL:
             resolutions[intent.action_id] = _Resolution(
                 True,
                 "told",
                 place_id,
                 (EvidenceFact("message", intent.message or ""),),
                 intent.source_event_ids,
+            )
+        else:
+            raise ValueError("unsupported situated action kind")
+
+    for passage_id, contenders in sorted(eligible_passage_changes.items()):
+        if len(contenders) > 1:
+            for intent in contenders:
+                resolutions[intent.action_id] = _Resolution(
+                    False, "passage_conflict", bodies[intent.agent_id].place_id,
+                )
+            continue
+        intent = contenders[0]
+        should_open = intent.kind is SituatedActionKind.OPEN_PASSAGE
+        if passage_states[passage_id].open == should_open:
+            resolutions[intent.action_id] = _Resolution(
+                False, "already_open" if should_open else "already_closed",
+                bodies[intent.agent_id].place_id,
+            )
+        else:
+            resolutions[intent.action_id] = _Resolution(
+                True, "passage_opened" if should_open else "passage_closed",
+                bodies[intent.agent_id].place_id,
+                (EvidenceFact("passage_id", passage_id),),
             )
 
     for object_id, contenders in eligible_takes.items():
@@ -446,12 +514,19 @@ def resolve_situated_round(
 
     next_bodies = dict(bodies)
     next_objects = dict(objects)
+    next_passages = dict(passage_states)
     for intent in canonical:
         resolution = resolutions[intent.action_id]
         if not resolution.success:
             continue
         if intent.kind is SituatedActionKind.MOVE:
             next_bodies[intent.agent_id] = AgentBodyState(intent.agent_id, passages[intent.target_id].target_place_id)
+        elif intent.kind in {
+            SituatedActionKind.OPEN_PASSAGE, SituatedActionKind.CLOSE_PASSAGE,
+        }:
+            next_passages[intent.target_id] = PassageState(
+                intent.target_id, intent.kind is SituatedActionKind.OPEN_PASSAGE,
+            )
         elif intent.kind is SituatedActionKind.TAKE:
             next_objects[intent.target_id] = WorldObjectState(intent.target_id, None, intent.agent_id)
         elif intent.kind is SituatedActionKind.DROP:
@@ -482,7 +557,7 @@ def resolve_situated_round(
         parent_state_hash=state.content_hash,
         agents=tuple(next_bodies.values()),
         objects=tuple(next_objects.values()),
-        passages=tuple(PassageState(item.passage_id, item.open) for item in state.passages),
+        passages=tuple(next_passages.values()),
     )
     validate_situated_state(model, next_state)
 
