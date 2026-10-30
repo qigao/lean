@@ -53,6 +53,42 @@ must always be reported separately, with assumptions and scope.
 R1–R4 are research work to design and implement; they are **not** represented
 as already complete by existing Lean proofs or a finite gateway fixture.
 
+## R2.M5: operationalize established mechanisms of key-person influence
+
+Research question: by which **separate mechanisms** can a powerful or
+strategically located person alter an event, and when can the resulting
+network update feed back into future opportunities? The established
+literature provides hypotheses and methods, NOT a universal numeric power
+score (Emerson 1962 power/dependence; Borgatti 2006 task-specific key
+players; Granovetter 1978 response thresholds). See Issue #120.
+
+- **Resource-control / institutional authority (M5a):** add explicit
+  controller Agent identities to selected source V19 passages. Role
+  labels do not grant access; the native world executor checks the
+  permission before OPEN/CLOSE. Denial is a real failed event and cannot
+  mutate the world. A same-initial-model control contrasts controller
+  WAIT vs successful OPEN vs co-located unauthorized manager attempt,
+  then replays identical MOVE and TELL with the existing perception
+  engine. This is a finite executable mechanism, not a population
+  estimate.
+- **Structural influence (M5b, NOT implemented):** select exactly one
+  sourced V24 directed relation, register Agent roster, timestamp and
+  diffusion/disruption objective; centrality or gateway location must
+  not override passage permissions or imply a transmission occurred.
+- **Epistemic influence (M5c, NOT implemented):** use original V19 exact
+  perception, admitted testimony, private verification and directional
+  trust as the only owners; message reach does not automatically imply
+  agreement, truth, trust or authority.
+- **Empirical qualification (later):** preregister distinct populations,
+  matched controls, thresholds, dependencies, external benchmarks and
+  uncertainty. Single deterministic simulations never prove societal
+  causality.
+
+Keep the original V19/V24 source identity, baseline conformance bytes,
+mathematical theorem trust, cached CI singleflight and Draft gate. Do
+not add a second graph store, new formal proof of six hops, fallback
+engine, installer/consumer project or universal influence ranking.
+
 ## Code and PR acceptance rules
 
 1. One implementation per model; prefer existing

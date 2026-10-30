@@ -452,6 +452,13 @@ def resolve_situated_round(
                 resolutions[intent.action_id] = _Resolution(
                     False, "not_at_passage_source", place_id,
                 )
+            elif passage.controller_agent_ids and intent.agent_id not in passage.controller_agent_ids:
+                # A co-located actor's role, reputation or network location
+                # does not grant passage control. Denied intents are not
+                # admitted to the authorized contender set.
+                resolutions[intent.action_id] = _Resolution(
+                    False, "not_authorized", place_id,
+                )
             else:
                 # Competing boundary changes, including an attempted no-op,
                 # are rejected as a unit: never last-writer-wins.

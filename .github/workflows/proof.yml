@@ -216,6 +216,23 @@ jobs:
             echo 'RED: R2.M4c1 paired source differs from reviewed native vector'
             exit 1
           fi
+      - name: R2 M5a source-owned passage decision authority
+        run: |
+          set -euo pipefail
+          mkdir -p .generated-conformance
+          generated=.generated-conformance/network_passage_authority_v1.json
+          pinned=conformance/network_passage_authority_v1.json
+          python3 -m tools.render_passage_authority_vectors > "$generated"
+          if [ ! -f "$pinned" ]; then
+            echo 'RED: required reviewed V19 passage authority vector is absent'
+            exit 1
+          fi
+          python -m unittest tests.test_network_power_authority -v
+          if ! cmp -s "$pinned" "$generated"; then
+            diff -u "$pinned" "$generated" || true
+            echo 'RED: V19 passage authority source replay differs from reviewed bytes'
+            exit 1
+          fi
       - name: Runtime-derived mesh regression
         run: python -m unittest tests.test_mesh_projection tests.test_mesh_evidence -v
 
