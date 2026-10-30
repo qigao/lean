@@ -168,6 +168,23 @@ jobs:
             echo 'RED: real coupled R2.M4a Agent/network evidence differs from reviewed source'
             exit 1
           fi
+      - name: R2 M4b BB rewiring evolving native-family qualification
+        run: |
+          set -euo pipefail
+          python -m unittest tests.test_network_model_family_comparison -v
+          mkdir -p .generated-conformance
+          generated=.generated-conformance/network_model_family_comparison_v1.json
+          pinned=conformance/network_model_family_comparison_v1.json
+          python3 -m tools.render_model_family_comparison_vectors > "$generated"
+          if [ ! -f "$pinned" ]; then
+            echo 'RED: reviewed model-native R2.M4b vector is missing'
+            exit 1
+          fi
+          if ! cmp -s "$pinned" "$generated"; then
+            diff -u "$pinned" "$generated" || true
+            echo 'RED: R2.M4b independent native models differ from reviewed source'
+            exit 1
+          fi
       - name: Runtime-derived mesh regression
         run: python -m unittest tests.test_mesh_projection tests.test_mesh_evidence -v
 

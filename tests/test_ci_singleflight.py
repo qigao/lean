@@ -98,6 +98,20 @@ class SingleflightCIContractTests(unittest.TestCase):
         self.assertIn("social_topology_checkpoint_v1.json", script)
         self.assertIn("cmp -s", script)
 
+    def test_r2_m4b_native_family_nonenquivalence_gate(self):
+        self.assertIn("R2 M4b BB rewiring evolving native-family qualification", self.content)
+        self.assertIn("tests.test_network_model_family_comparison", self.content)
+        self.assertIn("tools.render_model_family_comparison_vectors", self.content)
+        self.assertIn("conformance/network_model_family_comparison_v1.json", self.content)
+        self.assertLess(
+            self.content.index("R2 M4b BB rewiring evolving native-family qualification"),
+            self.content.index("Runtime-derived mesh regression"),
+        )
+        script = (ROOT / "tools/check_mesh_evidence_lean.sh").read_text(encoding="utf-8")
+        self.assertIn("tools.render_model_family_comparison_vectors", script)
+        self.assertIn("network_model_family_comparison_v1.json", script)
+        self.assertIn("cmp -s", script)
+
     def test_r2_m4a_controlled_coupled_source_evidence_gate(self):
         self.assertIn("R2 M4a same-origin coupled V19 control and intervention", self.content)
         self.assertIn("tests.test_network_coupled_evolution", self.content)
