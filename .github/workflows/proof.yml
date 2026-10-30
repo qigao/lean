@@ -267,6 +267,26 @@ jobs:
             echo 'RED: M5c V19 cognitive and social source evidence differs'
             exit 1
           fi
+      - name: R2 M5d original V19 post-evidence actions and trust-causal firewall
+        run: |
+          set -euo pipefail
+          mkdir -p .generated-conformance
+          generated=.generated-conformance/network_post_evidence_actual_actions_v1.json
+          pinned=conformance/network_post_evidence_actual_actions_v1.json
+          python3 -m tools.render_native_post_evidence_action_vectors > "$generated"
+          if [ ! -f "$pinned" ]; then
+            echo 'R2_M5D_NATIVE_VECTOR_BEGIN'
+            cat "$generated"
+            echo 'R2_M5D_NATIVE_VECTOR_END'
+            echo 'RED: reviewed native V19 post-evidence action source vector is missing'
+            exit 1
+          fi
+          python -m unittest tests.test_network_post_evidence_actions -v
+          if ! cmp -s "$pinned" "$generated"; then
+            diff -u "$pinned" "$generated" || true
+            echo 'RED: V19 post-evidence actual actions differ from source review'
+            exit 1
+          fi
       - name: Runtime-derived mesh regression
         run: python -m unittest tests.test_mesh_projection tests.test_mesh_evidence -v
 

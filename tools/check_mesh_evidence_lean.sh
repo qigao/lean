@@ -114,6 +114,13 @@ if ! cmp -s conformance/network_source_epistemic_influence_v1.json "$tmpdir/netw
   diff -u conformance/network_source_epistemic_influence_v1.json "$tmpdir/network_source_epistemic_influence_v1.json" || true
   exit 1
 fi
+# R2.M5d: source-owned V19 native post-evidence action, NOT trust causality.
+python3 -m tools.render_native_post_evidence_action_vectors > "$tmpdir/network_post_evidence_actual_actions_v1.json"
+if ! cmp -s conformance/network_post_evidence_actual_actions_v1.json "$tmpdir/network_post_evidence_actual_actions_v1.json"; then
+  echo 'FAIL: R2.M5d native post-evidence action vector changed' >&2
+  diff -u conformance/network_post_evidence_actual_actions_v1.json "$tmpdir/network_post_evidence_actual_actions_v1.json" || true
+  exit 1
+fi
 generated="$tmpdir/authoritative.lean"
 
 # Always regenerate from the actual V19 snapshot, then enforce the immutable
