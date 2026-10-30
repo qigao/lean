@@ -185,6 +185,20 @@ jobs:
             echo 'RED: R2.M4b independent native models differ from reviewed source'
             exit 1
           fi
+      - name: R2 M4c0 preregistered native metric eligibility
+        run: |
+          set -euo pipefail
+          python -m unittest tests.test_network_metric_protocol -v
+          mkdir -p .generated-conformance
+          generated=.generated-conformance/native_metric_protocol_v1.json
+          pinned=conformance/native_metric_protocol_v1.json
+          python3 -m tools.render_native_metric_protocol_vectors > "$generated"
+          test -f "$pinned"
+          if ! cmp -s "$pinned" "$generated"; then
+            diff -u "$pinned" "$generated" || true
+            echo 'RED: R2.M4c0 native metric source vector changed'
+            exit 1
+          fi
       - name: Runtime-derived mesh regression
         run: python -m unittest tests.test_mesh_projection tests.test_mesh_evidence -v
 

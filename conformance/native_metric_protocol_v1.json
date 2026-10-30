@@ -1,0 +1,140 @@
+{
+  "causal_attribution": "UNATTRIBUTED",
+  "comparison_eligibility": {
+    "any_vs_v19": {
+      "reason": "NO_REGISTERED_V19_SOURCE_RELATION_ROSTER_OR_OBSERVER_MAPPING",
+      "status": "NOT_COMPARABLE"
+    },
+    "bb_vs_evolving": {
+      "reason": "UNDIRECTED_BIRTH_PAIRS_VS_ACTIVE_MEMBERSHIP",
+      "status": "NOT_COMPARABLE"
+    },
+    "bb_vs_rewiring": {
+      "reason": "UNDIRECTED_BIRTH_PAIRS_VS_DIRECTED_CANDIDATE_CATALOG",
+      "status": "NOT_COMPARABLE"
+    },
+    "rewiring_vs_evolving": {
+      "reason": "DIRECTED_CANDIDATE_ACTIVATION_VS_MEMBER_LIFECYCLE",
+      "status": "NOT_COMPARABLE"
+    }
+  },
+  "confidence_interval": "NOT_ESTIMABLE",
+  "cross_family_numeric_ranking": "FORBIDDEN",
+  "external_validation": "NO_EXTERNAL_VALIDATION",
+  "families": {
+    "bb_fitness_growth": [
+      {
+        "clock_kind": "GLOBAL_TICK_NOT_BIRTH_INDEX",
+        "denominator": 3,
+        "denominator_kind": "ALL_POSSIBLE_UNORDERED_PAIRS_IN_CURRENT_BB_ROSTER",
+        "exact_fraction": "2/3",
+        "family": "bb_fitness_growth",
+        "frame_source_hash": "sha256:86907cc0066bef9ce8ab0481c534411240987dbe12585b204ccf1f699eb5f42b",
+        "metric_id": "undirected_birth_topology_density",
+        "native_time": 1,
+        "numerator": 2,
+        "owner": "BBRuntimeReplay",
+        "phase": "AFTER_BB_TICK",
+        "population_scope": "BORN_BB_NODES_AT_NATIVE_TICK",
+        "run_source_hash": "sha256:f14bac690941fae6765c9d15283fb208944782e628f0cd85a5f6b2dad3594f7c",
+        "unit": "occupied_unordered_pair_per_eligible_unordered_pair"
+      },
+      {
+        "clock_kind": "GLOBAL_TICK_NOT_BIRTH_INDEX",
+        "denominator": 3,
+        "denominator_kind": "ALL_POSSIBLE_UNORDERED_PAIRS_IN_CURRENT_BB_ROSTER",
+        "exact_fraction": "2/3",
+        "family": "bb_fitness_growth",
+        "frame_source_hash": "sha256:7d59b5c0fdcc5465f12a67300025a1985d7a5327dac716673f05c6552af29208",
+        "metric_id": "undirected_birth_topology_density",
+        "native_time": 2,
+        "numerator": 2,
+        "owner": "BBRuntimeReplay",
+        "phase": "AFTER_BB_TICK",
+        "population_scope": "BORN_BB_NODES_AT_NATIVE_TICK",
+        "run_source_hash": "sha256:f14bac690941fae6765c9d15283fb208944782e628f0cd85a5f6b2dad3594f7c",
+        "unit": "occupied_unordered_pair_per_eligible_unordered_pair"
+      }
+    ],
+    "directed_rewiring": [
+      {
+        "clock_kind": "NATIVE_REWIRING_ROUND",
+        "denominator": 2,
+        "denominator_kind": "FIXED_DIRECTED_CANDIDATE_CATALOG",
+        "exact_fraction": "1",
+        "family": "directed_rewiring",
+        "frame_source_hash": "sha256:5a43c5cf7d909d7c37006714552ef6012cd55b8c6f0b1ee81d4157a2c3658864",
+        "metric_id": "directed_candidate_activation_fraction",
+        "native_time": 1,
+        "numerator": 2,
+        "owner": "RewiringPopulationState",
+        "phase": "AFTER_REWIRING_NOT_PROPAGATION",
+        "population_scope": "REWIRING_FIXED_AGENT_CATALOG",
+        "run_source_hash": "sha256:4dd2b5e1a105e8cbc654f442126ec54bef6f6d539a8ff9de2fc73942509bdbf6",
+        "unit": "active_directed_candidate_per_declared_directed_candidate"
+      },
+      {
+        "clock_kind": "NATIVE_REWIRING_ROUND",
+        "denominator": 2,
+        "denominator_kind": "FIXED_DIRECTED_CANDIDATE_CATALOG",
+        "exact_fraction": "1",
+        "family": "directed_rewiring",
+        "frame_source_hash": "sha256:14444fe12f71299cef8bf78afea5a6364ae786c239001f41f1452184cf3a6296",
+        "metric_id": "directed_candidate_activation_fraction",
+        "native_time": 2,
+        "numerator": 2,
+        "owner": "RewiringPopulationState",
+        "phase": "AFTER_REWIRING_NOT_PROPAGATION",
+        "population_scope": "REWIRING_FIXED_AGENT_CATALOG",
+        "run_source_hash": "sha256:4dd2b5e1a105e8cbc654f442126ec54bef6f6d539a8ff9de2fc73942509bdbf6",
+        "unit": "active_directed_candidate_per_declared_directed_candidate"
+      }
+    ],
+    "lifecycle_feedback": [
+      {
+        "clock_kind": "NATIVE_EVOLVING_ROUND",
+        "denominator": 3,
+        "denominator_kind": "ALL_NATIVE_CATALOG_MEMBERS_INCLUDING_INACTIVE",
+        "exact_fraction": "1",
+        "family": "lifecycle_feedback",
+        "frame_source_hash": "sha256:10796601905295d7851e9d61841be40a094c0315633b072c5dd3298711c6808b",
+        "metric_id": "active_catalog_membership_fraction",
+        "native_time": 1,
+        "numerator": 3,
+        "owner": "EvolvingPopulationState",
+        "phase": "AFTER_LIFECYCLE_FEEDBACK_REWIRING",
+        "population_scope": "EVOLVING_AGENT_CATALOG_ALL_STATUSES",
+        "run_source_hash": "sha256:5ee5f4058963e00c36c428eecfb841f8674533e9d580dc84717b954291a58de8",
+        "unit": "active_agent_per_catalog_member"
+      },
+      {
+        "clock_kind": "NATIVE_EVOLVING_ROUND",
+        "denominator": 3,
+        "denominator_kind": "ALL_NATIVE_CATALOG_MEMBERS_INCLUDING_INACTIVE",
+        "exact_fraction": "1",
+        "family": "lifecycle_feedback",
+        "frame_source_hash": "sha256:a3f0dd3a5ed30a052dd5288eab1e6f7a2add8abcba47cb74eb2be1b9442bd20b",
+        "metric_id": "active_catalog_membership_fraction",
+        "native_time": 2,
+        "numerator": 3,
+        "owner": "EvolvingPopulationState",
+        "phase": "AFTER_LIFECYCLE_FEEDBACK_REWIRING",
+        "population_scope": "EVOLVING_AGENT_CATALOG_ALL_STATUSES",
+        "run_source_hash": "sha256:5ee5f4058963e00c36c428eecfb841f8674533e9d580dc84717b954291a58de8",
+        "unit": "active_agent_per_catalog_member"
+      }
+    ]
+  },
+  "normalization": "NONE",
+  "sample_size_per_native_run": 1,
+  "schema": "r2-m4c0-native-metric-eligibility-v1",
+  "source_owner": "READ_ONLY_R2_M4B_PROJECTION",
+  "source_report_hash": "sha256:a90be55452f10281c950140f022e2a3803bc0b734f20687c1f2c0d2a33eb92d7",
+  "v19_reference": {
+    "control_story_hash": "sha256:cc02742b17a309c9a20998d55dae7896a4882fbddb982c6670ec68f38eff02a4",
+    "intervention_story_hash": "sha256:99b156a9f93351a52dd22fa22ebbf6bd4802a58ae3b4165cdb67820d61f4538e",
+    "metric_status": "NOT_MEASURABLE_FROM_M4B_REFERENCE",
+    "source_owner": "SITUATED_V19_STORY_COGNITION_SOCIAL_MEMORY",
+    "story_lineage": "DIVERGENT_STORY_BRANCH"
+  }
+}

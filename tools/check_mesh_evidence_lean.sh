@@ -76,6 +76,13 @@ if ! cmp -s conformance/network_model_family_comparison_v1.json "$tmpdir/network
   diff -u conformance/network_model_family_comparison_v1.json "$tmpdir/network_model_family_comparison_v1.json" || true
   exit 1
 fi
+# R2.M4c0: do not derive universal edge or trust units.
+python3 -m tools.render_native_metric_protocol_vectors > "$tmpdir/native_metric_protocol_v1.json"
+if ! cmp -s conformance/native_metric_protocol_v1.json "$tmpdir/native_metric_protocol_v1.json"; then
+  echo 'FAIL: R2.M4c0 native metric denominator/eligibility source changed' >&2
+  diff -u conformance/native_metric_protocol_v1.json "$tmpdir/native_metric_protocol_v1.json" || true
+  exit 1
+fi
 generated="$tmpdir/authoritative.lean"
 
 # Always regenerate from the actual V19 snapshot, then enforce the immutable
