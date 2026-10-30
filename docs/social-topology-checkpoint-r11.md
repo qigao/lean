@@ -71,3 +71,23 @@ canonical UTF-8 bytes against
 Missing, stale or edited bytes are RED in both the focused Python and
 independent Lean input-acceptance lanes. No hidden source graph or
 external actor authentication is implied.
+
+## Independent V19 source replay of checkpoint interventions
+
+`SocialTrustCheckpointReceipt` rejects malformed hash fields, non-boolean
+effective-edge flags, nonfinite thresholds and no-op transition identities.
+`SocialTrustCheckpointResult` validates its source/runtime/social SHA chain
+at construction. These *structural* checks do not imply the caller's target
+trust was actually applied.
+
+`verify_social_trust_checkpoint(database, model, original, recorded)`
+re-executes the typed intervention from the supplied exact authoritative V19
+checkpoint through the **same** `admit_social_trust_checkpoint` implementation,
+then compares the complete new runtime state and receipt. Regression
+deliberately forges a coherent receipt that binds a valid 0.25 trust update
+while claiming that the original intervention set trust to 0.0: only actual
+re-execution detects the mismatch. Canonical source-derived vectors are also
+checked through this independent replay method without changing their bytes.
+
+This remains deterministic in-process correctness evidence, not external
+actor authentication, cryptographic proof of history or a second trust graph.

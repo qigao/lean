@@ -42,6 +42,10 @@ class SocialTopologyTrustConflict(TopologyChangeError):
     """The directed trust intervention does not actually cross the active threshold."""
 
 
+class SocialTopologyIntegrityError(TopologyChangeError):
+    """A recorded checkpoint cannot be reproduced from its authoritative start."""
+
+
 class SocialTrustOperation(str, Enum):
     ACTIVATE = "activate"
     DEACTIVATE = "deactivate"
@@ -130,6 +134,37 @@ class SocialTrustCheckpointReceipt:
     previous_active: bool
     next_active: bool
 
+    def __post_init__(self) -> None:
+        for key in (
+            "intervention_hash", "before_runtime_hash", "after_runtime_hash",
+            "before_source_hash", "after_source_hash",
+            "before_social_hash", "after_social_hash",
+        ):
+            try:
+                _hash(getattr(self, key), key)
+            except TopologyChangeError as exc:
+                raise SocialTopologyIntegrityError(str(exc)) from exc
+        if (
+            type(self.previous_active) is not bool
+            or type(self.next_active) is not bool
+            or self.previous_active == self.next_active
+        ):
+            raise SocialTopologyIntegrityError(
+                "receipt needs opposite typed before/after effective states"
+            )
+        if (
+            type(self.threshold) not in (int, float)
+            or not math.isfinite(self.threshold)
+            or not 0 <= self.threshold <= 1
+        ):
+            raise SocialTopologyIntegrityError("receipt threshold must be finite in [0,1]")
+        if (
+            self.before_runtime_hash == self.after_runtime_hash
+            or self.before_source_hash == self.after_source_hash
+            or self.before_social_hash == self.after_social_hash
+        ):
+            raise SocialTopologyIntegrityError("receipt must bind changed states")
+
     def to_dict(self) -> dict[str, object]:
         return {
             "schema": _RECEIPT_SCHEMA,
@@ -156,6 +191,37 @@ class SocialTrustCheckpointResult:
     next_runtime_state: SituatedNetworkRuntimeState
     intervention: SocialTrustCheckpointIntervention
     receipt: SocialTrustCheckpointReceipt
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.previous_runtime_state, SituatedNetworkRuntimeState)
+            or not isinstance(self.next_runtime_state, SituatedNetworkRuntimeState)
+            or type(self.intervention) is not SocialTrustCheckpointIntervention
+            or type(self.receipt) is not SocialTrustCheckpointReceipt
+        ):
+            raise SocialTopologyIntegrityError("checkpoint result requires exact typed records")
+        old, new, event, receipt = (
+            self.previous_runtime_state, self.next_runtime_state,
+            self.intervention, self.receipt,
+        )
+        if (
+            event.expected_runtime_hash != old.content_hash
+            or event.expected_source_hash != old.snapshot.content_hash
+            or event.expected_social_state_hash != old.social_state.content_hash
+            or receipt.intervention_hash != event.content_hash
+            or receipt.before_runtime_hash != old.content_hash
+            or receipt.after_runtime_hash != new.content_hash
+            or receipt.before_source_hash != old.snapshot.content_hash
+            or receipt.after_source_hash != new.snapshot.content_hash
+            or receipt.before_social_hash != old.social_state.content_hash
+            or receipt.after_social_hash != new.social_state.content_hash
+            or new.story != old.story
+            or new.cognitive_state != old.cognitive_state
+            or new.round_index != old.round_index
+            or new.memory_store_hash != old.memory_store_hash
+            or not new.checkpoint
+        ):
+            raise SocialTopologyIntegrityError("recorded checkpoint state/receipt chain mismatch")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -260,3 +326,44 @@ def admit_social_trust_checkpoint(
         threshold, old_active, new_active,
     )
     return SocialTrustCheckpointResult(runtime, new_runtime, event, receipt)
+
+def verify_social_trust_checkpoint(
+    database_path: str | Path,
+    model: SituatedNetworkRuntimeModel,
+    original: SituatedNetworkRuntimeState,
+    recorded: SocialTrustCheckpointResult,
+) -> bool:
+    """Independently reapply one trust intervention through the same V19 owner.
+
+    Internal hash-consistent records may still claim a semantically false
+    target trust value. Re-run the real social-state admission from the
+    caller's original checkpoint and compare the full resulting state and
+    receipt. This verifies reproducibility, not actor authentication.
+    """
+    if not isinstance(original, SituatedNetworkRuntimeState):
+        raise TypeError("verification requires a V19 original checkpoint")
+    if not isinstance(recorded, SocialTrustCheckpointResult):
+        raise TypeError("verification requires a social trust checkpoint record")
+    if recorded.previous_runtime_state != original:
+        raise TopologyVersionConflict("recorded source checkpoint differs from provided origin")
+    if (
+        recorded.previous_runtime_state.content_hash != original.content_hash
+        or recorded.intervention.expected_runtime_hash != original.content_hash
+    ):
+        raise TopologyVersionConflict("recorded expected checkpoint hash is stale")
+    try:
+        actual = admit_social_trust_checkpoint(
+            database_path, model, original, recorded.intervention,
+        )
+    except TopologyChangeError as exc:
+        raise SocialTopologyIntegrityError(
+            "recorded trust event cannot execute from original V19 checkpoint"
+        ) from exc
+    if (
+        recorded.to_dict() != actual.to_dict()
+        or recorded.next_runtime_state.to_dict() != actual.next_runtime_state.to_dict()
+    ):
+        raise SocialTopologyIntegrityError(
+            "recorded trust effect or receipt differs from actual source-authoritative admission"
+        )
+    return True

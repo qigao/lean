@@ -19,7 +19,7 @@ from narrative_dynamics.abm.situated_network import (
 )
 from narrative_dynamics.abm.situated_social_topology import (
     SocialTrustOperation, SocialTrustCheckpointIntervention,
-    admit_social_trust_checkpoint,
+    admit_social_trust_checkpoint, verify_social_trust_checkpoint,
 )
 from tests.test_network_abm_situated_network import initial_runtime_case
 
@@ -51,6 +51,8 @@ def build_vector_manifest() -> dict[str, object]:
             db, model, prior,
             _event(prior, "deactivate-alice-to-bob", SocialTrustOperation.DEACTIVATE, 0.0),
         )
+        if not verify_social_trust_checkpoint(db, model, prior, deactivate):
+            raise AssertionError("real trust change failed authoritative reexecution")
         middle = deactivate.next_runtime_state
         mid_mesh = MeshSnapshot(middle.snapshot, societies)
         if (
@@ -67,6 +69,8 @@ def build_vector_manifest() -> dict[str, object]:
             db, model, middle,
             _event(middle, "activate-alice-to-bob", SocialTrustOperation.ACTIVATE, 1.0),
         )
+        if not verify_social_trust_checkpoint(db, model, middle, activate):
+            raise AssertionError("real trust reactivation failed authoritative reexecution")
         last = activate.next_runtime_state
         final_mesh = MeshSnapshot(last.snapshot, societies)
         if ("alice", "bob") not in mesh_edges(final_mesh, MeshRelation.RELATIONSHIP):

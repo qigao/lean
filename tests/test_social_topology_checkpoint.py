@@ -19,7 +19,8 @@ from narrative_dynamics.abm.situated_network import (
 from narrative_dynamics.abm.situated_social_topology import (
     SocialTrustOperation, SocialTrustCheckpointIntervention,
     SocialTopologyBoundaryError, SocialTopologyTrustConflict,
-    admit_social_trust_checkpoint,
+    SocialTopologyIntegrityError, SocialTrustCheckpointResult,
+    admit_social_trust_checkpoint, verify_social_trust_checkpoint,
 )
 from narrative_dynamics.abm.mesh_topology_events import (
     TopologyChangeError, TopologyVersionConflict, TopologyUnknownAgent,
@@ -199,6 +200,68 @@ class SocialTopologyCheckpointTests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaises(TopologyChangeError):
                 replace(valid, **invalid)
         self.assertEqual(old.social_state.content_hash, self.social.content_hash)
+
+    def test_independent_source_checkpoint_verification_rejects_forged_effect(self):
+        previous = self.runtime
+        expected = event_for(
+            previous, "deactivate-ab", SocialTrustOperation.DEACTIVATE,
+            "alice", "bob", 0.0,
+        )
+        genuine = admit_social_trust_checkpoint(
+            self.path, self.model, previous, expected,
+        )
+        self.assertTrue(
+            verify_social_trust_checkpoint(
+                self.path, self.model, previous, genuine,
+            ),
+        )
+        different_event = replace(expected, target_trust=0.25)
+        different = admit_social_trust_checkpoint(
+            self.path, self.model, previous, different_event,
+        )
+        # Validly formed records with consistent source, social and runtime
+        # digest bindings can still claim a different effective trust update.
+        forged_receipt = replace(
+            different.receipt, intervention_hash=expected.content_hash,
+        )
+        claimed = SocialTrustCheckpointResult(
+            previous, different.next_runtime_state, expected, forged_receipt,
+        )
+        with self.assertRaises(SocialTopologyIntegrityError):
+            verify_social_trust_checkpoint(
+                self.path, self.model, previous, claimed,
+            )
+        with self.assertRaises(TopologyVersionConflict):
+            verify_social_trust_checkpoint(
+                self.path, self.model, genuine.next_runtime_state, genuine,
+            )
+        with self.assertRaises(TypeError):
+            verify_social_trust_checkpoint(self.path, self.model, None, genuine)
+
+    def test_constructor_rejects_forged_checkpoint_receipt_lineage(self):
+        previous = self.runtime
+        result = admit_social_trust_checkpoint(
+            self.path, self.model, previous,
+            event_for(previous, "deactivate-ab",
+                      SocialTrustOperation.DEACTIVATE, "alice", "bob", 0.0),
+        )
+        for changes in (
+            {"before_social_hash": "sha256:" + "f"*64},
+            {"after_runtime_hash": "sha256:" + "f"*64},
+            {"intervention_hash": "sha256:" + "f"*64},
+            {"before_runtime_hash": "no-hash"},
+            {"previous_active": 1},
+            {"next_active": result.receipt.previous_active},
+            {"threshold": True},
+            {"threshold": float("inf")},
+        ):
+            with self.subTest(changes=changes), self.assertRaises(
+                SocialTopologyIntegrityError
+            ):
+                bad_receipt = replace(result.receipt, **changes)
+                replace(result, receipt=bad_receipt)
+        with self.assertRaises(SocialTopologyIntegrityError):
+            replace(result, next_runtime_state=previous)
 
     def test_checked_in_social_trust_checkpoint_vectors_match_runtime(self):
         from pathlib import Path
