@@ -224,10 +224,7 @@ jobs:
           pinned=conformance/network_passage_authority_v1.json
           python3 -m tools.render_passage_authority_vectors > "$generated"
           if [ ! -f "$pinned" ]; then
-            echo 'R2_M5A_NATIVE_VECTOR_BEGIN'
-            cat "$generated"
-            echo 'R2_M5A_NATIVE_VECTOR_END'
-            echo 'RED: reviewed native V19 passage authority source vector is missing'
+            echo 'RED: required reviewed V19 passage authority vector is absent'
             exit 1
           fi
           python -m unittest tests.test_network_power_authority -v

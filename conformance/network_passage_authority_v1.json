@@ -1,0 +1,90 @@
+{
+  "report": {
+    "arms": {
+      "authorized_open": {
+        "alice_place_at_tell": "open",
+        "bob_tell_fidelity": "exact",
+        "gate_event_actor": "alice",
+        "gate_event_hash": "sha256:464d712f1aac79dc3329d53539c62eab8c6ee404722c8c4cf7ec00cbc00bd0dc",
+        "gate_event_outcome": "passage_opened",
+        "gate_event_success": true,
+        "gate_open_at_tell": true,
+        "move_event_hash": "sha256:17e0581fcb0c9de8cae5cbb2451501059ecca4e38bc3f3d8f9f8d95575e1a0fa",
+        "move_event_outcome": "moved",
+        "move_success": true,
+        "story_hash": "sha256:4cffeddab184b76a06b2a355ac07665f54ebfe67cb9d60350b5af11c98921769",
+        "tell_event_hash": "sha256:298d06f3b32c646fb0671ba409c613fd80a7e1a8c6377e8399c053c153e0919d",
+        "world_round_hashes": [
+          "sha256:37b368cbf36c6a2a86ce893bd6c72a52d04d30d5cc9c3200f41a5a89d4bf6c88",
+          "sha256:dadbacec818737cbd670f95d07632d48c4f9c75511d7b18328f92a52a8f674f3",
+          "sha256:aace882ea08319a0307623807981cec4e0b740e69e2df5b395cc7194b2abfa06"
+        ]
+      },
+      "control_wait": {
+        "alice_place_at_tell": "records",
+        "bob_tell_fidelity": "detected",
+        "gate_event_actor": "alice",
+        "gate_event_hash": "sha256:14b231c0554f5b00a72a099c1ecb33cf1370cfbb7c121c97e28cca2fa69b1015",
+        "gate_event_outcome": "waited",
+        "gate_event_success": true,
+        "gate_open_at_tell": false,
+        "move_event_hash": "sha256:082bae2aceabf3fc8396f10eb41c1339d1e0fa8a967efd56ebdfdcc5bbb82d4b",
+        "move_event_outcome": "passage_closed",
+        "move_success": false,
+        "story_hash": "sha256:9cb653c22e91bce7fcc23e28915935e086e2b35b38277ecd2506ec74d4d7f079",
+        "tell_event_hash": "sha256:10f7c886653d15602e23c35d9dd63cbddae8cfa5f08e98b3a847ce2543e9a92e",
+        "world_round_hashes": [
+          "sha256:c2731e6040c751ae19b04545f60f1d25be5152476922be19d7d6e2eb7e7cd3b7",
+          "sha256:706f332d457b09ebe89b766ce59217da80b4118a724407123cc83f4fe3e063e9",
+          "sha256:f88bd271738d345b9993da2d58453a1ea72a341f8c723683dbd7ac3b4fcf6e23"
+        ]
+      },
+      "unauthorized_manager_open": {
+        "alice_place_at_tell": "records",
+        "bob_tell_fidelity": "detected",
+        "gate_event_actor": "dana",
+        "gate_event_hash": "sha256:e260f563cc17f55e9e3825db31b618f9ff9e18af226796aea4b1f93df5d41eea",
+        "gate_event_outcome": "not_authorized",
+        "gate_event_success": false,
+        "gate_open_at_tell": false,
+        "move_event_hash": "sha256:082bae2aceabf3fc8396f10eb41c1339d1e0fa8a967efd56ebdfdcc5bbb82d4b",
+        "move_event_outcome": "passage_closed",
+        "move_success": false,
+        "story_hash": "sha256:f80897f92009e154bca9b2f89e2ce329b5f8f71eb11f4ba012f97ea21077ba4d",
+        "tell_event_hash": "sha256:10f7c886653d15602e23c35d9dd63cbddae8cfa5f08e98b3a847ce2543e9a92e",
+        "world_round_hashes": [
+          "sha256:a800fd426d7dd5b42867495f83b69189053612c2b8f8bde108cc1e0751b150da",
+          "sha256:706f332d457b09ebe89b766ce59217da80b4118a724407123cc83f4fe3e063e9",
+          "sha256:f88bd271738d345b9993da2d58453a1ea72a341f8c723683dbd7ac3b4fcf6e23"
+        ]
+      }
+    },
+    "causal_attribution": "UNATTRIBUTED",
+    "confidence_interval": "NOT_ESTIMABLE",
+    "controlled_passage": "records-open",
+    "controller": {
+      "agent_id": "alice",
+      "role": "analyst"
+    },
+    "controller_agent_ids": [
+      "alice"
+    ],
+    "cross_branch_relation": "DIVERGENT_STORY_BRANCH",
+    "external_validation": "NO_EXTERNAL_VALIDATION",
+    "initial_world_hash": "sha256:87483ffd9acfbf7b656ce0ec01603ea704c54b5ba56ec511dae7e4b6fd78662f",
+    "mechanism": "EXPLICIT_PASSAGE_RESOURCE_CONTROL",
+    "network_centrality": "NOT_MEASURED",
+    "sample_size_per_arm": 1,
+    "schema": "r2-m5a-v19-source-passage-control-v1",
+    "scope": "finite source model intervention, not a population causal effect",
+    "source_model_hash": "sha256:fc4867c2a7cb22e503026fb52f0fa48032d2da1c9dbd5395ac87893c6008e321",
+    "source_owner": "V19_SITUATED_WORLD_MODEL_AND_STORY",
+    "trust_change": "NOT_MEASURED",
+    "unauthorized_actor": {
+      "agent_id": "dana",
+      "role": "manager"
+    }
+  },
+  "report_hash": "sha256:43bf357dfb665be52466d2f053c2980d09bade224df1cf5845bcfdbf4d8b86ce",
+  "schema": "r2-m5a-v19-source-passage-control-v1"
+}
