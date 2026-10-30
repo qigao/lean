@@ -228,9 +228,7 @@ class EnvironmentActionTraceTests(unittest.TestCase):
         text=render_vector_corpus()
         self.assertNotIn(PRIVATE_MESSAGE,text)
         pin=Path(__file__).resolve().parents[1]/"conformance/network_environment_action_v1.json"
-        if not pin.exists():
-            # One-time fail-closed actual CI handoff; remove after source review.
-            raise AssertionError("R2_ENV_VECTOR_BEGIN\n"+text+"R2_ENV_VECTOR_END")
+        # This reviewed source vector is mandatory in all CI lanes.
         self.assertEqual(pin.read_bytes(),text.encode("utf-8"))
 
 

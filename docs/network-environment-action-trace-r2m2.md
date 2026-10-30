@@ -70,7 +70,7 @@ external actor identity or historical physical fact.
   alternate initial conditions are rejected before attribution
 - [ ] Report source/hash immutability, private TELL redaction and
   distinct relation-selected graph edges
-- [ ] Reviewed versioned two-case `conformance/network_environment_action_v1.json`
+- [x] Reviewed versioned two-case `conformance/network_environment_action_v1.json`
   generated from real Python fixtures, compared **byte-for-byte** in
   focused Python and independent Lean-lane acceptance
 - [ ] Preserve original full Python, Lean/35+11/BB/PathN, Studio/Playwright,
@@ -78,3 +78,20 @@ external actor identity or historical physical fact.
 
 This is a read-only effect/evidence layer. No new mutable network
 owner, no general six-hop theorem, no installers or consumer CI project.
+
+## Reviewed native source vector — 2026-10-30
+
+Initial focused [CI #41013905544](https://github.com/qigao/lean/actions/runs/41013905544)
+had **six real behavior regressions passing** and exactly one intentional
+missing-vector failure. Its canonical generated source text was inspected
+for schema, case order, four actual sequential environmental rounds,
+the rejected-action counterexample, UNATTRIBUTED scope and absence of the
+private TELL body, then committed exactly as
+`conformance/network_environment_action_v1.json`. The one-time failed
+candidate transfer has been removed. Python and Lean must now compare
+the checked-in full UTF-8 bytes without silently rewriting the file.
+
+The acceptance intentionally distinguishes a MOVE changing directed
+interaction opportunity from a later *real* TELL creating
+`alice→bob` realized transmission, while neither change fabricates a
+trust/relationship edge. No external history verification is claimed.
