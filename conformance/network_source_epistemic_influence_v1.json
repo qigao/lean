@@ -1,0 +1,132 @@
+{
+  "report": {
+    "adoption_threshold": 0.7,
+    "branches": {
+      "authorized_open": {
+        "admitted_testimony": 1,
+        "admitted_verification": 1,
+        "alice_to_bob_relationship_after": false,
+        "alice_to_bob_relationship_before": true,
+        "bob_above_threshold_after": true,
+        "bob_above_threshold_before": false,
+        "bob_claim_statuses": [
+          "contradicted"
+        ],
+        "bob_inspect_event_hash": "sha256:3eecd68806d3f1bf4ebfa57bb008fc38709632c88c54c5f5686192b16a6ae923",
+        "bob_inspect_success": true,
+        "bob_to_alice_relationship_after": true,
+        "bob_to_alice_relationship_before": true,
+        "bob_tracked_belief_after": 0.8389830508474576,
+        "bob_tracked_belief_before": 0.5,
+        "bob_trust_alice_after": 0.3,
+        "bob_trust_alice_before": 0.5,
+        "claim_revisions": 1,
+        "content_evidence_trace_hash": "sha256:c1ad4fafe4611a87ce2c2588ada04d09676824efebc657551652705a520a08c7",
+        "final_world_hash": "sha256:8133ee3593ec58e2da496d5c9c63abaf3ec61c12b862a60986b1697e2735caa8",
+        "gate_event_hash": "sha256:8bccd70e772335c132c903548211bef7c0e69313598452466d8dce9062d35e6b",
+        "gate_outcome": "passage_opened",
+        "gate_success": true,
+        "move_outcome": "moved",
+        "move_success": true,
+        "reverse_alice_trust_bob_after": 0.5,
+        "reverse_alice_trust_bob_before": 0.5,
+        "source_network_after_hash": "sha256:34bbdb5905b86f906bd562956402b0f276c38581bf70a39c666e2a2852f544fc",
+        "source_network_before_hash": "sha256:b055a98ee00582bc6481d50c8f1badbd34f3d36f00cda28725bc8823514d21c4",
+        "source_social_after_hash": "sha256:d874330b066b8d5aee2f982bc35afbe388ce34ef935e07a15ff7abcba78cedf1",
+        "source_social_before_hash": "sha256:f340ec5ccfa07a2eb2ca8598416a2fe112e47c48d1760c68899577a896741081",
+        "story_hash": "sha256:f80c36eff7bfae6fb34943076cf2d6ee806e8c5c6cecade4255c6059042e194c",
+        "tell_event_hash": "sha256:74adf369ee260fe7987daed0b3e362907f7fbc31d1ff390ecd9598e21227d639",
+        "tell_event_id": "r0004:e0001",
+        "tell_fidelity_bob": "exact",
+        "trust_revisions": 1
+      },
+      "control_wait": {
+        "admitted_testimony": 0,
+        "admitted_verification": 1,
+        "alice_to_bob_relationship_after": true,
+        "alice_to_bob_relationship_before": true,
+        "bob_above_threshold_after": true,
+        "bob_above_threshold_before": false,
+        "bob_claim_statuses": [],
+        "bob_inspect_event_hash": "sha256:3eecd68806d3f1bf4ebfa57bb008fc38709632c88c54c5f5686192b16a6ae923",
+        "bob_inspect_success": true,
+        "bob_to_alice_relationship_after": true,
+        "bob_to_alice_relationship_before": true,
+        "bob_tracked_belief_after": 0.9,
+        "bob_tracked_belief_before": 0.5,
+        "bob_trust_alice_after": 0.5,
+        "bob_trust_alice_before": 0.5,
+        "claim_revisions": 0,
+        "content_evidence_trace_hash": "sha256:1d1f3a529093f2f0f742bd6e9637d25d5e7e71a55b0467ba78f3482b4464b3f3",
+        "final_world_hash": "sha256:531d937b7aafe99561734982fb7c3371e85d8090a561b148707359f09c59d8b2",
+        "gate_event_hash": "sha256:fd0e6bd401a64337ff5c1634590684f5ead99b62b599125193d7901d76b14781",
+        "gate_outcome": "waited",
+        "gate_success": true,
+        "move_outcome": "passage_closed",
+        "move_success": false,
+        "reverse_alice_trust_bob_after": 0.5,
+        "reverse_alice_trust_bob_before": 0.5,
+        "source_network_after_hash": "sha256:2b23c8912125d2ef8522d7110ebb0b434c76516fb9862e47c4d2ffc7246142f0",
+        "source_network_before_hash": "sha256:e3d3ffa99e1e277d52bb4842745ffce974eb4ce6935360315808369d2255506f",
+        "source_social_after_hash": "sha256:7e8c0eac0005dc2bc2bcb41fda0fd77e634397883349b6b94a0e5b22440f8e38",
+        "source_social_before_hash": "sha256:9b96832f551b8aea59b722784c802ea901732b3893edcfd8d27057000faa7f99",
+        "story_hash": "sha256:0c53426e1cfc909ae3c469679560a451a124f4266c8aa5639113368c75a6b02c",
+        "tell_event_hash": "sha256:20f3402c239458aac86a1c9b1d61d64cc0c453e6cf7f999ffa69e278292d36c6",
+        "tell_event_id": "r0004:e0001",
+        "tell_fidelity_bob": "detected",
+        "trust_revisions": 0
+      }
+    },
+    "causal_attribution": "UNATTRIBUTED",
+    "confidence_interval": "NOT_ESTIMABLE",
+    "controller_agent_ids": [
+      "alice"
+    ],
+    "cross_mechanism_ranking": "FORBIDDEN",
+    "external_validation": "NO_EXTERNAL_VALIDATION",
+    "initial_story_hash": "sha256:7a51dca178572c3da7683ff018bd8ecd2e2033564b018f3e09866f76a1a9a882",
+    "initial_world_hash": "sha256:7940d358562cb2a06e4d7099b2a0bbe6f91ff62f0154f944d4fb9cd2ceffa642",
+    "intervention": "ALICE_WAIT_VS_AUTHORIZED_OPEN_ONLY",
+    "post_trust_action_effect": "NOT_ESTABLISHED",
+    "resource_controller": "alice",
+    "sample_size_per_arm": 1,
+    "schema": "r2-m5c-source-epistemic-role-authority-v1",
+    "shared_native_action_ids": [
+      "alice-inspect",
+      "alice-common-move",
+      "alice-common-tell",
+      "bob-common-move",
+      "bob-common-inspect"
+    ],
+    "source_lineage": "DIVERGENT_STORY_BRANCH",
+    "source_memory_model_hash": "sha256:1b612eae3b654c5d11cef09d83c7519a84f657be591f1619cf46974710f03387",
+    "source_model_hash": "sha256:15a6b287f35ddccb7fb6522c5492ef1b882f4021d7d205449786e61eeccba6b6",
+    "source_owner": "V19_SOURCE_COGNITION_AND_SOCIAL_MEMORY_V24_READ_ONLY",
+    "source_perception_model_hash": "sha256:8fccadf01a83372a65242e233ac692399a525382bec3b1b1ab339aff6cc31677",
+    "source_social_model_hash": "sha256:5d55a77ef6df0cf57fdf28c74cf2eb2bc9d7b22679dc22b9c6f57042f10422c6",
+    "source_world_hash": "sha256:e9ffd6cbaacd409747ab0cb604c4e0d47722bf9642761feb9505e4d7dcce92a6",
+    "structural_directed_edges": [
+      [
+        "bob",
+        "dana"
+      ],
+      [
+        "carol",
+        "bob"
+      ]
+    ],
+    "structural_disruption_candidates": [
+      "bob"
+    ],
+    "structural_event_count": 0,
+    "structural_out_reach_candidates": [
+      "carol"
+    ],
+    "structural_relation": "direct_interaction",
+    "structural_source_snapshot_hash": "sha256:dd9c7d2799c4917d82dcb113778f98b7c85d3add3e7b49e6b0783718ad245b75",
+    "structural_transmission_count": 0,
+    "tracked_hypothesis_id": "approved"
+  },
+  "report_hash": "sha256:8b988137038cb77e39065663f6e98aa326d0c45249fd191238cbd20cd434f154",
+  "schema": "r2-m5c-source-epistemic-role-authority-v1"
+}

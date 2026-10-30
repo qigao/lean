@@ -109,6 +109,31 @@ transmissions remain zero. These are finite descriptive properties,
 not a power causal estimate, universal influence ranking or six-hop
 theorem. Follow Issue #120 and the separate M5c epistemic gate.
 
+## R2.M5c — epistemic influence is not structural reach or resource control
+
+The previous M5a world-rule gate and M5b source-projected structural
+metrics are prerequisites but **neither** establishes opinion change,
+trust or enacted adoption. The next single-origin controlled native V19
+case compares Alice WAIT versus authorized OPEN, followed by identical
+INSPECT → MOVE → TELL → Bob MOVE → private INSPECT stages. The
+original V19 source Story, private-memory/SQLite cognition and
+social evidence/trust engine must remain the only owners.
+
+Record Bob's DETECTED vs EXACT TELL, actual admitted testimony, his
+independent inspection, claim contradiction, the **Bob→Alice trust
+judgment** and the correctly oriented **Alice→Bob source-relationship
+edge**, while checking the reverse direction separately. Both branches
+may contain a legitimate private INSPECT; without a preceding admitted
+claim, no source-directed trust change follows.
+
+The 0.7 adoption threshold can classify the tracked belief snapshot,
+but no subsequent **action** may be inferred unless an actual source
+decision/behavior consumes it. The structural Carol/Bob M5b tasks
+remain source-scoped, event count is not reachability, and the
+passage controller Alice is not automatically a central or trusted
+Agent. One deterministic paired run cannot identify societal causal
+effects, and no universal leadership score is defined.
+
 ## Code and PR acceptance rules
 
 1. One implementation per model; prefer existing
