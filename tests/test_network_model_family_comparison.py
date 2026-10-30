@@ -162,6 +162,32 @@ class NativeModelFamilyQualificationTests(unittest.TestCase):
         d["cross_family_numeric_ranking"]="BB_WINS"
         with self.assertRaisesRegex(ValueError,"equivalent graphs or causal rankings"):
             NativeModelFamilyComparison(json.dumps(d,sort_keys=True))
+        # A forbidden ranking is not the only invalid semantic mapping.
+        # Reject normalized, directed/undirected, clock and trust re-labeling,
+        # while leaving the reviewed native vector entirely unchanged.
+        for field, value in (
+            ("normalization", "UNIVERSAL_EDGE_SCORE"),
+            ("comparability", {"raw_edge_counts": "COMPARABLE"}),
+        ):
+            corrupted=self.report.to_dict()
+            corrupted[field]=value
+            with self.subTest(field=field):
+                with self.assertRaisesRegex(ValueError,"equivalent graphs or causal rankings"):
+                    NativeModelFamilyComparison(json.dumps(corrupted,sort_keys=True))
+        for family, field, value in (
+            ("bb_fitness_growth","edge_semantics","DIRECTED_CANDIDATE"),
+            ("directed_rewiring","time_semantics","GLOBAL_BIRTH_TICK"),
+            ("lifecycle_feedback","trust_semantics","V19_PRIVATE_VERIFICATION"),
+        ):
+            corrupted=self.report.to_dict()
+            corrupted["families"][family][field]=value
+            with self.subTest(family=family,field=field):
+                with self.assertRaisesRegex(ValueError,"equivalent graphs or causal rankings"):
+                    NativeModelFamilyComparison(json.dumps(corrupted,sort_keys=True))
+        corrupted=self.report.to_dict()
+        corrupted["v19_reference"]["source_owner"]="UNIVERSAL_GRAPH"
+        with self.assertRaisesRegex(ValueError,"equivalent graphs or causal rankings"):
+            NativeModelFamilyComparison(json.dumps(corrupted,sort_keys=True))
         d=self.report.to_dict()
         d["families"]["bb_fitness_growth"]["native_owner"]="V19_GRAPH"
         with self.assertRaisesRegex(ValueError,"requires three native sources and a V19 reference"):

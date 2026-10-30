@@ -29,6 +29,37 @@ from narrative_dynamics.abm.lifecycle_contracts import PopulationLifecycleEvent
 _SCHEMA = "v19-abm-model-family-qualification-v1"
 _MAX_STEPS = 8
 
+# R2.M4b records are model-native: these labels are schema invariants,
+# not a conversion into a universal graph, timebase, or trust unit.
+_FAMILY_SEMANTICS = {
+    "bb_fitness_growth": {
+        "native_owner": "BBRuntimeReplay",
+        "edge_semantics": "UNDIRECTED_FITNESS_WEIGHTED_BIRTH",
+        "time_semantics": "GLOBAL_TICK_AND_BIRTH_INDEX_NOT_V19_STORY_ROUND",
+        "trust_semantics": "NOT_REPRESENTED_AS_V19_SOCIAL_TRUST",
+    },
+    "directed_rewiring": {
+        "native_owner": "RewiringPopulationState",
+        "edge_semantics": "DIRECTED_FIXED_CANDIDATES_SIMILARITY_HYSTERESIS",
+        "time_semantics": "PROPAGATE_OLD_TOPOLOGY_THEN_REWIRE_FOR_NEXT_ROUND",
+        "trust_semantics": "NO_PRIVATE_V19_TESTIMONY_OR_SOCIAL_CLAIM_STATE",
+    },
+    "lifecycle_feedback": {
+        "native_owner": "EvolvingPopulationState",
+        "edge_semantics": "DIRECTED_LIFECYCLE_TRUST_AND_SIMILARITY_HYSTERESIS",
+        "time_semantics": "MEMBERSHIP_THEN_PROPAGATION_THEN_EXTERNAL_FEEDBACK_THEN_REWIRING",
+        "trust_semantics": "EXTERNAL_TRUTH_FEEDBACK_NOT_V19_PRIVATE_INSPECT_VERIFICATION",
+    },
+}
+_COMPARABILITY_CONTRACT = {
+    "bb_vs_directed_others": "INCOMPARABLE_UNDIRECTED_BIRTH_VS_DIRECTED_CANDIDATES",
+    "evolving_vs_v19_trust": "INCOMPARABLE_EXTERNAL_TRUTH_FEEDBACK_VS_PRIVATE_EVIDENCE",
+    "rewiring_vs_v19_edges": "INCOMPARABLE_SIMILARITY_CANDIDATE_VS_SOCIAL_TRUST",
+    "raw_edge_counts": "NOT_RANKABLE",
+    "propagation_events": "MODEL_NATIVE_UNITS_ONLY",
+}
+
+
 
 @dataclass(frozen=True)
 class NativeModelFamilyComparison:
@@ -45,10 +76,22 @@ class NativeModelFamilyComparison:
             or d.get("schema") != _SCHEMA
             or d.get("causal_attribution") != "UNATTRIBUTED"
             or d.get("cross_family_numeric_ranking") != "FORBIDDEN"
+            or d.get("normalization") != "NONE"
             or d.get("source_owner") != "INDEPENDENT_NATIVE_MODELS"
-            or not isinstance(d.get("families"), dict)
-            or set(d["families"]) != {"bb_fitness_growth", "directed_rewiring", "lifecycle_feedback"}
-            or d.get("v19_reference", {}).get("story_lineage") != "DIVERGENT_STORY_BRANCH"
+            or type(d.get("families")) is not dict
+            or set(d["families"]) != set(_FAMILY_SEMANTICS)
+            or any(
+                type(d["families"][name]) is not dict
+                or any(d["families"][name].get(field) != expected
+                       for field, expected in contract.items())
+                for name, contract in _FAMILY_SEMANTICS.items()
+            )
+            or type(d.get("comparability")) is not dict
+            or d["comparability"] != _COMPARABILITY_CONTRACT
+            or type(d.get("v19_reference")) is not dict
+            or d["v19_reference"].get("source_owner") != "SITUATED_V19_STORY_COGNITION_SOCIAL_MEMORY"
+            or d["v19_reference"].get("story_lineage") != "DIVERGENT_STORY_BRANCH"
+            or d["v19_reference"].get("trust_semantics") != "V19_PRIVATE_EXACT_PERCEPT_TESTIMONY_VERIFICATION"
         ):
             raise ValueError("comparison must not claim equivalent graphs or causal rankings")
 
