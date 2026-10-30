@@ -1,0 +1,454 @@
+{
+  "arms": {
+    "control_no_gate_change": {
+      "alice_place_at_tell": "records",
+      "claims_after_learning": [],
+      "content_counts": {
+        "actual_tell_events": 1,
+        "admitted_testimony": 0,
+        "admitted_verification": 0,
+        "belief_revisions": 0,
+        "claim_revisions": 0,
+        "trust_revisions": 0
+      },
+      "content_trace_hash": "sha256:ae57c89e409be71f8f6bcfe7e23bd669cab5cf66390bea2d6d33ecd283c71ba9",
+      "direct_interaction_edges_at_tell": [
+        [
+          "bob",
+          "carol"
+        ],
+        [
+          "carol",
+          "bob"
+        ]
+      ],
+      "gate_open_at_tell": false,
+      "move": {
+        "event_hash": "sha256:b9999e445e990e19ecdb19e903007268478c8e9cf9f98c9e2c2009c81679301e",
+        "event_id": "r0002:e0001",
+        "outcome": "passage_closed",
+        "success": false
+      },
+      "other_agent_fidelity": {
+        "detected": 2
+      },
+      "realized_transmission_edges_at_tell": [],
+      "relationship_edges_after_learning": [
+        [
+          "alice",
+          "bob"
+        ],
+        [
+          "alice",
+          "carol"
+        ],
+        [
+          "alice",
+          "dana"
+        ],
+        [
+          "bob",
+          "alice"
+        ],
+        [
+          "bob",
+          "carol"
+        ],
+        [
+          "bob",
+          "dana"
+        ],
+        [
+          "carol",
+          "alice"
+        ],
+        [
+          "carol",
+          "bob"
+        ],
+        [
+          "carol",
+          "dana"
+        ],
+        [
+          "dana",
+          "alice"
+        ],
+        [
+          "dana",
+          "bob"
+        ],
+        [
+          "dana",
+          "carol"
+        ]
+      ],
+      "relationship_edges_at_tell": [
+        [
+          "alice",
+          "bob"
+        ],
+        [
+          "alice",
+          "carol"
+        ],
+        [
+          "alice",
+          "dana"
+        ],
+        [
+          "bob",
+          "alice"
+        ],
+        [
+          "bob",
+          "carol"
+        ],
+        [
+          "bob",
+          "dana"
+        ],
+        [
+          "carol",
+          "alice"
+        ],
+        [
+          "carol",
+          "bob"
+        ],
+        [
+          "carol",
+          "dana"
+        ],
+        [
+          "dana",
+          "alice"
+        ],
+        [
+          "dana",
+          "bob"
+        ],
+        [
+          "dana",
+          "carol"
+        ]
+      ],
+      "social_checkpoint_hash": "sha256:4e5568e85ebb035409cfc050b6213239d5f1c00ec08366fb9c974b87f8fedbe6",
+      "social_result_hash": "sha256:d3d616f186174156d10c0e5e30e6cdbb85a65a825167cb42c99ad0fe3230d9fe",
+      "source_after_social_round_hash": "sha256:15c62e7371de098f52e0ce1b6fb7e3c175f7c9eebf60de2272ae18abee6150e9",
+      "source_after_tell_hash": "sha256:879725cc12041b551095b44a7b328dd7433430f11d01dffc6150245e6cc9aa9c",
+      "story_hash": "sha256:cc02742b17a309c9a20998d55dae7896a4882fbddb982c6670ec68f38eff02a4",
+      "tell": {
+        "event_hash": "sha256:9d7f4bca7127aecd30589d42645ddccba978fd8d894fc810f5b6d6f064f9e743",
+        "event_id": "r0003:e0001",
+        "success": true
+      },
+      "world_round_hashes": [
+        "sha256:efdbe47c0860971b7066530465dde055055b0e43c843d6c7be13d48a8096dd15",
+        "sha256:465a2257d077e528807e256bbdbbeac64c0e1428647bec848ce59140370ada21",
+        "sha256:40c4b15579bfcd25b00d9e882ede0894b20b945a38182186a7f1970ecca4be4b"
+      ]
+    },
+    "intervention_open_gate": {
+      "alice_place_at_tell": "open",
+      "claims_after_learning": [
+        {
+          "claim_hash": "sha256:ffa759d6db04f28cabfa733feeef1ce81411f6d82bd777256769235aeb40e253",
+          "observer": "bob",
+          "source": "alice",
+          "status": "active"
+        }
+      ],
+      "content_counts": {
+        "actual_tell_events": 1,
+        "admitted_testimony": 1,
+        "admitted_verification": 0,
+        "belief_revisions": 1,
+        "claim_revisions": 1,
+        "trust_revisions": 0
+      },
+      "content_trace_hash": "sha256:c9c0ed2c8961991ee46f368f634b71b26194472968bf4a1d76cb4ef3d9884515",
+      "direct_interaction_edges_at_tell": [
+        [
+          "alice",
+          "bob"
+        ],
+        [
+          "alice",
+          "carol"
+        ],
+        [
+          "bob",
+          "alice"
+        ],
+        [
+          "bob",
+          "carol"
+        ],
+        [
+          "carol",
+          "alice"
+        ],
+        [
+          "carol",
+          "bob"
+        ]
+      ],
+      "gate_open_at_tell": true,
+      "move": {
+        "event_hash": "sha256:b3ec74023b46b64fe26c6c49f48f6517f2abb3b45afa356263675b9fcb70e444",
+        "event_id": "r0002:e0001",
+        "outcome": "moved",
+        "success": true
+      },
+      "other_agent_fidelity": {
+        "exact": 2
+      },
+      "realized_transmission_edges_at_tell": [
+        [
+          "alice",
+          "bob"
+        ],
+        [
+          "alice",
+          "carol"
+        ]
+      ],
+      "relationship_edges_after_learning": [
+        [
+          "alice",
+          "bob"
+        ],
+        [
+          "alice",
+          "carol"
+        ],
+        [
+          "alice",
+          "dana"
+        ],
+        [
+          "bob",
+          "alice"
+        ],
+        [
+          "bob",
+          "carol"
+        ],
+        [
+          "bob",
+          "dana"
+        ],
+        [
+          "carol",
+          "alice"
+        ],
+        [
+          "carol",
+          "bob"
+        ],
+        [
+          "carol",
+          "dana"
+        ],
+        [
+          "dana",
+          "alice"
+        ],
+        [
+          "dana",
+          "bob"
+        ],
+        [
+          "dana",
+          "carol"
+        ]
+      ],
+      "relationship_edges_at_tell": [
+        [
+          "alice",
+          "bob"
+        ],
+        [
+          "alice",
+          "carol"
+        ],
+        [
+          "alice",
+          "dana"
+        ],
+        [
+          "bob",
+          "alice"
+        ],
+        [
+          "bob",
+          "carol"
+        ],
+        [
+          "bob",
+          "dana"
+        ],
+        [
+          "carol",
+          "alice"
+        ],
+        [
+          "carol",
+          "bob"
+        ],
+        [
+          "carol",
+          "dana"
+        ],
+        [
+          "dana",
+          "alice"
+        ],
+        [
+          "dana",
+          "bob"
+        ],
+        [
+          "dana",
+          "carol"
+        ]
+      ],
+      "social_checkpoint_hash": "sha256:9cf4ce7a3a23b507178eb635a3602d53bbfe9a667e3495e0aa5ae3aca45934a8",
+      "social_result_hash": "sha256:7575a571ed571dfc38fdfd33de281965d9b690084cf6ca75c17db4959b4f2fda",
+      "source_after_social_round_hash": "sha256:6e6c408d3524dbbe959872e06c844bd3d79235cf8f59825200baedd21e0de341",
+      "source_after_tell_hash": "sha256:44ab8514bd29b2ab3827f16ae5888807c503d0d8a2d861f77862d4a118505d0e",
+      "story_hash": "sha256:99b156a9f93351a52dd22fa22ebbf6bd4802a58ae3b4165cdb67820d61f4538e",
+      "tell": {
+        "event_hash": "sha256:c23b5a55b1a6ba806108dc88593ac0674b9c317b48e7a5634f38f38496fe253f",
+        "event_id": "r0003:e0001",
+        "success": true
+      },
+      "world_round_hashes": [
+        "sha256:4d66dab8154ec7c37641088f551411547dafc42258ff21525438f273ccd335b8",
+        "sha256:9f9cd9002cf7fe531d31c413df9b2a9bc31aa6202e62f0903a72824929774022",
+        "sha256:c33c52c84226032b6166175b79e37d4d780e5719057694a5eb6d7d6e4322139f"
+      ]
+    }
+  },
+  "cross_branch": {
+    "causal_attribution": "UNATTRIBUTED",
+    "observed_axes": {
+      "environment": true,
+      "multi_agent_content": false,
+      "physical_boundary": true,
+      "social_trust": false,
+      "society_boundary": false
+    },
+    "relation_deltas": {
+      "direct_interaction": {
+        "diameter_after": null,
+        "diameter_before": null,
+        "projected_edges": {
+          "added": [
+            [
+              "alice",
+              "bob"
+            ],
+            [
+              "alice",
+              "carol"
+            ],
+            [
+              "bob",
+              "alice"
+            ],
+            [
+              "carol",
+              "alice"
+            ]
+          ],
+          "removed": []
+        },
+        "reachable_pairs_after": 6,
+        "reachable_pairs_before": 2,
+        "source_edges": {
+          "added": [
+            [
+              "alice",
+              "bob"
+            ],
+            [
+              "alice",
+              "carol"
+            ],
+            [
+              "bob",
+              "alice"
+            ],
+            [
+              "carol",
+              "alice"
+            ]
+          ],
+          "removed": []
+        },
+        "strong_component_count_after": 2,
+        "strong_component_count_before": 3
+      },
+      "relationship": {
+        "diameter_after": 1,
+        "diameter_before": 1,
+        "projected_edges": {
+          "added": [],
+          "removed": []
+        },
+        "reachable_pairs_after": 12,
+        "reachable_pairs_before": 12,
+        "source_edges": {
+          "added": [],
+          "removed": []
+        },
+        "strong_component_count_after": 1,
+        "strong_component_count_before": 1
+      },
+      "transmission": {
+        "diameter_after": null,
+        "diameter_before": null,
+        "projected_edges": {
+          "added": [
+            [
+              "alice",
+              "bob"
+            ],
+            [
+              "alice",
+              "carol"
+            ]
+          ],
+          "removed": []
+        },
+        "reachable_pairs_after": 2,
+        "reachable_pairs_before": 0,
+        "source_edges": {
+          "added": [
+            [
+              "alice",
+              "bob"
+            ],
+            [
+              "alice",
+              "carol"
+            ]
+          ],
+          "removed": []
+        },
+        "strong_component_count_after": 4,
+        "strong_component_count_before": 4
+      }
+    },
+    "story_lineage": "DIVERGENT_STORY_BRANCH"
+  },
+  "initial_source_hash": "sha256:b47b3d75854aa65888355f1dc45fd1e79e4842a9d5670d88aa48c698f4df2955",
+  "initial_world_hash": "sha256:a4697cec660d0832e78097fb842220d5a4b9f9985c86fc37f01fa0bc65805217",
+  "model_hash": "sha256:192f428e3f5f807fca97de5c6594d8fc8c6341d59fe99ae36dd6ad293d9f4a87",
+  "schema": "v19-controlled-coupled-evolution-v1",
+  "scope": "deterministic V19 paired intervention; not statistical/empirical causal proof",
+  "shared_move_action_id": "alice-common-move",
+  "shared_tell_action_id": "alice-common-tell"
+}

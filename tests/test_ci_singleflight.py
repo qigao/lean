@@ -98,6 +98,20 @@ class SingleflightCIContractTests(unittest.TestCase):
         self.assertIn("social_topology_checkpoint_v1.json", script)
         self.assertIn("cmp -s", script)
 
+    def test_r2_m4a_controlled_coupled_source_evidence_gate(self):
+        self.assertIn("R2 M4a same-origin coupled V19 control and intervention", self.content)
+        self.assertIn("tests.test_network_coupled_evolution", self.content)
+        self.assertIn("tools.render_network_coupled_evolution_vectors", self.content)
+        self.assertIn("conformance/network_coupled_evolution_v1.json", self.content)
+        self.assertLess(
+            self.content.index("R2 M4a same-origin coupled V19 control and intervention"),
+            self.content.index("Runtime-derived mesh regression"),
+        )
+        script = (ROOT / "tools/check_mesh_evidence_lean.sh").read_text(encoding="utf-8")
+        self.assertIn("tools.render_network_coupled_evolution_vectors", script)
+        self.assertIn("network_coupled_evolution_v1.json", script)
+        self.assertIn("cmp -s", script)
+
     def test_r2_m3_exact_percept_content_evidence_gate(self):
         self.assertIn("R2 M3 exact V19 multi-Agent content evidence", self.content)
         self.assertIn("tests.test_agent_content_evidence", self.content)
