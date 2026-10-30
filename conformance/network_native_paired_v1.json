@@ -1,0 +1,612 @@
+{
+  "report": {
+    "causal_attribution": "UNATTRIBUTED",
+    "confidence_interval": "NOT_ESTIMABLE",
+    "cross_family_numeric_ranking": "FORBIDDEN",
+    "external_validation": "NO_EXTERNAL_VALIDATION",
+    "families": {
+      "bb_fitness_growth": {
+        "clock": "GLOBAL_BB_TICK",
+        "control": {
+          "final_source_hash": "sha256:7d59b5c0fdcc5465f12a67300025a1985d7a5327dac716673f05c6552af29208",
+          "last_native_topology": [
+            [
+              "0",
+              "1"
+            ],
+            [
+              "1",
+              "2"
+            ]
+          ],
+          "metrics": [
+            {
+              "clock_kind": "GLOBAL_TICK_NOT_BIRTH_INDEX",
+              "denominator": 3,
+              "denominator_kind": "ALL_POSSIBLE_UNORDERED_PAIRS_IN_CURRENT_BB_ROSTER",
+              "exact_fraction": "2/3",
+              "family": "bb_fitness_growth",
+              "frame_source_hash": "sha256:86907cc0066bef9ce8ab0481c534411240987dbe12585b204ccf1f699eb5f42b",
+              "metric_id": "undirected_birth_topology_density",
+              "native_time": 1,
+              "numerator": 2,
+              "owner": "BBRuntimeReplay",
+              "phase": "AFTER_BB_TICK",
+              "population_scope": "BORN_BB_NODES_AT_NATIVE_TICK",
+              "run_source_hash": "sha256:f14bac690941fae6765c9d15283fb208944782e628f0cd85a5f6b2dad3594f7c",
+              "unit": "occupied_unordered_pair_per_eligible_unordered_pair"
+            },
+            {
+              "clock_kind": "GLOBAL_TICK_NOT_BIRTH_INDEX",
+              "denominator": 3,
+              "denominator_kind": "ALL_POSSIBLE_UNORDERED_PAIRS_IN_CURRENT_BB_ROSTER",
+              "exact_fraction": "2/3",
+              "family": "bb_fitness_growth",
+              "frame_source_hash": "sha256:7d59b5c0fdcc5465f12a67300025a1985d7a5327dac716673f05c6552af29208",
+              "metric_id": "undirected_birth_topology_density",
+              "native_time": 2,
+              "numerator": 2,
+              "owner": "BBRuntimeReplay",
+              "phase": "AFTER_BB_TICK",
+              "population_scope": "BORN_BB_NODES_AT_NATIVE_TICK",
+              "run_source_hash": "sha256:f14bac690941fae6765c9d15283fb208944782e628f0cd85a5f6b2dad3594f7c",
+              "unit": "occupied_unordered_pair_per_eligible_unordered_pair"
+            }
+          ],
+          "native_transmissions_per_tick": [
+            [
+              [
+                "0",
+                "1",
+                "bb"
+              ]
+            ],
+            [
+              [
+                "0",
+                "1",
+                "bb"
+              ],
+              [
+                "1",
+                "0",
+                "bb"
+              ],
+              [
+                "1",
+                "2",
+                "bb"
+              ]
+            ]
+          ],
+          "source_program_tick_hashes": [
+            "sha256:e1518137d58b8a545b6ec0efde7cbc118e38703ba5f50d60afbc353d911fe9d3",
+            "sha256:489bcd49b5ff9bc150747f28dbf10e1ba52c5b02ff8a4b8961185e7e9b9f2405"
+          ]
+        },
+        "family": "bb_fitness_growth",
+        "horizon": 2,
+        "initial_source_hash": "sha256:f14bac690941fae6765c9d15283fb208944782e628f0cd85a5f6b2dad3594f7c",
+        "intervention": {
+          "final_source_hash": "sha256:dd438804fe734edac96413c09d6813190ab8b97568b6b9cc177b3f74ebfdb774",
+          "last_native_topology": [
+            [
+              "0",
+              "1"
+            ],
+            [
+              "0",
+              "2"
+            ]
+          ],
+          "metrics": [
+            {
+              "clock_kind": "GLOBAL_TICK_NOT_BIRTH_INDEX",
+              "denominator": 3,
+              "denominator_kind": "ALL_POSSIBLE_UNORDERED_PAIRS_IN_CURRENT_BB_ROSTER",
+              "exact_fraction": "2/3",
+              "family": "bb_fitness_growth",
+              "frame_source_hash": "sha256:0aa8f0653ba79e4f7ea9b0852e1fe426c7c8de975cd66347dc14b89fd8169f22",
+              "metric_id": "undirected_birth_topology_density",
+              "native_time": 1,
+              "numerator": 2,
+              "owner": "BBRuntimeReplay",
+              "phase": "AFTER_BB_TICK",
+              "population_scope": "BORN_BB_NODES_AT_NATIVE_TICK",
+              "run_source_hash": "sha256:f14bac690941fae6765c9d15283fb208944782e628f0cd85a5f6b2dad3594f7c",
+              "unit": "occupied_unordered_pair_per_eligible_unordered_pair"
+            },
+            {
+              "clock_kind": "GLOBAL_TICK_NOT_BIRTH_INDEX",
+              "denominator": 3,
+              "denominator_kind": "ALL_POSSIBLE_UNORDERED_PAIRS_IN_CURRENT_BB_ROSTER",
+              "exact_fraction": "2/3",
+              "family": "bb_fitness_growth",
+              "frame_source_hash": "sha256:dd438804fe734edac96413c09d6813190ab8b97568b6b9cc177b3f74ebfdb774",
+              "metric_id": "undirected_birth_topology_density",
+              "native_time": 2,
+              "numerator": 2,
+              "owner": "BBRuntimeReplay",
+              "phase": "AFTER_BB_TICK",
+              "population_scope": "BORN_BB_NODES_AT_NATIVE_TICK",
+              "run_source_hash": "sha256:f14bac690941fae6765c9d15283fb208944782e628f0cd85a5f6b2dad3594f7c",
+              "unit": "occupied_unordered_pair_per_eligible_unordered_pair"
+            }
+          ],
+          "native_transmissions_per_tick": [
+            [
+              [
+                "0",
+                "1",
+                "bb"
+              ],
+              [
+                "0",
+                "2",
+                "bb"
+              ]
+            ],
+            [
+              [
+                "0",
+                "1",
+                "bb"
+              ],
+              [
+                "0",
+                "2",
+                "bb"
+              ],
+              [
+                "1",
+                "0",
+                "bb"
+              ],
+              [
+                "2",
+                "0",
+                "bb"
+              ]
+            ]
+          ],
+          "source_program_tick_hashes": [
+            "sha256:ea976f539783dbe210eb2c74f03a6f8daf3b205d5c29289bde730a87f24ec0c9",
+            "sha256:489bcd49b5ff9bc150747f28dbf10e1ba52c5b02ff8a4b8961185e7e9b9f2405"
+          ]
+        },
+        "intervention_kind": "BIRTH_TARGET_ONLY",
+        "native_metric_delta": [
+          "0",
+          "0"
+        ],
+        "origin_identity": "SAME_NATIVE_SEED_FRAME",
+        "topology_changed": true
+      },
+      "directed_rewiring": {
+        "clock": "NATIVE_REWIRING_ROUND",
+        "control": {
+          "final_source_hash": "sha256:f0850f0917f94daa611936b648c3252d3e6db1132c9eb3500ad15747f92fd95b",
+          "initial_source_hash": "sha256:158f72fc638cb0652c4a987876b95f116bf448d5b4e998384a5c97ab64bbf3a0",
+          "metrics": [
+            {
+              "clock_kind": "NATIVE_REWIRING_ROUND",
+              "denominator": 2,
+              "denominator_kind": "FIXED_DIRECTED_CANDIDATE_CATALOG",
+              "exact_fraction": "1",
+              "family": "directed_rewiring",
+              "frame_source_hash": "sha256:55c874185d8ee23bedcdc61b85216d22b16d120caf06ca106988e0c573ffc8e8",
+              "metric_id": "directed_candidate_activation_fraction",
+              "native_time": 1,
+              "numerator": 2,
+              "owner": "RewiringPopulationState",
+              "phase": "AFTER_REWIRING_NOT_PROPAGATION",
+              "population_scope": "REWIRING_FIXED_AGENT_CATALOG",
+              "run_source_hash": "sha256:158f72fc638cb0652c4a987876b95f116bf448d5b4e998384a5c97ab64bbf3a0",
+              "unit": "active_directed_candidate_per_declared_directed_candidate"
+            },
+            {
+              "clock_kind": "NATIVE_REWIRING_ROUND",
+              "denominator": 2,
+              "denominator_kind": "FIXED_DIRECTED_CANDIDATE_CATALOG",
+              "exact_fraction": "1",
+              "family": "directed_rewiring",
+              "frame_source_hash": "sha256:f0850f0917f94daa611936b648c3252d3e6db1132c9eb3500ad15747f92fd95b",
+              "metric_id": "directed_candidate_activation_fraction",
+              "native_time": 2,
+              "numerator": 2,
+              "owner": "RewiringPopulationState",
+              "phase": "AFTER_REWIRING_NOT_PROPAGATION",
+              "population_scope": "REWIRING_FIXED_AGENT_CATALOG",
+              "run_source_hash": "sha256:158f72fc638cb0652c4a987876b95f116bf448d5b4e998384a5c97ab64bbf3a0",
+              "unit": "active_directed_candidate_per_declared_directed_candidate"
+            }
+          ],
+          "model_hash": "sha256:70ea1fd09336d2a9022562fa10231259fc1e8671cc95c9110219fda0f43c8b8a",
+          "native_formation_threshold": 0.8,
+          "native_transmissions_per_round": [
+            [
+              [
+                "a",
+                "b",
+                "peer"
+              ]
+            ],
+            [
+              [
+                "a",
+                "b",
+                "peer"
+              ],
+              [
+                "b",
+                "c",
+                "peer"
+              ]
+            ]
+          ],
+          "next_active_edges_per_round": [
+            [
+              [
+                "a",
+                "b",
+                "peer"
+              ],
+              [
+                "b",
+                "c",
+                "peer"
+              ]
+            ],
+            [
+              [
+                "a",
+                "b",
+                "peer"
+              ],
+              [
+                "b",
+                "c",
+                "peer"
+              ]
+            ]
+          ],
+          "prior_active_edges_per_round": [
+            [
+              [
+                "a",
+                "b",
+                "peer"
+              ]
+            ],
+            [
+              [
+                "a",
+                "b",
+                "peer"
+              ],
+              [
+                "b",
+                "c",
+                "peer"
+              ]
+            ]
+          ]
+        },
+        "family": "directed_rewiring",
+        "first_round_transmission_equal": true,
+        "horizon": 2,
+        "intervention": {
+          "final_source_hash": "sha256:acefecc9d70aa4ffa0b58e40470dc821d685fe402dbdd79df02207d12b839825",
+          "initial_source_hash": "sha256:b5ffe4c50765b198bb014f1e3ff452a6cd1bbbce4dd96341a7b09b5d35aeae72",
+          "metrics": [
+            {
+              "clock_kind": "NATIVE_REWIRING_ROUND",
+              "denominator": 2,
+              "denominator_kind": "FIXED_DIRECTED_CANDIDATE_CATALOG",
+              "exact_fraction": "1/2",
+              "family": "directed_rewiring",
+              "frame_source_hash": "sha256:0279f21e13aeff425bf64e6117f0a3e1e4e2a4170a29ca7fdb65f6e7896821da",
+              "metric_id": "directed_candidate_activation_fraction",
+              "native_time": 1,
+              "numerator": 1,
+              "owner": "RewiringPopulationState",
+              "phase": "AFTER_REWIRING_NOT_PROPAGATION",
+              "population_scope": "REWIRING_FIXED_AGENT_CATALOG",
+              "run_source_hash": "sha256:b5ffe4c50765b198bb014f1e3ff452a6cd1bbbce4dd96341a7b09b5d35aeae72",
+              "unit": "active_directed_candidate_per_declared_directed_candidate"
+            },
+            {
+              "clock_kind": "NATIVE_REWIRING_ROUND",
+              "denominator": 2,
+              "denominator_kind": "FIXED_DIRECTED_CANDIDATE_CATALOG",
+              "exact_fraction": "1",
+              "family": "directed_rewiring",
+              "frame_source_hash": "sha256:acefecc9d70aa4ffa0b58e40470dc821d685fe402dbdd79df02207d12b839825",
+              "metric_id": "directed_candidate_activation_fraction",
+              "native_time": 2,
+              "numerator": 2,
+              "owner": "RewiringPopulationState",
+              "phase": "AFTER_REWIRING_NOT_PROPAGATION",
+              "population_scope": "REWIRING_FIXED_AGENT_CATALOG",
+              "run_source_hash": "sha256:b5ffe4c50765b198bb014f1e3ff452a6cd1bbbce4dd96341a7b09b5d35aeae72",
+              "unit": "active_directed_candidate_per_declared_directed_candidate"
+            }
+          ],
+          "model_hash": "sha256:a258553c7aaeaed4079dfb77e6286b3306f227173c03a29aad3ae122f09f3ad6",
+          "native_formation_threshold": 0.9,
+          "native_transmissions_per_round": [
+            [
+              [
+                "a",
+                "b",
+                "peer"
+              ]
+            ],
+            [
+              [
+                "a",
+                "b",
+                "peer"
+              ]
+            ]
+          ],
+          "next_active_edges_per_round": [
+            [
+              [
+                "a",
+                "b",
+                "peer"
+              ]
+            ],
+            [
+              [
+                "a",
+                "b",
+                "peer"
+              ],
+              [
+                "b",
+                "c",
+                "peer"
+              ]
+            ]
+          ],
+          "prior_active_edges_per_round": [
+            [
+              [
+                "a",
+                "b",
+                "peer"
+              ]
+            ],
+            [
+              [
+                "a",
+                "b",
+                "peer"
+              ]
+            ]
+          ]
+        },
+        "intervention_kind": "FORMATION_THRESHOLD_ONLY",
+        "native_metric_delta": [
+          "-1/2",
+          "0"
+        ],
+        "origin_identity": "MATCHED_INITIAL_COMPONENTS_DIFFERENT_MODEL_HASH",
+        "shared_base_model_hash": "sha256:48a7a9ac72f343baa1413479835264cd65518f66e1aaf5175e3c80601af9d27c",
+        "shared_native_initial_components_hash": "sha256:69b23812683ee4cc1a216738698af1cc76a54e29dfaab4ee6d858abec7ffc18f"
+      },
+      "lifecycle_feedback": {
+        "clock": "NATIVE_EVOLVING_ROUND",
+        "control": {
+          "event_schedule_hash": "sha256:23ac30a5d30aec1eb420f39c862a9da652405cd505df705af2c434fce2e00490",
+          "external_feedback_targets": [
+            [],
+            []
+          ],
+          "final_source_hash": "sha256:83ec86b389f9ae844a3fb0850bdb5607e45426727b8aba47ac8a39b3becb7aa1",
+          "metrics": [
+            {
+              "clock_kind": "NATIVE_EVOLVING_ROUND",
+              "denominator": 3,
+              "denominator_kind": "ALL_NATIVE_CATALOG_MEMBERS_INCLUDING_INACTIVE",
+              "exact_fraction": "2/3",
+              "family": "lifecycle_feedback",
+              "frame_source_hash": "sha256:e7364fefb1ed8df94c69c2ac4fd2bdcd831d064c7b30eb31f4cc693361f120d9",
+              "metric_id": "active_catalog_membership_fraction",
+              "native_time": 1,
+              "numerator": 2,
+              "owner": "EvolvingPopulationState",
+              "phase": "AFTER_LIFECYCLE_FEEDBACK_REWIRING",
+              "population_scope": "EVOLVING_AGENT_CATALOG_ALL_STATUSES",
+              "run_source_hash": "sha256:5ee5f4058963e00c36c428eecfb841f8674533e9d580dc84717b954291a58de8",
+              "unit": "active_agent_per_catalog_member"
+            },
+            {
+              "clock_kind": "NATIVE_EVOLVING_ROUND",
+              "denominator": 3,
+              "denominator_kind": "ALL_NATIVE_CATALOG_MEMBERS_INCLUDING_INACTIVE",
+              "exact_fraction": "2/3",
+              "family": "lifecycle_feedback",
+              "frame_source_hash": "sha256:83ec86b389f9ae844a3fb0850bdb5607e45426727b8aba47ac8a39b3becb7aa1",
+              "metric_id": "active_catalog_membership_fraction",
+              "native_time": 2,
+              "numerator": 2,
+              "owner": "EvolvingPopulationState",
+              "phase": "AFTER_LIFECYCLE_FEEDBACK_REWIRING",
+              "population_scope": "EVOLVING_AGENT_CATALOG_ALL_STATUSES",
+              "run_source_hash": "sha256:5ee5f4058963e00c36c428eecfb841f8674533e9d580dc84717b954291a58de8",
+              "unit": "active_agent_per_catalog_member"
+            }
+          ],
+          "native_members_after": [
+            [
+              {
+                "agent_id": "a",
+                "belief": 1.0,
+                "status": "active"
+              },
+              {
+                "agent_id": "b",
+                "belief": 0.0,
+                "status": "inactive"
+              },
+              {
+                "agent_id": "c",
+                "belief": 0.5,
+                "status": "active"
+              }
+            ],
+            [
+              {
+                "agent_id": "a",
+                "belief": 1.0,
+                "status": "active"
+              },
+              {
+                "agent_id": "b",
+                "belief": 0.0,
+                "status": "inactive"
+              },
+              {
+                "agent_id": "c",
+                "belief": 0.5,
+                "status": "active"
+              }
+            ]
+          ],
+          "native_transmissions_per_round": [
+            [],
+            []
+          ]
+        },
+        "family": "lifecycle_feedback",
+        "horizon": 2,
+        "initial_source_hash": "sha256:5ee5f4058963e00c36c428eecfb841f8674533e9d580dc84717b954291a58de8",
+        "intervention": {
+          "event_schedule_hash": "sha256:2b071e0f09b356a8cf9f765885db2469904281ed645643653f4b00bc2f615b29",
+          "external_feedback_targets": [
+            [],
+            []
+          ],
+          "final_source_hash": "sha256:1c2318e337652c9e6af01a18a5c0df193f944d91d92a93450c358d468e278078",
+          "metrics": [
+            {
+              "clock_kind": "NATIVE_EVOLVING_ROUND",
+              "denominator": 3,
+              "denominator_kind": "ALL_NATIVE_CATALOG_MEMBERS_INCLUDING_INACTIVE",
+              "exact_fraction": "1",
+              "family": "lifecycle_feedback",
+              "frame_source_hash": "sha256:024c3df2342f24b6d1c2b94d2a7c118e1a363aa137733bfe4077a1675f209fa4",
+              "metric_id": "active_catalog_membership_fraction",
+              "native_time": 1,
+              "numerator": 3,
+              "owner": "EvolvingPopulationState",
+              "phase": "AFTER_LIFECYCLE_FEEDBACK_REWIRING",
+              "population_scope": "EVOLVING_AGENT_CATALOG_ALL_STATUSES",
+              "run_source_hash": "sha256:5ee5f4058963e00c36c428eecfb841f8674533e9d580dc84717b954291a58de8",
+              "unit": "active_agent_per_catalog_member"
+            },
+            {
+              "clock_kind": "NATIVE_EVOLVING_ROUND",
+              "denominator": 3,
+              "denominator_kind": "ALL_NATIVE_CATALOG_MEMBERS_INCLUDING_INACTIVE",
+              "exact_fraction": "1",
+              "family": "lifecycle_feedback",
+              "frame_source_hash": "sha256:1c2318e337652c9e6af01a18a5c0df193f944d91d92a93450c358d468e278078",
+              "metric_id": "active_catalog_membership_fraction",
+              "native_time": 2,
+              "numerator": 3,
+              "owner": "EvolvingPopulationState",
+              "phase": "AFTER_LIFECYCLE_FEEDBACK_REWIRING",
+              "population_scope": "EVOLVING_AGENT_CATALOG_ALL_STATUSES",
+              "run_source_hash": "sha256:5ee5f4058963e00c36c428eecfb841f8674533e9d580dc84717b954291a58de8",
+              "unit": "active_agent_per_catalog_member"
+            }
+          ],
+          "native_members_after": [
+            [
+              {
+                "agent_id": "a",
+                "belief": 1.0,
+                "status": "active"
+              },
+              {
+                "agent_id": "b",
+                "belief": 0.5,
+                "status": "active"
+              },
+              {
+                "agent_id": "c",
+                "belief": 0.5,
+                "status": "active"
+              }
+            ],
+            [
+              {
+                "agent_id": "a",
+                "belief": 1.0,
+                "status": "active"
+              },
+              {
+                "agent_id": "b",
+                "belief": 0.75,
+                "status": "active"
+              },
+              {
+                "agent_id": "c",
+                "belief": 0.5,
+                "status": "active"
+              }
+            ]
+          ],
+          "native_transmissions_per_round": [
+            [
+              [
+                "a",
+                "b",
+                "peer"
+              ]
+            ],
+            [
+              [
+                "a",
+                "b",
+                "peer"
+              ],
+              [
+                "b",
+                "c",
+                "peer"
+              ]
+            ]
+          ]
+        },
+        "intervention_kind": "ENTER_EVENT_ONLY",
+        "model_hash": "sha256:6fe63db2d748d3014b6d676f20d8a51741d1b0a6b4ad36ec2dbc721095922149",
+        "native_metric_delta": [
+          "1/3",
+          "1/3"
+        ],
+        "origin_identity": "SAME_NATIVE_MODEL_AND_STATE",
+        "shared_feedback_schedule": "EMPTY_BOTH_ARMS"
+      }
+    },
+    "normalization": "NONE",
+    "paired_estimand_scope": "MODEL_LOCAL_DETERMINISTIC_DESCRIPTION",
+    "sample_size_per_arm": 1,
+    "schema": "r2-m4c1-native-within-family-paired-v1",
+    "source_owner": "INDEPENDENT_NATIVE_PAIRED_REPLAYS",
+    "v19_reference": {
+      "comparison_status": "SEPARATE_SOURCE_REFERENCE_ONLY",
+      "control_story_hash": "sha256:cc02742b17a309c9a20998d55dae7896a4882fbddb982c6670ec68f38eff02a4",
+      "initial_world_hash": "sha256:a4697cec660d0832e78097fb842220d5a4b9f9985c86fc37f01fa0bc65805217",
+      "intervention_story_hash": "sha256:99b156a9f93351a52dd22fa22ebbf6bd4802a58ae3b4165cdb67820d61f4538e",
+      "source_owner": "SITUATED_V19_STORY_COGNITION_SOCIAL_MEMORY",
+      "story_lineage": "DIVERGENT_STORY_BRANCH"
+    }
+  },
+  "report_hash": "sha256:6b139971a9763b32cb24b4a27b8ad9a4afab456f1a3b4b3d87b996c05e93f882",
+  "schema": "r2-m4c1-native-within-family-paired-v1"
+}

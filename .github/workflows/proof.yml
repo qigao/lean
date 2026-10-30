@@ -199,6 +199,23 @@ jobs:
             echo 'RED: R2.M4c0 native metric source vector changed'
             exit 1
           fi
+      - name: R2 M4c1 one-variable native paired control acceptance
+        run: |
+          set -euo pipefail
+          mkdir -p .generated-conformance
+          generated=.generated-conformance/network_native_paired_v1.json
+          pinned=conformance/network_native_paired_v1.json
+          python3 -m tools.render_network_native_paired_vectors > "$generated"
+          if [ ! -f "$pinned" ]; then
+            echo 'RED: reviewed R2.M4c1 native paired source vector is missing'
+            exit 1
+          fi
+          python -m unittest tests.test_network_native_paired -v
+          if ! cmp -s "$pinned" "$generated"; then
+            diff -u "$pinned" "$generated" || true
+            echo 'RED: R2.M4c1 paired source differs from reviewed native vector'
+            exit 1
+          fi
       - name: Runtime-derived mesh regression
         run: python -m unittest tests.test_mesh_projection tests.test_mesh_evidence -v
 
@@ -206,7 +223,7 @@ jobs:
     needs: mesh-projection
     # BB branches exclude peripheral discovery (Blender, providers and Studio).
     # These jobs remain enabled on other branches; skipped does not mean tested.
-    if: ${{ !cancelled() && !startsWith(github.head_ref || github.ref_name, 'feature/fitness-') }}
+    if: ${{ success() && !startsWith(github.head_ref || github.ref_name, 'feature/fitness-') }}
     name: Python tests
     runs-on: ubuntu-latest
     concurrency:
@@ -237,7 +254,7 @@ jobs:
     name: Lean proof
     needs: mesh-projection
     # Run independently of full Python to overlap their expensive acceptance gates.
-    if: ${{ !cancelled() }}
+    if: ${{ success() }}
     runs-on: ubuntu-latest
     concurrency:
       # A bounded proof lane allows overlap with Python on another runner.
@@ -514,11 +531,11 @@ jobs:
 
 
   verify:
-    # Join both independent test families even when one finishes RED.
+    # Join independently accepted Python and Lean families; skip Studio on upstream RED.
     needs: [python-tests, lean-proof]
     # BB branches exclude peripheral UI, WebSocket and browser integration tests.
     # These jobs remain enabled on other branches; skipped does not mean tested.
-    if: ${{ !cancelled() && !startsWith(github.head_ref || github.ref_name, 'feature/fitness-') }}
+    if: ${{ success() && !startsWith(github.head_ref || github.ref_name, 'feature/fitness-') }}
     runs-on: ubuntu-latest
     concurrency:
       group: lean-ci-runner-${{ github.repository }}
