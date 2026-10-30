@@ -44,6 +44,14 @@ if ! cmp -s conformance/network_boundary_events_v1.json "$tmpdir/network_boundar
   diff -u conformance/network_boundary_events_v1.json "$tmpdir/network_boundary_events_v1.json" || true
   exit 1
 fi
+# R2.M2: independently regenerate real V19 Agent MOVE/TAKE/DROP and
+# subsequent TELL action-event effects from the authoritative story.
+python3 -m tools.render_network_environment_vectors > "$tmpdir/network_environment_action_v1.json"
+if ! cmp -s conformance/network_environment_action_v1.json "$tmpdir/network_environment_action_v1.json"; then
+  echo 'FAIL: R2.M2 source-derived environment action vectors changed' >&2
+  diff -u conformance/network_environment_action_v1.json "$tmpdir/network_environment_action_v1.json" || true
+  exit 1
+fi
 generated="$tmpdir/authoritative.lean"
 
 # Always regenerate from the actual V19 snapshot, then enforce the immutable

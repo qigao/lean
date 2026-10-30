@@ -1,0 +1,387 @@
+{
+  "cases": [
+    {
+      "name": "take_move_drop_then_tell",
+      "trace": {
+        "actual_source_rounds": [
+          {
+            "direct_interaction_after": [],
+            "direct_interaction_before": [],
+            "failed_environment_actions": [],
+            "next_world_hash": "sha256:cc7d8817fe623cc5385c271d6e7a7489c67c7bd50606658969b5e8c524dd6bc4",
+            "observation_channels": {
+              "self": 2
+            },
+            "prior_world_hash": "sha256:a04e23d6f2cdab116505a1bf95dc2c37c2f97f0720b46cf8edfda36cd0172a3c",
+            "round_index": 1,
+            "sourced_effects": [
+              {
+                "actor_agent_id": "alice",
+                "after": {
+                  "holder_agent_id": "alice",
+                  "place_id": null
+                },
+                "before": {
+                  "holder_agent_id": null,
+                  "place_id": "records"
+                },
+                "event_hash": "sha256:a98011a66e51381afc0ce492befd7f2bd195d63aeb13f08f58117ab3d92ad02d",
+                "event_id": "r0001:e0001",
+                "kind": "take",
+                "object_id": "memo",
+                "round_index": 1
+              }
+            ],
+            "story_round_hash": "sha256:0eb91b2bdc85adafbc9f348c6e55f8edc1ec5e4da6c0857db0e0ef5d3388abcc",
+            "successful_boundary_event_ids": [],
+            "successful_tell_event_ids": []
+          },
+          {
+            "direct_interaction_after": [
+              [
+                "alice",
+                "bob"
+              ],
+              [
+                "bob",
+                "alice"
+              ]
+            ],
+            "direct_interaction_before": [],
+            "failed_environment_actions": [],
+            "next_world_hash": "sha256:76ebd3976c87602c68b6587c513fd4932cb9fdba7318a0adaa027ca0eb6965fd",
+            "observation_channels": {
+              "self": 2,
+              "visual": 1
+            },
+            "prior_world_hash": "sha256:cc7d8817fe623cc5385c271d6e7a7489c67c7bd50606658969b5e8c524dd6bc4",
+            "round_index": 2,
+            "sourced_effects": [
+              {
+                "actor_agent_id": "alice",
+                "after_place": "open",
+                "before_place": "records",
+                "event_hash": "sha256:4b472be57effea7439ac0d47619783f5edd03eba6ac308aa7e5e510a18fb5c5c",
+                "event_id": "r0002:e0001",
+                "kind": "move",
+                "passage_id": "records-open",
+                "round_index": 2
+              }
+            ],
+            "story_round_hash": "sha256:58e8d85e4a82105c413e82e02499ca665017ae8315ab33ea8f26703dbe3432e6",
+            "successful_boundary_event_ids": [],
+            "successful_tell_event_ids": []
+          },
+          {
+            "direct_interaction_after": [
+              [
+                "alice",
+                "bob"
+              ],
+              [
+                "bob",
+                "alice"
+              ]
+            ],
+            "direct_interaction_before": [
+              [
+                "alice",
+                "bob"
+              ],
+              [
+                "bob",
+                "alice"
+              ]
+            ],
+            "failed_environment_actions": [],
+            "next_world_hash": "sha256:8c8529e73c6fb69089bba709f8dd42b38606acb98bb08679f11d482effe3a575",
+            "observation_channels": {
+              "self": 2,
+              "visual": 1
+            },
+            "prior_world_hash": "sha256:76ebd3976c87602c68b6587c513fd4932cb9fdba7318a0adaa027ca0eb6965fd",
+            "round_index": 3,
+            "sourced_effects": [
+              {
+                "actor_agent_id": "alice",
+                "after": {
+                  "holder_agent_id": null,
+                  "place_id": "open"
+                },
+                "before": {
+                  "holder_agent_id": "alice",
+                  "place_id": null
+                },
+                "event_hash": "sha256:69b0a8d1e36cec8a54212ee19ef44381e7d79526684ba013ef95c93ae882ece0",
+                "event_id": "r0003:e0001",
+                "kind": "drop",
+                "object_id": "memo",
+                "round_index": 3
+              }
+            ],
+            "story_round_hash": "sha256:1cac1020c708e075e6eb27f89cc663ac857d28bbaaad39f420f59ed7968fae12",
+            "successful_boundary_event_ids": [],
+            "successful_tell_event_ids": []
+          },
+          {
+            "direct_interaction_after": [
+              [
+                "alice",
+                "bob"
+              ],
+              [
+                "bob",
+                "alice"
+              ]
+            ],
+            "direct_interaction_before": [
+              [
+                "alice",
+                "bob"
+              ],
+              [
+                "bob",
+                "alice"
+              ]
+            ],
+            "failed_environment_actions": [],
+            "next_world_hash": "sha256:acceceb9fd385fa9b4763207cf175ac49faf63200677d5a9fa22fa1b5c30e91b",
+            "observation_channels": {
+              "auditory": 1,
+              "self": 2
+            },
+            "prior_world_hash": "sha256:8c8529e73c6fb69089bba709f8dd42b38606acb98bb08679f11d482effe3a575",
+            "round_index": 4,
+            "sourced_effects": [],
+            "story_round_hash": "sha256:4aa85e44b159844b7a631f33523ba1b4653fce6464476e25249771a510e004d1",
+            "successful_boundary_event_ids": [],
+            "successful_tell_event_ids": [
+              "r0004:e0001"
+            ]
+          }
+        ],
+        "causal_attribution": "UNATTRIBUTED",
+        "environment_changes": {
+          "agent_movements": [
+            {
+              "after_place": "open",
+              "agent_id": "alice",
+              "before_place": "records"
+            }
+          ],
+          "perception_model_hash": "sha256:f7af9ca4e64005bf28889e75f24779ee93ec44a4267c0539dec105260b5f5c8b",
+          "world_object_revisions": [
+            {
+              "after_hash": "sha256:464ab82718fa758980808bea42c306992fee3b20c81b162e7627f0b2256188b2",
+              "before_hash": "sha256:5100c661daf257cd337690077e10998e823c867a2dfb26ab07fc66f07437d2c5",
+              "object_id": "memo"
+            }
+          ]
+        },
+        "multi_agent_content": {
+          "changed_claim_count": 0,
+          "changed_trust_pair_count": 0,
+          "successful_tell_event_ids": [
+            "r0004:e0001"
+          ]
+        },
+        "next_source_hash": "sha256:8942c736329ce3ed4afb1184b30251504e7a4abd5701fe531a3383df3ea76776",
+        "next_story_hash": "sha256:1ac5e69849a520d9ef517239221ac1b5ed64c8b65d48044e8d4b19750ab1d516",
+        "physical_boundary_changes": [],
+        "prior_source_hash": "sha256:08047c4ca8483a5470f209e5516d3b3b0bb45d1b7874b8d889a3ba234f94eb9c",
+        "prior_story_hash": "sha256:0b42c395646f90bafbe4e9d61d504b846b515d451a8d58b8ba8ae4fa935b6a45",
+        "schema": "v19-environment-action-trace-v1",
+        "scope": "re-executable V19 world effects only, not authenticated historical causation",
+        "selected_relation_graphs": {
+          "direct_interaction": {
+            "diameter_after": 1,
+            "diameter_before": null,
+            "projected_edges": {
+              "added": [
+                [
+                  "alice",
+                  "bob"
+                ],
+                [
+                  "bob",
+                  "alice"
+                ]
+              ],
+              "removed": []
+            },
+            "reachable_pairs_after": 2,
+            "reachable_pairs_before": 0,
+            "source_edges": {
+              "added": [
+                [
+                  "alice",
+                  "bob"
+                ],
+                [
+                  "bob",
+                  "alice"
+                ]
+              ],
+              "removed": []
+            },
+            "strong_component_count_after": 1,
+            "strong_component_count_before": 2
+          },
+          "relationship": {
+            "diameter_after": 1,
+            "diameter_before": 1,
+            "projected_edges": {
+              "added": [],
+              "removed": []
+            },
+            "reachable_pairs_after": 2,
+            "reachable_pairs_before": 2,
+            "source_edges": {
+              "added": [],
+              "removed": []
+            },
+            "strong_component_count_after": 1,
+            "strong_component_count_before": 1
+          },
+          "transmission": {
+            "diameter_after": null,
+            "diameter_before": null,
+            "projected_edges": {
+              "added": [
+                [
+                  "alice",
+                  "bob"
+                ]
+              ],
+              "removed": []
+            },
+            "reachable_pairs_after": 1,
+            "reachable_pairs_before": 0,
+            "source_edges": {
+              "added": [
+                [
+                  "alice",
+                  "bob"
+                ]
+              ],
+              "removed": []
+            },
+            "strong_component_count_after": 2,
+            "strong_component_count_before": 2
+          }
+        },
+        "story_lineage": "STORY_EXTENSION"
+      },
+      "trace_hash": "sha256:35867d56cc207c7cb1b7b14c3ba3abc4fcb10770cbfab3641ee690cff899fb5d"
+    },
+    {
+      "name": "failed_environment_actions",
+      "trace": {
+        "actual_source_rounds": [
+          {
+            "direct_interaction_after": [],
+            "direct_interaction_before": [],
+            "failed_environment_actions": [
+              {
+                "actor_agent_id": "alice",
+                "event_hash": "sha256:2be1153134fb7a46df016dd36e1ea775d0029730bbd8ef24a35ebb3807f2d1a5",
+                "event_id": "r0001:e0001",
+                "kind": "take",
+                "outcome": "object_not_co_located"
+              },
+              {
+                "actor_agent_id": "bob",
+                "event_hash": "sha256:5c707fd7787a27adb1584abb83cc5c6320477e9efaff52bd370c9e256f6bbb86",
+                "event_id": "r0001:e0002",
+                "kind": "move",
+                "outcome": "passage_closed"
+              }
+            ],
+            "next_world_hash": "sha256:2b43282aaa0d0f4d174a5a71fbfebcfb3ff1f64c43def19e3f84f5ae09ab7b5f",
+            "observation_channels": {
+              "self": 2
+            },
+            "prior_world_hash": "sha256:a04e23d6f2cdab116505a1bf95dc2c37c2f97f0720b46cf8edfda36cd0172a3c",
+            "round_index": 1,
+            "sourced_effects": [],
+            "story_round_hash": "sha256:84c36adbc4a4400cf1495b462fb5d7f0c120e2ce81ed434fddd342fc8fd896bc",
+            "successful_boundary_event_ids": [],
+            "successful_tell_event_ids": []
+          }
+        ],
+        "causal_attribution": "UNATTRIBUTED",
+        "environment_changes": {
+          "agent_movements": [],
+          "perception_model_hash": "sha256:f7af9ca4e64005bf28889e75f24779ee93ec44a4267c0539dec105260b5f5c8b",
+          "world_object_revisions": []
+        },
+        "multi_agent_content": {
+          "changed_claim_count": 0,
+          "changed_trust_pair_count": 0,
+          "successful_tell_event_ids": []
+        },
+        "next_source_hash": "sha256:d36a7a8e41d36f4bccadefad44ffaacb8ca3a7f03b8565c2de44b7bb52cc2320",
+        "next_story_hash": "sha256:73371b22828ade08de6315e5d7768e4c8d592dd005914b0098597b1cf67ca992",
+        "physical_boundary_changes": [],
+        "prior_source_hash": "sha256:08047c4ca8483a5470f209e5516d3b3b0bb45d1b7874b8d889a3ba234f94eb9c",
+        "prior_story_hash": "sha256:0b42c395646f90bafbe4e9d61d504b846b515d451a8d58b8ba8ae4fa935b6a45",
+        "schema": "v19-environment-action-trace-v1",
+        "scope": "re-executable V19 world effects only, not authenticated historical causation",
+        "selected_relation_graphs": {
+          "direct_interaction": {
+            "diameter_after": null,
+            "diameter_before": null,
+            "projected_edges": {
+              "added": [],
+              "removed": []
+            },
+            "reachable_pairs_after": 0,
+            "reachable_pairs_before": 0,
+            "source_edges": {
+              "added": [],
+              "removed": []
+            },
+            "strong_component_count_after": 2,
+            "strong_component_count_before": 2
+          },
+          "relationship": {
+            "diameter_after": 1,
+            "diameter_before": 1,
+            "projected_edges": {
+              "added": [],
+              "removed": []
+            },
+            "reachable_pairs_after": 2,
+            "reachable_pairs_before": 2,
+            "source_edges": {
+              "added": [],
+              "removed": []
+            },
+            "strong_component_count_after": 1,
+            "strong_component_count_before": 1
+          },
+          "transmission": {
+            "diameter_after": null,
+            "diameter_before": null,
+            "projected_edges": {
+              "added": [],
+              "removed": []
+            },
+            "reachable_pairs_after": 0,
+            "reachable_pairs_before": 0,
+            "source_edges": {
+              "added": [],
+              "removed": []
+            },
+            "strong_component_count_after": 2,
+            "strong_component_count_before": 2
+          }
+        },
+        "story_lineage": "STORY_EXTENSION"
+      },
+      "trace_hash": "sha256:badb04e49d220e817b29777628151ab7ca0e01c49939952bfc2bc4b2a0737bed"
+    }
+  ],
+  "notice": "Real re-executable V19 environment events and selected V24 edges; does not disclose private messages or prove historical causality",
+  "schema": "v19-environment-action-trace-v1"
+}

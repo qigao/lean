@@ -117,6 +117,23 @@ jobs:
             echo 'RED: real V19 boundary events differ from reviewed source'
             exit 1
           fi
+      - name: R2 M2 real V19 environment-action trace
+        run: |
+          set -euo pipefail
+          python -m unittest tests.test_network_environment_actions -v
+          mkdir -p .generated-conformance
+          generated=.generated-conformance/network_environment_action_v1.json
+          pinned=conformance/network_environment_action_v1.json
+          python3 -m tools.render_network_environment_vectors > "$generated"
+          if [ ! -f "$pinned" ]; then
+            echo 'RED: reviewed V19 environmental action vectors are missing'
+            exit 1
+          fi
+          if ! cmp -s "$pinned" "$generated"; then
+            diff -u "$pinned" "$generated" || true
+            echo 'RED: R2.M2 environment action source vectors differ'
+            exit 1
+          fi
       - name: Runtime-derived mesh regression
         run: python -m unittest tests.test_mesh_projection tests.test_mesh_evidence -v
 
