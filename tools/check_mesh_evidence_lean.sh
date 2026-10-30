@@ -129,6 +129,14 @@ if ! cmp -s conformance/network_native_direct_tell_trust_v1.json "$tmpdir/networ
   diff -u conformance/network_native_direct_tell_trust_v1.json "$tmpdir/network_native_direct_tell_trust_v1.json" || true
   exit 1
 fi
+# R2.M5e.1: original V19 source learning round8,
+# new native TELL round9 and native recipient decision round10.
+python3 -m tools.render_native_verified_trust_new_tell_vectors > "$tmpdir/network_native_verified_trust_new_tell_v1.json"
+if ! cmp -s conformance/network_native_verified_trust_new_tell_v1.json "$tmpdir/network_native_verified_trust_new_tell_v1.json"; then
+  echo 'FAIL: R2.M5e.1 original source new-TELL vector changed' >&2
+  diff -u conformance/network_native_verified_trust_new_tell_v1.json "$tmpdir/network_native_verified_trust_new_tell_v1.json" || true
+  exit 1
+fi
 generated="$tmpdir/authoritative.lean"
 
 # Always regenerate from the actual V19 snapshot, then enforce the immutable
