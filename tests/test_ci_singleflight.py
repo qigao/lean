@@ -105,6 +105,20 @@ class SingleflightCIContractTests(unittest.TestCase):
         self.assertIn("social_topology_checkpoint_v1.json", script)
         self.assertIn("cmp -s", script)
 
+    def test_r2_m5e0_direct_tell_social_trust_optin(self):
+        self.assertIn("R2 M5e0 direct V19 EXACT TELL source trust protocol", self.content)
+        self.assertIn("tests.test_network_direct_tell_trust", self.content)
+        self.assertIn("tools.render_native_direct_tell_trust_vectors", self.content)
+        self.assertIn("conformance/network_native_direct_tell_trust_v1.json", self.content)
+        self.assertLess(
+            self.content.index("R2 M5e0 direct V19 EXACT TELL source trust protocol"),
+            self.content.index("Runtime-derived mesh regression"),
+        )
+        script = (ROOT / "tools/check_mesh_evidence_lean.sh").read_text(encoding="utf-8")
+        self.assertIn("tools.render_native_direct_tell_trust_vectors", script)
+        self.assertIn("network_native_direct_tell_trust_v1.json", script)
+        self.assertIn("cmp -s", script)
+
     def test_r2_m5d_native_post_evidence_action_causal_firewall(self):
         self.assertIn("R2 M5d original V19 post-evidence actions and trust-causal firewall", self.content)
         self.assertIn("tests.test_network_post_evidence_actions", self.content)

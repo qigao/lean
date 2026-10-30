@@ -110,6 +110,9 @@ class SituatedSocialMemoryPolicy:
     contradiction_affinity_delta: float = 0.2
     max_unresolved_age_rounds: int = 20
     max_active_claims: int = 100
+    # An explicit source-model protocol switch. False preserves the exact
+    # serialization and all legacy V19 source-owner behavior.
+    trust_weight_direct_testimony: bool = False
 
     def __post_init__(self) -> None:
         for name in (
@@ -130,9 +133,11 @@ class SituatedSocialMemoryPolicy:
             "max_active_claims",
             _positive(self.max_active_claims, label="situated social maximum active claims"),
         )
+        if type(self.trust_weight_direct_testimony) is not bool:
+            raise TypeError("direct testimony source trust flag must be boolean")
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        values = {
             "initial_source_trust": self.initial_source_trust,
             "confirmation_rate": self.confirmation_rate,
             "contradiction_rate": self.contradiction_rate,
@@ -141,6 +146,9 @@ class SituatedSocialMemoryPolicy:
             "max_unresolved_age_rounds": self.max_unresolved_age_rounds,
             "max_active_claims": self.max_active_claims,
         }
+        if self.trust_weight_direct_testimony:
+            values["trust_weight_direct_testimony"] = True
+        return values
 
     @property
     def content_hash(self) -> str:

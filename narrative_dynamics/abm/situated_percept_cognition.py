@@ -129,6 +129,7 @@ def admit_situated_percepts(
     *,
     _claim_topic_by_symbol: Mapping[str, str] | None = None,
     _consolidated_claim_keys: frozenset[tuple[str, str, str]] | None = None,
+    _source_trust_by_source: Mapping[str, float] | None = None,
 ) -> SituatedBeliefAdmissionResult:
     """Apply newly disclosed private percepts to one agent's Bayesian state."""
 
@@ -151,6 +152,11 @@ def admit_situated_percepts(
     consolidated_claim_keys = set(
         () if _consolidated_claim_keys is None else _consolidated_claim_keys
     )
+    source_trust = {} if _source_trust_by_source is None else dict(_source_trust_by_source)
+    if any(type(source) is not str or not source.strip()
+           or type(trust) not in (int, float) or not math.isfinite(trust)
+           or not 0 <= trust <= 1 for source, trust in source_trust.items()):
+        raise ValueError("direct TELL trust requires a valid source identity and unit weight")
     active_claim_symbols: dict[tuple[str, str], str] = {}
     for source_id, topic_id, symbol_id in consolidated_claim_keys:
         scope = (source_id, topic_id)
@@ -178,6 +184,16 @@ def admit_situated_percepts(
         rule = match_situated_percept_rule(model, percept)
         if rule is None:
             continue
+        # EXACT means the event was perceived, not that its source must be
+        # believed. Only external TELL is tempered by an explicitly supplied
+        # owner-scoped trust map. All INSPECT and SELF evidence is untempered.
+        effective_trust = (
+            source_trust.get(percept.actor_agent_id, 1.0)
+            if percept.kind is SituatedActionKind.TELL
+            and percept.actor_agent_id is not None
+            and percept.actor_agent_id != mind.agent_id
+            else 1.0
+        )
         claim_scope = None
         if (
             percept.kind is SituatedActionKind.TELL
@@ -202,11 +218,13 @@ def admit_situated_percepts(
                 belief,
                 belief,
                 True,
+                effective_trust,
             ))
             continue
         masses = {
             hypothesis_id: probability
-            * likelihoods[(rule.likelihood_action_id, hypothesis_id, rule.symbol_id)]
+            * ((1.0 - effective_trust) + effective_trust
+               * likelihoods[(rule.likelihood_action_id, hypothesis_id, rule.symbol_id)])
             for hypothesis_id, probability in belief.probabilities.items()
         }
         evidence = math.fsum(masses.values())
@@ -222,6 +240,8 @@ def admit_situated_percepts(
             rule.likelihood_action_id,
             belief,
             posterior,
+            False,
+            effective_trust,
         ))
         belief = posterior
         if claim_scope is not None:
