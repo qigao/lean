@@ -199,6 +199,26 @@ jobs:
             echo 'RED: R2.M4c0 native metric source vector changed'
             exit 1
           fi
+      - name: R2 M4c1 one-variable native paired control acceptance
+        run: |
+          set -euo pipefail
+          mkdir -p .generated-conformance
+          generated=.generated-conformance/network_native_paired_v1.json
+          pinned=conformance/network_native_paired_v1.json
+          python3 -m tools.render_network_native_paired_vectors > "$generated"
+          if [ ! -f "$pinned" ]; then
+            echo 'R2_M4C1_NATIVE_REVIEW_VECTOR_BEGIN'
+            cat "$generated"
+            echo 'R2_M4C1_NATIVE_REVIEW_VECTOR_END'
+            echo 'RED: reviewed M4c1 paired native source vector is missing'
+            exit 1
+          fi
+          python -m unittest tests.test_network_native_paired -v
+          if ! cmp -s "$pinned" "$generated"; then
+            diff -u "$pinned" "$generated" || true
+            echo 'RED: R2.M4c1 paired source differs from reviewed native vector'
+            exit 1
+          fi
       - name: Runtime-derived mesh regression
         run: python -m unittest tests.test_mesh_projection tests.test_mesh_evidence -v
 

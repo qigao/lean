@@ -83,6 +83,13 @@ if ! cmp -s conformance/native_metric_protocol_v1.json "$tmpdir/native_metric_pr
   diff -u conformance/native_metric_protocol_v1.json "$tmpdir/native_metric_protocol_v1.json" || true
   exit 1
 fi
+# R2.M4c1: paired native programs use independent source-owner state.
+python3 -m tools.render_network_native_paired_vectors > "$tmpdir/network_native_paired_v1.json"
+if ! cmp -s conformance/network_native_paired_v1.json "$tmpdir/network_native_paired_v1.json"; then
+  echo 'FAIL: R2.M4c1 reviewed native paired experiment vector changed' >&2
+  diff -u conformance/network_native_paired_v1.json "$tmpdir/network_native_paired_v1.json" || true
+  exit 1
+fi
 generated="$tmpdir/authoritative.lean"
 
 # Always regenerate from the actual V19 snapshot, then enforce the immutable
