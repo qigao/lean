@@ -1,0 +1,169 @@
+{
+  "cases": [
+    {
+      "close_round": {
+        "events": [
+          {
+            "event_hash": "sha256:6407f854c87dddd2abfb4f7adf7eca25440e665cbe6190ca4b9d05dd9beecada",
+            "kind": "close_passage",
+            "outcome": "passage_closed",
+            "success": true
+          },
+          {
+            "event_hash": "sha256:8356a029446657de39ff5997d9408cc97e002a769911b50a01fe205aa2984296",
+            "kind": "move",
+            "outcome": "moved",
+            "success": true
+          },
+          {
+            "event_hash": "sha256:a98cbae2d49b0b7d53c8e30119cdb213157be1cc019febaa5e83a8a0d991c071",
+            "kind": "wait",
+            "outcome": "waited",
+            "success": true
+          },
+          {
+            "event_hash": "sha256:06ee0ff78cc03a09f454af9078f70d1c86904b76b5743243c6e7f3a9d75112f0",
+            "kind": "wait",
+            "outcome": "waited",
+            "success": true
+          }
+        ],
+        "next_world_hash": "sha256:ae6025ccedf220a2ee6db8bf0b58ce4203b50d14a915be3c2f820fdec9a615df",
+        "passage_open": false,
+        "prior_world_hash": "sha256:1be8d5da0b9837f14d8741bea8b95c156a46dbd53ac9dff61c63c735597fef7d"
+      },
+      "name": "directed_passage_snapshot_isolation",
+      "open_round": {
+        "events": [
+          {
+            "event_hash": "sha256:7e6d1235e7547a182de0632f42a2beba529dded9f7d2e4a299572b9e50f826a8",
+            "kind": "move",
+            "outcome": "passage_closed",
+            "success": false
+          },
+          {
+            "event_hash": "sha256:af08b30632fe06916262be6389a046215adc8831eb87790072eb4351ef20ef57",
+            "kind": "open_passage",
+            "outcome": "passage_opened",
+            "success": true
+          },
+          {
+            "event_hash": "sha256:04be27c2b5f5295c7fa825fd9709fb6f09caa62bcf252f813f4f3a2aa3b71819",
+            "kind": "wait",
+            "outcome": "waited",
+            "success": true
+          },
+          {
+            "event_hash": "sha256:3b8fd183a19bee41f5568bd2059d2d2743c0376043f257d75ad0bbb89f61ac10",
+            "kind": "wait",
+            "outcome": "waited",
+            "success": true
+          }
+        ],
+        "initial_auditory_loss": 25.0,
+        "next_auditory_loss": 5.0,
+        "next_world_hash": "sha256:1be8d5da0b9837f14d8741bea8b95c156a46dbd53ac9dff61c63c735597fef7d",
+        "passage_open": true,
+        "prior_world_hash": "sha256:2e2d7956a5f22294556d833cf1f5e1e0dcb4900cf431b26eb0af7efd3d753361"
+      },
+      "prior_world_hash": "sha256:2e2d7956a5f22294556d833cf1f5e1e0dcb4900cf431b26eb0af7efd3d753361"
+    },
+    {
+      "after_source_hash": "sha256:3485b4ee76cac67c463d0406d314710f193b790dc7796f4fd22b750828555b2a",
+      "before_source_hash": "sha256:7545b10219aee38fc8e117da0cd267d48caf526eaceb85031b1dc90c5e07d673",
+      "boundary": {
+        "declared_bridges": {
+          "added": [],
+          "removed": []
+        },
+        "physical_passages": [
+          {
+            "after_open": true,
+            "before_open": false,
+            "passage_id": "records-open"
+          }
+        ],
+        "society_memberships": []
+      },
+      "causal_attribution": "UNATTRIBUTED",
+      "name": "real_v19_boundary_to_v24_projection",
+      "new_story_events": [
+        {
+          "event_id": "r0001:e0001",
+          "kind": "open_passage",
+          "round_index": 1,
+          "success": true
+        },
+        {
+          "event_id": "r0001:e0002",
+          "kind": "wait",
+          "round_index": 1,
+          "success": true
+        }
+      ],
+      "observation_hash": "sha256:5215db2be2ecde8597244e67e52b2b430d4a265304c2841d441355415555b75c",
+      "selected_relation_graphs": {
+        "direct_interaction": {
+          "diameter_after": null,
+          "diameter_before": null,
+          "projected_edges": {
+            "added": [
+              [
+                "alice",
+                "bob"
+              ]
+            ],
+            "removed": []
+          },
+          "reachable_pairs_after": 1,
+          "reachable_pairs_before": 0,
+          "source_edges": {
+            "added": [
+              [
+                "alice",
+                "bob"
+              ]
+            ],
+            "removed": []
+          },
+          "strong_component_count_after": 2,
+          "strong_component_count_before": 2
+        },
+        "relationship": {
+          "diameter_after": 1,
+          "diameter_before": 1,
+          "projected_edges": {
+            "added": [],
+            "removed": []
+          },
+          "reachable_pairs_after": 2,
+          "reachable_pairs_before": 2,
+          "source_edges": {
+            "added": [],
+            "removed": []
+          },
+          "strong_component_count_after": 1,
+          "strong_component_count_before": 1
+        },
+        "transmission": {
+          "diameter_after": null,
+          "diameter_before": null,
+          "projected_edges": {
+            "added": [],
+            "removed": []
+          },
+          "reachable_pairs_after": 0,
+          "reachable_pairs_before": 0,
+          "source_edges": {
+            "added": [],
+            "removed": []
+          },
+          "strong_component_count_after": 2,
+          "strong_component_count_before": 2
+        }
+      }
+    }
+  ],
+  "notice": "Real V19 passage action and source projection, not authenticated external control or a TELL event",
+  "schema": "v19-physical-boundary-events-v1"
+}
