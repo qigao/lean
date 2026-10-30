@@ -1,7 +1,7 @@
 """R2.M0 regression: source-derived boundary, environment, and content deltas."""
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import json
@@ -9,7 +9,7 @@ import unittest
 
 from narrative_dynamics.abm.mesh_contracts import MeshSnapshot, MeshSociety
 from narrative_dynamics.abm.mesh_evolution_observation import (
-    NetworkLayerView, compare_network_layers, observe_network_layers,
+    NetworkLayerView, NetworkChangeReport, compare_network_layers, observe_network_layers,
 )
 from narrative_dynamics.abm.situated_network import initialize_situated_network_runtime
 from narrative_dynamics.abm.situated_percept_memory_cognition import (
@@ -197,6 +197,32 @@ class NetworkEvolutionObservationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "incompatible"):
             compare_network_layers(before, different)
 
+    def test_report_content_is_immutable_and_never_claims_causes(self):
+        before, after = self.scenarios["real_tell_content_extension"]
+        report = compare_network_layers(before, after)
+        reviewed = report.to_dict()
+        unchanged_hash = report.content_hash
+        reviewed["causal_attribution"] = "PROVED"
+        reviewed["interaction_content"]["new_story_events"].append(
+            {"event_id": "forged", "success": True, "message": SECRET},
+        )
+        self.assertEqual(report.to_dict()["causal_attribution"], "UNATTRIBUTED")
+        self.assertNotIn("forged", json.dumps(report.to_dict(), sort_keys=True))
+        self.assertNotIn(SECRET, json.dumps(report.to_dict(), sort_keys=True))
+        self.assertEqual(report.content_hash, unchanged_hash)
+        with self.assertRaises(FrozenInstanceError):
+            report._canonical_json = "{}"
+        with self.assertRaisesRegex(ValueError, "exact source and attribution"):
+            replace(report, _canonical_json=json.dumps(reviewed, sort_keys=True))
+        with self.assertRaisesRegex(ValueError, "exact source and attribution"):
+            replace(report, _canonical_json=json.dumps(
+                report.to_dict() | {"after": {"source_snapshot_hash": "sha256:" + "f"*64}},
+                sort_keys=True,
+            ))
+        with self.assertRaises(TypeError):
+            NetworkChangeReport(report.before_source_hash,
+                                report.after_source_hash, report.story_lineage, {})
+
     def test_canonical_reviewed_vectors_match_all_real_source_revisions(self):
         from tools.render_network_evolution_vectors import (
             SCHEMA, build_vector_manifest, render_vector_corpus,
@@ -206,9 +232,6 @@ class NetworkEvolutionObservationTests(unittest.TestCase):
         self.assertEqual(len(expected["cases"]), 5)
         data = render_vector_corpus().encode("utf-8")
         path = Path(__file__).resolve().parents[1] / "conformance" / "network_evolution_observation_v1.json"
-        if not path.exists():
-            # Initial fail-closed one-time transfer; remove after review.
-            raise AssertionError("R2_VECTOR_BEGIN\n" + data.decode("utf-8") + "R2_VECTOR_END")
         self.assertEqual(path.read_bytes(), data)
 
 

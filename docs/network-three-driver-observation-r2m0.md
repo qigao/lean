@@ -72,9 +72,9 @@ universal six-hop property.
 
 The reviewed `conformance/network_evolution_observation_v1.json` must
 match the exact generated UTF-8 bytes in focused Python, full Python
-and the independent Lean acceptance lane. The first missing-pin run is
-intentionally RED and emits the actual reviewed candidate, then that
-one-time handoff is removed. All earlier V19/V24, R1/R1.1, 35+11 theorem
+and the independent Lean acceptance lane. The initial RED established the missing vector and exposed the actual
+source-derived JSON. That reviewed file is now committed and mandatory;
+the one-time transfer path has been removed. All earlier V19/V24, R1/R1.1, 35+11 theorem
 trust, BB/PathN and World Studio/Playwright checks remain mandatory.
 
 ## Not yet implemented
@@ -84,3 +84,12 @@ physical passage or institutional-boundary action into the current story
 runtime, rewrite model geometry in-place, manage shared-document revisions,
 execute concurrent content merges, or attribute graph-edge changes to a
 unique cause. Those are separately scoped later phases under Issue #110.
+
+## Report ownership and immutability
+
+`NetworkChangeReport` stores a canonical immutable JSON string, validates
+that the schema, before/after V19 source identities and `UNATTRIBUTED`
+claim scope all agree, and returns freshly decoded objects to callers.
+Editing a caller's returned dictionary must not mutate the original report,
+alter its stable digest or reclassify observed changes as proven causes.
+This remains a **read-only report**, not a new mutable content/graph store.

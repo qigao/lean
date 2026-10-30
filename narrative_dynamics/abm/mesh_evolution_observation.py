@@ -8,8 +8,8 @@ a cause, reveal message payloads or own a second graph.
 from __future__ import annotations
 
 from collections import Counter
-from copy import deepcopy
 from dataclasses import dataclass
+import json
 
 from narrative_dynamics.contracts import stable_content_hash
 from narrative_dynamics.abm.mesh_contracts import (
@@ -93,10 +93,25 @@ class NetworkChangeReport:
     before_source_hash: str
     after_source_hash: str
     story_lineage: str
-    _data: dict[str, object]
+    _canonical_json: str
+
+    def __post_init__(self) -> None:
+        if type(self._canonical_json) is not str:
+            raise TypeError("network observation report requires canonical JSON source bytes")
+        payload = json.loads(self._canonical_json)
+        if not isinstance(payload, dict) or (
+            payload.get("schema") != _SCHEMA
+            or payload.get("causal_attribution") != "UNATTRIBUTED"
+            or payload.get("story_lineage") != self.story_lineage
+            or payload.get("before", {}).get("source_snapshot_hash") != self.before_source_hash
+            or payload.get("after", {}).get("source_snapshot_hash") != self.after_source_hash
+        ):
+            raise ValueError("network observation report must bind exact source and attribution")
 
     def to_dict(self) -> dict[str, object]:
-        return deepcopy(self._data)
+        # Parse afresh: caller edits cannot mutate the report's source facts or
+        # convert unverified differences into a spurious causal claim.
+        return json.loads(self._canonical_json)
 
     @property
     def content_hash(self) -> str:
@@ -328,5 +343,6 @@ def compare_network_layers(before: NetworkLayerView, after: NetworkLayerView) ->
     return NetworkChangeReport(
         before.mesh.source_snapshot.content_hash,
         after.mesh.source_snapshot.content_hash,
-        lineage, data,
+        lineage, json.dumps(data, ensure_ascii=False, sort_keys=True,
+                            separators=(",", ":")),
     )
