@@ -28,6 +28,14 @@ if ! cmp -s conformance/social_topology_checkpoint_v1.json "$tmpdir/social_topol
   diff -u conformance/social_topology_checkpoint_v1.json "$tmpdir/social_topology_checkpoint_v1.json" || true
   exit 1
 fi
+# R2.M0: independently check the reviewed V19 three-driver observation
+# corpus before compiling the already-maintained finite Lean contracts.
+python3 -m tools.render_network_evolution_vectors > "$tmpdir/network_evolution_observation_v1.json"
+if ! cmp -s conformance/network_evolution_observation_v1.json "$tmpdir/network_evolution_observation_v1.json"; then
+  echo 'FAIL: R2 V19 boundary/environment/content observed vectors changed' >&2
+  diff -u conformance/network_evolution_observation_v1.json "$tmpdir/network_evolution_observation_v1.json" || true
+  exit 1
+fi
 generated="$tmpdir/authoritative.lean"
 
 # Always regenerate from the actual V19 snapshot, then enforce the immutable

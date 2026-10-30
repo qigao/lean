@@ -1,0 +1,646 @@
+{
+  "cases": [
+    {
+      "name": "physical_boundary_alternative",
+      "report": {
+        "after": {
+          "cognitive_state_hash": "sha256:c69a08640e039caa30f5fdab8bc027d506bc5bd0ff92f186dd9ca9d1600c716a",
+          "mesh_hash": "sha256:509c62c57a970506fd7c1e926890a6d203b32bbd295bd411cccc4265a4a543d9",
+          "model_hash": "sha256:75644713f5b6214d860d5ab2c2c6d83b76641048678b5df1f583cfc48ce929ef",
+          "round_index": 0,
+          "social_state_hash": "sha256:173f4a73f85c29c54d7a47e19ce05aae1dca7326a5b7bb2601cb4b0fa37f8cc9",
+          "source_snapshot_hash": "sha256:49b538ba8d5c8421f514c872325bfb1840a8c41038315c5db9889d4746e48708",
+          "story_hash": "sha256:3f018c9751ab0d2e3cb603622799f20ff984d1b4e99c6d698b366d59ded287e0",
+          "world_state_hash": "sha256:c18159a462395e8604140335afa1baa487746f95ed607be5aad74bf5ba15c065"
+        },
+        "before": {
+          "cognitive_state_hash": "sha256:b59ead038cd1f0b3cb55a08b9eb7aebbbe06bc210c178603d1505978c18c723a",
+          "mesh_hash": "sha256:2271bbd5519868eac09ec4f70d70ed9ec47f1b6841d833d82a2ce3b2f4745ce8",
+          "model_hash": "sha256:75644713f5b6214d860d5ab2c2c6d83b76641048678b5df1f583cfc48ce929ef",
+          "round_index": 0,
+          "social_state_hash": "sha256:326f17b84ec72335b4fdcf5b7660045d663f2d2718febf7a22338bcbd1a87572",
+          "source_snapshot_hash": "sha256:08047c4ca8483a5470f209e5516d3b3b0bb45d1b7874b8d889a3ba234f94eb9c",
+          "story_hash": "sha256:0b42c395646f90bafbe4e9d61d504b846b515d451a8d58b8ba8ae4fa935b6a45",
+          "world_state_hash": "sha256:a04e23d6f2cdab116505a1bf95dc2c37c2f97f0720b46cf8edfda36cd0172a3c"
+        },
+        "boundary": {
+          "declared_bridges": {
+            "added": [],
+            "removed": []
+          },
+          "physical_passages": [
+            {
+              "after_open": false,
+              "before_open": true,
+              "passage_id": "lobby-open"
+            }
+          ],
+          "society_memberships": []
+        },
+        "causal_attribution": "UNATTRIBUTED",
+        "environment": {
+          "agent_movements": [],
+          "perception_model_hash": "sha256:f7af9ca4e64005bf28889e75f24779ee93ec44a4267c0539dec105260b5f5c8b",
+          "world_object_revisions": []
+        },
+        "interaction_content": {
+          "belief_changes": [],
+          "claim_changes": [],
+          "new_observations_by_channel": {},
+          "new_processed_evidence_count": 0,
+          "new_story_events": [],
+          "new_successful_tell_event_ids": [],
+          "removed_processed_evidence_count": 0,
+          "social_trust_changes": []
+        },
+        "observed_axes": {
+          "environment": false,
+          "multi_agent_content": false,
+          "physical_boundary": true,
+          "social_trust": false,
+          "society_boundary": false
+        },
+        "schema": "v19-network-three-driver-observation-v1",
+        "scope": "bounded V19 observed source differences, not causal attribution",
+        "selected_relation_graphs": {
+          "direct_interaction": {
+            "diameter_after": null,
+            "diameter_before": null,
+            "projected_edges": {
+              "added": [],
+              "removed": []
+            },
+            "reachable_pairs_after": 0,
+            "reachable_pairs_before": 0,
+            "source_edges": {
+              "added": [],
+              "removed": []
+            },
+            "strong_component_count_after": 2,
+            "strong_component_count_before": 2
+          },
+          "relationship": {
+            "diameter_after": 1,
+            "diameter_before": 1,
+            "projected_edges": {
+              "added": [],
+              "removed": []
+            },
+            "reachable_pairs_after": 2,
+            "reachable_pairs_before": 2,
+            "source_edges": {
+              "added": [],
+              "removed": []
+            },
+            "strong_component_count_after": 1,
+            "strong_component_count_before": 1
+          },
+          "transmission": {
+            "diameter_after": null,
+            "diameter_before": null,
+            "projected_edges": {
+              "added": [],
+              "removed": []
+            },
+            "reachable_pairs_after": 0,
+            "reachable_pairs_before": 0,
+            "source_edges": {
+              "added": [],
+              "removed": []
+            },
+            "strong_component_count_after": 2,
+            "strong_component_count_before": 2
+          }
+        },
+        "story_lineage": "DIFFERENT_INITIAL_CONDITIONS"
+      },
+      "report_hash": "sha256:a780e3649e29ab633a03567050d805ddd6900dc725b38be0e77161fe672ade8b"
+    },
+    {
+      "name": "environment_alternative",
+      "report": {
+        "after": {
+          "cognitive_state_hash": "sha256:92cfed069c3b1515200727f6544d411ffe28802d03e6e437213259634350bd0c",
+          "mesh_hash": "sha256:f0b2d5be3601c887ac89c232f56ed6e905067f7acfbfbef7e9a653e8a7a14d6e",
+          "model_hash": "sha256:75644713f5b6214d860d5ab2c2c6d83b76641048678b5df1f583cfc48ce929ef",
+          "round_index": 0,
+          "social_state_hash": "sha256:ca7ca1c7dab4ec556efe1e1c176499dc0d257e0d6f5fd24fe5f5e455f76abd2b",
+          "source_snapshot_hash": "sha256:5f7eaea2f0e794d4ae545ce78566593dfe0552e5c8597fb1e62e08ab10e92b80",
+          "story_hash": "sha256:c5ca345980b739f484651bb989e1059d4cecf67832ef355ef3af0058fd4eb195",
+          "world_state_hash": "sha256:a7a7d74e72573186abb6b0154d714a59bf6c0399708ac05821eb9a3eb2f895fd"
+        },
+        "before": {
+          "cognitive_state_hash": "sha256:b59ead038cd1f0b3cb55a08b9eb7aebbbe06bc210c178603d1505978c18c723a",
+          "mesh_hash": "sha256:2271bbd5519868eac09ec4f70d70ed9ec47f1b6841d833d82a2ce3b2f4745ce8",
+          "model_hash": "sha256:75644713f5b6214d860d5ab2c2c6d83b76641048678b5df1f583cfc48ce929ef",
+          "round_index": 0,
+          "social_state_hash": "sha256:326f17b84ec72335b4fdcf5b7660045d663f2d2718febf7a22338bcbd1a87572",
+          "source_snapshot_hash": "sha256:08047c4ca8483a5470f209e5516d3b3b0bb45d1b7874b8d889a3ba234f94eb9c",
+          "story_hash": "sha256:0b42c395646f90bafbe4e9d61d504b846b515d451a8d58b8ba8ae4fa935b6a45",
+          "world_state_hash": "sha256:a04e23d6f2cdab116505a1bf95dc2c37c2f97f0720b46cf8edfda36cd0172a3c"
+        },
+        "boundary": {
+          "declared_bridges": {
+            "added": [],
+            "removed": []
+          },
+          "physical_passages": [],
+          "society_memberships": []
+        },
+        "causal_attribution": "UNATTRIBUTED",
+        "environment": {
+          "agent_movements": [
+            {
+              "after_place": "lobby",
+              "agent_id": "alice",
+              "before_place": "records"
+            }
+          ],
+          "perception_model_hash": "sha256:f7af9ca4e64005bf28889e75f24779ee93ec44a4267c0539dec105260b5f5c8b",
+          "world_object_revisions": []
+        },
+        "interaction_content": {
+          "belief_changes": [],
+          "claim_changes": [],
+          "new_observations_by_channel": {},
+          "new_processed_evidence_count": 0,
+          "new_story_events": [],
+          "new_successful_tell_event_ids": [],
+          "removed_processed_evidence_count": 0,
+          "social_trust_changes": []
+        },
+        "observed_axes": {
+          "environment": true,
+          "multi_agent_content": false,
+          "physical_boundary": false,
+          "social_trust": false,
+          "society_boundary": false
+        },
+        "schema": "v19-network-three-driver-observation-v1",
+        "scope": "bounded V19 observed source differences, not causal attribution",
+        "selected_relation_graphs": {
+          "direct_interaction": {
+            "diameter_after": null,
+            "diameter_before": null,
+            "projected_edges": {
+              "added": [],
+              "removed": []
+            },
+            "reachable_pairs_after": 0,
+            "reachable_pairs_before": 0,
+            "source_edges": {
+              "added": [],
+              "removed": []
+            },
+            "strong_component_count_after": 2,
+            "strong_component_count_before": 2
+          },
+          "relationship": {
+            "diameter_after": 1,
+            "diameter_before": 1,
+            "projected_edges": {
+              "added": [],
+              "removed": []
+            },
+            "reachable_pairs_after": 2,
+            "reachable_pairs_before": 2,
+            "source_edges": {
+              "added": [],
+              "removed": []
+            },
+            "strong_component_count_after": 1,
+            "strong_component_count_before": 1
+          },
+          "transmission": {
+            "diameter_after": null,
+            "diameter_before": null,
+            "projected_edges": {
+              "added": [],
+              "removed": []
+            },
+            "reachable_pairs_after": 0,
+            "reachable_pairs_before": 0,
+            "source_edges": {
+              "added": [],
+              "removed": []
+            },
+            "strong_component_count_after": 2,
+            "strong_component_count_before": 2
+          }
+        },
+        "story_lineage": "DIFFERENT_INITIAL_CONDITIONS"
+      },
+      "report_hash": "sha256:6c604418ff7a69005ae9b37c13c27d3b5efb1073ba2636013b55c441c5783a3e"
+    },
+    {
+      "name": "society_boundary_change",
+      "report": {
+        "after": {
+          "cognitive_state_hash": "sha256:b59ead038cd1f0b3cb55a08b9eb7aebbbe06bc210c178603d1505978c18c723a",
+          "mesh_hash": "sha256:61d2ec541e4f01f76f651d701c0f607b645908029e819cbbab763144532b7c23",
+          "model_hash": "sha256:75644713f5b6214d860d5ab2c2c6d83b76641048678b5df1f583cfc48ce929ef",
+          "round_index": 0,
+          "social_state_hash": "sha256:326f17b84ec72335b4fdcf5b7660045d663f2d2718febf7a22338bcbd1a87572",
+          "source_snapshot_hash": "sha256:08047c4ca8483a5470f209e5516d3b3b0bb45d1b7874b8d889a3ba234f94eb9c",
+          "story_hash": "sha256:0b42c395646f90bafbe4e9d61d504b846b515d451a8d58b8ba8ae4fa935b6a45",
+          "world_state_hash": "sha256:a04e23d6f2cdab116505a1bf95dc2c37c2f97f0720b46cf8edfda36cd0172a3c"
+        },
+        "before": {
+          "cognitive_state_hash": "sha256:b59ead038cd1f0b3cb55a08b9eb7aebbbe06bc210c178603d1505978c18c723a",
+          "mesh_hash": "sha256:2271bbd5519868eac09ec4f70d70ed9ec47f1b6841d833d82a2ce3b2f4745ce8",
+          "model_hash": "sha256:75644713f5b6214d860d5ab2c2c6d83b76641048678b5df1f583cfc48ce929ef",
+          "round_index": 0,
+          "social_state_hash": "sha256:326f17b84ec72335b4fdcf5b7660045d663f2d2718febf7a22338bcbd1a87572",
+          "source_snapshot_hash": "sha256:08047c4ca8483a5470f209e5516d3b3b0bb45d1b7874b8d889a3ba234f94eb9c",
+          "story_hash": "sha256:0b42c395646f90bafbe4e9d61d504b846b515d451a8d58b8ba8ae4fa935b6a45",
+          "world_state_hash": "sha256:a04e23d6f2cdab116505a1bf95dc2c37c2f97f0720b46cf8edfda36cd0172a3c"
+        },
+        "boundary": {
+          "declared_bridges": {
+            "added": [],
+            "removed": []
+          },
+          "physical_passages": [],
+          "society_memberships": [
+            {
+              "after_members": [
+                "alice"
+              ],
+              "before_members": [],
+              "society_id": "alice-society"
+            },
+            {
+              "after_members": [
+                "bob"
+              ],
+              "before_members": [],
+              "society_id": "bob-society"
+            },
+            {
+              "after_members": [],
+              "before_members": [
+                "alice",
+                "bob"
+              ],
+              "society_id": "office"
+            }
+          ]
+        },
+        "causal_attribution": "UNATTRIBUTED",
+        "environment": {
+          "agent_movements": [],
+          "perception_model_hash": "sha256:f7af9ca4e64005bf28889e75f24779ee93ec44a4267c0539dec105260b5f5c8b",
+          "world_object_revisions": []
+        },
+        "interaction_content": {
+          "belief_changes": [],
+          "claim_changes": [],
+          "new_observations_by_channel": {},
+          "new_processed_evidence_count": 0,
+          "new_story_events": [],
+          "new_successful_tell_event_ids": [],
+          "removed_processed_evidence_count": 0,
+          "social_trust_changes": []
+        },
+        "observed_axes": {
+          "environment": false,
+          "multi_agent_content": false,
+          "physical_boundary": false,
+          "social_trust": false,
+          "society_boundary": true
+        },
+        "schema": "v19-network-three-driver-observation-v1",
+        "scope": "bounded V19 observed source differences, not causal attribution",
+        "selected_relation_graphs": {
+          "direct_interaction": {
+            "diameter_after": null,
+            "diameter_before": null,
+            "projected_edges": {
+              "added": [],
+              "removed": []
+            },
+            "reachable_pairs_after": 0,
+            "reachable_pairs_before": 0,
+            "source_edges": {
+              "added": [],
+              "removed": []
+            },
+            "strong_component_count_after": 2,
+            "strong_component_count_before": 2
+          },
+          "relationship": {
+            "diameter_after": null,
+            "diameter_before": 1,
+            "projected_edges": {
+              "added": [],
+              "removed": [
+                [
+                  "alice",
+                  "bob"
+                ],
+                [
+                  "bob",
+                  "alice"
+                ]
+              ]
+            },
+            "reachable_pairs_after": 0,
+            "reachable_pairs_before": 2,
+            "source_edges": {
+              "added": [],
+              "removed": []
+            },
+            "strong_component_count_after": 2,
+            "strong_component_count_before": 1
+          },
+          "transmission": {
+            "diameter_after": null,
+            "diameter_before": null,
+            "projected_edges": {
+              "added": [],
+              "removed": []
+            },
+            "reachable_pairs_after": 0,
+            "reachable_pairs_before": 0,
+            "source_edges": {
+              "added": [],
+              "removed": []
+            },
+            "strong_component_count_after": 2,
+            "strong_component_count_before": 2
+          }
+        },
+        "story_lineage": "SAME_STORY"
+      },
+      "report_hash": "sha256:06beb8a97162583e2a0ef097146110669e2cbcd9fdb7117a98301caafa1c3e29"
+    },
+    {
+      "name": "real_tell_content_extension",
+      "report": {
+        "after": {
+          "cognitive_state_hash": "sha256:efbd6437c45b2eefb9efea722762c07ccefe877e782c60081753cf0a5fe62a28",
+          "mesh_hash": "sha256:0283d9aebdcb9bb5526d18911a6972ec1962950e65eefb9e65da195468bc5b5b",
+          "model_hash": "sha256:75644713f5b6214d860d5ab2c2c6d83b76641048678b5df1f583cfc48ce929ef",
+          "round_index": 1,
+          "social_state_hash": "sha256:065489f5384aae926264680688fb9a8ac5a87c18c1737f972e83b422907bc7bc",
+          "source_snapshot_hash": "sha256:979843bf395667b78bf56af9e5bc6ff89b8ff762d1d3d8055068fe93f76f20df",
+          "story_hash": "sha256:5e12ecbf066a5d3ada773694df16d31d0dfe42a73cbecfbff6ab2865a7805094",
+          "world_state_hash": "sha256:2b43282aaa0d0f4d174a5a71fbfebcfb3ff1f64c43def19e3f84f5ae09ab7b5f"
+        },
+        "before": {
+          "cognitive_state_hash": "sha256:b59ead038cd1f0b3cb55a08b9eb7aebbbe06bc210c178603d1505978c18c723a",
+          "mesh_hash": "sha256:2271bbd5519868eac09ec4f70d70ed9ec47f1b6841d833d82a2ce3b2f4745ce8",
+          "model_hash": "sha256:75644713f5b6214d860d5ab2c2c6d83b76641048678b5df1f583cfc48ce929ef",
+          "round_index": 0,
+          "social_state_hash": "sha256:326f17b84ec72335b4fdcf5b7660045d663f2d2718febf7a22338bcbd1a87572",
+          "source_snapshot_hash": "sha256:08047c4ca8483a5470f209e5516d3b3b0bb45d1b7874b8d889a3ba234f94eb9c",
+          "story_hash": "sha256:0b42c395646f90bafbe4e9d61d504b846b515d451a8d58b8ba8ae4fa935b6a45",
+          "world_state_hash": "sha256:a04e23d6f2cdab116505a1bf95dc2c37c2f97f0720b46cf8edfda36cd0172a3c"
+        },
+        "boundary": {
+          "declared_bridges": {
+            "added": [],
+            "removed": []
+          },
+          "physical_passages": [],
+          "society_memberships": []
+        },
+        "causal_attribution": "UNATTRIBUTED",
+        "environment": {
+          "agent_movements": [],
+          "perception_model_hash": "sha256:f7af9ca4e64005bf28889e75f24779ee93ec44a4267c0539dec105260b5f5c8b",
+          "world_object_revisions": []
+        },
+        "interaction_content": {
+          "belief_changes": [],
+          "claim_changes": [],
+          "new_observations_by_channel": {
+            "self": 2
+          },
+          "new_processed_evidence_count": 0,
+          "new_story_events": [
+            {
+              "event_id": "r0001:e0001",
+              "kind": "tell",
+              "round_index": 1,
+              "success": true
+            },
+            {
+              "event_id": "r0001:e0002",
+              "kind": "wait",
+              "round_index": 1,
+              "success": true
+            }
+          ],
+          "new_successful_tell_event_ids": [
+            "r0001:e0001"
+          ],
+          "removed_processed_evidence_count": 0,
+          "social_trust_changes": []
+        },
+        "observed_axes": {
+          "environment": false,
+          "multi_agent_content": true,
+          "physical_boundary": false,
+          "social_trust": false,
+          "society_boundary": false
+        },
+        "schema": "v19-network-three-driver-observation-v1",
+        "scope": "bounded V19 observed source differences, not causal attribution",
+        "selected_relation_graphs": {
+          "direct_interaction": {
+            "diameter_after": null,
+            "diameter_before": null,
+            "projected_edges": {
+              "added": [],
+              "removed": []
+            },
+            "reachable_pairs_after": 0,
+            "reachable_pairs_before": 0,
+            "source_edges": {
+              "added": [],
+              "removed": []
+            },
+            "strong_component_count_after": 2,
+            "strong_component_count_before": 2
+          },
+          "relationship": {
+            "diameter_after": 1,
+            "diameter_before": 1,
+            "projected_edges": {
+              "added": [],
+              "removed": []
+            },
+            "reachable_pairs_after": 2,
+            "reachable_pairs_before": 2,
+            "source_edges": {
+              "added": [],
+              "removed": []
+            },
+            "strong_component_count_after": 1,
+            "strong_component_count_before": 1
+          },
+          "transmission": {
+            "diameter_after": null,
+            "diameter_before": null,
+            "projected_edges": {
+              "added": [
+                [
+                  "alice",
+                  "bob"
+                ]
+              ],
+              "removed": []
+            },
+            "reachable_pairs_after": 1,
+            "reachable_pairs_before": 0,
+            "source_edges": {
+              "added": [
+                [
+                  "alice",
+                  "bob"
+                ]
+              ],
+              "removed": []
+            },
+            "strong_component_count_after": 2,
+            "strong_component_count_before": 2
+          }
+        },
+        "story_lineage": "STORY_EXTENSION"
+      },
+      "report_hash": "sha256:a7235c9ce343c70c89a9cab443de5808ec05d74b2ca8385548407e2d0abd58bd"
+    },
+    {
+      "name": "explicit_social_trust_checkpoint",
+      "report": {
+        "after": {
+          "cognitive_state_hash": "sha256:b59ead038cd1f0b3cb55a08b9eb7aebbbe06bc210c178603d1505978c18c723a",
+          "mesh_hash": "sha256:3ec0ef11617bd6888e9030f27eef5177f3c9385ef610533f84b76d7051d5f95a",
+          "model_hash": "sha256:75644713f5b6214d860d5ab2c2c6d83b76641048678b5df1f583cfc48ce929ef",
+          "round_index": 0,
+          "social_state_hash": "sha256:0d8852d397354ffbb4ce04d466aa5819a1427c9dd9d94aed894d1ea541025d17",
+          "source_snapshot_hash": "sha256:451d47a2d3ae46d25559661e89524ac9f41d16076d8907aacd1f8f7a3b36f65b",
+          "story_hash": "sha256:0b42c395646f90bafbe4e9d61d504b846b515d451a8d58b8ba8ae4fa935b6a45",
+          "world_state_hash": "sha256:a04e23d6f2cdab116505a1bf95dc2c37c2f97f0720b46cf8edfda36cd0172a3c"
+        },
+        "before": {
+          "cognitive_state_hash": "sha256:b59ead038cd1f0b3cb55a08b9eb7aebbbe06bc210c178603d1505978c18c723a",
+          "mesh_hash": "sha256:2271bbd5519868eac09ec4f70d70ed9ec47f1b6841d833d82a2ce3b2f4745ce8",
+          "model_hash": "sha256:75644713f5b6214d860d5ab2c2c6d83b76641048678b5df1f583cfc48ce929ef",
+          "round_index": 0,
+          "social_state_hash": "sha256:326f17b84ec72335b4fdcf5b7660045d663f2d2718febf7a22338bcbd1a87572",
+          "source_snapshot_hash": "sha256:08047c4ca8483a5470f209e5516d3b3b0bb45d1b7874b8d889a3ba234f94eb9c",
+          "story_hash": "sha256:0b42c395646f90bafbe4e9d61d504b846b515d451a8d58b8ba8ae4fa935b6a45",
+          "world_state_hash": "sha256:a04e23d6f2cdab116505a1bf95dc2c37c2f97f0720b46cf8edfda36cd0172a3c"
+        },
+        "boundary": {
+          "declared_bridges": {
+            "added": [],
+            "removed": []
+          },
+          "physical_passages": [],
+          "society_memberships": []
+        },
+        "causal_attribution": "UNATTRIBUTED",
+        "environment": {
+          "agent_movements": [],
+          "perception_model_hash": "sha256:f7af9ca4e64005bf28889e75f24779ee93ec44a4267c0539dec105260b5f5c8b",
+          "world_object_revisions": []
+        },
+        "interaction_content": {
+          "belief_changes": [],
+          "claim_changes": [],
+          "new_observations_by_channel": {},
+          "new_processed_evidence_count": 0,
+          "new_story_events": [],
+          "new_successful_tell_event_ids": [],
+          "removed_processed_evidence_count": 0,
+          "social_trust_changes": [
+            {
+              "effective_after": false,
+              "effective_before": true,
+              "observer_agent_id": "bob",
+              "source_agent_id": "alice",
+              "trust_after": 0.0,
+              "trust_before": 0.5
+            }
+          ]
+        },
+        "observed_axes": {
+          "environment": false,
+          "multi_agent_content": false,
+          "physical_boundary": false,
+          "social_trust": true,
+          "society_boundary": false
+        },
+        "schema": "v19-network-three-driver-observation-v1",
+        "scope": "bounded V19 observed source differences, not causal attribution",
+        "selected_relation_graphs": {
+          "direct_interaction": {
+            "diameter_after": null,
+            "diameter_before": null,
+            "projected_edges": {
+              "added": [],
+              "removed": []
+            },
+            "reachable_pairs_after": 0,
+            "reachable_pairs_before": 0,
+            "source_edges": {
+              "added": [],
+              "removed": []
+            },
+            "strong_component_count_after": 2,
+            "strong_component_count_before": 2
+          },
+          "relationship": {
+            "diameter_after": null,
+            "diameter_before": 1,
+            "projected_edges": {
+              "added": [],
+              "removed": [
+                [
+                  "alice",
+                  "bob"
+                ]
+              ]
+            },
+            "reachable_pairs_after": 1,
+            "reachable_pairs_before": 2,
+            "source_edges": {
+              "added": [],
+              "removed": [
+                [
+                  "alice",
+                  "bob"
+                ]
+              ]
+            },
+            "strong_component_count_after": 2,
+            "strong_component_count_before": 1
+          },
+          "transmission": {
+            "diameter_after": null,
+            "diameter_before": null,
+            "projected_edges": {
+              "added": [],
+              "removed": []
+            },
+            "reachable_pairs_after": 0,
+            "reachable_pairs_before": 0,
+            "source_edges": {
+              "added": [],
+              "removed": []
+            },
+            "strong_component_count_after": 2,
+            "strong_component_count_before": 2
+          }
+        },
+        "story_lineage": "SAME_STORY"
+      },
+      "report_hash": "sha256:f9d641abb550c04f1542a06954619cc9f23d870ce8d3bc42f1089bc3617de98b"
+    }
+  ],
+  "notice": "Source-derived finite V19/V24 comparisons: observations and story-prefix evidence, never unverified causal attribution or disclosure of private message payloads",
+  "schema": "v19-three-driver-network-observation-v1"
+}
