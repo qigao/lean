@@ -105,6 +105,19 @@ class SingleflightCIContractTests(unittest.TestCase):
         self.assertIn("social_topology_checkpoint_v1.json", script)
         self.assertIn("cmp -s", script)
 
+    def test_r2_m5b_native_structural_source_is_scope_bound(self):
+        self.assertIn("R2 M5b V19/V24 selected structural key-player qualification", self.content)
+        self.assertIn("tests.test_network_structural_influence", self.content)
+        self.assertIn("tools.render_source_structural_influence_vectors", self.content)
+        self.assertIn("conformance/network_source_structural_influence_v1.json", self.content)
+        self.assertLess(
+            self.content.index("R2 M5b V19/V24 selected structural key-player qualification"),
+            self.content.index("Runtime-derived mesh regression"),
+        )
+        script = (ROOT / "tools/check_mesh_evidence_lean.sh").read_text(encoding="utf-8")
+        self.assertIn("tools.render_source_structural_influence_vectors", script)
+        self.assertIn("network_source_structural_influence_v1.json", script)
+
     def test_r2_m5a_authority_source_is_not_role_or_centrality(self):
         self.assertIn("R2 M5a source-owned passage decision authority", self.content)
         self.assertIn("tests.test_network_power_authority", self.content)

@@ -89,6 +89,26 @@ mathematical theorem trust, cached CI singleflight and Draft gate. Do
 not add a second graph store, new formal proof of six hops, fallback
 engine, installer/consumer project or universal influence ranking.
 
+## R2.M5b — explicitly separate structural influence tasks
+
+M5b is a **read-only finite observation** of the same V19 source-backed
+V24 relation selection, not an additional network engine. Register
+one immutable world/story/model/cognitive/social revision, a selected
+directed relation, exact Agent roster and Society scope, plus a
+task-specific criterion. A broadcaster's static out-reach, an
+intermediary's removal sensitivity, an Agent's actual passage resource
+control, and a listener's trust are different concepts and must not be
+collapsed into a social power scalar.
+
+The first native case uses V19 perception-model INTERACTION edges
+Carol→Bob→Dana and an independent controller Alice, then derives
+V24 direct-interaction opportunities without inventing edges.
+Out-reach recognizes Carol; removal sensitivity recognizes Bob;
+Alice's passage permission does not create a social edge. Actual TELL
+transmissions remain zero. These are finite descriptive properties,
+not a power causal estimate, universal influence ranking or six-hop
+theorem. Follow Issue #120 and the separate M5c epistemic gate.
+
 ## Code and PR acceptance rules
 
 1. One implementation per model; prefer existing
