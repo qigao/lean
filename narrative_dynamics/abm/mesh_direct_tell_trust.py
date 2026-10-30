@@ -14,7 +14,7 @@ import re
 from tempfile import TemporaryDirectory
 
 from narrative_dynamics.contracts import stable_content_hash
-from narrative_dynamics.abm.situated import SituatedActionKind
+from narrative_dynamics.abm.situated import SituatedActionKind, SituatedActionIntent, ObservationChannel
 from narrative_dynamics.abm.situated_perception_contracts import SituatedPerceptFidelity
 from narrative_dynamics.abm.situated_percept_cognition import (
     admit_situated_percepts, perceptual_timeline,
@@ -27,6 +27,9 @@ from narrative_dynamics.abm.situated_percept_social_cognition import (
 )
 from narrative_dynamics.abm.situated_social_memory_contracts import (
     initialize_situated_social_memory,
+)
+from narrative_dynamics.abm.situated_memory_cognition_contracts import (
+    SituatedMemoryRecallCue,
 )
 from narrative_dynamics.abm.situated_story import replay_situated_story
 
@@ -44,8 +47,8 @@ _ARM_KEYS = frozenset({
     "actual_effective_direct_tell_trust",
     "native_source_tell_event_hash", "native_bob_exact_percept_hash",
     "direct_tell_admission_id", "direct_tell_prior_approved",
-    "direct_tell_posterior_approved", "direct_inspect_effective_trust",
-    "direct_inspect_posterior_approved",
+    "direct_tell_posterior_approved", "native_non_tell_direct_weights",
+    "native_new_tell_round", "native_tell_admitted_to_bob_decision",
     "native_cognitive_round_hash", "native_source_story_after_hash",
     "native_social_state_after_hash", "native_bob_decision_hash",
     "native_bob_selected_action", "native_bob_feasible_actions",
@@ -125,12 +128,14 @@ class DirectTellSourceTrustReport:
                 or a["native_source_tell_event_hash"] != d["source_tell_event_hash"]
                 or type(a["direct_tell_admission_id"]) is not str
                 or not a["direct_tell_admission_id"]
-                or a["direct_inspect_effective_trust"] != 1.0
+                or a["native_new_tell_round"] != 4
+                or a["native_tell_admitted_to_bob_decision"] is not True
+                or type(a["native_non_tell_direct_weights"]) is not list
+                or any(weight != 1.0 for weight in a["native_non_tell_direct_weights"])
                 or any(type(a[k]) not in (int, float) or not 0 <= a[k] <= 1
                        for k in (
                            "direct_tell_prior_approved",
                            "direct_tell_posterior_approved",
-                           "direct_inspect_posterior_approved",
                            "native_bob_prior_approved",
                            "native_bob_posterior_approved",
                            "native_social_trust_after",
@@ -174,36 +179,57 @@ class DirectTellSourceTrustReport:
 
 
 def observe_direct_tell_source_trust() -> DirectTellSourceTrustReport:
-    """Execute one real V19 Story with four exact social source-policy variants."""
+    """Make a *new* native V19 TELL after a legitimate source checkpoint.
+
+    All social-policy arms share the exact same prior Story and cognition.
+    The original action planner emits the new message in native round 4;
+    the original percept/social/cognitive owner admits it in round 5.
+    """
     from tests.test_network_epistemic_influence import source_epistemic_case
 
-    net, origin, _, open_schedule = source_epistemic_case()
-    memory = net.percept_memory_model
-    world = memory.cognitive_model.world_model
-    perception = memory.perception_model
+    net, root, _, _ = source_epistemic_case()
+    old_memory = net.percept_memory_model
+    world = old_memory.cognitive_model.world_model
+    perception = old_memory.perception_model
     social = net.social_memory_model
-    story = replay_situated_story(
-        world, origin.initial_state, open_schedule, perception_model=perception,
+    # An authored Alice INSPECT and authorized OPEN/MOVE are genuine world
+    # actions. The cognitive checkpoint is created only AFTER these rounds,
+    # so the next TELL is a new direct percept, not stale checkpoint history.
+    alice_inspection_cue = SituatedMemoryRecallCue(
+        "m5e-alice-own-inspect", "restructuring",
+        required_place_ids=("open",),
+        event_kinds=(SituatedActionKind.INSPECT,),
+        channels=(ObservationChannel.INSPECTION,),
     )
+    memory = replace(
+        old_memory,
+        agents=tuple(
+            replace(agent, cues=(alice_inspection_cue,))
+            if agent.agent_id == "alice" else agent
+            for agent in old_memory.agents
+        ),
+    )
+    early_actions = (
+        (SituatedActionIntent("m5e-alice-inspect", "alice",
+                              SituatedActionKind.INSPECT, target_id="memo"),),
+        (SituatedActionIntent("m5e-alice-authorized-open", "alice",
+                              SituatedActionKind.OPEN_PASSAGE, target_id="records-open"),),
+        (SituatedActionIntent("m5e-alice-move", "alice",
+                              SituatedActionKind.MOVE, target_id="records-open"),),
+    )
+    story = replay_situated_story(
+        world, root.initial_state, early_actions, perception_model=perception,
+    )
+    source_actions = [next(e for e in row.events if e.action_id == actions[0].action_id)
+                      for row, actions in zip(story.rounds, early_actions, strict=True)]
+    if (len(source_actions) != 3 or not all(item.success for item in source_actions)
+            or story.current_state.round_index != 3):
+        raise ValueError("M5e prerequisite must use actual V19 INSPECT OPEN MOVE")
     cognitive = initialize_situated_percept_memory_cognition(memory, story)
-    told = next(event for round_result in story.rounds for event in round_result.events
-                if event.action_id == open_schedule[3][0].action_id)
-    if not told.success or told.kind is not SituatedActionKind.TELL:
-        raise ValueError("M5e source must have real successful V19 TELL")
-    bob_percepts = perceptual_timeline(perception, story, "bob")
-    exact_tell = [
-        p for p in bob_percepts
-        if p.source_event_id == told.event_id
-        and p.fidelity is SituatedPerceptFidelity.EXACT
-        and p.actor_agent_id == "alice"
-        and p.kind is SituatedActionKind.TELL
-    ]
-    if len(exact_tell) != 1 or exact_tell[0].source_event_hash != told.content_hash:
-        raise ValueError("M5e needs one native source-qualified Bob EXACT TELL")
     agents = {a.agent_id: a for a in memory.cognitive_model.agents}
-    bob = agents["bob"]
-    mind = next(m for m in cognitive.minds if m.agent_id == "bob")
+    bob_model = agents["bob"]
     arms = {}
+    accepted_tells = {}
     for name, flag, trust, expected_effective_trust in _SPECS:
         policy = replace(
             social.policy, initial_source_trust=trust,
@@ -211,51 +237,80 @@ def observe_direct_tell_source_trust() -> DirectTellSourceTrustReport:
         )
         bounded_social = replace(social, policy=policy)
         prior_social = initialize_situated_social_memory(bounded_social, cognitive)
-        actual_trust = next(
-            x.trust for x in prior_social.relationships
-            if x.observer_agent_id == "bob" and x.source_agent_id == "alice"
-        )
-        # This is *the same original V19 percept admission function* that
-        # the integrated social-cognitive round calls, not a second updater.
-        direct = admit_situated_percepts(
-            bob, mind, bob_percepts,
-            _source_trust_by_source=(
-                {"alice": actual_trust} if flag else None
-            ),
-        )
-        tell_admissions = [
-            x for x in direct.admissions
-            if x.event_id == told.event_id
-        ]
-        inspect_admissions = [
-            x for x in direct.admissions if x.event_id != told.event_id
-            and x.likelihood_action_id == "inspect"
-        ]
-        if (
-            len(tell_admissions) != 1 or len(inspect_admissions) != 1
-            or tell_admissions[0].source_trust != expected_effective_trust
-            or inspect_admissions[0].source_trust != 1.0
-        ):
-            raise ValueError("M5e must separate external testimony from own inspection")
         with TemporaryDirectory(prefix=f"v19-m5e-direct-{name}-") as tmp:
-            result = simulate_situated_percept_social_cognitive_round(
-                str(Path(tmp) / "memory.sqlite3"),
-                memory, bounded_social, story, cognitive, prior_social,
+            db = str(Path(tmp) / "memory.sqlite3")
+            first = simulate_situated_percept_social_cognitive_round(
+                db, memory, bounded_social, story, cognitive, prior_social,
             )
-        decision = next(x for x in result.decisions if x.agent_id == "bob")
-        event = next(
-            e for e in result.next_story.rounds[-1].events
-            if e.action_id == decision.intent.action_id
-            and e.actor_agent_id == "bob"
-        )
-        bob_social_after = next(
-            x.trust for x in result.next_social_state.relationships
+            # Alice's action MUST come from the existing V19 cognitive owner,
+            # be a successful TELL and cite her actually observed INSPECT.
+            emitted = [
+                x for x in first.next_story.rounds[-1].events
+                if x.kind is SituatedActionKind.TELL
+                and x.actor_agent_id == "alice"
+                and x.success
+            ]
+            if len(emitted) != 1:
+                raise ValueError("M5e native planner did not produce a fresh Alice TELL")
+            told = emitted[0]
+            if told.round_index != 4 or told.cause_event_ids != (source_actions[0].event_id,):
+                raise ValueError("M5e fresh TELL must cite the actual native INSPECT")
+            accepted_tells[name] = told
+            bob_percepts = perceptual_timeline(
+                perception, first.next_story, "bob"
+            )
+            exact_tell = [
+                x for x in bob_percepts
+                if x.source_event_id == told.event_id
+                and x.source_event_hash == told.content_hash
+                and x.fidelity is SituatedPerceptFidelity.EXACT
+                and x.kind is SituatedActionKind.TELL
+                and x.actor_agent_id == "alice"
+            ]
+            if len(exact_tell) != 1:
+                raise ValueError("M5e Bob must receive a new source-owned EXACT TELL")
+            actual_trust = next(
+                x.trust for x in first.next_social_state.relationships
+                if x.observer_agent_id == "bob" and x.source_agent_id == "alice"
+            )
+            bob_mind = next(x for x in first.next_cognitive_state.minds
+                            if x.agent_id == "bob")
+            direct = admit_situated_percepts(
+                bob_model, bob_mind, bob_percepts,
+                _source_trust_by_source=(
+                    {"alice": actual_trust} if flag else None
+                ),
+            )
+            told_admissions = [
+                x for x in direct.admissions if x.event_id == told.event_id
+            ]
+            if len(told_admissions) != 1 or told_admissions[0].source_trust != expected_effective_trust:
+                raise ValueError("M5e source-owned new direct TELL trust admission missing")
+            not_tell_weights = [
+                x.source_trust for x in direct.admissions
+                if x.event_id != told.event_id
+            ]
+            # The second original native round is the actual decision which
+            # consumes the new TELL and current source social trust.
+            second = simulate_situated_percept_social_cognitive_round(
+                db, memory, bounded_social,
+                first.next_story, first.next_cognitive_state,
+                first.next_social_state,
+            )
+        bob_decision = next(x for x in second.decisions if x.agent_id == "bob")
+        if told_admissions[0].observation_id not in bob_decision.admitted_observation_ids:
+            raise ValueError("M5e native Bob decision did not consume the new TELL")
+        bob_event = next(x for x in second.next_story.rounds[-1].events
+                         if x.action_id == bob_decision.intent.action_id
+                         and x.actor_agent_id == "bob")
+        direct_social_trust_after = next(
+            x.trust for x in second.next_social_state.relationships
             if x.observer_agent_id == "bob" and x.source_agent_id == "alice"
         )
         admitted_testimony = sum(
-            e.kind.value == "testimony" and e.observer_agent_id == "bob"
-            and e.source_agent_id == "alice"
-            for e in result.social_update.admitted_evidence
+            x.kind.value == "testimony" and x.observer_agent_id == "bob"
+            and x.source_agent_id == "alice"
+            for x in second.social_update.admitted_evidence
         )
         arms[name] = {
             "social_model_hash": bounded_social.content_hash,
@@ -263,37 +318,42 @@ def observe_direct_tell_source_trust() -> DirectTellSourceTrustReport:
             "configured_social_source_trust": trust,
             "weight_direct_tell": flag,
             "actual_social_source_trust": actual_trust,
-            "actual_effective_direct_tell_trust": tell_admissions[0].source_trust,
+            "actual_effective_direct_tell_trust": told_admissions[0].source_trust,
             "native_source_tell_event_hash": told.content_hash,
             "native_bob_exact_percept_hash": exact_tell[0].content_hash,
-            "direct_tell_admission_id": tell_admissions[0].observation_id,
+            "direct_tell_admission_id": told_admissions[0].observation_id,
             "direct_tell_prior_approved":
-                tell_admissions[0].prior_belief.probabilities["approved"],
+                told_admissions[0].prior_belief.probabilities["approved"],
             "direct_tell_posterior_approved":
-                tell_admissions[0].posterior_belief.probabilities["approved"],
-            "direct_inspect_effective_trust": inspect_admissions[0].source_trust,
-            "direct_inspect_posterior_approved":
-                inspect_admissions[0].posterior_belief.probabilities["approved"],
-            "native_cognitive_round_hash": result.content_hash,
-            "native_source_story_after_hash": result.next_story.content_hash,
-            "native_social_state_after_hash": result.next_social_state.content_hash,
-            "native_bob_decision_hash": decision.content_hash,
-            "native_bob_selected_action": decision.selected_action_id,
-            "native_bob_feasible_actions": list(decision.feasible_action_ids),
-            "native_bob_prior_approved": decision.prior_belief.probabilities["approved"],
+                told_admissions[0].posterior_belief.probabilities["approved"],
+            "native_non_tell_direct_weights": not_tell_weights,
+            "native_new_tell_round": told.round_index,
+            "native_tell_admitted_to_bob_decision": True,
+            "native_cognitive_round_hash": second.content_hash,
+            "native_source_story_after_hash": second.next_story.content_hash,
+            "native_social_state_after_hash": second.next_social_state.content_hash,
+            "native_bob_decision_hash": bob_decision.content_hash,
+            "native_bob_selected_action": bob_decision.selected_action_id,
+            "native_bob_feasible_actions": list(bob_decision.feasible_action_ids),
+            "native_bob_prior_approved":
+                bob_decision.prior_belief.probabilities["approved"],
             "native_bob_posterior_approved":
-                decision.posterior_belief.probabilities["approved"],
-            "native_bob_event_hash": event.content_hash,
-            "native_bob_event_outcome": event.outcome,
-            "native_bob_event_success": event.success,
+                bob_decision.posterior_belief.probabilities["approved"],
+            "native_bob_event_hash": bob_event.content_hash,
+            "native_bob_event_outcome": bob_event.outcome,
+            "native_bob_event_success": bob_event.success,
             "native_social_claim_statuses": sorted(
-                c.status.value for c in result.next_social_state.claims
-                if c.observer_agent_id == "bob"
+                x.status.value for x in second.next_social_state.claims
+                if x.observer_agent_id == "bob"
             ),
-            "native_social_trust_after": bob_social_after,
+            "native_social_trust_after": direct_social_trust_after,
             "native_bob_admitted_testimony": admitted_testimony,
         }
-    payload = {
+    source_events = {(t.event_id, t.content_hash) for t in accepted_tells.values()}
+    if len(source_events) != 1:
+        raise ValueError("M5e four social policy arms changed the authored TELL source event")
+    tell_id, tell_hash = next(iter(source_events))
+    result = {
         "schema": _SCHEMA,
         "source_owner": "V19_SINGLE_DIRECT_COGNITION_AND_SOCIAL_OWNER",
         "base_world_hash": world.content_hash,
@@ -301,9 +361,9 @@ def observe_direct_tell_source_trust() -> DirectTellSourceTrustReport:
         "base_cognitive_model_hash": memory.cognitive_model.content_hash,
         "base_perception_model_hash": perception.content_hash,
         "base_initial_cognitive_state_hash": cognitive.content_hash,
-        "source_policy_variants": [k for k, *_ in _SPECS],
-        "source_tell_event_id": told.event_id,
-        "source_tell_event_hash": told.content_hash,
+        "source_policy_variants": [x[0] for x in _SPECS],
+        "source_tell_event_id": tell_id,
+        "source_tell_event_hash": tell_hash,
         "source_subject_id": "alice",
         "source_observer_id": "bob",
         "source_trust_direction": "BOB_OBSERVES_ALICE",
@@ -318,5 +378,5 @@ def observe_direct_tell_source_trust() -> DirectTellSourceTrustReport:
         "arms": arms,
     }
     return DirectTellSourceTrustReport(
-        json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        json.dumps(result, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     )

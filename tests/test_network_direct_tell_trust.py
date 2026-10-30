@@ -53,6 +53,8 @@ class DirectTellSourceTrustAcceptance(unittest.TestCase):
                          "V19_SINGLE_DIRECT_COGNITION_AND_SOCIAL_OWNER")
         self.assertEqual(d["source_direct_percept_fidelity"], "exact")
         self.assertEqual(d["source_trust_direction"], "BOB_OBSERVES_ALICE")
+        self.assertEqual(d["source_world_branch_comparison"],
+                         "SAME_WORLD_STORY_DIFFERENT_SOCIAL_POLICY")
         self.assertEqual(
             {arm["native_source_tell_event_hash"] for arm in arms.values()},
             {d["source_tell_event_hash"]},
@@ -76,10 +78,13 @@ class DirectTellSourceTrustAcceptance(unittest.TestCase):
         one = a["weighted_one"]["direct_tell_posterior_approved"]
         self.assertEqual(legacy, one)
         self.assertEqual(zero, a["weighted_zero"]["direct_tell_prior_approved"])
-        self.assertLess(legacy, half)
-        self.assertLess(half, zero)
+        self.assertLess(zero, half)
+        self.assertLess(half, legacy)
         for arm in a.values():
-            self.assertEqual(arm["direct_inspect_effective_trust"], 1.0)
+            self.assertEqual(arm["native_new_tell_round"], 4)
+            self.assertTrue(arm["native_tell_admitted_to_bob_decision"])
+            self.assertTrue(all(w == 1.0 for w in
+                                arm["native_non_tell_direct_weights"]))
             self.assertEqual(arm["native_bob_admitted_testimony"], 1)
 
     def test_same_exact_world_native_sqlite_choice_uses_direct_policy(self):
