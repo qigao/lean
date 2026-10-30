@@ -1,0 +1,287 @@
+{
+  "cases": [
+    {
+      "name": "exact_observed_tell",
+      "trace": {
+        "admitted_evidence": [
+          {
+            "event_id": "r0001:e0001",
+            "evidence_hash": "sha256:38aa30fcf7a079f833fcfba263fd0ea695d73b46c150a662b59e61b7924b6968",
+            "evidence_id": "recalled-percept:r0001:e0001:p:bob",
+            "kind": "testimony",
+            "observer_agent_id": "bob",
+            "percept_id": "r0001:e0001:p:bob",
+            "round_index": 1,
+            "source_agent_id": "alice"
+          }
+        ],
+        "belief_revisions": [
+          {
+            "after_hash": "sha256:e777bf3e4069aaff8b97d739dfe698702dadaa9b260e0df211cb5e6868bfbcc1",
+            "agent_id": "bob",
+            "before_hash": "sha256:f8e7b7a53f70b0c4fb8697b4487d7bb57844e8a0c79e788180fc53dbf6c727f9"
+          }
+        ],
+        "causal_attribution": "UNATTRIBUTED",
+        "claim_revisions": [
+          {
+            "after_hash": "sha256:b2fa9baeb386992ff66463326e028bc2bcbe695416ea5b18be44adb5ed67a056",
+            "before_hash": null,
+            "claim_id": "sha256:18b0b49e22613e552384fb93b2f63fc1999cd006f287bcece19678e012c05b12",
+            "observer_agent_id": "bob",
+            "source_agent_id": "alice",
+            "status_after": "active",
+            "status_before": null
+          }
+        ],
+        "counts": {
+          "actual_tell_events": 1,
+          "admitted_testimony": 1,
+          "admitted_verification": 0,
+          "belief_revisions": 1,
+          "claim_revisions": 1,
+          "trust_revisions": 0
+        },
+        "directed_trust_revisions": [],
+        "next_cognitive_state_hash": "sha256:77a2f4fcac30f9cf6e8f366458c14b53155ce4a5e5cc96585ae12863b8ee7cdf",
+        "next_social_state_hash": "sha256:2daf12d1d134fdb2c764ce84a77ee8f3455acfcf34fe1e301bafd6194d1bb73f",
+        "next_story_hash": "sha256:31523791e5186670a6c35c166b074f4c587e7152a9ed51fce368019b58597403",
+        "prior_cognitive_state_hash": "sha256:4cea2b1d77c9189e7d3ddd24ff0b3656c57fe8cae64462153cb02dc383d716b6",
+        "prior_social_state_hash": "sha256:bdcebef01b8c69d82b423b0998043c0f94887a58c2bf3b12b796a82ba1dbc743",
+        "prior_story_hash": "sha256:6a440d01b0638651ae4b7e3e0f2d5d0ce40a57a5dd7c32e11fe95c40a3e0f04e",
+        "schema": "v19-agent-content-evidence-trace-v1",
+        "scope": "finite exact V19 private percept/social evidence; not external historical proof",
+        "source_tell_events": [
+          {
+            "actor_agent_id": "alice",
+            "event_hash": "sha256:0ade684cee5fd8d80fe53441f0bbd7ea7f6e969edbbbc6eb981c2cf26264f8f1",
+            "event_id": "r0001:e0001",
+            "other_agent_perception_by_fidelity": {
+              "exact": 2
+            },
+            "round_index": 1
+          }
+        ],
+        "transition_hash": "sha256:8f0dfd9e879676f1cc2970366b93f67e3b2a09761032e90f271ef0a7e4e7ec4f"
+      },
+      "trace_hash": "sha256:987a2d50903488c137e880802a3c78bdf26520c1288e3d98c52c201a8f0ed22d"
+    },
+    {
+      "name": "detected_sound_no_testimony",
+      "trace": {
+        "admitted_evidence": [],
+        "belief_revisions": [],
+        "causal_attribution": "UNATTRIBUTED",
+        "claim_revisions": [],
+        "counts": {
+          "actual_tell_events": 1,
+          "admitted_testimony": 0,
+          "admitted_verification": 0,
+          "belief_revisions": 0,
+          "claim_revisions": 0,
+          "trust_revisions": 0
+        },
+        "directed_trust_revisions": [],
+        "next_cognitive_state_hash": "sha256:db6a531ecc990fd5f2b23266b90468009d3c967c26d53f88f7250c355b6262a8",
+        "next_social_state_hash": "sha256:e0f25172b153c2e14f1640edaf3d558f6a1eda0fc91ca74a8ab0ad6465d5d0b7",
+        "next_story_hash": "sha256:efc1eb2d2681164d48db59afbed25908a9c39662e7610f7ed56cdf6ae8ae6dec",
+        "prior_cognitive_state_hash": "sha256:0c97d99db21464978bd81879bf9a5027bb01a9826f1e0b47599fd5ae0450622c",
+        "prior_social_state_hash": "sha256:8359481468565698c65e982d7355c462a71a2179d15f1286d9a25b06e2a02b64",
+        "prior_story_hash": "sha256:f371d267a2f645f1ead9138206b08586c67a382ac887a2067b3e589d083ed6e1",
+        "schema": "v19-agent-content-evidence-trace-v1",
+        "scope": "finite exact V19 private percept/social evidence; not external historical proof",
+        "source_tell_events": [
+          {
+            "actor_agent_id": "alice",
+            "event_hash": "sha256:0ade684cee5fd8d80fe53441f0bbd7ea7f6e969edbbbc6eb981c2cf26264f8f1",
+            "event_id": "r0001:e0001",
+            "other_agent_perception_by_fidelity": {
+              "detected": 2
+            },
+            "round_index": 1
+          }
+        ],
+        "transition_hash": "sha256:df000354da183ed5ba789bd95d9bc79938460045e3f2876cc7440e5cb6773364"
+      },
+      "trace_hash": "sha256:f30fbd0c16fb81f1ee02edfad1f1981b15ef2e836323112fe0d9ab2800d8fdaf"
+    },
+    {
+      "name": "identified_action_no_content",
+      "trace": {
+        "admitted_evidence": [],
+        "belief_revisions": [
+          {
+            "after_hash": "sha256:37342b44a64585806c08831ebc7bb05615a07946ca0dbaeababb6ee44725ca22",
+            "agent_id": "bob",
+            "before_hash": "sha256:f8e7b7a53f70b0c4fb8697b4487d7bb57844e8a0c79e788180fc53dbf6c727f9"
+          }
+        ],
+        "causal_attribution": "UNATTRIBUTED",
+        "claim_revisions": [],
+        "counts": {
+          "actual_tell_events": 1,
+          "admitted_testimony": 0,
+          "admitted_verification": 0,
+          "belief_revisions": 1,
+          "claim_revisions": 0,
+          "trust_revisions": 0
+        },
+        "directed_trust_revisions": [],
+        "next_cognitive_state_hash": "sha256:f93d35413800911addf2fd3225d7b9e3928f9bbc9dbd7dc3a3f42ca0f6b243ad",
+        "next_social_state_hash": "sha256:504d33e86feaa62d254fb63a68908f394729f145b8074dde10937b8cb615f597",
+        "next_story_hash": "sha256:6a18720bda64593c9d308f2689d5d615aefa86ede73250d4d4839649199b767d",
+        "prior_cognitive_state_hash": "sha256:e9384c4409a03d5fd2fc2abf5fb21e80747ab5dc536f89b26f47484e072e4438",
+        "prior_social_state_hash": "sha256:e648f3857719af05b320f49a3272be84637111e3654a9b7aaf620ed69e6116ff",
+        "prior_story_hash": "sha256:e116aadce971da948acc31151c1ba1ff6be07b2ea51adc2721b95d4cabf92303",
+        "schema": "v19-agent-content-evidence-trace-v1",
+        "scope": "finite exact V19 private percept/social evidence; not external historical proof",
+        "source_tell_events": [
+          {
+            "actor_agent_id": "alice",
+            "event_hash": "sha256:0ade684cee5fd8d80fe53441f0bbd7ea7f6e969edbbbc6eb981c2cf26264f8f1",
+            "event_id": "r0001:e0001",
+            "other_agent_perception_by_fidelity": {
+              "identified": 2
+            },
+            "round_index": 1
+          }
+        ],
+        "transition_hash": "sha256:0f9fbcf1707804eb48f174a8afc92ce108451a151e92546c48d6c87e3a5247dd"
+      },
+      "trace_hash": "sha256:ca6949aade5d40a252b39dacd54ac1ecd0a88858c6302d75578c8de23189fb70"
+    },
+    {
+      "name": "private_inspection_verification",
+      "trace": {
+        "admitted_evidence": [
+          {
+            "event_id": "r0001:e0001",
+            "evidence_hash": "sha256:873015f730c89f349c44f3fc8104f9660af1a06bedff29363e2fa23c099a4f78",
+            "evidence_id": "recalled-percept:r0001:e0001:p:alice",
+            "kind": "verification",
+            "observer_agent_id": "alice",
+            "percept_id": "r0001:e0001:p:alice",
+            "round_index": 1,
+            "source_agent_id": null
+          }
+        ],
+        "belief_revisions": [
+          {
+            "after_hash": "sha256:c062105cfa592f19ac0eb27a2fc469453f81760e1df8b053b08c5e87dd7a4a68",
+            "agent_id": "alice",
+            "before_hash": "sha256:f8e7b7a53f70b0c4fb8697b4487d7bb57844e8a0c79e788180fc53dbf6c727f9"
+          }
+        ],
+        "causal_attribution": "UNATTRIBUTED",
+        "claim_revisions": [],
+        "counts": {
+          "actual_tell_events": 0,
+          "admitted_testimony": 0,
+          "admitted_verification": 1,
+          "belief_revisions": 1,
+          "claim_revisions": 0,
+          "trust_revisions": 0
+        },
+        "directed_trust_revisions": [],
+        "next_cognitive_state_hash": "sha256:99468fc342136ffc19b6169a795495a18e75ae430b4937d58702848d9caadf53",
+        "next_social_state_hash": "sha256:cf3065aae03b64b889622b861afb0df6ff8ff1f79a158876a1a61c95dbbfed54",
+        "next_story_hash": "sha256:0e04509a7af486c820e543c47eba4184ba0b4ba39c60da18ed7b4e90d30b2c33",
+        "prior_cognitive_state_hash": "sha256:430e5bcbd9fc9785a92a752c263b3885ff89aa86e9e5592f177d37db13f2b4d2",
+        "prior_social_state_hash": "sha256:022d79583ebc006f1981277ca30f2e9e019a9753e38df54ef65feff81ba432e0",
+        "prior_story_hash": "sha256:cfc7800fafa1792d4a6c73387f8e1673292a58bba6fd81f5b19c67fcedd72b5b",
+        "schema": "v19-agent-content-evidence-trace-v1",
+        "scope": "finite exact V19 private percept/social evidence; not external historical proof",
+        "source_tell_events": [],
+        "transition_hash": "sha256:824380be1d4f544f76fde84e50a3eeedfa6544dd867fbb27322a0aa4c5282406"
+      },
+      "trace_hash": "sha256:cdf2b08abb1dab9d65bd210e5f7a9c7685f7ed12ce09862a8de59d4d21dd78a1"
+    },
+    {
+      "name": "contradicted_claim_directed_trust",
+      "trace": {
+        "admitted_evidence": [
+          {
+            "event_id": "r0003:e0001",
+            "evidence_hash": "sha256:66c3735fe38d784fc10ad737b6f30eb148c87388905f54925e471cecd0192b74",
+            "evidence_id": "recalled-percept:r0003:e0001:p:bob",
+            "kind": "testimony",
+            "observer_agent_id": "bob",
+            "percept_id": "r0003:e0001:p:bob",
+            "round_index": 3,
+            "source_agent_id": "alice"
+          },
+          {
+            "event_id": "r0005:e0001",
+            "evidence_hash": "sha256:de300f02d22fa2672bd3576cb2ef5be83f38e95ffadca17df2fb14b89c93d0a5",
+            "evidence_id": "recalled-percept:r0005:e0001:p:bob",
+            "kind": "verification",
+            "observer_agent_id": "bob",
+            "percept_id": "r0005:e0001:p:bob",
+            "round_index": 5,
+            "source_agent_id": null
+          }
+        ],
+        "belief_revisions": [
+          {
+            "after_hash": "sha256:8ec29c020605798812c9e69c3b63876541363fd6c11cb0d6e0be784fd9eed493",
+            "agent_id": "bob",
+            "before_hash": "sha256:f8e7b7a53f70b0c4fb8697b4487d7bb57844e8a0c79e788180fc53dbf6c727f9"
+          }
+        ],
+        "causal_attribution": "UNATTRIBUTED",
+        "claim_revisions": [
+          {
+            "after_hash": "sha256:a35c68436826b8597c37ee8cd8ba8722b8e57eef8bec7fe4cebadd51c147cef5",
+            "before_hash": null,
+            "claim_id": "sha256:b7b2489f143dc8e31ece513f51b96d5710ff8b4dc17392d3b3172a65dbf8974f",
+            "observer_agent_id": "bob",
+            "source_agent_id": "alice",
+            "status_after": "contradicted",
+            "status_before": null
+          }
+        ],
+        "counts": {
+          "actual_tell_events": 1,
+          "admitted_testimony": 1,
+          "admitted_verification": 1,
+          "belief_revisions": 1,
+          "claim_revisions": 1,
+          "trust_revisions": 1
+        },
+        "directed_trust_revisions": [
+          {
+            "observer_agent_id": "bob",
+            "relation_after_hash": "sha256:ded1ed40e4348dbc4c7945521169ffd0a5e2d77d49c8cdd2a8547cb33c55fc28",
+            "relation_before_hash": "sha256:abeab9625f82845c64aeaeba2057ddb4c6bfb61c28e9a2e38961e90d75391dce",
+            "source_agent_id": "alice",
+            "trust_after": 0.3,
+            "trust_before": 0.5
+          }
+        ],
+        "next_cognitive_state_hash": "sha256:9dabe64e83845e41c20bd67ea6aac990fe4a4033de1463cd72f25bf64e7105e1",
+        "next_social_state_hash": "sha256:65217ac984c5460b0bf6a5b8720eb34799dfe196df328343bb7bbb85cb60003b",
+        "next_story_hash": "sha256:bb04f2f23efbdaec78f8d6486190c7f9f12de4363ff16617c9a1b81827e39584",
+        "prior_cognitive_state_hash": "sha256:b0613fa4429d6abd5b18e7a093d5283776db2da51b4d4ecd689608052dd9065a",
+        "prior_social_state_hash": "sha256:1d243ed1c46321d36cac5ba51fb93f6406045e4c9b3ad68465853a92581394b1",
+        "prior_story_hash": "sha256:99759e2fcf8915915554d0e37ad26d646c30c082503570f11fcf80b53b669b49",
+        "schema": "v19-agent-content-evidence-trace-v1",
+        "scope": "finite exact V19 private percept/social evidence; not external historical proof",
+        "source_tell_events": [
+          {
+            "actor_agent_id": "alice",
+            "event_hash": "sha256:109227f38e09788ce3c0598d47d09689cc93b52f2df82253a96863234faabfa5",
+            "event_id": "r0003:e0001",
+            "other_agent_perception_by_fidelity": {
+              "exact": 2
+            },
+            "round_index": 3
+          }
+        ],
+        "transition_hash": "sha256:90017dee72a4b3f8b7ead77fc972481ba57ec9a88707b8bf3323a738a56f8cad"
+      },
+      "trace_hash": "sha256:969330bca582b1ef69d983964f700b4ff262f133cf06b0a1fea96b7b8cc66fe9"
+    }
+  ],
+  "notice": "Real V19 private perception and source-owned social claims; no private content payload, external actor authentication, automatic trust or inferred universal graph property",
+  "schema": "v19-agent-content-evidence-v1"
+}

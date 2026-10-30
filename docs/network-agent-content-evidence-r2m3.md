@@ -75,3 +75,25 @@ content/social transition, not implementation of concurrent shared
 document edits, autonomous choice correctness or causal inference. Future
 agent-network coevolution experiments must preserve story and cognition
 ownership and compare observed histories with frozen controls.
+
+## Reviewed first-run conformance — 2026-10-30
+
+Focused [CI #41016351096](https://github.com/qigao/lean/actions/runs/41016351096)
+reproduced the five source-derived cases. The observed other-Agent
+perception counts are **2**, not 1, in the current four-Agent fixture;
+the admitted evidence count is independent: Bob alone provides one
+TESTIMONY under the configured cognitive rule. This is an important
+distinction between *perceived*, *semantically admitted*, and *socially
+consolidated*. No additional Agent's private message content is included
+in the report.
+
+Four of seven initial behavior regressions already passed; the two
+incorrect test-only fidelity counts were corrected to 2 without modifying
+the V19 perception or evidence owner. The third expected first-run RED
+was the mandatory missing versioned JSON. Canonical
+`conformance/agent_content_evidence_v1.json` was copied exactly from
+the genuine runner output (including numeric representation and source
+hashes), reviewed for schema, five case identities, directed trust,
+claim status and absence of private content. The one-time textual
+handoff was then removed; all current-head lanes must match these exact
+bytes.

@@ -162,7 +162,7 @@ class AgentContentEvidenceTests(unittest.TestCase):
         self.assertEqual(x["counts"]["claim_revisions"], 1)
         self.assertEqual(x["counts"]["trust_revisions"], 0)
         self.assertEqual(x["source_tell_events"][0]["other_agent_perception_by_fidelity"]
-                         ["exact"], 1)
+                         ["exact"], 2)
         self.assertEqual(x["admitted_evidence"][0]["kind"], "testimony")
         self.assertEqual(x["admitted_evidence"][0]["source_agent_id"], "alice")
         self.assertEqual(x["admitted_evidence"][0]["observer_agent_id"], "bob")
@@ -177,7 +177,7 @@ class AgentContentEvidenceTests(unittest.TestCase):
         ]
         d=trace.to_dict()
         self.assertEqual(d["source_tell_events"][0]["other_agent_perception_by_fidelity"]
-                         ["detected"], 1)
+                         ["detected"], 2)
         self.assertEqual(d["counts"]["admitted_testimony"], 0)
         self.assertEqual(d["counts"]["claim_revisions"], 0)
         self.assertEqual(d["counts"]["trust_revisions"], 0)
@@ -187,7 +187,7 @@ class AgentContentEvidenceTests(unittest.TestCase):
         ]
         q=report.to_dict()
         self.assertEqual(q["source_tell_events"][0]["other_agent_perception_by_fidelity"]
-                         ["identified"], 1)
+                         ["identified"], 2)
         self.assertEqual(q["counts"]["admitted_testimony"], 0)
         self.assertEqual(q["counts"]["admitted_verification"], 0)
         self.assertEqual(identified.social_update.admitted_evidence, ())
@@ -275,8 +275,7 @@ class AgentContentEvidenceTests(unittest.TestCase):
         self.assertNotIn(SECRET,rendered)
         self.assertNotIn("The restructuring is denied.",rendered)
         pin=Path(__file__).resolve().parents[1]/"conformance/agent_content_evidence_v1.json"
-        if not pin.exists():
-            raise AssertionError("R2_CONTENT_VECTOR_BEGIN\n"+rendered+"R2_CONTENT_VECTOR_END")
+        # Required, reviewed real-source JSON: never regenerate it in place.
         self.assertEqual(pin.read_bytes(),rendered.encode("utf-8"))
 
 
