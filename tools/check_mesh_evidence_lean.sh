@@ -60,6 +60,14 @@ if ! cmp -s conformance/agent_content_evidence_v1.json "$tmpdir/agent_content_ev
   diff -u conformance/agent_content_evidence_v1.json "$tmpdir/agent_content_evidence_v1.json" || true
   exit 1
 fi
+# R2.M4a: deterministic paired real V19 boundary/environment/content
+# intervention, original cognitive/social and V24 selected source relations.
+python3 -m tools.render_network_coupled_evolution_vectors > "$tmpdir/network_coupled_evolution_v1.json"
+if ! cmp -s conformance/network_coupled_evolution_v1.json "$tmpdir/network_coupled_evolution_v1.json"; then
+  echo 'FAIL: R2.M4a source-derived coupled Agent/network contrast changed' >&2
+  diff -u conformance/network_coupled_evolution_v1.json "$tmpdir/network_coupled_evolution_v1.json" || true
+  exit 1
+fi
 generated="$tmpdir/authoritative.lean"
 
 # Always regenerate from the actual V19 snapshot, then enforce the immutable

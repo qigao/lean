@@ -151,6 +151,23 @@ jobs:
             echo 'RED: V19 Agent content evidence differs from exact source'
             exit 1
           fi
+      - name: R2 M4a same-origin coupled V19 control and intervention
+        run: |
+          set -euo pipefail
+          python -m unittest tests.test_network_coupled_evolution -v
+          mkdir -p .generated-conformance
+          generated=.generated-conformance/network_coupled_evolution_v1.json
+          pinned=conformance/network_coupled_evolution_v1.json
+          python3 -m tools.render_network_coupled_evolution_vectors > "$generated"
+          if [ ! -f "$pinned" ]; then
+            echo 'RED: reviewed same-origin R2.M4a V19 coupled vector is missing'
+            exit 1
+          fi
+          if ! cmp -s "$pinned" "$generated"; then
+            diff -u "$pinned" "$generated" || true
+            echo 'RED: real coupled R2.M4a Agent/network evidence differs from reviewed source'
+            exit 1
+          fi
       - name: Runtime-derived mesh regression
         run: python -m unittest tests.test_mesh_projection tests.test_mesh_evidence -v
 
