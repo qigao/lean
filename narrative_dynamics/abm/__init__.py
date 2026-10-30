@@ -426,6 +426,9 @@ from narrative_dynamics.abm.situated_network_contracts import (
     SituatedNetworkTrajectory,
     SituatedNetworkTransmission,
 )
+from narrative_dynamics.abm.mesh_environment_observation import (
+    EnvironmentActionTrace, observe_environment_action_trace,
+)
 from narrative_dynamics.abm.mesh_evolution_observation import (
     NetworkLayerView, NetworkChangeReport,
     observe_network_layers, compare_network_layers,

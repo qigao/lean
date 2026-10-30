@@ -98,6 +98,20 @@ class SingleflightCIContractTests(unittest.TestCase):
         self.assertIn("social_topology_checkpoint_v1.json", script)
         self.assertIn("cmp -s", script)
 
+    def test_r2_m2_real_environment_event_trace_gate(self):
+        self.assertIn("R2 M2 real V19 environment-action trace", self.content)
+        self.assertIn("tests.test_network_environment_actions", self.content)
+        self.assertIn("tools.render_network_environment_vectors", self.content)
+        self.assertIn("conformance/network_environment_action_v1.json", self.content)
+        self.assertLess(
+            self.content.index("R2 M2 real V19 environment-action trace"),
+            self.content.index("Runtime-derived mesh regression"),
+        )
+        script = (ROOT / "tools/check_mesh_evidence_lean.sh").read_text(encoding="utf-8")
+        self.assertIn("tools.render_network_environment_vectors", script)
+        self.assertIn("network_environment_action_v1.json", script)
+        self.assertIn("cmp -s", script)
+
     def test_r2_m1_physical_passage_events_gate(self):
         self.assertIn("R2 M1 physical V19 passage-boundary events", self.content)
         self.assertIn("tests.test_network_boundary_events", self.content)
