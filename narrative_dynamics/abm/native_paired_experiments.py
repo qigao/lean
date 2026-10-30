@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from fractions import Fraction
 import json
+import math
+import re
 
 from narrative_dynamics.contracts import stable_content_hash
 from narrative_dynamics.abm.bb_runtime_contracts import BBRuntimeSeed, BBRuntimeTick
@@ -24,7 +26,7 @@ from narrative_dynamics.abm.model_family_comparison import (
     observe_bb_growth, observe_rewiring, observe_evolving,
 )
 from narrative_dynamics.abm.native_metric_protocol import (
-    _bb_frames, _rewiring_frames, _evolving_frames,
+    NativeMetric, _bb_frames, _rewiring_frames, _evolving_frames,
 )
 
 _SCHEMA = "r2-m4c1-native-within-family-paired-v1"
@@ -259,6 +261,209 @@ def run_evolving_entry_pair(
     }
 
 
+
+# Validate the structure of immutable observations independently of the
+# original source replay. This cannot authenticate an actor or replace source
+# reexecution; the checked-in vector remains the exact engine-owned evidence.
+_DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
+_NATIVE_CLOCKS = {
+    "bb_fitness_growth": "GLOBAL_BB_TICK",
+    "directed_rewiring": "NATIVE_REWIRING_ROUND",
+    "lifecycle_feedback": "NATIVE_EVOLVING_ROUND",
+}
+
+
+def _valid_digest(value: object) -> bool:
+    return type(value) is str and _DIGEST.fullmatch(value) is not None
+
+
+def _edges(items: object, *, directed: bool, label: str) -> set:
+    if type(items) is not list:
+        raise ValueError(label + ": expected native edge list")
+    result = set()
+    for edge in items:
+        if (type(edge) is not list or len(edge) != (3 if directed else 2)
+                or any(type(x) is not str or not x for x in edge)
+                or edge[0] == edge[1]):
+            raise ValueError(label + ": malformed native edge")
+        identity = tuple(edge) if directed else frozenset(edge)
+        result.add(identity)
+    if len(result) != len(items):
+        raise ValueError(label + ": repeated or reversed native edge")
+    return result
+
+
+def _round_edges(items: object, *, label: str) -> list[set]:
+    if type(items) is not list or len(items) != 2:
+        raise ValueError(label + ": expected two native rounds")
+    return [_edges(x, directed=True, label=label) for x in items]
+
+
+def _audit_native_paired_case(family: str, case: dict) -> None:
+    """Require locally consistent source identities, native units and deltas."""
+    if case.get("clock") != _NATIVE_CLOCKS[family]:
+        raise ValueError("paired case changed native clock")
+    parsed = {}
+    for label in ("control", "intervention"):
+        arm = case[label]
+        if not _valid_digest(arm.get("final_source_hash")):
+            raise ValueError("paired arm requires native final source hash")
+        try:
+            rows = [NativeMetric(**item) for item in arm["metrics"]]
+        except (TypeError, ValueError, KeyError, ZeroDivisionError) as exc:
+            raise ValueError("paired arm has invalid typed native metric") from exc
+        if (len(rows) != 2 or any(m.family != family for m in rows)
+                or [m.native_time for m in rows] != [1, 2]
+                or rows[-1].frame_source_hash != arm["final_source_hash"]
+                or rows[0].frame_source_hash == rows[-1].frame_source_hash
+                or any(not _valid_digest(m.run_source_hash)
+                       or not _valid_digest(m.frame_source_hash) for m in rows)):
+            raise ValueError("paired arm lost original model/clock/frame identity")
+        parsed[label] = rows
+    if case["native_metric_delta"] != _delta(
+        parsed["control"], parsed["intervention"]
+    ):
+        raise ValueError("paired native metric delta differs from exact fractions")
+    if family == "bb_fitness_growth":
+        source = case.get("initial_source_hash")
+        if (not _valid_digest(source) or case.get("topology_changed") is not True
+                or any(m.run_source_hash != source
+                       for rows in parsed.values() for m in rows)):
+            raise ValueError("BB paired birth must share exact genesis source")
+        topologies = []
+        ticks = []
+        for label in ("control", "intervention"):
+            arm = case[label]
+            topology = _edges(
+                arm.get("last_native_topology"), directed=False,
+                label="BB undirected topology",
+            )
+            count = len({node for edge in topology for node in edge})
+            denominator = parsed[label][-1].denominator
+            if (len(topology) != parsed[label][-1].numerator
+                    or count * (count - 1) // 2 != denominator):
+                raise ValueError("BB native undirected endpoints/denominator disagree")
+            program = arm.get("source_program_tick_hashes")
+            if (type(program) is not list or len(program) != 2
+                    or not all(_valid_digest(x) for x in program)):
+                raise ValueError("BB source tick hashes must identify both steps")
+            transmissions = _round_edges(
+                arm.get("native_transmissions_per_tick"),
+                label="BB native transmissions",
+            )
+            if any((edge[2] != "bb" or frozenset(edge[:2]) not in topology)
+                   for round_edges in transmissions for edge in round_edges):
+                raise ValueError("BB transmissions must use actual undirected birth edges")
+            topologies.append(topology)
+            ticks.append(program)
+        if (topologies[0] == topologies[1] or ticks[0][0] == ticks[1][0]
+                or ticks[0][1] != ticks[1][1]):
+            raise ValueError("BB paired intervention must change only its birth tick")
+    elif family == "directed_rewiring":
+        if (not _valid_digest(case.get("shared_base_model_hash"))
+                or not _valid_digest(case.get("shared_native_initial_components_hash"))
+                or case.get("first_round_transmission_equal") is not True):
+            raise ValueError("rewiring pair lost shared initial components")
+        model_hashes, initial_hashes, thresholds = [], [], []
+        all_propagations = []
+        all_priors = []
+        for label in ("control", "intervention"):
+            arm = case[label]
+            model_hash, initial_hash = arm.get("model_hash"), arm.get("initial_source_hash")
+            threshold = arm.get("native_formation_threshold")
+            if (not _valid_digest(model_hash) or not _valid_digest(initial_hash)
+                    or type(threshold) not in (float, int)
+                    or not math.isfinite(threshold) or not 0 <= threshold <= 1
+                    or any(m.run_source_hash != initial_hash for m in parsed[label])):
+                raise ValueError("rewiring arm changed model/initial source identity")
+            priors = _round_edges(arm.get("prior_active_edges_per_round"),
+                                  label="prior directed candidate topology")
+            posts = _round_edges(arm.get("next_active_edges_per_round"),
+                                 label="post directed candidate topology")
+            tx = _round_edges(arm.get("native_transmissions_per_round"),
+                              label="rewiring propagation")
+            if (priors[1] != posts[0]
+                    or any(not transmitted.issubset(prior)
+                           for transmitted, prior in zip(tx, priors, strict=True))
+                    or any(len(post) != metric.numerator
+                           for post, metric in zip(posts, parsed[label], strict=True))):
+                raise ValueError("rewiring must propagate old directed edges before rewire")
+            model_hashes.append(model_hash)
+            initial_hashes.append(initial_hash)
+            thresholds.append(threshold)
+            all_priors.append(priors)
+            all_propagations.append(tx)
+        if (len(set(model_hashes)) != 2 or len(set(initial_hashes)) != 2
+                or thresholds[0] == thresholds[1]
+                or all_priors[0][0] != all_priors[1][0]
+                or all_propagations[0][0] != all_propagations[1][0]):
+            raise ValueError("rewiring pair must change only its native threshold")
+    else:
+        shared_source, model_hash = case.get("initial_source_hash"), case.get("model_hash")
+        if (not _valid_digest(shared_source) or not _valid_digest(model_hash)
+                or case.get("shared_feedback_schedule") != "EMPTY_BOTH_ARMS"
+                or any(m.run_source_hash != shared_source
+                       for rows in parsed.values() for m in rows)):
+            raise ValueError("evolving pair must share exact model, initial state and no-feedback")
+        memberships = []
+        schedules = []
+        for label in ("control", "intervention"):
+            arm = case[label]
+            if not _valid_digest(arm.get("event_schedule_hash")):
+                raise ValueError("evolving event schedule hash required")
+            frames = arm.get("native_members_after")
+            if type(frames) is not list or len(frames) != 2:
+                raise ValueError("evolving pair requires two native membership frames")
+            if arm.get("external_feedback_targets") != [[], []]:
+                raise ValueError("evolving entry-only comparison forbids external feedback")
+            transmissions = _round_edges(
+                arm.get("native_transmissions_per_round"),
+                label="evolving native transmissions",
+            )
+            member_ids = []
+            for idx, frame in enumerate(frames):
+                if type(frame) is not list or not frame:
+                    raise ValueError("evolving membership frame must have real catalog")
+                catalog = {}
+                for member in frame:
+                    if (type(member) is not dict or set(member) !=
+                            {"agent_id", "status", "belief"}
+                            or type(member["agent_id"]) is not str
+                            or not member["agent_id"]
+                            or member["status"] not in {"active", "inactive", "dead"}
+                            or type(member["belief"]) not in (int, float)
+                            or not math.isfinite(member["belief"])
+                            or not 0 <= member["belief"] <= 1
+                            or member["agent_id"] in catalog):
+                        raise ValueError("evolving member catalog malformed")
+                    catalog[member["agent_id"]] = member["status"]
+                if (len(catalog) != parsed[label][idx].denominator
+                        or sum(status == "active" for status in catalog.values())
+                        != parsed[label][idx].numerator
+                        or any(edge[0] not in catalog or edge[1] not in catalog
+                               or catalog[edge[0]] != "active"
+                               or catalog[edge[1]] != "active"
+                               for edge in transmissions[idx])):
+                    raise ValueError("evolving metric does not match active catalog/transmissions")
+                member_ids.append(set(catalog))
+            if member_ids[0] != member_ids[1]:
+                raise ValueError("evolving catalog identity cannot silently change")
+            memberships.append(frames)
+            schedules.append(arm["event_schedule_hash"])
+        if (schedules[0] != stable_content_hash([[], []])
+                or schedules[0] == schedules[1]
+                or [m["agent_id"] for m in memberships[0][0]] !=
+                   [m["agent_id"] for m in memberships[1][0]]):
+            raise ValueError("evolving pair must differ by one native ENTER event")
+        for idx in (0, 1):
+            before = {m["agent_id"]: m["status"] for m in memberships[0][idx]}
+            after = {m["agent_id"]: m["status"] for m in memberships[1][idx]}
+            changed = [k for k in before if before[k] != after[k]]
+            if (len(changed) != 1 or before[changed[0]] != "inactive"
+                    or after[changed[0]] != "active"):
+                raise ValueError("evolving entry must change one actual member")
+
+
 @dataclass(frozen=True)
 class NativePairedExperiment:
     """Audited immutable source dossier; not a graph model or statistical result."""
@@ -298,6 +503,14 @@ class NativePairedExperiment:
                     raise ValueError("paired native source arms must be complete")
                 if len(data["metrics"]) != 2:
                     raise ValueError("paired native metric horizon cannot be altered")
+            _audit_native_paired_case(family, case)
+        reference = d["v19_reference"]
+        if (reference.get("source_owner") != "SITUATED_V19_STORY_COGNITION_SOCIAL_MEMORY"
+                or not all(_valid_digest(reference.get(key)) for key in (
+                    "initial_world_hash", "control_story_hash", "intervention_story_hash",
+                ))
+                or reference["control_story_hash"] == reference["intervention_story_hash"]):
+            raise ValueError("V19 source-owned story branches must not be merged")
 
     def to_dict(self) -> dict[str, object]:
         return json.loads(self._canonical_json)

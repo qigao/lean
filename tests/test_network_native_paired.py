@@ -152,6 +152,42 @@ class NativePairedSourceAcceptance(unittest.TestCase):
         with self.assertRaises(FrozenInstanceError):
             self.report._canonical_json = "{}"
 
+
+    def test_nested_source_forgery_and_metric_deltas_fail_closed(self):
+        """The verified source-run corpus must not accept shallow JSON relabeling."""
+        def rejected(change):
+            data = self.report.to_dict()
+            change(data)
+            with self.assertRaises(ValueError):
+                NativePairedExperiment(json.dumps(data, sort_keys=True))
+
+        rejected(lambda d: d["families"]["bb_fitness_growth"]
+                 ["native_metric_delta"].__setitem__(0, "1/7"))
+        rejected(lambda d: d["families"]["bb_fitness_growth"]["control"]
+                 ["metrics"][1].__setitem__("denominator", 2))
+        rejected(lambda d: d["families"]["bb_fitness_growth"]["intervention"]
+                 ["last_native_topology"].__setitem__(1, ["1", "2"]))
+        rejected(lambda d: d["families"]["bb_fitness_growth"]["control"]
+                 .__setitem__("final_source_hash", "sha256:" + "a" * 64))
+        rejected(lambda d: d["families"]["directed_rewiring"]
+                 .__setitem__("first_round_transmission_equal", False))
+        rejected(lambda d: d["families"]["directed_rewiring"]["control"]
+                 ["native_transmissions_per_round"][0].append(["b", "c", "peer"]))
+        rejected(lambda d: d["families"]["directed_rewiring"]["control"]
+                 ["next_active_edges_per_round"][0].pop())
+        rejected(lambda d: d["families"]["lifecycle_feedback"]["control"]
+                 ["native_members_after"][0][0].__setitem__("status", "inactive"))
+        rejected(lambda d: d["families"]["lifecycle_feedback"]["intervention"]
+                 ["external_feedback_targets"][0].append(["a", "b", "peer"]))
+        rejected(lambda d: d["families"]["lifecycle_feedback"]["intervention"]
+                 .__setitem__("event_schedule_hash",
+                    d["families"]["lifecycle_feedback"]["control"]["event_schedule_hash"]))
+        rejected(lambda d: d["v19_reference"]
+                 .__setitem__("source_owner", "UNIVERSAL_GRAPH_OWNER"))
+        rejected(lambda d: d["v19_reference"]
+                 .__setitem__("intervention_story_hash",
+                    d["v19_reference"]["control_story_hash"]))
+
     def test_replays_are_deterministic_and_have_no_private_text(self):
         second = build_native_paired_case()
         self.assertEqual(self.report.content_hash, second.content_hash)
