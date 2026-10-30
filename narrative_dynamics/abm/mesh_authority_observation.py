@@ -25,6 +25,22 @@ from narrative_dynamics.abm.situated_perception_contracts import (
 _SCHEMA = "r2-m5a-v19-source-passage-control-v1"
 _HASH = re.compile(r"sha256:[0-9a-f]{64}")
 
+_ROOT_KEYS = frozenset({
+    "schema", "source_owner", "mechanism", "scope", "source_model_hash",
+    "initial_world_hash", "controlled_passage", "controller_agent_ids",
+    "controller", "unauthorized_actor", "cross_branch_relation",
+    "causal_attribution", "sample_size_per_arm", "confidence_interval",
+    "external_validation", "network_centrality", "trust_change", "arms",
+})
+_ARM_KEYS = frozenset({
+    "story_hash", "world_round_hashes", "gate_event_hash",
+    "gate_event_actor", "gate_event_outcome", "gate_event_success",
+    "move_event_hash", "move_event_outcome", "move_success",
+    "tell_event_hash", "bob_tell_fidelity", "gate_open_at_tell",
+    "alice_place_at_tell",
+})
+
+
 
 def _digest(value: object) -> bool:
     return type(value) is str and _HASH.fullmatch(value) is not None
@@ -39,7 +55,8 @@ class PassageAuthorityEvidence:
         if type(self._canonical_json) is not str:
             raise TypeError("source evidence requires immutable JSON")
         d = json.loads(self._canonical_json)
-        if (type(d) is not dict or d.get("schema") != _SCHEMA
+        if (type(d) is not dict or set(d) != _ROOT_KEYS
+                or d.get("schema") != _SCHEMA
                 or d.get("source_owner") != "V19_SITUATED_WORLD_MODEL_AND_STORY"
                 or d.get("mechanism") != "EXPLICIT_PASSAGE_RESOURCE_CONTROL"
                 or d.get("causal_attribution") != "UNATTRIBUTED"
@@ -62,7 +79,7 @@ class PassageAuthorityEvidence:
             raise ValueError("M5a cannot claim universal social power or causal effect")
         arms = d["arms"]
         for arm in arms.values():
-            if (type(arm) is not dict
+            if (type(arm) is not dict or set(arm) != _ARM_KEYS
                     or any(not _digest(arm.get(k)) for k in (
                         "story_hash", "gate_event_hash", "move_event_hash",
                         "tell_event_hash",
@@ -95,6 +112,11 @@ class PassageAuthorityEvidence:
                 or control["move_success"] or denied["move_success"]
                 or not approved["move_success"]
                 or control["bob_tell_fidelity"] != "detected"
+                or control["move_event_outcome"] != "passage_closed"
+                or denied["move_event_outcome"] != "passage_closed"
+                or approved["move_event_outcome"] != "moved"
+                or control["tell_event_hash"] != denied["tell_event_hash"]
+                or approved["tell_event_hash"] == control["tell_event_hash"]
                 or denied["bob_tell_fidelity"] != "detected"
                 or approved["bob_tell_fidelity"] != "exact"
                 or control["alice_place_at_tell"] != "records"

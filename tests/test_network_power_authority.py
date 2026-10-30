@@ -167,12 +167,22 @@ class NativeResourceAuthorityTests(unittest.TestCase):
 
         reject(lambda d: d.__setitem__("causal_attribution", "REAL_WORLD_PROVEN"))
         reject(lambda d: d.__setitem__("trust_change", "AUTO_TRUST"))
+        reject(lambda d: d.__setitem__("universal_power_score", 0.99))
+        reject(lambda d: d["arms"]["authorized_open"]
+               .__setitem__("message", "private TELL payload"))
+        reject(lambda d: d["arms"]["authorized_open"]
+               .__setitem__("private_percept_text", "private INSPECT data"))
         reject(lambda d: d["arms"]["unauthorized_manager_open"]
                .__setitem__("gate_event_outcome", "passage_opened"))
         reject(lambda d: d["arms"]["authorized_open"]
                .__setitem__("move_success", False))
         reject(lambda d: d["arms"]["control_wait"]
                .__setitem__("bob_tell_fidelity", "exact"))
+        reject(lambda d: d["arms"]["control_wait"]
+               .__setitem__("move_event_outcome", "moved"))
+        reject(lambda d: d["arms"]["unauthorized_manager_open"]
+               .__setitem__("tell_event_hash",
+                            d["arms"]["authorized_open"]["tell_event_hash"]))
         with self.assertRaises(FrozenInstanceError):
             self.report._canonical_json = "{}"
 
