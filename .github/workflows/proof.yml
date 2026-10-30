@@ -258,10 +258,7 @@ jobs:
           pinned=conformance/network_source_epistemic_influence_v1.json
           python3 -m tools.render_source_epistemic_influence_vectors > "$generated"
           if [ ! -f "$pinned" ]; then
-            echo 'R2_M5C_NATIVE_VECTOR_BEGIN'
-            cat "$generated"
-            echo 'R2_M5C_NATIVE_VECTOR_END'
-            echo 'RED: reviewed V19 epistemic source trace is missing'
+            echo 'RED: required reviewed V19 M5c epistemic source vector is missing'
             exit 1
           fi
           python -m unittest tests.test_network_epistemic_influence -v

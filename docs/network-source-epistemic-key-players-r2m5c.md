@@ -92,3 +92,40 @@ The subsequent empirical study still needs independent samples,
 registered comparisons, explicit outcome/counterfactual definitions,
 external source data and assumption-based causal inference. None of
 those are supplied by this finite native replay.
+
+## Actual native CI source result / reviewed vector
+
+Initial [CI #41085005267](https://github.com/qigao/lean/actions/runs/41085005267)
+executed all source actions and the original SQLite-backed private
+cognitive/social round successfully, then **intentionally failed closed**
+on its missing reviewed source vector. The reviewed native output is
+**6,426 bytes**, pinned at
+`conformance/network_source_epistemic_influence_v1.json`,
+report hash:
+`sha256:8b988137038cb77e39065663f6e98aa326d0c45249fd191238cbd20cd434f154`.
+
+Actual source observations:
+- WAIT branch: Alice MOVE blocked by closed gate; Bob TELL DETECTED; 0
+  admitted testimony, 1 private INSPECT verification, 0 claim
+  revisions, 0 trust revisions; Bob→Alice trust stays 0.5, source
+  relationship Alice→Bob remains.
+- Authorized OPEN branch: MOVE succeeds; Bob TELL EXACT, 1 admitted
+  testimony and 1 private verification; the claim is CONTRADICTED;
+  Bob→Alice trust drops 0.5→0.3, and the derived Alice→Bob relationship
+  retires while Bob→Alice remains active.
+- Bob's tracked belief in the approved hypothesis rises from 0.5 to
+  0.9 in the control and to approximately 0.83898305 in the open arm;
+  both exceed the registered adoption *classification* threshold 0.7.
+  Neither is an established post-trust behavioral action or
+  population effect.
+- The pre-intervention structural graph remains Carol→Bob→Dana with
+  zero actual initial TELL/transmissions. Role, passage control,
+  structural reach and trust remain separate.
+- Same authored TELL ID across divergent Stories, different exact
+  source event hashes, no raw private message or INSPECT content in
+  the reviewed vector.
+
+The one-time stdout handoff has been removed. Existing V24 Python
+and independent Lean gates now regenerate and compare these exact
+bytes. Full Python/Lean/Studio and stacked parent review remain
+mandatory at the new exact HEAD.
