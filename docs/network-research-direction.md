@@ -188,6 +188,29 @@ TELL path and matched post-trust behavior remain a **separate**
 M5e.1 gate. No universal score, unsupported causal estimate or
 new six-hop theorem.
 
+## R2.M5e.1 — authentic trust history before a *later* TELL
+
+The M5e.0 native protocol checks that freshly received other-Agent
+EXACT TELL uses the declared V19 observer→source trust, but its
+different social-policy variants cannot isolate real-world trust
+causality or prove a different action. M5e.1 requires **the same
+underlying V19 model** and a source-history-only intervention:
+prior Alice TELL content confirmed vs contradicted by Bob's own
+INSPECT. Bob's original V19 social owner must learn the resulting
+0.6 vs 0.3 directional trust in native round 8.
+
+A TELL emitted during round 8 is NOT post-revision; only an
+additional original-native Alice TELL in round 9 qualifies.
+Original Bob's subsequent round-10 decision must consume that
+specific new EXACT percept with the learned trust, then actually
+execute a native world action. Record distinct Story hashes,
+same current physical positions but potentially different prior
+private beliefs/claims/observations. Never assert a trust-only
+causal result if those epistemic confounders remain different.
+Do not invent trust, events, world permissions, graph edges or
+a universal elite influence score. Keep full original four-job
+source/proof/Studio CI and independent native vector review.
+
 ## Code and PR acceptance rules
 
 1. One implementation per model; prefer existing

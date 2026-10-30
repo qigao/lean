@@ -105,6 +105,20 @@ class SingleflightCIContractTests(unittest.TestCase):
         self.assertIn("social_topology_checkpoint_v1.json", script)
         self.assertIn("cmp -s", script)
 
+    def test_r2_m5e1_learned_trust_then_later_native_tell(self):
+        self.assertIn("R2 M5e1 source-learned trust before new native TELL", self.content)
+        self.assertIn("tests.test_network_trust_history_new_tell", self.content)
+        self.assertIn("tools.render_native_verified_trust_new_tell_vectors", self.content)
+        self.assertIn("conformance/network_native_verified_trust_new_tell_v1.json", self.content)
+        self.assertLess(
+            self.content.index("R2 M5e1 source-learned trust before new native TELL"),
+            self.content.index("Runtime-derived mesh regression"),
+        )
+        script = (ROOT / "tools/check_mesh_evidence_lean.sh").read_text(encoding="utf-8")
+        self.assertIn("tools.render_native_verified_trust_new_tell_vectors", script)
+        self.assertIn("network_native_verified_trust_new_tell_v1.json", script)
+        self.assertIn("cmp -s", script)
+
     def test_r2_m5e0_direct_tell_social_trust_optin(self):
         self.assertIn("R2 M5e0 direct V19 EXACT TELL source trust protocol", self.content)
         self.assertIn("tests.test_network_direct_tell_trust", self.content)
