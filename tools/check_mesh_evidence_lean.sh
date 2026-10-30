@@ -106,6 +106,14 @@ if ! cmp -s conformance/network_source_structural_influence_v1.json "$tmpdir/net
   diff -u conformance/network_source_structural_influence_v1.json "$tmpdir/network_source_structural_influence_v1.json" || true
   exit 1
 fi
+# R2.M5c: original V19 private content/verification/relationship source;
+# checked separately from graph reach, world resource power and formal reachability.
+python3 -m tools.render_source_epistemic_influence_vectors > "$tmpdir/network_source_epistemic_influence_v1.json"
+if ! cmp -s conformance/network_source_epistemic_influence_v1.json "$tmpdir/network_source_epistemic_influence_v1.json"; then
+  echo 'FAIL: R2.M5c V19 epistemic/trust source vector changed' >&2
+  diff -u conformance/network_source_epistemic_influence_v1.json "$tmpdir/network_source_epistemic_influence_v1.json" || true
+  exit 1
+fi
 generated="$tmpdir/authoritative.lean"
 
 # Always regenerate from the actual V19 snapshot, then enforce the immutable

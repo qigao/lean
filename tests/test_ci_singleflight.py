@@ -105,6 +105,23 @@ class SingleflightCIContractTests(unittest.TestCase):
         self.assertIn("social_topology_checkpoint_v1.json", script)
         self.assertIn("cmp -s", script)
 
+    def test_r2_m5c_source_owned_epistemic_trust_is_not_structural_power(self):
+        self.assertIn(
+            "R2 M5c source-owned TELL verification and directed-trust acceptance",
+            self.content,
+        )
+        self.assertIn("tests.test_network_epistemic_influence", self.content)
+        self.assertIn("tools.render_source_epistemic_influence_vectors", self.content)
+        self.assertIn("conformance/network_source_epistemic_influence_v1.json", self.content)
+        self.assertLess(
+            self.content.index("R2 M5c source-owned TELL verification and directed-trust acceptance"),
+            self.content.index("Runtime-derived mesh regression"),
+        )
+        script = (ROOT / "tools/check_mesh_evidence_lean.sh").read_text(encoding="utf-8")
+        self.assertIn("tools.render_source_epistemic_influence_vectors", script)
+        self.assertIn("network_source_epistemic_influence_v1.json", script)
+        self.assertIn("cmp -s", script)
+
     def test_r2_m5b_native_structural_source_is_scope_bound(self):
         self.assertIn("R2 M5b V19/V24 selected structural key-player qualification", self.content)
         self.assertIn("tests.test_network_structural_influence", self.content)
