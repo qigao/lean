@@ -98,6 +98,14 @@ if ! cmp -s conformance/network_passage_authority_v1.json "$tmpdir/network_passa
   diff -u conformance/network_passage_authority_v1.json "$tmpdir/network_passage_authority_v1.json" || true
   exit 1
 fi
+# R2.M5b: selected-source V24 directed paths/removal sensitivity only.
+# No conversion of static opportunities into temporal TELL delivery.
+python3 -m tools.render_source_structural_influence_vectors > "$tmpdir/network_source_structural_influence_v1.json"
+if ! cmp -s conformance/network_source_structural_influence_v1.json "$tmpdir/network_source_structural_influence_v1.json"; then
+  echo 'FAIL: R2.M5b source-selected structural qualification vector changed' >&2
+  diff -u conformance/network_source_structural_influence_v1.json "$tmpdir/network_source_structural_influence_v1.json" || true
+  exit 1
+fi
 generated="$tmpdir/authoritative.lean"
 
 # Always regenerate from the actual V19 snapshot, then enforce the immutable
