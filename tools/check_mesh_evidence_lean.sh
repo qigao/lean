@@ -22,6 +22,12 @@ if ! cmp -s conformance/topology_revision_v1.json "$tmpdir/topology_revision_v1.
   diff -u conformance/topology_revision_v1.json "$tmpdir/topology_revision_v1.json" || true
   exit 1
 fi
+python3 -m tools.render_social_topology_checkpoint_vectors > "$tmpdir/social_topology_checkpoint_v1.json"
+if ! cmp -s conformance/social_topology_checkpoint_v1.json "$tmpdir/social_topology_checkpoint_v1.json"; then
+  echo 'FAIL: V19 authoritative social topology checkpoint vectors changed' >&2
+  diff -u conformance/social_topology_checkpoint_v1.json "$tmpdir/social_topology_checkpoint_v1.json" || true
+  exit 1
+fi
 generated="$tmpdir/authoritative.lean"
 
 # Always regenerate from the actual V19 snapshot, then enforce the immutable
