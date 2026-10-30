@@ -426,6 +426,12 @@ from narrative_dynamics.abm.situated_network_contracts import (
     SituatedNetworkTrajectory,
     SituatedNetworkTransmission,
 )
+from narrative_dynamics.abm.situated_social_topology import (
+    SocialTopologyBoundaryError, SocialTopologyTrustConflict,
+    SocialTrustOperation, SocialTrustCheckpointIntervention,
+    SocialTrustCheckpointReceipt, SocialTrustCheckpointResult,
+    admit_social_trust_checkpoint,
+)
 from narrative_dynamics.abm.mesh_topology_events import (
     TopologyChange, TopologyOperation, TopologyChangeError,
     TopologyVersionConflict, TopologyDuplicateEvent,
