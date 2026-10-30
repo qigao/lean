@@ -31,15 +31,22 @@ class SingleflightCIContractTests(unittest.TestCase):
             self.content.count("group: lean-ci-runner-lean-${{ github.repository }}"), 1
         )
         self.assertIn(
-            "  verify:\n    # Join both independent test families even when one finishes RED.\n"
+            "  verify:\n    # Join independently accepted Python and Lean families; skip Studio on upstream RED.\n"
             "    needs: [python-tests, lean-proof]",
             self.content,
         )
         self.assertIn("  lean-proof:\n    name: Lean proof\n", self.content)
         self.assertEqual(self.content.count("    needs: mesh-projection"), 2)
         self.assertNotIn("    needs: python-tests\n", self.content)
-        self.assertIn("    if: ${{ !cancelled() }}", self.content)
+        self.assertIn("    if: ${{ success() }}", self.content)
+        self.assertEqual(self.content.count("if: ${{ success()"), 3)
+        self.assertNotIn("if: ${{ !cancelled()", self.content)
 
+    def test_failed_mesh_source_gate_does_not_start_expensive_followups(self):
+        self.assertIn("  python-tests:\n    needs: mesh-projection\n", self.content)
+        self.assertIn("  lean-proof:\n    name: Lean proof\n    needs: mesh-projection\n", self.content)
+        self.assertIn("  verify:\n", self.content)
+        self.assertEqual(self.content.count("if: ${{ success()"), 3)
     def test_warm_cache_inputs(self):
         for name in ("cache: pip", "cache: npm", "~/.elan",
                      ".lake/packages", ".lake/build", "~/.cache/ms-playwright"):
