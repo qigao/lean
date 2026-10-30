@@ -97,3 +97,23 @@ hashes), reviewed for schema, five case identities, directed trust,
 claim status and absence of private content. The one-time textual
 handoff was then removed; all current-head lanes must match these exact
 bytes.
+
+## Actual content-to-V19/V24 relationship projection
+
+Beyond the claim/receipt audit, two integration regressions use a real
+`SituatedNetworkRuntimeModel` constructed from the very same percept
+memory and social-memory models. They reproject the authoritative
+V19 source before/after the content transition and query the existing
+V24 `MeshSnapshot` / `source_relation_edges` / `mesh_edges`:
+
+- A true exact TELL and one ACTIVE, unverified claim leaves the
+  relationship edge set **unchanged**, despite changed cognition/content.
+- Real contradictory verification changes only Bob's trust of Alice
+  from 0.5 to 0.3; at the configured 0.5 threshold the selected
+  **Alice→Bob** source relationship disappears while Bob→Alice
+  remains. This is an actual social-memory-derived topology change,
+  never a synthetic edge mutation.
+
+Neither test claims that trust alone proves message transmission or
+that the cognitive agent's belief reflects a real-world truth. The
+three graph selectors continue to use separate V19 sources.

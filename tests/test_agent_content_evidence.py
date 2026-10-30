@@ -10,6 +10,16 @@ import unittest
 from narrative_dynamics.abm.mesh_agent_content_evidence import (
     AgentContentEvidenceTrace, observe_agent_content_evidence,
 )
+from narrative_dynamics.abm.mesh_contracts import (
+    MeshRelation, MeshSnapshot, MeshSociety, source_relation_edges,
+)
+from narrative_dynamics.abm.situated_network import (
+    project_situated_network_snapshot,
+)
+from narrative_dynamics.abm.situated_network_contracts import (
+    SituatedNetworkRuntimeModel,
+)
+from narrative_dynamics.abm.situated_mesh import mesh_edges
 from narrative_dynamics.abm.situated import SituatedActionIntent, SituatedActionKind, ObservationChannel
 from narrative_dynamics.abm.situated_cognition_contracts import SituatedObservationRule
 from narrative_dynamics.abm.situated_memory_cognition_contracts import SituatedMemoryRecallCue
@@ -217,6 +227,69 @@ class AgentContentEvidenceTests(unittest.TestCase):
         self.assertEqual(trust["trust_after"],0.3)
         self.assertEqual(result.next_social_state.claims[0].status,
                          SituatedClaimStatus.CONTRADICTED)
+
+    def test_actual_claim_contradiction_retires_only_v19_source_relationship_edge(self):
+        model, social_model, story, cognitive, social, outcome, trace = self.cases[
+            "contradicted_claim_directed_trust"
+        ]
+        network = SituatedNetworkRuntimeModel(
+            "r2-content-verification", "1", model, social_model,
+            "approved", 0.7, 0.5,
+        )
+        source_before = project_situated_network_snapshot(
+            network, story, cognitive, social,
+        )
+        source_after = project_situated_network_snapshot(
+            network, outcome.next_story,
+            outcome.next_cognitive_state, outcome.next_social_state,
+        )
+        members = tuple(n.agent_id for n in source_before.nodes)
+        societies = (MeshSociety("office", members),)
+        before = MeshSnapshot(source_before, societies)
+        after = MeshSnapshot(source_after, societies)
+        b = set(source_relation_edges(source_before, MeshRelation.RELATIONSHIP))
+        a = set(source_relation_edges(source_after, MeshRelation.RELATIONSHIP))
+        self.assertEqual(b - a, {("alice", "bob")})
+        self.assertEqual(a - b, set())
+        self.assertIn(("bob", "alice"), b)
+        self.assertIn(("bob", "alice"), a)
+        self.assertEqual(
+            set(mesh_edges(before, MeshRelation.RELATIONSHIP)) -
+            set(mesh_edges(after, MeshRelation.RELATIONSHIP)),
+            {("alice", "bob")},
+        )
+        self.assertEqual(trace.to_dict()["counts"]["admitted_verification"], 1)
+        self.assertEqual(trace.to_dict()["counts"]["trust_revisions"], 1)
+        self.assertEqual(
+            source_after.social_state_hash, outcome.next_social_state.content_hash,
+        )
+        self.assertNotEqual(source_before.content_hash, source_after.content_hash)
+        # This reprojects V19 from the actual social owner: we do not
+        # fabricate the edge by mutating V24 or a separate graph.
+
+    def test_exact_testimony_without_verification_does_not_change_v19_edges(self):
+        model, social_model, story, cognitive, social, outcome, trace = self.cases[
+            "exact_observed_tell"
+        ]
+        network = SituatedNetworkRuntimeModel(
+            "r2-content-observed", "1", model, social_model,
+            "approved", 0.7, 0.5,
+        )
+        before = project_situated_network_snapshot(network, story, cognitive, social)
+        after = project_situated_network_snapshot(
+            network, outcome.next_story,
+            outcome.next_cognitive_state, outcome.next_social_state,
+        )
+        self.assertEqual(
+            source_relation_edges(before, MeshRelation.RELATIONSHIP),
+            source_relation_edges(after, MeshRelation.RELATIONSHIP),
+        )
+        self.assertEqual(trace.to_dict()["counts"]["admitted_testimony"], 1)
+        self.assertEqual(trace.to_dict()["counts"]["admitted_verification"], 0)
+        self.assertEqual(trace.to_dict()["counts"]["trust_revisions"], 0)
+        self.assertNotEqual(before.content_hash, after.content_hash)
+        # A content/claim revision has taken place, but trust and effective
+        # relationship topology have not automatically changed.
 
     def test_forged_social_evidence_and_wrong_source_fail_closed(self):
         model,social,story,prior_cog,prior_soc,result,trace=self.cases[
