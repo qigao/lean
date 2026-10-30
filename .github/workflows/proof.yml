@@ -62,6 +62,22 @@ jobs:
           set -euo pipefail
           python -m unittest tests.test_mesh_topology_revisions tests.test_social_topology_checkpoint -v
           mkdir -p .generated-conformance
+          social_generated=.generated-conformance/social_topology_checkpoint_v1.json
+          social_pinned=conformance/social_topology_checkpoint_v1.json
+          python3 -m tools.render_social_topology_checkpoint_vectors > "$social_generated"
+          if [ ! -f "$social_pinned" ]; then
+            echo 'RED: required reviewed V19 social-topology checkpoint vectors are missing'
+            echo 'V19_SOCIAL_TOPOLOGY_BEGIN'
+            cat "$social_generated"
+            echo 'V19_SOCIAL_TOPOLOGY_END'
+            exit 1
+          fi
+          if ! cmp -s "$social_pinned" "$social_generated"; then
+            diff -u "$social_pinned" "$social_generated" || true
+            echo 'RED: V19 social-topology source vectors changed'
+            exit 1
+          fi
+          mkdir -p .generated-conformance
           generated=.generated-conformance/topology_revision_v1.json
           pinned=conformance/topology_revision_v1.json
           python3 -m tools.render_topology_revision_vectors > "$generated"

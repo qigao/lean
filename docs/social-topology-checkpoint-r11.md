@@ -55,3 +55,18 @@ human-world causal claim. External access control is not provided by R1.1.
 **Remaining:** source-derived versioned R1.1 evidence vector and exact-head
 full four-job CI. No claim of persistence to an external database or
 authenticated administrative actors.
+
+## Versioned real V19 checkpoint evidence
+
+`tools/render_social_topology_checkpoint_vectors.py` regenerates a reviewed
+schema-v1 JSON record from a genuine two-Agent V19
+model/story/cognitive/social/SQLite checkpoint. It records the exact source,
+social-memory and runtime identity at baseline, after deactivation, and after
+reactivation. Each event binds its expected parent hashes; the V19 projector
+and existing source-backed path/metric APIs determine observed edge changes.
+
+The focused Python and independent Lean verification lanes compare these
+canonical UTF-8 bytes against
+`conformance/social_topology_checkpoint_v1.json`. The first run intentionally
+fails closed until the output has been reviewed and committed. No source
+graph duplication or cryptographic authentication is implied.

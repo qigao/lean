@@ -91,6 +91,13 @@ class SingleflightCIContractTests(unittest.TestCase):
             self.content.index("Runtime-derived mesh regression"),
         )
 
+    def test_r11_reviewed_source_checkpoint_vectors(self):
+        self.assertIn("tools.render_social_topology_checkpoint_vectors", self.content)
+        self.assertIn("conformance/social_topology_checkpoint_v1.json", self.content)
+        script = (ROOT / "tools/check_mesh_evidence_lean.sh").read_text(encoding="utf-8")
+        self.assertIn("social_topology_checkpoint_v1.json", script)
+        self.assertIn("cmp -s", script)
+
     def test_r11_real_social_memory_checkpoint_gate(self):
         self.assertIn("tests.test_social_topology_checkpoint", self.content)
         self.assertIn("tests.test_mesh_topology_revisions", self.content)

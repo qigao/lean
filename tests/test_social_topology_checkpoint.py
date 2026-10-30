@@ -200,6 +200,26 @@ class SocialTopologyCheckpointTests(unittest.TestCase):
                 replace(valid, **invalid)
         self.assertEqual(old.social_state.content_hash, self.social.content_hash)
 
+    def test_checked_in_social_trust_checkpoint_vectors_match_runtime(self):
+        from pathlib import Path
+        from tools.render_social_topology_checkpoint_vectors import (
+            SCHEMA, build_vector_manifest, render_vector_corpus,
+        )
+        manifest = build_vector_manifest()
+        self.assertEqual(manifest["schema"], SCHEMA)
+        self.assertTrue(manifest["deactivate"]["old_path_invalid"])
+        self.assertEqual(
+            manifest["deactivate"]["receipt"]["before_source_hash"],
+            manifest["original"]["source_hash"],
+        )
+        self.assertEqual(
+            manifest["activate"]["receipt"]["before_source_hash"],
+            manifest["deactivate"]["next_source_hash"],
+        )
+        reviewed = Path(__file__).resolve().parents[1] / "conformance" / "social_topology_checkpoint_v1.json"
+        if reviewed.exists():
+            self.assertEqual(reviewed.read_bytes(), render_vector_corpus().encode("utf-8"))
+
     def test_original_authoritative_source_rejects_tampered_snapshot(self):
         old = self.runtime
         forged_snapshot = replace(
