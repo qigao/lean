@@ -105,6 +105,20 @@ class SingleflightCIContractTests(unittest.TestCase):
         self.assertIn("social_topology_checkpoint_v1.json", script)
         self.assertIn("cmp -s", script)
 
+    def test_r2_m5a_authority_source_is_not_role_or_centrality(self):
+        self.assertIn("R2 M5a source-owned passage decision authority", self.content)
+        self.assertIn("tests.test_network_power_authority", self.content)
+        self.assertIn("tools.render_passage_authority_vectors", self.content)
+        self.assertIn("conformance/network_passage_authority_v1.json", self.content)
+        self.assertLess(
+            self.content.index("R2 M5a source-owned passage decision authority"),
+            self.content.index("Runtime-derived mesh regression"),
+        )
+        script = (ROOT / "tools/check_mesh_evidence_lean.sh").read_text(encoding="utf-8")
+        self.assertIn("tools.render_passage_authority_vectors", script)
+        self.assertIn("network_passage_authority_v1.json", script)
+        self.assertIn("cmp -s", script)
+
     def test_r2_m4b_native_family_nonenquivalence_gate(self):
         self.assertIn("R2 M4b BB rewiring evolving native-family qualification", self.content)
         self.assertIn("tests.test_network_model_family_comparison", self.content)

@@ -77,6 +77,9 @@ class PassageSpec:
     source_place_id: str
     target_place_id: str
     initially_open: bool = True
+    # Exact resource-controller identities: roles, reputation and reach
+    # never imply authorization. Empty keeps the legacy unrestricted gate.
+    controller_agent_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "passage_id", _text(self.passage_id, label="passage id"))
@@ -86,14 +89,27 @@ class PassageSpec:
             raise ValueError("passage endpoints must differ")
         if not isinstance(self.initially_open, bool):
             raise TypeError("passage initially open must be boolean")
+        controllers = self.controller_agent_ids
+        if type(controllers) is not tuple:
+            raise TypeError("passage controllers must be an immutable tuple")
+        if any(type(agent_id) is not str or not agent_id.strip()
+               for agent_id in controllers):
+            raise ValueError("passage controller IDs must be nonempty strings")
+        if len(set(controllers)) != len(controllers):
+            raise ValueError("passage controller IDs must be unique")
+        object.__setattr__(self, "controller_agent_ids", tuple(sorted(controllers)))
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        data = {
             "passage_id": self.passage_id,
             "source_place_id": self.source_place_id,
             "target_place_id": self.target_place_id,
             "initially_open": self.initially_open,
         }
+        # Previously unrestricted V19 model hashes/source vectors do not change.
+        if self.controller_agent_ids:
+            data["controller_agent_ids"] = list(self.controller_agent_ids)
+        return data
 
     @property
     def content_hash(self) -> str:
@@ -201,6 +217,10 @@ class SituatedWorldModel:
             raise ValueError("agent initial place must reference a model place")
         if any(item.initial_place_id not in place_ids for item in self.objects):
             raise ValueError("object initial place must reference a model place")
+        agent_ids = set(identities[2][1])
+        for passage in self.passages:
+            if any(controller not in agent_ids for controller in passage.controller_agent_ids):
+                raise ValueError("passage controller must be an exact world Agent ID")
         object.__setattr__(self, "places", tuple(sorted(self.places, key=lambda item: item.place_id)))
         object.__setattr__(self, "passages", tuple(sorted(self.passages, key=lambda item: item.passage_id)))
         object.__setattr__(self, "agents", tuple(sorted(self.agents, key=lambda item: item.agent_id)))
