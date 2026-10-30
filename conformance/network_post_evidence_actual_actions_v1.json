@@ -1,0 +1,92 @@
+{
+  "report": {
+    "action_kind_or_outcome_differs": true,
+    "actual_native_actions_observed": true,
+    "branches": {
+      "authorized_open": {
+        "first_native_round_hash": "sha256:68151f97988a37ee4e6ab971f11cd887e1baa602a8b73883cbbaf91c1328e017",
+        "first_social_state_hash": "sha256:d874330b066b8d5aee2f982bc35afbe388ce34ef935e07a15ff7abcba78cedf1",
+        "native_bob_action": "move",
+        "native_bob_action_event_hash": "sha256:eccce32e30cc49203f1d39b5b6e06e5424230e05c3a382eaf0a5360575ec69c6",
+        "native_bob_action_event_id": "r0008:e0002",
+        "native_bob_action_kind": "move",
+        "native_bob_action_outcome": "moved",
+        "native_bob_action_success": true,
+        "native_bob_decision_hash": "sha256:5984b8de0c8652bde2fccb304df5133a4d6ac287f8b632d15038fd6c115c1d36",
+        "native_bob_feasible_actions": [
+          "move",
+          "wait"
+        ],
+        "native_bob_policy_probability": 0.9996037096474476,
+        "native_bob_posterior_belief_approved": 0.9791208791208791,
+        "native_bob_prior_belief_approved": 0.8389830508474576,
+        "native_bob_recalled_alice_tell": [],
+        "new_trust_weighted_tell_recall_count": 0,
+        "post_evidence_action_round": 8,
+        "post_evidence_native_round_hash": "sha256:8d1c7c7f1679d7345e4d130ee183bc2c8d134b164f691e31eb77517ed220ce13",
+        "post_evidence_social_state_hash": "sha256:0c326a7314456bf0d1e7cf93bac34eecba5808c32d710eda24b2ca9ff15342c6",
+        "second_round_actual_tell_event_count": 0,
+        "source_after_first_cognition_hash": "sha256:86206e401bf46a15ca2747955a74ae15a62330fb7242653e01262387629ef2e9",
+        "source_after_post_evidence_action_hash": "sha256:f99231288a608032ac310cc26ac8fdaa132bff63d5d27302e02ad560839f3094",
+        "source_story_before_cognition_hash": "sha256:f80c36eff7bfae6fb34943076cf2d6ee806e8c5c6cecade4255c6059042e194c",
+        "source_trust_bob_alice_after_first_round": 0.3
+      },
+      "control_wait": {
+        "first_native_round_hash": "sha256:01df312c296ce54db422859ef70dd6692a4610d53c50aa5a6ee712897601a9fc",
+        "first_social_state_hash": "sha256:7e8c0eac0005dc2bc2bcb41fda0fd77e634397883349b6b94a0e5b22440f8e38",
+        "native_bob_action": "move",
+        "native_bob_action_event_hash": "sha256:a5126f0e33831e3f0725f4153efebdfc26d6fddee658e5ff706979c0ea4ccb1a",
+        "native_bob_action_event_id": "r0008:e0002",
+        "native_bob_action_kind": "move",
+        "native_bob_action_outcome": "passage_closed",
+        "native_bob_action_success": false,
+        "native_bob_decision_hash": "sha256:71270020d411f48ba325a904548d5efed4ed58797836beb4ee7e31139da277c8",
+        "native_bob_feasible_actions": [
+          "move",
+          "wait"
+        ],
+        "native_bob_policy_probability": 0.9996302963415729,
+        "native_bob_posterior_belief_approved": 0.9878048780487805,
+        "native_bob_prior_belief_approved": 0.9,
+        "native_bob_recalled_alice_tell": [],
+        "new_trust_weighted_tell_recall_count": 0,
+        "post_evidence_action_round": 8,
+        "post_evidence_native_round_hash": "sha256:17cefbdcdcd43236d58359441bb9ab9a1825879f7685ab808b1e7eb0513200c5",
+        "post_evidence_social_state_hash": "sha256:6988921b174e8e355de63dcf3abab5fdc57426e71ce136bf7e18df0af63cf707",
+        "second_round_actual_tell_event_count": 0,
+        "source_after_first_cognition_hash": "sha256:cc1b124ce7539809c9b118302f376b169250741a4278b23c38fe851048b4d43b",
+        "source_after_post_evidence_action_hash": "sha256:e1cca10cbdc1812a09efcc76e3ab6d77613ea9b51c1395463d4e7e48f11bedae",
+        "source_story_before_cognition_hash": "sha256:0c53426e1cfc909ae3c469679560a451a124f4266c8aa5639113368c75a6b02c",
+        "source_trust_bob_alice_after_first_round": 0.5
+      }
+    },
+    "causal_attribution": "UNATTRIBUTED",
+    "confidence_interval": "NOT_ESTIMABLE",
+    "cross_mechanism_ranking": "FORBIDDEN",
+    "external_validation": "NO_EXTERNAL_VALIDATION",
+    "parent_epistemic_source_report_hash": "sha256:8b988137038cb77e39065663f6e98aa326d0c45249fd191238cbd20cd434f154",
+    "post_trust_action_effect": "TRUST_ONLY_CAUSAL_EFFECT_NOT_ESTABLISHED",
+    "prior_trust_values": {
+      "authorized_open": 0.3,
+      "control_wait": 0.5
+    },
+    "same_original_action_ids": [
+      "alice-inspect",
+      "alice-common-move",
+      "alice-common-tell",
+      "bob-common-move",
+      "bob-common-inspect"
+    ],
+    "sample_size_per_arm": 1,
+    "schema": "r2-m5d-v19-post-evidence-native-actions-v1",
+    "selected_action_ids_differ": false,
+    "source_branches_divergent": true,
+    "source_initial_story_hash": "sha256:7a51dca178572c3da7683ff018bd8ecd2e2033564b018f3e09866f76a1a9a882",
+    "source_network_model_hash": "sha256:15a6b287f35ddccb7fb6522c5492ef1b882f4021d7d205449786e61eeccba6b6",
+    "source_owner": "V19_NATIVE_SQLITE_COGNITION_SOCIAL_AND_WORLD",
+    "source_world_model_hash": "sha256:e9ffd6cbaacd409747ab0cb604c4e0d47722bf9642761feb9505e4d7dcce92a6",
+    "trust_isolation": "NOT_ISOLATED_BETWEEN_SOURCE_BRANCHES"
+  },
+  "report_hash": "sha256:67b1b49ae47be43ff3405acda0842f5bfae47786e09368232b0dde5cb6f2d2fa",
+  "schema": "r2-m5d-v19-post-evidence-native-actions-v1"
+}

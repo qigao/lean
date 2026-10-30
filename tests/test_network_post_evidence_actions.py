@@ -103,6 +103,30 @@ class PostEvidenceActualActionAcceptance(unittest.TestCase):
         self.assertEqual(d["external_validation"], "NO_EXTERNAL_VALIDATION")
         self.assertEqual(d["cross_mechanism_ranking"], "FORBIDDEN")
 
+    def test_native_trust_change_did_not_change_selected_action(self):
+        """Native negative result: the resource boundary, not a new recall,
+        explains why the same MOVE intention had different actual outcomes."""
+        d = self.data
+        c = d["branches"]["control_wait"]
+        o = d["branches"]["authorized_open"]
+        self.assertFalse(d["selected_action_ids_differ"])
+        self.assertTrue(d["action_kind_or_outcome_differs"])
+        for arm in (c, o):
+            self.assertEqual(arm["native_bob_action"], "move")
+            self.assertEqual(arm["native_bob_action_kind"], "move")
+            self.assertEqual(arm["native_bob_feasible_actions"], ["move", "wait"])
+            self.assertEqual(arm["new_trust_weighted_tell_recall_count"], 0)
+            self.assertEqual(arm["native_bob_recalled_alice_tell"], [])
+            self.assertEqual(arm["second_round_actual_tell_event_count"], 0)
+        self.assertEqual(c["native_bob_action_outcome"], "passage_closed")
+        self.assertFalse(c["native_bob_action_success"])
+        self.assertEqual(o["native_bob_action_outcome"], "moved")
+        self.assertTrue(o["native_bob_action_success"])
+        self.assertAlmostEqual(c["native_bob_prior_belief_approved"], 0.9)
+        self.assertAlmostEqual(o["native_bob_prior_belief_approved"], 0.8389830508474576)
+        self.assertEqual(d["post_trust_action_effect"],
+                         "TRUST_ONLY_CAUSAL_EFFECT_NOT_ESTABLISHED")
+
     def test_mutations_cannot_fabricate_post_trust_action_or_private_details(self):
         def rejected(change):
             altered = self.report.to_dict()

@@ -87,3 +87,44 @@ lanes. Preserve all existing full Python, 35+11 theorem trust,
 BB/PathN, Studio/Playwright and bounded CI singleflight. No
 extra workflow, consumer, installer, fallback, second parser
 or new six-hop theorem.
+
+## Native source result — negative trust-to-action finding
+
+The original [CI #41089014322](https://github.com/qigao/lean/actions/runs/41089014322)
+successfully ran the native seventh and eighth source-world cognitive/social
+rounds, and then deliberately failed closed because the reviewed JSON
+source corpus had not yet been pinned. Its **5,196-byte source-generated
+JSON**, with exact report digest
+`sha256:67b1b49ae47be43ff3405acda0842f5bfae47786e09368232b0dde5cb6f2d2fa`,
+is now checked in as
+`conformance/network_post_evidence_actual_actions_v1.json`.
+One-time stdout bootstrap has been removed; independent Python and Lean
+gates require exact byte reproduction.
+
+**Crucial model result:** Bob's eighth-round original native
+`SituatedCognitiveDecision` selected **MOVE in BOTH branches**,
+each from registered feasible actions `[move, wait]`. In the WAIT
+branch, the real attempted MOVE failed with `passage_closed`; in
+the authorized OPEN branch, the same selected MOVE succeeded with
+`moved`. The decision probabilities were about 0.99963 and 0.99960,
+respectively, but the selected action ID did **not** differ.
+
+The original social owners reported directional trust in Alice of
+0.5 (control) and 0.3 (open), but **neither eighth-round Bob decision
+had any NEW trust-weighted Alice TELL recall**: count 0 in both
+branches. Hence this experiment did not demonstrate a trust-to-recall-
+to-choice effect and must not be cited as such. The different actual
+MOVE outcomes reflect the original source passage state.
+
+Both branch cognitive beliefs again changed by source-native
+observations, but the 0.7 adoption classification still does not
+constitute an action rule. The status remains
+`TRUST_ONLY_CAUSAL_EFFECT_NOT_ESTABLISHED` /
+`NOT_ISOLATED_BETWEEN_SOURCE_BRANCHES`, not a population causal result.
+
+A future trust-isolated design must use a valid source-owned
+intervention and match world location, previous observations and
+candidate actions, then verify that the original decision path
+actually consumes a *new* source-qualified trust-weighted admission.
+Do not hand-edit trust or invent evidence. Keep all full Python,
+Lean and Studio gates at the new exact HEAD.
