@@ -82,3 +82,27 @@ M5c will separately study admitted testimony/private INSPECT verification,
 directional trust and Agent response thresholds. Proper historical/empirical
 validation remains later and cannot borrow this single deterministic
 source scenario as a statistical sample.
+
+## First original source-run evidence, 2026-10-30
+
+[CI #41082131312](https://github.com/qigao/lean/actions/runs/41082131312)
+successfully replayed actual V19/V24 source projection and printed the required
+review corpus before failing closed on the intentionally missing pin. Its
+reviewed **4,245-byte** canonical JSON is committed as
+`conformance/network_source_structural_influence_v1.json`, report hash
+`sha256:a6391c8c4e8a8c1d70dcda424cc37094198e0f4ac54d851ead1a7f4db29e7467`.
+
+The real directed edges are exactly `bob→dana` and `carol→bob`.
+Carol can reach Bob and Dana; Bob's query-only exclusion disconnects
+Carol→Dana; Alice alone is the source-owned passage controller; there
+are zero realized TELL events/transmissions. No private TELL text appears.
+
+One negative regression was refined before full CI: changing only the
+network-model version is not an invalid source binding (it is a legitimate
+new model identity). The proper stale-source test instead changes the
+perception model while retaining the old Story, which the existing source
+projection must reject. This corrects the *test*, not production logic.
+
+The initial stdout handoff is removed; focused Python and independent
+Lean now reproduce the **exact reviewed bytes**. Full Python, BB/PathN,
+Lean theorem trust and Studio/Playwright remain required at the updated HEAD.

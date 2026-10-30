@@ -1,0 +1,150 @@
+{
+  "report": {
+    "bounded_witnesses": [
+      {
+        "hop_count": 1,
+        "path_agent_ids": [
+          "bob",
+          "dana"
+        ],
+        "source_agent_id": "bob",
+        "target_agent_id": "dana"
+      },
+      {
+        "hop_count": 1,
+        "path_agent_ids": [
+          "carol",
+          "bob"
+        ],
+        "source_agent_id": "carol",
+        "target_agent_id": "bob"
+      },
+      {
+        "hop_count": 2,
+        "path_agent_ids": [
+          "carol",
+          "bob",
+          "dana"
+        ],
+        "source_agent_id": "carol",
+        "target_agent_id": "dana"
+      }
+    ],
+    "causal_attribution": "UNATTRIBUTED",
+    "confidence_interval": "NOT_ESTIMABLE",
+    "cross_mechanism_ranking": "FORBIDDEN",
+    "external_validation": "NO_EXTERNAL_VALIDATION",
+    "highest_out_reach_candidates": [
+      "carol"
+    ],
+    "highest_removal_loss_candidates": [
+      "bob"
+    ],
+    "normalization": "NONE",
+    "query_scope": "EXACT_SOURCE_ROSTER_UNIVERSAL_SOCIETY",
+    "sample_size": 1,
+    "schema": "r2-m5b-source-directed-key-player-v1",
+    "source_agent_roster": [
+      "alice",
+      "bob",
+      "carol",
+      "dana"
+    ],
+    "source_cognitive_hash": "sha256:8f8b4e69c9d53c9a4bc0f8668df7a44485d697e5ffb89fe6f23800f78920bb35",
+    "source_controller_agent_ids": [
+      "alice"
+    ],
+    "source_directed_edges": [
+      [
+        "bob",
+        "dana"
+      ],
+      [
+        "carol",
+        "bob"
+      ]
+    ],
+    "source_latest_tell_events": 0,
+    "source_latest_transmissions": 0,
+    "source_mesh_hash": "sha256:9603c9be84dad3330e9f93bbf534a976bdc2c3c4c39f2aeb64fcd7bb172bf616",
+    "source_network_model_hash": "sha256:6c1a99cc0da301539903e729ad9e139bf0ac79087266f41e31fbf36c5c2ebfe7",
+    "source_owner": "DERIVED_V24_FROM_V19_NOT_A_GRAPH_OWNER",
+    "source_passage_id": "records-open",
+    "source_relation": "direct_interaction",
+    "source_relation_semantics": "SELECTED_DIRECTED_TOPOLOGY_NOT_EVENT_DELIVERY",
+    "source_roles": {
+      "alice": "analyst",
+      "bob": "engineer",
+      "carol": "designer",
+      "dana": "manager"
+    },
+    "source_round": 0,
+    "source_snapshot_hash": "sha256:84dbc62ff5d24d445718431ef15aeaac31500fb4d3bdcb5f4e6df4900e6507f6",
+    "source_social_hash": "sha256:9fcf5723c8b3fb5f0099166837c53364e501027b24842d959f2cfc697bea684e",
+    "source_story_hash": "sha256:7a51dca178572c3da7683ff018bd8ecd2e2033564b018f3e09866f76a1a9a882",
+    "source_world_model_hash": "sha256:e9ffd6cbaacd409747ab0cb604c4e0d47722bf9642761feb9505e4d7dcce92a6",
+    "structural_measurements": [
+      {
+        "agent_id": "alice",
+        "declared_passage_controller": true,
+        "in_degree": 0,
+        "in_reachable_agents": [],
+        "out_degree": 0,
+        "out_reachable_agents": [],
+        "removal_eligible_ordered_pairs": 6,
+        "removal_lost_ordered_pairs": [],
+        "role": "analyst"
+      },
+      {
+        "agent_id": "bob",
+        "declared_passage_controller": false,
+        "in_degree": 1,
+        "in_reachable_agents": [
+          "carol"
+        ],
+        "out_degree": 1,
+        "out_reachable_agents": [
+          "dana"
+        ],
+        "removal_eligible_ordered_pairs": 6,
+        "removal_lost_ordered_pairs": [
+          [
+            "carol",
+            "dana"
+          ]
+        ],
+        "role": "engineer"
+      },
+      {
+        "agent_id": "carol",
+        "declared_passage_controller": false,
+        "in_degree": 0,
+        "in_reachable_agents": [],
+        "out_degree": 1,
+        "out_reachable_agents": [
+          "bob",
+          "dana"
+        ],
+        "removal_eligible_ordered_pairs": 6,
+        "removal_lost_ordered_pairs": [],
+        "role": "designer"
+      },
+      {
+        "agent_id": "dana",
+        "declared_passage_controller": false,
+        "in_degree": 1,
+        "in_reachable_agents": [
+          "bob",
+          "carol"
+        ],
+        "out_degree": 0,
+        "out_reachable_agents": [],
+        "removal_eligible_ordered_pairs": 6,
+        "removal_lost_ordered_pairs": [],
+        "role": "manager"
+      }
+    ]
+  },
+  "report_hash": "sha256:a6391c8c4e8a8c1d70dcda424cc37094198e0f4ac54d851ead1a7f4db29e7467",
+  "schema": "r2-m5b-source-directed-key-player-v1"
+}

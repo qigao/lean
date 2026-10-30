@@ -178,9 +178,22 @@ class StructuralSourceInfluenceAcceptance(unittest.TestCase):
                 relation=MeshRelation.DIRECT_INTERACTION,
                 controlled_passage_id="open-lobby",
             )
-        with self.assertRaises(ValueError):
+        # Changing only the network-model version is a *new valid source
+        # identity*. To test provenance rejection, change the bound
+        # perception model without changing the original Story.
+        alternate_perception = replace(
+            model.percept_memory_model.perception_model,
+            version="different-perception-revision",
+        )
+        alternate_model = replace(
+            model, percept_memory_model=replace(
+                model.percept_memory_model,
+                perception_model=alternate_perception,
+            ),
+        )
+        with self.assertRaisesRegex(ValueError, "exact perception model"):
             observe_source_structural_influence(
-                replace(model, version="unmatched"), story, cognition, social,
+                alternate_model, story, cognition, social,
                 relation=MeshRelation.DIRECT_INTERACTION,
                 controlled_passage_id="records-open",
             )
