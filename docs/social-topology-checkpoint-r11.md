@@ -107,3 +107,19 @@ versioned fixture bytes.
 This is only an explicit intervention stream between checkpoints.
 A later full V19 story/cognition/social round still uses the existing
 `simulate_situated_network_round` and normal social-evidence learning.
+
+## Exact-source verification for the entire checkpoint replay
+
+`verify_social_trust_replay(database_path, model, initial, recorded_results)`
+requires a real authoritative V19 starting checkpoint and a bounded, typed,
+unique, continuous sequence of recorded social checkpoint results. The
+verifier re-executes the complete event stream through the existing
+`replay_social_trust_checkpoints` implementation and compares the entire
+prior and next source/social/runtime state and every receipt. A forged,
+internally hash-consistent intermediate trust update, duplicate IDs, a
+reordered sequence and a wrong origin are rejected.
+
+The reviewed JSON vector is also regenerated through this independent
+full-sequence verifier; no report bytes change. The check proves only
+reproducibility under the supplied source, not actor identity or what
+physically occurred in the past.

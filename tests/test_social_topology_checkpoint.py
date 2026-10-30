@@ -21,7 +21,7 @@ from narrative_dynamics.abm.situated_social_topology import (
     SocialTopologyBoundaryError, SocialTopologyTrustConflict,
     SocialTopologyIntegrityError, SocialTrustCheckpointResult,
     admit_social_trust_checkpoint, verify_social_trust_checkpoint,
-    replay_social_trust_checkpoints,
+    replay_social_trust_checkpoints, verify_social_trust_replay,
 )
 from narrative_dynamics.abm.mesh_topology_events import (
     TopologyChangeError, TopologyVersionConflict, TopologyUnknownAgent,
@@ -312,6 +312,70 @@ class SocialTopologyCheckpointTests(unittest.TestCase):
                 self.path, self.model, prior, (deactivate,) * 129,
             )
         self.assertEqual(self.runtime, prior)
+
+
+    def test_verified_full_social_checkpoint_replay_rejects_forged_middle(self):
+        prior = self.runtime
+        deactivation = event_for(
+            prior, "deactivate-ab", SocialTrustOperation.DEACTIVATE,
+            "alice", "bob", 0.0,
+        )
+        genuine_first = admit_social_trust_checkpoint(
+            self.path, self.model, prior, deactivation,
+        )
+        interim = genuine_first.next_runtime_state
+        reactivation = event_for(
+            interim, "reactivate-ab", SocialTrustOperation.ACTIVATE,
+            "alice", "bob", 1.0,
+        )
+        accepted = replay_social_trust_checkpoints(
+            self.path, self.model, prior, (deactivation, reactivation),
+        )
+        self.assertTrue(verify_social_trust_replay(
+            self.path, self.model, prior, accepted,
+        ))
+        self.assertTrue(verify_social_trust_replay(
+            self.path, self.model, prior, (),
+        ))
+        other = admit_social_trust_checkpoint(
+            self.path, self.model, prior,
+            replace(deactivation, target_trust=0.25),
+        )
+        forged = SocialTrustCheckpointResult(
+            prior, other.next_runtime_state, deactivation,
+            replace(other.receipt, intervention_hash=deactivation.content_hash),
+        )
+        # The hash/receipt fields can be internally consistent despite the
+        # wrong real trust value. Re-execution from V19 must reject it.
+        with self.assertRaises(SocialTopologyIntegrityError):
+            verify_social_trust_replay(
+                self.path, self.model, prior, (forged,),
+            )
+        with self.assertRaises(TopologyVersionConflict):
+            verify_social_trust_replay(
+                self.path, self.model, prior, (accepted[1], accepted[0]),
+            )
+        with self.assertRaises(TopologyDuplicateEvent):
+            verify_social_trust_replay(
+                self.path, self.model, prior, (accepted[0], accepted[0]),
+            )
+        with self.assertRaises(TopologyVersionConflict):
+            verify_social_trust_replay(
+                self.path, self.model, interim, accepted,
+            )
+        with self.assertRaises(TypeError):
+            verify_social_trust_replay(
+                self.path, self.model, prior, [accepted[0]],
+            )
+        with self.assertRaises(TypeError):
+            verify_social_trust_replay(
+                self.path, self.model, prior, (object(),),
+            )
+        with self.assertRaises(TopologyChangeError):
+            verify_social_trust_replay(
+                self.path, self.model, prior, accepted * 65,
+            )
+        self.assertEqual(prior, self.runtime)
 
     def test_checked_in_social_trust_checkpoint_vectors_match_runtime(self):
         from pathlib import Path

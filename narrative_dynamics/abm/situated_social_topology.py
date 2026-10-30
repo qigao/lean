@@ -370,6 +370,63 @@ def verify_social_trust_checkpoint(
     return True
 
 
+
+def verify_social_trust_replay(
+    database_path: str | Path,
+    model: SituatedNetworkRuntimeModel,
+    original: SituatedNetworkRuntimeState,
+    recorded: tuple[SocialTrustCheckpointResult, ...],
+) -> bool:
+    """Independently verify all claimed V19 social trust checkpoint results.
+
+    The complete bounded series must start at the caller's authoritative
+    checkpoint and form a unique, ordered chain. Re-execute every event with
+    the single existing admission engine, then compare each original/new
+    source/social/runtime snapshot and receipt. This is reproducibility
+    checking, not external identity authentication or historical attestation.
+    """
+    if not isinstance(original, SituatedNetworkRuntimeState):
+        raise TypeError("social trust replay verification requires a V19 starting checkpoint")
+    if type(recorded) is not tuple:
+        raise TypeError("recorded social trust replay must be an immutable tuple")
+    if len(recorded) > 128:
+        raise TopologyChangeError("R1.1 verified social trust replay budget exceeded")
+    _validate_runtime_state(database_path, model, original)
+    previous = original
+    seen: set[str] = set()
+    for index, item in enumerate(recorded):
+        if type(item) is not SocialTrustCheckpointResult:
+            raise TypeError("recorded social trust replay requires exact typed results")
+        if item.intervention.event_id in seen:
+            raise TopologyDuplicateEvent("duplicate event in recorded social trust checkpoint replay")
+        seen.add(item.intervention.event_id)
+        if index == 0 and item.previous_runtime_state != original:
+            raise TopologyVersionConflict("recorded checkpoint replay starts from a different V19 source")
+        if item.previous_runtime_state != previous:
+            raise SocialTopologyIntegrityError("recorded social checkpoints are not consecutive")
+        previous = item.next_runtime_state
+    try:
+        actual = replay_social_trust_checkpoints(
+            database_path, model, original,
+            tuple(item.intervention for item in recorded),
+        )
+    except TopologyChangeError as exc:
+        raise SocialTopologyIntegrityError(
+            "recorded social trust changes cannot replay from the authoritative V19 source"
+        ) from exc
+    if len(actual) != len(recorded):
+        raise SocialTopologyIntegrityError("recorded social replay result length differs")
+    for claimed, reproduced in zip(recorded, actual):
+        if (
+            claimed.to_dict() != reproduced.to_dict()
+            or claimed.previous_runtime_state.to_dict() != reproduced.previous_runtime_state.to_dict()
+            or claimed.next_runtime_state.to_dict() != reproduced.next_runtime_state.to_dict()
+        ):
+            raise SocialTopologyIntegrityError(
+                "recorded checkpoint effects or receipts differ from authoritative reexecution"
+            )
+    return True
+
 def replay_social_trust_checkpoints(
     database_path: str | Path,
     model: SituatedNetworkRuntimeModel,

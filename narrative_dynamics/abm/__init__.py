@@ -432,7 +432,7 @@ from narrative_dynamics.abm.situated_social_topology import (
     SocialTrustOperation, SocialTrustCheckpointIntervention,
     SocialTrustCheckpointReceipt, SocialTrustCheckpointResult,
     admit_social_trust_checkpoint, verify_social_trust_checkpoint,
-    replay_social_trust_checkpoints,
+    verify_social_trust_replay, replay_social_trust_checkpoints,
 )
 from narrative_dynamics.abm.mesh_topology_events import (
     TopologyChange, TopologyOperation, TopologyChangeError,

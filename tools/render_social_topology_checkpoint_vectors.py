@@ -20,7 +20,7 @@ from narrative_dynamics.abm.situated_network import (
 from narrative_dynamics.abm.situated_social_topology import (
     SocialTrustOperation, SocialTrustCheckpointIntervention,
     admit_social_trust_checkpoint, verify_social_trust_checkpoint,
-    replay_social_trust_checkpoints,
+    replay_social_trust_checkpoints, verify_social_trust_replay,
 )
 from tests.test_network_abm_situated_network import initial_runtime_case
 
@@ -78,6 +78,8 @@ def build_vector_manifest() -> dict[str, object]:
         replayed = replay_social_trust_checkpoints(
             db, model, prior, (deactivate.intervention, activate.intervention),
         )
+        if not verify_social_trust_replay(db, model, prior, replayed):
+            raise AssertionError("source-derived social replay could not be independently reproduced")
         if (
             len(replayed) != 2
             or replayed[0].to_dict() != deactivate.to_dict()
