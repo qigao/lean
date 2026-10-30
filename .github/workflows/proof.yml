@@ -100,6 +100,23 @@ jobs:
             echo 'RED: R2 observations differ from exact V19 source revisions'
             exit 1
           fi
+      - name: R2 M1 physical V19 passage-boundary events
+        run: |
+          set -euo pipefail
+          python -m unittest tests.test_network_boundary_events -v
+          mkdir -p .generated-conformance
+          generated=.generated-conformance/network_boundary_events_v1.json
+          pinned=conformance/network_boundary_events_v1.json
+          python3 -m tools.render_network_boundary_events > "$generated"
+          if [ ! -f "$pinned" ]; then
+            echo 'RED: reviewed real V19 boundary event vectors are missing'
+            exit 1
+          fi
+          if ! cmp -s "$pinned" "$generated"; then
+            diff -u "$pinned" "$generated" || true
+            echo 'RED: real V19 boundary events differ from reviewed source'
+            exit 1
+          fi
       - name: Runtime-derived mesh regression
         run: python -m unittest tests.test_mesh_projection tests.test_mesh_evidence -v
 
