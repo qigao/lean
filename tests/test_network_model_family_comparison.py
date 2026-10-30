@@ -164,7 +164,7 @@ class NativeModelFamilyQualificationTests(unittest.TestCase):
             NativeModelFamilyComparison(json.dumps(d,sort_keys=True))
         d=self.report.to_dict()
         d["families"]["bb_fitness_growth"]["native_owner"]="V19_GRAPH"
-        with self.assertRaisesRegex(ValueError,"equivalent graphs or causal rankings"):
+        with self.assertRaisesRegex(ValueError,"requires three native sources and a V19 reference"):
             compare_native_model_families(
                 d["families"]["bb_fitness_growth"],
                 d["families"]["directed_rewiring"],
@@ -188,9 +188,7 @@ class NativeModelFamilyQualificationTests(unittest.TestCase):
         text=render_vector_corpus()
         self.assertNotIn("The restructuring is approved.",text)
         path=Path(__file__).resolve().parents[1]/"conformance/network_model_family_comparison_v1.json"
-        if not path.exists():
-            # Initial, expected fail-closed first native CI review handoff.
-            raise AssertionError("R2_FAMILIES_VECTOR_BEGIN\n"+text+"R2_FAMILIES_VECTOR_END")
+        # Reviewed canonical native-model bytes are mandatory, never synthesized.
         self.assertEqual(path.read_bytes(),text.encode("utf-8"))
 
 

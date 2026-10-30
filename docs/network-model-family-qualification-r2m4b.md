@@ -62,7 +62,7 @@ causal effects from four non-equivalent finite fixtures.
   comparability claims are fail-fast rejected.
 - [ ] Immutable `NativeModelFamilyComparison` returns fresh decoded
   data, never leaking an editable canonical source object.
-- [ ] Review and commit the exact source-derived JSON
+- [x] Review and commit the exact source-derived JSON
   `conformance/network_model_family_comparison_v1.json`; require full
   UTF-8 byte equivalence in focused Python and independent Lean CI.
 - [ ] Preserve R1, R2.M0–M4a, Python, Lean/35+11 trust, BB/PathN,
@@ -76,3 +76,34 @@ common-denominator metrics, frozen sampling/seeds, null models,
 confidence intervals and a separately admitted semantic mapping.
 Do not lower original Lean gates, add installer/consumer CI, or
 turn this qualification tool into a fallback graph engine.
+
+## First native-run evidence — 2026-10-30
+
+The first focused [CI #41023471575](https://github.com/qigao/lean/actions/runs/41023471575)
+ran the independent source-native BB, rewiring and evolving adapters and
+V19 control reference. Five behavioral/source/semantics regressions were
+GREEN. One negative test expected the wrong **error message**: the actual
+fail-fast rejection correctly said "model family dossier requires three
+native sources and a V19 reference". That assertion was corrected, with
+no production change. The remaining expected RED was the missing reviewed
+vector.
+
+The actual 12,436-byte canonical output was inspected and committed
+exactly, preserving the model-native clocks and identities:
+
+- BB birth and idle: 2→3 nodes, undirected `0--1--2`, exact
+  cumulative mass `1/2`; directed V1 transmission records are
+  separate from undirected birth topology
+- Rewiring: prior active `a→b` transmits first; new `b→c`
+  becomes eligible for transmission only on the second round
+- Evolving: b ENTERs, external a→b truth-feedback updates
+  native trust `0.5→0.75`; rewiring then permits b→c
+  transmission in round two
+- V19: the already-reviewed source-owned, branch-qualified
+  WAIT vs OPEN_PASSAGE / identical MOVE/TELL control remains
+  `DIVERGENT_STORY_BRANCH`
+
+No content payload, private TELL message, six-hop claim or numerical
+cross-family winner was added. The initial first-run textual vector
+handoff is removed. Same-HEAD focused/full Python and independent Lean
+must reproduce these exact reviewed bytes without changing the corpus.

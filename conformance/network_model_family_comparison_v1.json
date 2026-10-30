@@ -1,0 +1,392 @@
+{
+  "notice": "Three independent native ABM models alongside real V19 branch without edge-count normalization, trust equivalence or inferred causality",
+  "report": {
+    "causal_attribution": "UNATTRIBUTED",
+    "comparability": {
+      "bb_vs_directed_others": "INCOMPARABLE_UNDIRECTED_BIRTH_VS_DIRECTED_CANDIDATES",
+      "evolving_vs_v19_trust": "INCOMPARABLE_EXTERNAL_TRUTH_FEEDBACK_VS_PRIVATE_EVIDENCE",
+      "propagation_events": "MODEL_NATIVE_UNITS_ONLY",
+      "raw_edge_counts": "NOT_RANKABLE",
+      "rewiring_vs_v19_edges": "INCOMPARABLE_SIMILARITY_CANDIDATE_VS_SOCIAL_TRUST"
+    },
+    "cross_family_numeric_ranking": "FORBIDDEN",
+    "families": {
+      "bb_fitness_growth": {
+        "edge_semantics": "UNDIRECTED_FITNESS_WEIGHTED_BIRTH",
+        "final_birth_count": 1,
+        "final_frame_hash": "sha256:7d59b5c0fdcc5465f12a67300025a1985d7a5327dac716673f05c6552af29208",
+        "final_native_beliefs": {
+          "0": 1.0,
+          "1": 1.0,
+          "2": 1.0
+        },
+        "final_node_count": 3,
+        "initial_frame_hash": "sha256:f14bac690941fae6765c9d15283fb208944782e628f0cd85a5f6b2dad3594f7c",
+        "initial_undirected_topology": [
+          [
+            "0",
+            "1"
+          ]
+        ],
+        "m": 1,
+        "native_owner": "BBRuntimeReplay",
+        "steps": [
+          {
+            "exact_cumulative_trace_mass": "1/2",
+            "exact_tick_mass": "1/2",
+            "native_agent_ids": [
+              "0",
+              "1",
+              "2"
+            ],
+            "native_birth_index": 1,
+            "native_population_round": 1,
+            "native_tick": 1,
+            "native_transmissions": [
+              [
+                "0",
+                "1",
+                "bb"
+              ]
+            ],
+            "native_undirected_topology": [
+              [
+                "0",
+                "1"
+              ],
+              [
+                "1",
+                "2"
+              ]
+            ],
+            "next_frame_hash": "sha256:86907cc0066bef9ce8ab0481c534411240987dbe12585b204ccf1f699eb5f42b",
+            "parent_frame_hash": "sha256:f14bac690941fae6765c9d15283fb208944782e628f0cd85a5f6b2dad3594f7c",
+            "tick_hash": "sha256:e1518137d58b8a545b6ec0efde7cbc118e38703ba5f50d60afbc353d911fe9d3",
+            "tick_kind": "birth"
+          },
+          {
+            "exact_cumulative_trace_mass": "1/2",
+            "exact_tick_mass": "1",
+            "native_agent_ids": [
+              "0",
+              "1",
+              "2"
+            ],
+            "native_birth_index": 1,
+            "native_population_round": 2,
+            "native_tick": 2,
+            "native_transmissions": [
+              [
+                "0",
+                "1",
+                "bb"
+              ],
+              [
+                "1",
+                "0",
+                "bb"
+              ],
+              [
+                "1",
+                "2",
+                "bb"
+              ]
+            ],
+            "native_undirected_topology": [
+              [
+                "0",
+                "1"
+              ],
+              [
+                "1",
+                "2"
+              ]
+            ],
+            "next_frame_hash": "sha256:7d59b5c0fdcc5465f12a67300025a1985d7a5327dac716673f05c6552af29208",
+            "parent_frame_hash": "sha256:86907cc0066bef9ce8ab0481c534411240987dbe12585b204ccf1f699eb5f42b",
+            "tick_hash": "sha256:489bcd49b5ff9bc150747f28dbf10e1ba52c5b02ff8a4b8961185e7e9b9f2405",
+            "tick_kind": "idle"
+          }
+        ],
+        "time_semantics": "GLOBAL_TICK_AND_BIRTH_INDEX_NOT_V19_STORY_ROUND",
+        "trust_semantics": "NOT_REPRESENTED_AS_V19_SOCIAL_TRUST",
+        "validated_seed_frame_hash": "sha256:f14bac690941fae6765c9d15283fb208944782e628f0cd85a5f6b2dad3594f7c"
+      },
+      "directed_rewiring": {
+        "candidate_count": 2,
+        "dissolution_similarity": 0.2,
+        "edge_semantics": "DIRECTED_FIXED_CANDIDATES_SIMILARITY_HYSTERESIS",
+        "final_state_hash": "sha256:14444fe12f71299cef8bf78afea5a6364ae786c239001f41f1452184cf3a6296",
+        "formation_similarity": 0.8,
+        "initial_state_hash": "sha256:4dd2b5e1a105e8cbc654f442126ec54bef6f6d539a8ff9de2fc73942509bdbf6",
+        "model_hash": "sha256:875e197e2b0224a0f6adee1767a2eb9f1ee1fbf1b8e966fea30b47343f7c4a47",
+        "native_owner": "RewiringPopulationState",
+        "steps": [
+          {
+            "changed_candidate_edges": [
+              [
+                "b",
+                "c",
+                "peer"
+              ]
+            ],
+            "native_beliefs": {
+              "a": 1.0,
+              "b": 1.0,
+              "c": 1.0
+            },
+            "native_transmissions": [
+              [
+                "a",
+                "b",
+                "peer"
+              ]
+            ],
+            "next_active_candidate_edges": [
+              [
+                "a",
+                "b",
+                "peer"
+              ],
+              [
+                "b",
+                "c",
+                "peer"
+              ]
+            ],
+            "next_state_hash": "sha256:5a43c5cf7d909d7c37006714552ef6012cd55b8c6f0b1ee81d4157a2c3658864",
+            "prior_active_candidate_edges": [
+              [
+                "a",
+                "b",
+                "peer"
+              ]
+            ],
+            "round": 1,
+            "source_state_hash": "sha256:4dd2b5e1a105e8cbc654f442126ec54bef6f6d539a8ff9de2fc73942509bdbf6"
+          },
+          {
+            "changed_candidate_edges": [],
+            "native_beliefs": {
+              "a": 1.0,
+              "b": 1.0,
+              "c": 1.0
+            },
+            "native_transmissions": [
+              [
+                "a",
+                "b",
+                "peer"
+              ],
+              [
+                "b",
+                "c",
+                "peer"
+              ]
+            ],
+            "next_active_candidate_edges": [
+              [
+                "a",
+                "b",
+                "peer"
+              ],
+              [
+                "b",
+                "c",
+                "peer"
+              ]
+            ],
+            "next_state_hash": "sha256:14444fe12f71299cef8bf78afea5a6364ae786c239001f41f1452184cf3a6296",
+            "prior_active_candidate_edges": [
+              [
+                "a",
+                "b",
+                "peer"
+              ],
+              [
+                "b",
+                "c",
+                "peer"
+              ]
+            ],
+            "round": 2,
+            "source_state_hash": "sha256:5a43c5cf7d909d7c37006714552ef6012cd55b8c6f0b1ee81d4157a2c3658864"
+          }
+        ],
+        "time_semantics": "PROPAGATE_OLD_TOPOLOGY_THEN_REWIRE_FOR_NEXT_ROUND",
+        "trust_semantics": "NO_PRIVATE_V19_TESTIMONY_OR_SOCIAL_CLAIM_STATE"
+      },
+      "lifecycle_feedback": {
+        "candidate_count": 2,
+        "edge_semantics": "DIRECTED_LIFECYCLE_TRUST_AND_SIMILARITY_HYSTERESIS",
+        "final_state_hash": "sha256:a3f0dd3a5ed30a052dd5288eab1e6f7a2add8abcba47cb74eb2be1b9442bd20b",
+        "initial_active_members": [
+          "a",
+          "c"
+        ],
+        "initial_state_hash": "sha256:5ee5f4058963e00c36c428eecfb841f8674533e9d580dc84717b954291a58de8",
+        "initial_trust": 0.5,
+        "learning_rate": 0.5,
+        "model_hash": "sha256:6fe63db2d748d3014b6d676f20d8a51741d1b0a6b4ad36ec2dbc721095922149",
+        "native_owner": "EvolvingPopulationState",
+        "steps": [
+          {
+            "feedback_targets": [
+              [
+                "a",
+                "b",
+                "peer"
+              ]
+            ],
+            "lifecycle_events": [
+              {
+                "agent_id": "b",
+                "kind": "enter"
+              }
+            ],
+            "native_active_candidate_edges": [
+              [
+                "a",
+                "b",
+                "peer"
+              ],
+              [
+                "b",
+                "c",
+                "peer"
+              ]
+            ],
+            "native_members_after": [
+              {
+                "agent_id": "a",
+                "belief": 1.0,
+                "status": "active"
+              },
+              {
+                "agent_id": "b",
+                "belief": 0.5,
+                "status": "active"
+              },
+              {
+                "agent_id": "c",
+                "belief": 0.5,
+                "status": "active"
+              }
+            ],
+            "native_rewiring_changes": [
+              [
+                "b",
+                "c"
+              ]
+            ],
+            "native_transmissions": [
+              [
+                "a",
+                "b",
+                "peer"
+              ]
+            ],
+            "native_trust_values": [
+              {
+                "feedback_count": 1,
+                "source": "a",
+                "target": "b",
+                "trust": 0.75
+              },
+              {
+                "feedback_count": 0,
+                "source": "b",
+                "target": "c",
+                "trust": 0.5
+              }
+            ],
+            "next_state_hash": "sha256:10796601905295d7851e9d61841be40a094c0315633b072c5dd3298711c6808b",
+            "round": 1,
+            "source_state_hash": "sha256:5ee5f4058963e00c36c428eecfb841f8674533e9d580dc84717b954291a58de8"
+          },
+          {
+            "feedback_targets": [],
+            "lifecycle_events": [],
+            "native_active_candidate_edges": [
+              [
+                "a",
+                "b",
+                "peer"
+              ],
+              [
+                "b",
+                "c",
+                "peer"
+              ]
+            ],
+            "native_members_after": [
+              {
+                "agent_id": "a",
+                "belief": 1.0,
+                "status": "active"
+              },
+              {
+                "agent_id": "b",
+                "belief": 0.875,
+                "status": "active"
+              },
+              {
+                "agent_id": "c",
+                "belief": 0.5,
+                "status": "active"
+              }
+            ],
+            "native_rewiring_changes": [],
+            "native_transmissions": [
+              [
+                "a",
+                "b",
+                "peer"
+              ],
+              [
+                "b",
+                "c",
+                "peer"
+              ]
+            ],
+            "native_trust_values": [
+              {
+                "feedback_count": 1,
+                "source": "a",
+                "target": "b",
+                "trust": 0.75
+              },
+              {
+                "feedback_count": 0,
+                "source": "b",
+                "target": "c",
+                "trust": 0.5
+              }
+            ],
+            "next_state_hash": "sha256:a3f0dd3a5ed30a052dd5288eab1e6f7a2add8abcba47cb74eb2be1b9442bd20b",
+            "round": 2,
+            "source_state_hash": "sha256:10796601905295d7851e9d61841be40a094c0315633b072c5dd3298711c6808b"
+          }
+        ],
+        "time_semantics": "MEMBERSHIP_THEN_PROPAGATION_THEN_EXTERNAL_FEEDBACK_THEN_REWIRING",
+        "trust_semantics": "EXTERNAL_TRUTH_FEEDBACK_NOT_V19_PRIVATE_INSPECT_VERIFICATION"
+      }
+    },
+    "normalization": "NONE",
+    "schema": "v19-abm-model-family-qualification-v1",
+    "scope": "frozen finite model-native qualification, NOT equivalent V19 histories",
+    "source_owner": "INDEPENDENT_NATIVE_MODELS",
+    "v19_reference": {
+      "control_story_hash": "sha256:cc02742b17a309c9a20998d55dae7896a4882fbddb982c6670ec68f38eff02a4",
+      "controlled_intervention": "OPEN_PASSAGE_VS_WAIT_THEN_IDENTICAL_MOVE_TELL",
+      "initial_world_hash": "sha256:a4697cec660d0832e78097fb842220d5a4b9f9985c86fc37f01fa0bc65805217",
+      "intervention_story_hash": "sha256:99b156a9f93351a52dd22fa22ebbf6bd4802a58ae3b4165cdb67820d61f4538e",
+      "model_hash": "sha256:192f428e3f5f807fca97de5c6594d8fc8c6341d59fe99ae36dd6ad293d9f4a87",
+      "source_owner": "SITUATED_V19_STORY_COGNITION_SOCIAL_MEMORY",
+      "story_lineage": "DIVERGENT_STORY_BRANCH",
+      "trust_semantics": "V19_PRIVATE_EXACT_PERCEPT_TESTIMONY_VERIFICATION"
+    }
+  },
+  "report_hash": "sha256:a90be55452f10281c950140f022e2a3803bc0b734f20687c1f2c0d2a33eb92d7",
+  "schema": "v19-abm-model-family-qualification-v1"
+}
