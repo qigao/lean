@@ -265,6 +265,58 @@ class BoundaryEventTests(unittest.TestCase):
             replace(plain, next_state=replace(
                 plain.next_state, passages=(PassageState("meeting-door", True),),
             ))
+        opening = story.rounds[0]
+        wrong_authored = tuple(
+            replace(intent, kind=SituatedActionKind.MOVE)
+            if intent.kind is SituatedActionKind.OPEN_PASSAGE else intent
+            for intent in opening.intents
+        )
+        with self.assertRaisesRegex(ValueError, "boundary event must match"):
+            replace(opening, intents=wrong_authored)
+
+    def test_same_round_opening_cannot_retroactively_disclose_tell_content(self):
+        from narrative_dynamics.abm.situated_perception_contracts import (
+            SituatedPerceptFidelity,
+        )
+        perception, before = boundary_fixture()
+        secret = "private-review-message"
+        earlier = resolve_situated_round(perception.world_model, before, (
+            act("open", "alice", SituatedActionKind.OPEN_PASSAGE, "meeting-door"),
+            SituatedActionIntent("tell-before-open", "carol",
+                                 SituatedActionKind.TELL, message=secret),
+        ))
+        first_tell = next(e for e in earlier.events
+                          if e.action_id == "tell-before-open")
+        remote = tuple(
+            p for p in percepts_for_agent(
+                project_situated_percepts(perception, earlier), "bob",
+            ) if p.source_event_id == first_tell.event_id
+        )
+        self.assertEqual(len(remote), 1)
+        self.assertIs(remote[0].fidelity, SituatedPerceptFidelity.DETECTED)
+        self.assertIsNone(remote[0].actor_agent_id)
+        self.assertIsNone(remote[0].kind)
+        self.assertEqual(remote[0].details, ())
+        self.assertNotIn(secret, str(remote[0].to_dict()))
+
+        later = resolve_situated_round(perception.world_model, earlier.next_state, (
+            SituatedActionIntent("tell-after-open", "carol",
+                                 SituatedActionKind.TELL, message=secret),
+        ))
+        second_tell = next(e for e in later.events
+                           if e.action_id == "tell-after-open")
+        now = tuple(
+            p for p in percepts_for_agent(
+                project_situated_percepts(perception, later), "bob",
+            ) if p.source_event_id == second_tell.event_id
+        )
+        self.assertEqual(len(now), 1)
+        self.assertIs(now[0].fidelity, SituatedPerceptFidelity.EXACT)
+        self.assertIs(now[0].kind, SituatedActionKind.TELL)
+        self.assertTrue(any(d.name == "message" and d.value == secret
+                            for d in now[0].details))
+        # Actual TELL is a different historical event; opening the gate
+        # did not produce or pre-deliver this content.
 
     def test_real_v19_source_reports_actual_boundary_event_and_no_fake_tell(self):
         model, before, after, report_obj = build_real_boundary_case()
@@ -304,10 +356,6 @@ class BoundaryEventTests(unittest.TestCase):
         self.assertEqual(len(corpus["cases"]), 2)
         vector = render_vector_corpus().encode("utf-8")
         pinned = Path(__file__).resolve().parents[1] / "conformance" / "network_boundary_events_v1.json"
-        if not pinned.exists():
-            # First-run fail-closed source handoff; remove after actual review.
-            raise AssertionError("R2_BOUNDARY_VECTOR_BEGIN\n" + vector.decode("utf-8")
-                                 + "R2_BOUNDARY_VECTOR_END")
         self.assertEqual(pinned.read_bytes(), vector)
 
 

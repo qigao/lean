@@ -310,15 +310,29 @@ class SituatedRoundResult:
         # from constructing a forged SituatedRoundResult with a silently
         # modified physical boundary and unchanged event history.
         expected_passages = {p.passage_id: p.open for p in self.prior_state.passages}
+        intents_by_id = {intent.action_id: intent for intent in self.intents}
+        successfully_changed_passages: set[str] = set()
         for event in self.events:
-            if event.success and event.kind in {
+            if event.kind in {
                 SituatedActionKind.OPEN_PASSAGE, SituatedActionKind.CLOSE_PASSAGE,
             }:
-                if event.target_id not in expected_passages:
-                    raise ValueError("successful boundary event must name an existing passage")
-                expected_passages[event.target_id] = (
-                    event.kind is SituatedActionKind.OPEN_PASSAGE
-                )
+                authored = intents_by_id.get(event.action_id)
+                if (
+                    authored is None
+                    or authored.kind is not event.kind
+                    or authored.agent_id != event.actor_agent_id
+                    or authored.target_id != event.target_id
+                ):
+                    raise ValueError("boundary event must match its authored Agent intent")
+                if event.success:
+                    if event.target_id not in expected_passages:
+                        raise ValueError("successful boundary event must name an existing passage")
+                    if event.target_id in successfully_changed_passages:
+                        raise ValueError("passage cannot be changed twice in one synchronous round")
+                    successfully_changed_passages.add(event.target_id)
+                    expected_passages[event.target_id] = (
+                        event.kind is SituatedActionKind.OPEN_PASSAGE
+                    )
         actual_passages = {p.passage_id: p.open for p in self.next_state.passages}
         if expected_passages != actual_passages:
             raise ValueError(

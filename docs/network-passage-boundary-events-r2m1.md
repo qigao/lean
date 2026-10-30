@@ -82,3 +82,21 @@ changed reviewed vector with strict byte equality; the original full
 Python/Lean/BB/PathN/Studio tests remain unchanged. Initial RED is
 intentional until CI output is reviewed and pinned. No installer or
 downstream consumer project is introduced.
+
+## Cross-axis timing: permission does not imply message disclosure
+
+A same-round OPEN_PASSAGE and TELL are evaluated using the **prior**
+environment for reach and privacy: an observer across a still-closed gate
+may detect attenuated audio but cannot see the action or read private
+message details. A subsequent TELL after the gate opens can be observed
+more clearly under the exact existing perception model. The actual
+percept fidelity (DETECTED vs EXACT), actor identity, message redaction
+and event hashes are asserted by regression; no gate operation creates a
+historical transmission or alters a source-owned social trust value.
+
+The `SituatedRoundResult` check also ties each successful boundary event
+to its **typed authored intent** and rejects multiple successful
+changes to the same passage within one synchronous round.
+
+The reviewed JSON source vector from CI #41007780518 is now checked in
+and strictly required; the one-time missing-pin transport was removed.
