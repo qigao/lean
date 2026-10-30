@@ -1,0 +1,188 @@
+{
+  "activate": {
+    "directed_edges": [
+      [
+        "alice",
+        "bob"
+      ],
+      [
+        "bob",
+        "alice"
+      ]
+    ],
+    "intervention": {
+      "actor_id": "model-review-fixture",
+      "event_id": "activate-alice-to-bob",
+      "expected_runtime_hash": "sha256:c3f7bdc44bcf3f22b9187cb44453635301f3f2696433578451e661587aece2a5",
+      "expected_social_state_hash": "sha256:0d8852d397354ffbb4ce04d466aa5819a1427c9dd9d94aed894d1ea541025d17",
+      "expected_source_hash": "sha256:451d47a2d3ae46d25559661e89524ac9f41d16076d8907aacd1f8f7a3b36f65b",
+      "observer_agent_id": "bob",
+      "operation": "activate",
+      "reason": "explicit trust checkpoint admission",
+      "schema": "v19-social-trust-checkpoint-intervention-v1",
+      "source_agent_id": "alice",
+      "target_trust": 1.0
+    },
+    "next_runtime_hash": "sha256:ad015c4b9f68150c1b7a509184ca69d5cf733818e88b4044c8e565f0cc60c289",
+    "next_social_hash": "sha256:0094a5bedaa075a5b38a6b2ec2da3500c7f532f55153fa955d67078df06f4b09",
+    "next_source_hash": "sha256:1704e75058149d8fe2a319989bd41fa51519c0dc5d4e909c90235463f13d64ac",
+    "observation": {
+      "agent_count": 2,
+      "directed_diameter": 1,
+      "directed_edges": [
+        [
+          "alice",
+          "bob"
+        ],
+        [
+          "bob",
+          "alice"
+        ]
+      ],
+      "distance_sum": 2,
+      "max_finite_distance": 1,
+      "mesh_hash": "sha256:46f99cdc139a7a6ea45dfed0c911632d8ccf90a190724c79f2bfa4a24576cb85",
+      "reachable_ordered_pair_count": 2,
+      "relation": "relationship",
+      "source_snapshot_hash": "sha256:1704e75058149d8fe2a319989bd41fa51519c0dc5d4e909c90235463f13d64ac",
+      "strong_components": [
+        [
+          "alice",
+          "bob"
+        ]
+      ],
+      "unreachable_ordered_pair_count": 0
+    },
+    "receipt": {
+      "after_runtime_hash": "sha256:ad015c4b9f68150c1b7a509184ca69d5cf733818e88b4044c8e565f0cc60c289",
+      "after_social_hash": "sha256:0094a5bedaa075a5b38a6b2ec2da3500c7f532f55153fa955d67078df06f4b09",
+      "after_source_hash": "sha256:1704e75058149d8fe2a319989bd41fa51519c0dc5d4e909c90235463f13d64ac",
+      "before_runtime_hash": "sha256:c3f7bdc44bcf3f22b9187cb44453635301f3f2696433578451e661587aece2a5",
+      "before_social_hash": "sha256:0d8852d397354ffbb4ce04d466aa5819a1427c9dd9d94aed894d1ea541025d17",
+      "before_source_hash": "sha256:451d47a2d3ae46d25559661e89524ac9f41d16076d8907aacd1f8f7a3b36f65b",
+      "intervention_hash": "sha256:96c44ac1f74aaf2d2188b8de0eb78030b38d7da34d9e0711f0d1db54400e3b68",
+      "next_active": true,
+      "previous_active": false,
+      "schema": "v19-social-trust-checkpoint-receipt-v1",
+      "threshold": 0.5
+    },
+    "receipt_hash": "sha256:827e2a544413b63ba317b604029168be4a144cb7da8b0c3c7346f41750e88e0b"
+  },
+  "cognitive_state_hash": "sha256:b59ead038cd1f0b3cb55a08b9eb7aebbbe06bc210c178603d1505978c18c723a",
+  "deactivate": {
+    "directed_edges": [
+      [
+        "bob",
+        "alice"
+      ]
+    ],
+    "intervention": {
+      "actor_id": "model-review-fixture",
+      "event_id": "deactivate-alice-to-bob",
+      "expected_runtime_hash": "sha256:0f3060ac2470ed99dd0ccc09608b26c728b1b19f7203342d6d4775aed24ef7fd",
+      "expected_social_state_hash": "sha256:326f17b84ec72335b4fdcf5b7660045d663f2d2718febf7a22338bcbd1a87572",
+      "expected_source_hash": "sha256:08047c4ca8483a5470f209e5516d3b3b0bb45d1b7874b8d889a3ba234f94eb9c",
+      "observer_agent_id": "bob",
+      "operation": "deactivate",
+      "reason": "explicit trust checkpoint admission",
+      "schema": "v19-social-trust-checkpoint-intervention-v1",
+      "source_agent_id": "alice",
+      "target_trust": 0.0
+    },
+    "next_runtime_hash": "sha256:c3f7bdc44bcf3f22b9187cb44453635301f3f2696433578451e661587aece2a5",
+    "next_social_hash": "sha256:0d8852d397354ffbb4ce04d466aa5819a1427c9dd9d94aed894d1ea541025d17",
+    "next_source_hash": "sha256:451d47a2d3ae46d25559661e89524ac9f41d16076d8907aacd1f8f7a3b36f65b",
+    "observation": {
+      "agent_count": 2,
+      "directed_diameter": null,
+      "directed_edges": [
+        [
+          "bob",
+          "alice"
+        ]
+      ],
+      "distance_sum": 1,
+      "max_finite_distance": 1,
+      "mesh_hash": "sha256:3ec0ef11617bd6888e9030f27eef5177f3c9385ef610533f84b76d7051d5f95a",
+      "reachable_ordered_pair_count": 1,
+      "relation": "relationship",
+      "source_snapshot_hash": "sha256:451d47a2d3ae46d25559661e89524ac9f41d16076d8907aacd1f8f7a3b36f65b",
+      "strong_components": [
+        [
+          "alice"
+        ],
+        [
+          "bob"
+        ]
+      ],
+      "unreachable_ordered_pair_count": 1
+    },
+    "old_path_invalid": true,
+    "receipt": {
+      "after_runtime_hash": "sha256:c3f7bdc44bcf3f22b9187cb44453635301f3f2696433578451e661587aece2a5",
+      "after_social_hash": "sha256:0d8852d397354ffbb4ce04d466aa5819a1427c9dd9d94aed894d1ea541025d17",
+      "after_source_hash": "sha256:451d47a2d3ae46d25559661e89524ac9f41d16076d8907aacd1f8f7a3b36f65b",
+      "before_runtime_hash": "sha256:0f3060ac2470ed99dd0ccc09608b26c728b1b19f7203342d6d4775aed24ef7fd",
+      "before_social_hash": "sha256:326f17b84ec72335b4fdcf5b7660045d663f2d2718febf7a22338bcbd1a87572",
+      "before_source_hash": "sha256:08047c4ca8483a5470f209e5516d3b3b0bb45d1b7874b8d889a3ba234f94eb9c",
+      "intervention_hash": "sha256:bf7e1c2bab00e9f82320c69a517c75003c96bf1ad5bc8c7d9c1dbc3b602ba435",
+      "next_active": false,
+      "previous_active": true,
+      "schema": "v19-social-trust-checkpoint-receipt-v1",
+      "threshold": 0.5
+    },
+    "receipt_hash": "sha256:e9a6d487a557d45e41a0c05cbc7d0d789b1e5fb10a73397f88a88dafd46663d2"
+  },
+  "model_hash": "sha256:75644713f5b6214d860d5ab2c2c6d83b76641048678b5df1f583cfc48ce929ef",
+  "notice": "Source-derived administrative checkpoint intervention, not actor authentication or ordinary social-evidence learning",
+  "original": {
+    "directed_edges": [
+      [
+        "alice",
+        "bob"
+      ],
+      [
+        "bob",
+        "alice"
+      ]
+    ],
+    "observation": {
+      "agent_count": 2,
+      "directed_diameter": 1,
+      "directed_edges": [
+        [
+          "alice",
+          "bob"
+        ],
+        [
+          "bob",
+          "alice"
+        ]
+      ],
+      "distance_sum": 2,
+      "max_finite_distance": 1,
+      "mesh_hash": "sha256:2271bbd5519868eac09ec4f70d70ed9ec47f1b6841d833d82a2ce3b2f4745ce8",
+      "reachable_ordered_pair_count": 2,
+      "relation": "relationship",
+      "source_snapshot_hash": "sha256:08047c4ca8483a5470f209e5516d3b3b0bb45d1b7874b8d889a3ba234f94eb9c",
+      "strong_components": [
+        [
+          "alice",
+          "bob"
+        ]
+      ],
+      "unreachable_ordered_pair_count": 0
+    },
+    "runtime_hash": "sha256:0f3060ac2470ed99dd0ccc09608b26c728b1b19f7203342d6d4775aed24ef7fd",
+    "social_hash": "sha256:326f17b84ec72335b4fdcf5b7660045d663f2d2718febf7a22338bcbd1a87572",
+    "source_hash": "sha256:08047c4ca8483a5470f209e5516d3b3b0bb45d1b7874b8d889a3ba234f94eb9c"
+  },
+  "original_round_index": 0,
+  "relationship_threshold": 0.5,
+  "schema": "v19-social-topology-checkpoint-v1",
+  "story_hash": "sha256:0b42c395646f90bafbe4e9d61d504b846b515d451a8d58b8ba8ae4fa935b6a45",
+  "unchanged_selected_relations": {
+    "direct_interaction": [],
+    "transmission": []
+  }
+}
