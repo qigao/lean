@@ -98,6 +98,20 @@ class SingleflightCIContractTests(unittest.TestCase):
         self.assertIn("social_topology_checkpoint_v1.json", script)
         self.assertIn("cmp -s", script)
 
+    def test_r2_three_driver_source_observation_gate(self):
+        self.assertIn("R2 three-driver V19/V24 observed-network regression", self.content)
+        self.assertIn("tests.test_network_evolution_observation", self.content)
+        self.assertIn("tools.render_network_evolution_vectors", self.content)
+        self.assertIn("conformance/network_evolution_observation_v1.json", self.content)
+        self.assertLess(
+            self.content.index("R2 three-driver V19/V24 observed-network regression"),
+            self.content.index("Runtime-derived mesh regression"),
+        )
+        script = (ROOT / "tools/check_mesh_evidence_lean.sh").read_text(encoding="utf-8")
+        self.assertIn("tools.render_network_evolution_vectors", script)
+        self.assertIn("network_evolution_observation_v1.json", script)
+        self.assertIn("cmp -s", script)
+
     def test_r11_real_social_memory_checkpoint_gate(self):
         self.assertIn("tests.test_social_topology_checkpoint", self.content)
         self.assertIn("tests.test_mesh_topology_revisions", self.content)

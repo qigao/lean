@@ -426,6 +426,10 @@ from narrative_dynamics.abm.situated_network_contracts import (
     SituatedNetworkTrajectory,
     SituatedNetworkTransmission,
 )
+from narrative_dynamics.abm.mesh_evolution_observation import (
+    NetworkLayerView, NetworkChangeReport,
+    observe_network_layers, compare_network_layers,
+)
 from narrative_dynamics.abm.situated_social_topology import (
     SocialTopologyBoundaryError, SocialTopologyTrustConflict,
     SocialTopologyIntegrityError,

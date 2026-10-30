@@ -83,6 +83,23 @@ jobs:
             echo 'RED: R1 topology replay vectors differ from authoritative execution'
             exit 1
           fi
+      - name: R2 three-driver V19/V24 observed-network regression
+        run: |
+          set -euo pipefail
+          python -m unittest tests.test_network_evolution_observation -v
+          mkdir -p .generated-conformance
+          generated=.generated-conformance/network_evolution_observation_v1.json
+          pinned=conformance/network_evolution_observation_v1.json
+          python3 -m tools.render_network_evolution_vectors > "$generated"
+          if [ ! -f "$pinned" ]; then
+            echo 'RED: reviewed R2 observation vectors are missing'
+            exit 1
+          fi
+          if ! cmp -s "$pinned" "$generated"; then
+            diff -u "$pinned" "$generated" || true
+            echo 'RED: R2 observations differ from exact V19 source revisions'
+            exit 1
+          fi
       - name: Runtime-derived mesh regression
         run: python -m unittest tests.test_mesh_projection tests.test_mesh_evidence -v
 
