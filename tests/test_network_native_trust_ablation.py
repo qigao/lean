@@ -149,6 +149,25 @@ class NativeTrustChannelAblationAcceptance(unittest.TestCase):
                 a["native_map_action"]!=b["native_map_action"],
             )
 
+    def test_legacy_off_is_full_likelihood_for_same_real_native_target_tell(self):
+        """Predeclared mathematical expected posterior from native 0.72/0.08
+        likelihood at prior 0.5. It is NOT a measured population effect."""
+        d=self.data
+        yes=d["cells"]["legacy"]["history_arms"]["confirmed_audit"]
+        no=d["cells"]["legacy"]["history_arms"]["contradicted_audit"]
+        self.assertEqual(yes["native_effective_tell_weight"],1.0)
+        self.assertEqual(no["native_effective_tell_weight"],1.0)
+        self.assertAlmostEqual(yes["native_bob_direct_posterior_approved"],0.9)
+        self.assertAlmostEqual(no["native_bob_direct_posterior_approved"],0.9)
+        for hist in ("confirmed_audit","contradicted_audit"):
+            self.assertTrue(d["within_history_posterior_diff"][hist])
+            self.assertGreater(
+                d["cells"]["legacy"]["history_arms"][hist]
+                ["native_bob_direct_posterior_approved"],
+                d["cells"]["weighted"]["history_arms"][hist]
+                ["native_bob_direct_posterior_approved"],
+            )
+
     def test_unchanged_private_histories_do_not_create_population_causality(self):
         d=self.data
         self.assertEqual(d["source_private_history_match"],"NOT_MATCHED")

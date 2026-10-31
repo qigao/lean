@@ -220,6 +220,8 @@ class NativeTrustChannelAblationReport:
                 source_histories.setdefault(history, []).append(identity)
         if (model_hashes[0][0] == model_hashes[1][0]
                 or model_hashes[0][1] == model_hashes[1][1]
+                or d["cells"]["weighted"]["source_initial_world_hash"] !=
+                   d["cells"]["legacy"]["source_initial_world_hash"]
                 or any(x[0] != x[1] for x in source_histories.values())
                 or source_histories[_HISTORIES[0][0]][0][0] ==
                    source_histories[_HISTORIES[1][0]][0][0]):
