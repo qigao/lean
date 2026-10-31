@@ -169,6 +169,14 @@ if ! cmp -s conformance/network_native_neutral_target_v1.json "$tmpdir/network_n
   diff -u conformance/network_native_neutral_target_v1.json "$tmpdir/network_native_neutral_target_v1.json" || true
   exit 1
 fi
+# R2.M5g.2: same original V19 exact historical Story and new target
+# TELL; compare social-policy direct likelihood ON vs original OFF.
+python3 -m tools.render_native_trust_channel_ablation_vectors > "$tmpdir/network_native_trust_channel_ablation_v1.json"
+if ! cmp -s conformance/network_native_trust_channel_ablation_v1.json "$tmpdir/network_native_trust_channel_ablation_v1.json"; then
+  echo 'FAIL: R2.M5g.2 original four-cell native trust-channel source changed' >&2
+  diff -u conformance/network_native_trust_channel_ablation_v1.json "$tmpdir/network_native_trust_channel_ablation_v1.json" || true
+  exit 1
+fi
 generated="$tmpdir/authoritative.lean"
 
 # Always regenerate from the actual V19 snapshot, then enforce the immutable

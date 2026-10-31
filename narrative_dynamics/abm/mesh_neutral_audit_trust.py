@@ -193,7 +193,10 @@ class NeutralAuditSourceReport:
         return stable_content_hash(self.to_dict())
 
 
-def _neutral_source_models(*, allow_post_audit_target_tell: bool = False):
+def _neutral_source_models(
+    *, allow_post_audit_target_tell: bool = False,
+    trust_weight_direct_testimony: bool = True,
+):
     """Declare one V19 model with separate audit and target topics.
 
     Every action/hypothesis likelihood row retains 80% of its original
@@ -204,6 +207,8 @@ def _neutral_source_models(*, allow_post_audit_target_tell: bool = False):
     """
     if type(allow_post_audit_target_tell) is not bool:
         raise TypeError("M5g1 native target-TELL repeatability switch must be boolean")
+    if type(trust_weight_direct_testimony) is not bool:
+        raise TypeError("M5g2 source direct-TELL protocol must be boolean")
     from tests.test_network_epistemic_influence import source_epistemic_case
     net, root, _, _ = source_epistemic_case()
     old_cognition = net.percept_memory_model.cognitive_model
@@ -293,7 +298,10 @@ def _neutral_source_models(*, allow_post_audit_target_tell: bool = False):
             SituatedClaimTopic("restructuring", ("approved", "denied")),
             SituatedClaimTopic("source-audit", _AUDIT_SYMBOLS),
         ),
-        policy=replace(old_social.policy, trust_weight_direct_testimony=True),
+        policy=replace(
+            old_social.policy,
+            trust_weight_direct_testimony=trust_weight_direct_testimony,
+        ),
     )
     # Proven native likelihood normalization and neutrality at the MODEL
     # boundary, not merely an assertion in the report JSON.
@@ -319,8 +327,8 @@ def _neutral_source_models(*, allow_post_audit_target_tell: bool = False):
             }
             if informative["approved"] <= informative["denied"]:
                 raise ValueError("audit protocol erased informative target testimony")
-    if social.policy.trust_weight_direct_testimony is not True:
-        raise ValueError("neutral training must preserve original source direct-trust policy")
+    if social.policy.trust_weight_direct_testimony is not trust_weight_direct_testimony:
+        raise ValueError("M5g2 source protocol must equal its exact declared policy")
     return memory, social, root
 
 

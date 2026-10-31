@@ -332,6 +332,38 @@ Prior audit histories and private memory/claim IDs remain
 NOT_MATCHED regardless. No claim of isolated trust causality
 or universal leader power is permitted from this finite replay.
 
+## R2.M5g.2 — source V19 direct-TELL trust ON/OFF ablation
+
+M5g.1 established source-neutral audit training and a later native
+target TELL, with matching target prior 0.5 in both confirmed and
+contradicted histories but unmatched private claim/memory content.
+The original direct-TELL source weights 0.6 vs 0.3 yield two
+different posteriors, yet both MAP actions are TELL. That is a
+source mechanism, NOT a trust-only real-world causal effect.
+
+M5g.2 registers a COMPLETE source-native 2×2 software
+protocol ablation: confirmed/contradicted audit history ×
+original \`trust_weight_direct_testimony\` policy ON/OFF.
+The OFF protocol is the original default False; it still
+learns Bob→Alice 0.6/0.3 through the same original V19
+social-memory engine but uses the original full likelihood
+(weight 1.0) for the later direct TELL. ON uses the learned
+0.6/0.3. The two policies are explicitly different model
+versions (different hashes), not a covert edit to trust.
+
+For EACH history, demand exactly the same original source
+Story, actual later target TELL event/hash, native pre-message
+belief and feasible actions under both policy versions;
+otherwise fail closed instead of comparing unlike stimuli.
+Report all four source-native posterior/decision/WorldEvent
+observations, including unchanged MAP actions, with explicit
+finite-softmax policy checks and privacy redaction.
+The old M5g.1 vector must stay byte-for-byte identical.
+Source private memory/claim histories across different audit
+histories remain UNMATCHED: the ablation identifies only a
+finite SOFTWARE policy channel, not an empirical causal
+effect of leader trust or a population generalization.
+
 ## Code and PR acceptance rules
 
 1. One implementation per model; prefer existing
