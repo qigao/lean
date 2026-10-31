@@ -193,8 +193,8 @@ class NeutralAuditSourceReport:
         return stable_content_hash(self.to_dict())
 
 
-def _neutral_source_models():
-    """Declare one new V19 model with a separate audit topic.
+def _neutral_source_models(*, allow_post_audit_target_tell: bool = False):
+    """Declare one V19 model with separate audit and target topics.
 
     Every action/hypothesis likelihood row retains 80% of its original
     target evidence distribution; the two audit symbols each receive 10%
@@ -202,6 +202,8 @@ def _neutral_source_models():
     Therefore target likelihood ratios are unchanged, audit symbols are
     neutral, and row normalization still exactly holds.
     """
+    if type(allow_post_audit_target_tell) is not bool:
+        raise TypeError("M5g1 native target-TELL repeatability switch must be boolean")
     from tests.test_network_epistemic_influence import source_epistemic_case
     net, root, _, _ = source_epistemic_case()
     old_cognition = net.percept_memory_model.cognitive_model
@@ -249,6 +251,27 @@ def _neutral_source_models():
             likelihoods=old_likelihood + neutral_rows,
             observation_rules=rules,
         )
+        if allow_post_audit_target_tell and actor.agent_id in ("alice", "bob"):
+            # Only existing source-constrained TELL becomes repeatable.
+            # No reward, likelihood, goal, schedule or world action is invented.
+            original = actor
+            actor = replace(actor, actions=tuple(
+                replace(action, repeatable=True)
+                if action.action_id == "tell" else action
+                for action in actor.actions
+            ))
+            if (actor.rewards != original.rewards
+                    or actor.likelihoods != original.likelihoods
+                    or actor.goals != original.goals
+                    or actor.action_schedule != original.action_schedule
+                    or any(
+                        x != y for x,y in zip(
+                            (a for a in actor.actions if a.action_id != "tell"),
+                            (a for a in original.actions if a.action_id != "tell"),
+                            strict=True,
+                        )
+                    )):
+                raise ValueError("native target policy cannot alter original Agent rewards")
         cognitive_agents.append(actor)
     cognition = replace(old_cognition, agents=tuple(cognitive_agents))
     memory = replace(net.percept_memory_model, cognitive_model=cognition,
