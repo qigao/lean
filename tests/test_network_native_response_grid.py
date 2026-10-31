@@ -140,6 +140,47 @@ class SourceResponseRegimeGridAcceptance(unittest.TestCase):
                 "the historical world Story cannot depend on Bob's future TELL cost",
             )
 
+    def test_reviewed_grid_has_one_local_model_switch_without_cherry_picking(self):
+        """Full original V19 grid includes every unchanged and switched case.
+        These are outcome checks, not post-hoc tuning or causal attribution."""
+        d = self.data
+        arms = {
+            cost: {
+                name: cell["history_arms"][name]["native_selected_action_id"]
+                for name in ("confirmed_history", "contradicted_history")
+            }
+            for cell in d["cells"]
+            for cost in (cell["speaking_cost"],)
+        }
+        self.assertEqual(d["discovered_switch_costs"], [3.0])
+        self.assertEqual(arms[0.0],
+                         {"confirmed_history": "tell", "contradicted_history": "tell"})
+        self.assertEqual(arms[2.0],
+                         {"confirmed_history": "tell", "contradicted_history": "tell"})
+        self.assertEqual(arms[3.0],
+                         {"confirmed_history": "tell", "contradicted_history": "wait"})
+        self.assertEqual(arms[4.0],
+                         {"confirmed_history": "wait", "contradicted_history": "wait"})
+        self.assertEqual(arms[5.0],
+                         {"confirmed_history": "wait", "contradicted_history": "wait"})
+        # Cost 3 is a finite model-version regime. Both original
+        # V19 world events really succeed, yet private histories
+        # remain unmatched and trust-alone causality NOT_IDENTIFIED.
+        case = next(c for c in d["cells"] if c["speaking_cost"] == 3.0)
+        c = case["history_arms"]["confirmed_history"]
+        x = case["history_arms"]["contradicted_history"]
+        self.assertEqual(c["native_world_event_outcome"], "told")
+        self.assertEqual(x["native_world_event_outcome"], "waited")
+        self.assertTrue(c["native_world_event_success"])
+        self.assertTrue(x["native_world_event_success"])
+        self.assertAlmostEqual(c["native_action_policy"]["tell"],
+                               0.9529565978505351)
+        self.assertAlmostEqual(x["native_action_policy"]["tell"],
+                               0.4795749765923345)
+        self.assertEqual(d["grid_design"],
+                         "EXPLORATORY_SELECTED_AFTER_M5E2_BASELINE")
+        self.assertEqual(d["trust_only_causal_effect"], "NOT_IDENTIFIED")
+
     def test_wrong_grid_private_content_and_forged_metrics_fail_closed(self):
         def reject(mutate):
             data = self.report.to_dict()

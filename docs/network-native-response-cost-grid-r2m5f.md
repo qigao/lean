@@ -137,3 +137,72 @@ setUpClass grid observation, and serializes that *same result*
 for its pin check rather than re-running the grid inside the
 test method. The original CI still independently regenerates
 the vector through its entrypoint and compares exact bytes.
+
+## First native source result — full grid, including every null cell
+
+The first [CI #41152240777](https://github.com/qigao/lean/actions/runs/41152240777)
+executed ALL five cost models and BOTH historical branches using
+the original V19 source engine. It generated the complete
+**19,047-byte** UTF-8 JSON vector, then stopped intentionally at
+the mandatory missing reviewed corpus. There was NO source
+runtime exception or reduced scientific/CI gate.
+
+The entire actual output was reviewed, pinned in
+conformance/network_native_speaking_cost_grid_v1.json, and
+its report content hash is:
+sha256:0bbd765d4bc6a75c0f1b5342fd235876ce46249cd4e39ccab7f2edc750c24363
+
+Native original round-10 model-local results, without selection
+or filtering:
+
+| TELL cost | Confirmed (trust=0.6) | Contradicted (trust=0.3) | Different MAP? |
+| --- | --- | --- | --- |
+| 0 | TELL, success | TELL, success | No |
+| 2 | TELL, success | TELL, success | No |
+| 3 | TELL, success | WAIT, success | Yes |
+| 4 | WAIT, success | WAIT, success | No |
+| 5 | WAIT, success | WAIT, success | No |
+
+Source original finite-softmax probability of TELL by cost:
+
+| TELL cost | Confirmed | Contradicted |
+| --- | ---: | ---: |
+| 0 | 0.9999996967 | 0.9999974030 |
+| 2 | 0.9992407941 | 0.9813246774 |
+| 3 | 0.9529565979 | 0.4795749766 |
+| 4 | 0.2733474091 | 0.0170706509 |
+| 5 | 0.0068468193 | 0.0003183246 |
+
+The cost-3 **native original V19 model** gives Bob two genuinely
+feasible actions TELL/WAIT. In the confirmed-history case its
+original action values are about 2.2943791 vs 1.5422544,
+and the real world event is successful TELL (told). In the
+contradicted-history case original values are about 1.3751066
+vs 1.3955430, so MAP selects WAIT and the actual event is
+successful WAIT (waited). All other cost cells are retained,
+including cases with the same MAP outcome.
+
+All five cognitive model hashes are distinct, source original
+world and perceptual identities are common, and the original
+authored historical Story hashes are identical across model
+cost cells. Cost=0 exactly matches the reviewed M5e.2
+source report hash and its earlier source corpus.
+Private message and INSPECT contents are not exported.
+
+**Scientific interpretation: exploratory and combined-history only.**
+The cost grid was chosen AFTER seeing M5e.2's original source
+baseline (not blind preregistration). The two history arms have
+different private beliefs, claims and prior evidence, so even
+the cost-3 action divergence cannot be attributed to trust
+alone. Each cost is a separately versioned reward model;
+the raw action utilities are not one invariant cross-model
+unit. This is one deterministic source-generated finite
+model-local response regime, not a population estimate
+or a universal social/elite power law.
+
+The reviewed vector has been pinned and the one-time
+stdout bootstrap deleted. Original V24 Python and
+independent Lean source lanes must reproduce exact bytes.
+All full Python, Lean theorem trust/BB/PathN and
+Studio/Playwright gates remain required on the NEW exact
+HEAD, which is not yet fully CI accepted.

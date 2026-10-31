@@ -343,10 +343,7 @@ jobs:
           pinned=conformance/network_native_speaking_cost_grid_v1.json
           python3 -m tools.render_native_speaking_cost_grid_vectors > "$generated"
           if [ ! -f "$pinned" ]; then
-            echo 'R2_M5F_NATIVE_VECTOR_BEGIN'
-            cat "$generated"
-            echo 'R2_M5F_NATIVE_VECTOR_END'
-            echo 'RED: reviewed full M5f native exploratory response grid source vector is missing'
+            echo 'RED: exact reviewed M5f full source grid vector is missing'
             exit 1
           fi
           python3 -m unittest tests.test_network_native_response_grid -v
