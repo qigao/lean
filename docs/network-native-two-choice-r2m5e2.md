@@ -101,3 +101,56 @@ Strict scientific statuses:
 Further trust-only causal identification needs matched
 source-owned cognition and private histories, independent
 source-qualified samples and empirical external benchmarks.
+
+## Native first-run evidence and reviewed source corpus
+
+First [CI #41149402451](https://github.com/qigao/lean/actions/runs/41149402451)
+successfully replayed the original M5e.1 historical source case
+and the registered M5e.2 cognitive model. It stopped at the
+expected absent reviewed vector, NOT at a model failure.
+
+The actual native **4,641-byte** UTF-8 JSON source vector
+has been reviewed and pinned at
+conformance/network_native_two_choice_v1.json,
+report hash:
+sha256:4d4d6342dae40c96534ba25211d6985e5a773b6b00c6e5bc3505f2fb42e43333
+
+Native round 10 in both histories now has **two original
+feasible actions**: TELL and WAIT. Bob's actual
+MAP-selected and enacted action is **TELL in both arms**;
+both native V19 events succeed with outcome told.
+
+Confirmed previous history:
+- Bob→Alice source trust: 0.6.
+- New EXACT TELL approved posterior: 0.9848288915887558.
+- Original native TELL action value: 6.755771025206115.
+- Original native WAIT action value: 3.0036658615015717.
+- TELL probability: 0.9999996966628545.
+
+Contradicted previous history:
+- Bob→Alice source trust: 0.3.
+- New EXACT TELL approved posterior: 0.9019590565697919.
+- Native TELL value: 5.600709517779901.
+- Native WAIT value: 2.3854206408243424.
+- TELL probability: 0.9999974030116334.
+
+Thus action values and softmax probabilities differ in this
+source-qualified **model-local** comparison; the original
+MAP action and enacted world outcome do NOT differ.
+No reward, likelihood, goal, beta or physical world rule
+was changed after observing that result.
+
+The two historical branches still have different prior
+claims, private memories and beliefs. Therefore the
+probability difference is **not an isolated causal trust
+estimate**, and no population or generalized elite effect
+may be inferred. Any higher-sensitivity experiment must
+preregister its full incentive grid and source identity
+BEFORE execution, and report the entire grid including
+no-difference results.
+
+The one-time source stdout handoff has been removed.
+Existing V24 Python and independent Lean check
+this exact reviewed corpus and original M5e.1
+source bytes. All full Python/Lean/Studio gates remain
+required at the new exact HEAD.

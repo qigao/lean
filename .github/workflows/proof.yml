@@ -326,10 +326,7 @@ jobs:
           pinned=conformance/network_native_two_choice_v1.json
           python3 -m tools.render_native_two_choice_vectors > "$generated"
           if [ ! -f "$pinned" ]; then
-            echo 'R2_M5E2_NATIVE_VECTOR_BEGIN'
-            cat "$generated"
-            echo 'R2_M5E2_NATIVE_VECTOR_END'
-            echo 'RED: source-reviewed M5e2 original two-choice vector is missing'
+            echo 'RED: M5e2 reviewed source-native two-choice vector not committed'
             exit 1
           fi
           python3 -m unittest tests.test_network_native_two_choice -v

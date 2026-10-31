@@ -126,6 +126,36 @@ class NativeMultiActionSourceAcceptance(unittest.TestCase):
             contradicted["native_action_policy"],
         )
 
+    def test_real_negative_map_divergence_with_different_action_policies(self):
+        """Real source result: TWO feasible actions, same enacted TELL.
+
+        Do not relabel an action-probability difference as a trust-only
+        causal effect, and never tune native rewards to force a split.
+        """
+        d = self.data
+        self.assertFalse(d["native_selected_actions_differ"])
+        self.assertTrue(d["native_action_probabilities_differ"])
+        self.assertFalse(d["native_world_outcomes_differ"])
+        confirm = d["arms"]["confirmed_history"]
+        contradict = d["arms"]["contradicted_history"]
+        for arm in (confirm, contradict):
+            self.assertEqual(arm["native_feasible_actions"], ["tell", "wait"])
+            self.assertEqual(arm["native_selected_action_id"], "tell")
+            self.assertEqual(arm["native_world_event_kind"], "tell")
+            self.assertEqual(arm["native_world_event_outcome"], "told")
+            self.assertTrue(arm["native_world_event_success"])
+            self.assertGreater(arm["native_action_policy"]["tell"],
+                               arm["native_action_policy"]["wait"])
+        self.assertAlmostEqual(confirm["native_action_policy"]["tell"],
+                               0.9999996966628545)
+        self.assertAlmostEqual(contradict["native_action_policy"]["tell"],
+                               0.9999974030116334)
+        self.assertGreater(
+            confirm["native_action_policy"]["tell"],
+            contradict["native_action_policy"]["tell"],
+        )
+        self.assertEqual(d["trust_only_causal_effect"], "NOT_IDENTIFIED")
+
     def test_report_forbids_forged_actions_rewards_private_content_and_causality(self):
         def rejects(mutation):
             data = self.report.to_dict()
