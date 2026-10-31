@@ -267,6 +267,41 @@ causal inference. Preserve full original CI and native
 source-byte conformance without adding a second engine,
 workflow or consumer/installer project.
 
+## R2.M5g.0 — source-neutral audit evidence prerequisite
+
+The complete exploratory M5f speaking-cost grid provides a model-local
+TELL/WAIT MAP action split in one cost version, but Bob's two historical
+branches differ in prior target belief as well as learned trust. This
+cannot establish an isolated trust causal mechanism.
+
+M5g.0 declares a **new single V19 cognitive/social model** with a
+separate source-audit topic and two new audit symbols. Each audit
+symbol has exactly the same observation likelihood under the
+target approved/denied hypotheses (0.1 each), while original target
+symbol probabilities are multiplied by the common factor 0.8 to keep
+every original action/hypothesis likelihood row normalized. Thus
+target testimony remains informative, while audit evidence has
+likelihood ratio 1 and cannot change the target belief.
+
+Both arms execute the same original native V19 source world
+actions except prior Alice audit TELL content (confirmed vs
+contradicted). Original private Bob INSPECT verifies the true
+audit marker. Native source SQLite/social owner must report
+Bob→Alice trust 0.5→0.6 vs 0.5→0.3, with one audit testimony
+and one private audit verification each, yet BOTH Bob
+original round-8 target prior and posterior stay exactly 0.5.
+No target-topic testimony/claim is admitted from this training.
+Exact physical locations/passages and single model hashes
+remain common, but private history/claim identities are
+explicitly still UNMATCHED.
+
+This is a source mechanism prerequisite, NOT the next target
+TELL/behavior test. M5g.1 later needs an actual new target TELL
+after source trust learning, original native admission and a
+decision with ≥2 feasible actions, plus explicit review of
+other cognitive-state confounders. Never edit trust fields
+or invent evidence to force causality.
+
 ## Code and PR acceptance rules
 
 1. One implementation per model; prefer existing

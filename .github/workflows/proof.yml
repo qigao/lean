@@ -352,6 +352,23 @@ jobs:
             echo 'RED: full native V19 M5f grid differs from reviewed source bytes'
             exit 1
           fi
+      - name: R2 M5g0 V19 neutral audit trust learning without target-belief change
+        run: |
+          set -euo pipefail
+          mkdir -p .generated-conformance
+          generated=.generated-conformance/network_native_neutral_audit_v1.json
+          pinned=conformance/network_native_neutral_audit_v1.json
+          python3 -m tools.render_native_neutral_audit_vectors > "$generated"
+          if [ ! -f "$pinned" ]; then
+            echo 'RED: required reviewed M5g0 native neutral audit vector is missing'
+            exit 1
+          fi
+          python3 -m unittest tests.test_network_neutral_audit_training -v
+          if ! cmp -s "$pinned" "$generated"; then
+            diff -u "$pinned" "$generated" || true
+            echo 'RED: M5g0 V19 neutral audit/trust source differs'
+            exit 1
+          fi
       - name: Runtime-derived mesh regression
         run: python -m unittest tests.test_mesh_projection tests.test_mesh_evidence -v
 

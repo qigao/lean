@@ -153,6 +153,14 @@ if ! cmp -s conformance/network_native_speaking_cost_grid_v1.json "$tmpdir/netwo
   diff -u conformance/network_native_speaking_cost_grid_v1.json "$tmpdir/network_native_speaking_cost_grid_v1.json" || true
   exit 1
 fi
+# R2.M5g0: original V19 neutral training changes source trust while
+# leaving target belief unchanged; NOT a causal action claim.
+python3 -m tools.render_native_neutral_audit_vectors > "$tmpdir/network_native_neutral_audit_v1.json"
+if ! cmp -s conformance/network_native_neutral_audit_v1.json "$tmpdir/network_native_neutral_audit_v1.json"; then
+  echo 'FAIL: R2.M5g0 original source neutral audit vector changed' >&2
+  diff -u conformance/network_native_neutral_audit_v1.json "$tmpdir/network_native_neutral_audit_v1.json" || true
+  exit 1
+fi
 generated="$tmpdir/authoritative.lean"
 
 # Always regenerate from the actual V19 snapshot, then enforce the immutable
