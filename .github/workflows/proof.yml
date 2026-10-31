@@ -386,6 +386,26 @@ jobs:
             echo 'RED: native neutral audit/target decision differs from source review'
             exit 1
           fi
+      - name: R2 M5g2 original V19 full two-factor direct TELL policy ablation
+        run: |
+          set -euo pipefail
+          mkdir -p .generated-conformance
+          generated=.generated-conformance/network_native_trust_channel_ablation_v1.json
+          pinned=conformance/network_native_trust_channel_ablation_v1.json
+          python3 -m tools.render_native_trust_channel_ablation_vectors > "$generated"
+          if [ ! -f "$pinned" ]; then
+            echo 'R2_M5G2_NATIVE_VECTOR_BEGIN'
+            cat "$generated"
+            echo 'R2_M5G2_NATIVE_VECTOR_END'
+            echo 'RED: reviewed original V19 four-cell trust protocol source vector missing'
+            exit 1
+          fi
+          python3 -m unittest tests.test_network_native_trust_ablation -v
+          if ! cmp -s "$pinned" "$generated"; then
+            diff -u "$pinned" "$generated" || true
+            echo 'RED: M5g2 original V19 source policy ablation changed'
+            exit 1
+          fi
       - name: Runtime-derived mesh regression
         run: python -m unittest tests.test_mesh_projection tests.test_mesh_evidence -v
 

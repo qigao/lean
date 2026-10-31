@@ -16,7 +16,6 @@ import re
 from tempfile import TemporaryDirectory
 
 from grounded_goal_softmax import finite_softmax
-from grounded_goal_softmax import finite_softmax
 from narrative_dynamics.contracts import stable_content_hash
 from narrative_dynamics.abm.mesh_neutral_audit_trust import (
     _AUDIT_ROWS,
@@ -236,12 +235,22 @@ class NeutralAuditTargetDecisionReport:
         return stable_content_hash(self.to_dict())
 
 
-def observe_neutral_audit_then_new_target_choice() -> NeutralAuditTargetDecisionReport:
-    """Original V19 source/SQLite engine with neutral training and target decision."""
+def _run_neutral_audit_then_new_target_choice(
+    *, trust_weight_direct_testimony: bool = True,
+) -> dict[str, object]:
+    """Run the SAME original V19 engine for one explicit social protocol version.
+
+    True preserves the original exact M5g1 report. False uses the
+    original disabled direct-percept weighting, but DOES NOT disable
+    social trust learning, world resolution or remembered testimony.
+    """
+    if type(trust_weight_direct_testimony) is not bool:
+        raise TypeError("M5g2 native direct-TELL protocol must be boolean")
     parent = observe_neutral_training_trust()
     parent_data = parent.to_dict()
     memory, social, root = _neutral_source_models(
         allow_post_audit_target_tell=True,
+        trust_weight_direct_testimony=trust_weight_direct_testimony,
     )
     # New source model is one declared version; same in BOTH histories.
     reference, _, _ = _neutral_source_models()
@@ -381,11 +390,18 @@ def observe_neutral_audit_then_new_target_choice() -> NeutralAuditTargetDecision
                 raise ValueError("M5g1 directional trust drifted before target admission")
             direct = admit_situated_percepts(
                 bob_model,bob_mind,perceptual_timeline(perception,second.next_story,"bob"),
-                _source_trust_by_source={"alice":trust_current},
+                _source_trust_by_source=(
+                    {"alice":trust_current}
+                    if trust_weight_direct_testimony else None
+                ),
             )
             admissions = [a for a in direct.admissions if a.event_id==newer.event_id]
-            if len(admissions)!=1 or admissions[0].source_trust!=expected_trust:
-                raise ValueError("M5g1 original TELL admission lost current trust source")
+            expected_effective_trust = (
+                expected_trust if trust_weight_direct_testimony else 1.0
+            )
+            if (len(admissions)!=1
+                    or admissions[0].source_trust!=expected_effective_trust):
+                raise ValueError("M5g2 native direct TELL does not match source protocol")
             third = simulate_situated_percept_social_cognitive_round(
                 db,memory,social,
                 second.next_story,second.next_cognitive_state,second.next_social_state,
@@ -494,6 +510,14 @@ def observe_neutral_audit_then_new_target_choice() -> NeutralAuditTargetDecision
         "cross_mechanism_ranking":"FORBIDDEN",
         "arms":results,
     }
+    return model_scope
+
+
+def observe_neutral_audit_then_new_target_choice() -> NeutralAuditTargetDecisionReport:
+    """Preserve exact M5g1 public source contract and reviewed bytes."""
+    report = _run_neutral_audit_then_new_target_choice(
+        trust_weight_direct_testimony=True,
+    )
     return NeutralAuditTargetDecisionReport(json.dumps(
-        model_scope,sort_keys=True,separators=(",",":"),ensure_ascii=False,
+        report, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
     ))
