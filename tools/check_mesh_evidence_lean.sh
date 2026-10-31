@@ -161,6 +161,14 @@ if ! cmp -s conformance/network_native_neutral_audit_v1.json "$tmpdir/network_na
   diff -u conformance/network_native_neutral_audit_v1.json "$tmpdir/network_native_neutral_audit_v1.json" || true
   exit 1
 fi
+# R2.M5g.1: source-native V19 neutral trust learning -> NEW target
+# TELL -> original two-choice Bob action; confounders remain explicit.
+python3 -m tools.render_native_neutral_target_vectors > "$tmpdir/network_native_neutral_target_v1.json"
+if ! cmp -s conformance/network_native_neutral_target_v1.json "$tmpdir/network_native_neutral_target_v1.json"; then
+  echo 'FAIL: R2.M5g.1 exact native target source vector changed' >&2
+  diff -u conformance/network_native_neutral_target_v1.json "$tmpdir/network_native_neutral_target_v1.json" || true
+  exit 1
+fi
 generated="$tmpdir/authoritative.lean"
 
 # Always regenerate from the actual V19 snapshot, then enforce the immutable

@@ -369,6 +369,23 @@ jobs:
             echo 'RED: M5g0 V19 neutral audit/trust source differs'
             exit 1
           fi
+      - name: R2 M5g1 V19 neutral training then new target TELL and native decision
+        run: |
+          set -euo pipefail
+          mkdir -p .generated-conformance
+          generated=.generated-conformance/network_native_neutral_target_v1.json
+          pinned=conformance/network_native_neutral_target_v1.json
+          python3 -m tools.render_native_neutral_target_vectors > "$generated"
+          if [ ! -f "$pinned" ]; then
+            echo 'RED: exact reviewed V19 M5g1 neutral target source vector missing'
+            exit 1
+          fi
+          python3 -m unittest tests.test_network_neutral_target_decision -v
+          if ! cmp -s "$pinned" "$generated"; then
+            diff -u "$pinned" "$generated" || true
+            echo 'RED: native neutral audit/target decision differs from source review'
+            exit 1
+          fi
       - name: Runtime-derived mesh regression
         run: python -m unittest tests.test_mesh_projection tests.test_mesh_evidence -v
 

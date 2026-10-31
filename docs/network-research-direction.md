@@ -302,6 +302,36 @@ decision with ≥2 feasible actions, plus explicit review of
 other cognitive-state confounders. Never edit trust fields
 or invent evidence to force causality.
 
+## R2.M5g.1 — neutral V19 audit -> new source target TELL -> actual choice
+
+A model-local, original V19/SQLite experiment may show source-social
+trust learning while the target belief remains unchanged at the
+training checkpoint (M5g.0). This does NOT establish equality of
+all cognitive/private decision inputs. M5g.1 versions one common
+model to make Alice's and Bob's existing native TELL repeatable
+without altering source rewards, observation likelihoods,
+goals, beta, physical permissions or social policy.
+
+The native original social memory learns Bob→Alice trust 0.6 vs
+0.3 during round 8 through a separate target-neutral audit
+topic and Bob's own private INSPECT. A fresh original Agent
+TELL about the target must be emitted in round 9, with an
+observed native causal source event. Its Bob EXACT percept
+must enter the native round-10 decision using the *then-current*
+learned trust, with >=2 actual feasible original actions and
+the real world success/outcome. Record the full source model,
+Story, private observation/memory/claim-status hashes and
+entire action policy.
+
+**Crucial temporal confounder:** an intervening native target
+TELL or other source event may change Bob's target belief
+before the *new* round-9 event is admitted in round 10.
+The report must state whether beliefs remain matched at that
+point; if not, label NOT_MATCHED_AFTER_NATIVE_INTERMEDIATE_EVENTS.
+Prior audit histories and private memory/claim IDs remain
+NOT_MATCHED regardless. No claim of isolated trust causality
+or universal leader power is permitted from this finite replay.
+
 ## Code and PR acceptance rules
 
 1. One implementation per model; prefer existing

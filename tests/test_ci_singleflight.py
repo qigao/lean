@@ -105,6 +105,25 @@ class SingleflightCIContractTests(unittest.TestCase):
         self.assertIn("social_topology_checkpoint_v1.json", script)
         self.assertIn("cmp -s", script)
 
+    def test_r2_m5g1_native_neutral_training_new_target_decision(self):
+        self.assertIn(
+            "R2 M5g1 V19 neutral training then new target TELL and native decision",
+            self.content,
+        )
+        self.assertIn("tests.test_network_neutral_target_decision",self.content)
+        self.assertIn("tools.render_native_neutral_target_vectors",self.content)
+        self.assertIn("conformance/network_native_neutral_target_v1.json",self.content)
+        self.assertLess(
+            self.content.index(
+                "R2 M5g1 V19 neutral training then new target TELL and native decision",
+            ),
+            self.content.index("Runtime-derived mesh regression"),
+        )
+        script=(ROOT/"tools/check_mesh_evidence_lean.sh").read_text(encoding="utf-8")
+        self.assertIn("tools.render_native_neutral_target_vectors",script)
+        self.assertIn("network_native_neutral_target_v1.json",script)
+        self.assertIn("cmp -s",script)
+
     def test_r2_m5g0_native_neutral_audit_trust_but_not_target_belief(self):
         self.assertIn(
             "R2 M5g0 V19 neutral audit trust learning without target-belief change",
