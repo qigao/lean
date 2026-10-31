@@ -113,3 +113,59 @@ Subsequent M5g.2, if needed, must improve actual decision-input
 matching or find a fully source-legitimate neutral learning protocol;
 it must not claim causal identification by deleting observed
 private-memory/claim differences from the report.
+
+## First exact native source run and reviewed evidence
+
+Initial [CI #41157842053](https://github.com/qigao/lean/actions/runs/41157842053)
+executed the authentic source-owned V19 round-8 trust learning,
+round-9 fresh target TELL and round-10 Bob decision/world event
+without native runtime or source-model error. It deliberately
+stopped at the required missing reviewed native source vector.
+
+The exact **7,685 UTF-8 bytes**, report digest
+sha256:3753da8ae2f0ec2b753296a5441fc5732879d02a8c3b5b19ba8bd15010de2bc0,
+are now pinned in
+conformance/network_native_neutral_target_v1.json.
+The temporary stdout handoff has been deleted.
+
+Source-qualified observations:
+- Parent M5g.0 original neutral audit training remains unchanged:
+  approved target belief 0.5 BEFORE AND AFTER social trust
+  learning; confirmed-history Bob→Alice trust 0.6,
+  contradicted-history trust 0.3.
+- The native round-9 NEW target TELL is source-linked and
+  reaches Bob as EXACT with the same native target
+  message/event hash, qualified by branch Story source identity.
+- Importantly, at the actual pre-target observation point,
+  Bob's approved target belief is **still 0.5 in BOTH arms**.
+  Hence \`pre_new_target_belief_match=EXACT\`, observed rather
+  than assumed. This is stronger than training checkpoint
+  equality alone.
+- The original round-10 direct target TELL admission uses
+  Bob→Alice trust **0.6 versus 0.3**, and moves the actual
+  source Bayesian approved posterior to **0.65 versus
+  0.5585365853658536**, respectively.
+- Both native Bob decisions have TWO genuine feasible actions,
+  TELL and WAIT, with the original decision values and
+  action-policy probabilities recorded. Both choose TELL;
+  both original V19 world events succeed with outcome told.
+- Processed observation ID hashes and prior selected-action
+  hashes happen to match in this finite experiment; both
+  recalled-memory counts are 2 and active topic claim
+  counts at the source checkpoint are recorded. These do NOT
+  prove equality of the private contents of memories or
+  historical evidence; both Story histories still differ.
+
+Scientific boundary: even though target prior belief and
+physical opportunity are equal at the relevant time, the
+distinct audit claims, source provenance and private memory
+content remain potential decision confounders. There is
+**NO observed MAP choice divergence**, and the source
+cannot identify an isolated causal trust-only effect.
+This is a finite original-native belief-response mechanism,
+NOT a population effect, a universal elite-influence
+principle or a new six-hop theorem.
+
+The complete exact-head V24 source Python, full Python,
+Lean theorem/BB/PathN trust and Studio/verify CI is still
+required on the pinned-source commit.

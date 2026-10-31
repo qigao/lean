@@ -138,6 +138,47 @@ class NativeNeutralTargetDecisionAcceptance(unittest.TestCase):
                               no["native_bob_selected_action"] else "SAME_MAP",
         )
 
+    def test_real_neutral_pre_target_equal_belief_then_weighted_different_posterior(self):
+        """Original native result: comparable target belief *before*
+        round-10 message, divergent source trust, and same enacted TELL.
+        Private memory/claim histories remain NOT_MATCHED."""
+        d=self.data
+        a=d["arms"]["confirmed_audit"]
+        b=d["arms"]["contradicted_audit"]
+        self.assertEqual(d["pre_new_target_belief_match"],"EXACT")
+        self.assertEqual(d["actual_action_comparison"],"SAME_MAP")
+        self.assertEqual(a["native_bob_pre_target_approved"],0.5)
+        self.assertEqual(b["native_bob_pre_target_approved"],0.5)
+        self.assertEqual(a["native_bob_direct_prior_approved"],0.5)
+        self.assertEqual(b["native_bob_direct_prior_approved"],0.5)
+        self.assertAlmostEqual(a["native_bob_direct_posterior_approved"],0.65)
+        self.assertAlmostEqual(b["native_bob_direct_posterior_approved"],
+                               0.5585365853658536)
+        self.assertEqual(a["native_bob_direct_tell_trust"],0.6)
+        self.assertEqual(b["native_bob_direct_tell_trust"],0.3)
+        self.assertEqual(a["new_target_tell_event_hash"],
+                         b["new_target_tell_event_hash"])
+        self.assertEqual(a["native_bob_feasible_actions"],["tell","wait"])
+        self.assertEqual(b["native_bob_feasible_actions"],["tell","wait"])
+        self.assertEqual(a["native_bob_selected_action"],"tell")
+        self.assertEqual(b["native_bob_selected_action"],"tell")
+        self.assertEqual(a["native_bob_world_event_outcome"],"told")
+        self.assertEqual(b["native_bob_world_event_outcome"],"told")
+        self.assertTrue(a["native_bob_world_event_success"])
+        self.assertTrue(b["native_bob_world_event_success"])
+        self.assertEqual(a["native_bob_recalled_memory_count"],2)
+        self.assertEqual(b["native_bob_recalled_memory_count"],2)
+        self.assertEqual(
+            a["native_bob_previous_selected_actions_hash"],
+            b["native_bob_previous_selected_actions_hash"],
+        )
+        self.assertEqual(
+            a["native_bob_recent_observation_ids_hash"],
+            b["native_bob_recent_observation_ids_hash"],
+        )
+        self.assertEqual(d["source_private_history_match"],"NOT_MATCHED")
+        self.assertEqual(d["trust_only_causal_effect"],"NOT_IDENTIFIED")
+
     def test_private_source_and_forged_trust_behaviour_fail_closed(self):
         def reject(mutate):
             x=self.report.to_dict()

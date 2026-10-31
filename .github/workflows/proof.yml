@@ -377,10 +377,7 @@ jobs:
           pinned=conformance/network_native_neutral_target_v1.json
           python3 -m tools.render_native_neutral_target_vectors > "$generated"
           if [ ! -f "$pinned" ]; then
-            echo 'R2_M5G1_NATIVE_VECTOR_BEGIN'
-            cat "$generated"
-            echo 'R2_M5G1_NATIVE_VECTOR_END'
-            echo 'RED: source-reviewed V19 neutral target native decision vector is missing'
+            echo 'RED: exact reviewed V19 M5g1 neutral target source vector missing'
             exit 1
           fi
           python3 -m unittest tests.test_network_neutral_target_decision -v
