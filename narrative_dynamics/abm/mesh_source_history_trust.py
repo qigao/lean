@@ -17,7 +17,9 @@ from tempfile import TemporaryDirectory
 from narrative_dynamics.contracts import stable_content_hash
 from narrative_dynamics.abm.situated import (
     ObservationChannel, SituatedActionIntent, SituatedActionKind,
+    SituatedWorldEvent,
 )
+from narrative_dynamics.abm.situated_cognition import SituatedCognitiveDecision
 from narrative_dynamics.abm.situated_story import replay_situated_story
 from narrative_dynamics.abm.situated_memory_cognition_contracts import (
     SituatedMemoryRecallCue,
@@ -178,7 +180,19 @@ class SourceHistoryNewTellReport:
         return stable_content_hash(self.to_dict())
 
 
-def observe_verified_trust_then_new_tell() -> SourceHistoryNewTellReport:
+def _run_verified_trust_then_new_tell(
+    *, bob_repeatable_tell: bool = False,
+) -> tuple[
+    SourceHistoryNewTellReport,
+    dict[str, tuple[SituatedCognitiveDecision, SituatedWorldEvent]],
+]:
+    """Run the single original native V19 engine; optionally register Bob TELL repeatability.
+
+    This is a source-model version, not a second decision implementation.
+    The False case preserves all reviewed M5e.1 report bytes/hashes.
+    """
+    if type(bob_repeatable_tell) is not bool:
+        raise TypeError("native Bob TELL repeatability is a source-model boolean")
     from tests.test_network_epistemic_influence import source_epistemic_case
 
     original, root, _, _ = source_epistemic_case()
@@ -187,20 +201,43 @@ def observe_verified_trust_then_new_tell() -> SourceHistoryNewTellReport:
     perception = old_memory.perception_model
     # Source V19 social policy enables the exact M5e.0 newly accepted
     # direct-TELL weight. One policy/model is shared by BOTH histories.
-    # One source cognitive model allows the ORIGINAL planner to choose
-    # repeatable TELL after trust is learned. Bob remains at open because
-    # his original MOVE is eligible only when his own place is records.
-    cognition = replace(
-        old_memory.cognitive_model,
-        agents=tuple(
-            replace(agent, actions=tuple(
+    # One source cognitive model allows Alice to repeat TELL after trust
+    # learning. M5e.2 optionally registers Bob's *already declared* TELL
+    # as repeatable too; all action rewards, likelihoods, goals, original
+    # world permissions and every other action property remain unchanged.
+    original_cognitive = old_memory.cognitive_model
+    cognitive_agents = []
+    for actor in original_cognitive.agents:
+        register_repeatable = actor.agent_id == "alice" or (
+            bob_repeatable_tell and actor.agent_id == "bob"
+        )
+        if register_repeatable:
+            actor = replace(actor, actions=tuple(
                 replace(action, repeatable=True)
                 if action.action_id == "tell" else action
-                for action in agent.actions
-            )) if agent.agent_id == "alice" else agent
-            for agent in old_memory.cognitive_model.agents
-        ),
+                for action in actor.actions
+            ))
+        cognitive_agents.append(actor)
+    cognition = replace(
+        original_cognitive, agents=tuple(cognitive_agents),
     )
+    if bob_repeatable_tell:
+        original_bob = next(x for x in original_cognitive.agents if x.agent_id == "bob")
+        new_bob = next(x for x in cognition.agents if x.agent_id == "bob")
+        original_other = tuple(action for action in original_bob.actions
+                               if action.action_id != "tell")
+        new_other = tuple(action for action in new_bob.actions
+                          if action.action_id != "tell")
+        orig_tell = next(x for x in original_bob.actions if x.action_id == "tell")
+        new_tell = next(x for x in new_bob.actions if x.action_id == "tell")
+        if (new_bob.rewards != original_bob.rewards
+                or new_bob.likelihoods != original_bob.likelihoods
+                or new_bob.goals != original_bob.goals
+                or new_bob.action_schedule != original_bob.action_schedule
+                or original_other != new_other
+                or not new_tell.repeatable
+                or replace(new_tell, repeatable=orig_tell.repeatable) != orig_tell):
+            raise ValueError("M5e.2 must alter only Bob's existing TELL repeatability")
     social = replace(
         original.social_memory_model,
         memory_cognitive_model=replace(
@@ -266,6 +303,7 @@ def observe_verified_trust_then_new_tell() -> SourceHistoryNewTellReport:
     )
     snapshots = {}
     data = {}
+    native_decisions: dict[str, tuple[SituatedCognitiveDecision, SituatedWorldEvent]] = {}
     for label, previous_message, expected_trust, _ in _HISTORY:
         historical_tell = SituatedActionIntent(
             "m5e1-alice-prior-tell", "alice", SituatedActionKind.TELL,
@@ -446,6 +484,7 @@ def observe_verified_trust_then_new_tell() -> SourceHistoryNewTellReport:
             if x.action_id == decision.intent.action_id
             and x.actor_agent_id == "bob"
         )
+        native_decisions[label] = (decision, event)
         result = {
             "historical_story_hash": story.content_hash,
             "historical_world_state_hash": story.current_state.content_hash,
@@ -521,6 +560,12 @@ def observe_verified_trust_then_new_tell() -> SourceHistoryNewTellReport:
         "external_validation": "NO_EXTERNAL_VALIDATION",
         "arms": data,
     }
-    return SourceHistoryNewTellReport(
+    report = SourceHistoryNewTellReport(
         json.dumps(root_data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     )
+    return report, native_decisions
+
+
+def observe_verified_trust_then_new_tell() -> SourceHistoryNewTellReport:
+    """Maintain M5e.1's exact public behavior and reviewed canonical bytes."""
+    return _run_verified_trust_then_new_tell(bob_repeatable_tell=False)[0]

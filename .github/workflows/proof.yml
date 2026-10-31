@@ -318,6 +318,23 @@ jobs:
             echo 'RED: M5e1 real source learning / later TELL replay differs'
             exit 1
           fi
+      - name: R2 M5e2 source native two-choice MAP and reward integrity
+        run: |
+          set -euo pipefail
+          mkdir -p .generated-conformance
+          generated=.generated-conformance/network_native_two_choice_v1.json
+          pinned=conformance/network_native_two_choice_v1.json
+          python3 -m tools.render_native_two_choice_vectors > "$generated"
+          if [ ! -f "$pinned" ]; then
+            echo 'RED: M5e2 reviewed source-native two-choice vector not committed'
+            exit 1
+          fi
+          python3 -m unittest tests.test_network_native_two_choice -v
+          if ! cmp -s "$pinned" "$generated"; then
+            diff -u "$pinned" "$generated" || true
+            echo 'RED: M5e2 V19 source two-choice decision differs from reviewed vector'
+            exit 1
+          fi
       - name: Runtime-derived mesh regression
         run: python -m unittest tests.test_mesh_projection tests.test_mesh_evidence -v
 
