@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 import json
+import math
 from pathlib import Path
 import re
 from tempfile import TemporaryDirectory
@@ -182,6 +183,7 @@ class SourceHistoryNewTellReport:
 
 def _run_verified_trust_then_new_tell(
     *, bob_repeatable_tell: bool = False,
+    bob_tell_cost: float = 0.0,
 ) -> tuple[
     SourceHistoryNewTellReport,
     dict[str, tuple[SituatedCognitiveDecision, SituatedWorldEvent]],
@@ -193,6 +195,11 @@ def _run_verified_trust_then_new_tell(
     """
     if type(bob_repeatable_tell) is not bool:
         raise TypeError("native Bob TELL repeatability is a source-model boolean")
+    if (type(bob_tell_cost) not in (int, float)
+            or not math.isfinite(bob_tell_cost)
+            or bob_tell_cost < 0.0 or bob_tell_cost > 5.0
+            or (bob_tell_cost and not bob_repeatable_tell)):
+        raise ValueError("bounded native source cost requires repeatable Bob TELL and cost 0..5")
     from tests.test_network_epistemic_influence import source_epistemic_case
 
     original, root, _, _ = source_epistemic_case()
@@ -217,6 +224,15 @@ def _run_verified_trust_then_new_tell(
                 if action.action_id == "tell" else action
                 for action in actor.actions
             ))
+        if actor.agent_id == "bob" and bob_tell_cost:
+            # One registered source-model reward version per grid cell.
+            # Apply the *same* cost to TELL for every hypothesis;
+            # retain all other original goal rewards exactly.
+            actor = replace(actor, rewards=tuple(
+                replace(reward, value=reward.value - bob_tell_cost)
+                if reward.action_id == "tell" else reward
+                for reward in actor.rewards
+            ))
         cognitive_agents.append(actor)
     cognition = replace(
         original_cognitive, agents=tuple(cognitive_agents),
@@ -230,14 +246,22 @@ def _run_verified_trust_then_new_tell(
                           if action.action_id != "tell")
         orig_tell = next(x for x in original_bob.actions if x.action_id == "tell")
         new_tell = next(x for x in new_bob.actions if x.action_id == "tell")
-        if (new_bob.rewards != original_bob.rewards
+        expected_rewards = tuple(
+            replace(reward, value=reward.value - bob_tell_cost)
+            if reward.action_id == "tell" else reward
+            for reward in original_bob.rewards
+        )
+        if (new_bob.rewards != expected_rewards
                 or new_bob.likelihoods != original_bob.likelihoods
                 or new_bob.goals != original_bob.goals
+                or new_bob.beta != original_bob.beta
+                or new_bob.discount != original_bob.discount
+                or new_bob.transitions != original_bob.transitions
                 or new_bob.action_schedule != original_bob.action_schedule
                 or original_other != new_other
                 or not new_tell.repeatable
                 or replace(new_tell, repeatable=orig_tell.repeatable) != orig_tell):
-            raise ValueError("M5e.2 must alter only Bob's existing TELL repeatability")
+            raise ValueError("M5f must change only repeatable TELL and registered Bob TELL cost")
     social = replace(
         original.social_memory_model,
         memory_cognitive_model=replace(

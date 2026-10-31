@@ -335,6 +335,26 @@ jobs:
             echo 'RED: M5e2 V19 source two-choice decision differs from reviewed vector'
             exit 1
           fi
+      - name: R2 M5f complete exploratory V19 speaking-cost response grid
+        run: |
+          set -euo pipefail
+          mkdir -p .generated-conformance
+          generated=.generated-conformance/network_native_speaking_cost_grid_v1.json
+          pinned=conformance/network_native_speaking_cost_grid_v1.json
+          python3 -m tools.render_native_speaking_cost_grid_vectors > "$generated"
+          if [ ! -f "$pinned" ]; then
+            echo 'R2_M5F_NATIVE_VECTOR_BEGIN'
+            cat "$generated"
+            echo 'R2_M5F_NATIVE_VECTOR_END'
+            echo 'RED: reviewed full M5f native exploratory response grid source vector is missing'
+            exit 1
+          fi
+          python3 -m unittest tests.test_network_native_response_grid -v
+          if ! cmp -s "$pinned" "$generated"; then
+            diff -u "$pinned" "$generated" || true
+            echo 'RED: full native V19 M5f grid differs from reviewed source bytes'
+            exit 1
+          fi
       - name: Runtime-derived mesh regression
         run: python -m unittest tests.test_mesh_projection tests.test_mesh_evidence -v
 
