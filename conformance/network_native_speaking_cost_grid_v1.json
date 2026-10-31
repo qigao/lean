@@ -1,0 +1,372 @@
+{
+  "report": {
+    "baseline_m5e2_source_report_hash": "sha256:4e6fa050ccb6fe47fe97066fcd0e923e1922c56df223bac5a903f6efd082aa2b",
+    "cells": [
+      {
+        "bob_reward_table_hash": "sha256:2b5ac0216637982c6a5edcf61d6c57838508f9e242e7ef6a80b8377864e93fce",
+        "history_arms": {
+          "confirmed_history": {
+            "native_action_feasible_ids": [
+              "tell",
+              "wait"
+            ],
+            "native_action_policy": {
+              "tell": 0.9999996966628545,
+              "wait": 3.0333714563492894e-07
+            },
+            "native_action_values": {
+              "tell": 6.755771025206115,
+              "wait": 3.0036658615015717
+            },
+            "native_bob_learned_trust": 0.6,
+            "native_clock_round": 10,
+            "native_decision_hash": "sha256:db4f139e2ecc3ec32b590baed0c62a439031915fdde949664d2f6196f4ca47bc",
+            "native_new_tell_posterior_approved": 0.9848288915887558,
+            "native_selected_action_id": "tell",
+            "native_selected_action_probability": 0.9999996966628545,
+            "native_world_event_hash": "sha256:af263b7e9afb1f5626d6111b5d79c401f8af15a5774dcb5a5d1904804563b9b2",
+            "native_world_event_kind": "tell",
+            "native_world_event_outcome": "told",
+            "native_world_event_success": true,
+            "new_source_tell_admitted": true,
+            "prior_source_history_hash": "sha256:ff2e82e41cc67d9bc3fcb5af3f9fce34175cb30f8e884102868363dbe6fd423f"
+          },
+          "contradicted_history": {
+            "native_action_feasible_ids": [
+              "tell",
+              "wait"
+            ],
+            "native_action_policy": {
+              "tell": 0.9999974030116334,
+              "wait": 2.5969883666858403e-06
+            },
+            "native_action_values": {
+              "tell": 5.600709517779901,
+              "wait": 2.3854206408243424
+            },
+            "native_bob_learned_trust": 0.3,
+            "native_clock_round": 10,
+            "native_decision_hash": "sha256:de2e4e4d724e6a3222a1196826103a9134c6ac836ad4cbb7058ce7c5981e898c",
+            "native_new_tell_posterior_approved": 0.9019590565697919,
+            "native_selected_action_id": "tell",
+            "native_selected_action_probability": 0.9999974030116334,
+            "native_world_event_hash": "sha256:af263b7e9afb1f5626d6111b5d79c401f8af15a5774dcb5a5d1904804563b9b2",
+            "native_world_event_kind": "tell",
+            "native_world_event_outcome": "told",
+            "native_world_event_success": true,
+            "new_source_tell_admitted": true,
+            "prior_source_history_hash": "sha256:d9efc8110c41b21dee5c93e5d0a5d781b040e68e98881916c269a7bcc9cc492a"
+          }
+        },
+        "native_history_report_hash": "sha256:4e6fa050ccb6fe47fe97066fcd0e923e1922c56df223bac5a903f6efd082aa2b",
+        "native_policy_probabilities_differ": true,
+        "native_selected_actions_differ": false,
+        "native_world_outcomes_differ": false,
+        "same_original_perception_hash": "sha256:8fccadf01a83372a65242e233ac692399a525382bec3b1b1ab339aff6cc31677",
+        "same_original_world_hash": "sha256:e9ffd6cbaacd409747ab0cb604c4e0d47722bf9642761feb9505e4d7dcce92a6",
+        "source_cognitive_model_hash": "sha256:581c3aabace235d6046017b53bb6eea53233ab503d5ed20003222ca0fc37add7",
+        "source_memory_model_hash": "sha256:9e07ead62c45af0db6d7ab9bb895381dd6bca75a001bbd9cc9af9385328079b7",
+        "source_social_model_hash": "sha256:2ab09b13a33030f6a12cf10aa1bc659e853e4b48525a739ed3f1790532e8a91c",
+        "speaking_cost": 0.0
+      },
+      {
+        "bob_reward_table_hash": "sha256:933ba57bb357f43fe2e63da38483839678276d272fb7b906175c7efe7c33eaae",
+        "history_arms": {
+          "confirmed_history": {
+            "native_action_feasible_ids": [
+              "tell",
+              "wait"
+            ],
+            "native_action_policy": {
+              "tell": 0.999240794100939,
+              "wait": 0.0007592058990609282
+            },
+            "native_action_values": {
+              "tell": 3.298795865166664,
+              "wait": 1.5031763535777625
+            },
+            "native_bob_learned_trust": 0.6,
+            "native_clock_round": 10,
+            "native_decision_hash": "sha256:568678c863cca969213889585cbd4e0dfc31cdd8baef3a1f5441f68f3937c275",
+            "native_new_tell_posterior_approved": 0.9848288915887558,
+            "native_selected_action_id": "tell",
+            "native_selected_action_probability": 0.999240794100939,
+            "native_world_event_hash": "sha256:af263b7e9afb1f5626d6111b5d79c401f8af15a5774dcb5a5d1904804563b9b2",
+            "native_world_event_kind": "tell",
+            "native_world_event_outcome": "told",
+            "native_world_event_success": true,
+            "new_source_tell_admitted": true,
+            "prior_source_history_hash": "sha256:ff2e82e41cc67d9bc3fcb5af3f9fce34175cb30f8e884102868363dbe6fd423f"
+          },
+          "contradicted_history": {
+            "native_action_feasible_ids": [
+              "tell",
+              "wait"
+            ],
+            "native_action_policy": {
+              "tell": 0.9813246774173418,
+              "wait": 0.018675322582658284
+            },
+            "native_action_values": {
+              "tell": 2.3593454387359953,
+              "wait": 1.3689203471852351
+            },
+            "native_bob_learned_trust": 0.3,
+            "native_clock_round": 10,
+            "native_decision_hash": "sha256:df5275c64fdd7f19fd279c647ae33714145e6a6ec107067a745c07a6e56ab19a",
+            "native_new_tell_posterior_approved": 0.9019590565697919,
+            "native_selected_action_id": "tell",
+            "native_selected_action_probability": 0.9813246774173418,
+            "native_world_event_hash": "sha256:af263b7e9afb1f5626d6111b5d79c401f8af15a5774dcb5a5d1904804563b9b2",
+            "native_world_event_kind": "tell",
+            "native_world_event_outcome": "told",
+            "native_world_event_success": true,
+            "new_source_tell_admitted": true,
+            "prior_source_history_hash": "sha256:d9efc8110c41b21dee5c93e5d0a5d781b040e68e98881916c269a7bcc9cc492a"
+          }
+        },
+        "native_history_report_hash": "sha256:779e8c91d6bbc97ac89deea2575ae72d9c6d1e4bc775e43760f3e4eb5254677a",
+        "native_policy_probabilities_differ": true,
+        "native_selected_actions_differ": false,
+        "native_world_outcomes_differ": false,
+        "same_original_perception_hash": "sha256:8fccadf01a83372a65242e233ac692399a525382bec3b1b1ab339aff6cc31677",
+        "same_original_world_hash": "sha256:e9ffd6cbaacd409747ab0cb604c4e0d47722bf9642761feb9505e4d7dcce92a6",
+        "source_cognitive_model_hash": "sha256:2e11e0f96ddc0fbbb2f1fd542f2d881987dc90f71f0daad9caf065c4a4f23127",
+        "source_memory_model_hash": "sha256:8ef2fc3f58cf9823ae8e91559285f20179eafccce87424f08669958b3dcbe86e",
+        "source_social_model_hash": "sha256:7e5a6c429db0efdfbedced46d355543a55ec90157c8828eeeb8bb836f511e0b0",
+        "speaking_cost": 2.0
+      },
+      {
+        "bob_reward_table_hash": "sha256:a81586737733ece1407f94d1f69336eace252017bfdd53b68304ac183381e3b4",
+        "history_arms": {
+          "confirmed_history": {
+            "native_action_feasible_ids": [
+              "tell",
+              "wait"
+            ],
+            "native_action_policy": {
+              "tell": 0.9529565978505351,
+              "wait": 0.047043402149465015
+            },
+            "native_action_values": {
+              "tell": 2.2943790978205545,
+              "wait": 1.5422544142250936
+            },
+            "native_bob_learned_trust": 0.6,
+            "native_clock_round": 10,
+            "native_decision_hash": "sha256:9443cf539b92c081d5ea1d93f30cda00fdae755b2db9e2bb27c3be896e8f2981",
+            "native_new_tell_posterior_approved": 0.9848288915887558,
+            "native_selected_action_id": "tell",
+            "native_selected_action_probability": 0.9529565978505351,
+            "native_world_event_hash": "sha256:af263b7e9afb1f5626d6111b5d79c401f8af15a5774dcb5a5d1904804563b9b2",
+            "native_world_event_kind": "tell",
+            "native_world_event_outcome": "told",
+            "native_world_event_success": true,
+            "new_source_tell_admitted": true,
+            "prior_source_history_hash": "sha256:ff2e82e41cc67d9bc3fcb5af3f9fce34175cb30f8e884102868363dbe6fd423f"
+          },
+          "contradicted_history": {
+            "native_action_feasible_ids": [
+              "tell",
+              "wait"
+            ],
+            "native_action_policy": {
+              "tell": 0.4795749765923345,
+              "wait": 0.5204250234076655
+            },
+            "native_action_values": {
+              "tell": 1.3751065623490661,
+              "wait": 1.395542958403688
+            },
+            "native_bob_learned_trust": 0.3,
+            "native_clock_round": 10,
+            "native_decision_hash": "sha256:3c7cb3c16bf6727c119ba2fd426dbb8c9acdc691f09a308af984ab40a374db78",
+            "native_new_tell_posterior_approved": 0.9019590565697919,
+            "native_selected_action_id": "wait",
+            "native_selected_action_probability": 0.5204250234076655,
+            "native_world_event_hash": "sha256:7c545b4a498351f8dd073a4f54d1d2f98d319832af41a3f609e9147c93c55948",
+            "native_world_event_kind": "wait",
+            "native_world_event_outcome": "waited",
+            "native_world_event_success": true,
+            "new_source_tell_admitted": true,
+            "prior_source_history_hash": "sha256:d9efc8110c41b21dee5c93e5d0a5d781b040e68e98881916c269a7bcc9cc492a"
+          }
+        },
+        "native_history_report_hash": "sha256:2a46485f2ba57da98cb84f706424960bde87d195d742b81b07aeed5e26e0eca4",
+        "native_policy_probabilities_differ": true,
+        "native_selected_actions_differ": true,
+        "native_world_outcomes_differ": true,
+        "same_original_perception_hash": "sha256:8fccadf01a83372a65242e233ac692399a525382bec3b1b1ab339aff6cc31677",
+        "same_original_world_hash": "sha256:e9ffd6cbaacd409747ab0cb604c4e0d47722bf9642761feb9505e4d7dcce92a6",
+        "source_cognitive_model_hash": "sha256:42cf58d332efb575de55c813666d7dcdf9f44b25c5da85d4f12dddcfc2b06dd0",
+        "source_memory_model_hash": "sha256:a07dea36e773d5af3b94c4524b75f5ed174810b1fc93f890addf9b879514a030",
+        "source_social_model_hash": "sha256:e95dd603b72313d092043dc626a6c9ad7a55a9380e8629b7e28f08d06d8af41d",
+        "speaking_cost": 3.0
+      },
+      {
+        "bob_reward_table_hash": "sha256:c0daf441e40809c55813da132b59a7ed4225782405c187285dc0669aeeb229c3",
+        "history_arms": {
+          "confirmed_history": {
+            "native_action_feasible_ids": [
+              "tell",
+              "wait"
+            ],
+            "native_action_policy": {
+              "tell": 0.27334740911052197,
+              "wait": 0.726652590889478
+            },
+            "native_action_values": {
+              "tell": 1.3057984956703355,
+              "wait": 1.5502247330657724
+            },
+            "native_bob_learned_trust": 0.6,
+            "native_clock_round": 10,
+            "native_decision_hash": "sha256:0926f15499fe5aa3283e668a65043a6a9896b1ccb75268e377b712c74b219530",
+            "native_new_tell_posterior_approved": 0.9848288915887558,
+            "native_selected_action_id": "wait",
+            "native_selected_action_probability": 0.726652590889478,
+            "native_world_event_hash": "sha256:7c545b4a498351f8dd073a4f54d1d2f98d319832af41a3f609e9147c93c55948",
+            "native_world_event_kind": "wait",
+            "native_world_event_outcome": "waited",
+            "native_world_event_success": true,
+            "new_source_tell_admitted": true,
+            "prior_source_history_hash": "sha256:ff2e82e41cc67d9bc3fcb5af3f9fce34175cb30f8e884102868363dbe6fd423f"
+          },
+          "contradicted_history": {
+            "native_action_feasible_ids": [
+              "tell",
+              "wait"
+            ],
+            "native_action_policy": {
+              "tell": 0.017070650866739746,
+              "wait": 0.9829293491332602
+            },
+            "native_action_values": {
+              "tell": 0.3834550459517525,
+              "wait": 1.3967491908282925
+            },
+            "native_bob_learned_trust": 0.3,
+            "native_clock_round": 10,
+            "native_decision_hash": "sha256:fe33e6ebde00ac7070adc68411a5829f94028285e23e819416fccaf57f5301a5",
+            "native_new_tell_posterior_approved": 0.9019590565697919,
+            "native_selected_action_id": "wait",
+            "native_selected_action_probability": 0.9829293491332602,
+            "native_world_event_hash": "sha256:7c545b4a498351f8dd073a4f54d1d2f98d319832af41a3f609e9147c93c55948",
+            "native_world_event_kind": "wait",
+            "native_world_event_outcome": "waited",
+            "native_world_event_success": true,
+            "new_source_tell_admitted": true,
+            "prior_source_history_hash": "sha256:d9efc8110c41b21dee5c93e5d0a5d781b040e68e98881916c269a7bcc9cc492a"
+          }
+        },
+        "native_history_report_hash": "sha256:f07730db29307cef262e7a41879befcfecb4f0d303d3ad966a9a9eaaf83c5b3f",
+        "native_policy_probabilities_differ": true,
+        "native_selected_actions_differ": false,
+        "native_world_outcomes_differ": false,
+        "same_original_perception_hash": "sha256:8fccadf01a83372a65242e233ac692399a525382bec3b1b1ab339aff6cc31677",
+        "same_original_world_hash": "sha256:e9ffd6cbaacd409747ab0cb604c4e0d47722bf9642761feb9505e4d7dcce92a6",
+        "source_cognitive_model_hash": "sha256:ecc60656936edba8d29a0d5100df5d9caf6aa8c90823cea1283c92d66b8d7859",
+        "source_memory_model_hash": "sha256:f01172b6e93ac5be38ec3a532943314ccb74d356308f1cad5e98c3c9116ed4de",
+        "source_social_model_hash": "sha256:354661c9e23f9ef6c21cef6fa488ef1e4087f8a5fbb0ebda986b53df34fa14ea",
+        "speaking_cost": 4.0
+      },
+      {
+        "bob_reward_table_hash": "sha256:a0e4ea8b5538eaf891f995383230ddc63822c34b579ae801da4b32d15c510e7f",
+        "history_arms": {
+          "confirmed_history": {
+            "native_action_feasible_ids": [
+              "tell",
+              "wait"
+            ],
+            "native_action_policy": {
+              "tell": 0.0068468192846293146,
+              "wait": 0.9931531807153707
+            },
+            "native_action_values": {
+              "tell": 0.30622341845110324,
+              "wait": 1.5504985950165648
+            },
+            "native_bob_learned_trust": 0.6,
+            "native_clock_round": 10,
+            "native_decision_hash": "sha256:7b50db46e5b19150a9b1f62ecb63676192f8464441c7351abcc6afb57bced0a7",
+            "native_new_tell_posterior_approved": 0.9848288915887558,
+            "native_selected_action_id": "wait",
+            "native_selected_action_probability": 0.9931531807153707,
+            "native_world_event_hash": "sha256:7c545b4a498351f8dd073a4f54d1d2f98d319832af41a3f609e9147c93c55948",
+            "native_world_event_kind": "wait",
+            "native_world_event_outcome": "waited",
+            "native_world_event_success": true,
+            "new_source_tell_admitted": true,
+            "prior_source_history_hash": "sha256:ff2e82e41cc67d9bc3fcb5af3f9fce34175cb30f8e884102868363dbe6fd423f"
+          },
+          "contradicted_history": {
+            "native_action_feasible_ids": [
+              "tell",
+              "wait"
+            ],
+            "native_action_policy": {
+              "tell": 0.0003183246180437812,
+              "wait": 0.9996816753819561
+            },
+            "native_action_values": {
+              "tell": -0.6162460931667824,
+              "wait": 1.3967840341095408
+            },
+            "native_bob_learned_trust": 0.3,
+            "native_clock_round": 10,
+            "native_decision_hash": "sha256:663133135f0b2b79c4ec140de91e9f6952c2b85cfb34dfa002641580f9619131",
+            "native_new_tell_posterior_approved": 0.9019590565697919,
+            "native_selected_action_id": "wait",
+            "native_selected_action_probability": 0.9996816753819561,
+            "native_world_event_hash": "sha256:7c545b4a498351f8dd073a4f54d1d2f98d319832af41a3f609e9147c93c55948",
+            "native_world_event_kind": "wait",
+            "native_world_event_outcome": "waited",
+            "native_world_event_success": true,
+            "new_source_tell_admitted": true,
+            "prior_source_history_hash": "sha256:d9efc8110c41b21dee5c93e5d0a5d781b040e68e98881916c269a7bcc9cc492a"
+          }
+        },
+        "native_history_report_hash": "sha256:11b03141786d4917c0f271ed318f563dd02f311131df016defdd605bf13905c7",
+        "native_policy_probabilities_differ": true,
+        "native_selected_actions_differ": false,
+        "native_world_outcomes_differ": false,
+        "same_original_perception_hash": "sha256:8fccadf01a83372a65242e233ac692399a525382bec3b1b1ab339aff6cc31677",
+        "same_original_world_hash": "sha256:e9ffd6cbaacd409747ab0cb604c4e0d47722bf9642761feb9505e4d7dcce92a6",
+        "source_cognitive_model_hash": "sha256:e1c6528268d06a1edebda6a6c519eb8fc20c5d07bc7439bfc5a886877c38f89c",
+        "source_memory_model_hash": "sha256:924fa5fda497ded8c64794681976323cf7eed7cc1b95946dc90cb7356e130015",
+        "source_social_model_hash": "sha256:be2e6dbb3ce68a6ad720d6c28ae7641649e52e8560f02d9c2a7ba02f40a63749",
+        "speaking_cost": 5.0
+      }
+    ],
+    "confidence_interval": "NOT_ESTIMABLE",
+    "cross_mechanism_ranking": "FORBIDDEN",
+    "discovered_switch_costs": [
+      3.0
+    ],
+    "external_validation": "NO_EXTERNAL_VALIDATION",
+    "grid_completeness": "ALL_REGISTERED_CELLS_INCLUDED",
+    "grid_costs": [
+      0.0,
+      2.0,
+      3.0,
+      4.0,
+      5.0
+    ],
+    "grid_design": "EXPLORATORY_SELECTED_AFTER_M5E2_BASELINE",
+    "original_bob_reward_table_hash": "sha256:2b5ac0216637982c6a5edcf61d6c57838508f9e242e7ef6a80b8377864e93fce",
+    "parent_m5e2_report_hash": "sha256:4d4d6342dae40c96534ba25211d6985e5a773b6b00c6e5bc3505f2fb42e43333",
+    "registered_model_change": "SYMMETRIC_BOB_TELL_REWARD_MINUS_COST_EACH_HYPOTHESIS",
+    "registered_social_policy_hash": "sha256:49d5e60fd25d94aee7c00ec145938c9a653e78c14af7a89d1fe767a34f02d288",
+    "sample_size_per_arm": 1,
+    "schema": "r2-m5f-exploratory-native-speaking-cost-grid-v1",
+    "scientific_scope": "FINITE_MODEL_SENSITIVITY_NOT_CAUSAL_INFERENCE",
+    "source_bob_beta": 4.0,
+    "source_history_comparison": "CONFIRMED_VS_CONTRADICTED",
+    "source_owner": "V19_NATIVE_PLANNER_AND_SQLITE_SOCIAL_COGNITION",
+    "source_perception_hash": "sha256:8fccadf01a83372a65242e233ac692399a525382bec3b1b1ab339aff6cc31677",
+    "source_world_hash": "sha256:e9ffd6cbaacd409747ab0cb604c4e0d47722bf9642761feb9505e4d7dcce92a6",
+    "trust_only_causal_effect": "NOT_IDENTIFIED"
+  },
+  "report_hash": "sha256:0bbd765d4bc6a75c0f1b5342fd235876ce46249cd4e39ccab7f2edc750c24363",
+  "schema": "r2-m5f-exploratory-native-speaking-cost-grid-v1"
+}

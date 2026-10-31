@@ -145,6 +145,14 @@ if ! cmp -s conformance/network_native_two_choice_v1.json "$tmpdir/network_nativ
   diff -u conformance/network_native_two_choice_v1.json "$tmpdir/network_native_two_choice_v1.json" || true
   exit 1
 fi
+# R2.M5f: every predeclared original V19 native speaking-cost model;
+# no selective result publication or unreviewed trust-only causality.
+python3 -m tools.render_native_speaking_cost_grid_vectors > "$tmpdir/network_native_speaking_cost_grid_v1.json"
+if ! cmp -s conformance/network_native_speaking_cost_grid_v1.json "$tmpdir/network_native_speaking_cost_grid_v1.json"; then
+  echo 'FAIL: R2.M5f full native exploratory response grid source vector changed' >&2
+  diff -u conformance/network_native_speaking_cost_grid_v1.json "$tmpdir/network_native_speaking_cost_grid_v1.json" || true
+  exit 1
+fi
 generated="$tmpdir/authoritative.lean"
 
 # Always regenerate from the actual V19 snapshot, then enforce the immutable

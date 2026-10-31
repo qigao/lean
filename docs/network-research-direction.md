@@ -235,6 +235,38 @@ arms. Accept a no-difference selected-action result even if
 policies differ; never post-hoc change rewards to force divergence.
 Preserve exact old M5e.1 conformance bytes and all upstream CI.
 
+## R2.M5f — complete exploratory native V19 speaking-cost response grid
+
+R2.M5e.2 showed two genuine feasible Agent actions under unchanged
+native rewards, with different confirmed/contradicted history policy
+probabilities but the SAME MAP TELL and world outcome. Only a
+new explicitly **exploratory** model-version sensitivity analysis
+may investigate other response regimes.
+
+M5f freezes the complete numeric speaking-cost grid
+\`[0.0, 2.0, 3.0, 4.0, 5.0]\` in source and design **before its
+first M5f execution**, but acknowledges this range was chosen
+after inspecting M5e.2's baseline: it is **not** blind
+preregistration or an independent causal test. For EACH grid
+cell, derive one new original V19 cognitive model in which
+every Bob TELL hypothesis/goal reward is shifted by the same
+declared cost, keeping all other rewards/likelihoods/goals/
+beta/decisions and world/social/perception owners unchanged.
+Both confirmed/contradicted histories run in the same model
+version; different costs produce different model hashes.
+
+Publish ALL cells including no-switch cases; record original
+V19 action values, full finite-softmax policies, feasible
+actions, original MAP selection and native world result, as
+well as model/social/Story/trust hashes. The zero-cost cell
+MUST reproduce the reviewed original M5e.2 source report.
+No reward is changed post-hoc after source outcomes appear.
+Keep unmatched historical private memory/belief confounders
+explicit, forbid any universal elite score or trust-only
+causal inference. Preserve full original CI and native
+source-byte conformance without adding a second engine,
+workflow or consumer/installer project.
+
 ## Code and PR acceptance rules
 
 1. One implementation per model; prefer existing

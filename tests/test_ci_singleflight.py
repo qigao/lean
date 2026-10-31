@@ -105,6 +105,23 @@ class SingleflightCIContractTests(unittest.TestCase):
         self.assertIn("social_topology_checkpoint_v1.json", script)
         self.assertIn("cmp -s", script)
 
+    def test_r2_m5f_full_native_response_cost_grid_scope_and_ci(self):
+        self.assertIn(
+            "R2 M5f complete exploratory V19 speaking-cost response grid",
+            self.content,
+        )
+        self.assertIn("tests.test_network_native_response_grid", self.content)
+        self.assertIn("tools.render_native_speaking_cost_grid_vectors", self.content)
+        self.assertIn("conformance/network_native_speaking_cost_grid_v1.json", self.content)
+        self.assertLess(
+            self.content.index("R2 M5f complete exploratory V19 speaking-cost response grid"),
+            self.content.index("Runtime-derived mesh regression"),
+        )
+        script = (ROOT / "tools/check_mesh_evidence_lean.sh").read_text(encoding="utf-8")
+        self.assertIn("tools.render_native_speaking_cost_grid_vectors", script)
+        self.assertIn("network_native_speaking_cost_grid_v1.json", script)
+        self.assertIn("cmp -s", script)
+
     def test_r2_m5e2_actual_native_two_choice_not_threshold_inference(self):
         self.assertIn("R2 M5e2 source native two-choice MAP and reward integrity", self.content)
         self.assertIn("tests.test_network_native_two_choice", self.content)
