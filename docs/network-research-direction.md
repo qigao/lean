@@ -211,6 +211,30 @@ Do not invent trust, events, world permissions, graph edges or
 a universal elite influence score. Keep full original four-job
 source/proof/Studio CI and independent native vector review.
 
+## R2.M5e.2 — native action-choice eligibility rather than forced WAIT
+
+The first M5e.1 source-qualified trust-learning experiment consumed
+a new EXACT TELL and performed the actual round-10 decision, but
+only WAIT remained feasible. This cannot test whether different
+trust-weighted evidence yields different native action choices.
+
+M5e.2 registers a DIFFERENT V19 cognitive model version where Bob's
+existing, already-declared TELL has repeatable=True, retaining its
+exact action kind/source constraints, all original rewards/likelihoods,
+goals, beta and other actions. Both confirmed/contradicted histories
+use this same new model; world, perception, social policy and history
+intervention remain source-owned. The original V19 native planner
+must expose TELL plus WAIT at round 10, report complete native
+action values, finite-softmax probabilities, lexical MAP selection
+and actual source-world event success/outcome.
+
+This is a new preregistered model-version qualification, **NOT**
+a proof that the isolated trust delta caused any behavioral
+difference. Historical private belief/claims still differ between
+arms. Accept a no-difference selected-action result even if
+policies differ; never post-hoc change rewards to force divergence.
+Preserve exact old M5e.1 conformance bytes and all upstream CI.
+
 ## Code and PR acceptance rules
 
 1. One implementation per model; prefer existing
