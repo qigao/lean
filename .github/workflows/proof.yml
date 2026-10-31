@@ -397,7 +397,7 @@ jobs:
             echo 'RED: required reviewed M5g2 original-native four-cell vector is missing'
             exit 1
           fi
-          python3 -m unittest tests.test_network_native_trust_ablation -v
+          python3 -m unittest tests.test_network_native_trust_ablation tests.test_network_native_trust_math -v
           if ! cmp -s "$pinned" "$generated"; then
             diff -u "$pinned" "$generated" || true
             echo 'RED: M5g2 original V19 source policy ablation changed'
@@ -696,6 +696,7 @@ jobs:
           lake env lean NarrativeDynamics/Tests/HypothesisCompetition.lean
           lake env lean NarrativeDynamics/Tests/GroundedHypothesisSpace.lean
           lake env lean NarrativeDynamics/Tests/GroundedBeliefUpdate.lean
+          lake env lean NarrativeDynamics/Tests/NativeTrustWeightedTell.lean
           lake env lean NarrativeDynamics/Tests/InterpretationCommitment.lean
           lake env lean NarrativeDynamics/Tests/InterpretationSelection.lean
           lake env lean NarrativeDynamics/Tests/EpistemicGoal.lean
