@@ -168,6 +168,45 @@ class NativeTrustChannelAblationAcceptance(unittest.TestCase):
                 ["native_bob_direct_posterior_approved"],
             )
 
+    def test_real_four_cell_negative_map_divergence_and_full_likelihood(self):
+        """Expected source result is now pinned after REAL V19 execution.
+        All four original world events TELL succeed; no behavioral split."""
+        d=self.data
+        self.assertEqual(d["within_history_posterior_diff"],
+                         {"confirmed_audit":True,"contradicted_audit":True})
+        self.assertEqual(d["within_history_map_diff"],
+                         {"confirmed_audit":False,"contradicted_audit":False})
+        self.assertAlmostEqual(
+            d["cells"]["weighted"]["history_arms"]["confirmed_audit"]
+            ["native_bob_direct_posterior_approved"],0.65,
+        )
+        self.assertAlmostEqual(
+            d["cells"]["weighted"]["history_arms"]["contradicted_audit"]
+            ["native_bob_direct_posterior_approved"],0.5585365853658536,
+        )
+        for history in ("confirmed_audit","contradicted_audit"):
+            legacy=d["cells"]["legacy"]["history_arms"][history]
+            weighted=d["cells"]["weighted"]["history_arms"][history]
+            self.assertEqual(legacy["native_effective_tell_weight"],1.0)
+            self.assertAlmostEqual(legacy["native_bob_direct_posterior_approved"],0.9)
+            self.assertEqual(weighted["native_map_action"],"tell")
+            self.assertEqual(legacy["native_map_action"],"tell")
+            self.assertEqual(weighted["native_world_event_kind"],"tell")
+            self.assertEqual(legacy["native_world_event_kind"],"tell")
+            self.assertEqual(weighted["native_world_outcome"],"told")
+            self.assertEqual(legacy["native_world_outcome"],"told")
+            self.assertTrue(weighted["native_world_success"])
+            self.assertTrue(legacy["native_world_success"])
+            self.assertEqual(
+                weighted["source_target_tell_event_hash"],
+                legacy["source_target_tell_event_hash"],
+            )
+            self.assertEqual(
+                weighted["training_story_hash"],
+                legacy["training_story_hash"],
+            )
+        self.assertEqual(d["trust_only_causal_effect"],"NOT_IDENTIFIED")
+
     def test_unchanged_private_histories_do_not_create_population_causality(self):
         d=self.data
         self.assertEqual(d["source_private_history_match"],"NOT_MATCHED")

@@ -146,3 +146,60 @@ at the NEW exact HEAD. Preserve cache and FIFO/singleflight.
 No new workflow, consumer/installer project, alternative
 cognitive engine, fake universal power score or duplicated
 six-hop theorem.
+
+## Actual native source outcome and reviewed conformance
+
+The initial [source CI #41160340616](https://github.com/qigao/lean/actions/runs/41160340616)
+completed **all four** ORIGINAL V19/SQLite native protocol
+cases and all inherited source regressions. It then stopped
+intentionally at the missing reviewed corpus; no source
+exception or deliberately skipped test occurred.
+
+The full **12,084-byte** native-generated canonical UTF-8 JSON
+has been reviewed and pinned in
+conformance/network_native_trust_channel_ablation_v1.json.
+Report content digest:
+
+sha256:82a398b05982690503a13a4df9a6f3bc58f43dcd337ccee6fd064d6dbbff5563
+
+Source-native Bayesian approved posteriors:
+
+| Prior audit Story | Actually learned source trust | Direct weight ON | Posterior ON | Direct weight OFF | Posterior OFF |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| confirmed | 0.6 | 0.6 | 0.65 | 1.0 | 0.9 |
+| contradicted | 0.3 | 0.3 | 0.5585365853658536 | 1.0 | 0.9 |
+
+Every arm starts from original approved belief 0.5 and
+has BOTH original TELL and WAIT actions feasible. ALL FOUR
+V19 native MAP-selected actions are TELL and ALL FOUR
+actual world events succeed with outcome told. The complete
+softmax distributions, native action values, source event/
+Story hashes, true social trust, and original distinct
+social-policy/model hashes are retained in the pinned corpus.
+
+Within EACH historical arm, policy ON/OFF preserves the
+actual seven-round Story, target TELL event ID/content
+hash, pre-message belief, feasible original action roster
+and processed observation/previous selected-action IDs.
+The direct source protocol alone changes the effective
+TELL likelihood from current social trust to 1.0.
+The parent's M5g.1 7,685-byte reviewed vector remains
+byte-identical under its default-ON observer.
+
+**Scientific scope:** The real four-cell output supports
+a deterministic *native software calculation-channel*
+effect on belief and action probabilities, with NO
+observed difference in enacted MAP action. Previous
+private audit histories are still unmatched across
+confirmed/contradicted arms, and ON/OFF are TWO
+explicitly different policy/model versions. This is
+NOT a randomized trust-only historical treatment,
+empirical population estimate or universal rule of
+influential leaders.
+
+The one-time stdout bootstrap was removed. The
+existing focused V24 source Python and independent
+Lean source-equivalence lane now require byte-identical
+regeneration. Full Python, Lean theorem/BB/PathN trust
+and Studio/verify gates remain REQUIRED on the new
+exact HEAD; upstream 4/4 cannot be transferred.

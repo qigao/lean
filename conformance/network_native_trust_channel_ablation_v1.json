@@ -1,0 +1,221 @@
+{
+  "report": {
+    "cells": {
+      "legacy": {
+        "history_arms": {
+          "confirmed_audit": {
+            "learned_observer_source_trust": 0.6,
+            "native_action_policy": {
+              "tell": 0.9999982500556283,
+              "wait": 1.7499443717111035e-06
+            },
+            "native_action_values": {
+              "tell": 5.869847823188237,
+              "wait": 2.5558666211427767
+            },
+            "native_active_audit_claims": 0,
+            "native_active_target_claims": 0,
+            "native_admission_consumed": true,
+            "native_bob_direct_posterior_approved": 0.9,
+            "native_bob_direct_prior_approved": 0.5,
+            "native_bob_prior_approved": 0.5,
+            "native_direct_decision_hash": "sha256:765acfa74bdc3c56cd01cff0a0625546c18fd184773f1f67809475e2141c0283",
+            "native_effective_tell_weight": 1.0,
+            "native_feasible_actions": [
+              "tell",
+              "wait"
+            ],
+            "native_map_action": "tell",
+            "native_private_memory_count": 2,
+            "native_target_tell_received_fidelity": "exact",
+            "native_world_event_hash": "sha256:af263b7e9afb1f5626d6111b5d79c401f8af15a5774dcb5a5d1904804563b9b2",
+            "native_world_event_kind": "tell",
+            "native_world_outcome": "told",
+            "native_world_success": true,
+            "post_learning_story_hash": "sha256:528f4d279096691d35adda3e052d58d99b9db3d5ca85f283c97a571dc6aea4cb",
+            "prior_selected_action_hash": "sha256:54fabe946622564ef7f601690b718b78843042d43a740cd83d9d7d1fc78a711a",
+            "processed_observation_ids_hash": "sha256:468876a11d2f7d4c8569d372a928d261174b5d6f54e8fb48e6b60070d985fd90",
+            "source_target_tell_cause_event_ids": [
+              "r0008:e0002"
+            ],
+            "source_target_tell_event_hash": "sha256:c9e22252f6e552ea9692d55dfabf53d6dddc38e16cafacedda699cac1d4c2288",
+            "source_target_tell_event_id": "r0009:e0001",
+            "training_audit_event_hash": "sha256:8bf3037dc1ac720e20dd3492a96ae01817a53cde3f079fd13a183d853de131e8",
+            "training_story_hash": "sha256:ac913abb89d1d40def4bbfa0cd001c11937826728f916c89fc511f4b3d198dc0"
+          },
+          "contradicted_audit": {
+            "learned_observer_source_trust": 0.3,
+            "native_action_policy": {
+              "tell": 0.9999982500556283,
+              "wait": 1.7499443717111035e-06
+            },
+            "native_action_values": {
+              "tell": 5.869847823188237,
+              "wait": 2.5558666211427767
+            },
+            "native_active_audit_claims": 0,
+            "native_active_target_claims": 0,
+            "native_admission_consumed": true,
+            "native_bob_direct_posterior_approved": 0.9,
+            "native_bob_direct_prior_approved": 0.5,
+            "native_bob_prior_approved": 0.5,
+            "native_direct_decision_hash": "sha256:765acfa74bdc3c56cd01cff0a0625546c18fd184773f1f67809475e2141c0283",
+            "native_effective_tell_weight": 1.0,
+            "native_feasible_actions": [
+              "tell",
+              "wait"
+            ],
+            "native_map_action": "tell",
+            "native_private_memory_count": 2,
+            "native_target_tell_received_fidelity": "exact",
+            "native_world_event_hash": "sha256:af263b7e9afb1f5626d6111b5d79c401f8af15a5774dcb5a5d1904804563b9b2",
+            "native_world_event_kind": "tell",
+            "native_world_outcome": "told",
+            "native_world_success": true,
+            "post_learning_story_hash": "sha256:c902ee631ff69b4fb63d8241c1812821744ce3897c9ec6241eb752915dacdf53",
+            "prior_selected_action_hash": "sha256:54fabe946622564ef7f601690b718b78843042d43a740cd83d9d7d1fc78a711a",
+            "processed_observation_ids_hash": "sha256:468876a11d2f7d4c8569d372a928d261174b5d6f54e8fb48e6b60070d985fd90",
+            "source_target_tell_cause_event_ids": [
+              "r0008:e0002"
+            ],
+            "source_target_tell_event_hash": "sha256:c9e22252f6e552ea9692d55dfabf53d6dddc38e16cafacedda699cac1d4c2288",
+            "source_target_tell_event_id": "r0009:e0001",
+            "training_audit_event_hash": "sha256:bb8772bc32e5119340e3cb44e703da23a0c668864440eac2bde24b4301e4ce95",
+            "training_story_hash": "sha256:4b0af1ff5d2e861954c20070fd78f7f250478e2ea3f1af221fbf6bcf4b17da88"
+          }
+        },
+        "protocol": "legacy",
+        "source_initial_world_hash": "sha256:7940d358562cb2a06e4d7099b2a0bbe6f91ff62f0154f944d4fb9cd2ceffa642",
+        "source_model_hash": "sha256:dd2daf268be085cb734dcaed9455770d18c949b16f1488fba6b0eaac86182b91",
+        "source_perception_hash": "sha256:8fccadf01a83372a65242e233ac692399a525382bec3b1b1ab339aff6cc31677",
+        "source_social_model_hash": "sha256:ebc62e63d22260e9d0c1b4cb7f0c42495546a3326faa744c8209ee731d564ee2",
+        "source_social_policy_hash": "sha256:dc475b1c301657cab0e702f6a57eec09daf77e536544cee5e8c2a6a63f797ee6",
+        "source_world_hash": "sha256:e9ffd6cbaacd409747ab0cb604c4e0d47722bf9642761feb9505e4d7dcce92a6",
+        "trust_weight_direct_testimony": false
+      },
+      "weighted": {
+        "history_arms": {
+          "confirmed_audit": {
+            "learned_observer_source_trust": 0.6,
+            "native_action_policy": {
+              "tell": 0.9994356056232843,
+              "wait": 0.0005643943767158565
+            },
+            "native_action_values": {
+              "tell": 2.8743753835669965,
+              "wait": 1.0045771966610306
+            },
+            "native_active_audit_claims": 0,
+            "native_active_target_claims": 0,
+            "native_admission_consumed": true,
+            "native_bob_direct_posterior_approved": 0.65,
+            "native_bob_direct_prior_approved": 0.5,
+            "native_bob_prior_approved": 0.5,
+            "native_direct_decision_hash": "sha256:6b7baf74ef114ec015fabd048bbd353f91affef986455aeabaa188ccfa012431",
+            "native_effective_tell_weight": 0.6,
+            "native_feasible_actions": [
+              "tell",
+              "wait"
+            ],
+            "native_map_action": "tell",
+            "native_private_memory_count": 2,
+            "native_target_tell_received_fidelity": "exact",
+            "native_world_event_hash": "sha256:af263b7e9afb1f5626d6111b5d79c401f8af15a5774dcb5a5d1904804563b9b2",
+            "native_world_event_kind": "tell",
+            "native_world_outcome": "told",
+            "native_world_success": true,
+            "post_learning_story_hash": "sha256:528f4d279096691d35adda3e052d58d99b9db3d5ca85f283c97a571dc6aea4cb",
+            "prior_selected_action_hash": "sha256:54fabe946622564ef7f601690b718b78843042d43a740cd83d9d7d1fc78a711a",
+            "processed_observation_ids_hash": "sha256:468876a11d2f7d4c8569d372a928d261174b5d6f54e8fb48e6b60070d985fd90",
+            "source_target_tell_cause_event_ids": [
+              "r0008:e0002"
+            ],
+            "source_target_tell_event_hash": "sha256:c9e22252f6e552ea9692d55dfabf53d6dddc38e16cafacedda699cac1d4c2288",
+            "source_target_tell_event_id": "r0009:e0001",
+            "training_audit_event_hash": "sha256:8bf3037dc1ac720e20dd3492a96ae01817a53cde3f079fd13a183d853de131e8",
+            "training_story_hash": "sha256:ac913abb89d1d40def4bbfa0cd001c11937826728f916c89fc511f4b3d198dc0"
+          },
+          "contradicted_audit": {
+            "learned_observer_source_trust": 0.3,
+            "native_action_policy": {
+              "tell": 0.9829856154914917,
+              "wait": 0.017014384508508385
+            },
+            "native_action_values": {
+              "tell": 1.8626900697843918,
+              "wait": 0.8485562315515335
+            },
+            "native_active_audit_claims": 0,
+            "native_active_target_claims": 0,
+            "native_admission_consumed": true,
+            "native_bob_direct_posterior_approved": 0.5585365853658536,
+            "native_bob_direct_prior_approved": 0.5,
+            "native_bob_prior_approved": 0.5,
+            "native_direct_decision_hash": "sha256:807cdccd6561854d2f0967a9bd428d2fb051a3582e0a5df47e652683f47b834f",
+            "native_effective_tell_weight": 0.3,
+            "native_feasible_actions": [
+              "tell",
+              "wait"
+            ],
+            "native_map_action": "tell",
+            "native_private_memory_count": 2,
+            "native_target_tell_received_fidelity": "exact",
+            "native_world_event_hash": "sha256:af263b7e9afb1f5626d6111b5d79c401f8af15a5774dcb5a5d1904804563b9b2",
+            "native_world_event_kind": "tell",
+            "native_world_outcome": "told",
+            "native_world_success": true,
+            "post_learning_story_hash": "sha256:c902ee631ff69b4fb63d8241c1812821744ce3897c9ec6241eb752915dacdf53",
+            "prior_selected_action_hash": "sha256:54fabe946622564ef7f601690b718b78843042d43a740cd83d9d7d1fc78a711a",
+            "processed_observation_ids_hash": "sha256:468876a11d2f7d4c8569d372a928d261174b5d6f54e8fb48e6b60070d985fd90",
+            "source_target_tell_cause_event_ids": [
+              "r0008:e0002"
+            ],
+            "source_target_tell_event_hash": "sha256:c9e22252f6e552ea9692d55dfabf53d6dddc38e16cafacedda699cac1d4c2288",
+            "source_target_tell_event_id": "r0009:e0001",
+            "training_audit_event_hash": "sha256:bb8772bc32e5119340e3cb44e703da23a0c668864440eac2bde24b4301e4ce95",
+            "training_story_hash": "sha256:4b0af1ff5d2e861954c20070fd78f7f250478e2ea3f1af221fbf6bcf4b17da88"
+          }
+        },
+        "protocol": "weighted",
+        "source_initial_world_hash": "sha256:7940d358562cb2a06e4d7099b2a0bbe6f91ff62f0154f944d4fb9cd2ceffa642",
+        "source_model_hash": "sha256:dd2daf268be085cb734dcaed9455770d18c949b16f1488fba6b0eaac86182b91",
+        "source_perception_hash": "sha256:8fccadf01a83372a65242e233ac692399a525382bec3b1b1ab339aff6cc31677",
+        "source_social_model_hash": "sha256:37454744cb12eeaddd4e14e351a92f190aeee6a50c20e945190a2f36c8291f39",
+        "source_social_policy_hash": "sha256:49d5e60fd25d94aee7c00ec145938c9a653e78c14af7a89d1fe767a34f02d288",
+        "source_world_hash": "sha256:e9ffd6cbaacd409747ab0cb604c4e0d47722bf9642761feb9505e4d7dcce92a6",
+        "trust_weight_direct_testimony": true
+      }
+    },
+    "common_original_rewards_hash": "sha256:2b5ac0216637982c6a5edcf61d6c57838508f9e242e7ef6a80b8377864e93fce",
+    "common_source_cognitive_hash": "sha256:dd2daf268be085cb734dcaed9455770d18c949b16f1488fba6b0eaac86182b91",
+    "common_source_perception_hash": "sha256:8fccadf01a83372a65242e233ac692399a525382bec3b1b1ab339aff6cc31677",
+    "common_source_world_hash": "sha256:e9ffd6cbaacd409747ab0cb604c4e0d47722bf9642761feb9505e4d7dcce92a6",
+    "complete_factorial": true,
+    "confidence_interval": "NOT_ESTIMABLE",
+    "cross_mechanism_ranking": "FORBIDDEN",
+    "external_validation": "NO_EXTERNAL_VALIDATION",
+    "grid_design": "COMPLETE_TWO_FACTOR_NATIVE_PROTOCOL_ABLATION",
+    "history_content_differs": true,
+    "model_social_policy_versions_distinct": true,
+    "native_protocol_mechanism_scope": "FINITE_SOFTWARE_POLICY_ABLATION",
+    "parent_m5g1_report_hash": "sha256:3753da8ae2f0ec2b753296a5441fc5732879d02a8c3b5b19ba8bd15010de2bc0",
+    "same_v19_world_and_model_cognition": true,
+    "sample_size_per_arm": 1,
+    "schema": "r2-m5g2-original-v19-native-direct-tell-trust-ablation-v1",
+    "source_bob_beta": 4.0,
+    "source_owner": "ONE_ORIGINAL_V19_SQLITE_COGNITION_SOCIAL_WORLD",
+    "source_private_history_match": "NOT_MATCHED",
+    "trust_only_causal_effect": "NOT_IDENTIFIED",
+    "within_history_event_identity_required": true,
+    "within_history_map_diff": {
+      "confirmed_audit": false,
+      "contradicted_audit": false
+    },
+    "within_history_posterior_diff": {
+      "confirmed_audit": true,
+      "contradicted_audit": true
+    }
+  },
+  "report_hash": "sha256:82a398b05982690503a13a4df9a6f3bc58f43dcd337ccee6fd064d6dbbff5563",
+  "schema": "r2-m5g2-original-v19-native-direct-tell-trust-ablation-v1"
+}

@@ -394,10 +394,7 @@ jobs:
           pinned=conformance/network_native_trust_channel_ablation_v1.json
           python3 -m tools.render_native_trust_channel_ablation_vectors > "$generated"
           if [ ! -f "$pinned" ]; then
-            echo 'R2_M5G2_NATIVE_VECTOR_BEGIN'
-            cat "$generated"
-            echo 'R2_M5G2_NATIVE_VECTOR_END'
-            echo 'RED: reviewed original V19 four-cell trust protocol source vector missing'
+            echo 'RED: required reviewed M5g2 original-native four-cell vector is missing'
             exit 1
           fi
           python3 -m unittest tests.test_network_native_trust_ablation -v
