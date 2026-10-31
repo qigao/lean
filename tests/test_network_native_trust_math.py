@@ -117,11 +117,19 @@ class OriginalV19TrustBayesTheoremBinding(unittest.TestCase):
         )
         for trust, posterior in expected:
             self.assertEqual(rational_posterior(trust, _APPROVED, _DENIED), posterior)
-        self.assertEqual(
-            rational_posterior(Fraction(1, 2), Fraction(1, 4),
-                               Fraction(1, 4) - Fraction(1, 100000)),
-            rational_posterior(Fraction(1, 2), Fraction(1, 4),
-                               Fraction(1, 4) - Fraction(1, 100000)),
+        # Independent exact-rational comparisons, never compare a result
+        # with itself: strict posterior movement is the theorem contract.
+        for (lower, _), (upper, _) in zip(expected, expected[1:]):
+            self.assertLess(
+                rational_posterior(lower, _APPROVED, _DENIED),
+                rational_posterior(upper, _APPROVED, _DENIED),
+            )
+        self.assertGreater(
+            rational_posterior(
+                Fraction(1, 2), Fraction(1, 4),
+                Fraction(1, 4) - Fraction(1, 100000),
+            ),
+            Fraction(1, 2),
         )
         neutral = Fraction(1, 4)
         actual = (1 - Fraction(3, 5) + Fraction(3, 5) * neutral)
