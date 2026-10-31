@@ -21,12 +21,12 @@ def effectiveLikelihood (trust likelihood : ℝ) : ℝ :=
 
 /-- Equal-prior, source-declared approved posterior for a newly admitted
 EXACT external TELL (18/25 approved vs 2/25 denied). -/
-def approvedPosterior (trust : ℝ) : ℝ :=
+noncomputable def approvedPosterior (trust : ℝ) : ℝ :=
   effectiveLikelihood trust (18 / 25 : ℝ) /
     (effectiveLikelihood trust (18 / 25 : ℝ) +
       effectiveLikelihood trust (2 / 25 : ℝ))
 
-def deniedPosterior (trust : ℝ) : ℝ :=
+noncomputable def deniedPosterior (trust : ℝ) : ℝ :=
   effectiveLikelihood trust (2 / 25 : ℝ) /
     (effectiveLikelihood trust (18 / 25 : ℝ) +
       effectiveLikelihood trust (2 / 25 : ℝ))
