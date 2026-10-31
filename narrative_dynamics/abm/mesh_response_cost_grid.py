@@ -111,6 +111,7 @@ class NativeResponseGridReport:
             raise ValueError("M5f grid must disclose every source cell and limitations")
         source_ids = set()
         switch_costs = []
+        reference_histories = None
         for entry, cost in zip(d["cells"], _COSTS, strict=True):
             if (
                 type(entry) is not dict or set(entry) != _CELL_KEYS
@@ -184,6 +185,17 @@ class NativeResponseGridReport:
                     or arm["new_source_tell_admitted"] is not True
                 ):
                     raise ValueError("M5f actual native action/reward policy was forged")
+            # Costs alter only the registered native cognitive model;
+            # the original seven AUTHORED V19 world/history action
+            # records must remain identical across cost versions.
+            history_hashes = tuple(
+                entry["history_arms"][name]["prior_source_history_hash"]
+                for name in _HISTORY
+            )
+            if reference_histories is None:
+                reference_histories = history_hashes
+            elif reference_histories != history_hashes:
+                raise ValueError("M5f cost versions changed source historical Stories")
             yes = entry["history_arms"]["confirmed_history"]
             no = entry["history_arms"]["contradicted_history"]
             switched = (yes["native_selected_action_id"] !=

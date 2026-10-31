@@ -13,6 +13,9 @@ from narrative_dynamics.abm.mesh_response_cost_grid import (
     NativeResponseGridReport, observe_native_speaking_cost_grid,
     _COSTS,
 )
+from narrative_dynamics.abm.mesh_source_history_trust import (
+    _run_verified_trust_then_new_tell,
+)
 
 
 class SourceResponseRegimeGridAcceptance(unittest.TestCase):
@@ -113,6 +116,30 @@ class SourceResponseRegimeGridAcceptance(unittest.TestCase):
         self.assertEqual(d["external_validation"], "NO_EXTERNAL_VALIDATION")
         self.assertEqual(d["cross_mechanism_ranking"], "FORBIDDEN")
 
+    def test_invalid_costs_fail_before_any_native_world_replay(self):
+        for bad_cost in (-1, 5.01, float("nan"), True, "2"):
+            with self.subTest(cost=bad_cost):
+                with self.assertRaises(ValueError):
+                    _run_verified_trust_then_new_tell(
+                        bob_repeatable_tell=True, bob_tell_cost=bad_cost,
+                    )
+        with self.assertRaisesRegex(ValueError, "repeatable Bob TELL"):
+            _run_verified_trust_then_new_tell(
+                bob_repeatable_tell=False, bob_tell_cost=2.0,
+            )
+
+    def test_historical_story_source_identical_across_all_cost_models(self):
+        cells = self.data["cells"]
+        for arm_name in ("confirmed_history", "contradicted_history"):
+            hashes = {
+                c["history_arms"][arm_name]["prior_source_history_hash"]
+                for c in cells
+            }
+            self.assertEqual(
+                len(hashes), 1,
+                "the historical world Story cannot depend on Bob's future TELL cost",
+            )
+
     def test_wrong_grid_private_content_and_forged_metrics_fail_closed(self):
         def reject(mutate):
             data = self.report.to_dict()
@@ -125,6 +152,10 @@ class SourceResponseRegimeGridAcceptance(unittest.TestCase):
         reject(lambda d: d["cells"][0].__setitem__(
             "source_cognitive_model_hash",
             d["cells"][1]["source_cognitive_model_hash"]))
+        reject(lambda d: d["cells"][1]["history_arms"]["confirmed_history"]
+               .__setitem__("prior_source_history_hash",
+                            d["cells"][1]["history_arms"]["contradicted_history"]
+                            ["prior_source_history_hash"]))
         reject(lambda d: d.__setitem__("grid_design", "BLIND_CAUSAL_PROOF"))
         reject(lambda d: d.__setitem__("trust_only_causal_effect", "PROVEN"))
         reject(lambda d: d.__setitem__("confidence_interval", "ESTIMATED"))
