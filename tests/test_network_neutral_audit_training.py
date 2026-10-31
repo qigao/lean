@@ -136,6 +136,29 @@ class NativeNeutralAuditTrainingAcceptance(unittest.TestCase):
         self.assertEqual(d["external_validation"], "NO_EXTERNAL_VALIDATION")
         self.assertEqual(d["cross_mechanism_ranking"], "FORBIDDEN")
 
+    def test_reviewed_source_audit_trust_contrast_with_equal_target_belief(self):
+        """Exact model-source result, not a synthetic trust-only intervention."""
+        d = self.data
+        yes = d["arms"]["confirmed_audit"]
+        no = d["arms"]["contradicted_audit"]
+        self.assertEqual(d["native_social_learning_round"], 8)
+        self.assertEqual(yes["original_social_trust_after"], 0.6)
+        self.assertEqual(no["original_social_trust_after"], 0.3)
+        self.assertEqual(yes["source_bob_prior_approved_belief"], 0.5)
+        self.assertEqual(no["source_bob_prior_approved_belief"], 0.5)
+        self.assertEqual(yes["source_bob_posterior_approved_belief"], 0.5)
+        self.assertEqual(no["source_bob_posterior_approved_belief"], 0.5)
+        self.assertEqual(yes["native_physical_positions"],
+                         no["native_physical_positions"])
+        self.assertEqual(yes["native_passage_states"],
+                         no["native_passage_states"])
+        self.assertNotEqual(yes["source_historical_story_hash"],
+                            no["source_historical_story_hash"])
+        self.assertEqual(yes["original_social_claim_status"], "confirmed")
+        self.assertEqual(no["original_social_claim_status"], "contradicted")
+        self.assertEqual(d["post_training_target_action_effect"], "NOT_TESTED")
+        self.assertEqual(d["trust_only_causal_effect"], "NOT_IDENTIFIED")
+
     def test_source_report_forbids_forged_trust_belief_or_private_content(self):
         def reject(mutation):
             d = self.report.to_dict()

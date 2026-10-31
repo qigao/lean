@@ -130,3 +130,43 @@ theorem/BB/PathN audits and Studio/Playwright. Preserve cache,
 per-PR FIFO/singleflight, no extra workflow, installer/consumer
 project, second cognitive/trust/graph engine or duplicated
 six-degree theorem.
+
+## First actual source-run evidence and reviewed bytes
+
+[Initial CI #41154902856](https://github.com/qigao/lean/actions/runs/41154902856)
+executed one ORIGINAL V19 social-cognitive round on each true
+source Story/SQLite history without a native model exception.
+It stopped intentionally on the mandatory missing reviewed
+conformance corpus. Its real original **6,309 UTF-8 bytes**,
+report hash:
+
+sha256:10867af4bd3a100b409b20103f352818323ff44c7ed59300560a71054eb0f86e
+
+are now pinned to conformance/network_native_neutral_audit_v1.json
+and the one-time stdout handoff has been removed. Existing
+source Python and independent Lean lanes must regenerate and
+compare these exact bytes; full Python, Lean proof/BB/PathN trust
+and Studio remain required at the new HEAD.
+
+Original native results, not invented bookkeeping:
+- Confirmed audit: Bob→Alice source trust **0.5→0.6**,
+  one EXACT audit testimony and one private Bob INSPECT
+  verification, one native CONFIRMED source-audit claim.
+- Contradicted audit: trust **0.5→0.3**, one EXACT
+  testimony and one private verification, native
+  CONTRADICTED source-audit claim.
+- BOTH histories: native Bob target approved belief
+  **0.5 before AND 0.5 after** learning, with exactly
+  the same V19 world, current physical positions and
+  passage states.
+- The histories have the same authored action IDs but
+  different actual TELL event and Story content hashes.
+- Audit-verified and audit-denied each have likelihood
+  0.1 under BOTH approved and denied hypotheses.
+  The target approved/denied likelihood ratios are
+  still informative in the new declared model.
+
+This is the needed **source trust / target-belief separation**.
+It does not establish matched private memories/claims or
+an enacted target-topic action; do not report a trust-only
+behavioral causal effect or generalization.

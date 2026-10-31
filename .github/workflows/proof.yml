@@ -360,10 +360,7 @@ jobs:
           pinned=conformance/network_native_neutral_audit_v1.json
           python3 -m tools.render_native_neutral_audit_vectors > "$generated"
           if [ ! -f "$pinned" ]; then
-            echo 'R2_M5G0_NATIVE_VECTOR_BEGIN'
-            cat "$generated"
-            echo 'R2_M5G0_NATIVE_VECTOR_END'
-            echo 'RED: reviewed M5g0 original V19 neutral audit source vector missing'
+            echo 'RED: required reviewed M5g0 native neutral audit vector is missing'
             exit 1
           fi
           python3 -m unittest tests.test_network_neutral_audit_training -v

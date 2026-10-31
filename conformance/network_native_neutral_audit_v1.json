@@ -1,0 +1,120 @@
+{
+  "report": {
+    "arms": {
+      "confirmed_audit": {
+        "bob_original_exact_tell_percept_hash": "sha256:557df553e181a7013c88e80eb004d507d785920e242b048fe8a9b4a55d08ac0e",
+        "bob_own_inspect_event_hash": "sha256:7a3632871a019e86a1140d6d6e914706c7bbd54eb4309c9cb605d6231c504e92",
+        "native_original_action_round": 8,
+        "native_passage_states": {
+          "lobby-open": true,
+          "manager-open": false,
+          "open-lobby": true,
+          "open-manager": false,
+          "open-records": true,
+          "records-open": true
+        },
+        "native_physical_positions": {
+          "alice": "open",
+          "bob": "open",
+          "carol": "lobby",
+          "dana": "manager"
+        },
+        "original_bob_decision_hash": "sha256:42787f20c7f9d979b9e54b25122f406c04c67fa55730f4bd16eea110246e22b6",
+        "original_next_cognitive_state_hash": "sha256:87903f30b2e80edbb22e4dee2bae5b3feba81e63a70a30e834dfde5fa76077c1",
+        "original_next_social_state_hash": "sha256:46732b5c2ddf5dff175b31452c02591ad35e494a0bf918601800196929ba213d",
+        "original_social_claim_status": "confirmed",
+        "original_social_evidence_private_verify_count": 1,
+        "original_social_evidence_testimony_count": 1,
+        "original_social_round_hash": "sha256:d162f230273fc2c41994c3557b3307ed6bd446bf18af6d3bd0bcce5697a2f83c",
+        "original_social_trust_after": 0.6,
+        "original_social_trust_before": 0.5,
+        "prior_audit_tell_event_hash": "sha256:8bf3037dc1ac720e20dd3492a96ae01817a53cde3f079fd13a183d853de131e8",
+        "prior_audit_tell_event_id": "r0004:e0001",
+        "source_audit_symbol": "audit-verified",
+        "source_bob_approved_belief_unchanged": true,
+        "source_bob_posterior_approved_belief": 0.5,
+        "source_bob_prior_approved_belief": 0.5,
+        "source_historical_story_hash": "sha256:ac913abb89d1d40def4bbfa0cd001c11937826728f916c89fc511f4b3d198dc0",
+        "source_historical_world_hash": "sha256:eb43603bddbfff4c10997ecdb2eac1e041d328d1ed7439b5502c43c063d330ef"
+      },
+      "contradicted_audit": {
+        "bob_original_exact_tell_percept_hash": "sha256:981243cbe5fe962e892835a230363f82e81a9e7baf81d61eab8fe12c57b64118",
+        "bob_own_inspect_event_hash": "sha256:7a3632871a019e86a1140d6d6e914706c7bbd54eb4309c9cb605d6231c504e92",
+        "native_original_action_round": 8,
+        "native_passage_states": {
+          "lobby-open": true,
+          "manager-open": false,
+          "open-lobby": true,
+          "open-manager": false,
+          "open-records": true,
+          "records-open": true
+        },
+        "native_physical_positions": {
+          "alice": "open",
+          "bob": "open",
+          "carol": "lobby",
+          "dana": "manager"
+        },
+        "original_bob_decision_hash": "sha256:119cc234b1b82e467509871a3afc3089ade8e2a5de8c06fd4dba894ed4948c0b",
+        "original_next_cognitive_state_hash": "sha256:d77124fbdf8acc6afeb47d635d0617365e983fb145e3da898c83ee5f2d61ecc1",
+        "original_next_social_state_hash": "sha256:ea6d3a53d311d22e02b45c6ae057f91c949da8a5a85b5a3a399f13b578d7ec16",
+        "original_social_claim_status": "contradicted",
+        "original_social_evidence_private_verify_count": 1,
+        "original_social_evidence_testimony_count": 1,
+        "original_social_round_hash": "sha256:bb25abe6361cd41a7902d61e27476dabdbb0ccac29e3d15e0fd093e9f83a5bbb",
+        "original_social_trust_after": 0.3,
+        "original_social_trust_before": 0.5,
+        "prior_audit_tell_event_hash": "sha256:bb8772bc32e5119340e3cb44e703da23a0c668864440eac2bde24b4301e4ce95",
+        "prior_audit_tell_event_id": "r0004:e0001",
+        "source_audit_symbol": "audit-denied",
+        "source_bob_approved_belief_unchanged": true,
+        "source_bob_posterior_approved_belief": 0.5,
+        "source_bob_prior_approved_belief": 0.5,
+        "source_historical_story_hash": "sha256:4b0af1ff5d2e861954c20070fd78f7f250478e2ea3f1af221fbf6bcf4b17da88",
+        "source_historical_world_hash": "sha256:eb43603bddbfff4c10997ecdb2eac1e041d328d1ed7439b5502c43c063d330ef"
+      }
+    },
+    "audit_likelihood_per_target_hypothesis": {
+      "approved": {
+        "audit-denied": 0.1,
+        "audit-verified": 0.1
+      },
+      "denied": {
+        "audit-denied": 0.1,
+        "audit-verified": 0.1
+      }
+    },
+    "audit_symbols": [
+      "audit-denied",
+      "audit-verified"
+    ],
+    "audit_topic": "source-audit",
+    "confidence_interval": "NOT_ESTIMABLE",
+    "cross_mechanism_ranking": "FORBIDDEN",
+    "external_validation": "NO_EXTERNAL_VALIDATION",
+    "native_social_learning_round": 8,
+    "original_social_owner": "V19_ADVANCE_SITUATED_SOCIAL_MEMORY",
+    "other_cognitive_inputs_match": "NOT_PROVEN_DIFFERENT_PRIVATE_MEMORIES_AND_CLAIMS",
+    "post_training_target_action_effect": "NOT_TESTED",
+    "sample_size_per_arm": 1,
+    "schema": "r2-m5g0-v19-neutral-audit-trust-learning-v1",
+    "source_action_ids_identical": true,
+    "source_cognitive_model_hash": "sha256:57327b58b2f1c3109f59a5a5fa6cd77b9e2b23f272b762493d1c6b65f7fdda1a",
+    "source_initial_world_hash": "sha256:7940d358562cb2a06e4d7099b2a0bbe6f91ff62f0154f944d4fb9cd2ceffa642",
+    "source_memory_model_hash": "sha256:eafb44fc39a88447bea5eb2b0cf653c24071352f979c472a097c4ab8bb8474ae",
+    "source_owner": "ONE_NATIVE_V19_SQLITE_COGNITION_AND_SOCIAL_OWNER",
+    "source_perception_model_hash": "sha256:8fccadf01a83372a65242e233ac692399a525382bec3b1b1ab339aff6cc31677",
+    "source_physical_world_snapshots_equal": true,
+    "source_social_model_hash": "sha256:9a0584b392f78726284b8c877aeb356410a7d90a2a71421d5ffe2c547a70016c",
+    "source_social_policy_hash": "sha256:49d5e60fd25d94aee7c00ec145938c9a653e78c14af7a89d1fe767a34f02d288",
+    "source_training_contrast": "PRIOR_AUDIT_TELL_CONTENT_ONLY",
+    "source_world_model_hash": "sha256:e9ffd6cbaacd409747ab0cb604c4e0d47722bf9642761feb9505e4d7dcce92a6",
+    "target_belief_match": "EXACT_NATIVE_PRIOR_AND_POSTERIOR",
+    "target_hypothesis": "approved",
+    "target_tell_likelihood_ratio_still_informative": true,
+    "target_topic": "restructuring",
+    "trust_only_causal_effect": "NOT_IDENTIFIED"
+  },
+  "report_hash": "sha256:10867af4bd3a100b409b20103f352818323ff44c7ed59300560a71054eb0f86e",
+  "schema": "r2-m5g0-v19-neutral-audit-trust-learning-v1"
+}
